@@ -7822,6 +7822,28 @@
         return { success: true, message: 'Grand feast begun! The feast lasts 3 days. You have 5 actions per day.', openFeast: true, kingdomId: player.kingState.kingdomId };
     }
 
+    // ── King: Start Town Festival (Common People Event) ──
+    function kingStartFestival(townId, festivalType) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!townId) return { success: false, message: 'Select a town for the festival.' };
+        if (festivalType !== 'small' && festivalType !== 'large') return { success: false, message: 'Choose small or large festival.' };
+        // Use engine function
+        var result = Engine.startFestival(kingdom.id, townId, festivalType);
+        if (!result || result.error) return { success: false, message: (result && result.error) || 'Could not start festival.' };
+        var cost = festivalType === 'large' ? 2000 : 500;
+        var happBoost = festivalType === 'large' ? 20 : 10;
+        var town = Engine.findTown(townId);
+        var townName = town ? town.name : 'the town';
+        var title = player.sex === 'F' ? 'Queen' : 'King';
+        var sizeLabel = festivalType === 'large' ? 'grand' : '';
+        Engine.logEvent('🎉 ' + title + ' ' + player.fullName + ' has ordered a ' + sizeLabel + ' festival in ' + townName + '! (-' + cost + 'g, +' + happBoost + ' happiness)', null, 'my_kingdom');
+        autoJournalCapture('king', 'I ordered a ' + sizeLabel + ' festival in ' + townName + ' to lift the spirits of the common folk.', { mood: 'content' });
+        if (player.kingState) player.kingState._lastFestivalDay = Engine.getDay();
+        return { success: true, message: '🎉 ' + (festivalType === 'large' ? 'Grand' : 'Small') + ' festival started in ' + townName + '! Lasts 3 days. Cost: ' + cost + 'g. (+' + happBoost + ' happiness during, +' + (happBoost / 2) + ' for 15 days after)' };
+    }
+
     function kingHoldCourt(leadDays) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var kingdom = Engine.findKingdom(player.kingState.kingdomId);
@@ -10921,23 +10943,36 @@
         });
         actions.push({
             category: 'economic', id: 'royal_festival',
-            icon: '🎉', name: 'Hold Royal Festival',
-            desc: 'Organize a kingdom festival (+5 happiness, costs treasury gold).',
+            icon: '🎉', name: 'Hold Town Festival',
+            desc: 'Organize a festival for the common people (small: 500g, large: 2000g). Boosts town happiness.',
             baseChance: 0.55,
             modifiers: function() {
                 var m = [];
-                var cost = Math.min(2000, Math.max(500, treasury * 0.05));
-                if (treasury < cost * 2) m.push({ name: 'Tight treasury', val: -0.25 });
+                if (treasury < 1000) m.push({ name: 'Tight treasury', val: -0.25 });
                 if (happiness < 40) m.push({ name: 'Unhappy people need boost', val: 0.20 });
                 if (kp.temperament === 'kind' || kp.temperament === 'merciful') m.push({ name: 'Kind king', val: 0.15 });
                 if (kp.temperament === 'cruel') m.push({ name: 'Cruel king dislikes festivities', val: -0.20 });
                 return m;
             },
             execute: function() {
-                var cost = Math.min(2000, Math.max(500, treasury * 0.05));
-                kingdom.gold = Math.max(0, kingdom.gold - cost);
-                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 5);
-                Engine.logEvent('🎉 ' + kingdom.name + ' holds a grand festival! (+5 happiness, -' + Math.floor(cost) + 'g)');
+                // Pick a town that needs it most (lowest happiness, 90-day cooldown met)
+                var bestTown = null, bestHapp = 999;
+                try {
+                    var kTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
+                    for (var _fi = 0; _fi < kTowns.length; _fi++) {
+                        var _ft = kTowns[_fi];
+                        if ((Engine.getDay() - (_ft._lastFestivalDay || 0)) < 90) continue;
+                        var _fh = _ft.happiness || 50;
+                        if (_fh < bestHapp) { bestHapp = _fh; bestTown = _ft; }
+                    }
+                } catch(e) {}
+                if (!bestTown) { Engine.logEvent('🎉 No eligible town for a festival (90-day cooldown).'); return; }
+                var festType = (bestHapp < 30 && treasury > 5000) ? 'large' : 'small';
+                var result = Engine.startFestival(kingdom.id, bestTown.id, festType);
+                if (result && !result.error) {
+                    var cost = festType === 'large' ? 2000 : 500;
+                    Engine.logEvent('🎉 ' + kingdom.name + ' holds a ' + festType + ' festival in ' + bestTown.name + '! (-' + cost + 'g)');
+                }
             }
         });
         actions.push({
@@ -13123,6 +13158,17 @@
         player.spouseId = plan.fianceId;
         person.spouseId = 'player';
         person.employerId = 'player';
+        // Set starting family relationship
+        var _spouseWarmth = (person.personality && person.personality.warmth) || 50;
+        var _spouseStartRel = Math.max(25, Math.min(70, Math.floor(_spouseWarmth * 0.5 + 15)));
+        if (!player.relationships[plan.fianceId]) {
+            player.relationships[plan.fianceId] = { level: _spouseStartRel, type: 'spouse' };
+        } else {
+            player.relationships[plan.fianceId].level = Math.max(player.relationships[plan.fianceId].level, _spouseStartRel);
+            player.relationships[plan.fianceId].type = 'spouse';
+        }
+        if (!person.relationships) person.relationships = {};
+        person.relationships['player'] = { level: _spouseStartRel, type: 'spouse' };
         if (!player.employees.includes(plan.fianceId)) {
             player.employees.push(plan.fianceId);
         }
@@ -13850,6 +13896,17 @@
                 }
 
                 player.childrenIds.push(child.id);
+                // Set starting parent-child relationship
+                var _childWarmth = (child.personality && child.personality.warmth) || 60;
+                var _childStartRel = Math.max(15, Math.min(70, Math.floor(_childWarmth * 0.3 + 25)));
+                player.relationships[child.id] = { level: _childStartRel, type: 'child' };
+                if (!child.relationships) child.relationships = {};
+                child.relationships['player'] = { level: _childStartRel, type: 'parent' };
+                if (spouse) {
+                    if (!spouse.relationships) spouse.relationships = {};
+                    spouse.relationships[child.id] = { level: _childStartRel, type: 'child' };
+                    child.relationships[spouse.id] = { level: _childStartRel, type: 'parent' };
+                }
                 // Link child to spouse's childrenIds too
                 if (spouse && spouse.childrenIds) {
                     spouse.childrenIds.push(child.id);
@@ -37931,6 +37988,7 @@
         kingDonateTreasury,
         kingWithdrawTreasury,
         kingHostFeast,
+        kingStartFestival,
         kingHoldCourt,
         kingGrantAudience,
         kingDenyAudience,

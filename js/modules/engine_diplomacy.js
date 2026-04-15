@@ -75,6 +75,7 @@
     var tickKingTravel = function(k) { return Engine.tickKingTravel(k); };
     var tickPendingKingDecisions = function(k) { return Engine.tickPendingKingDecisions(k); };
     var tickKingdomFeasts = function(k) { return Engine.tickKingdomFeasts(k); };
+    var tickKingdomFestivals = function(k) { return Engine.tickKingdomFestivals(k); };
     var tickKingdomCourt = function(k) { return Engine.tickKingdomCourt(k); };
     var tickNobleConspiracies = function(k) { return Engine.tickNobleConspiracies(k); };
     var tickKingUnrestResponse = function(k) { return Engine.tickKingUnrestResponse(k); };
@@ -1764,6 +1765,7 @@
             // Always tick feasts: activates pending feasts/courts, ends expired, runs events.
             // NPC auto-scheduling is guarded inside the function itself.
             tickKingdomFeasts(k);
+            tickKingdomFestivals(k);
 
             // ---- AI Court system (daily check, runs every 30-60 days) ----
             // NPC-only: AI king processes petitions automatically
@@ -1773,6 +1775,10 @@
 
             // ---- H2: Noble personality influence on governance (monthly) ----
             if (typeof Engine.tickNobleInfluence === 'function') Engine.tickNobleInfluence(k);
+            // ---- Noble policy advocacy (weekly) ----
+            if (typeof Engine.tickNoblePolicyAdvocacy === 'function') Engine.tickNoblePolicyAdvocacy(k);
+            // ---- NPC local conversations (every 3 days) ----
+            if (typeof Engine.tickLocalConversations === 'function') Engine.tickLocalConversations(k);
             // ---- Noble conspiracies & king unrest response (monthly) ----
             tickNobleConspiracies(k);
             if (!_playerIsKingHere) {
@@ -2596,23 +2602,24 @@
         // 4. HAPPINESS MANAGEMENT
         if (happiness < 40 && p.temperament !== 'cruel') {
             if (p.intelligence === 'brilliant' || p.intelligence === 'clever') {
-                // Smart: lower taxes, hold festival
+                // Smart: lower taxes, may throw a festival via new system
                 k.taxRate = Math.max(0.02, k.taxRate - 0.01);
                 if (k.gold > 2000 && rng.chance(0.3)) {
-                    k.gold -= 200;
-                    boostKingdomHappiness(k, 10);
-                    // Mark towns for festival afterglow
-                    for (const tid of k.territories) { const t = findTown(tid); if (t) t._festivalDay = world.day; }
-                    logEvent(`${k.name} holds a royal festival! Citizens rejoice.`, {
-                        type: 'festival', kingdomId: k.id,
-                        cause: 'The ruler of ' + k.name + ' noticed low happiness (' + Math.round(happiness) + '%) and spent 200g to boost morale.',
-                        effects: [
-                            'Kingdom happiness increased by 10 points',
-                            'Treasury decreased by 200g (now ' + Math.floor(k.gold) + 'g)',
-                            'Citizens feel more loyal to the crown'
-                        ]
-                    });
-                    logKingAction(k, '🎉 Held a festival (-200g, +10 happiness)');
+                    // Pick unhappiest town that's eligible for a festival
+                    var _bestFestTown = null, _bestFestHapp = 999;
+                    for (const tid of k.territories) {
+                        const t = findTown(tid);
+                        if (!t || (world.day - (t._lastFestivalDay || 0)) < 90) continue;
+                        if ((t.happiness || 50) < _bestFestHapp) { _bestFestHapp = t.happiness || 50; _bestFestTown = t; }
+                    }
+                    if (_bestFestTown) {
+                        var _festType = (_bestFestHapp < 30 && k.gold > 5000) ? 'large' : 'small';
+                        var _festResult = Engine.startFestival(k.id, _bestFestTown.id, _festType);
+                        if (_festResult && !_festResult.error) {
+                            var _festCost = _festType === 'large' ? 2000 : 500;
+                            logKingAction(k, '🎉 Held a ' + _festType + ' festival in ' + _bestFestTown.name + ' (-' + _festCost + 'g)');
+                        }
+                    }
                 }
             } else if (p.intelligence === 'dim' || p.intelligence === 'foolish') {
                 // Dim kings increase guards (makes it worse if already unhappy)
@@ -2647,22 +2654,23 @@
             }
         }
 
-        // 6. FESTIVALS (kind kings — foolish/generous kings may party while broke, smart kings require 2000g)
+        // 6. FESTIVALS (kind kings — now uses new festival system via tickKingdomFestivals)
+        // The new tickKingdomFestivals handles AI scheduling with proper cooldowns/costs.
+        // Kind kings still get an extra chance here for spontaneous festivals
         var festGate = (p.intelligence === 'foolish' || p.intelligence === 'dim') ? 100 : 2000;
-        if (p.greed === 'greedy' || p.greed === 'corrupt') festGate = Infinity; // greedy kings never hold festivals
-        if (p.temperament === 'kind' && k.gold > festGate && rng.chance(0.15)) {
-            k.gold -= 200;
-            boostKingdomHappiness(k, 10);
-            for (const tid of k.territories) { const t = findTown(tid); if (t) t._festivalDay = world.day; }
-            logEvent(`The kind ruler of ${k.name} holds a festival for the people.`, {
-                type: 'festival', kingdomId: k.id,
-                cause: 'The generous ruler of ' + k.name + ' decided to celebrate with the people.',
-                effects: [
-                    'Kingdom happiness increased by 10 points',
-                    'Treasury decreased by 200g (now ' + Math.floor(k.gold) + 'g)',
-                    'Citizens feel more loyal to the crown'
-                ]
-            });
+        if (p.greed === 'greedy' || p.greed === 'corrupt') festGate = Infinity;
+        if (p.temperament === 'kind' && k.gold > festGate && rng.chance(0.10)) {
+            // Pick a random eligible town
+            var _kindFestTowns = [];
+            for (const tid of k.territories) {
+                const t = findTown(tid);
+                if (t && (world.day - (t._lastFestivalDay || 0)) >= 90) _kindFestTowns.push(t);
+            }
+            if (_kindFestTowns.length > 0) {
+                var _kindTown = rng.pick(_kindFestTowns);
+                var _kindType = k.gold > 5000 ? 'large' : 'small';
+                Engine.startFestival(k.id, _kindTown.id, _kindType);
+            }
         }
 
         // 6b. ROYAL TOURNAMENT — king sponsors a tournament at the capital

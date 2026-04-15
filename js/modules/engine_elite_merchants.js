@@ -1708,6 +1708,52 @@
                 }
             }
 
+            // ---- 1b. FEAST ATTENDANCE — travel to feast if invited ----
+            if (em._feastInvitation && !em.traveling) {
+                var fInv = em._feastInvitation;
+                var fKingdom = findKingdom(fInv.kingdomId);
+                if (fKingdom && fKingdom._activeFeast && fKingdom._activeFeast.daysLeft > 0) {
+                    var fCapital = findTown(fKingdom.capitalTownId);
+                    if (fCapital && em.townId !== fCapital.id) {
+                        // Travel to feast location
+                        em.townId = fCapital.id;
+                        em.traveling = false;
+                    }
+                } else {
+                    // Feast over, clear invitation
+                    delete em._feastInvitation;
+                }
+            }
+
+            // ---- 1c. NOBLE RELATIONSHIP BUILDING — proactively converse with nobles ----
+            if (day % 5 === 0 && !em.traveling && rng.chance(0.25)) {
+                var emTown = findTown(em.townId);
+                if (emTown) {
+                    var localNobles = world.people.filter(function(p) {
+                        return p.alive && p.townId === em.townId && p.socialRank && p.id !== em.id;
+                    });
+                    for (var lni = 0; lni < localNobles.length; lni++) {
+                        var ln = localNobles[lni];
+                        var lnRank = 0;
+                        for (var lnk in (ln.socialRank || {})) { if ((ln.socialRank[lnk] || 0) > lnRank) lnRank = ln.socialRank[lnk]; }
+                        if (lnRank < 4) continue; // only minor nobles+
+                        // Check rank restriction
+                        var emRank = 0;
+                        for (var ek in (em.socialRank || {})) { if ((em.socialRank[ek] || 0) > emRank) emRank = em.socialRank[ek]; }
+                        if (lnRank - emRank > 1) continue; // can't talk to someone 2+ ranks above
+                        // Build relationship
+                        if (!em._nobleRelationships) em._nobleRelationships = {};
+                        var currentRel = em._nobleRelationships[ln.id] || 0;
+                        var relGain = rng.randFloat(0.5, 2.0);
+                        if ((em.personality || {}).social > 55) relGain += 0.5;
+                        em._nobleRelationships[ln.id] = Math.min(100, currentRel + relGain);
+                        if (!ln._nobleRelationships) ln._nobleRelationships = {};
+                        ln._nobleRelationships[em.id] = Math.min(100, (ln._nobleRelationships[em.id] || 0) + relGain * 0.5);
+                        break; // one conversation per tick
+                    }
+                }
+            }
+
             // ---- 2. TRAVEL DECISIONS ----
             if (day % sMod.travelFreq === 0 && !em.traveling) {
                 eliteTravelAI(em, town, rng, strategy);
@@ -5954,6 +6000,91 @@
     }
 
     // ========================================================
+    // EM-NPC Relationship Favors System
+    // EMs with high relationships (60+) occasionally receive favors
+    // ========================================================
+    function tickEMRelationshipFavors() {
+        if (!world || !world.people) return;
+        var day = world.day || 0;
+        // Only run every 7 days
+        if (day % 7 !== 0) return;
+        var rng = world.rng;
+        if (!rng) return;
+
+        var elites = world.people.filter(function(p) { return p.alive && p.isEliteMerchant; });
+        for (var i = 0; i < elites.length; i++) {
+            var em = elites[i];
+            if (!em.relationships) continue;
+
+            for (var relId in em.relationships) {
+                var rel = em.relationships[relId];
+                if (!rel || rel.level < 60) continue;
+
+                // Higher relationship = higher favor chance (1-5% per week)
+                var favorChance = (rel.level - 55) * 0.001;
+                if (!rng.chance(favorChance)) continue;
+
+                var npc = Engine.findPerson(relId);
+                if (!npc || !npc.alive || npc.isEliteMerchant) continue;
+
+                // Pick a favor type based on NPC personality
+                var personality = npc.personality || {};
+                var generosity = (personality.warmth || 50) + (personality.loyalty || 50);
+                var favorRoll = rng.random() * 100;
+                var favorGiven = false;
+
+                if (favorRoll < 30 && generosity > 60) {
+                    // Gold gift: 5-50g based on NPC wealth and relationship
+                    var npcGold = npc.gold || 0;
+                    var giftAmount = Math.min(Math.floor(npcGold * 0.05), Math.floor(5 + (rel.level - 60) * 1.5));
+                    if (giftAmount >= 5 && npcGold > giftAmount * 2) {
+                        npc.gold -= giftAmount;
+                        em.gold = (em.gold || 0) + giftAmount;
+                        favorGiven = true;
+                    }
+                } else if (favorRoll < 55) {
+                    // Trade tip: small boost to EM's trading skill
+                    if (em.skills && em.skills.trading != null) {
+                        em.skills.trading = Math.min(100, (em.skills.trading || 0) + 0.5);
+                        favorGiven = true;
+                    }
+                } else if (favorRoll < 75 && rel.level >= 70) {
+                    // Introduction: boost relationship with another NPC in town
+                    var townPeople = world.people.filter(function(tp) {
+                        return tp.alive && tp.townId === em.townId && tp.id !== em.id && tp.id !== relId &&
+                               (!em.relationships[tp.id] || em.relationships[tp.id].level < 40);
+                    });
+                    if (townPeople.length > 0) {
+                        var introduced = rng.pick(townPeople);
+                        if (!em.relationships[introduced.id]) {
+                            em.relationships[introduced.id] = { level: 15, type: 'acquaintance' };
+                        } else {
+                            em.relationships[introduced.id].level = Math.min(100, em.relationships[introduced.id].level + 10);
+                        }
+                        if (!introduced.relationships) introduced.relationships = {};
+                        if (!introduced.relationships[em.id]) {
+                            introduced.relationships[em.id] = { level: 10, type: 'acquaintance' };
+                        } else {
+                            introduced.relationships[em.id].level = Math.min(100, introduced.relationships[em.id].level + 8);
+                        }
+                        favorGiven = true;
+                    }
+                } else if (favorRoll < 90) {
+                    // Relationship boost: mutual relationship grows from interaction
+                    rel.level = Math.min(100, rel.level + 2);
+                    if (npc.relationships && npc.relationships[em.id]) {
+                        npc.relationships[em.id].level = Math.min(100, npc.relationships[em.id].level + 2);
+                    }
+                    favorGiven = true;
+                }
+
+                // Max 1 favor per EM per week
+                if (favorGiven) break;
+            }
+        }
+    }
+
+    // ========================================================
     // Register extracted functions on Engine namespace
     // ========================================================
 
@@ -5995,5 +6126,8 @@
 
     // §19B1b — Family Member Simulation
     Engine.tickFamilyMembers = tickFamilyMembers;
+
+    // EM-NPC Relationship Favors
+    Engine.tickEMRelationshipFavors = tickEMRelationshipFavors;
 
 })(window.Engine);

@@ -4059,6 +4059,29 @@
     }
 
     /**
+     * Initialize family relationship between two people based on personality compatibility.
+     * Sets starting relationship level (0-70) for spouse, child, or parent bonds.
+     */
+    function initFamilyRelationship(personA, personB, relType) {
+        if (!personA || !personB) return;
+        var rng = world && world.rng ? world.rng : { random: Math.random };
+        var persA = personA.personality || {};
+        var persB = personB.personality || {};
+        var warmAvg = ((persA.warmth || 50) + (persB.warmth || 50)) / 2;
+        var loyAvg = ((persA.loyalty || 50) + (persB.loyalty || 50)) / 2;
+        var base = Math.floor((warmAvg * 0.4 + loyAvg * 0.3) * 0.7);
+        var variance = Math.floor(rng.random() * 21) - 10;
+        var level = Math.max(0, Math.min(70, base + variance));
+        if (relType === 'spouse') level = Math.max(level, 25);
+        if (relType === 'child' || relType === 'parent') level = Math.max(level, 15);
+
+        if (!personA.relationships) personA.relationships = {};
+        if (!personB.relationships) personB.relationships = {};
+        personA.relationships[personB.id] = { level: level, type: relType || 'family' };
+        personB.relationships[personA.id] = { level: level, type: relType || 'family' };
+    }
+
+    /**
      * Generate a royal family for a king: spouse, siblings (with their families), and children.
      * @param {object} rng - Seeded RNG
      * @param {object} king - The king person object
@@ -4151,6 +4174,7 @@
                 spouse.occupation = 'queens_lord';
             }
             king.spouseId = spouse.id;
+            initFamilyRelationship(king, spouse, 'spouse');
             people.push(spouse);
             if (capitalTown) capitalTown.population = (capitalTown.population || 0) + 1;
 
@@ -4181,6 +4205,8 @@
                 }
                 king.childrenIds.push(child.id);
                 spouse.childrenIds.push(child.id);
+                initFamilyRelationship(king, child, 'child');
+                initFamilyRelationship(spouse, child, 'child');
                 people.push(child);
                 if (capitalTown) capitalTown.population = (capitalTown.population || 0) + 1;
             }
@@ -4214,6 +4240,7 @@
                     goldMin: 30, goldMax: 100,
                 });
                 sibling.spouseId = sibSpouse.id;
+                initFamilyRelationship(sibling, sibSpouse, 'spouse');
                 people.push(sibSpouse);
                 sibTown.population = (sibTown.population || 0) + 1;
 
@@ -4238,6 +4265,8 @@
                         if (!isNephewAdult) nephew.gold = 0;
                         sibling.childrenIds.push(nephew.id);
                         sibSpouse.childrenIds.push(nephew.id);
+                        initFamilyRelationship(sibling, nephew, 'child');
+                        initFamilyRelationship(sibSpouse, nephew, 'child');
                         people.push(nephew);
                         sibTown.population = (sibTown.population || 0) + 1;
                     }
@@ -6271,13 +6300,42 @@
             }
 
             // ---- Starvation ----
+            // Nobles and elite merchants with gold urgently seek food or travel
+            if (p.needs.food <= 15 && (p.isEliteMerchant || (p.socialRank && Object.values(p.socialRank).some(function(r) { return r >= 4; })))) {
+                // First: try to buy food locally with gold
+                if (p.gold >= 5 && town) {
+                    var foodCost = Math.min(20, Math.floor(p.gold * 0.05));
+                    if (foodCost >= 2) {
+                        p.gold -= foodCost;
+                        p.needs.food = Math.min(100, p.needs.food + foodCost * 4);
+                    }
+                }
+                // If still hungry and food <= 10, deterministically travel to a better town
+                if (p.needs.food <= 10 && town) {
+                    var _survTowns = world.towns.filter(function(t) {
+                        return t.id !== p.townId && t.prosperity > 30 &&
+                            !world.events.some(function(ev) { return ev.active && (ev.type === 'plague' || ev.type === 'plague_disaster') && ev.townId === t.id; });
+                    });
+                    _survTowns.sort(function(a, b) { return b.prosperity - a.prosperity; });
+                    if (_survTowns.length > 0) {
+                        var _survDest = _survTowns[0]; // Pick the most prosperous town
+                        town.population--;
+                        p.townId = _survDest.id;
+                        p.kingdomId = _survDest.kingdomId;
+                        _survDest.population++;
+                        p.needs.food = Math.min(100, p.needs.food + 30);
+                        if (p.gold >= 10) { p.gold -= 10; p.needs.food = Math.min(100, p.needs.food + 20); }
+                    }
+                }
+            }
             if (p.needs.food <= 0) {
                 if (world.rng.chance(0.003)) {
                     killPerson(p, 'starvation');
                     continue;
                 }
-                // Starving people try to migrate more urgently
-                if (world.rng.chance(0.02) && town) {
+                // Starving people try to migrate more urgently (5% no gold, 10% some gold, 15% wealthy)
+                var _starvMigrateChance = (p.gold > 100) ? 0.15 : (p.gold >= 1) ? 0.10 : 0.05;
+                if (world.rng.chance(_starvMigrateChance) && town) {
                     // Never migrate the player's spouse or children
                     const isPlayerFamily = p.spouseId === 'player' || (p.parentIds && p.parentIds.includes('player'));
                     // Indentured servants cannot travel
@@ -6526,6 +6584,7 @@
                     const spouse = world.rng.pick(candidates);
                     p.spouseId = spouse.id;
                     spouse.spouseId = p.id;
+                    initFamilyRelationship(p, spouse, 'spouse');
                 }
             }
 
@@ -6540,6 +6599,7 @@
                         var emSpouse = emCandidates[Math.floor(world.rng.random() * emCandidates.length)];
                         p.spouseId = emSpouse.id;
                         emSpouse.spouseId = p.id;
+                        initFamilyRelationship(p, emSpouse, 'spouse');
                         var emTown = findTown(p.townId);
                         logEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + (emTown ? emTown.name : 'town') + '.');
                     }
@@ -6618,6 +6678,9 @@
                         }
                     }
                     newPeople.push(child);
+                    // Initialize parent-child relationships
+                    initFamilyRelationship(p, child, 'child');
+                    initFamilyRelationship(father, child, 'child');
                     if (town) town.population++;
                     if (world._alivePopCount != null) world._alivePopCount++;
                 }
@@ -6662,6 +6725,35 @@
                 }
 
                 if (migrateChance > 0 && !isPlayerFamily && !(p.status === 'indentured' && p.servitudeTravelBan) && world.rng.chance(migrateChance)) {
+                    // Nobles are less likely to leave their kingdom without urgent reason
+                    var _nobleRank = 0;
+                    var _nobleKingdomId = null;
+                    if (p.socialRank && typeof p.socialRank === 'object') {
+                        for (var _nrk in p.socialRank) {
+                            if ((p.socialRank[_nrk] || 0) > _nobleRank) {
+                                _nobleRank = p.socialRank[_nrk];
+                                _nobleKingdomId = _nrk;
+                            }
+                        }
+                    }
+                    // Check if noble is on a king's mission (army, war, diplomatic)
+                    var _onMission = p._onKingMission || p._armyId || p._diplomaticMission;
+                    // Urgent reasons that justify leaving: famine, plague, war
+                    var _urgentReason = (migrateReason === 'famine' || migrateReason === 'plague' || migrateReason === 'war');
+
+                    // If noble and no urgent reason and not on mission, reduce chance or block
+                    if (_nobleRank >= 4 && !_urgentReason && !_onMission) {
+                        // Minor nobles (4): 30% chance to still migrate
+                        // Lords (5): 15% chance
+                        // Royal Advisors/High Nobles (6): 5% chance
+                        // Kings (7): never migrate without reason
+                        var _nobleStayChance = _nobleRank >= 7 ? 0 : _nobleRank >= 6 ? 0.05 : _nobleRank >= 5 ? 0.15 : 0.30;
+                        if (!world.rng.chance(_nobleStayChance)) {
+                            migrateChance = 0; // Block this migration
+                        }
+                    }
+
+                    if (migrateChance > 0) {
                     // Pick destination: safe towns with higher prosperity
                     const safeTowns = world.towns.filter(t => {
                         if (t.id === p.townId) return false;
@@ -6675,10 +6767,26 @@
                         if (migrateReason === 'war' && destK && destK.atWar && destK.atWar.size > 0) return false;
                         return true;
                     });
-                    if (safeTowns.length > 0) {
+
+                    // Nobles strongly prefer staying in their own kingdom
+                    var _filteredTowns = safeTowns;
+                    if (_nobleRank >= 4 && _nobleKingdomId && !_urgentReason) {
+                        var _sameKingdomTowns = safeTowns.filter(function(t) { return t.kingdomId === _nobleKingdomId; });
+                        if (_sameKingdomTowns.length > 0) _filteredTowns = _sameKingdomTowns;
+                    }
+
+                    // Lords (5+) and royal advisors (6+) prefer the capital city
+                    if (_nobleRank >= 5 && _filteredTowns.length > 1) {
+                        var _capitalTowns = _filteredTowns.filter(function(t) { return t.isCapital; });
+                        if (_capitalTowns.length > 0 && world.rng.chance(_nobleRank >= 6 ? 0.80 : 0.60)) {
+                            _filteredTowns = _capitalTowns;
+                        }
+                    }
+
+                    if (_filteredTowns.length > 0) {
                         // Prefer higher prosperity destinations
-                        safeTowns.sort((a, b) => b.prosperity - a.prosperity);
-                        const dest = safeTowns.length > 3 ? world.rng.pick(safeTowns.slice(0, 3)) : world.rng.pick(safeTowns);
+                        _filteredTowns.sort((a, b) => b.prosperity - a.prosperity);
+                        const dest = _filteredTowns.length > 3 ? world.rng.pick(_filteredTowns.slice(0, 3)) : world.rng.pick(_filteredTowns);
                         town.population--;
                         p.townId = dest.id;
                         p.kingdomId = dest.kingdomId;
@@ -6711,6 +6819,7 @@
                             town._migrationCount = { day: world.day, count: 1, dest: dest.id };
                         }
                     }
+                    } // end if (migrateChance > 0) inner check
                 }
             }
 
@@ -9139,7 +9248,7 @@
                     var spouse = rng.pick(spouseCandidates);
                     noble.spouseId = spouse.id;
                     spouse.spouseId = noble.id;
-                    // Non-noble spouse gains one rank below
+                    initFamilyRelationship(noble, spouse, 'spouse');
                     var nobleRank = (noble.socialRank && noble.socialRank[kId]) || 0;
                     var spouseRank = (spouse.socialRank && spouse.socialRank[kId]) || 0;
                     if (nobleRank >= 4 && spouseRank < nobleRank) {
@@ -9269,6 +9378,7 @@
                     var bride = rng.pick(candidates);
                     king.spouseId = bride.id;
                     bride.spouseId = king.id;
+                    initFamilyRelationship(king, bride, 'spouse');
                     if (!bride.socialRank) bride.socialRank = {};
                     bride.socialRank[k.id] = 5; // King's spouse = Lord rank
                     bride.occupation = king.sex === 'M' ? 'queen' : 'queens_lord';
@@ -12615,12 +12725,12 @@
                 if (!noble._incomeLog.stipend) noble._incomeLog.stipend = 0;
                 noble._incomeLog.stipend += stipend;
 
-                // Deduct expenses by rank
+                // Deduct expenses by rank (household, servants, upkeep)
                 var expense = 0;
-                if (rank >= 7) expense = 500;
-                else if (rank === 6) expense = 200;
-                else if (rank === 5) expense = 100;
-                else expense = 50;
+                if (rank >= 7) expense = 350;      // king: large household but funded by treasury
+                else if (rank === 6) expense = 80;  // RA: modest court lifestyle
+                else if (rank === 5) expense = 40;  // lord: estate upkeep
+                else expense = 15;                   // minor noble: basic noble living
                 noble.gold -= expense;
                 noble._incomeLog.expenses += expense;
 
@@ -23689,6 +23799,94 @@
                 }
             } catch (e) { /* Player not loaded */ }
 
+            // ── Noble invitations to Elite Merchants and non-noble player ──
+            // Nobles attending the feast may invite EMs or the player (burgher+ rank) if they have good relationships
+            try {
+                var _feastAttendees = k._activeFeast.attendees;
+                var _invitedEMs = [];
+                // Check each attending noble for EM/player relationships
+                for (var _ini = 0; _ini < _feastAttendees.length; _ini++) {
+                    var _invNoble = findPerson(_feastAttendees[_ini]);
+                    if (!_invNoble || !_invNoble._nobleRelationships) continue;
+                    var _invNp = _invNoble.personality || {};
+                    // Social/warm nobles are more likely to invite
+                    var _invBaseChance = 0.15;
+                    if ((_invNp.social || 50) > 60) _invBaseChance += 0.10;
+                    if ((_invNp.warmth || 50) > 60) _invBaseChance += 0.05;
+                    if ((_invNp.ambition || 50) > 65) _invBaseChance += 0.05; // ambitious nobles network
+
+                    // Check EMs this noble has relationship with
+                    if (world.eliteMerchants) {
+                        for (var _emi = 0; _emi < world.eliteMerchants.length; _emi++) {
+                            var _em = world.eliteMerchants[_emi];
+                            if (!_em || !_em.alive || !_em.id) continue;
+                            if (_invitedEMs.indexOf(_em.id) >= 0) continue; // already invited
+                            // EM must be at least burgher (rank 3) in this kingdom
+                            var _emRank = (_em.socialRank && _em.socialRank[kId]) || 0;
+                            if (_emRank < 3) continue;
+                            // Check relationship
+                            var _emRel = _invNoble._nobleRelationships[_em.id] || 0;
+                            if (_emRel < 30) continue; // need decent relationship
+                            // Calculate invite chance
+                            var _emInvChance = _invBaseChance;
+                            if (_emRel > 60) _emInvChance += 0.15;
+                            else if (_emRel > 45) _emInvChance += 0.08;
+                            if (_emRank >= 4) _emInvChance += 0.10; // guildmaster more likely
+                            if (rng.chance(_emInvChance)) {
+                                _invitedEMs.push(_em.id);
+                                k._activeFeast.attendees.push(_em.id);
+                                // Mark the EM as feast-invited for AI behavior
+                                if (!_em._feastInvitation) _em._feastInvitation = {};
+                                _em._feastInvitation = { kingdomId: kId, feastId: k._activeFeast.id, townId: feastTownId, invitedBy: _invNoble.id, endDay: k._activeFeast.endDay };
+                            }
+                        }
+                    }
+
+                    // Check if this noble wants to invite the player (non-noble, burgher+ rank)
+                    try {
+                        if (typeof Player !== 'undefined' && Player.personId) {
+                            var _pPersonId2 = Player.personId;
+                            var _pPerson2 = findPerson(_pPersonId2);
+                            var _pRank2 = (_pPerson2 && _pPerson2.socialRank && _pPerson2.socialRank[kId]) || 0;
+                            var _pIsKingAlready2 = Player.state && Player.state.isKing;
+                            // Only invite if player is burgher/guildmaster (rank 3-4), not already a noble (5+), not king
+                            if (!_pIsKingAlready2 && _pRank2 >= 3 && _pRank2 < 5 && k._activeFeast.attendees.indexOf(_pPersonId2) < 0) {
+                                var _pRel2 = _invNoble._nobleRelationships[_pPersonId2] || 0;
+                                if (_pRel2 >= 30) {
+                                    var _pInvChance2 = _invBaseChance;
+                                    if (_pRel2 > 60) _pInvChance2 += 0.15;
+                                    else if (_pRel2 > 45) _pInvChance2 += 0.08;
+                                    if (_pRank2 >= 4) _pInvChance2 += 0.10; // guildmaster
+                                    if (rng.chance(_pInvChance2)) {
+                                        if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
+                                        var _alreadyInvited2 = Player.state._feastInvitations.some(function(inv) { return inv.feastId === k._activeFeast.id; });
+                                        if (!_alreadyInvited2) {
+                                            var _invName2 = (_invNoble.firstName || 'A noble') + ' ' + (_invNoble.lastName || '');
+                                            Player.state._feastInvitations.push({
+                                                kingdomId: kId,
+                                                feastId: k._activeFeast.id,
+                                                townId: feastTownId,
+                                                townName: feastTownName,
+                                                kingdomName: k.name,
+                                                endDay: k._activeFeast.endDay,
+                                                inviteDay: world.day,
+                                                invitedBy: _invNoble.id,
+                                                inviterName: _invName2.trim(),
+                                                isMerchantInvite: true
+                                            });
+                                            logEvent('📨 ' + _invName2.trim() + ' has invited you to the Royal Feast in ' + feastTownName + '! You must travel there to attend.', null, 'my_kingdom');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch(e2) {}
+                }
+                if (_invitedEMs.length > 0) {
+                    k._activeFeast._invitedEMs = _invitedEMs;
+                }
+            } catch(e3) { /* EM invitation error */ }
+
             var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
             logEvent('🎪 The king of ' + k.name + ' is hosting a Royal Feast in ' + feastTownName + '! (3 days)', {
                 type: 'feast_started', kingdomId: k.id, townId: feastTownId,
@@ -23724,6 +23922,7 @@
         // AI noble feast actions (personality-driven)
         if (k._activeFeast) {
             tickFeastNobleActions(k);
+            tickFeastEMActions(k);
         }
     }
 
@@ -24269,6 +24468,97 @@
             }
             feast.events.push('You subtly interrogated ' + probeName + ' during conversation.');
             result = { success: true, message: '🔍 You subtly probed ' + probeName + ': ' + intel.join('; ') + '.' };
+
+        // ── Merchant guest feast actions (for invited EMs/players who are burgher/guildmaster) ──
+        } else if (actionId === 'advocate_lower_taxes') {
+            // Try to convince a minor noble/lord to advocate for lower taxes
+            var taxNobles = otherAttendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                if (!p) return false;
+                var rank = (p.socialRank && p.socialRank[k.id]) || 0;
+                return rank >= 4 && rank <= 5;
+            });
+            if (taxNobles.length === 0) return { success: false, message: 'No minor nobles or lords present to advocate to.' };
+            var taxTarget = rng.pick(taxNobles);
+            var taxRel = 0;
+            try { taxRel = Player.getRelationship ? (Player.getRelationship(taxTarget.id) || {}).level || 0 : 0; } catch(e) {}
+            var taxSuccess = 0.20 + (taxRel > 60 ? 0.25 : taxRel > 30 ? 0.10 : 0);
+            if (rng.chance(taxSuccess)) {
+                if (!taxTarget._policyOpinions) taxTarget._policyOpinions = {};
+                taxTarget._policyOpinions.lower_taxes = { favor: true, day: world.day, advocatedBy: 'player' };
+                feast.events.push('You convinced ' + (taxTarget.firstName || 'a noble') + ' to advocate for lower taxes.');
+                result = { success: true, message: '📜 ' + (taxTarget.firstName || 'A noble') + ' agreed to advocate for lower taxes to the king!' };
+            } else {
+                feast.events.push((taxTarget.firstName || 'A noble') + ' dismissed your plea for lower taxes.');
+                result = { success: false, message: (taxTarget.firstName || 'A noble') + ' was not persuaded by your argument for lower taxes.' };
+            }
+
+        } else if (actionId === 'advocate_lower_tariffs') {
+            var tariffNobles = otherAttendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                if (!p) return false;
+                var rank = (p.socialRank && p.socialRank[k.id]) || 0;
+                return rank >= 4 && rank <= 5;
+            });
+            if (tariffNobles.length === 0) return { success: false, message: 'No minor nobles or lords present to advocate to.' };
+            var tariffTarget = rng.pick(tariffNobles);
+            var tariffRel = 0;
+            try { tariffRel = Player.getRelationship ? (Player.getRelationship(tariffTarget.id) || {}).level || 0 : 0; } catch(e) {}
+            var tariffSuccess = 0.18 + (tariffRel > 60 ? 0.25 : tariffRel > 30 ? 0.10 : 0);
+            if (rng.chance(tariffSuccess)) {
+                if (!tariffTarget._policyOpinions) tariffTarget._policyOpinions = {};
+                tariffTarget._policyOpinions.lower_tariffs = { favor: true, day: world.day, advocatedBy: 'player' };
+                feast.events.push('You convinced ' + (tariffTarget.firstName || 'a noble') + ' to push for lower tariffs.');
+                result = { success: true, message: '📜 ' + (tariffTarget.firstName || 'A noble') + ' will advocate for lower tariffs!' };
+            } else {
+                result = { success: false, message: (tariffTarget.firstName || 'A noble') + ' was unswayed by your tariff argument.' };
+            }
+
+        } else if (actionId === 'advocate_unban_good') {
+            // Check if there are banned goods
+            var bannedGoods = (k.laws && k.laws.bannedGoods) || [];
+            if (bannedGoods.length === 0) return { success: false, message: 'No goods are currently banned in this kingdom.' };
+            var unbanNobles = otherAttendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                if (!p) return false;
+                var rank = (p.socialRank && p.socialRank[k.id]) || 0;
+                return rank >= 4 && rank <= 5;
+            });
+            if (unbanNobles.length === 0) return { success: false, message: 'No minor nobles or lords present.' };
+            var unbanTarget = rng.pick(unbanNobles);
+            var bannedGood = rng.pick(bannedGoods);
+            var unbanRel = 0;
+            try { unbanRel = Player.getRelationship ? (Player.getRelationship(unbanTarget.id) || {}).level || 0 : 0; } catch(e) {}
+            var unbanSuccess = 0.15 + (unbanRel > 60 ? 0.20 : unbanRel > 30 ? 0.10 : 0);
+            if (rng.chance(unbanSuccess)) {
+                if (!unbanTarget._policyOpinions) unbanTarget._policyOpinions = {};
+                unbanTarget._policyOpinions['unban_' + bannedGood] = { favor: true, day: world.day, advocatedBy: 'player' };
+                feast.events.push('You argued for unbanning ' + bannedGood + ' and ' + (unbanTarget.firstName || 'a noble') + ' was convinced.');
+                result = { success: true, message: '📜 ' + (unbanTarget.firstName || 'A noble') + ' will advocate for unbanning ' + bannedGood + '!' };
+            } else {
+                result = { success: false, message: (unbanTarget.firstName || 'A noble') + ' refused to advocate for unbanning ' + bannedGood + '.' };
+            }
+
+        } else if (actionId === 'merchant_network') {
+            // Network with other merchants/EMs at the feast
+            var emAttendees = otherAttendees.map(function(id) { return findPerson(id); }).filter(function(p) {
+                return p && p.isEliteMerchant;
+            });
+            if (emAttendees.length > 0) {
+                var netTarget = rng.pick(emAttendees);
+                var netBonus = rng.randInt(4, 8);
+                try { if (Player.modifyRelationship) Player.modifyRelationship(netTarget.id, netBonus); } catch(e) {}
+                feast.events.push('You exchanged trade contacts with ' + (netTarget.firstName || 'a merchant') + '.');
+                result = { success: true, message: '🤝 You networked with ' + (netTarget.firstName || 'a merchant') + '. (+' + netBonus + ' relationship)' };
+            } else {
+                // Network with nobles instead
+                if (otherAttendees.length > 0) {
+                    var netNoble = rng.pick(otherAttendees);
+                    var netNoblePerson = findPerson(netNoble);
+                    var nb = rng.randInt(2, 5);
+                    try { if (Player.modifyRelationship) Player.modifyRelationship(netNoble, nb); } catch(e) {}
+                    result = { success: true, message: '🤝 You mingled with ' + (netNoblePerson ? netNoblePerson.firstName : 'a noble') + '. (+' + nb + ' relationship)' };
+                } else {
+                    result = { success: false, message: 'No one to network with.' };
+                }
+            }
 
         } else {
             return { success: false, message: 'Unknown feast action: ' + actionId };
@@ -24883,6 +25173,662 @@
         }
     }
 
+    // ── Elite Merchant feast actions — EMs invited to feasts try to build noble relationships ──
+    function tickFeastEMActions(k) {
+        if (!k || !k._activeFeast) return;
+        var feast = k._activeFeast;
+        var rng = world.rng;
+        var invitedEMs = feast._invitedEMs || [];
+        if (invitedEMs.length === 0) return;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var kId = k.id;
+
+        for (var ei = 0; ei < invitedEMs.length; ei++) {
+            var emId = invitedEMs[ei];
+            var em = findPerson(emId);
+            if (!em || !em.alive) continue;
+            // EM must be at the feast town to participate
+            if (em.townId !== feast.townId) continue;
+
+            var emName = (em.firstName || 'A merchant') + ' ' + (em.lastName || '');
+            var action = '';
+            var emPersonality = em.personality || {};
+
+            // EMs focus on building relationships with minor nobles and lords (not king/royal advisors)
+            var eligibleNobles = feast.attendees.filter(function(id) {
+                if (id === emId) return false;
+                var p = findPerson(id);
+                if (!p || !p.alive) return false;
+                var rank = (p.socialRank && p.socialRank[kId]) || 0;
+                return rank >= 4 && rank <= 5; // minor nobles and lords only (can't address king/RA)
+            });
+
+            if (eligibleNobles.length === 0) continue;
+
+            // Choose action based on personality
+            if (rng.chance(0.50)) {
+                // Mingle with a noble — build relationship
+                var targetId = rng.pick(eligibleNobles);
+                var target = findPerson(targetId);
+                if (target) {
+                    var relBoost = rng.randInt(3, 7);
+                    if (!em._nobleRelationships) em._nobleRelationships = {};
+                    if (!target._nobleRelationships) target._nobleRelationships = {};
+                    em._nobleRelationships[targetId] = Math.min(100, (em._nobleRelationships[targetId] || 0) + relBoost);
+                    target._nobleRelationships[emId] = Math.min(100, (target._nobleRelationships[emId] || 0) + Math.ceil(relBoost * 0.7));
+                    var tName = (target.firstName || 'a noble');
+                    action = emName.trim() + ' charmed ' + tName + ' with tales of foreign trade.';
+                }
+            } else if (rng.chance(0.30) && (emPersonality.ambition || 50) > 55) {
+                // Advocate for economic policy — try to convince a noble
+                var advocateTarget = rng.pick(eligibleNobles);
+                var advocateNoble = findPerson(advocateTarget);
+                if (advocateNoble) {
+                    var policies = ['lower tariffs', 'reduce taxes on merchants', 'unban a trade good', 'open new trade routes'];
+                    var policy = rng.pick(policies);
+                    var rel = (em._nobleRelationships && em._nobleRelationships[advocateTarget]) || 0;
+                    var successChance = 0.15 + (rel > 50 ? 0.20 : rel > 30 ? 0.10 : 0);
+                    if (rng.chance(successChance)) {
+                        // Noble is swayed — store opinion
+                        if (!advocateNoble._policyOpinions) advocateNoble._policyOpinions = {};
+                        advocateNoble._policyOpinions['merchant_' + policy.replace(/\s/g, '_')] = { favor: true, day: world.day, advocatedBy: emId };
+                        action = emName.trim() + ' convinced ' + (advocateNoble.firstName || 'a noble') + ' to advocate for ' + policy + '.';
+                    } else {
+                        action = emName.trim() + ' tried to persuade ' + (advocateNoble.firstName || 'a noble') + ' about ' + policy + ' but was rebuffed.';
+                    }
+                }
+            } else {
+                // Observe and gather intelligence
+                var obsTarget = rng.pick(eligibleNobles);
+                var obsPerson = findPerson(obsTarget);
+                if (obsPerson) {
+                    // EM learns about the noble's disposition
+                    if (!em._nobleIntel) em._nobleIntel = {};
+                    em._nobleIntel[obsTarget] = { loyalty: obsPerson.kingLoyalty || 50, day: world.day };
+                    action = emName.trim() + ' observed the court dynamics carefully.';
+                }
+            }
+
+            if (action) {
+                feast.events.push(action);
+                if (isPlayerK) {
+                    logEvent('🎪 ' + action, { type: 'feast_em_action', kingdomId: k.id }, category);
+                }
+            }
+        }
+    }
+
+    /**
+     * Main daily tick for the festival system.
+     * Handles: ending expired festivals, afterglow happiness, NPC AI scheduling.
+     */
+    function tickKingdomFestivals(k) {
+        if (!k) return;
+        if (!k._activeFestivals) k._activeFestivals = [];
+        var rng = world.rng;
+        var day = world.day;
+
+        // --- End expired festivals ---
+        var stillActive = [];
+        for (var fi = 0; fi < k._activeFestivals.length; fi++) {
+            var f = k._activeFestivals[fi];
+            if (day > f.endDay) {
+                // Festival ended — set afterglow on the town
+                var fTown = findTown(f.townId);
+                if (fTown) {
+                    fTown._festivalAfterglow = {
+                        boost: f.afterglowBoost,
+                        endDay: f.afterglowEndDay
+                    };
+                }
+                var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+                logEvent('🎉 The festival in ' + f.townName + ' has ended. The townsfolk are still in good spirits.', {
+                    type: 'festival_ended', kingdomId: k.id, townId: f.townId
+                }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+            } else {
+                stillActive.push(f);
+            }
+        }
+        k._activeFestivals = stillActive;
+
+        // --- Apply afterglow happiness to all towns in kingdom ---
+        k.territories.forEach(function(tId) {
+            var town = findTown(tId);
+            if (!town || !town._festivalAfterglow) return;
+            if (day > town._festivalAfterglow.endDay) {
+                town._festivalAfterglow = null;
+                return;
+            }
+            town.happiness = Math.min(100, (town.happiness || 50) + town._festivalAfterglow.boost * 0.1);
+        });
+
+        // --- Trigger daily events for active festivals (40% chance each) ---
+        for (var ai = 0; ai < k._activeFestivals.length; ai++) {
+            if (rng.chance(0.4)) {
+                _triggerFestivalEvent(k._activeFestivals[ai], k);
+            }
+        }
+
+        // --- NPC AI scheduling (skip if player is king) ---
+        var playerIsKing = false;
+        try {
+            playerIsKing = typeof Player !== 'undefined' && Player.state && Player.state.isKing &&
+                Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+        } catch(e) {}
+        if (playerIsKing) return;
+
+        // Check every 30 days
+        if (day % 30 !== 0) return;
+
+        var king = findPerson(k.king);
+        if (!king || !king.alive) return;
+        var kp = king.personality || {};
+        var warmthVal = kp.warmth !== undefined ? kp.warmth : 50;
+        var greedVal = kp.greed !== undefined ? kp.greed : 50;
+
+        // Skip if kingdom too poor
+        if ((k.gold || 0) < 1000) return;
+
+        k.territories.forEach(function(tId) {
+            var town = findTown(tId);
+            if (!town) return;
+
+            // 90-day cooldown per town
+            if (day - (town._lastFestivalDay || 0) < 90) return;
+
+            // Base chance 5%
+            var chance = 0.05;
+            var townHappy = town.happiness || 50;
+
+            // Happiness modifiers
+            if (townHappy < 25) {
+                chance += 0.25;
+            } else if (townHappy < 40) {
+                chance += 0.15;
+            }
+
+            // Personality modifiers
+            if (warmthVal >= 70) chance += 0.10; // compassionate/kind
+            if (greedVal <= 30) chance += 0.05;  // generous
+            if (greedVal >= 70) chance -= 0.15;  // miserly/greedy
+
+            // At war modifier
+            if (k.atWar && k.atWar.size > 0) chance -= 0.10;
+
+            if (chance <= 0) return;
+            if (!rng.chance(chance)) return;
+
+            // Determine festival size
+            var type = 'small';
+            if (townHappy < 30 && (k.gold || 0) > 5000) {
+                type = rng.chance(0.6) ? 'large' : 'small';
+            } else if ((k.gold || 0) > 3000 && (greedVal <= 30 || warmthVal >= 70)) {
+                type = rng.chance(0.3) ? 'large' : 'small';
+            }
+
+            var cost = type === 'large' ? 2000 : 500;
+            if ((k.gold || 0) < cost) return;
+
+            // Deduct gold and create festival
+            k.gold -= cost;
+            var festival = {
+                id: 'festival_' + day + '_' + tId,
+                townId: tId,
+                townName: town.name || tId,
+                kingdomId: k.id,
+                type: type,
+                startDay: day,
+                endDay: day + 3,
+                cost: cost,
+                happinessBoost: type === 'large' ? 20 : 10,
+                afterglowBoost: type === 'large' ? 10 : 5,
+                afterglowEndDay: day + 3 + 15,
+                events: [],
+                _playerActionsToday: 0,
+                _playerActionDay: 0,
+                _maxActionsPerDay: 5
+            };
+            k._activeFestivals.push(festival);
+            town._lastFestivalDay = day;
+
+            // Apply happiness boost during festival start
+            town.happiness = Math.min(100, (town.happiness || 50) + festival.happinessBoost * 0.5);
+
+            var isPlayerK2 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+            logEvent('🎉 ' + (king.firstName || 'The King') + ' has ordered a ' + type + ' festival in ' + (town.name || tId) + '! Cost: ' + cost + 'g.', {
+                type: 'festival_started', kingdomId: k.id, townId: tId, festivalType: type
+            }, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
+        });
+    }
+
+    /**
+     * Trigger a random event during an active festival.
+     */
+    function _triggerFestivalEvent(festival, k) {
+        var rng = world.rng;
+        var townPeople = world.people.filter(function(p) {
+            return p.alive && p.townId === festival.townId;
+        });
+        if (townPeople.length < 2) return;
+
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var eventType = rng.randInt(0, 7);
+
+        switch (eventType) {
+            case 0: { // Meet Neighbor
+                var a = rng.pick(townPeople);
+                var b = rng.pick(townPeople);
+                if (a && b && a.id !== b.id) {
+                    if (!a._nobleRelationships) a._nobleRelationships = {};
+                    var boost = rng.randInt(3, 7);
+                    a._nobleRelationships[b.id] = Math.min(100, (a._nobleRelationships[b.id] || 0) + boost);
+                    if (!b._nobleRelationships) b._nobleRelationships = {};
+                    b._nobleRelationships[a.id] = Math.min(100, (b._nobleRelationships[a.id] || 0) + boost);
+                    festival.events.push('Meet Neighbor: ' + (a.firstName || 'Someone') + ' and ' + (b.firstName || 'someone') + ' bonded at the festival.');
+                }
+                break;
+            }
+            case 1: { // Gossip Spreads
+                var target = rng.pick(townPeople);
+                if (target) {
+                    if (rng.chance(0.5)) {
+                        target.reputation = Math.min(100, (target.reputation || 50) + 2);
+                        festival.events.push('Gossip: Good word about ' + (target.firstName || 'someone') + ' spreads at the festival.');
+                    } else {
+                        target.reputation = Math.max(0, (target.reputation || 50) - 2);
+                        festival.events.push('Gossip: Bad rumors about ' + (target.firstName || 'someone') + ' circulate at the festival.');
+                    }
+                }
+                break;
+            }
+            case 2: { // Pickpocket
+                var victim = rng.pick(townPeople);
+                if (victim && (victim.gold || 0) > 0) {
+                    var stolen = rng.randInt(1, Math.min(5, victim.gold || 1));
+                    victim.gold = (victim.gold || 0) - stolen;
+                    festival.events.push('Pickpocket: Someone lost ' + stolen + 'g at the festival.');
+                    if (rng.chance(0.2)) {
+                        var catcher = rng.pick(townPeople);
+                        if (catcher && catcher.id !== victim.id) {
+                            catcher.reputation = Math.min(100, (catcher.reputation || 50) + 1);
+                            festival.events.push((catcher.firstName || 'A vigilant citizen') + ' caught the pickpocket!');
+                        }
+                    }
+                }
+                break;
+            }
+            case 3: { // Rumor Mill
+                var nobles = world.people.filter(function(p) {
+                    return p.alive && p.townId === festival.townId && p.occupation === 'noble';
+                });
+                var ems = world.people.filter(function(p) {
+                    return p.alive && p.townId === festival.townId && p.isEliteMerchant;
+                });
+                if (nobles.length > 0 && rng.chance(0.5)) {
+                    var noble = rng.pick(nobles);
+                    var shift = rng.randInt(-3, 3);
+                    if (noble.kingLoyalty !== undefined) {
+                        noble._perceivedLoyalty = Math.max(0, Math.min(100, (noble._perceivedLoyalty || noble.kingLoyalty || 50) + shift));
+                    }
+                    festival.events.push('Rumor Mill: Whispers about ' + (noble.firstName || 'a noble') + '\'s loyalty spread.');
+                } else if (ems.length > 0) {
+                    var em = rng.pick(ems);
+                    var repShift = rng.randInt(-2, 2);
+                    em.reputation = Math.max(0, Math.min(100, (em.reputation || 50) + repShift));
+                    festival.events.push('Rumor Mill: Talk about ' + (em.firstName || 'a merchant') + ' at the festival.');
+                }
+                break;
+            }
+            case 4: { // Entertainment
+                for (var ei = 0; ei < townPeople.length; ei++) {
+                    townPeople[ei].happiness = Math.min(100, (townPeople[ei].happiness || 50) + 1);
+                }
+                festival.events.push('Entertainment: A performer delighted the crowd! Everyone feels a little happier.');
+                break;
+            }
+            case 5: { // Brawl
+                var ba = rng.pick(townPeople);
+                var bb = rng.pick(townPeople);
+                if (ba && bb && ba.id !== bb.id) {
+                    if (!ba._nobleRelationships) ba._nobleRelationships = {};
+                    if (!bb._nobleRelationships) bb._nobleRelationships = {};
+                    ba._nobleRelationships[bb.id] = Math.max(-100, (ba._nobleRelationships[bb.id] || 0) - 5);
+                    bb._nobleRelationships[ba.id] = Math.max(-100, (bb._nobleRelationships[ba.id] || 0) - 5);
+                    festival.events.push('Brawl: ' + (ba.firstName || 'Someone') + ' and ' + (bb.firstName || 'someone') + ' got into a fight!');
+                }
+                break;
+            }
+            case 6: { // Merchant Deals
+                var town = findTown(festival.townId);
+                if (town && town.market && town.market.demand) {
+                    var foodGoods = ['wheat', 'bread', 'ale', 'wine', 'eggs', 'fish'];
+                    for (var mi = 0; mi < foodGoods.length; mi++) {
+                        var good = foodGoods[mi];
+                        if (town.market.demand[good] !== undefined) {
+                            town.market.demand[good] = Math.ceil((town.market.demand[good] || 0) * 1.1);
+                        }
+                    }
+                    festival.events.push('Merchant Deals: Festival demand boosts food and drink trade!');
+                }
+                break;
+            }
+            case 7: { // Romance
+                var men = townPeople.filter(function(p) { return p.sex === 'M' && p.age >= 16 && !p.spouseId; });
+                var women = townPeople.filter(function(p) { return p.sex === 'F' && p.age >= 16 && !p.spouseId; });
+                if (men.length > 0 && women.length > 0) {
+                    var man = rng.pick(men);
+                    var woman = rng.pick(women);
+                    if (man && woman) {
+                        if (!man._nobleRelationships) man._nobleRelationships = {};
+                        if (!woman._nobleRelationships) woman._nobleRelationships = {};
+                        man._nobleRelationships[woman.id] = Math.min(100, (man._nobleRelationships[woman.id] || 0) + 10);
+                        woman._nobleRelationships[man.id] = Math.min(100, (woman._nobleRelationships[man.id] || 0) + 10);
+                        festival.events.push('Romance: ' + (man.firstName || 'A man') + ' and ' + (woman.firstName || 'a woman') + ' shared a dance at the festival.');
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    /**
+     * Player action at a festival. Returns { success, message }.
+     */
+    function doFestivalAction(kingdomId, festivalId, actionId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { success: false, message: 'Kingdom not found.' };
+        if (!k._activeFestivals) return { success: false, message: 'No active festivals.' };
+
+        var festival = null;
+        for (var i = 0; i < k._activeFestivals.length; i++) {
+            if (k._activeFestivals[i].id === festivalId) {
+                festival = k._activeFestivals[i];
+                break;
+            }
+        }
+        if (!festival) return { success: false, message: 'Festival not found or has ended.' };
+
+        // Check player is at the festival's town
+        if (typeof Player === 'undefined') return { success: false, message: 'No player context.' };
+        if (Player.townId !== festival.townId) return { success: false, message: 'You must be in ' + festival.townName + ' to participate.' };
+
+        // Reset daily actions if new day
+        if (festival._playerActionDay !== world.day) {
+            festival._playerActionsToday = 0;
+            festival._playerActionDay = world.day;
+        }
+        if (festival._playerActionsToday >= (festival._maxActionsPerDay || 5)) {
+            return { success: false, message: 'You have used all your festival actions for today (max ' + festival._maxActionsPerDay + ').' };
+        }
+
+        var rng = world.rng;
+        var playerPersonId = Player.personId || 'player';
+        var townPeople = world.people.filter(function(p) {
+            return p.alive && p.townId === festival.townId && p.id !== playerPersonId;
+        });
+        var result = { success: false, message: '' };
+
+        switch (actionId) {
+            case 'mingle': {
+                if (townPeople.length === 0) { result.message = 'No one around to mingle with.'; break; }
+                var met = rng.pick(townPeople);
+                var relBoost = rng.randInt(3, 6);
+                if (!met._nobleRelationships) met._nobleRelationships = {};
+                met._nobleRelationships[playerPersonId] = Math.min(100, (met._nobleRelationships[playerPersonId] || 0) + relBoost);
+                result.success = true;
+                result.message = 'You chatted with ' + (met.firstName || 'a festivalgoer') + ' and hit it off! (Relationship +' + relBoost + ')';
+                break;
+            }
+            case 'gossip': {
+                var roll = rng.random();
+                if (roll < 0.4) {
+                    // Learn something about a noble or EM
+                    var nobles = world.people.filter(function(p) {
+                        return p.alive && p.townId === festival.townId && (p.occupation === 'noble' || p.isEliteMerchant);
+                    });
+                    if (nobles.length > 0) {
+                        var subj = rng.pick(nobles);
+                        var hints = [];
+                        if (subj.kingLoyalty !== undefined) hints.push('loyalty seems ' + (subj.kingLoyalty > 60 ? 'strong' : subj.kingLoyalty < 40 ? 'wavering' : 'moderate'));
+                        if (subj.gold !== undefined) hints.push(subj.gold > 500 ? 'quite wealthy' : 'not very rich');
+                        if (subj._conspiracyRole) hints.push('may be involved in something secretive');
+                        var hint = hints.length > 0 ? rng.pick(hints) : 'nothing specific';
+                        result.success = true;
+                        result.message = 'You heard that ' + (subj.firstName || 'someone important') + ' — ' + hint + '.';
+                    } else {
+                        result.success = true;
+                        result.message = 'You listened around but heard nothing particularly useful.';
+                    }
+                } else if (roll < 0.6) {
+                    // Caught gossiping
+                    if (Player.reputation !== undefined) {
+                        Player.reputation = Math.max(0, Player.reputation - 3);
+                    }
+                    result.success = true;
+                    result.message = 'You were caught gossiping! Your reputation suffered. (-3 rep)';
+                } else {
+                    result.success = true;
+                    result.message = 'You listened around but heard nothing useful.';
+                }
+                break;
+            }
+            case 'drink': {
+                if (Player.happiness !== undefined) {
+                    Player.happiness = Math.min(100, Player.happiness + 3);
+                }
+                result.success = true;
+                result.message = 'You enjoyed a hearty drink at the festival! (+3 happiness)';
+                if (rng.chance(0.1)) {
+                    if (Player.energy !== undefined) {
+                        Player.energy = Math.max(0, Player.energy - 5);
+                    }
+                    result.message += ' ...though you may have had one too many. (-5 energy)';
+                }
+                break;
+            }
+            case 'shop': {
+                var town = findTown(festival.townId);
+                if (!town || !town.market || !town.market.supply) {
+                    result.message = 'No market stalls available.';
+                    break;
+                }
+                var availableGoods = [];
+                for (var goodKey in town.market.supply) {
+                    if (town.market.supply[goodKey] > 0) availableGoods.push(goodKey);
+                }
+                if (availableGoods.length === 0) {
+                    result.message = 'No goods available at the stalls.';
+                    break;
+                }
+                var chosenGood = rng.pick(availableGoods);
+                var discount = rng.randInt(10, 30);
+                var basePrice = (town.market.prices && town.market.prices[chosenGood]) || 10;
+                var salePrice = Math.max(1, Math.round(basePrice * (1 - discount / 100)));
+                result.success = true;
+                result.message = 'You found a deal on ' + chosenGood + '! ' + discount + '% off (price: ' + salePrice + 'g instead of ' + basePrice + 'g).';
+                result.shopDeal = { item: chosenGood, basePrice: basePrice, salePrice: salePrice, discount: discount };
+                break;
+            }
+            case 'perform': {
+                var canPerform = false;
+                try {
+                    canPerform = (Player.hasSkill && Player.hasSkill('music')) ||
+                        (Player.inventory && (Player.inventory.lute || Player.inventory.flute || Player.inventory.drum || Player.inventory.instrument));
+                } catch(e) {}
+                if (!canPerform) {
+                    result.message = "You don't have the skill or instruments to perform.";
+                    break;
+                }
+                var tips = rng.randInt(2, 10);
+                if (Player.gold !== undefined) Player.gold += tips;
+                if (Player.reputation !== undefined) Player.reputation = Math.min(100, Player.reputation + 2);
+                result.success = true;
+                result.message = 'You performed for the crowd and earned ' + tips + 'g in tips! (+2 rep)';
+                break;
+            }
+            case 'gamble': {
+                var bet = rng.randInt(5, 20);
+                if ((Player.gold || 0) < bet) {
+                    result.message = 'You need at least 5g to gamble. You have ' + (Player.gold || 0) + 'g.';
+                    break;
+                }
+                if (rng.chance(0.45)) {
+                    Player.gold += bet;
+                    result.success = true;
+                    result.message = 'You won the game! +' + (bet * 2) + 'g (bet ' + bet + 'g, won ' + bet + 'g profit).';
+                } else {
+                    Player.gold -= bet;
+                    result.success = true;
+                    result.message = 'You lost the game. -' + bet + 'g.';
+                }
+                break;
+            }
+            case 'pickpocket': {
+                var hasPickSkill = false;
+                try {
+                    hasPickSkill = (Player.hasSkill && (Player.hasSkill('lockpicking') || Player.hasSkill('pickpocket')));
+                } catch(e) {}
+                if (!hasPickSkill) {
+                    result.message = 'You lack the skill for pickpocketing (need lockpicking or pickpocket).';
+                    break;
+                }
+                var ppRoll = rng.random();
+                if (ppRoll < 0.3) {
+                    var loot = rng.randInt(2, 8);
+                    if (Player.gold !== undefined) Player.gold += loot;
+                    result.success = true;
+                    result.message = 'You deftly lifted ' + loot + 'g from an unsuspecting festivalgoer.';
+                } else if (ppRoll < 0.7) {
+                    result.success = true;
+                    result.message = 'You couldn\'t find a good opportunity. Nothing happened.';
+                } else {
+                    if (Player.reputation !== undefined) Player.reputation = Math.max(0, Player.reputation - 5);
+                    result.success = true;
+                    result.message = 'You were caught pickpocketing! (-5 rep, possible criminal charges)';
+                }
+                break;
+            }
+            case 'socialize_noble': {
+                var pRank = 0;
+                try {
+                    if (Player.socialRank && Player.socialRank[kingdomId]) pRank = Player.socialRank[kingdomId];
+                } catch(e) {}
+                if (pRank < 3) {
+                    result.message = 'You need to be at least burgher rank (3+) to approach nobles at the festival.';
+                    break;
+                }
+                var nobleTargets = world.people.filter(function(p) {
+                    return p.alive && p.townId === festival.townId && p.occupation === 'noble' && p.id !== playerPersonId;
+                });
+                if (nobleTargets.length === 0) {
+                    result.message = 'There are no nobles at this festival to socialize with.';
+                    break;
+                }
+                var noble = rng.pick(nobleTargets);
+                var nobleRank = noble.socialRank || 4;
+                if (pRank < nobleRank - 1) {
+                    if (Player.reputation !== undefined) Player.reputation = Math.max(0, Player.reputation - 1);
+                    result.success = true;
+                    result.message = (noble.firstName || 'The noble') + ' barely acknowledges your presence. (-1 rep)';
+                } else {
+                    var nRelBoost = rng.randInt(3, 5);
+                    if (!noble._nobleRelationships) noble._nobleRelationships = {};
+                    noble._nobleRelationships[playerPersonId] = Math.min(100, (noble._nobleRelationships[playerPersonId] || 0) + nRelBoost);
+                    result.success = true;
+                    result.message = 'You had a pleasant conversation with ' + (noble.firstName || 'a noble') + '. (Relationship +' + nRelBoost + ')';
+                }
+                break;
+            }
+            default:
+                result.message = 'Unknown action: ' + actionId;
+                break;
+        }
+
+        if (result.success) {
+            festival._playerActionsToday++;
+            // Advance 1 tick
+            try {
+                if (typeof Game !== 'undefined' && Game.advanceTicks) {
+                    Game.advanceTicks(1);
+                }
+            } catch(e) {}
+        }
+
+        return result;
+    }
+
+    /**
+     * Start a festival (called by player king).
+     * Returns the festival object on success, or { error: string } on failure.
+     */
+    function startFestival(kingdomId, townId, type) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { error: 'Kingdom not found.' };
+
+        var town = findTown(townId);
+        if (!town) return { error: 'Town not found.' };
+
+        // Check town is in kingdom
+        if (!k.territories || !k.territories.has(townId)) {
+            return { error: 'That town is not part of your kingdom.' };
+        }
+
+        // Validate type
+        if (type !== 'small' && type !== 'large') {
+            return { error: 'Invalid festival type. Must be "small" or "large".' };
+        }
+
+        // Check cooldown (90 days)
+        var day = world.day;
+        if (day - (town._lastFestivalDay || 0) < 90) {
+            var daysLeft = 90 - (day - (town._lastFestivalDay || 0));
+            return { error: 'This town had a festival recently. Wait ' + daysLeft + ' more days.' };
+        }
+
+        // Check cost
+        var cost = type === 'large' ? 2000 : 500;
+        if ((k.gold || 0) < cost) {
+            return { error: 'Not enough gold. Need ' + cost + 'g, have ' + (k.gold || 0) + 'g.' };
+        }
+
+        // Initialize array if needed
+        if (!k._activeFestivals) k._activeFestivals = [];
+
+        // Deduct gold and create festival
+        k.gold -= cost;
+        var festival = {
+            id: 'festival_' + day + '_' + townId,
+            townId: townId,
+            townName: town.name || townId,
+            kingdomId: k.id,
+            type: type,
+            startDay: day,
+            endDay: day + 3,
+            cost: cost,
+            happinessBoost: type === 'large' ? 20 : 10,
+            afterglowBoost: type === 'large' ? 10 : 5,
+            afterglowEndDay: day + 3 + 15,
+            events: [],
+            _playerActionsToday: 0,
+            _playerActionDay: 0,
+            _maxActionsPerDay: 5
+        };
+        k._activeFestivals.push(festival);
+        town._lastFestivalDay = day;
+
+        // Apply initial happiness boost
+        town.happiness = Math.min(100, (town.happiness || 50) + festival.happinessBoost * 0.5);
+
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+        logEvent('🎉 A ' + type + ' festival has been declared in ' + (town.name || townId) + '! The people rejoice!', {
+            type: 'festival_started', kingdomId: k.id, townId: townId, festivalType: type
+        }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+
+        return festival;
+    }
+
     // ========================================================
     // §19c NOBLE CONSPIRACY SYSTEM
     // ========================================================
@@ -24991,6 +25937,11 @@
         });
         if (nobles.length === 0) return;
 
+        // Initialize opinions for any nobles that don't have them yet
+        for (var oi = 0; oi < nobles.length; oi++) {
+            initNobleOpinions(nobles[oi], kId);
+        }
+
         var kingPerson = findPerson(k.king);
         var kingInt = (kingPerson && kingPerson.personality) ? (kingPerson.personality.intelligence || 50) : 50;
         // Smarter kings are less swayed by noble pressure
@@ -25092,6 +26043,183 @@
         // Happiness effect: generous/kind noble councils make populace happier
         if (taxDownPressure > taxUpPressure && rng.chance(0.05)) {
             k.happiness = Math.min(100, (k.happiness || 50) + 0.5);
+        }
+    }
+
+    // ── Noble Opinion System — Nobles form opinions on policies based on personality + events ──
+    function initNobleOpinions(noble, kId) {
+        if (!noble || noble._policyOpinions) return;
+        var rng = world.rng;
+        var p = noble.personality || {};
+        noble._policyOpinions = {};
+
+        // Tax opinions
+        if ((p.greed || 50) > 60) noble._policyOpinions.taxes = 'raise';
+        else if ((p.warmth || 50) > 60) noble._policyOpinions.taxes = 'lower';
+        else noble._policyOpinions.taxes = rng.chance(0.5) ? 'neutral' : (rng.chance(0.5) ? 'raise' : 'lower');
+
+        // War opinions
+        if ((p.courage || 50) > 65 && (p.ambition || 50) > 55) noble._policyOpinions.war = 'hawk';
+        else if ((p.warmth || 50) > 60 || (p.courage || 50) < 35) noble._policyOpinions.war = 'dove';
+        else noble._policyOpinions.war = 'neutral';
+
+        // Trade opinions
+        if ((p.greed || 50) > 55 || (p.ambition || 50) > 60) noble._policyOpinions.trade = 'free_trade';
+        else noble._policyOpinions.trade = rng.chance(0.6) ? 'protectionist' : 'free_trade';
+
+        // Alliance opinions
+        if ((p.social || 50) > 55) noble._policyOpinions.alliances = 'pro_alliance';
+        else if ((p.ambition || 50) > 70) noble._policyOpinions.alliances = 'independent';
+        else noble._policyOpinions.alliances = rng.chance(0.5) ? 'pro_alliance' : 'neutral';
+    }
+
+    // ── Process noble policy advocacy — nobles who were convinced by EMs/player try to sway the king ──
+    function tickNoblePolicyAdvocacy(k) {
+        if (!k || world.day % 7 !== 0) return; // weekly check
+        var rng = world.rng;
+        var kId = k.id;
+        var kingPerson = findPerson(k.king);
+        if (!kingPerson) return;
+
+        var nobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 && p._policyOpinions;
+        });
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var noble = nobles[ni];
+            var opinions = noble._policyOpinions;
+            var rank = noble.socialRank[kId] || 4;
+
+            // Check for specific advocacy items (set by feast/court interactions)
+            for (var opKey in opinions) {
+                var op = opinions[opKey];
+                if (!op || typeof op !== 'object' || !op.favor || !op.day) continue;
+                // Only process recent advocacy (within 30 days)
+                if (world.day - op.day > 30) { delete opinions[opKey]; continue; }
+
+                // Calculate influence on king
+                var influence = 0.05; // base
+                if (rank >= 6) influence = 0.25; // royal advisor has biggest sway
+                else if (rank >= 5) influence = 0.15; // lord
+                else influence = 0.08; // minor noble
+
+                // Relationship with king
+                var nobleRel = (noble._nobleRelationships && noble._nobleRelationships[k.king]) || 0;
+                if (nobleRel > 50) influence += 0.10;
+                else if (nobleRel > 30) influence += 0.05;
+
+                // Perceived loyalty matters
+                var percLoy = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : (noble.kingLoyalty || 50);
+                if (percLoy > 70) influence += 0.10;
+                else if (percLoy < 40) influence -= 0.10;
+
+                // King personality: stubborn/foolish kings harder to sway
+                var kingP = kingPerson.personality || {};
+                if ((kingP.intelligence || 50) < 40) influence -= 0.05; // foolish kings don't listen
+                if ((kingP.ambition || 50) > 70) influence -= 0.05; // ambitious kings have own plans
+
+                if (rng.chance(Math.max(0.02, Math.min(0.40, influence)))) {
+                    // King is swayed — apply the policy change
+                    if (opKey === 'lower_taxes' || opKey === 'merchant_lower_taxes') {
+                        k.taxRate = Math.max(0.02, (k.taxRate || 0.10) - 0.01);
+                        logEvent('📜 The king of ' + k.name + ' lowered taxes after counsel from the nobility.', { type: 'policy_change', kingdomId: kId });
+                    } else if (opKey === 'lower_tariffs' || opKey === 'merchant_lower_tariffs') {
+                        if (k.laws) k.laws.tariffRate = Math.max(0, ((k.laws.tariffRate != null ? k.laws.tariffRate : 0.10) - 0.02));
+                        logEvent('📜 The king of ' + k.name + ' reduced tariffs after noble advocacy.', { type: 'policy_change', kingdomId: kId });
+                    } else if (opKey.indexOf('unban_') === 0) {
+                        var goodToUnban = opKey.replace('unban_', '');
+                        if (k.laws && k.laws.bannedGoods) {
+                            var idx = k.laws.bannedGoods.indexOf(goodToUnban);
+                            if (idx >= 0) {
+                                k.laws.bannedGoods.splice(idx, 1);
+                                logEvent('📜 The king of ' + k.name + ' unbanned ' + goodToUnban + ' after noble advocacy.', { type: 'policy_change', kingdomId: kId });
+                            }
+                        }
+                    }
+                    // Clear the advocacy after processing
+                    delete opinions[opKey];
+                }
+            }
+        }
+    }
+
+    // ── Rank-restricted conversation check ──
+    // Returns true if personA can approach personB for conversation
+    // Can't talk to someone 2+ ranks above without an introduction from someone 1 rank below target
+    function canTalkTo(personA, personB, kId) {
+        if (!personA || !personB) return false;
+        var rankA = (personA.socialRank && personA.socialRank[kId]) || 0;
+        var rankB = (personB.socialRank && personB.socialRank[kId]) || 0;
+        // Same rank or higher can always talk
+        if (rankA >= rankB || rankB - rankA <= 1) return true;
+        // 2+ ranks difference: need an introduction
+        var introRank = rankB - 1;
+        // Check if personA has a good relationship with anyone at introRank
+        var rels = personA._nobleRelationships || personA._npcRelationships || {};
+        var people = world.people;
+        for (var i = 0; i < people.length; i++) {
+            var mid = people[i];
+            if (!mid.alive || mid.id === personA.id || mid.id === personB.id) continue;
+            var midRank = (mid.socialRank && mid.socialRank[kId]) || 0;
+            if (midRank !== introRank) continue;
+            var relWithMid = rels[mid.id] || 0;
+            if (relWithMid >= 40) return true; // has introduction through this person
+        }
+        return false;
+    }
+
+    // ── NPC Local Conversations — all NPCs can converse in their location ──
+    function tickLocalConversations(k) {
+        if (!k || world.day % 3 !== 0) return; // every 3 days
+        var rng = world.rng;
+        var kId = k.id;
+
+        // Group nobles and EMs by town
+        var townGroups = {};
+        var people = world.people;
+        for (var i = 0; i < people.length; i++) {
+            var p = people[i];
+            if (!p.alive || !p.townId) continue;
+            var rank = (p.socialRank && p.socialRank[kId]) || 0;
+            if (rank < 3) continue; // only burghers+ converse meaningfully
+            if (!townGroups[p.townId]) townGroups[p.townId] = [];
+            townGroups[p.townId].push(p);
+        }
+
+        // Process conversations per town
+        for (var tId in townGroups) {
+            var group = townGroups[tId];
+            if (group.length < 2) continue;
+
+            // Each person gets a chance to converse with one other person
+            for (var gi = 0; gi < group.length; gi++) {
+                if (!rng.chance(0.20)) continue; // 20% chance per person per tick
+                var speaker = group[gi];
+                // Pick a random conversant they can actually talk to
+                var targets = [];
+                for (var gj = 0; gj < group.length; gj++) {
+                    if (gi === gj) continue;
+                    if (canTalkTo(speaker, group[gj], kId)) targets.push(group[gj]);
+                }
+                if (targets.length === 0) continue;
+                var target = rng.pick(targets);
+
+                // Build or improve relationship based on personality compatibility
+                var sp = speaker.personality || {};
+                var tp = target.personality || {};
+                var compat = 0;
+                if (Math.abs((sp.warmth || 50) - (tp.warmth || 50)) < 20) compat += 1;
+                if (Math.abs((sp.ambition || 50) - (tp.ambition || 50)) < 25) compat += 1;
+                if ((sp.social || 50) > 50) compat += 1;
+                if ((tp.social || 50) > 50) compat += 1;
+
+                var relChange = compat > 2 ? rng.randFloat(1, 3) : (compat > 0 ? rng.randFloat(0, 2) : rng.randFloat(-1, 1));
+
+                if (!speaker._nobleRelationships) speaker._nobleRelationships = {};
+                if (!target._nobleRelationships) target._nobleRelationships = {};
+                speaker._nobleRelationships[target.id] = Math.max(-100, Math.min(100, (speaker._nobleRelationships[target.id] || 0) + relChange));
+                target._nobleRelationships[speaker.id] = Math.max(-100, Math.min(100, (target._nobleRelationships[speaker.id] || 0) + relChange * 0.7));
+            }
         }
     }
 
@@ -26357,6 +27485,7 @@
             Engine.tickNPCMerchantTravel();
             Engine.tickFamilyMembers();
             Engine.tickEliteMerchantAI();
+            Engine.tickEMRelationshipFavors();
             Engine.tickNPCCaravans();     // Process caravan movement
             Engine.tickEMCaravans();      // EM caravan hiring decisions
             Engine.tickKingdomCaravans(); // Kingdom supply caravans
@@ -27058,9 +28187,16 @@
         tickKingTravel: tickKingTravel,
         tickPendingKingDecisions: tickPendingKingDecisions,
         tickKingdomFeasts: tickKingdomFeasts,
+        tickKingdomFestivals: tickKingdomFestivals,
+        doFestivalAction: doFestivalAction,
+        startFestival: startFestival,
         tickKingdomCourt: tickKingdomCourt,
         tickNobleConspiracies: tickNobleConspiracies,
         tickNobleInfluence: tickNobleInfluence,
+        tickNoblePolicyAdvocacy: tickNoblePolicyAdvocacy,
+        initNobleOpinions: initNobleOpinions,
+        canTalkTo: canTalkTo,
+        tickLocalConversations: tickLocalConversations,
         tickKingUnrestResponse: tickKingUnrestResponse,
         tickNobleIncome: tickNobleIncome,
         tickNobleRelationships: tickNobleRelationships,

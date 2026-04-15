@@ -516,16 +516,34 @@
         if (_bannedGoods.length > 0) html += '<div style="font-size:0.62rem;color:#c44e52;margin-top:3px;">Currently banned: ' + _bannedGoods.join(', ') + '</div>';
         html += '</div>';
 
-        // Fund Festival
+        // Throw Festival (Small/Large)
         html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
-        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🎉 Fund Festival <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(200) + ')</span></div>';
+        html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🎉 Town Festival <span style="font-size:0.62rem;color:#888;">(for common people)</span></div>';
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
         html += '<select id="_roFestTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:140px;">';
         html += '<option value="">Select town...</option>';
-        for (var _ron = 0; _ron < _roTowns.length; _ron++) html += '<option value="' + _roTowns[_ron].id + '">' + escapeHtml(_roTowns[_ron].name) + '</option>';
+        for (var _ron = 0; _ron < _roTowns.length; _ron++) {
+            var _fTown = _roTowns[_ron];
+            var _fCd = Engine.getDay() - (_fTown._lastFestivalDay || 0);
+            var _fReady = _fCd >= 90;
+            html += '<option value="' + _fTown.id + '"' + (!_fReady ? ' disabled' : '') + '>' + escapeHtml(_fTown.name) + (_fReady ? '' : ' (CD: ' + (90 - _fCd) + 'd)') + '</option>';
+        }
         html += '</select>';
-        html += '<button class="btn-medieval" data-action="kingOrderFestival" style="font-size:0.62rem;padding:2px 6px;">🎉 Fund</button>';
-        html += '</div></div>';
+        html += '<button class="btn-medieval" data-action="kingStartSmallFestival" style="font-size:0.62rem;padding:2px 6px;" title="3 days, +10 happiness during, +5 for 15 days after">🎉 Small (' + formatGold(500) + ')</button>';
+        html += '<button class="btn-medieval" data-action="kingStartLargeFestival" style="font-size:0.62rem;padding:2px 6px;" title="3 days, +20 happiness during, +10 for 15 days after">🎊 Grand (' + formatGold(2000) + ')</button>';
+        html += '</div>';
+        // Show active festivals
+        var _activeFests = kingdom._activeFestivals || [];
+        if (_activeFests.length > 0) {
+            html += '<div style="margin-top:4px;font-size:0.62rem;color:#e0c58a;">';
+            for (var _afi = 0; _afi < _activeFests.length; _afi++) {
+                var _af = _activeFests[_afi];
+                var _afDaysLeft = _af.endDay - Engine.getDay();
+                html += '🎪 ' + escapeHtml(_af.townName || 'Town') + ': ' + (_af.type === 'large' ? 'Grand' : 'Small') + ' festival (' + _afDaysLeft + 'd left)<br>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
 
         // Promote Outpost
         var _outposts = [];
@@ -3929,10 +3947,15 @@
         if (!s || !s.value) { UI.toast('Select a good.', 'warning'); return; }
         var r = Player.kingExecuteOrder('unban_goods', { resourceId: s.value, resourceName: s.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
     });
-    UI.registerAction('kingOrderFestival', function() {
+    UI.registerAction('kingStartSmallFestival', function() {
         var t = document.getElementById('_roFestTown');
         if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
-        var r = Player.kingExecuteOrder('fund_festival', { townId: t.value }); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+        var r = Player.kingStartFestival(t.value, 'small'); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+    });
+    UI.registerAction('kingStartLargeFestival', function() {
+        var t = document.getElementById('_roFestTown');
+        if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
+        var r = Player.kingStartFestival(t.value, 'large'); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
     });
     UI.registerAction('kingOrderPromoteOutpost', function() {
         var s = document.getElementById('_roPromoteOutpost');

@@ -364,6 +364,32 @@ function showTownDetail(town) {
         html += '</div>';
     }
 
+    // Festival participation button (when there's an active festival in this town)
+    if (isPlayerHere && typeof Player !== 'undefined' && typeof Engine !== 'undefined') {
+        try {
+            var _festKingdom = Engine.getKingdom(town.kingdomId);
+            var _activeFest = null;
+            if (_festKingdom && _festKingdom._activeFestivals) {
+                for (var _ffi = 0; _ffi < _festKingdom._activeFestivals.length; _ffi++) {
+                    if (_festKingdom._activeFestivals[_ffi].townId === town.id) {
+                        _activeFest = _festKingdom._activeFestivals[_ffi];
+                        break;
+                    }
+                }
+            }
+            if (_activeFest) {
+                var _festDaysLeft = _activeFest.endDay - Engine.getDay();
+                var _festActionsLeft = (_activeFest._maxActionsPerDay || 5) - ((_activeFest._playerActionDay === Engine.getDay()) ? (_activeFest._playerActionsToday || 0) : 0);
+                var _festTypeLabel = _activeFest.type === 'large' ? '🎊 Grand Festival' : '🎉 Festival';
+                html += '<div class="text-center mt-sm">';
+                html += '<button class="btn-medieval" data-action="openFestivalPanel" data-kingdom="' + _festKingdom.id + '" data-festival="' + _activeFest.id + '" style="font-size:0.8rem;padding:6px 16px;border-color:#f1c40f;animation:glow 2s infinite;">';
+                html += _festTypeLabel + ' <span style="font-size:0.7rem;">(' + _festDaysLeft + 'd left, ' + _festActionsLeft + ' actions)</span>';
+                html += '</button>';
+                html += '</div>';
+            }
+        } catch(e) {}
+    }
+
     // Hospital / Clinic button (blinks when player OR family/guards at same location are sick/injured)
     if (isPlayerHere && typeof Player !== 'undefined') {
         var _medFacilities = Player.getMedicalFacilities ? Player.getMedicalFacilities(town.id) : { hasHospital: false, hasClinic: false };
@@ -4058,6 +4084,103 @@ function clickTown(townId) {
     }
 }
 
+    // ── Festival Participation Panel ──
+    function openFestivalPanel(kingdomId, festivalId) {
+        var kingdom = Engine.getKingdom(kingdomId);
+        if (!kingdom) { UI.toast('Kingdom not found.', 'warning'); return; }
+        var festivals = kingdom._activeFestivals || [];
+        var fest = null;
+        for (var i = 0; i < festivals.length; i++) {
+            if (festivals[i].id === festivalId) { fest = festivals[i]; break; }
+        }
+        if (!fest) { UI.toast('Festival has ended.', 'warning'); return; }
+        var town = Engine.findTown(fest.townId);
+        var townName = town ? town.name : 'the town';
+        var daysLeft = fest.endDay - Engine.getDay();
+        // Reset daily actions if new day
+        if (fest._playerActionDay !== Engine.getDay()) {
+            fest._playerActionsToday = 0;
+            fest._playerActionDay = Engine.getDay();
+        }
+        var actionsLeft = (fest._maxActionsPerDay || 5) - (fest._playerActionsToday || 0);
+        var sizeLabel = fest.type === 'large' ? '🎊 Grand Festival' : '🎉 Festival';
+
+        var html = '<div style="padding:10px;">';
+        html += '<h3 style="color:#f1c40f;margin:0 0 8px;">' + sizeLabel + ' in ' + escapeHtml(townName) + '</h3>';
+        html += '<div style="font-size:0.75rem;color:#ccc;margin-bottom:10px;">';
+        html += daysLeft + ' days remaining &bull; ' + actionsLeft + ' of ' + (fest._maxActionsPerDay || 5) + ' actions left today';
+        html += '</div>';
+
+        // Recent events
+        if (fest.events && fest.events.length > 0) {
+            html += '<div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:4px;margin-bottom:10px;max-height:100px;overflow-y:auto;">';
+            html += '<div style="font-size:0.68rem;color:#888;margin-bottom:4px;">Recent happenings:</div>';
+            var recentEvents = fest.events.slice(-5);
+            for (var ei = 0; ei < recentEvents.length; ei++) {
+                html += '<div style="font-size:0.68rem;color:#bbb;margin-bottom:2px;">• ' + escapeHtml(recentEvents[ei]) + '</div>';
+            }
+            html += '</div>';
+        }
+
+        // Action buttons
+        var actions = [
+            { id: 'mingle', icon: '🤝', name: 'Mingle', desc: 'Meet someone new (+3-6 relationship)' },
+            { id: 'gossip', icon: '🗣️', name: 'Gossip', desc: 'Hear what people are saying (may learn secrets)' },
+            { id: 'drink', icon: '🍺', name: 'Have a Drink', desc: 'Enjoy festival drinks (+3 happiness)' },
+            { id: 'shop', icon: '🛒', name: 'Browse Stalls', desc: 'Find discounted goods at festival stalls' },
+            { id: 'gamble', icon: '🎲', name: 'Gamble', desc: 'Bet gold on games of chance (45% win, 55% lose)' },
+            { id: 'socialize_noble', icon: '👑', name: 'Approach a Noble', desc: 'Try to meet a noble (Burgher+ required)' }
+        ];
+        // Add perform if player has music skill or instrument
+        var hasMusic = false;
+        try { hasMusic = Player.hasSkill && (Player.hasSkill('musician') || Player.hasSkill('bard')); } catch(e) {}
+        if (!hasMusic) {
+            try {
+                var inv = Player.getInventory ? Player.getInventory() : (Player.state ? Player.state.inventory : null);
+                if (inv) {
+                    var instruments = ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy'];
+                    for (var ii = 0; ii < instruments.length; ii++) {
+                        if ((inv[instruments[ii]] || 0) > 0) { hasMusic = true; break; }
+                    }
+                }
+            } catch(e) {}
+        }
+        if (hasMusic) {
+            actions.splice(4, 0, { id: 'perform', icon: '🎵', name: 'Perform', desc: 'Play music for tips (2-10g, +2 rep)' });
+        }
+        // Add pickpocket if player has skill
+        var hasPick = false;
+        try { hasPick = Player.hasSkill && (Player.hasSkill('lockpicking') || Player.hasSkill('pickpocket') || Player.hasSkill('thievery')); } catch(e) {}
+        if (hasPick) {
+            actions.push({ id: 'pickpocket', icon: '🤏', name: 'Pickpocket', desc: 'Try to steal from a festivalgoer' });
+        }
+
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+        for (var ai = 0; ai < actions.length; ai++) {
+            var a = actions[ai];
+            var disabled = actionsLeft <= 0;
+            html += '<button class="btn-medieval" data-action="doFestivalAction" data-kingdom="' + kingdomId + '" data-festival="' + festivalId + '" data-actionid="' + a.id + '" ';
+            html += 'style="font-size:0.72rem;padding:6px;text-align:left;' + (disabled ? 'opacity:0.4;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
+            html += a.icon + ' ' + a.name + '<br><span style="font-size:0.6rem;color:#aaa;">' + a.desc + '</span>';
+            html += '</button>';
+        }
+        html += '</div>';
+        html += '</div>';
+
+        openModal(sizeLabel + ' in ' + escapeHtml(townName), html, { width: '420px' });
+    }
+
+    UI.registerAction('doFestivalAction', function(_t, d) {
+        var result = Engine.doFestivalAction(d.kingdom, d.festival, d.actionid);
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+        } else {
+            UI.toast((result && result.message) || 'Action failed.', 'warning');
+        }
+        // Refresh the panel
+        UI.openFestivalPanel(d.kingdom, d.festival);
+    });
+
 
     // ── Register all public functions on UI namespace ──
 
@@ -4066,6 +4189,7 @@ function clickTown(townId) {
     UI.closeRightPanel         = closeRightPanel;
     UI._toggleCollapse         = _toggleCollapse;
     UI.showTownDetail          = showTownDetail;
+    UI.openFestivalPanel       = openFestivalPanel;
     UI.showKingdomDetail       = showKingdomDetail;
     UI.showPersonDetail        = showPersonDetail;
     UI.showRoadDetail          = showRoadDetail;
@@ -4162,6 +4286,7 @@ function clickTown(townId) {
     // Single-arg passthrough handlers (data-id)
     UI.registerAction('showTownPeople', function(_t, d) { UI.showTownPeople(d.id); });
     UI.registerAction('openTownQuests', function(_t, d) { UI.openTownQuests(d.id); });
+    UI.registerAction('openFestivalPanel', function(_t, d) { UI.openFestivalPanel(d.kingdom, d.festival); });
     UI.registerAction('openKingdomLawsPanel', function(_t, d) { UI.openKingdomLawsPanel(d.id); });
     UI.registerAction('openKingActionLog', function(_t, d) { UI.openKingActionLog(d.id); });
     UI.registerAction('openRoyalCommissionsPanel', function(_t, d) { UI.openRoyalCommissionsPanel(d.id); });

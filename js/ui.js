@@ -11641,11 +11641,42 @@ window.UI = (function () {
             feastActions.splice(1, 0, { id: 'toast_king', icon: '🥂', name: 'Toast the King', desc: 'Gain king favor (+2 relationship, +1 rep)', category: 'social' });
         }
 
+        // Merchant guest actions — available if player is attending as invited merchant (not noble)
+        var isMerchantGuest = false;
+        try {
+            if (!isKing && Player.state && Player.state._feastInvitations) {
+                isMerchantGuest = Player.state._feastInvitations.some(function(inv) {
+                    return inv.feastId === feast.id && inv.isMerchantInvite;
+                });
+            }
+            // Also check if player is rank 3-4 (burgher/guildmaster) and attending
+            if (!isMerchantGuest && !isKing) {
+                var pPerson = Engine.getPerson(Player.personId);
+                var kingdom = Engine.getKingdom(kingdomId);
+                if (pPerson && kingdom) {
+                    var pRank = (pPerson.socialRank && pPerson.socialRank[kingdom.id]) || 0;
+                    if (pRank >= 3 && pRank <= 4) isMerchantGuest = true;
+                }
+            }
+        } catch(e) {}
+
+        if (isMerchantGuest) {
+            feastActions.push({ id: 'advocate_lower_taxes', icon: '📜', name: 'Advocate Lower Taxes', desc: 'Convince a noble to push for lower taxes', category: 'economic' });
+            feastActions.push({ id: 'advocate_lower_tariffs', icon: '📦', name: 'Advocate Lower Tariffs', desc: 'Convince a noble to push for lower tariffs', category: 'economic' });
+            feastActions.push({ id: 'advocate_unban_good', icon: '🚫', name: 'Advocate Unbanning Good', desc: 'Convince a noble to push for unbanning a trade good', category: 'economic' });
+            feastActions.push({ id: 'merchant_network', icon: '💰', name: 'Merchant Networking', desc: 'Build contacts with other merchants/EMs', category: 'economic' });
+        }
+
         var categories = [
             { id: 'social', icon: '🤝', name: 'Social' },
             { id: 'intel', icon: '🕵️', name: 'Intelligence' },
             { id: 'scheme', icon: '🎭', name: 'Schemes' }
         ];
+
+        // Add economic category if merchant guest
+        if (isMerchantGuest) {
+            categories.push({ id: 'economic', icon: '💰', name: 'Economic Advocacy' });
+        }
 
         // King-specific actions section
         if (isKing) {
