@@ -7941,9 +7941,9 @@ window.UI = (function () {
         };
 
         var warTypes = ['war_declared', 'warDeclared', 'warEnded', 'peace', 'surrender', 'battle_result', 'siege_started', 'siege_ended'];
-        var politicsTypes = ['king_death', 'coronation', 'succession', 'assassination', 'assassination_attempt', 'conspiracy_discovered', 'noble_revolt_execution', 'noble_revolt_stripped'];
-        var revoltTypes = ['revolt', 'town_revolt_win', 'town_revolt_lose'];
-        var diploTypes = ['alliance_formed', 'alliance_broken', 'non_aggression_pact', 'royal_marriage', 'territory_transfer'];
+        var politicsTypes = ['king_death', 'coronation', 'succession', 'assassination', 'assassination_attempt', 'conspiracy_discovered', 'noble_revolt_execution', 'noble_revolt_stripped', 'solo_assassination', 'solo_assassination_failed', 'conspiracy_detected', 'conspiracy_assassination', 'conspiracy_coup', 'conspiracy_failed', 'noble_punishment', 'noble_execution', 'noble_exile'];
+        var revoltTypes = ['revolt', 'town_revolt_win', 'town_revolt_lose', 'revolt_started', 'revolt_victory', 'revolt_suppressed'];
+        var diploTypes = ['alliance_formed', 'alliance_broken', 'alliance_dissolved', 'non_aggression_pact', 'royal_marriage', 'territory_transfer', 'trade_agreement', 'mutual_defense_pact', 'border_accord', 'em_defection', 'peace_treaty', 'trade_deal'];
         var disasterTypes = ['kingdom_collapse', 'economic_collapse', 'kingdom_bankruptcy', 'plague_started', 'plague_ended'];
         var lawTypes = ['law_passed', 'law_repealed'];
         var socialTypes = ['feast_started', 'court_session'];

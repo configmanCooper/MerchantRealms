@@ -10924,6 +10924,20 @@
                 happinessDelta += 2.0;
             }
 
+            // Revolt success happiness boost: +30 for 30 days, +15 for 31-90 days
+            if (town._revoltSuccessDay) {
+                var _revoltAge = world.day - town._revoltSuccessDay;
+                if (_revoltAge <= 30) {
+                    happinessDelta += 2.0; // sustained boost during first month (+30 was applied at revolt, this maintains it)
+                } else if (_revoltAge <= 90) {
+                    // Transition from +30 to +15: gentle daily nudge toward +15 over baseline
+                    happinessDelta += 1.0;
+                } else {
+                    // Boost expired — clean up
+                    delete town._revoltSuccessDay;
+                }
+            }
+
             // Recovery boost for struggling towns — stronger at lower happiness to prevent death spirals
             var townPop = typeof town.population === 'number' ? town.population : 0;
             if (currentHappiness < 40 && townPop > 20) {
@@ -12252,6 +12266,65 @@
         // Add to world kingdoms
         world.kingdoms.push(newKingdom);
 
+        // ═══════════════════════════════════════════
+        // REVOLT SUCCESS BONUSES — Gold Plunder, Goods Transfer, Happiness Boost
+        // ═══════════════════════════════════════════
+        if (parentK) {
+            // Gold plunder: (location pop / kingdom total pop) * treasury * 0.25
+            var _locPop = town.population || 100;
+            var _kingdomPop = 0;
+            if (parentK.territories) {
+                parentK.territories.forEach(function(tid) {
+                    var t = findTown(tid);
+                    if (t) _kingdomPop += (t.population || 0);
+                });
+            }
+            _kingdomPop += _locPop; // include the revolting town's pop in original count
+            if (_kingdomPop < 1) _kingdomPop = 1;
+            var _plunderFraction = Math.min(0.5, (_locPop / _kingdomPop)); // cap at 50%
+            var _goldPlunder = Math.floor((parentK.gold || 0) * _plunderFraction * 0.25);
+            if (_goldPlunder > 0) {
+                parentK.gold = Math.max(0, (parentK.gold || 0) - _goldPlunder);
+                newKingdom.gold += _goldPlunder;
+                logEvent('💰 ' + groupName + ' plunders ' + _goldPlunder + 'g from ' + parentK.name + '\'s treasury!', {
+                    type: 'revolt_plunder', kingdomId: newKingdomId,
+                    effects: [groupName + ' gains ' + _goldPlunder + 'g', parentK.name + ' loses ' + _goldPlunder + 'g']
+                });
+            }
+
+            // Goods transfer: 5% of parent kingdom's goods stockpile
+            if (parentK.goodsStockpile) {
+                if (!newKingdom.goodsStockpile) newKingdom.goodsStockpile = {};
+                for (var _gsKey in parentK.goodsStockpile) {
+                    var _gsAmt = parentK.goodsStockpile[_gsKey] || 0;
+                    var _gsTransfer = Math.floor(_gsAmt * 0.05);
+                    if (_gsTransfer > 0) {
+                        parentK.goodsStockpile[_gsKey] = Math.max(0, _gsAmt - _gsTransfer);
+                        newKingdom.goodsStockpile[_gsKey] = (newKingdom.goodsStockpile[_gsKey] || 0) + _gsTransfer;
+                    }
+                }
+            }
+            // Also take 5% of military stockpile
+            if (parentK.militaryStockpile) {
+                for (var _msKey in parentK.militaryStockpile) {
+                    var _msAmt = parentK.militaryStockpile[_msKey] || 0;
+                    var _msTransfer = Math.floor(_msAmt * 0.05);
+                    if (_msTransfer > 0) {
+                        parentK.militaryStockpile[_msKey] = Math.max(0, _msAmt - _msTransfer);
+                        newKingdom.militaryStockpile[_msKey] = (newKingdom.militaryStockpile[_msKey] || 0) + _msTransfer;
+                    }
+                }
+            }
+        }
+
+        // Happiness boost: +30 for 30 days, then +15 for days 31-90
+        town._revoltSuccessDay = world.day;
+        town.happiness = Math.min(100, (town.happiness || 40) + 30);
+
+        // Fast AI mode for new revolt kingdom: king AI runs every 5 days for first 30 days
+        newKingdom._revoltFastAIUntil = world.day + 30;
+        newKingdom._revoltCreatedDay = world.day;
+
         // Clear revolt state
         delete town._activeRevolt;
         delete town._revoltBlocked;
@@ -12264,7 +12337,8 @@
             newKingdom: groupName,
             parentKingdom: parentK ? parentK.name : 'unknown',
             newKing: newKing ? (newKing.firstName || newKing.name) : null,
-            effects: ['New kingdom created', 'At war with ' + (parentK ? parentK.name : 'parent'), 'Town independence']
+            effects: ['New kingdom created', 'At war with ' + (parentK ? parentK.name : 'parent'), 'Town independence',
+                _goldPlunder > 0 ? 'Plundered ' + _goldPlunder + 'g' : 'No gold plundered']
         }, 'sensitive_intel');
 
         // Check if parent kingdom has 0 towns — eliminate if so
@@ -17372,21 +17446,29 @@
             }
         }
 
-        // Apply damage to surviving ships (reduce stats by HP-loss ratio)
-        const applyDamage = function(entries) {
+        // Apply damage to surviving ships (reduce stats by HP-loss ratio) and count casualties
+        var totalAttackerCasualties = 0, totalDefenderCasualties = 0;
+        const applyDamage = function(entries, isAttacker) {
+            var casualties = 0;
             for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
                 if (entry.alive && entry.hp < entry.maxHP) {
                     const hpRatio = entry.hp / entry.maxHP;
                     const reduction = 1 - (1 - hpRatio) * dmgRatio;
+                    const oldSoldiers = entry.ship.soldiers || 10;
                     entry.ship.attack = Math.max(1, Math.floor((entry.ship.attack || 5) * reduction));
                     entry.ship.defense = Math.max(1, Math.floor((entry.ship.defense || 5) * reduction));
-                    entry.ship.soldiers = Math.max(1, Math.floor((entry.ship.soldiers || 10) * reduction));
+                    entry.ship.soldiers = Math.max(1, Math.floor(oldSoldiers * reduction));
+                    casualties += oldSoldiers - entry.ship.soldiers;
+                } else if (!entry.alive) {
+                    // Sunk ship — all soldiers are casualties
+                    casualties += entry.ship.soldiers || 10;
                 }
             }
+            return casualties;
         };
-        applyDamage(aShips);
-        applyDamage(dShips);
+        totalAttackerCasualties = applyDamage(aShips, true);
+        totalDefenderCasualties = applyDamage(dShips, false);
 
         // Remove destroyed ships from kingdom fleets
         const sunkAttackers = aShips.filter(function(s) { return !s.alive; }).map(function(s) { return s.ship.id; });
@@ -17418,13 +17500,16 @@
             defenderShipsSunk: sunkDefenders.length,
             attackerSurvivors: aSurvivors,
             defenderSurvivors: dSurvivors,
+            attackerCasualties: totalAttackerCasualties,
+            defenderCasualties: totalDefenderCasualties,
             rounds: round,
             log: battleLog
         };
 
         // Log the battle
         const summary = attackerK.name + ' vs ' + defenderK.name + ' naval battle: ' +
-            result.rounds + ' rounds, ' + result.attackerShipsSunk + ' vs ' + result.defenderShipsSunk + ' ships sunk';
+            result.rounds + ' rounds, ' + result.attackerShipsSunk + ' vs ' + result.defenderShipsSunk + ' ships sunk, ' +
+            totalAttackerCasualties + ' vs ' + totalDefenderCasualties + ' casualties';
         logEvent(summary, {
             type: 'naval_battle',
             attackerKingdom: attackerK.id,
@@ -18816,7 +18901,13 @@
                 'conspiracy_discovered', 'feast_started', 'court_session', 'law_passed', 'law_repealed',
                 'noble_revolt_execution', 'noble_revolt_stripped', 'battle_result',
                 'kingdom_bankruptcy', 'plague_started', 'plague_ended', 'siege_started', 'siege_ended',
-                'non_aggression_pact', 'royal_marriage'];
+                'non_aggression_pact', 'royal_marriage',
+                'trade_agreement', 'mutual_defense_pact', 'border_accord', 'em_defection',
+                'solo_assassination', 'solo_assassination_failed', 'conspiracy_detected',
+                'conspiracy_assassination', 'conspiracy_coup', 'conspiracy_failed',
+                'revolt_started', 'revolt_victory', 'revolt_suppressed',
+                'noble_punishment', 'noble_execution', 'noble_exile', 'peace_treaty', 'trade_deal',
+                'alliance_dissolved'];
             if (majorTypes.indexOf(details.type) !== -1) {
                 if (!world.majorEventHistory) world.majorEventHistory = [];
                 var _chronicleEntry = { day: world.day, message: msg, details: details };
@@ -18830,8 +18921,8 @@
                     }
                 } catch(e) {}
                 world.majorEventHistory.push(_chronicleEntry);
-                // Cap at 500 entries to prevent unbounded growth
-                while (world.majorEventHistory.length > 500) world.majorEventHistory.shift();
+                // L1: Cap at 1000 entries (raised from 500), rolling delete of oldest
+                while (world.majorEventHistory.length > 1000) world.majorEventHistory.shift();
             }
         }
         // Auto-clear events older than 180 days
@@ -25947,6 +26038,23 @@
             if (world.day % 7 === 0) {
                 for (const k of world.kingdoms) {
                     Engine.tickKingEconomicStrategy(k);
+                }
+            }
+
+            // Treasury spending AI — gold sink for wealthy kingdoms (daily)
+            for (const k of world.kingdoms) {
+                Engine.tickTreasurySpending(k);
+            }
+
+            // Relationship-loyalty monthly link
+            for (const k of world.kingdoms) {
+                Engine.tickNobleRelationshipLoyaltyLink(k);
+            }
+
+            // Inter-kingdom trade deals (per-kingdom interval)
+            if (world.day % 5 === 0) {
+                for (const k of world.kingdoms) {
+                    Engine.tickInterKingdomTrade(k);
                 }
             }
 

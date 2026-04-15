@@ -95,6 +95,7 @@
     var getTentCampDiseaseMod = function(town) { return Engine.getTentCampDiseaseMod(town); };
     var recruitSoldier = function(person, town, kingdom, unitType) { return Engine.recruitSoldier(person, town, kingdom, unitType); };
     var findArmyRoute = function(from, to, kId) { return Engine.findArmyRoute(from, to, kId); };
+    var killPerson = function(person, cause) { return Engine.killPerson(person, cause); };
 
     // ── Noble Army Leader Selection ──
     // King AI picks a minor noble or lord (NOT royal advisor) to lead an army
@@ -830,20 +831,78 @@
                             kingdoms: [k.id, other.id]
                         });
                     } else {
-                        // Trade agreement (40% of events)
-                        const shift = rng.randInt(CONFIG.AGREEMENT_MIN || 5, CONFIG.AGREEMENT_MAX || 12);
-                        k.relations[other.id] = Math.min(100, (k.relations[other.id] || 0) + shift);
-                        other.relations[k.id] = Math.min(100, (other.relations[k.id] || 0) + shift);
-                        logEvent(`Trade agreement between ${k.name} and ${other.name}. Relations improve.`, {
-                            type: 'trade_agreement',
-                            cause: 'Merchants from both kingdoms negotiated favorable trade terms.',
-                            effects: [
-                                'Relations improved by ' + shift + ' points',
-                                'Current relations: ' + Math.round(k.relations[other.id]),
-                                'Trade between the kingdoms may increase'
-                            ],
-                            kingdoms: [k.id, other.id]
-                        });
+                        // L4: Differentiated diplomatic proposals — trade agreements, mutual defense pacts, border accords
+                        var _treatyRoll = rng.random();
+                        if (_treatyRoll < 0.40) {
+                            // TRADE AGREEMENT — deals with goods, tariffs, timed period
+                            var _tradeGoods = ['grain', 'cloth', 'iron', 'wood', 'fish', 'spices', 'salt', 'wine'];
+                            var _tradeGood = rng.pick(_tradeGoods);
+                            var _tradeDuration = rng.randInt(90, 360); // 3 months to 1 year
+                            var _tariffReduction = rng.randInt(10, 40); // percentage tariff reduction
+                            var shift = rng.randInt(CONFIG.AGREEMENT_MIN || 5, CONFIG.AGREEMENT_MAX || 12);
+                            k.relations[other.id] = Math.min(100, (k.relations[other.id] || 0) + shift);
+                            other.relations[k.id] = Math.min(100, (other.relations[k.id] || 0) + shift);
+                            // Store active treaty
+                            if (!k._activeTreaties) k._activeTreaties = [];
+                            if (!other._activeTreaties) other._activeTreaties = [];
+                            var _treaty = { type: 'trade_agreement', partnerId: other.id, good: _tradeGood, tariffReduction: _tariffReduction, startDay: world.day, endDay: world.day + _tradeDuration };
+                            k._activeTreaties.push(_treaty);
+                            other._activeTreaties.push({ type: 'trade_agreement', partnerId: k.id, good: _tradeGood, tariffReduction: _tariffReduction, startDay: world.day, endDay: world.day + _tradeDuration });
+                            logEvent('📦 Trade Agreement: ' + k.name + ' and ' + other.name + ' agree on ' + _tradeGood + ' trade terms for ' + _tradeDuration + ' days.', {
+                                type: 'trade_agreement',
+                                cause: 'Merchants negotiated favorable trade terms for ' + _tradeGood + '.',
+                                effects: [
+                                    'Relations improved by ' + shift + ' points',
+                                    _tariffReduction + '% tariff reduction on ' + _tradeGood,
+                                    'Treaty lasts ' + _tradeDuration + ' days',
+                                    '+0.3 passive relations boost while active'
+                                ],
+                                kingdoms: [k.id, other.id]
+                            });
+                        } else if (_treatyRoll < 0.70) {
+                            // MUTUAL DEFENSE PACT — defensive only (if attacked, partner helps)
+                            var _mdpDuration = rng.randInt(180, 720); // 6 months to 2 years
+                            var shift = rng.randInt(3, 8);
+                            k.relations[other.id] = Math.min(100, (k.relations[other.id] || 0) + shift);
+                            other.relations[k.id] = Math.min(100, (other.relations[k.id] || 0) + shift);
+                            if (!k._activeTreaties) k._activeTreaties = [];
+                            if (!other._activeTreaties) other._activeTreaties = [];
+                            k._activeTreaties.push({ type: 'mutual_defense', partnerId: other.id, startDay: world.day, endDay: world.day + _mdpDuration });
+                            other._activeTreaties.push({ type: 'mutual_defense', partnerId: k.id, startDay: world.day, endDay: world.day + _mdpDuration });
+                            logEvent('🛡️ Mutual Defense Pact: ' + k.name + ' and ' + other.name + ' pledge to defend each other if attacked.', {
+                                type: 'mutual_defense_pact',
+                                cause: 'Both kingdoms see benefit in mutual protection.',
+                                effects: [
+                                    'Relations improved by ' + shift + ' points',
+                                    'If one is attacked (not the aggressor), the other joins the war',
+                                    'Weaker than a full alliance — does not apply if you declare war',
+                                    'Pact lasts ' + _mdpDuration + ' days',
+                                    '+0.2 passive relations boost while active'
+                                ],
+                                kingdoms: [k.id, other.id]
+                            });
+                        } else {
+                            // BORDER ACCORD — allows passage even if laws prohibit
+                            var _baDuration = rng.randInt(90, 360);
+                            var shift = rng.randInt(2, 6);
+                            k.relations[other.id] = Math.min(100, (k.relations[other.id] || 0) + shift);
+                            other.relations[k.id] = Math.min(100, (other.relations[k.id] || 0) + shift);
+                            if (!k._activeTreaties) k._activeTreaties = [];
+                            if (!other._activeTreaties) other._activeTreaties = [];
+                            k._activeTreaties.push({ type: 'border_accord', partnerId: other.id, startDay: world.day, endDay: world.day + _baDuration });
+                            other._activeTreaties.push({ type: 'border_accord', partnerId: k.id, startDay: world.day, endDay: world.day + _baDuration });
+                            logEvent('🤝 Border Accord: ' + k.name + ' and ' + other.name + ' open their borders to each other\'s citizens.', {
+                                type: 'border_accord',
+                                cause: 'Diplomatic negotiations opened the borders.',
+                                effects: [
+                                    'Relations improved by ' + shift + ' points',
+                                    'Citizens may cross borders freely even if immigration laws prohibit it',
+                                    'Accord lasts ' + _baDuration + ' days',
+                                    '+0.1 passive relations boost while active'
+                                ],
+                                kingdoms: [k.id, other.id]
+                            });
+                        }
                     }
                 }
             }
@@ -907,7 +966,7 @@
                     : (CONFIG.WAR_EVAL_MAX_INTERVAL || 90));
             if (!k._lastWarEvalDay) k._lastWarEvalDay = world.day - _warEvalInterval;
 
-            // ---- War declaration (original + casus belli enhanced) ----
+            // ---- War declaration (original + casus belli enhanced + C3 improvements) ----
             for (const other of world.kingdoms) {
                 if (other.id === k.id || (k.atWar && k.atWar.has(other.id))) continue;
                 // Enforce peace treaties
@@ -916,7 +975,8 @@
                 if (other.warImmunityUntil && world.day < other.warImmunityUntil) continue;
                 const rel = k.relations[other.id] || 0;
                 let warChance = 0;
-                if (rel < CONFIG.RELATION_WAR_THRESHOLD) {
+                // C3: Lowered from CONFIG.RELATION_WAR_THRESHOLD (-20) to -30
+                if (rel < -30) {
                     warChance = CONFIG.WAR_CHANCE_PER_DAY;
                     // Marriage alliance halves war chance
                     if (k._marriageAlliances && k._marriageAlliances[other.id] && world.day < k._marriageAlliances[other.id]) {
@@ -930,6 +990,29 @@
                 var _cbExhMax = CONFIG.CASUS_BELLI_EXHAUSTION_MAX || 30;
                 if (_cbScore > 40 && rel < _cbWarThreshold && (k.warExhaustion || 0) < _cbExhMax) {
                     warChance += 0.015 * (_cbScore / 100); // Up to +1.5% daily from strong casus belli
+                }
+
+                // C3: Opportunity war — attack neighbors who are already at war with someone else
+                if (other.atWar && other.atWar.size > 0 && rel < 0) {
+                    var _kp2 = k.kingPersonality || {};
+                    if (_kp2.ambition === 'ambitious' || _kp2.temperament === 'aggressive' || _kp2.militarism === 'warlike') {
+                        var _oppStr = computeMilitaryStrength(k);
+                        var _oppTheirStr = computeMilitaryStrength(other);
+                        // C3: Lower military advantage threshold to 1.2x (was 2x for aggressive targeting)
+                        if (_oppStr > _oppTheirStr * 1.2 && (k.warExhaustion || 0) < 20) {
+                            warChance += 0.015; // Significant opportunity war bonus
+                        }
+                    }
+                }
+
+                // C3: Aggressive kings with 0 exhaustion and military superiority
+                var _kpAgg = k.kingPersonality || {};
+                if ((_kpAgg.militarism === 'warlike' || _kpAgg.militarism === 'aggressive') && (k.warExhaustion || 0) === 0) {
+                    var _aggStr = computeMilitaryStrength(k);
+                    var _aggTheirStr = computeMilitaryStrength(other);
+                    if (_aggStr > _aggTheirStr * 1.2 && rel < 0) {
+                        warChance += 0.008; // Aggressive kings are always looking for fights
+                    }
                 }
 
                 // C2: Periodic war evaluation — aggressive kings evaluate weak neighbors
@@ -970,12 +1053,22 @@
                 // King mood affects war willingness
                 var _wMood = getKingMoodModifiers(k);
                 warChance *= (_wMood.warMod || 1.0);
+                // Treasury spending AI: war eagerness from wealthy kingdoms
+                if (k._warEagerness && k._warEagerness > 0) {
+                    warChance += k._warEagerness * 0.001; // +0.1% per point
+                    k._warEagerness = Math.max(0, k._warEagerness - 0.5); // decay
+                }
+                // Big treasury bonus: wealthy kingdoms are more willing to go to war
+                if ((k.gold || 0) > 100000 && rel < 0) {
+                    var _treasuryWarBonus = Math.min(0.02, ((k.gold || 0) - 100000) / 10000000);
+                    warChance += _treasuryWarBonus;
+                }
                 if (warChance > 0 && rng.chance(warChance)) {
                     // Scout enemy strength before declaring war (M-4)
                     var scoutedEnemy = scoutEnemyStrength(k, other);
                     var ourStrength = computeMilitaryStrength(k);
-                    // Only declare if we think we're at least 70% of their strength
-                    if (ourStrength >= scoutedEnemy * 0.7) {
+                    // C3: Lower scouting threshold — declare if we're at least 60% of their strength (was 70%)
+                    if (ourStrength >= scoutedEnemy * 0.6) {
                         // Reset war eval timer
                         k._lastWarEvalDay = world.day;
                         // Clear casus belli on war declaration
@@ -1009,8 +1102,53 @@
             }
 
             // ---- Alliance formation (relations >= threshold) ----
+            // THREAT-BASED ALLIANCES: Small kingdoms ally against growing large ones
             if (!k.alliances) k.alliances = new Set();
             if (!k.allianceMeta) k.allianceMeta = {};
+
+            // Check if any kingdom is much larger/stronger — seek alliances against them
+            var kStrength = computeMilitaryStrength(k);
+            var kTerritorySize = k.territories ? k.territories.size : 0;
+            for (const threat of world.kingdoms) {
+                if (threat.id === k.id) continue;
+                if (k.alliances.has(threat.id)) continue; // already allied
+                var threatStr = computeMilitaryStrength(threat);
+                var threatSize = threat.territories ? threat.territories.size : 0;
+                var threatGold = threat.gold || 0;
+                // Is this kingdom a threat? Much stronger military, more territory, or much wealthier
+                var isThreat = (threatStr > kStrength * 1.8) || (threatSize > kTerritorySize * 2 && threatSize >= 4) || (threatGold > (k.gold || 0) * 3 && threatGold > 100000);
+                if (!isThreat) continue;
+                // Look for other small kingdoms to ally with against this threat
+                for (const ally of world.kingdoms) {
+                    if (ally.id === k.id || ally.id === threat.id) continue;
+                    if (k.alliances.has(ally.id)) continue; // already allied
+                    if (k.atWar.has(ally.id)) continue; // at war
+                    var allyRel = k.relations[ally.id] || 0;
+                    // Lower threshold for threat-based alliances (rel >= 15 instead of 50)
+                    if (allyRel < 15) continue;
+                    var allyStr = computeMilitaryStrength(ally);
+                    var allySize = ally.territories ? ally.territories.size : 0;
+                    // Ally must also be threatened by same kingdom
+                    var allyThreatened = (threatStr > allyStr * 1.5) || (threatSize > allySize * 1.5);
+                    if (!allyThreatened) continue;
+                    // Chance based on threat severity
+                    var threatAllianceChance = 0.005 + (threatStr / (kStrength + 1)) * 0.005;
+                    if (rng.chance(threatAllianceChance)) {
+                        if (!ally.alliances) ally.alliances = new Set();
+                        if (!ally.allianceMeta) ally.allianceMeta = {};
+                        k.alliances.add(ally.id);
+                        ally.alliances.add(k.id);
+                        k.allianceMeta[ally.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'threat_response' };
+                        ally.allianceMeta[k.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'threat_response' };
+                        logEvent('🛡️ ' + k.name + ' and ' + ally.name + ' form a defensive alliance against the growing power of ' + threat.name + '!', {
+                            type: 'alliance_formed', cause: threat.name + ' military strength and territory threaten smaller kingdoms',
+                            effects: ['Defensive pact formed against shared threat', 'Both kingdoms will defend each other if attacked'],
+                            kingdoms: [k.id, ally.id]
+                        });
+                        break; // one alliance per tick
+                    }
+                }
+            }
             for (const other of world.kingdoms) {
                 if (other.id === k.id) continue;
                 if (!other.alliances) other.alliances = new Set();
@@ -1021,6 +1159,23 @@
                 var allianceRelThresh = CONFIG.RELATION_ALLIANCE_THRESHOLD;
                 if (_aMood.warMod < 0.8) allianceRelThresh -= 10; // fearful/grieving — more eager for allies
                 else if (_aMood.warMod > 1.5) allianceRelThresh += 5; // wrathful/ambitious — picky about allies
+                // H3: Shared enemy bonus — kingdoms fighting the same enemy get relation boost
+                if (k.atWar && k.atWar.size > 0 && other.atWar && other.atWar.size > 0) {
+                    var _sharedEnemy = false;
+                    k.atWar.forEach(function(warTarget) {
+                        if (other.atWar.has(warTarget)) _sharedEnemy = true;
+                    });
+                    if (_sharedEnemy) {
+                        allianceRelThresh -= 15; // Much easier to ally when fighting same enemy
+                        // Also boost relations between kingdoms with shared enemies
+                        k.relations[other.id] = (k.relations[other.id] || 0) + rng.randFloat(0.5, 2.0);
+                    }
+                }
+                // H3: Diplomatic kings form alliances easier
+                var _kDip = k.kingPersonality || {};
+                if (_kDip.diplomatic === 'diplomatic' || (_kDip.diplomatic || 0) > 60) {
+                    allianceRelThresh -= 5;
+                }
                 if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
                     // Form alliance — most alliances are defensive by default
                     var newAllianceType = rel >= 90 && rng.chance(0.25) ? 'offensive' : 'defensive';
@@ -1143,6 +1298,31 @@
                     // Slow natural fatigue recovery during peaceful times
                     if (k.atWar.size === 0 && meta.fatigue > 0) {
                         meta.fatigue = Math.max(0, meta.fatigue - 0.1);
+                    }
+                }
+            }
+
+            // ---- L4: Active Treaty Management — passive bonuses + expiration ----
+            if (k._activeTreaties && k._activeTreaties.length > 0) {
+                for (var _ati = k._activeTreaties.length - 1; _ati >= 0; _ati--) {
+                    var _tr = k._activeTreaties[_ati];
+                    // Expire old treaties
+                    if (world.day >= _tr.endDay) {
+                        k._activeTreaties.splice(_ati, 1);
+                        continue;
+                    }
+                    // Cancel treaties with kingdoms we're at war with
+                    if (k.atWar && k.atWar.has(_tr.partnerId)) {
+                        k._activeTreaties.splice(_ati, 1);
+                        continue;
+                    }
+                    // Passive relations boost (daily tiny boost while active)
+                    var _passiveBoost = 0;
+                    if (_tr.type === 'trade_agreement') _passiveBoost = 0.01; // +0.3/month
+                    else if (_tr.type === 'mutual_defense') _passiveBoost = 0.007; // +0.2/month
+                    else if (_tr.type === 'border_accord') _passiveBoost = 0.003; // +0.1/month
+                    if (_passiveBoost > 0) {
+                        k.relations[_tr.partnerId] = Math.min(100, (k.relations[_tr.partnerId] || 0) + _passiveBoost);
                     }
                 }
             }
@@ -1540,6 +1720,17 @@
                 tickKingFamilyAI(k);
             }
 
+            // ---- Revolt kingdom fast AI mode: every 5 days for first 30 days ----
+            if (k._revoltFastAIUntil && world.day <= k._revoltFastAIUntil && world.day % 5 === 0 && !_playerIsKingHere) {
+                // Run king decisions more frequently so new revolt kingdom can respond to threats
+                if (world.day % CONFIG.DAYS_PER_SEASON !== 0) { // skip if already ran this tick
+                    tickKingMood(k);
+                    tickKingDecisions(k);
+                }
+                // Revolt survival AI: prioritize defense, diplomacy, and economic stability
+                _tickRevoltSurvivalAI(k);
+            }
+
             // ---- Kingdom purchasing from market (daily) ----
             // Player-king controls purchasing manually
             if (!_playerIsKingHere) {
@@ -1741,6 +1932,38 @@
         setKingMood(b, 'fearful', 'war declared by ' + a.name);
         if (a.kingPersonality && a.kingPersonality.courage === 'brave') {
             setKingMood(a, 'ambitious', 'declared war on ' + b.name);
+        }
+
+        // L4: Mutual defense pact activation — defender's MDP partners join the war
+        if (b._activeTreaties) {
+            var _mdpRng = world.rng;
+            for (var _mdpi = 0; _mdpi < b._activeTreaties.length; _mdpi++) {
+                var _mdp = b._activeTreaties[_mdpi];
+                if (_mdp.type !== 'mutual_defense') continue;
+                if (world.day >= _mdp.endDay) continue;
+                var _mdpPartner = findKingdom(_mdp.partnerId);
+                if (!_mdpPartner || _mdpPartner.id === a.id) continue;
+                if (_mdpPartner.atWar && _mdpPartner.atWar.has(a.id)) continue; // already at war
+                // Partner evaluates — personality and strength factor
+                var _mdpPers = _mdpPartner.kingPersonality || {};
+                var _honorChance = 0.65; // 65% base chance to honor defense pact
+                if (_mdpPers.loyalty === 'loyal' || (_mdpPers.loyalty || 50) > 65) _honorChance += 0.15;
+                if (_mdpPers.courage === 'cowardly' || (_mdpPers.courage || 50) < 30) _honorChance -= 0.25;
+                var _mdpStr = computeMilitaryStrength(_mdpPartner);
+                var _aggStr = computeMilitaryStrength(a);
+                if (_mdpStr < _aggStr * 0.3) _honorChance -= 0.3; // too weak to help
+                if (_mdpRng.chance(Math.max(0.1, _honorChance))) {
+                    _mdpPartner.atWar.add(a.id);
+                    a.atWar.add(_mdpPartner.id);
+                    _mdpPartner._lastWarStartDay = world.day;
+                    logEvent('🛡️ ' + _mdpPartner.name + ' honors their mutual defense pact with ' + b.name + ' and declares war on ' + a.name + '!', {
+                        type: 'war_declared',
+                        cause: 'Mutual defense pact with ' + b.name + ' triggered by ' + a.name + '\'s aggression.',
+                        effects: [_mdpPartner.name + ' joins the war against ' + a.name],
+                        kingdoms: [_mdpPartner.id, a.id]
+                    });
+                }
+            }
         }
     }
 
@@ -5462,6 +5685,899 @@
         }
     }
 
+    // ========================================================
+    // §17G-B  TREASURY SPENDING AI — GOLD SINK SYSTEM
+    // ========================================================
+    // When kingdom treasuries grow large (>50K), AI kings aggressively spend
+    // on recruitment, buildings, infrastructure, expansion, and war preparation.
+    // Spending is personality-driven and creates organic price inflation.
+
+    function tickTreasurySpending(k) {
+        if (!world || !k || !k.territories) return;
+        var rng = world.rng;
+        var p = k.kingPersonality || {};
+        var treasury = k.gold || 0;
+        var startingGold = k._startingGold || 10000;
+
+        // Skip player-king kingdoms (player manages spending manually)
+        if (typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id) return;
+
+        // Only activate when treasury is meaningfully large
+        if (treasury < 20000) return;
+
+        // Spending tiers — higher treasury = more aggressive spending
+        var spendingPressure = 0; // 0-1 scale
+        if (treasury >= 200000) spendingPressure = 1.0;
+        else if (treasury >= 150000) spendingPressure = 0.85;
+        else if (treasury >= 100000) spendingPressure = 0.65;
+        else if (treasury >= 75000) spendingPressure = 0.45;
+        else if (treasury >= 50000) spendingPressure = 0.3;
+        else if (treasury >= 30000) spendingPressure = 0.18;
+        else spendingPressure = 0.1;
+
+        // Personality modifiers to spending eagerness
+        var spendMod = 1.0;
+        if (p.ambition === 'ambitious') spendMod += 0.3;
+        else if (p.ambition === 'lazy') spendMod -= 0.4;
+        if (p.greed === 'generous') spendMod += 0.2;
+        else if (p.greed === 'greedy') spendMod -= 0.3;
+        else if (p.greed === 'corrupt') spendMod -= 0.15; // corrupt hoard but also embezzle
+        if (p.intelligence === 'brilliant') spendMod += 0.15;
+        else if (p.intelligence === 'foolish') spendMod -= 0.2;
+        if (p.courage === 'brave') spendMod += 0.1;
+
+        var effectivePressure = Math.max(0.05, Math.min(1.0, spendingPressure * spendMod));
+
+        // How much to spend this tick (percentage of treasury above reserve)
+        var fs = Engine.getKingdomFinancialState(k);
+        var reserveFloor = Math.max(fs.minReserve, 5000);
+        var spendableGold = Math.max(0, treasury - reserveFloor);
+        if (spendableGold < 500) return;
+
+        // Budget per category — personality determines allocation
+        var militaryWeight = 0.25, buildingWeight = 0.25, infraWeight = 0.2, expansionWeight = 0.15, warWeight = 0.15;
+        if (p.militarism === 'warlike' || p.militarism === 'aggressive') {
+            militaryWeight = 0.40; warWeight = 0.25; buildingWeight = 0.15; infraWeight = 0.10; expansionWeight = 0.10;
+        } else if (p.militarism === 'defensive') {
+            militaryWeight = 0.20; warWeight = 0.05; buildingWeight = 0.30; infraWeight = 0.25; expansionWeight = 0.20;
+        }
+        if (p.ambition === 'ambitious') { expansionWeight += 0.10; buildingWeight -= 0.05; infraWeight -= 0.05; }
+        if (p.greed === 'corrupt') { militaryWeight += 0.1; buildingWeight -= 0.1; } // corrupt kings build armies
+        if (p.intelligence === 'brilliant' || p.intelligence === 'clever') { infraWeight += 0.05; buildingWeight += 0.05; militaryWeight -= 0.05; warWeight -= 0.05; }
+
+        // Normalize weights
+        var totalWeight = militaryWeight + buildingWeight + infraWeight + expansionWeight + warWeight;
+        militaryWeight /= totalWeight; buildingWeight /= totalWeight; infraWeight /= totalWeight; expansionWeight /= totalWeight; warWeight /= totalWeight;
+
+        // Daily spending cap: spend 3-12% of spendable gold per tick based on pressure
+        var dailyBudget = Math.floor(spendableGold * effectivePressure * rng.randFloat(0.03, 0.12));
+        dailyBudget = Math.min(dailyBudget, Math.floor(treasury * 0.05)); // never more than 5% of total treasury per day
+        if (dailyBudget < 30) return;
+
+        var spent = 0;
+        var territories = Array.from(k.territories);
+        var atWar = k.atWar && k.atWar.size > 0;
+
+        // Track spending for price inflation (monthly) and cumulative totals
+        if (!k._treasurySpending) k._treasurySpending = { total: 0, military: 0, buildings: 0, infra: 0, lastDay: 0 };
+        if (!k._treasurySpendingTotal) k._treasurySpendingTotal = { total: 0, military: 0, buildings: 0, infra: 0 };
+        if (world.day - k._treasurySpending.lastDay > 30) {
+            // Reset monthly tracking
+            k._treasurySpending = { total: 0, military: 0, buildings: 0, infra: 0, lastDay: world.day };
+        }
+
+        // Each category can access up to 2.5x its weight share of the budget, capped by remaining
+        // This allows meaningful purchases (buildings cost 300-2000g)
+        var catBudget = function(weight) { return Math.min(Math.floor(dailyBudget * weight * 2.5), dailyBudget - spent); };
+
+        // ═══════════════════════════════════════════
+        // 1. MILITARY SPENDING — Recruitment & Equipment
+        // ═══════════════════════════════════════════
+        var milBudget = catBudget(militaryWeight);
+        if (milBudget > 30 && rng.chance(0.4 + effectivePressure * 0.4)) {
+            var targetGarrison = 15 + Math.floor(effectivePressure * 25); // 15-40 per town
+            if (atWar) targetGarrison = Math.floor(targetGarrison * 1.5);
+            if (p.militarism === 'warlike') targetGarrison = Math.floor(targetGarrison * 1.3);
+
+            // Recruit soldiers in understaffed towns
+            var milSpent = 0;
+            var recruitCost = CONFIG.SOLDIER_RECRUIT_COST || 50;
+            for (var mi = 0; mi < territories.length && milSpent < milBudget; mi++) {
+                var mTown = findTown(territories[mi]);
+                if (!mTown || mTown.isWilderness) continue;
+                var garrison = mTown.garrison || 0;
+                if (garrison >= targetGarrison) continue;
+                var toRecruit = Math.min(
+                    Math.floor((milBudget - milSpent) / recruitCost),
+                    targetGarrison - garrison,
+                    5 // max 5 per town per tick
+                );
+                if (toRecruit <= 0) continue;
+
+                // Find eligible people
+                var townPeople = getPeopleInTown(mTown.id);
+                var recruited = 0;
+                for (var ri = 0; ri < townPeople.length && recruited < toRecruit; ri++) {
+                    var rPerson = townPeople[ri];
+                    if (!rPerson.alive || rPerson.age < (CONFIG.COMING_OF_AGE || 16) || rPerson.age > 50) continue;
+                    if (rPerson.occupation !== 'laborer' && rPerson.occupation !== 'none') continue;
+
+                    var uType = 'infantry';
+                    var sup = mTown.market.supply || {};
+                    if ((sup.horses || 0) > 0 && (sup.saddles || 0) > 0 && rng.chance(0.15)) uType = 'cavalry';
+                    else if ((sup.bows || 0) > 0 && rng.chance(0.25)) uType = 'archer';
+
+                    recruitSoldier(rPerson, mTown, k, uType);
+                    k.gold -= recruitCost;
+                    milSpent += recruitCost;
+                    recruited++;
+                }
+            }
+
+            // Buy military equipment from markets
+            var equipBudget = Math.min(milBudget - milSpent, Math.floor(milBudget * 0.4));
+            if (equipBudget > 20) {
+                var milGoods = ['swords', 'armor', 'bows', 'arrows', 'shields'];
+                if (p.intelligence === 'brilliant' || p.intelligence === 'clever') {
+                    milGoods = milGoods.concat(['swords_good', 'armor_good', 'bows_good']);
+                }
+                for (var eti = 0; eti < territories.length && equipBudget > 10; eti++) {
+                    var eTown = findTown(territories[eti]);
+                    if (!eTown || !eTown.market || !eTown.market.supply) continue;
+                    for (var egi = 0; egi < milGoods.length && equipBudget > 5; egi++) {
+                        var eGood = milGoods[egi];
+                        var eAvail = eTown.market.supply[eGood] || 0;
+                        if (eAvail <= 1) continue;
+                        var ePrice = getMarketPrice(eTown, eGood) || 20;
+                        var eToBuy = Math.min(Math.floor(equipBudget / ePrice), eAvail - 1, 5);
+                        if (eToBuy <= 0) continue;
+                        var eCost = eToBuy * ePrice;
+                        eTown.market.supply[eGood] -= eToBuy;
+                        eTown.market.demand[eGood] = (eTown.market.demand[eGood] || 0) + eToBuy;
+                        k.gold -= eCost;
+                        if (!k.militaryStockpile) k.militaryStockpile = {};
+                        k.militaryStockpile[eGood] = (k.militaryStockpile[eGood] || 0) + eToBuy;
+                        equipBudget -= eCost;
+                        milSpent += eCost;
+                    }
+                }
+            }
+            spent += milSpent;
+            k._treasurySpending.military += milSpent;
+            k._treasurySpendingTotal.military += milSpent;
+        }
+
+        // ═══════════════════════════════════════════
+        // 2. BUILDING CONSTRUCTION — Economy & Defense
+        // ═══════════════════════════════════════════
+        var bldBudget = catBudget(buildingWeight);
+        if (bldBudget > 50 && rng.chance(0.25 + effectivePressure * 0.35)) {
+            var bldSpent = 0;
+            // Prioritize: clinics/hospitals > economic buildings > defensive buildings
+            var buildPriorities = [];
+            for (var bti = 0; bti < territories.length; bti++) {
+                var bTown = findTown(territories[bti]);
+                if (!bTown) continue;
+                var maxSlots = (CONFIG.TOWN_CATEGORIES[bTown.category] || {}).maxBuildingSlots || 10;
+                if (bTown.buildings.length >= maxSlots) continue;
+                var hasTypes = {};
+                for (var bhi = 0; bhi < bTown.buildings.length; bhi++) {
+                    hasTypes[bTown.buildings[bhi].type] = true;
+                }
+
+                // Medical buildings — high priority if population > 100
+                if ((bTown.population || 0) > 100 && !hasTypes['clinic'] && !hasTypes['hospital']) {
+                    buildPriorities.push({ town: bTown, type: 'clinic', priority: 100 });
+                }
+                if ((bTown.population || 0) > 300 && hasTypes['clinic'] && !hasTypes['hospital']) {
+                    buildPriorities.push({ town: bTown, type: 'hospital', priority: 90 });
+                }
+
+                // Defensive buildings — barracks, watchtower, walls
+                if (!hasTypes['barracks'] && (bTown.population || 0) > 80) {
+                    buildPriorities.push({ town: bTown, type: 'barracks', priority: 70 });
+                }
+
+                // Economic buildings based on culture
+                var culture = k.culture || 'balanced';
+                var econBuildings = [];
+                if (culture === 'military') econBuildings = ['blacksmith', 'armorer', 'fletcher', 'smelter'];
+                else if (culture === 'mercantile') econBuildings = ['warehouse', 'tailor', 'market_stall', 'jeweler'];
+                else if (culture === 'industrial') econBuildings = ['brick_kiln', 'toolsmith', 'smelter', 'sawmill'];
+                else if (culture === 'agricultural') econBuildings = ['smokehouse', 'pasture', 'pig_farm', 'bakery'];
+                else econBuildings = ['bakery', 'blacksmith', 'sawmill', 'smelter', 'warehouse'];
+
+                for (var ebi = 0; ebi < econBuildings.length; ebi++) {
+                    if (!hasTypes[econBuildings[ebi]]) {
+                        buildPriorities.push({ town: bTown, type: econBuildings[ebi], priority: 50 + ebi });
+                    }
+                }
+            }
+
+            // Sort by priority descending
+            buildPriorities.sort(function(a, b) { return b.priority - a.priority; });
+
+            // Try to build top priorities
+            for (var bpi = 0; bpi < buildPriorities.length && bldSpent < bldBudget; bpi++) {
+                var bp = buildPriorities[bpi];
+                var bt = findBuildingType(bp.type);
+                if (!bt) continue;
+                var bCost = (bt.cost || 0);
+                if (bCost > bldBudget - bldSpent) continue;
+                if (bCost > k.gold * 0.15) continue; // don't spend >15% on one building
+                if (kingdomBuild(k, bp.town, bp.type, rng)) {
+                    bldSpent += bCost;
+                    logEvent('🏗️ ' + k.name + ' invests treasury surplus into a ' + (bt.name || bp.type) + ' in ' + bp.town.name + '.', {
+                        type: 'treasury_spending', kingdomId: k.id,
+                        cause: 'Large treasury drives kingdom investment',
+                        effects: ['New ' + (bt.name || bp.type) + ' in ' + bp.town.name, 'Treasury -' + bCost + 'g']
+                    });
+                }
+            }
+            spent += bldSpent;
+            k._treasurySpending.buildings += bldSpent;
+            k._treasurySpendingTotal.buildings += bldSpent;
+        }
+
+        // ═══════════════════════════════════════════
+        // 3. INFRASTRUCTURE — Roads, Docks, Ships, Walls
+        // ═══════════════════════════════════════════
+        var infraBudget = catBudget(infraWeight);
+        if (infraBudget > 50 && rng.chance(0.2 + effectivePressure * 0.3)) {
+            var infraSpent = 0;
+
+            // 3a. Road quality upgrades
+            if (rng.chance(0.4)) {
+                var kRoads = world.roads.filter(function(r) {
+                    var ft = findTown(r.fromTownId);
+                    return ft && ft.kingdomId === k.id && r.quality < 3;
+                });
+                var upgradeCount = Math.min(kRoads.length, Math.floor(effectivePressure * 3) + 1);
+                for (var rui = 0; rui < upgradeCount && infraSpent < infraBudget; rui++) {
+                    var road = rng.pick(kRoads);
+                    var roadCost = 150 + (road.quality * 100); // escalating cost
+                    if (roadCost <= infraBudget - infraSpent && k.gold >= roadCost) {
+                        road.quality++;
+                        k.gold -= roadCost;
+                        infraSpent += roadCost;
+                    }
+                }
+            }
+
+            // 3b. Build docks at coastal towns without them
+            if (rng.chance(0.3)) {
+                for (var dti = 0; dti < territories.length && infraSpent < infraBudget; dti++) {
+                    var dTown = findTown(territories[dti]);
+                    if (!dTown || dTown.isPort) continue;
+                    // Check if town is coastal (has water nearby)
+                    var isCoastal = false;
+                    if (dTown.terrainType === 'coast' || dTown.terrain === 'coast') isCoastal = true;
+                    if (!isCoastal && world.seaRoutes) {
+                        for (var sri = 0; sri < world.seaRoutes.length; sri++) {
+                            if (world.seaRoutes[sri].fromTownId === dTown.id || world.seaRoutes[sri].toTownId === dTown.id) {
+                                isCoastal = true; break;
+                            }
+                        }
+                    }
+                    if (!isCoastal) continue;
+                    var dockCost = 500;
+                    if (dockCost <= infraBudget - infraSpent && k.gold >= dockCost) {
+                        dTown.isPort = true;
+                        if (!dTown.buildings.some(function(b) { return b.type === 'dock'; })) {
+                            dTown.buildings.push({ type: 'dock', level: 1, ownerId: null, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
+                        }
+                        k.gold -= dockCost;
+                        infraSpent += dockCost;
+                        logEvent('⚓ ' + k.name + ' builds a dock at ' + dTown.name + ', opening it for sea trade!', {
+                            type: 'treasury_spending', kingdomId: k.id,
+                            effects: [dTown.name + ' is now a port town', 'Treasury -' + dockCost + 'g']
+                        });
+                    }
+                }
+            }
+
+            // 3c. Commission trading ships at ports
+            if (rng.chance(0.2) && infraSpent < infraBudget) {
+                for (var sti = 0; sti < territories.length && infraSpent < infraBudget; sti++) {
+                    var sTown = findTown(territories[sti]);
+                    if (!sTown || !sTown.isPort) continue;
+                    var shipCost = 800 + Math.floor(rng.random() * 400); // 800-1200g for a trading ship
+                    if (shipCost <= infraBudget - infraSpent && k.gold >= shipCost) {
+                        if (!k._tradingShips) k._tradingShips = 0;
+                        if (k._tradingShips < 5 + territories.length) {
+                            k._tradingShips++;
+                            k.gold -= shipCost;
+                            infraSpent += shipCost;
+                            logEvent('⛵ ' + k.name + ' commissions a new trading ship at ' + sTown.name + '!', {
+                                type: 'treasury_spending', kingdomId: k.id,
+                                effects: ['Kingdom fleet +1 trading ship', 'Treasury -' + shipCost + 'g']
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 3d. Wall upgrades for towns
+            if (rng.chance(0.25) && infraSpent < infraBudget) {
+                for (var wti = 0; wti < territories.length && infraSpent < infraBudget; wti++) {
+                    var wTown = findTown(territories[wti]);
+                    if (!wTown) continue;
+                    var wallLevel = wTown.wallLevel || 0;
+                    if (wallLevel >= 3) continue;
+                    var wallCost = 300 + wallLevel * 500; // escalating
+                    if (wallCost <= infraBudget - infraSpent && k.gold >= wallCost) {
+                        wTown.wallLevel = wallLevel + 1;
+                        k.gold -= wallCost;
+                        infraSpent += wallCost;
+                        logEvent('🧱 ' + k.name + ' upgrades walls in ' + wTown.name + ' to level ' + wTown.wallLevel + '!', {
+                            type: 'treasury_spending', kingdomId: k.id,
+                            effects: ['Town defense improved', 'Treasury -' + wallCost + 'g']
+                        });
+                    }
+                }
+            }
+
+            spent += infraSpent;
+            k._treasurySpending.infra += infraSpent;
+            k._treasurySpendingTotal.infra += infraSpent;
+        }
+
+        // ═══════════════════════════════════════════
+        // 4. EXPANSION — Outpost→Village, New Territory Claims
+        // ═══════════════════════════════════════════
+        var expBudget = catBudget(expansionWeight);
+        if (expBudget > 100 && rng.chance(0.12 + effectivePressure * 0.2)) {
+            var expSpent = 0;
+
+            // 4a. Boost small towns — invest in prosperity to help them grow
+            for (var xti = 0; xti < territories.length && expSpent < expBudget; xti++) {
+                var xTown = findTown(territories[xti]);
+                if (!xTown) continue;
+                // Invest in towns with low prosperity to boost them
+                if ((xTown.prosperity || 50) < 60 && (xTown.population || 0) > 20) {
+                    var investCost = 200 + Math.floor(rng.random() * 300);
+                    if (investCost <= expBudget - expSpent && k.gold >= investCost) {
+                        xTown.prosperity = Math.min(100, (xTown.prosperity || 50) + rng.randInt(3, 8));
+                        xTown.happiness = Math.min(100, (xTown.happiness || 50) + 2);
+                        k.gold -= investCost;
+                        expSpent += investCost;
+                        // Distribute some gold as wages to townsfolk
+                        distributeConstructionWages(xTown.id, investCost, rng);
+                        logEvent('💰 ' + k.name + ' invests ' + investCost + 'g in ' + xTown.name + ' development!', {
+                            type: 'treasury_spending', kingdomId: k.id,
+                            effects: ['Prosperity boosted in ' + xTown.name, 'Treasury -' + investCost + 'g']
+                        });
+                    }
+                }
+            }
+
+            // 4b. Immigration incentives for underpopulated towns
+            if (expSpent < expBudget && rng.chance(0.3)) {
+                for (var iti = 0; iti < territories.length && expSpent < expBudget; iti++) {
+                    var iTown = findTown(territories[iti]);
+                    if (!iTown) continue;
+                    var popCap = ((CONFIG.TOWN_CATEGORIES[iTown.category] || {}).popCap) || (CONFIG.TOWN_POP_CAPS ? CONFIG.TOWN_POP_CAPS[iTown.category] : 200) || 200;
+                    if ((iTown.population || 0) < popCap * 0.5) {
+                        var immCost = 150;
+                        if (immCost <= expBudget - expSpent && k.gold >= immCost) {
+                            // Attract 1-3 settlers
+                            var settlers = rng.randInt(1, 3);
+                            iTown.population = Math.min(popCap, (iTown.population || 0) + settlers);
+                            k.gold -= immCost;
+                            expSpent += immCost;
+                        }
+                    }
+                }
+            }
+
+            spent += expSpent;
+        }
+
+        // ═══════════════════════════════════════════
+        // 5. WAR PREPARATION — Stockpiling & Aggression
+        // ═══════════════════════════════════════════
+        var warBudget = catBudget(warWeight);
+        if (warBudget > 100) {
+            // If at war: boost recruitment and offensive spending
+            if (atWar && rng.chance(0.4 + effectivePressure * 0.3)) {
+                // Extra wartime recruitment — big treasury means bigger armies
+                var warRecruit = Math.min(Math.floor(warBudget / (CONFIG.SOLDIER_RECRUIT_COST || 50)), 5);
+                var warRecruited = 0;
+                for (var wri = 0; wri < territories.length && warRecruited < warRecruit; wri++) {
+                    var wrTown = findTown(territories[wri]);
+                    if (!wrTown || wrTown.isWilderness) continue;
+                    var wrPeople = getPeopleInTown(wrTown.id);
+                    for (var wrpi = 0; wrpi < wrPeople.length && warRecruited < warRecruit; wrpi++) {
+                        var wrP = wrPeople[wrpi];
+                        if (!wrP.alive || wrP.age < (CONFIG.COMING_OF_AGE || 16) || wrP.age > 50) continue;
+                        if (wrP.occupation !== 'laborer' && wrP.occupation !== 'none') continue;
+                        recruitSoldier(wrP, wrTown, k, 'infantry');
+                        k.gold -= (CONFIG.SOLDIER_RECRUIT_COST || 50);
+                        warRecruited++;
+                    }
+                }
+                spent += warRecruited * (CONFIG.SOLDIER_RECRUIT_COST || 50);
+            }
+
+            // If NOT at war but treasury huge: evaluate war opportunity
+            if (!atWar && treasury > 100000 && rng.chance(0.02 + effectivePressure * 0.04)) {
+                // Wealthy kingdoms with aggressive/ambitious kings look for targets
+                if (p.militarism === 'warlike' || p.militarism === 'aggressive' || p.ambition === 'ambitious') {
+                    // Flag for war evaluation — boost war eagerness
+                    if (!k._warEagerness) k._warEagerness = 0;
+                    k._warEagerness = Math.min(50, (k._warEagerness || 0) + rng.randInt(2, 8));
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        // 6. NOBLE REACTIONS TO SPENDING
+        // ═══════════════════════════════════════════
+        if (spent > 500 && rng.chance(0.2)) {
+            var nobles = world.people.filter(function(np) {
+                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+            });
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var noble = nobles[ni];
+                var nPers = noble.personality || {};
+                var loyaltyDelta = 0;
+                var relDelta = 0;
+
+                // Military nobles like military spending
+                if (k._treasurySpending.military > spent * 0.3) {
+                    if ((nPers.courage || 50) > 60 || (nPers.ambition || 50) > 65) {
+                        loyaltyDelta += rng.randFloat(0.5, 1.5);
+                        relDelta += rng.randFloat(0.3, 1.0);
+                    } else if ((nPers.warmth || 50) > 70) {
+                        // Peacenik nobles dislike heavy military spending
+                        loyaltyDelta -= rng.randFloat(0.3, 0.8);
+                    }
+                }
+
+                // Infrastructure/building spending is generally liked
+                if (k._treasurySpending.buildings + k._treasurySpending.infra > spent * 0.4) {
+                    loyaltyDelta += rng.randFloat(0.3, 1.0);
+                    if ((nPers.intelligence || 50) > 60) relDelta += rng.randFloat(0.2, 0.8);
+                }
+
+                // Very high spending when kingdom is poor → disapproval
+                if (spent > treasury * 0.05 && (fs.lastSeasonRevenue || 0) < spent * 3) {
+                    if ((nPers.intelligence || 50) > 55) {
+                        loyaltyDelta -= rng.randFloat(0.5, 1.5);
+                        relDelta -= rng.randFloat(0.3, 1.0);
+                    }
+                }
+
+                // Apply
+                if (loyaltyDelta !== 0 && noble.kingLoyalty !== undefined) {
+                    noble.kingLoyalty = Math.max(0, Math.min(100, noble.kingLoyalty + loyaltyDelta));
+                }
+                if (relDelta !== 0) {
+                    var kingPerson = k.king ? findPerson(k.king) : null;
+                    if (kingPerson && noble.relationships) {
+                        noble.relationships[kingPerson.id] = Math.max(-100, Math.min(100, (noble.relationships[kingPerson.id] || 0) + relDelta));
+                    }
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════
+        // 7. PRICE INFLATION FROM SPENDING
+        // ═══════════════════════════════════════════
+        k._treasurySpending.total += spent;
+        k._treasurySpendingTotal.total += spent;
+
+        // Kingdom spending drives up prices in kingdom towns (demand pressure)
+        if (spent > 500) {
+            var inflationFactor = Math.min(0.03, spent / (treasury + 1) * 0.5); // 0-3% price bump
+            for (var ifti = 0; ifti < territories.length; ifti++) {
+                var ifTown = findTown(territories[ifti]);
+                if (!ifTown || !ifTown.market || !ifTown.market.prices) continue;
+                // Bump demand on goods the kingdom bought
+                for (var ifKey in ifTown.market.prices) {
+                    var currentPrice = ifTown.market.prices[ifKey];
+                    if (!currentPrice || currentPrice <= 0) continue;
+                    // Small organic price increase from increased gold in circulation
+                    var bump = currentPrice * inflationFactor * rng.randFloat(0.3, 1.0);
+                    if (bump > 0.01) {
+                        var resInfo = findResourceById(ifKey);
+                        var basePrice = resInfo ? resInfo.basePrice : 10;
+                        var ceiling = basePrice * (CONFIG.PRICE_CEILING_MULT || 6.0);
+                        ifTown.market.prices[ifKey] = Math.min(ceiling, currentPrice + bump);
+                    }
+                }
+            }
+        }
+
+        // Log major spending events
+        if (spent > 1000) {
+            var spendingType = 'balanced';
+            if (k._treasurySpending.military > spent * 0.5) spendingType = 'military';
+            else if (k._treasurySpending.buildings > spent * 0.4) spendingType = 'construction';
+            else if (k._treasurySpending.infra > spent * 0.3) spendingType = 'infrastructure';
+            logEvent('💎 ' + k.name + ' spends ' + Math.floor(spent) + 'g from its overflowing treasury on ' + spendingType + ' investments.', {
+                type: 'treasury_spending', kingdomId: k.id,
+                cause: 'Kingdom treasury of ' + Math.floor(treasury) + 'g drives aggressive investment',
+                effects: ['Military: ' + Math.floor(k._treasurySpending.military) + 'g', 'Buildings: ' + Math.floor(k._treasurySpending.buildings) + 'g', 'Infrastructure: ' + Math.floor(k._treasurySpending.infra) + 'g']
+            });
+        }
+    }
+
+    // ========================================================
+    // §17G-C  RELATIONSHIP-LOYALTY MONTHLY LINK
+    // ========================================================
+    // Noble relationship with king slightly affects loyalty each month
+
+    function tickNobleRelationshipLoyaltyLink(k) {
+        if (!world || !k) return;
+        // Run monthly
+        if (world.day % 30 !== 0) return;
+
+        var kingPerson = k.king ? findPerson(k.king) : null;
+        if (!kingPerson) return;
+
+        var nobles = world.people.filter(function(np) {
+            return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
+        });
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var noble = nobles[ni];
+            if (noble.kingLoyalty === undefined) continue;
+
+            var rel = (noble.relationships && noble.relationships[kingPerson.id]) || 0;
+            var loyaltyShift = 0;
+
+            // Good relationship → slight loyalty gain
+            if (rel > 50) loyaltyShift = Math.min(1.0, (rel - 50) / 50 * 1.0); // +0 to +1.0
+            else if (rel > 20) loyaltyShift = (rel - 20) / 60 * 0.3; // +0 to +0.3
+            else if (rel < -20) loyaltyShift = Math.max(-1.5, (rel + 20) / 40 * -1.5); // -0 to -1.5
+            else if (rel < 0) loyaltyShift = rel / 40 * -0.5; // -0 to -0.5
+
+            if (loyaltyShift !== 0) {
+                noble.kingLoyalty = Math.max(0, Math.min(100, noble.kingLoyalty + loyaltyShift));
+            }
+        }
+    }
+
+    // ========================================================
+    // §17G-D  INTER-KINGDOM TRADE DEALS
+    // ========================================================
+    // Kingdoms propose trade deals: gold for goods, goods for goods
+
+    function tickInterKingdomTrade(k) {
+        if (!world || !k) return;
+        var rng = world.rng;
+        var p = k.kingPersonality || {};
+
+        // Only trade every 30-60 days
+        if (!k._lastTradeDealDay) k._lastTradeDealDay = 0;
+        var tradeInterval = 30;
+        if (p.intelligence === 'brilliant') tradeInterval = 20;
+        else if (p.intelligence === 'foolish') tradeInterval = 60;
+        if (world.day - k._lastTradeDealDay < tradeInterval) return;
+        k._lastTradeDealDay = world.day;
+
+        // Don't trade if broke
+        if ((k.gold || 0) < 2000) return;
+
+        // Skip player-king
+        if (typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id) return;
+
+        // Find goods we need but don't have
+        var analysis = analyzeKingdomEconomy(k);
+        if (!analysis) return;
+
+        var neededGoods = [];
+        for (var di = 0; di < analysis.towns.length; di++) {
+            for (var dfi = 0; dfi < analysis.towns[di].deficits.length; dfi++) {
+                var def = analysis.towns[di].deficits[dfi];
+                if (!neededGoods.some(function(n) { return n.good === def.good; })) {
+                    neededGoods.push({ good: def.good, shortfall: def.shortfall });
+                }
+            }
+        }
+        if (neededGoods.length === 0) return;
+
+        // Find potential trading partners (not at war, relations > -20)
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var other = world.kingdoms[ki];
+            if (other.id === k.id || !other.territories || other.territories.size === 0) continue;
+            if (k.atWar && k.atWar.has(other.id)) continue;
+            var rel = (k.relations && k.relations[other.id]) || 0;
+            if (rel < -20) continue;
+
+            // Check if they have surplus of what we need
+            var otherAnalysis = analyzeKingdomEconomy(other);
+            if (!otherAnalysis) continue;
+
+            for (var ngi = 0; ngi < neededGoods.length; ngi++) {
+                var need = neededGoods[ngi];
+                var otherSupply = otherAnalysis.kingdomSupply[need.good] || 0;
+                var otherDemand = otherAnalysis.kingdomDemand[need.good] || 0;
+                if (otherSupply <= otherDemand * 1.5) continue; // they don't have surplus
+
+                // Calculate trade: buy from their cheapest town
+                var tradeTown = null;
+                var tradePrice = Infinity;
+                for (var oti = 0; oti < otherAnalysis.towns.length; oti++) {
+                    var oTown = findTown(otherAnalysis.towns[oti].id);
+                    if (!oTown || !oTown.market || !oTown.market.supply) continue;
+                    if ((oTown.market.supply[need.good] || 0) < 3) continue;
+                    var oPrice = getMarketPrice(oTown, need.good) || 10;
+                    if (oPrice < tradePrice) {
+                        tradeTown = oTown;
+                        tradePrice = oPrice;
+                    }
+                }
+                if (!tradeTown) continue;
+
+                // Markup for inter-kingdom trade: 1.3x-1.8x based on relations
+                var markup = 1.8 - (Math.max(0, rel) / 100) * 0.5; // 1.3 at rel=100, 1.8 at rel=0
+                var finalPrice = Math.ceil(tradePrice * markup);
+                var buyQty = Math.min(
+                    Math.floor(k.gold * 0.02 / finalPrice), // max 2% of treasury per deal
+                    Math.floor((tradeTown.market.supply[need.good] || 0) * 0.3), // max 30% of their supply
+                    10 // max 10 units per deal
+                );
+                if (buyQty <= 0) continue;
+
+                var totalCost = buyQty * finalPrice;
+                if (totalCost > k.gold * 0.05) continue; // don't overspend
+
+                // Execute trade
+                tradeTown.market.supply[need.good] -= buyQty;
+                tradeTown.market.demand[need.good] = (tradeTown.market.demand[need.good] || 0) + buyQty;
+                k.gold -= totalCost;
+                other.gold += totalCost;
+
+                // Add to our stockpile or distribute to our market
+                var ourCapital = null;
+                for (var octi = 0; octi < Array.from(k.territories).length; octi++) {
+                    var _oct = findTown(Array.from(k.territories)[octi]);
+                    if (_oct && _oct.isCapital) { ourCapital = _oct; break; }
+                }
+                if (ourCapital && ourCapital.market && ourCapital.market.supply) {
+                    ourCapital.market.supply[need.good] = (ourCapital.market.supply[need.good] || 0) + buyQty;
+                } else if (!k.goodsStockpile) {
+                    k.goodsStockpile = {};
+                    k.goodsStockpile[need.good] = (k.goodsStockpile[need.good] || 0) + buyQty;
+                } else {
+                    k.goodsStockpile[need.good] = (k.goodsStockpile[need.good] || 0) + buyQty;
+                }
+
+                // Improve relations slightly from trade
+                if (k.relations) {
+                    k.relations[other.id] = (k.relations[other.id] || 0) + rng.randFloat(0.5, 2.0);
+                    other.relations[k.id] = (other.relations[k.id] || 0) + rng.randFloat(0.3, 1.5);
+                }
+
+                var resInfo = findResourceById(need.good);
+                var goodName = resInfo ? resInfo.name : need.good;
+                logEvent('🤝 ' + k.name + ' purchases ' + buyQty + ' ' + goodName + ' from ' + other.name + ' for ' + totalCost + 'g.', {
+                    type: 'trade_deal', kingdomId: k.id,
+                    cause: 'Inter-kingdom trade agreement for needed goods',
+                    effects: [k.name + ' -' + totalCost + 'g', other.name + ' +' + totalCost + 'g', buyQty + ' ' + goodName + ' transferred']
+                });
+
+                // Only one deal per tick
+                return;
+            }
+        }
+    }
+
+    // ========================================================
+    // §17G-E  REVOLT KINGDOM SURVIVAL AI
+    // ========================================================
+    function _tickRevoltSurvivalAI(k) {
+        if (!world || !k) return;
+        var rng = world.rng;
+        var p = k.kingPersonality || {};
+        var atWar = k.atWar && k.atWar.size > 0;
+        var territories = Array.from(k.territories);
+        var daysSinceRevolt = world.day - (k._revoltCreatedDay || world.day);
+
+        // 1. Prioritize military defense — recruit all eligible laborers
+        if (atWar) {
+            var recruitCost = CONFIG.SOLDIER_RECRUIT_COST || 50;
+            for (var ti = 0; ti < territories.length; ti++) {
+                var town = findTown(territories[ti]);
+                if (!town) continue;
+                var people = getPeopleInTown(town.id);
+                for (var pi = 0; pi < people.length; pi++) {
+                    var person = people[pi];
+                    if (!person.alive || person.age < 16 || person.age > 50) continue;
+                    if (person.occupation !== 'laborer' && person.occupation !== 'none') continue;
+                    if (k.gold < recruitCost * 2) break; // keep minimum reserve
+                    recruitSoldier(person, town, k, 'infantry');
+                    k.gold -= recruitCost;
+                }
+            }
+        }
+
+        // 2. Try to sue for peace — based on personality
+        if (atWar && daysSinceRevolt > 10) {
+            var diplomatic = p.diplomatic || 50;
+            var courage = p.courage || 'cautious';
+            k.atWar.forEach(function(enemyId) {
+                var enemy = findKingdom(enemyId);
+                if (!enemy) return;
+                var ourStr = computeMilitaryStrength(k);
+                var theirStr = computeMilitaryStrength(enemy);
+                var peaceDesire = 0;
+                // Weaker kingdoms want peace more
+                if (ourStr < theirStr * 0.5) peaceDesire += 0.4;
+                else if (ourStr < theirStr * 0.8) peaceDesire += 0.2;
+                // Diplomatic kings seek peace sooner
+                if (diplomatic === 'diplomatic' || diplomatic > 65) peaceDesire += 0.2;
+                // Brave/ambitious kings fight longer
+                if (courage === 'brave' || p.ambition === 'ambitious') peaceDesire -= 0.15;
+                // Low treasury pushes for peace
+                if (k.gold < 200) peaceDesire += 0.3;
+
+                if (peaceDesire > 0 && rng.chance(peaceDesire * 0.2)) {
+                    // Attempt peace offer — enemy may refuse if much stronger
+                    var acceptChance = 0.1;
+                    if (theirStr < ourStr * 1.5) acceptChance += 0.2; // they're not much stronger, willing to stop
+                    var ep = enemy.kingPersonality || {};
+                    if (ep.temperament === 'fair' || ep.justice === 'just') acceptChance += 0.15;
+                    if (ep.temperament === 'aggressive' || ep.ambition === 'ambitious') acceptChance -= 0.1;
+                    // Enemy exhaustion makes peace more likely
+                    if ((enemy.warExhaustion || 0) > 30) acceptChance += 0.2;
+
+                    if (rng.chance(Math.max(0.02, acceptChance))) {
+                        // Peace accepted!
+                        k.atWar.delete(enemyId);
+                        enemy.atWar.delete(k.id);
+                        var treatyEnd = world.day + 360;
+                        if (!k.peaceTreaties) k.peaceTreaties = {};
+                        if (!enemy.peaceTreaties) enemy.peaceTreaties = {};
+                        k.peaceTreaties[enemyId] = treatyEnd;
+                        enemy.peaceTreaties[k.id] = treatyEnd;
+                        k.relations[enemyId] = Math.min(0, (k.relations[enemyId] || -80) + 30);
+                        enemy.relations[k.id] = Math.min(0, (enemy.relations[k.id] || -80) + 30);
+                        logEvent('🕊️ ' + k.name + ' and ' + enemy.name + ' agree to a cease-fire!', {
+                            type: 'peace_treaty', cause: 'Revolt kingdom negotiated peace',
+                            effects: ['War ends', '360-day peace treaty signed'],
+                            kingdoms: [k.id, enemyId]
+                        });
+                    }
+                }
+            });
+        }
+
+        // 3. Seek alliances with enemies of the parent kingdom
+        if (daysSinceRevolt <= 30) {
+            for (var ki = 0; ki < world.kingdoms.length; ki++) {
+                var other = world.kingdoms[ki];
+                if (other.id === k.id) continue;
+                if (k.alliances && k.alliances.has(other.id)) continue;
+                var rel = (k.relations && k.relations[other.id]) || 0;
+                // Lower threshold for revolt kingdoms seeking allies (rel >= 10 instead of 50)
+                if (rel >= 10 && !k.atWar.has(other.id)) {
+                    // Only if other kingdom also dislikes the parent
+                    var parentEnemy = false;
+                    k.atWar.forEach(function(warId) {
+                        if ((other.relations && (other.relations[warId] || 0) < -20) || (other.atWar && other.atWar.has(warId))) {
+                            parentEnemy = true;
+                        }
+                    });
+                    if (parentEnemy && rng.chance(0.15)) {
+                        if (!k.alliances) k.alliances = new Set();
+                        if (!other.alliances) other.alliances = new Set();
+                        k.alliances.add(other.id);
+                        other.alliances.add(k.id);
+                        if (!k.allianceMeta) k.allianceMeta = {};
+                        if (!other.allianceMeta) other.allianceMeta = {};
+                        k.allianceMeta[other.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'revolt_solidarity' };
+                        other.allianceMeta[k.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'revolt_solidarity' };
+                        logEvent('🤝 ' + k.name + ' forges an alliance with ' + other.name + ' against their common enemy!', {
+                            type: 'alliance_formed', kingdoms: [k.id, other.id],
+                            cause: 'New revolt kingdom seeks protection'
+                        });
+                    }
+                }
+            }
+        }
+
+        // 4. Try to recruit elite merchants
+        if (daysSinceRevolt <= 15) {
+            _tickRevoltEMRecruitment(k);
+        }
+    }
+
+    // ========================================================
+    // §17G-F  REVOLT KINGDOM ELITE MERCHANT RECRUITMENT
+    // ========================================================
+    function _tickRevoltEMRecruitment(k) {
+        if (!world || !k || !world.eliteMerchants) return;
+        var rng = world.rng;
+        var territories = Array.from(k.territories);
+        if (territories.length === 0) return;
+
+        for (var ei = 0; ei < world.eliteMerchants.length; ei++) {
+            var em = world.eliteMerchants[ei];
+            if (!em || !em.alive) continue;
+            if (em.kingdomId === k.id) continue; // already ours
+
+            // Check if EM is in our territory (higher chance) or in parent kingdom (lower chance)
+            var inOurTerritory = territories.indexOf(em.townId) >= 0;
+            var inParentKingdom = false;
+            k.atWar.forEach(function(warId) {
+                var enemy = findKingdom(warId);
+                if (enemy && enemy.territories && enemy.territories.has(em.townId)) {
+                    inParentKingdom = true;
+                }
+            });
+
+            if (!inOurTerritory && !inParentKingdom) continue;
+
+            // Base acceptance chance
+            var acceptChance = inOurTerritory ? 0.35 : 0.08;
+
+            // EM personality factors
+            var emPers = em.personality || {};
+            // Risk-taking/ambitious EMs more likely to join
+            if ((emPers.ambition || 50) > 60) acceptChance += 0.1;
+            if ((emPers.courage || 50) > 60) acceptChance += 0.05;
+            // Loyal/traditional EMs less likely
+            if ((emPers.tradition || 50) > 65) acceptChance -= 0.1;
+
+            // Relationship with parent kingdom
+            var parentKingdomId = null;
+            k.atWar.forEach(function(warId) { parentKingdomId = warId; });
+            if (parentKingdomId) {
+                var emRep = (em.reputation && em.reputation[parentKingdomId]) || 50;
+                // Low rep with parent = more likely to defect
+                if (emRep < 30) acceptChance += 0.15;
+                else if (emRep < 50) acceptChance += 0.05;
+                else if (emRep > 70) acceptChance -= 0.2; // loves the old kingdom
+            }
+
+            // Only attempt with some probability per day
+            if (!rng.chance(acceptChance * 0.1)) continue; // 10% of acceptance chance as daily attempt rate
+
+            // Offer accepted! Transfer EM to revolt kingdom
+            var oldKingdomId = em.kingdomId;
+            em.kingdomId = k.id;
+            em.citizenshipKingdomId = k.id;
+
+            // Grant guildmaster status (rank 3)
+            if (!em.socialRank) em.socialRank = {};
+            em.socialRank[k.id] = 3;
+            if (!em.reputation) em.reputation = {};
+            em.reputation[k.id] = 70;
+
+            // Signing bonus: 50-200g from kingdom treasury
+            var bonus = Math.min(Math.floor(k.gold * 0.1), rng.randInt(50, 200));
+            if (bonus > 0 && k.gold >= bonus) {
+                k.gold -= bonus;
+                em.gold = (em.gold || 0) + bonus;
+            }
+
+            // Transfer some buildings in the location to EM
+            var townInTerritory = findTown(territories[0]);
+            if (townInTerritory) {
+                var transferred = 0;
+                for (var bi = 0; bi < townInTerritory.buildings.length && transferred < 2; bi++) {
+                    var bld = townInTerritory.buildings[bi];
+                    if (!bld.ownerId || bld.ownerId === k.id) {
+                        bld.ownerId = em.id;
+                        transferred++;
+                    }
+                }
+            }
+
+            // Remove status from old kingdom
+            if (em.socialRank && oldKingdomId) delete em.socialRank[oldKingdomId];
+
+            logEvent('🏪 Elite Merchant ' + (em.firstName || em.name || 'A merchant') + ' defects to ' + k.name + '!', {
+                type: 'em_defection', kingdomId: k.id,
+                cause: 'Revolt kingdom recruited the merchant with status and gold',
+                effects: ['Guildmaster status granted', bonus > 0 ? bonus + 'g signing bonus' : 'No bonus']
+            });
+        }
+    }
+
     /**
      * NPC response to king's economic strategies — called during
      * NPC business evaluation tick (every 60 days).
@@ -5597,6 +6713,9 @@
         return k ? analyzeKingdomEconomy(k) : null;
     };
     Engine.tickKingEconomicStrategy = tickKingEconomicStrategy;
+    Engine.tickTreasurySpending = tickTreasurySpending;
+    Engine.tickNobleRelationshipLoyaltyLink = tickNobleRelationshipLoyaltyLink;
+    Engine.tickInterKingdomTrade = tickInterKingdomTrade;
     Engine.applyKingEconomicEffectsToNPCs = applyKingEconomicEffectsToNPCs;
 
     // Execute a player-approved economic proposal
