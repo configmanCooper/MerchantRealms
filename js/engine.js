@@ -12376,6 +12376,32 @@
             }, 'sensitive_intel');
         }
 
+        // D: Revolt EM promotion — top 1-2 wealthiest revolt participants become elite merchants
+        if (world.eliteMerchants && survivingRebels.length > 0) {
+            var _revoltEMCands = survivingRebels.filter(function(r) {
+                return r.alive && r.occupation === 'merchant' && !r.isEliteMerchant && (r.gold || 0) > 100;
+            });
+            _revoltEMCands.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+            var _revoltEMCount = Math.min(_revoltEMCands.length, _revoltEMCands.length >= 3 ? 2 : 1);
+            for (var _remi = 0; _remi < _revoltEMCount; _remi++) {
+                var _revEM = _revoltEMCands[_remi];
+                if (typeof Engine.createEliteMerchantFromNPC === 'function') {
+                    Engine.createEliteMerchantFromNPC(_revEM);
+                } else {
+                    _revEM.isEliteMerchant = true;
+                    _revEM.wealthClass = 'upper';
+                    if (!_revEM.buildings) _revEM.buildings = [];
+                    if (((_revEM.gold || 0)) < 1500) _revEM.gold = 1500 + Math.floor(rng.random() * 1000);
+                }
+                _revEM.kingdomId = newKingdomId;
+                world.eliteMerchants.push(_revEM);
+                logEvent('🌟 ' + (_revEM.firstName || '') + ' ' + (_revEM.lastName || '') + ', a merchant who bankrolled the ' + groupName + ' revolution, has risen to elite merchant status in the new kingdom!', {
+                    type: 'elite_promotion', townId: town.id, category: 'npc_activity',
+                    cause: 'Revolt participation and wealth in ' + groupName
+                });
+            }
+        }
+
         // Notify player
         if (typeof Player !== 'undefined' && Player.state) {
             var ps = Player.state;

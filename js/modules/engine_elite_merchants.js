@@ -214,8 +214,8 @@
         // Check every growth interval if new EMs should emerge
         if (world.day % (CONFIG.ELITE_MERCHANT_GROWTH_INTERVAL || 60) === 0) {
             // Organic promotion: wealthy NPC merchants can rise to EM status
-            // target ~2 promotions/year = ~0.33 per 60-day check
-            var promotionChance = 0.35;
+            // B: Increased from 0.35 to 0.50 for faster growth
+            var promotionChance = 0.50;
             
             // Only do growth-based spawning if below target
             var canGrowBeyondCurrent = activeEmCount < emTarget;
@@ -257,6 +257,7 @@
                             var promoted = candidates[0];
                             createEliteMerchantFromNPC(promoted);
                             world.eliteMerchants.push(promoted);
+                            activeEmCount++;
                             logEvent('🌟 ' + (promoted.firstName || '') + ' ' + (promoted.lastName || '') + ' of ' + (candidateTown.name || 'unknown') + ' has risen to become a renowned elite merchant! Their shrewd trading and growing wealth earned them a place among the elite.', { 
                                 type: 'elite_promotion',
                                 townId: promoted.townId, 
@@ -267,6 +268,42 @@
                                     (promoted.firstName || '') + ' gains access to elite trade networks',
                                     'Competition among elite merchants intensifies'
                                 ]
+                            });
+                            // B: Allow a second promotion per check if still below target
+                            if (candidates.length > 1 && activeEmCount < emTarget && world.rng.random() < 0.30) {
+                                var promoted2 = candidates[1];
+                                createEliteMerchantFromNPC(promoted2);
+                                world.eliteMerchants.push(promoted2);
+                                activeEmCount++;
+                                var _p2Town = findTown(promoted2.townId);
+                                logEvent('🌟 ' + (promoted2.firstName || '') + ' ' + (promoted2.lastName || '') + ' of ' + (_p2Town ? _p2Town.name : 'unknown') + ' has also risen to elite merchant status!', { 
+                                    type: 'elite_promotion', townId: promoted2.townId, category: 'npc_activity'
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // E: Economic boom promotion — thriving towns have extra chance to spawn EMs
+            if (activeEmCount < emTarget) {
+                var thrivingTowns = world.towns.filter(function(t) { return (t.prosperity || 0) > 80; });
+                for (var _tti = 0; _tti < thrivingTowns.length && activeEmCount < emTarget; _tti++) {
+                    if (world.rng.random() < 0.08) { // 8% chance per thriving town per check
+                        var _tt = thrivingTowns[_tti];
+                        var _ttCands = world.people.filter(function(p) {
+                            return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
+                                && p.townId === _tt.id && (p.gold || 0) > 150;
+                        });
+                        _ttCands.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+                        if (_ttCands.length > 0) {
+                            var _boomEM = _ttCands[0];
+                            createEliteMerchantFromNPC(_boomEM);
+                            world.eliteMerchants.push(_boomEM);
+                            activeEmCount++;
+                            logEvent('🌟 The thriving economy of ' + _tt.name + ' has produced a new elite merchant: ' + (_boomEM.firstName || '') + ' ' + (_boomEM.lastName || '') + '!', { 
+                                type: 'elite_promotion', townId: _boomEM.townId, category: 'npc_activity',
+                                cause: 'Economic boom in ' + _tt.name + ' (prosperity ' + Math.round(_tt.prosperity) + ')'
                             });
                         }
                     }
