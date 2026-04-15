@@ -993,6 +993,7 @@
                     transportRate: rng.randInt(10, 25), // Rate charged to travelers
                     licenseFees: {},  // goodId → custom fee; empty = use CONFIG defaults
                 },
+                taxRate: rng.randFloat(0.08, 0.12), // base income/trade tax rate (read by finance AI)
                 flavorText: '',     // filled below
                 crimePunishments: {},  // filled below
                 procurement: {
@@ -18905,6 +18906,8 @@
                 'trade_agreement', 'mutual_defense_pact', 'border_accord', 'em_defection',
                 'solo_assassination', 'solo_assassination_failed', 'conspiracy_detected',
                 'conspiracy_assassination', 'conspiracy_coup', 'conspiracy_failed',
+                'king_assassinated', 'coup_success', 'new_king_coup', 'conspiracy_formed',
+                'conspiracy_arrest', 'conspiracy_execution', 'coup_attempt', 'coup_failed',
                 'revolt_started', 'revolt_victory', 'revolt_suppressed',
                 'noble_punishment', 'noble_execution', 'noble_exile', 'peace_treaty', 'trade_deal',
                 'alliance_dissolved'];
@@ -24828,8 +24831,8 @@
         if (k._conspiracy) {
             var conspiracy = k._conspiracy;
 
-            // Grow strength: +5 per plotter per month
-            conspiracy.strength += conspiracy.plotters.length * 5;
+            // Grow strength: +8 per plotter per month (B: faster buildup)
+            conspiracy.strength += conspiracy.plotters.length * 8;
 
             // Detection: 10% base chance per month
             if (!conspiracy.detected && rng.chance(0.10)) {
@@ -24936,9 +24939,9 @@
         var caughtChance = _computeAssassinationCatchChance(plotterCount, plotterPersons, k);
 
         if (conspiracy.type === 'assassination') {
-            // Success chance: 40% base, +5% per plotter above 1 (more plotters = more attempts)
-            var assassinSuccessChance = 0.40 + Math.max(0, (plotterCount - 1) * 0.05);
-            assassinSuccessChance = Math.min(0.70, assassinSuccessChance);
+            // Success chance: 50% base, +5% per plotter above 1 (more plotters = more attempts)
+            var assassinSuccessChance = 0.50 + Math.max(0, (plotterCount - 1) * 0.05);
+            assassinSuccessChance = Math.min(0.75, assassinSuccessChance);
 
             if (rng.chance(assassinSuccessChance)) {
                 // Assassination succeeds — but were plotters caught?
@@ -25087,7 +25090,12 @@
 
         // Spread suspicion regardless
         _spreadAssassinationSuspicion(allNobles, plotterPersons, wasCaught, plotterCount, rng);
-        k._conspiracy = null;
+        if (wasCaught) {
+            k._conspiracy = null;
+        } else {
+            // Conspiracy survives but weakened — they can try again
+            conspiracy.strength = Math.max(0, conspiracy.strength - 40);
+        }
     }
 
     // ========================================================
