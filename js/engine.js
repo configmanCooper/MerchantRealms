@@ -12756,7 +12756,7 @@
                             }
                             break;
                         case 'jail':
-                            _pn._jailedUntilDay = day + 15;
+                            _pn._jailedUntilDay = world.day + 15;
                             _pn._jailedBy = 'king';
                             _pn.kingLoyalty = Math.max(0, (_pn.kingLoyalty || 50) - 18);
                             _pn.perceivedKingLoyalty = Math.max(0, (_pn.perceivedKingLoyalty || 50) - 12);
