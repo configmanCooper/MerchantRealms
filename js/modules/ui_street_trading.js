@@ -1205,6 +1205,60 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
         }
     } catch(e) {}
 
+    // ═══ Conspiracy Participation Section ═══
+    var _conspiracy = null;
+    try { _conspiracy = Engine.getKingdomConspiracy(citizenKingdomId); } catch(e) {}
+
+    html += '<div style="background:rgba(139,69,19,0.12);border:1px solid rgba(139,69,19,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.95rem;font-weight:bold;color:#d4a76a;margin-bottom:6px;">🗡️ Conspiracies</div>';
+
+    if (_conspiracy && _conspiracy.playerInvolved) {
+        // Player is in an active conspiracy — show status
+        var _cStrColor = _conspiracy.strength >= 80 ? '#2ecc71' : _conspiracy.strength >= 50 ? '#e67e22' : '#c44e52';
+        var _cStrLabel = _conspiracy.strength >= 80 ? 'Ready to strike!' : _conspiracy.strength >= 50 ? 'Growing stronger' : 'Still gathering support';
+        html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="font-size:0.85rem;color:#f0d0a0;">You are part of a <strong>' + _conspiracy.type + '</strong> conspiracy</div>';
+        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">Plotters: ' + escapeHtml(_conspiracy.plotterNames.join(', ')) + ' (' + _conspiracy.plotterCount + ' total)</div>';
+        html += '<div style="font-size:0.78rem;color:' + _cStrColor + ';margin-top:2px;">Strength: ' + Math.floor(_conspiracy.strength) + '/80 — ' + _cStrLabel + '</div>';
+        if (_conspiracy.strength >= 80) {
+            html += '<div style="font-size:0.78rem;color:#2ecc71;margin-top:4px;font-weight:bold;">⚡ The conspirators are ready to act! The plot will unfold soon.</div>';
+        }
+        html += '<div style="margin-top:6px;">';
+        html += '<button class="btn-medieval" data-action="playerLeaveConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚪 Withdraw from Conspiracy</button>';
+        html += '</div></div>';
+    } else if (_conspiracy && !_conspiracy.playerInvolved) {
+        // Active conspiracy exists that player could join
+        html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="font-size:0.85rem;color:#e67e22;">🤫 Rumours of a <strong>' + _conspiracy.type + '</strong> plot are circulating...</div>';
+        html += '<div style="font-size:0.78rem;color:#aaa;margin-top:4px;">' + _conspiracy.plotterCount + ' noble' + (_conspiracy.plotterCount > 1 ? 's' : '') + ' are involved. Strength: ' + Math.floor(_conspiracy.strength) + '/80</div>';
+        html += '<div style="margin-top:6px;">';
+        html += '<button class="btn-medieval" data-action="playerJoinConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Join the Conspiracy</button>';
+        html += '</div></div>';
+    } else {
+        // No conspiracy — player can form one with a discontented noble
+        var _discontented = nobles.filter(function(n) { return (n.kingLoyalty != null ? n.kingLoyalty : 50) <= 55; });
+        if (_discontented.length > 0) {
+            html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:6px;">No active conspiracy. You could form one with a discontented noble.</div>';
+            html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+            html += '<select id="conspiracy_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
+            for (var _di = 0; _di < _discontented.length; _di++) {
+                var _dn = _discontented[_di];
+                var _dnLoy = _dn.kingLoyalty != null ? Math.floor(_dn.kingLoyalty) : 50;
+                html += '<option value="' + _dn.id + '">' + escapeHtml((_dn.firstName || '?') + ' ' + (_dn.lastName || '')) + ' (loyalty: ' + _dnLoy + ')</option>';
+            }
+            html += '</select>';
+            html += '<select id="conspiracy_type" style="font-size:0.72rem;padding:2px;">';
+            html += '<option value="assassination">Assassination</option>';
+            html += '<option value="coup">Coup</option>';
+            html += '</select>';
+            html += '<button class="btn-medieval" data-action="playerFormConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Form Plot</button>';
+            html += '</div>';
+        } else {
+            html += '<div style="font-size:0.8rem;color:#888;font-style:italic;">No discontented nobles available to conspire with. Nobles must have low loyalty to the king.</div>';
+        }
+    }
+    html += '</div>';
+
     // Define all 5 schemes with their requirements
     var schemes = [
         { id: 'pit_nobles', name: '⚔️ Pit Nobles Against Each Other', desc: 'Create rivalry between two nobles, damaging their relationship.', cost: '300g', skill: 'shadow_dealings', skillAlt: null, needTwo: true },
@@ -2552,6 +2606,183 @@ function _switchProposeActionTab(tabId, kingdomId) {
 }
 
 
+    // ═══════════════════════════════════════════════════════════
+    // §REVOLT-DEAL  Revolt Kingdom Player Deal System
+    // ═══════════════════════════════════════════════════════════
+
+    function checkRevoltDealOffer() {
+        if (typeof Player === 'undefined' || !Player.state) return;
+        var deal = Player.state._revoltDealOffer;
+        if (!deal) return;
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (deal.expires && day > deal.expires) {
+            delete Player.state._revoltDealOffer;
+            return;
+        }
+        // Show deal notification once per session
+        if (!deal._notified) {
+            deal._notified = true;
+            openRevoltDealDialog();
+        }
+    }
+
+    function openRevoltDealDialog() {
+        if (typeof Player === 'undefined' || !Player.state) return;
+        var deal = Player.state._revoltDealOffer;
+        if (!deal) { toast('No pending kingdom offers.', 'info'); return; }
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        if (deal.expires && day > deal.expires) {
+            delete Player.state._revoltDealOffer;
+            toast('The offer has expired.', 'warning');
+            return;
+        }
+
+        var daysLeft = Math.max(0, (deal.expires || 0) - day);
+        var html = '';
+        html += '<div style="background:linear-gradient(135deg,rgba(196,78,82,0.15),rgba(201,168,76,0.1));border:1px solid rgba(201,168,76,0.4);border-radius:8px;padding:14px;margin-bottom:12px;">';
+        html += '<div style="font-size:1.1rem;font-weight:bold;color:var(--gold);margin-bottom:8px;">📜 A Message from ' + escapeHtml(deal.kingdomName) + '</div>';
+
+        if (deal.playerHelped) {
+            html += '<p style="color:#ddd;font-size:0.88rem;margin-bottom:10px;">';
+            html += '"Your valor in our revolution has not gone unnoticed. The people of <strong>' + escapeHtml(deal.townName) + '</strong> ';
+            html += 'owe their freedom to brave souls like yourself. We offer you a place of honor in our new kingdom."';
+            html += '</p>';
+        } else {
+            html += '<p style="color:#ddd;font-size:0.88rem;margin-bottom:10px;">';
+            html += '"The Kingdom of <strong>' + escapeHtml(deal.kingdomName) + '</strong> is newly born and seeks talented individuals. ';
+            html += 'We offer you status and wealth in exchange for your allegiance."';
+            html += '</p>';
+        }
+
+        html += '<div style="background:rgba(0,0,0,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.9rem;font-weight:bold;color:#f0d0a0;margin-bottom:6px;">The Offer:</div>';
+        html += '<div style="font-size:0.85rem;color:#ccc;margin-bottom:4px;">👑 <strong>' + escapeHtml(deal.offeredRankName) + '</strong> status in ' + escapeHtml(deal.kingdomName) + '</div>';
+        html += '<div style="font-size:0.85rem;color:#ccc;margin-bottom:4px;">💰 <strong>' + deal.offeredGold + ' gold</strong> signing bonus</div>';
+        if (deal.offeredBuildings && deal.offeredBuildings.length > 0) {
+            html += '<div style="font-size:0.85rem;color:#ccc;margin-bottom:4px;">🏗️ <strong>' + deal.offeredBuildings.length + ' building' + (deal.offeredBuildings.length > 1 ? 's' : '') + '</strong> in ' + escapeHtml(deal.townName) + ':';
+            for (var bi = 0; bi < deal.offeredBuildings.length; bi++) {
+                html += ' ' + escapeHtml(deal.offeredBuildings[bi].name);
+                if (bi < deal.offeredBuildings.length - 1) html += ',';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        html += '<div style="font-size:0.75rem;color:#888;margin-bottom:10px;">⏳ This offer expires in ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + '.</div>';
+
+        html += '<div style="display:flex;gap:8px;justify-content:center;">';
+        html += '<button class="btn-medieval" data-action="acceptRevoltDeal" style="padding:8px 20px;background:rgba(46,204,113,0.3);border-color:rgba(46,204,113,0.6);">✅ Accept Offer</button>';
+        html += '<button class="btn-medieval" data-action="declineRevoltDeal" style="padding:8px 20px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.6);">❌ Decline</button>';
+        html += '</div>';
+        html += '</div>';
+
+        openModal('📜 Kingdom Offer — ' + escapeHtml(deal.kingdomName), html);
+    }
+
+    UI.registerAction('acceptRevoltDeal', function() {
+        if (typeof Player === 'undefined' || !Player.state) return;
+        var deal = Player.state._revoltDealOffer;
+        if (!deal) { toast('No pending offer.', 'warning'); UI.closeModal(); return; }
+
+        var ps = Player.state;
+        // Grant rank
+        if (!ps.socialRank) ps.socialRank = {};
+        ps.socialRank[deal.kingdomId] = deal.offeredRank;
+        if (deal.offeredRank >= 4) {
+            ps.isNoble = true;
+        }
+
+        // Grant gold
+        ps.gold = (ps.gold || 0) + deal.offeredGold;
+
+        // Transfer buildings
+        if (deal.offeredBuildings && deal.offeredBuildings.length > 0) {
+            try {
+                var town = Engine.findTown(deal.townId);
+                if (town && town.buildings) {
+                    for (var bi = 0; bi < deal.offeredBuildings.length; bi++) {
+                        var bIdx = deal.offeredBuildings[bi].index;
+                        if (town.buildings[bIdx]) {
+                            town.buildings[bIdx].ownerId = 'player';
+                        }
+                    }
+                }
+            } catch(e) {}
+        }
+
+        // Set citizenship
+        ps.citizenshipKingdomId = deal.kingdomId;
+
+        // Set reputation
+        if (!ps.reputation) ps.reputation = {};
+        ps.reputation[deal.kingdomId] = Math.max(ps.reputation[deal.kingdomId] || 0, 60);
+
+        // Clean up
+        delete ps._revoltDealOffer;
+        delete ps._helpedRevolt;
+
+        // Log and notify
+        if (typeof Engine !== 'undefined' && Engine.logEvent) {
+            Engine.logEvent('📜 You accepted the offer from ' + deal.kingdomName + '! ' + deal.offeredRankName + ' status, ' + deal.offeredGold + 'g, and ' + (deal.offeredBuildings ? deal.offeredBuildings.length : 0) + ' building(s) received.');
+        }
+        toast('✅ You are now a ' + deal.offeredRankName + ' of ' + deal.kingdomName + '! +' + deal.offeredGold + 'g', 'success');
+
+        if (typeof Player !== 'undefined' && Player.addJournalEntry) {
+            Player.addJournalEntry('Accepted an offer from ' + deal.kingdomName + '. Granted ' + deal.offeredRankName + ' status and ' + deal.offeredGold + ' gold.');
+        }
+
+        UI.closeModal();
+    });
+
+    UI.registerAction('declineRevoltDeal', function() {
+        if (typeof Player === 'undefined' || !Player.state) return;
+        delete Player.state._revoltDealOffer;
+        toast('You declined the offer.', 'info');
+        UI.closeModal();
+    });
+
+    // Conspiracy participation actions
+    UI.registerAction('playerJoinConspiracy', function(el) {
+        var kId = el.getAttribute('data-id');
+        if (!kId || typeof Engine === 'undefined') return;
+        var result = Engine.playerJoinConspiracy(kId);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openNobilityDialog(); // refresh
+    });
+
+    UI.registerAction('playerLeaveConspiracy', function(el) {
+        var kId = el.getAttribute('data-id');
+        if (!kId || typeof Engine === 'undefined') return;
+        var result = Engine.playerLeaveConspiracy(kId);
+        if (result.success) {
+            toast(result.message, 'info');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openNobilityDialog(); // refresh
+    });
+
+    UI.registerAction('playerFormConspiracy', function(el) {
+        var kId = el.getAttribute('data-id');
+        if (!kId || typeof Engine === 'undefined') return;
+        var targetSel = document.getElementById('conspiracy_target');
+        var typeSel = document.getElementById('conspiracy_type');
+        if (!targetSel || !typeSel) { toast('Select a target noble and plot type.', 'warning'); return; }
+        var result = Engine.playerFormConspiracy(kId, targetSel.value, typeSel.value);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openNobilityDialog(); // refresh
+    });
+
     // Register on UI namespace
     // -- Street Trading --
     UI.openStreetTrading = openStreetTrading;
@@ -2584,6 +2815,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.assignHostileTask = assignHostileTask;
     UI.assignBusinessTask = assignBusinessTask;
     UI.assignIntelTask = assignIntelTask;
+    // -- Revolt Deal --
+    UI.openRevoltDealDialog = openRevoltDealDialog;
+    UI.checkRevoltDealOffer = checkRevoltDealOffer;
     // -- Kingdom Quests --
     UI._buildRoyalDirectivesSection = _buildRoyalDirectivesSection;
     UI._switchKQTab = _switchKQTab;

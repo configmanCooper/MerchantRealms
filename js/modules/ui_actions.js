@@ -3233,6 +3233,10 @@ function _revoltJoinSide(townId, optionId, side, winChance) {
         if (side === 'rebels') {
             revolt.rebelMorale = Math.min(100, (revolt.rebelMorale || 50) + 10);
             revolt.rebelStrength = Math.floor((revolt.rebelStrength || 0) * 1.1);
+            // Track player helped rebels for post-revolt deal
+            if (typeof Player !== 'undefined' && Player.state) {
+                Player.state._helpedRevolt = { townId: town.id, side: 'rebels', day: typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0 };
+            }
         } else {
             revolt.defenderMorale = Math.min(100, (revolt.defenderMorale || 50) + 10);
             revolt.defenderStrength = Math.floor((revolt.defenderStrength || 0) * 1.1);

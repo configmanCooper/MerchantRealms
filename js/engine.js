@@ -12359,6 +12359,68 @@
                     UI.toast('🏴 ' + groupName + ' has taken ' + town.name + '!', 'danger', 'critical');
                 }
             }
+
+            // Offer player a deal from the new revolt kingdom (if not already nobility here)
+            var _pIsKingHere = ps.isKing && ps.kingState && ps.kingState.kingdomId === newKingdomId;
+            var _pCurrentRank = (ps.socialRank && ps.socialRank[newKingdomId]) || 0;
+            var _pHighestRank = 0;
+            if (ps.socialRank) {
+                for (var _srk in ps.socialRank) {
+                    if ((ps.socialRank[_srk] || 0) > _pHighestRank) _pHighestRank = ps.socialRank[_srk];
+                }
+            }
+            // Only offer if player is not already nobility (rank 4+) and not king
+            if (!_pIsKingHere && _pHighestRank < 4) {
+                var _playerHelpedRevolt = ps._helpedRevolt && ps._helpedRevolt.townId === town.id && ps._helpedRevolt.side === 'rebels';
+
+                // Calculate offered rank: at least 1 above current, max guildmaster (3)
+                var _offeredRank = Math.min(3, Math.max(_pCurrentRank + 1, 1));
+
+                // Calculate gold offer: 500-2000 based on kingdom wealth and player help
+                var _baseGold = 500;
+                var _maxGold = 2000;
+                var _offeredGold = Math.min(_maxGold, Math.max(_baseGold, Math.floor((newKingdom.gold || 0) * 0.15)));
+                _offeredGold = Math.min(_offeredGold, Math.floor(newKingdom.gold * 0.3)); // never more than 30% of treasury
+
+                // Buildings to offer: unowned or kingdom-owned buildings in town (max 2)
+                var _offeredBuildings = [];
+                if (town.buildings) {
+                    for (var _bi = 0; _bi < town.buildings.length && _offeredBuildings.length < 2; _bi++) {
+                        var _bld = town.buildings[_bi];
+                        if (!_bld.ownerId || _bld.ownerId === newKingdomId || _bld.ownerId === (parentK ? parentK.id : '')) {
+                            _offeredBuildings.push({ index: _bi, type: _bld.type, name: _bld.name || _bld.type });
+                        }
+                    }
+                }
+
+                // If player helped the revolt, offer minor nobility (rank 4) instead
+                if (_playerHelpedRevolt) {
+                    _offeredRank = 4; // minor_noble
+                    _offeredGold = Math.min(_maxGold, Math.max(1000, _offeredGold)); // at least 1000g for helpers
+                }
+
+                var _rankNames = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble'];
+                ps._revoltDealOffer = {
+                    kingdomId: newKingdomId,
+                    kingdomName: groupName,
+                    townId: town.id,
+                    townName: town.name,
+                    offeredRank: _offeredRank,
+                    offeredRankName: _rankNames[_offeredRank] || 'Citizen',
+                    offeredGold: _offeredGold,
+                    offeredBuildings: _offeredBuildings,
+                    playerHelped: _playerHelpedRevolt,
+                    day: world.day,
+                    expires: world.day + 30
+                };
+
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    var _dealMsg = _playerHelpedRevolt
+                        ? '📜 ' + groupName + ' offers you Minor Nobility for your role in the revolution!'
+                        : '📜 ' + groupName + ' offers you ' + (_rankNames[_offeredRank] || 'a position') + ' status and gold to join their kingdom!';
+                    UI.toast(_dealMsg, 'success', 'critical');
+                }
+            }
         }
     }
 
@@ -25015,6 +25077,46 @@
         }
     }
 
+    // Player caught in conspiracy — consequences
+    function _playerConspiracyCaught(k, plotType, succeeded) {
+        if (typeof Player === 'undefined') return;
+        var kId = k.id;
+        // Demote player from any noble rank in this kingdom
+        if (Player.socialRank && Player.socialRank[kId] && Player.socialRank[kId] >= 4) {
+            var oldRank = Player.socialRank[kId];
+            Player.socialRank[kId] = 1; // Demoted to Citizen
+            logEvent('⚠️ You have been stripped of your noble title in ' + k.name + ' for conspiracy!', {
+                type: 'player_demoted', kingdomId: kId
+            }, 'my_kingdom');
+        }
+        // Lose kingdom rep
+        if (Player.kingdomRep && Player.kingdomRep[kId] != null) {
+            Player.kingdomRep[kId] = Math.max(0, (Player.kingdomRep[kId] || 0) - 40);
+        }
+        // Gold seizure — lose 30-50% of gold
+        if (Player.gold && Player.gold > 0) {
+            var seized = Math.floor(Player.gold * (0.30 + Math.random() * 0.20));
+            if (typeof Player.modifyGold === 'function') {
+                Player.modifyGold(-seized, 'conspiracy_fine');
+            } else {
+                Player.gold = Math.max(0, Player.gold - seized);
+            }
+            logEvent('💰 ' + seized + 'g seized from you as punishment for conspiracy in ' + k.name + '.', {
+                type: 'gold_seized', kingdomId: kId
+            }, 'my_kingdom');
+        }
+        // Imprisonment: 30-90 days
+        var jailDays = 30 + Math.floor(Math.random() * 61);
+        if (Player.state) {
+            Player.state._jailed = true;
+            Player.state._jailDays = jailDays;
+            Player.state._jailKingdom = kId;
+        }
+        logEvent('🔒 You have been imprisoned for ' + jailDays + ' days for your role in the ' + plotType + ' conspiracy in ' + k.name + '!', {
+            type: 'player_jailed', kingdomId: kId
+        }, 'my_kingdom');
+    }
+
     function _attemptConspiracyPlot(k, conspiracy) {
         var rng = world.rng;
         var kId = k.id;
@@ -25025,11 +25127,13 @@
 
         // Gather plotter person objects
         var plotterPersons = [];
+        var playerIsPlotter = false;
         for (var pi = 0; pi < conspiracy.plotters.length; pi++) {
+            if (conspiracy.plotters[pi] === 'player') { playerIsPlotter = true; continue; }
             var pp = findPerson(conspiracy.plotters[pi]);
             if (pp && pp.alive) plotterPersons.push(pp);
         }
-        var plotterCount = plotterPersons.length;
+        var plotterCount = plotterPersons.length + (playerIsPlotter ? 1 : 0);
 
         // Gather all nobles for suspicion spreading
         var allNobles = world.people.filter(function(p) {
@@ -25080,6 +25184,10 @@
                                 cp.kingLoyalty = Math.min(100, (cp.kingLoyalty || 0) + 30);
                             }
                         }
+                    }
+                    // Player caught in assassination conspiracy
+                    if (playerIsPlotter) {
+                        _playerConspiracyCaught(k, 'assassination', true);
                     }
                 }
                 // Suspicion always spreads
@@ -25188,6 +25296,11 @@
                         fp.kingLoyalty = Math.min(100, (fp.kingLoyalty || 0) + 30);
                     }
                 }
+            }
+            // Player caught in failed conspiracy
+            var _playerInThis = conspiracy.plotters && conspiracy.plotters.indexOf('player') >= 0;
+            if (_playerInThis) {
+                _playerConspiracyCaught(k, conspiracy.type, false);
             }
         } else {
             logEvent('⚔️ A ' + conspiracy.type + ' attempt in ' + k.name + ' has failed! The plotters escape into hiding.', {
@@ -26381,6 +26494,83 @@
         getWorldChronicle() {
             if (!world || !world.majorEventHistory) return [];
             return world.majorEventHistory;
+        },
+
+        // Player conspiracy system — get current conspiracy status in a kingdom
+        getKingdomConspiracy(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._conspiracy) return null;
+            var c = k._conspiracy;
+            var playerIn = c.plotters.indexOf('player') >= 0;
+            var plotterNames = [];
+            for (var i = 0; i < c.plotters.length; i++) {
+                if (c.plotters[i] === 'player') { plotterNames.push('You'); continue; }
+                var p = findPerson(c.plotters[i]);
+                if (p && p.alive) plotterNames.push((p.firstName || '?') + ' ' + (p.lastName || ''));
+            }
+            return {
+                type: c.type,
+                plotterCount: c.plotters.length,
+                plotterNames: plotterNames,
+                strength: c.strength,
+                startDay: c.startDay,
+                playerInvolved: playerIn,
+                detected: c.detected
+            };
+        },
+
+        // Player joins existing conspiracy
+        playerJoinConspiracy(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k) return { success: false, message: 'Kingdom not found.' };
+            if (!k._conspiracy) return { success: false, message: 'No active conspiracy to join.' };
+            if (k._conspiracy.plotters.indexOf('player') >= 0) return { success: false, message: 'You are already part of this conspiracy.' };
+            k._conspiracy.plotters.push('player');
+            k._conspiracy.strength += 15; // player brings significant strength
+            logEvent('🤫 You have secretly joined the ' + k._conspiracy.type + ' conspiracy in ' + k.name + '.', {
+                type: 'conspiracy_joined', kingdomId: k.id
+            }, 'my_kingdom');
+            return { success: true, message: 'You have joined the ' + k._conspiracy.type + ' plot against the king of ' + k.name + '.' };
+        },
+
+        // Player leaves conspiracy
+        playerLeaveConspiracy(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._conspiracy) return { success: false, message: 'No conspiracy to leave.' };
+            var idx = k._conspiracy.plotters.indexOf('player');
+            if (idx < 0) return { success: false, message: 'You are not part of this conspiracy.' };
+            k._conspiracy.plotters.splice(idx, 1);
+            k._conspiracy.strength = Math.max(0, k._conspiracy.strength - 15);
+            // Small chance plotters notice and relations drop
+            return { success: true, message: 'You quietly withdrew from the conspiracy.' };
+        },
+
+        // Player forms a new conspiracy with a discontented noble
+        playerFormConspiracy(kingdomId, targetNobleId, plotType) {
+            var k = findKingdom(kingdomId);
+            if (!k) return { success: false, message: 'Kingdom not found.' };
+            if (k._conspiracy) return { success: false, message: 'A conspiracy already exists in this kingdom. Try joining it instead.' };
+            if (k.king === 'player_king') return { success: false, message: 'You cannot conspire against yourself!' };
+            var noble = findPerson(targetNobleId);
+            if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+            var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
+            if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
+            // Check noble's loyalty — must be discontented
+            var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+            if (loyalty > 55) return { success: false, message: noble.firstName + ' is too loyal to the king to conspire.' };
+
+            var type = plotType === 'coup' ? 'coup' : 'assassination';
+            k._conspiracy = {
+                plotters: ['player', targetNobleId],
+                type: type,
+                startDay: world.day,
+                strength: 20,
+                detected: false
+            };
+            logEvent('🤫 You have formed a secret ' + type + ' conspiracy with ' + noble.firstName + ' in ' + k.name + '.', {
+                type: 'conspiracy_formed', kingdomId: k.id
+            }, 'my_kingdom');
+            return { success: true, message: 'You and ' + noble.firstName + ' have begun plotting a ' + type + ' against the king of ' + k.name + '.' };
         },
 
         addArmy(armyObj) {

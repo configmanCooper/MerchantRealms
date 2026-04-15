@@ -18835,6 +18835,11 @@
         // Check for king-directed commissions (Minor Noble+)
         checkKingCommissions();
 
+        // Check for pending revolt kingdom deal offers
+        if (typeof UI !== 'undefined' && UI.checkRevoltDealOffer) {
+            UI.checkRevoltDealOffer();
+        }
+
         // Noble loan repayments (monthly)
         tickNobleLoans();
 
