@@ -4,6 +4,37 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.75.0] - Festival System, Feast Invitations & Noble Influence
+
+### Added — Town Festival System
+- Kings can throw festivals in towns: small (500g, +10 happiness) or large (2000g, +20 happiness)
+- 3-day duration with 90-day cooldown per location
+- Happiness afterglow: +5/+10 for 15 days after festival ends
+- 8 player festival actions: mingle, gossip, drink, shop, perform, gamble, pickpocket, socialize with nobles
+- Festival participation button in town view when active festival exists
+- King UI: small/large festival choice with cooldown indicators per town
+- King AI decides based on personality, treasury balance, and town happiness
+
+### Added — Noble Feast Invitations for Elite Merchants
+- Nobles with relationship ≥30 can invite EMs/player (burgher+ rank) to royal feasts
+- Invite chance: personality (social/warm/ambitious) + relationship level + guildmaster bonus
+- Merchant-specific feast actions: advocate lower taxes, lower tariffs, unban goods, merchant networking
+- Economic Advocacy category in feast UI for invited merchant guests
+- EM AI travels to feast town when invited, builds noble relationships proactively
+
+### Added — NPC Conversation & Influence System
+- Noble policy opinions (taxes, war, trade, alliances) initialized from personality + RNG
+- `tickNoblePolicyAdvocacy`: nobles advocate policies to king weekly, can change tax rates, tariffs, bans
+- Royal advisors have biggest sway on king (modulated by relationship + perceived loyalty)
+- `tickLocalConversations`: NPCs converse locally every 3 days, build relationships based on compatibility
+- `canTalkTo`: rank restriction — can't approach someone 2+ ranks above without introduction from intermediary
+- EM AI relationship building with local nobles (every 5 days, 25% chance)
+
+### Fixed — Noble Stipend Balance
+- Reduced noble expenses to prevent unrealistic bankruptcy
+- Minor noble: 15g/10d (was 50), Lord: 40g (was 100), RA: 80g (was 200)
+- Nobles now net positive from stipend alone before building income
+
 ## [0.74.0] - Player King UI Parity, EM Growth & Treasury Spending
 
 ### Added — Player King Diplomacy
