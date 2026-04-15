@@ -70,7 +70,9 @@
         if (age <= 35) minGold = 1500;
         else if (age <= 50) minGold = 3000;
         else minGold = 5000;
-        if ((npc.gold || 0) < minGold) {
+        // Promotion bonus: +500g on top of whatever they have
+        npc.gold = (npc.gold || 0) + 500;
+        if (npc.gold < minGold) {
             npc.gold = minGold + Math.floor((world.rng ? world.rng.random() : Math.random()) * 2000);
         }
         // Assign unused heraldry
