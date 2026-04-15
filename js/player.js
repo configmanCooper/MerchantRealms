@@ -7840,7 +7840,7 @@
         }
         // Check cooldown AFTER checking existing sessions (so reopen/pending status still works)
         var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
-        if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before holding court.' };
+        if (daysSinceLast < 14) return { success: false, message: 'Must wait ' + (14 - daysSinceLast) + ' more days before holding court.' };
         // If no leadDays specified, return schedule options (don't set courtHeldDay yet!)
         if (!leadDays) {
             return { success: true, showSchedule: true, eventType: 'court', kingdomId: player.kingState.kingdomId };

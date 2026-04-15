@@ -18899,7 +18899,7 @@
                 'territory_transfer', 'kingdom_collapse', 'economic_collapse', 'revolt',
                 'town_revolt_win', 'town_revolt_lose', 'king_death', 'coronation', 'succession',
                 'alliance_formed', 'alliance_broken', 'assassination', 'assassination_attempt',
-                'conspiracy_discovered', 'feast_started', 'court_session', 'law_passed', 'law_repealed',
+                'conspiracy_discovered', 'law_passed', 'law_repealed',
                 'noble_revolt_execution', 'noble_revolt_stripped', 'battle_result',
                 'kingdom_bankruptcy', 'plague_started', 'plague_ended', 'siege_started', 'siege_ended',
                 'non_aggression_pact', 'royal_marriage',
@@ -23181,7 +23181,7 @@
         if (k.atWar && k.atWar.size > 0) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
         // Low happiness → king should hold court to help
         if ((k.happiness || 50) < 35) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
-        _courtBaseMin = Math.max(15, _courtBaseMin);
+        _courtBaseMin = Math.max(14, _courtBaseMin); // 14-day cooldown per user request
         _courtBaseMax = Math.max(_courtBaseMin + 5, _courtBaseMax);
         k._nextCourtDay = world.day + rng.randInt(_courtBaseMin, _courtBaseMax);
     }
@@ -23489,7 +23489,7 @@
             if ((k.gold || 0) > 15000) { _feastBaseMin -= 5; _feastBaseMax -= 10; }
             // Poor kingdoms delay feasts
             if ((k.gold || 0) < 3000) { _feastBaseMin += 15; _feastBaseMax += 20; }
-            _feastBaseMin = Math.max(25, _feastBaseMin);
+            _feastBaseMin = Math.max(30, _feastBaseMin); // 30-day cooldown per user request
             _feastBaseMax = Math.max(_feastBaseMin + 10, _feastBaseMax);
             k._nextFeastDay = world.day + rng.randInt(_feastBaseMin, _feastBaseMax);
         }
