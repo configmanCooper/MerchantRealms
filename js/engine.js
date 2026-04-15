@@ -24784,6 +24784,11 @@
                 if ((sP.courage || 50) > 65) assassinChance += 0.10;
                 if ((sP.honesty || 50) < 35) assassinChance += 0.10;
 
+                // Royal guards reduce success by 1% each, max 20%
+                var _soloRGCount = (k._employees && k._employees.royalGuards) ? k._employees.royalGuards.length : 0;
+                var _soloRGReduction = Math.min(0.20, _soloRGCount * 0.01);
+                assassinChance = Math.max(0.02, assassinChance - _soloRGReduction);
+
                 // C3: Unified catch chance — 1 noble = 70% base
                 var caughtChance = _computeAssassinationCatchChance(1, [sNoble], k);
 
@@ -24834,8 +24839,8 @@
             // Grow strength: +8 per plotter per month (B: faster buildup)
             conspiracy.strength += conspiracy.plotters.length * 8;
 
-            // Detection: 10% base chance per month
-            if (!conspiracy.detected && rng.chance(0.10)) {
+            // Detection: 8% base chance per month
+            if (!conspiracy.detected && rng.chance(0.08)) {
                 conspiracy.detected = true;
                 var kingPerson = findPerson(k.king);
                 var kingName = kingPerson ? (kingPerson.firstName || 'The King') : 'The King';
@@ -24943,6 +24948,11 @@
             var assassinSuccessChance = 0.50 + Math.max(0, (plotterCount - 1) * 0.05);
             assassinSuccessChance = Math.min(0.75, assassinSuccessChance);
 
+            // Royal guards reduce success by 1% each, max 20%
+            var _assRGCount = (k._employees && k._employees.royalGuards) ? k._employees.royalGuards.length : 0;
+            var _assRGReduction = Math.min(0.20, _assRGCount * 0.01);
+            assassinSuccessChance = Math.max(0.05, assassinSuccessChance - _assRGReduction);
+
             if (rng.chance(assassinSuccessChance)) {
                 // Assassination succeeds — but were plotters caught?
                 var wasCaught = rng.chance(caughtChance);
@@ -24988,9 +24998,14 @@
 
         } else if (conspiracy.type === 'coup') {
             // Coup success depends on plotters' combined military support vs king's garrison
-            var plotterSupport = plotterCount * 20;
+            var plotterSupport = plotterCount * 50;
             var garrison = k.soldiers || 0;
-            var coupChance = plotterSupport > garrison ? 0.50 : 0.20;
+            var coupChance = plotterSupport > garrison ? 0.70 : 0.40;
+
+            // Royal guards reduce coup/assassination success by 1% each, max 20%
+            var _coupRGCount = (k._employees && k._employees.royalGuards) ? k._employees.royalGuards.length : 0;
+            var _coupRGReduction = Math.min(0.20, _coupRGCount * 0.01);
+            coupChance = Math.max(0.05, coupChance - _coupRGReduction);
 
             if (rng.chance(coupChance)) {
                 // Coup succeeds — find leader (highest ambition)
