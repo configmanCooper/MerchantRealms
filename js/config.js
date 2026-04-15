@@ -92,7 +92,7 @@ const CONFIG = {
     GUARD_WAGE: 6,              // Was 4; guards cost more
     TAX_RATE_DEFAULT: 0.10,
     PRICE_VOLATILITY: 0.15,
-    SUPPLY_DEMAND_FACTOR: 0.005,
+    SUPPLY_DEMAND_FACTOR: 0.008,
     BUILDING_WEEKLY_MAINTENANCE: 0.03, // 3% of building cost per week as maintenance
 
     // Elite Merchant scaling

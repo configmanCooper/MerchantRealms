@@ -5657,6 +5657,27 @@
                     var prospFactor = 1 + (town.prosperity - 50) * 0.002;
                     price *= prospFactor;
                 }
+                // M1: Wartime price spikes for military and strategic goods
+                var _townK = findKingdom(town.kingdomId);
+                if (_townK && _townK.atWar && _townK.atWar.size > 0) {
+                    var _milGoods = { swords: 1.4, armor: 1.4, bows: 1.3, arrows: 1.25, horses: 1.3, saddles: 1.2, shields: 1.3, iron: 1.15, leather: 1.1, rope: 1.1, wood: 1.05 };
+                    if (_milGoods[r.id]) {
+                        price *= _milGoods[r.id]; // Military goods spike during wartime
+                    }
+                    // Food prices also rise during war (supply disruption)
+                    if (r.category === 'food') {
+                        price *= 1.1 + _townK.atWar.size * 0.05; // More wars = more disruption
+                    }
+                }
+                // M1: Scarcity multiplier — very low supply relative to demand causes sharper spikes
+                if (s > 0 && d > 0) {
+                    var _scarcityRatio = s / d;
+                    if (_scarcityRatio < 0.3) {
+                        price *= 1.3 + (0.3 - _scarcityRatio) * 2.0; // Up to +90% at near-zero supply
+                    } else if (_scarcityRatio < 0.6) {
+                        price *= 1.0 + (0.6 - _scarcityRatio) * 0.5; // Up to +15% at half supply
+                    }
+                }
                 // H4: Widened floor/ceiling — 15% to 600% of base price
                 price = Math.max(bp * 0.15, Math.min(bp * 6.0, price));
                 // Stale food discount — if some supply is stale, blend price down
@@ -5695,7 +5716,11 @@
                         var townK = findKingdom(town.kingdomId);
                         var neighborK = findKingdom(neighbor.kingdomId);
                         if (townK && townK.atWar && townK.atWar.has(neighbor.kingdomId)) {
-                            bgTradeRate *= 0.1; // 90% reduction during war
+                            bgTradeRate *= 0.05; // M1: 95% reduction during war (nearly halted)
+                        }
+                        // M1: Hostile relations also slow trade
+                        else if (townK && neighborK && (townK.relations[neighbor.kingdomId] || 0) < -40) {
+                            bgTradeRate *= 0.3; // Hostile relations impede trade
                         }
                         // Cross-kingdom base reduction (borders slow trade)
                         bgTradeRate *= 0.6;
@@ -7751,11 +7776,11 @@
             k.warExhaustion = Math.max(0, k.warExhaustion - 0.5);
             return;
         }
-        // Accumulate: base + per-war + treasury pressure + bankruptcy
-        var gain = 0.15 + ((k.atWar ? k.atWar.size : 0) * 0.1);
+        // C2: Slower exhaustion accumulation — wars last longer with more battles
+        var gain = 0.10 + ((k.atWar ? k.atWar.size : 0) * 0.07);
         var startGold = k._startingGold || 10000;
-        if (k.gold < startGold * 0.25) gain += 0.2;
-        if (k._bankruptDays > 0) gain += 0.3;
+        if (k.gold < startGold * 0.25) gain += 0.15;
+        if (k._bankruptDays > 0) gain += 0.20;
         k.warExhaustion = Math.min(100, k.warExhaustion + gain);
     }
 
@@ -13776,13 +13801,13 @@
                 if (_weStr > _strongestEnemyStr) { _strongestEnemy = _we; _strongestEnemyStr = _weStr; }
             }
 
-            // Phase transitions
-            if (_warPhase === 'buildup' && (_warPhaseDays > 30 || _kStrength > _strongestEnemyStr * 0.8)) {
+            // Phase transitions — C2: accelerated buildup, more aggressive phase transitions
+            if (_warPhase === 'buildup' && (_warPhaseDays > 15 || _kStrength > _strongestEnemyStr * 0.7)) {
                 _warPhase = 'offensive';
                 k._warPhaseStartDay = world.day;
-            } else if (_warPhase === 'offensive' && _warPhaseDays > 60) {
+            } else if (_warPhase === 'offensive' && _warPhaseDays > 45) {
                 // After sustained offensive, try capital strike if possible
-                if (_kStrength > _strongestEnemyStr * 1.2 && _pers.courage !== 'cowardly') {
+                if (_kStrength > _strongestEnemyStr * 1.0 && _pers.courage !== 'cowardly') {
                     _warPhase = 'capital_strike';
                     k._warPhaseStartDay = world.day;
                 } else {
@@ -13794,6 +13819,11 @@
             }
             k._warPhase = _warPhase;
             if (!k._warPhaseStartDay) k._warPhaseStartDay = world.day;
+
+            // C2: Decay counter-attack urgency over time
+            if (k._counterAttackUrgency && k._counterAttackUrgency > 0) {
+                k._counterAttackUrgency = Math.max(0, k._counterAttackUrgency - 1);
+            }
 
             // Border defense: move soldiers from interior to border towns
             if (rng.chance(0.08)) {
@@ -14065,11 +14095,16 @@
                     continue;
                 }
 
-                // H2: Phase-based army raising with improved deployment rates
-                var _raiseChance = _warPhase === 'buildup' ? 0.15 : (_warPhase === 'capital_strike' ? 0.50 : 0.35);
-                var _minAvail = _warPhase === 'buildup' ? 8 : 5;
+                // C2: Increased deployment rates for more decisive wars
+                var _raiseChance = _warPhase === 'buildup' ? 0.25 : (_warPhase === 'capital_strike' ? 0.65 : 0.50);
+                var _minAvail = _warPhase === 'buildup' ? 6 : 4;
+                // C2: Counter-attack urgency boost — recently lost a town
+                if (k._counterAttackUrgency && k._counterAttackUrgency > 0) {
+                    _raiseChance += 0.20;
+                    _minAvail = 3;
+                }
                 if (availableSoldiers > _minAvail && rng.chance(_raiseChance)) {
-                    const armySize = Math.min(Math.floor(town.garrison * 0.5), availableSoldiers);
+                    const armySize = Math.min(Math.floor(town.garrison * 0.65), availableSoldiers);
                     town.garrison -= armySize;
 
                     // Calculate unit composition: 60% infantry, 25% archers, 15% cavalry
@@ -16721,6 +16756,9 @@
             if (defendK) {
                 addBattleLossExhaustion(defendK);
                 addTownLossExhaustion(defendK);
+                // C2: Counter-attack urgency — losing a town triggers immediate army mobilization
+                defendK._counterAttackUrgency = (defendK._counterAttackUrgency || 0) + 30;
+                defendK._lastTownLostDay = world.day;
             }
             // War goals: attacker wins battle and potentially conquers target town
             if (attackK && defendK) incrementWarGoalBattles(attackK, defendK);
@@ -24913,6 +24951,124 @@
         }
     }
 
+    // H2: Noble Personality Influence on Kingdom Governance
+    // Nobles subtly push kingdom policy based on their personality traits
+    function tickNobleInfluence(k) {
+        if (!k || world.day % 30 !== 0) return;
+        var rng = world.rng;
+        var kId = k.id;
+        if (k.king === 'player_king') return; // Player-king makes own decisions
+
+        // Gather living nobles (rank 4-6)
+        var nobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
+        });
+        if (nobles.length === 0) return;
+
+        var kingPerson = findPerson(k.king);
+        var kingInt = (kingPerson && kingPerson.personality) ? (kingPerson.personality.intelligence || 50) : 50;
+        // Smarter kings are less swayed by noble pressure
+        var kingResistance = kingInt > 70 ? 0.5 : (kingInt > 50 ? 0.7 : 1.0);
+
+        // Tally noble faction pressures
+        var warPressure = 0, peacePressure = 0, taxUpPressure = 0, taxDownPressure = 0;
+        var expansionPressure = 0, diplomacyPressure = 0;
+
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var n = nobles[ni];
+            var pers = n.personality || {};
+            var rank = n.socialRank[kId] || 4;
+            var weight = rank >= 6 ? 1.5 : (rank >= 5 ? 1.2 : 1.0); // Higher rank = more influence
+            var loyalty = n.kingLoyalty != null ? n.kingLoyalty : 50;
+            // Disloyal nobles don't constructively advise (they conspire instead)
+            if (loyalty < 30) continue;
+
+            // Ambitious nobles push for expansion and war
+            var ambition = pers.ambition || 50;
+            if (ambition > 65) {
+                expansionPressure += (ambition - 50) * 0.02 * weight;
+                warPressure += (ambition - 60) * 0.015 * weight;
+            }
+
+            // Diplomatic/intelligent nobles push for treaties and peace
+            var intelligence = pers.intelligence || 50;
+            if (intelligence > 60) {
+                diplomacyPressure += (intelligence - 50) * 0.02 * weight;
+                peacePressure += (intelligence - 55) * 0.01 * weight;
+            }
+
+            // Greedy nobles push to raise taxes
+            var greed = pers.greed || 50;
+            if (greed > 60) {
+                taxUpPressure += (greed - 50) * 0.015 * weight;
+            }
+
+            // Generous/kind nobles push to lower taxes
+            var warmth = pers.warmth || 50;
+            if (warmth > 60) {
+                taxDownPressure += (warmth - 50) * 0.012 * weight;
+            }
+
+            // Militaristic nobles push for stronger military
+            var courage = pers.courage || 50;
+            if (courage > 65) {
+                warPressure += (courage - 55) * 0.01 * weight;
+            }
+        }
+
+        // Apply gentle pressure effects (scaled by king resistance)
+
+        // Tax pressure: nudge tax rate up or down
+        var netTaxPressure = (taxUpPressure - taxDownPressure) * kingResistance;
+        if (Math.abs(netTaxPressure) > 0.5 && rng.chance(0.15)) {
+            var taxShift = netTaxPressure > 0 ? rng.randFloat(0.005, 0.015) : -rng.randFloat(0.005, 0.015);
+            k.taxRate = Math.max(0.05, Math.min(0.25, (k.taxRate || 0.10) + taxShift));
+        }
+
+        // Expansion pressure: improve relations with weaker neighbors (expansion targets)
+        if (expansionPressure > 1.0 && rng.chance(0.08 * kingResistance)) {
+            // Ambitious nobles push king to view weak neighbors as opportunities
+            var weakNeighbors = world.kingdoms.filter(function(o) {
+                return o.id !== kId && !k.atWar.has(o.id) && computeMilitaryStrength(o) < computeMilitaryStrength(k) * 0.6;
+            });
+            if (weakNeighbors.length > 0) {
+                var target = rng.pick(weakNeighbors);
+                // Worsen relations slightly (hawks create tension)
+                k.relations[target.id] = Math.max(-100, (k.relations[target.id] || 0) - rng.randFloat(1, 4));
+            }
+        }
+
+        // Diplomacy pressure: improve relations with potential allies
+        if (diplomacyPressure > 1.0 && rng.chance(0.10 * kingResistance)) {
+            var potentialAllies = world.kingdoms.filter(function(o) {
+                return o.id !== kId && !k.atWar.has(o.id) && !k.alliances.has(o.id) &&
+                       (k.relations[o.id] || 0) > -30;
+            });
+            if (potentialAllies.length > 0) {
+                var ally = rng.pick(potentialAllies);
+                k.relations[ally.id] = Math.min(100, (k.relations[ally.id] || 0) + rng.randFloat(1, 3));
+                ally.relations[kId] = Math.min(100, (ally.relations[kId] || 0) + rng.randFloat(0.5, 1.5));
+            }
+        }
+
+        // War/peace pressure during wartime
+        if (k.atWar && k.atWar.size > 0) {
+            // Hawks make war exhaustion recovery slightly faster (morale boost)
+            if (warPressure > peacePressure * 1.5) {
+                k.warExhaustion = Math.max(0, (k.warExhaustion || 0) - 0.5);
+            }
+            // Doves increase exhaustion pressure (war weariness)
+            if (peacePressure > warPressure * 1.5) {
+                k.warExhaustion = Math.min(100, (k.warExhaustion || 0) + 0.3);
+            }
+        }
+
+        // Happiness effect: generous/kind noble councils make populace happier
+        if (taxDownPressure > taxUpPressure && rng.chance(0.05)) {
+            k.happiness = Math.min(100, (k.happiness || 50) + 0.5);
+        }
+    }
+
     function tickNobleConspiracies(k) {
         if (!k || world.day % 30 !== 0) return;
         var rng = world.rng;
@@ -26878,6 +27034,7 @@
         tickKingdomFeasts: tickKingdomFeasts,
         tickKingdomCourt: tickKingdomCourt,
         tickNobleConspiracies: tickNobleConspiracies,
+        tickNobleInfluence: tickNobleInfluence,
         tickKingUnrestResponse: tickKingUnrestResponse,
         tickNobleIncome: tickNobleIncome,
         tickNobleRelationships: tickNobleRelationships,

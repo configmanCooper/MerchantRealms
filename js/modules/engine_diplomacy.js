@@ -1771,6 +1771,8 @@
                 tickKingdomCourt(k);
             }
 
+            // ---- H2: Noble personality influence on governance (monthly) ----
+            if (typeof Engine.tickNobleInfluence === 'function') Engine.tickNobleInfluence(k);
             // ---- Noble conspiracies & king unrest response (monthly) ----
             tickNobleConspiracies(k);
             if (!_playerIsKingHere) {
@@ -3243,20 +3245,21 @@
                 })(k);
 
                 var exhaustion = k.warExhaustion || 0;
-                var highExhaustion = exhaustion > 50;
-                var criticalExhaustion = exhaustion > 75;
+                // C2: Raise exhaustion thresholds — wars should last longer with more battles
+                var highExhaustion = exhaustion > 65;
+                var criticalExhaustion = exhaustion > 85;
 
-                const wantsPeace = (losing && lostTowns >= 2 && p.courage !== 'brave') ||
-                                   (p.courage === 'cowardly' && losing) ||
-                                   (p.intelligence === 'brilliant' && losing && lostTowns >= 1) ||
-                                   (highExhaustion && p.courage !== 'brave') ||
+                const wantsPeace = (losing && lostTowns >= 3 && p.courage !== 'brave') ||
+                                   (p.courage === 'cowardly' && losing && lostTowns >= 1) ||
+                                   (p.intelligence === 'brilliant' && losing && lostTowns >= 2) ||
+                                   (highExhaustion && p.courage !== 'brave' && losing) ||
                                    (criticalExhaustion) || // even brave kings consider peace at critical exhaustion
-                                   (k.gold < 200 && (k._bankruptDays || 0) > 30);
+                                   (k.gold < 100 && (k._bankruptDays || 0) > 45);
 
-                var peaceChance = 0.1;
-                if (criticalExhaustion) peaceChance = 0.4;
-                else if (highExhaustion) peaceChance = 0.2;
-                if (k.atWar.size > 1) peaceChance += 0.1; // multi-front pressure
+                var peaceChance = 0.06;
+                if (criticalExhaustion) peaceChance = 0.25;
+                else if (highExhaustion) peaceChance = 0.12;
+                if (k.atWar.size > 1) peaceChance += 0.08; // multi-front pressure
 
                 if (wantsPeace && rng.chance(peaceChance)) {
                     // If enemy is player-king, send peace offer instead of auto-making peace
