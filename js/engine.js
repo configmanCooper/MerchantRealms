@@ -18909,7 +18909,7 @@
                 'king_assassinated', 'coup_success', 'new_king_coup', 'conspiracy_formed',
                 'conspiracy_arrest', 'conspiracy_execution', 'coup_attempt', 'coup_failed',
                 'revolt_started', 'revolt_victory', 'revolt_suppressed',
-                'noble_punishment', 'noble_execution', 'noble_exile', 'peace_treaty', 'trade_deal',
+                'noble_punishment', 'noble_execution', 'noble_exile', 'peace_treaty',
                 'alliance_dissolved'];
             if (majorTypes.indexOf(details.type) !== -1) {
                 if (!world.majorEventHistory) world.majorEventHistory = [];
