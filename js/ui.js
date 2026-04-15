@@ -7937,7 +7937,8 @@ window.UI = (function () {
             diplomacy: { icon: '🤝', label: 'Diplomacy & Treaties', events: [] },
             disasters: { icon: '💀', label: 'Disasters & Crises', events: [] },
             laws: { icon: '📜', label: 'Laws & Decrees', events: [] },
-            social: { icon: '🎪', label: 'Feasts & Court', events: [] }
+            social: { icon: '🎪', label: 'Feasts & Court', events: [] },
+            status: { icon: '📜', label: 'Yearly Kingdom Status', events: [] }
         };
 
         var warTypes = ['war_declared', 'warDeclared', 'warEnded', 'peace', 'surrender', 'battle_result', 'siege_started', 'siege_ended'];
@@ -7947,6 +7948,7 @@ window.UI = (function () {
         var disasterTypes = ['kingdom_collapse', 'economic_collapse', 'kingdom_bankruptcy', 'plague_started', 'plague_ended'];
         var lawTypes = ['law_passed', 'law_repealed'];
         var socialTypes = ['feast_started', 'court_session'];
+        var statusTypes = ['yearly_kingdom_summary'];
 
         for (var i = 0; i < chronicle.length; i++) {
             var evt = chronicle[i];
@@ -7958,17 +7960,18 @@ window.UI = (function () {
             else if (disasterTypes.indexOf(dtype) >= 0) categories.disasters.events.push(evt);
             else if (lawTypes.indexOf(dtype) >= 0) categories.laws.events.push(evt);
             else if (socialTypes.indexOf(dtype) >= 0) categories.social.events.push(evt);
+            else if (statusTypes.indexOf(dtype) >= 0) categories.status.events.push(evt);
             else categories.politics.events.push(evt); // default
         }
 
-        // Helper: format day as year/season/day
+        // Helper: format day as year/season/day (1 year = 1 season = 90 days)
         function formatChronicleDay(day) {
-            var year = Math.floor(day / 360) + 1;
-            var dayInYear = day % 360;
+            var dps = CONFIG.DAYS_PER_SEASON || 90;
+            var year = Math.floor(day / dps) + 1;
+            var dayInYear = (day % dps) + 1;
             var seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
-            var season = seasons[Math.floor(dayInYear / 90)] || 'Spring';
-            var dayInSeason = (dayInYear % 90) + 1;
-            return 'Year ' + year + ', ' + season + ' Day ' + dayInSeason;
+            var season = seasons[(Math.floor(day / dps)) % 4] || 'Spring';
+            return 'Year ' + year + ', ' + season + ' Day ' + dayInYear;
         }
 
         var html = '<div style="max-height:70vh;overflow-y:auto;padding:0 8px;">';
@@ -7992,7 +7995,7 @@ window.UI = (function () {
                 var e = evts[ei];
                 var dayLabel = formatChronicleDay(e.day);
                 var playerMark = e.playerInvolved ? ' <span style="color:var(--gold);">★</span>' : '';
-                var msgText = escapeHtml(e.message).replace(/[⚔️🛡️👑🔥💀🎪⚖️🤝📜💰🏰🗡️🔗📨]/g, function(m) { return '<span>' + m + '</span>'; });
+                var msgText = escapeHtml(e.message).replace(/\n/g, '<br>').replace(/[⚔️🛡️👑🔥💀🎪⚖️🤝📜💰🏰🗡️🔗📨]/g, function(m) { return '<span>' + m + '</span>'; });
 
                 html += '<div style="margin:4px 0;padding:4px 8px;border-left:2px solid rgba(180,140,50,0.2);font-size:0.85rem;">';
                 html += '<span style="color:#888;font-size:0.75rem;">' + escapeHtml(dayLabel) + '</span>' + playerMark + '<br>';

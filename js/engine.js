@@ -18935,6 +18935,102 @@
         while (world.eventLog.length > 1000) world.eventLog.shift();
     }
 
+    // ── World Chronicle: Yearly Kingdom Status Summary ──
+    function _generateKingdomStatusSummary() {
+        if (!world || !world.kingdoms || world.kingdoms.length === 0) return;
+        var dps = CONFIG.DAYS_PER_SEASON || 90;
+        var yearNum = Math.floor(world.day / dps) + 1;
+        var seasons = ['Spring', 'Summer', 'Autumn', 'Winter'];
+        var season = seasons[(Math.floor(world.day / dps)) % 4] || 'Spring';
+
+        var lines = [];
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (!k || !k.name) continue;
+
+            // Military description
+            var soldiers = k.soldiers || 0;
+            var milDesc;
+            if (soldiers >= 500) milDesc = 'a formidable military force';
+            else if (soldiers >= 300) milDesc = 'a strong army';
+            else if (soldiers >= 150) milDesc = 'a capable fighting force';
+            else if (soldiers >= 50) milDesc = 'a modest garrison';
+            else milDesc = 'a weak and undermanned military';
+
+            // Happiness description
+            var hap = k.happiness != null ? k.happiness : 50;
+            var hapDesc;
+            if (hap >= 80) hapDesc = 'The people are jubilant and content';
+            else if (hap >= 60) hapDesc = 'The populace is generally satisfied';
+            else if (hap >= 40) hapDesc = 'Unease simmers among the people';
+            else if (hap >= 20) hapDesc = 'Widespread discontent plagues the realm';
+            else hapDesc = 'The people teeter on the brink of open revolt';
+
+            // Treasury description
+            var gold = k.gold || 0;
+            var treasDesc;
+            if (gold >= 20000) treasDesc = 'overflowing coffers';
+            else if (gold >= 10000) treasDesc = 'a prosperous treasury';
+            else if (gold >= 5000) treasDesc = 'healthy finances';
+            else if (gold >= 2000) treasDesc = 'modest funds';
+            else if (gold >= 500) treasDesc = 'dwindling coffers';
+            else treasDesc = 'near-empty coffers';
+
+            // Alliances
+            var allyNames = [];
+            if (k.alliances && k.alliances.size > 0) {
+                k.alliances.forEach(function(aid) {
+                    var ally = findKingdom(aid);
+                    if (ally) allyNames.push(ally.name);
+                });
+            }
+
+            // Wars
+            var warNames = [];
+            if (k.atWar && k.atWar.size > 0) {
+                k.atWar.forEach(function(wid) {
+                    var enemy = findKingdom(wid);
+                    if (enemy) warNames.push(enemy.name);
+                });
+            }
+
+            // Towns
+            var townCount = k.territories ? k.territories.size : 0;
+
+            // King name
+            var kingPerson = k.king ? findPerson(k.king) : null;
+            var kingName = kingPerson ? (kingPerson.firstName + ' ' + (kingPerson.lastName || '')) : 'an unknown ruler';
+
+            // Build narrative
+            var desc = '🏰 ' + k.name + ' — Ruled by ' + kingName.trim() + ' with ' + townCount + ' town' + (townCount !== 1 ? 's' : '') + '. ';
+            desc += hapDesc + '. ';
+            desc += 'The kingdom commands ' + milDesc + ' and holds ' + treasDesc + '. ';
+
+            if (allyNames.length > 0) {
+                desc += 'Allied with ' + allyNames.join(', ') + '. ';
+            }
+            if (warNames.length > 0) {
+                desc += 'At war with ' + warNames.join(', ') + '. ';
+            }
+            if (allyNames.length === 0 && warNames.length === 0) {
+                desc += 'At peace, with no formal alliances. ';
+            }
+
+            lines.push(desc.trim());
+        }
+
+        var summaryMsg = '📜 Year ' + yearNum + ' (' + season + ') — State of the Realm:\n' + lines.join('\n');
+
+        // Push directly to world chronicle
+        if (!world.majorEventHistory) world.majorEventHistory = [];
+        world.majorEventHistory.push({
+            day: world.day,
+            message: summaryMsg,
+            details: { type: 'yearly_kingdom_summary', year: yearNum, season: season }
+        });
+        while (world.majorEventHistory.length > 1000) world.majorEventHistory.shift();
+    }
+
     // ========================================================
     // §18b BACKGROUND GOSSIP SYSTEM
     // ========================================================
@@ -26156,6 +26252,11 @@
                 Engine.tickEliteMerchantDynamics();
                 Engine.ensureEliteMerchantCount();
                 Engine.tickEMGuildAI();
+            }
+
+            // World Chronicle: Kingdom status summary every 90 days (1 year)
+            if (world.day % 90 === 0 && world.day > 0) {
+                _generateKingdomStatusSummary();
             }
 
             // Register any new people born this tick
