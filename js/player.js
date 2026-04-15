@@ -9087,6 +9087,240 @@
         return { success: true, message: 'Trade agreement established with ' + target.name + ' for 90 days! Relations +10.' };
     }
 
+    // ── King Propose Non-Aggression Pact ──
+    function kingProposeNAP(targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        var target = Engine.findKingdom(targetKingdomId);
+        if (!kingdom || !target) return { success: false, message: 'Kingdom not found.' };
+        if (kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(target.id)) return { success: false, message: 'Cannot propose NAP with a kingdom you are at war with.' };
+        var relations = (kingdom.relations && kingdom.relations[targetKingdomId]) || 0;
+        if (relations < -10) return { success: false, message: 'Relations too poor (need > -10, currently ' + Math.round(relations) + ').' };
+        // Check not already in a NAP
+        if (kingdom.peaceTreaties && kingdom.peaceTreaties[targetKingdomId] && Engine.getDay() < kingdom.peaceTreaties[targetKingdomId]) {
+            return { success: false, message: 'Already have an active non-aggression pact with ' + target.name + '.' };
+        }
+        var cost = 75;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g for diplomatic expenses.' };
+
+        var rng = Engine.getRng();
+        var acceptChance = 0.35 + (relations / 200);
+        if (rng.random() > acceptChance) {
+            kingdom.gold -= cost;
+            if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.max(-100, relations - 2);
+            return { success: false, message: target.name + ' declined the non-aggression pact.' };
+        }
+        kingdom.gold -= cost;
+        var duration = 270;
+        if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
+        if (!target.peaceTreaties) target.peaceTreaties = {};
+        kingdom.peaceTreaties[targetKingdomId] = Engine.getDay() + duration;
+        target.peaceTreaties[kingdom.id] = Engine.getDay() + duration;
+        if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 5);
+        if (target.relations) target.relations[kingdom.id] = Math.min(100, (target.relations[kingdom.id] || 0) + 5);
+        Engine.logEvent('🕊️ ' + kingdom.name + ' and ' + target.name + ' sign a non-aggression pact! (270 days)', {
+            type: 'non_aggression_pact', kingdoms: [kingdom.id, target.id],
+            effects: ['Neither may declare war for 270 days', 'Relations +5 both ways']
+        });
+        autoJournalCapture('king', 'I signed a non-aggression pact with ' + target.name + '. Peace shall hold for 270 days.', { mood: 'content' });
+        return { success: true, message: 'Non-aggression pact signed with ' + target.name + ' for 270 days! Relations +5.' };
+    }
+
+    // ── King Propose Mutual Defense Pact ──
+    function kingProposeMDP(targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        var target = Engine.findKingdom(targetKingdomId);
+        if (!kingdom || !target) return { success: false, message: 'Kingdom not found.' };
+        if (kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(target.id)) return { success: false, message: 'Cannot propose defense pact with a kingdom you are at war with.' };
+        var relations = (kingdom.relations && kingdom.relations[targetKingdomId]) || 0;
+        if (relations < 20) return { success: false, message: 'Relations too low (need 20+, currently ' + Math.round(relations) + ').' };
+        // Check not already in a MDP
+        var existing = (kingdom._activeTreaties || []).filter(function(t) { return t.type === 'mutual_defense' && t.partnerId === targetKingdomId && Engine.getDay() < t.endDay; });
+        if (existing.length > 0) return { success: false, message: 'Already have a mutual defense pact with ' + target.name + '.' };
+        var cost = 150;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g for diplomatic expenses.' };
+
+        var rng = Engine.getRng();
+        var acceptChance = 0.25 + (relations / 250);
+        if (rng.random() > acceptChance) {
+            kingdom.gold -= cost;
+            return { success: false, message: target.name + ' declined the mutual defense pact.' };
+        }
+        kingdom.gold -= cost;
+        var duration = 360;
+        if (!kingdom._activeTreaties) kingdom._activeTreaties = [];
+        if (!target._activeTreaties) target._activeTreaties = [];
+        kingdom._activeTreaties.push({ type: 'mutual_defense', partnerId: target.id, startDay: Engine.getDay(), endDay: Engine.getDay() + duration });
+        target._activeTreaties.push({ type: 'mutual_defense', partnerId: kingdom.id, startDay: Engine.getDay(), endDay: Engine.getDay() + duration });
+        if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 5);
+        if (target.relations) target.relations[kingdom.id] = Math.min(100, (target.relations[kingdom.id] || 0) + 5);
+        Engine.logEvent('🛡️ Mutual Defense Pact: ' + kingdom.name + ' and ' + target.name + ' pledge to defend each other if attacked.', {
+            type: 'mutual_defense_pact', kingdoms: [kingdom.id, target.id],
+            effects: ['If one is attacked, the other joins the defense', 'Pact lasts ' + duration + ' days', 'Relations +5']
+        });
+        autoJournalCapture('king', 'I forged a mutual defense pact with ' + target.name + '. If either of us is attacked, the other will come to our aid.', { mood: 'content' });
+        return { success: true, message: 'Mutual defense pact signed with ' + target.name + ' for ' + duration + ' days! Relations +5.' };
+    }
+
+    // ── King Propose Border Accord ──
+    function kingProposeBorderAccord(targetKingdomId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        var target = Engine.findKingdom(targetKingdomId);
+        if (!kingdom || !target) return { success: false, message: 'Kingdom not found.' };
+        if (kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(target.id)) return { success: false, message: 'Cannot propose border accord with a kingdom you are at war with.' };
+        var relations = (kingdom.relations && kingdom.relations[targetKingdomId]) || 0;
+        if (relations < 10) return { success: false, message: 'Relations too low (need 10+, currently ' + Math.round(relations) + ').' };
+        var existing = (kingdom._activeTreaties || []).filter(function(t) { return t.type === 'border_accord' && t.partnerId === targetKingdomId && Engine.getDay() < t.endDay; });
+        if (existing.length > 0) return { success: false, message: 'Already have a border accord with ' + target.name + '.' };
+        var cost = 50;
+        if (kingdom.gold < cost) return { success: false, message: 'Need ' + cost + 'g for diplomatic expenses.' };
+
+        var rng = Engine.getRng();
+        var acceptChance = 0.40 + (relations / 200);
+        if (rng.random() > acceptChance) {
+            kingdom.gold -= cost;
+            return { success: false, message: target.name + ' declined the border accord.' };
+        }
+        kingdom.gold -= cost;
+        var duration = 180;
+        if (!kingdom._activeTreaties) kingdom._activeTreaties = [];
+        if (!target._activeTreaties) target._activeTreaties = [];
+        kingdom._activeTreaties.push({ type: 'border_accord', partnerId: target.id, startDay: Engine.getDay(), endDay: Engine.getDay() + duration });
+        target._activeTreaties.push({ type: 'border_accord', partnerId: kingdom.id, startDay: Engine.getDay(), endDay: Engine.getDay() + duration });
+        if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 3);
+        if (target.relations) target.relations[kingdom.id] = Math.min(100, (target.relations[kingdom.id] || 0) + 3);
+        Engine.logEvent('🤝 Border Accord: ' + kingdom.name + ' and ' + target.name + ' open their borders to free passage.', {
+            type: 'border_accord', kingdoms: [kingdom.id, target.id],
+            effects: ['Citizens may cross borders freely', 'Accord lasts ' + duration + ' days', 'Relations +3']
+        });
+        autoJournalCapture('king', 'I signed a border accord with ' + target.name + '. Our peoples may now cross freely.', { mood: 'content' });
+        return { success: true, message: 'Border accord signed with ' + target.name + ' for ' + duration + ' days! Relations +3.' };
+    }
+
+    // ── King Pardon Noble ──
+    function kingPardonNoble(nobleId) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+        var nName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
+
+        // Release from prison if jailed
+        if (noble._imprisoned) {
+            delete noble._imprisoned;
+            delete noble._imprisonedUntil;
+        }
+
+        // Restore some loyalty
+        var loyGain = 15 + Math.floor((Engine.getRng().random()) * 10);
+        noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 30) + loyGain);
+        if (noble.perceivedKingLoyalty != null) noble.perceivedKingLoyalty = Math.min(100, noble.perceivedKingLoyalty + loyGain);
+
+        // Remove from conspiracy if in one
+        if (kingdom._conspiracy && kingdom._conspiracy.plotters) {
+            var plotIdx = kingdom._conspiracy.plotters.indexOf(nobleId);
+            if (plotIdx >= 0) {
+                kingdom._conspiracy.plotters.splice(plotIdx, 1);
+                if (kingdom._conspiracy.plotters.length === 0) delete kingdom._conspiracy;
+            }
+        }
+
+        // Other nobles see mercy — mixed reaction
+        var allNobles = Engine.getWorld().people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kingdom.id] && p.socialRank[kingdom.id] >= 4 && p.id !== nobleId;
+        });
+        for (var ni = 0; ni < allNobles.length; ni++) {
+            var n = allNobles[ni];
+            // Kind/generous nobles appreciate mercy, ambitious/disloyal see weakness
+            var pers = n.personality || {};
+            if ((pers.warmth || 50) > 60 || (pers.loyalty || 50) > 60) {
+                n.kingLoyalty = Math.min(100, (n.kingLoyalty || 50) + 3);
+            } else if ((pers.ambition || 50) > 70) {
+                n.kingLoyalty = Math.max(0, (n.kingLoyalty || 50) - 2);
+            }
+        }
+
+        Engine.logEvent('👑 King pardons ' + nName + '! Mercy shown to the once-suspected noble.', {
+            type: 'noble_pardoned', category: 'political'
+        });
+        autoJournalCapture('king', 'I chose mercy and pardoned ' + nName + '. I hope this act of grace will be remembered.', { mood: 'content' });
+        return { success: true, message: nName + ' pardoned. Loyalty +' + loyGain + '. Kind nobles appreciate the mercy.' };
+    }
+
+    // ── King Respond to Conspiracy ──
+    function kingRespondToConspiracy(action) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+        if (!kingdom._conspiracy) return { success: false, message: 'No active conspiracy detected.' };
+        var conspiracy = kingdom._conspiracy;
+        var plotters = conspiracy.plotters || [];
+
+        if (action === 'arrest_all') {
+            var arrested = 0;
+            for (var pi = plotters.length - 1; pi >= 0; pi--) {
+                var plotter = Engine.findPerson(plotters[pi]);
+                if (plotter && plotter.alive) {
+                    plotter._imprisoned = true;
+                    plotter._imprisonedUntil = Engine.getDay() + 30;
+                    plotter.kingLoyalty = Math.max(0, (plotter.kingLoyalty || 0) - 20);
+                    arrested++;
+                }
+            }
+            delete kingdom._conspiracy;
+            Engine.logEvent('👑 King orders mass arrests! ' + arrested + ' conspirators are imprisoned.', {
+                type: 'conspiracy_arrest', category: 'political'
+            });
+            autoJournalCapture('king', 'I ordered the arrest of all ' + arrested + ' conspirators. The plot is foiled.', { mood: 'stern' });
+            return { success: true, message: arrested + ' conspirators arrested and imprisoned for 30 days. Conspiracy dissolved.' };
+        } else if (action === 'execute_ringleader') {
+            if (plotters.length === 0) return { success: false, message: 'No conspirators to execute.' };
+            var leader = Engine.findPerson(plotters[0]);
+            if (leader && leader.alive) {
+                var lName = ((leader.firstName || '') + ' ' + (leader.lastName || '')).trim();
+                leader.alive = false;
+                leader._deathDay = Engine.getDay();
+                leader._deathCause = 'executed_treason';
+                plotters.splice(0, 1);
+                if (plotters.length === 0) delete kingdom._conspiracy;
+                // Fear effect on other nobles
+                var nobles = Engine.getWorld().people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[kingdom.id] >= 4;
+                });
+                for (var fi = 0; fi < nobles.length; fi++) {
+                    nobles[fi].fearOfKing = Math.min(100, (nobles[fi].fearOfKing || 0) + 20);
+                    nobles[fi].kingLoyalty = Math.max(0, (nobles[fi].kingLoyalty || 50) - 5);
+                }
+                Engine.logEvent('⚔️ King executes ' + lName + ' for treason! The other nobles tremble.', {
+                    type: 'conspiracy_execution', category: 'political'
+                });
+                autoJournalCapture('king', 'I had ' + lName + ' executed for treason. Let this be a warning to any who would plot against the crown.', { mood: 'ruthless' });
+                return { success: true, message: lName + ' executed for treason. Nobles now fear the crown (+20 fear, -5 loyalty).' };
+            }
+            return { success: false, message: 'Ringleader could not be found.' };
+        } else if (action === 'pardon_all') {
+            for (var pai = 0; pai < plotters.length; pai++) {
+                var pardoned = Engine.findPerson(plotters[pai]);
+                if (pardoned && pardoned.alive) {
+                    pardoned.kingLoyalty = Math.min(100, (pardoned.kingLoyalty || 30) + 10);
+                }
+            }
+            delete kingdom._conspiracy;
+            Engine.logEvent('👑 King shows mercy — all conspirators are pardoned!', { type: 'conspiracy_pardoned', category: 'political' });
+            autoJournalCapture('king', 'I chose mercy and pardoned the conspirators. I hope this generosity will inspire loyalty.', { mood: 'merciful' });
+            return { success: true, message: 'All conspirators pardoned. Loyalty improved, but ambitious nobles may see weakness.' };
+        }
+        return { success: false, message: 'Unknown action.' };
+    }
+
     function kingSendDiplomaticEnvoy(nobleId, targetKingdomId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var ks = player.kingState;
@@ -37717,6 +37951,11 @@
         kingTickMissions,
         kingTickIntrigueDetection,
         kingProposeTrade,
+        kingProposeNAP,
+        kingProposeMDP,
+        kingProposeBorderAccord,
+        kingPardonNoble,
+        kingRespondToConspiracy,
         kingSendDiplomaticEnvoy,
         kingCollectTribute,
         kingCourtTick,

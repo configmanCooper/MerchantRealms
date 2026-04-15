@@ -1548,6 +1548,7 @@
                     }
                     html += '<button class="btn-medieval" data-action="kingInvestigateNoble" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.68rem;padding:4px 10px;background:rgba(93,173,226,0.35);border:1px solid rgba(93,173,226,0.6);color:#8dd3f5;">🔍 Investigate</button>';
                     html += '<button class="btn-medieval" data-action="kingPunishNobleUI" data-id="' + n.id + '" data-name="' + nName + '" style="font-size:0.68rem;padding:4px 10px;background:rgba(196,78,82,0.35);border:1px solid rgba(196,78,82,0.6);color:#f5a0a0;">⚖️ Punish</button>';
+                    html += '<button class="btn-medieval" data-action="kingPardonNoble" data-id="' + n.id + '" style="font-size:0.68rem;padding:4px 10px;background:rgba(85,168,104,0.35);border:1px solid rgba(85,168,104,0.6);color:#a0f5a0;">🕊️ Pardon</button>';
                     html += '</div></div>';
                 }
                 html += '</div>';
@@ -1609,25 +1610,72 @@
     function _kingDiplomacySection(kingdom, ks) {
         var html = '';
         html += '<div style="background:rgba(0,0,0,0.15);padding:8px;border-radius:6px;margin-bottom:8px;">';
-        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🤝 Trade Agreements & Diplomacy</div>';
-        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:6px;">Propose trade agreements with other kingdoms. Costs 100g, requires relations 30+.</div>';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:4px;">🤝 Diplomacy & Agreements</div>';
+        html += '<div style="font-size:0.65rem;color:#888;margin-bottom:6px;">Propose diplomatic agreements with other kingdoms. Different pacts have different relation thresholds and costs.</div>';
 
-        // Active agreements
-        var agreements = (ks._tradeAgreements || []).filter(function(ta) { return Engine.getDay() < ta.endDay; });
-        if (agreements.length > 0) {
+        // Show active agreements of ALL types
+        var tradeAgr = (ks._tradeAgreements || []).filter(function(ta) { return Engine.getDay() < ta.endDay; });
+        var activeTreaties = (kingdom._activeTreaties || []).filter(function(t) { return Engine.getDay() < t.endDay; });
+        var activeNAPs = [];
+        if (kingdom.peaceTreaties) {
+            for (var napK in kingdom.peaceTreaties) {
+                if (Engine.getDay() < kingdom.peaceTreaties[napK]) {
+                    var napTarget = null;
+                    try { napTarget = Engine.findKingdom(napK); } catch(e) {}
+                    activeNAPs.push({ targetId: napK, targetName: napTarget ? napTarget.name : napK, endDay: kingdom.peaceTreaties[napK] });
+                }
+            }
+        }
+
+        var hasActive = tradeAgr.length > 0 || activeTreaties.length > 0 || activeNAPs.length > 0;
+        if (hasActive) {
             html += '<div style="margin-bottom:6px;">';
-            for (var tai = 0; tai < agreements.length; tai++) {
-                var ta = agreements[tai];
+            // Trade agreements
+            for (var tai = 0; tai < tradeAgr.length; tai++) {
+                var ta = tradeAgr[tai];
                 var daysLeft = ta.endDay - Engine.getDay();
                 html += '<div style="background:rgba(85,168,104,0.15);border-left:3px solid #55a868;padding:4px 8px;border-radius:4px;margin-bottom:2px;">';
                 html += '<span style="font-size:0.72rem;color:#55a868;">📦 Trade Agreement: ' + escapeHtml(ta.targetKingdomName) + '</span>';
                 html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">' + daysLeft + ' days left</span>';
                 html += '</div>';
             }
+            // NAPs
+            for (var ni = 0; ni < activeNAPs.length; ni++) {
+                var nap = activeNAPs[ni];
+                var napLeft = nap.endDay - Engine.getDay();
+                html += '<div style="background:rgba(93,173,226,0.15);border-left:3px solid #5dade2;padding:4px 8px;border-radius:4px;margin-bottom:2px;">';
+                html += '<span style="font-size:0.72rem;color:#8dd3f5;">🕊️ Non-Aggression Pact: ' + escapeHtml(nap.targetName) + '</span>';
+                html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">' + napLeft + ' days left</span>';
+                html += '</div>';
+            }
+            // Mutual defense & border accords
+            for (var ti = 0; ti < activeTreaties.length; ti++) {
+                var tr = activeTreaties[ti];
+                var trLeft = tr.endDay - Engine.getDay();
+                var partnerK = null;
+                try { partnerK = Engine.findKingdom(tr.partnerId); } catch(e) {}
+                var pName = partnerK ? partnerK.name : tr.partnerId;
+                if (tr.type === 'mutual_defense') {
+                    html += '<div style="background:rgba(155,89,182,0.15);border-left:3px solid #9b59b6;padding:4px 8px;border-radius:4px;margin-bottom:2px;">';
+                    html += '<span style="font-size:0.72rem;color:#c8a0ff;">🛡️ Mutual Defense: ' + escapeHtml(pName) + '</span>';
+                    html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">' + trLeft + ' days left</span>';
+                    html += '</div>';
+                } else if (tr.type === 'border_accord') {
+                    html += '<div style="background:rgba(230,126,34,0.15);border-left:3px solid #e67e22;padding:4px 8px;border-radius:4px;margin-bottom:2px;">';
+                    html += '<span style="font-size:0.72rem;color:#f0b27a;">🤝 Border Accord: ' + escapeHtml(pName) + '</span>';
+                    html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">' + trLeft + ' days left</span>';
+                    html += '</div>';
+                } else if (tr.type === 'trade_agreement') {
+                    html += '<div style="background:rgba(85,168,104,0.15);border-left:3px solid #55a868;padding:4px 8px;border-radius:4px;margin-bottom:2px;">';
+                    html += '<span style="font-size:0.72rem;color:#55a868;">📦 Trade Agreement: ' + escapeHtml(pName) + '</span>';
+                    html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">' + trLeft + ' days left</span>';
+                    html += '</div>';
+                }
+            }
             html += '</div>';
         }
 
-        // Propose new agreements
+        // Propose new agreements — show all types per kingdom
         try {
             var _allK = Engine.getWorld().kingdoms;
             var hasProposals = false;
@@ -1636,30 +1684,74 @@
                 if (tgt.id === kingdom.id) continue;
                 var atWar = kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(tgt.id);
                 if (atWar) continue;
-                // Check not already in agreement
-                var alreadyAgreed = false;
-                for (var ai = 0; ai < agreements.length; ai++) {
-                    if (agreements[ai].targetKingdomId === tgt.id) { alreadyAgreed = true; break; }
-                }
-                if (alreadyAgreed) continue;
 
-                var relations = (kingdom.relations && kingdom.relations[tgt.id]) || 50;
-                var canPropose = relations >= 30;
+                var relations = (kingdom.relations && kingdom.relations[tgt.id]) || 0;
                 hasProposals = true;
 
-                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.1);border-radius:4px;">';
-                html += '<div>';
-                html += '<span style="font-size:0.72rem;color:#d4c9a0;">🤝 ' + escapeHtml(tgt.name) + '</span>';
-                html += '<span style="font-size:0.6rem;color:#888;margin-left:6px;">Relations: ' + Math.round(relations) + '</span>';
+                // Check existing agreements for this target
+                var hasTradeWith = tradeAgr.some(function(ta) { return ta.targetKingdomId === tgt.id; });
+                var hasNAPWith = activeNAPs.some(function(n) { return n.targetId === tgt.id; });
+                var hasMDPWith = activeTreaties.some(function(t) { return t.type === 'mutual_defense' && t.partnerId === tgt.id && Engine.getDay() < t.endDay; });
+                var hasBAWith = activeTreaties.some(function(t) { return t.type === 'border_accord' && t.partnerId === tgt.id && Engine.getDay() < t.endDay; });
+
+                html += '<div style="background:rgba(0,0,0,0.1);padding:5px 6px;margin-bottom:3px;border-radius:4px;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">';
+                html += '<span style="font-size:0.72rem;color:#d4c9a0;">' + escapeHtml(tgt.name) + '</span>';
+                html += '<span style="font-size:0.6rem;color:' + (relations >= 30 ? '#55a868' : relations >= 0 ? '#d4a843' : '#c44e52') + ';">Relations: ' + Math.round(relations) + '</span>';
                 html += '</div>';
-                html += '<button class="btn-medieval" data-action="kingProposeTrade" data-id="' + tgt.id + '" style="font-size:0.6rem;padding:2px 8px;' + (!canPropose ? 'opacity:0.5;' : '') + '" ' + (!canPropose ? 'disabled title="Need 30+ relations"' : '') + '>📦 Propose Trade (100g)</button>';
-                html += '</div>';
+                html += '<div style="display:flex;flex-wrap:wrap;gap:3px;">';
+
+                // Trade Agreement (30+ relations, 100g)
+                if (!hasTradeWith) {
+                    var canTrade = relations >= 30;
+                    html += '<button class="btn-medieval" data-action="kingProposeTrade" data-id="' + tgt.id + '" style="font-size:0.58rem;padding:2px 6px;' + (!canTrade ? 'opacity:0.4;' : '') + '" ' + (!canTrade ? 'disabled title="Need 30+ relations"' : '') + '>📦 Trade (100g)</button>';
+                }
+
+                // Non-Aggression Pact (>-10 relations, 75g)
+                if (!hasNAPWith) {
+                    var canNAP = relations > -10;
+                    html += '<button class="btn-medieval" data-action="kingProposeNAP" data-id="' + tgt.id + '" style="font-size:0.58rem;padding:2px 6px;background:rgba(93,173,226,0.25);border-color:rgba(93,173,226,0.5);' + (!canNAP ? 'opacity:0.4;' : '') + '" ' + (!canNAP ? 'disabled title="Need > -10 relations"' : '') + '>🕊️ NAP (75g)</button>';
+                }
+
+                // Mutual Defense Pact (20+ relations, 150g)
+                if (!hasMDPWith) {
+                    var canMDP = relations >= 20;
+                    html += '<button class="btn-medieval" data-action="kingProposeMDP" data-id="' + tgt.id + '" style="font-size:0.58rem;padding:2px 6px;background:rgba(155,89,182,0.25);border-color:rgba(155,89,182,0.5);' + (!canMDP ? 'opacity:0.4;' : '') + '" ' + (!canMDP ? 'disabled title="Need 20+ relations"' : '') + '>🛡️ Defense (150g)</button>';
+                }
+
+                // Border Accord (10+ relations, 50g)
+                if (!hasBAWith) {
+                    var canBA = relations >= 10;
+                    html += '<button class="btn-medieval" data-action="kingProposeBorderAccord" data-id="' + tgt.id + '" style="font-size:0.58rem;padding:2px 6px;background:rgba(230,126,34,0.25);border-color:rgba(230,126,34,0.5);' + (!canBA ? 'opacity:0.4;' : '') + '" ' + (!canBA ? 'disabled title="Need 10+ relations"' : '') + '>🤝 Border (50g)</button>';
+                }
+
+                html += '</div></div>';
             }
-            if (!hasProposals && agreements.length === 0) {
-                html += '<div style="font-size:0.72rem;color:#888;">No kingdoms available for trade agreements.</div>';
+            if (!hasProposals && !hasActive) {
+                html += '<div style="font-size:0.72rem;color:#888;">No kingdoms available for diplomacy.</div>';
             }
         } catch(e) {}
         html += '</div>';
+
+        // ── Conspiracy Response Section (if conspiracy detected) ──
+        if (kingdom._conspiracy && kingdom._conspiracy.detected) {
+            var consp = kingdom._conspiracy;
+            var plotterNames = (consp.plotters || []).map(function(pid) {
+                var p = null;
+                try { p = Engine.findPerson(pid); } catch(e) {}
+                return p ? ((p.firstName || '') + ' ' + (p.lastName || '')).trim() : 'Unknown';
+            });
+            html += '<div style="background:rgba(196,78,82,0.1);padding:8px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(196,78,82,0.3);">';
+            html += '<div style="font-size:0.85rem;color:#c44e52;margin-bottom:4px;">🗡️ Active Conspiracy Detected!</div>';
+            html += '<div style="font-size:0.68rem;color:#ddd;margin-bottom:4px;">Type: <b>' + (consp.type === 'coup' ? '⚔️ Coup' : '🗡️ Assassination') + '</b> — Strength: <b>' + Math.round(consp.strength || 0) + '/80</b></div>';
+            html += '<div style="font-size:0.65rem;color:#aaa;margin-bottom:6px;">Known plotters: ' + plotterNames.join(', ') + '</div>';
+            html += '<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+            html += '<button class="btn-medieval" data-action="kingRespondConspiracy" data-val="arrest_all" style="font-size:0.65rem;padding:3px 10px;background:rgba(93,173,226,0.3);border-color:rgba(93,173,226,0.6);">🔒 Arrest All</button>';
+            html += '<button class="btn-medieval" data-action="kingRespondConspiracy" data-val="execute_ringleader" style="font-size:0.65rem;padding:3px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.6);">⚔️ Execute Ringleader</button>';
+            html += '<button class="btn-medieval" data-action="kingRespondConspiracy" data-val="pardon_all" style="font-size:0.65rem;padding:3px 10px;background:rgba(85,168,104,0.3);border-color:rgba(85,168,104,0.6);">🕊️ Pardon All</button>';
+            html += '</div></div>';
+        }
+
         return html;
     }
 
@@ -3367,6 +3459,36 @@
     });
     UI.registerAction('kingProposeTrade', function(_t, d) {
         var r = Player.kingProposeTrade(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+
+    UI.registerAction('kingProposeNAP', function(_t, d) {
+        var r = Player.kingProposeNAP(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+
+    UI.registerAction('kingProposeMDP', function(_t, d) {
+        var r = Player.kingProposeMDP(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+
+    UI.registerAction('kingProposeBorderAccord', function(_t, d) {
+        var r = Player.kingProposeBorderAccord(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('decisions');
+    });
+
+    UI.registerAction('kingPardonNoble', function(_t, d) {
+        var r = Player.kingPardonNoble(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('court');
+    });
+
+    UI.registerAction('kingRespondConspiracy', function(_t, d) {
+        var r = Player.kingRespondToConspiracy(d.val);
         UI.toast(r.message, r.success ? 'success' : 'warning');
         UI.openKingPanel('decisions');
     });
