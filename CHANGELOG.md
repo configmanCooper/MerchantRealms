@@ -4,6 +4,49 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.73.0] - World Simulation & Diplomacy Overhaul
+
+### Added — Diplomatic Systems
+- 3 differentiated treaty types: Trade Agreements (tariff reduction, specific goods, timed), Mutual Defense Pacts (defensive war trigger), Border Accords (passage rights)
+- `_activeTreaties` array on kingdoms tracking active treaties with duration, passive relation boosts
+- Treaty expiration tick and automatic cancellation on war declaration
+- Mutual Defense Pact trigger: when attacked, MDP partners evaluate joining war (personality/strength-based)
+- Shared-enemy alliance bonuses: kingdoms fighting same enemy get threshold reduction + relation boost
+- Diplomatic king personality bonus for alliance formation (-5 threshold)
+- Alliance formation cooldowns (30-day threat eval, 3% daily roll gate) to prevent flooding
+
+### Added — War Declaration AI (C3)
+- Lowered war relation threshold to -30 (was CONFIG default)
+- Added opportunity wars: attack neighbors already at war with someone else
+- Aggressive king bonus: 0 exhaustion + military superiority = +0.8% daily war chance
+- Lowered scouting threshold from 70% to 60% of enemy strength
+- Military advantage threshold lowered to 1.2x
+
+### Added — Revolt Systems
+- Revolt survival AI (`_tickRevoltSurvivalAI`): defense recruitment, peace negotiation, alliance seeking
+- Revolt EM recruitment (`_tickRevoltEMRecruitment`): guildmaster offers, personality-driven acceptance
+- Revolt success bonuses: gold plunder (proportional), 5% goods transfer, happiness boost (+30/30d, +15/90d)
+- Fast AI mode for revolt kingdoms (every 5 days for first 30 days)
+
+### Added — World Chronicle
+- Chronicle cap raised to 1000 (rolling delete of oldest)
+- New event types: trade_agreement, mutual_defense_pact, border_accord, em_defection, solo_assassination
+- Updated chronicle UI categories (politics, revolt, diplomacy groups)
+
+### Fixed
+- Naval combat casualties: `resolveNavalBattle` now tracks actual casualties (was always 0)
+- `killPerson` wrapper alias added to engine_diplomacy.js
+- `day` → `world.day` in tickNobleRelationships jail case
+- `rng is not defined` in declareWar MDP code (uses world.rng)
+- Alliance event flooding (353 → 22 per 900 days) via cooldowns and roll gates
+
+### Verified — World Simulation
+- 4 simulation runs (900×2, 1800, 2700 days) — all 0 errors
+- Wars: 2-12 per sim, Assassinations: 1-6, Revolts: 0-3, Treaties: 16-56
+- Alliances: 15-73 formed per sim with healthy dissolution rates
+- Population growth: 70-140% over sim duration
+- Happiness variance: 0-94 (genuine, not stuck at 50)
+
 ## [0.72.0] - Kingdom Management Overhaul (War, Economy, Nobility, Auto-Work)
 
 ### Added — War & Military
