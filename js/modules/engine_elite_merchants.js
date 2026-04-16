@@ -532,22 +532,22 @@
 
     const STRATEGY_GOODS = {
         food_monopoly:     ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
-        military_supplier: ['swords', 'armor', 'bows', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools'],
+        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good'],
         luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture'],
         diversified:       ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
-        war_profiteer:     ['swords', 'armor', 'bows', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools'],
+        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
     };
 
     const STRATEGY_BUILDINGS = {
         food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant', 'warehouse_small'],
-        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright', 'powder_works'],
+        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright', 'powder_works', 'armorer', 'fletcher', 'arrow_maker'],
         luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small'],
         diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small', 'wheelwright'],
         political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],
-        war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse'],
+        war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse', 'armorer', 'fletcher', 'arrow_maker'],
         land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse', 'wheelwright'],
         trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse', 'wheelwright'],
         medical_supplier:  ['herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
@@ -1992,6 +1992,9 @@
             if (day % 30 === 0) {
                 eliteKingdomRelationshipAI(em, town, rng, personality);
             }
+
+            // Safety: prevent gold from going negative
+            if (em.gold < 0) em.gold = 0;
         }
     }
 
@@ -2688,7 +2691,7 @@
             // Buy the land
             em.gold -= emLandCost;
             em.landOwned[buildTown.id] = (em.landOwned[buildTown.id] || 0) + 1;
-            effectiveCost += emLandCost; // include in total spend for logging
+            // Note: land cost already deducted above, don't add to effectiveCost
         }
 
         if (em.gold < effectiveCost) return;
