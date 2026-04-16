@@ -2423,6 +2423,7 @@
             em.townId = bestTown.id;
             em.kingdomId = bestTown.kingdomId;
             bestTown.population = (bestTown.population || 0) + 1;
+            if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, bestTown.id, bestTown.kingdomId);
         }
     }
 
@@ -3775,6 +3776,7 @@
                 // Fix population bookkeeping on flee
                 if (town.population > 0) town.population--;
                 dest.population = (dest.population || 0) + 1;
+                if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, dest.id, dest.kingdomId);
                 logEvent(em.firstName + ' ' + (em.lastName || '') + ' flees the frontline in ' + oldTown + ' for safety in ' + dest.name + '.', {
                     type: 'elite_frontline_flee',
                     cause: oldTown + ' is on the front lines of war — too dangerous for trade.',
@@ -3805,6 +3807,7 @@
             dest.population = (dest.population || 0) + 1;
             em.townId = dest.id;
             em.kingdomId = dest.kingdomId;
+            if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, dest.id, dest.kingdomId);
         }
     }
 
@@ -4741,6 +4744,7 @@
                         freeDest.population = (freeDest.population || 0) + 1;
                         em.townId = freeDest.id;
                         em.kingdomId = freeDest.kingdomId;
+                        if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, freeDest.id, freeDest.kingdomId);
                         logEvent(em.firstName + ' ' + (em.lastName || '') + ' relocates to ' + freeDest.name + ' in ' + freeK.name + ' to escape nationalization.', {
                             type: 'elite_nationalization_flee',
                             cause: 'Nationalization policies in ' + kingdom.name + ' threaten ' + em.firstName + '\'s business.',
@@ -4797,6 +4801,7 @@
                         var dest = destTowns.sort(function(a, b) { return (b.prosperity || 0) - (a.prosperity || 0); })[0];
                         em.townId = dest.id;
                         em.kingdomId = dest.kingdomId;
+                        if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, dest.id, dest.kingdomId);
                         logEvent(em.firstName + ' ' + (em.lastName || '') + ' abandons ' + kingdom.name + ' after royal seizure, relocating to ' + betterK.name + '.', {
                             type: 'elite_seizure_response',
                             cause: 'Royal confiscation destroyed trust between ' + em.firstName + ' and ' + kingdom.name + '.',

@@ -6390,6 +6390,7 @@
                         p.kingdomId = dest.kingdomId;
                         dest.population++;
                         p.needs.food = 30;
+                        moveYoungChildrenWithParent(p, dest.id, dest.kingdomId);
                     }
                     }
                 }
@@ -6831,6 +6832,7 @@
                         p.kingdomId = dest.kingdomId;
                         dest.population++;
                         if (p.needs.food <= 10) p.needs.food = 30;
+                        moveYoungChildrenWithParent(p, dest.id, dest.kingdomId);
 
                         // Track migration for wave events
                         if (!town._migrationCount) town._migrationCount = { day: world.day, count: 0, dest: dest.id };
@@ -11187,6 +11189,7 @@
                             migrant.kingdomId = town.kingdomId;
                             if (typeof source.population === 'number') source.population = Math.max(0, source.population - 1);
                             if (typeof town.population === 'number') town.population += 1;
+                            moveYoungChildrenWithParent(migrant, town.id, town.kingdomId);
                         }
                     }
                 }
@@ -11424,6 +11427,7 @@
                                 emigrant.kingdomId = dest.kingdomId;
                                 if (typeof town.population === 'number') town.population = Math.max(0, town.population - 1);
                                 if (typeof dest.population === 'number') dest.population += 1;
+                                moveYoungChildrenWithParent(emigrant, dest.id, dest.kingdomId);
                                 emigrantCount++;
                             }
                         }
@@ -11491,6 +11495,7 @@
                                 refugee.kingdomId = safeDest.kingdomId;
                                 if (typeof town.population === 'number') town.population = Math.max(0, town.population - 1);
                                 if (typeof safeDest.population === 'number') safeDest.population += 1;
+                                moveYoungChildrenWithParent(refugee, safeDest.id, safeDest.kingdomId);
                                 fled++;
                             }
                         }
@@ -27325,6 +27330,141 @@
     }
 
     // ========================================================
+    // §19b CHILD CUSTODY — Young children follow parents
+    // ========================================================
+
+    /**
+     * Ensures children under 12 are co-located with a parent (preferring mother).
+     * Runs every 3 days for performance. If a child is separated from all parents,
+     * moves them to the mother's town (or father's, or nearest family member).
+     */
+    function tickChildCustody() {
+        if (!world || !world.people) return;
+        if (world.day % 3 !== 0) return;
+
+        var YOUNG_AGE = 12;
+
+        for (var i = 0; i < world.people.length; i++) {
+            var child = world.people[i];
+            if (!child.alive) continue;
+            if (child.age == null || child.age >= YOUNG_AGE) continue;
+            if (!child.parentIds || child.parentIds.length === 0) continue;
+
+            // Find living parents
+            var mother = null;
+            var father = null;
+            for (var pi = 0; pi < child.parentIds.length; pi++) {
+                var par = findPerson(child.parentIds[pi]);
+                if (!par || !par.alive) continue;
+                if (par.sex === 'female' || par.sex === 'F') {
+                    mother = par;
+                } else if (!father) {
+                    father = par;
+                }
+            }
+
+            // Prefer mother, then father
+            var custodian = mother || father;
+            if (!custodian) {
+                // Both parents dead — find a family member (grandparent, sibling of parent, etc.)
+                // Check if any alive person shares parentIds with the child's parents (aunt/uncle)
+                // or is listed as a parent of the child's parents (grandparent)
+                var _familyMember = null;
+                for (var fpi = 0; fpi < child.parentIds.length && !_familyMember; fpi++) {
+                    var deadParent = findPerson(child.parentIds[fpi]);
+                    if (!deadParent) continue;
+                    // Check grandparents
+                    if (deadParent.parentIds) {
+                        for (var gpi = 0; gpi < deadParent.parentIds.length; gpi++) {
+                            var gp = findPerson(deadParent.parentIds[gpi]);
+                            if (gp && gp.alive) { _familyMember = gp; break; }
+                        }
+                    }
+                    // Check aunts/uncles (siblings of parent — share parentIds)
+                    if (!_familyMember && deadParent.parentIds && deadParent.parentIds.length > 0) {
+                        for (var si = 0; si < world.people.length && !_familyMember; si++) {
+                            var sib = world.people[si];
+                            if (!sib.alive || sib.id === deadParent.id) continue;
+                            if (sib.age != null && sib.age < 18) continue; // must be adult
+                            if (sib.parentIds && sib.parentIds.length > 0) {
+                                for (var spi = 0; spi < sib.parentIds.length; spi++) {
+                                    if (deadParent.parentIds.indexOf(sib.parentIds[spi]) !== -1) {
+                                        _familyMember = sib;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                custodian = _familyMember;
+            }
+
+            if (!custodian) continue; // orphan with no traceable family
+
+            // If child is already in custodian's town, nothing to do
+            if (child.townId === custodian.townId) continue;
+
+            // Move child to custodian's town
+            var childTown = findTown(child.townId);
+            var custTown = findTown(custodian.townId);
+            if (!custTown) continue;
+
+            if (childTown) childTown.population = Math.max(0, childTown.population - 1);
+            child.townId = custTown.id;
+            child.kingdomId = custTown.kingdomId;
+            custTown.population++;
+        }
+    }
+
+    /**
+     * Helper: when a parent moves towns, also move their children under 12.
+     * Call this after changing a parent's townId.
+     */
+    function moveYoungChildrenWithParent(parent, newTownId, newKingdomId) {
+        if (!parent || !parent.childrenIds || parent.childrenIds.length === 0) return;
+        var YOUNG_AGE = 12;
+        var newTown = findTown(newTownId);
+        if (!newTown) return;
+
+        for (var ci = 0; ci < parent.childrenIds.length; ci++) {
+            var child = findPerson(parent.childrenIds[ci]);
+            if (!child || !child.alive) continue;
+            if (child.age == null || child.age >= YOUNG_AGE) continue;
+            if (child.townId === newTownId) continue;
+
+            // Only move if this parent is the primary custodian (mother preferred)
+            // If the other parent is alive and in the child's current town, leave child there
+            var otherParentKeeping = false;
+            if (child.parentIds) {
+                for (var opi = 0; opi < child.parentIds.length; opi++) {
+                    if (child.parentIds[opi] === parent.id) continue;
+                    var otherParent = findPerson(child.parentIds[opi]);
+                    if (otherParent && otherParent.alive && otherParent.townId === child.townId) {
+                        // Other parent is alive and in child's town
+                        // If other parent is mother, they keep the child
+                        if (otherParent.sex === 'female' || otherParent.sex === 'F') {
+                            otherParentKeeping = true;
+                        }
+                        // If parent moving is mother, mother takes child
+                        if (parent.sex === 'female' || parent.sex === 'F') {
+                            otherParentKeeping = false;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (otherParentKeeping) continue;
+
+            var oldTown = findTown(child.townId);
+            if (oldTown) oldTown.population = Math.max(0, oldTown.population - 1);
+            child.townId = newTownId;
+            child.kingdomId = newKingdomId || newTown.kingdomId;
+            newTown.population++;
+        }
+    }
+
+    // ========================================================
     // §20 MAIN GENERATE & TICK
     // ========================================================
 
@@ -27880,6 +28020,9 @@
             // Runs BEFORE happiness fluctuation so it checks yesterday's ending happiness
             tickTownRevolts();
 
+            // Young children (under 12) follow parents
+            tickChildCustody();
+
             // Daily happiness fluctuation (drains + boosts)
             tickHappinessFluctuation();
             // Daily town happiness consequences (scaled percentage-based)
@@ -28338,6 +28481,7 @@
         findNearestTown(x, y) { return findNearestTown(x, y); },
         findKingdom(id) { return findKingdom(id); },
         findPerson(id) { return findPerson(id); },
+        moveYoungChildrenWithParent(parent, newTownId, newKingdomId) { return moveYoungChildrenWithParent(parent, newTownId, newKingdomId); },
         findPath(a, b, opts) { return findPath(a, b, opts); },
         findBuildingType(id) { return findBuildingType(id); },
         getPeopleInTown(id) { return getPeopleInTown(id); },

@@ -1391,6 +1391,7 @@
                         shuffledFlee[fi].kingdomId = destK.id;
                         destTown2.population = (destTown2.population || 0) + 1;
                         town.population = Math.max(10, town.population - 1);
+                        if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(shuffledFlee[fi], destTown2.id, destK.id);
                         fled++;
                     }
                 }
@@ -1427,6 +1428,7 @@
                     const dest = rng.pick(safeTowns);
                     m.townId = dest.id;
                     m.kingdomId = dest.kingdomId;
+                    if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(m, dest.id, dest.kingdomId);
                 }
             }
         }
