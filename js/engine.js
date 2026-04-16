@@ -6855,7 +6855,7 @@
 
     function killPerson(p, cause) {
         // Child protection system — children are much harder to kill
-        if (cause !== 'old age') {
+        if (cause !== 'old age' && cause !== 'natural causes') {
             const isPlayerChild = p.id && p.id.startsWith('p_child_');
             const isPlayerSpouse = p.spouseId === 'player';
             const isUnderAge = p.age != null && p.age < CONFIG.COMING_OF_AGE;
@@ -6880,9 +6880,22 @@
                 if (hasEliteParent && world.rng.chance(0.995)) return;
             }
 
-            // All other NPC children under 18: decent protection
+            // Noble children under 18: near-immune (protected households)
+            if (isUnderAge && !isPlayerChild && p.socialRank >= 4) {
+                if (world.rng.chance(0.99)) return;
+            }
+
+            // All other NPC children under 18: strong protection
             if (isUnderAge && !isPlayerChild) {
-                if (world.rng.chance(0.85)) return;
+                // Cause-specific survival rates for children
+                var childSurvivalChance = 0.95; // base: 95% survive (was 85%)
+                if (cause === 'starvation') childSurvivalChance = 0.92;  // families feed children first
+                else if (cause === 'disease' || cause === 'plague') childSurvivalChance = 0.93;
+                else if (cause === 'battle' || cause === 'raid' || cause === 'siege') childSurvivalChance = 0.97; // children are sheltered
+                else if (cause === 'flood' || cause === 'fire' || cause === 'mine collapse') childSurvivalChance = 0.96;
+                else if (cause === 'revolt' || cause === 'revolt_suppression') childSurvivalChance = 0.97;
+                else if (cause === 'executed' || cause === 'assassination' || cause === 'coup') childSurvivalChance = 0.98; // children spared from political violence
+                if (world.rng.chance(childSurvivalChance)) return;
             }
         }
         p.alive = false;
