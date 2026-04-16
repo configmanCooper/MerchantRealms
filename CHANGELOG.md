@@ -30,10 +30,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - `canTalkTo`: rank restriction — can't approach someone 2+ ranks above without introduction from intermediary
 - EM AI relationship building with local nobles (every 5 days, 25% chance)
 
-### Fixed — Noble Stipend Balance
-- Reduced noble expenses to prevent unrealistic bankruptcy
-- Minor noble: 15g/10d (was 50), Lord: 40g (was 100), RA: 80g (was 200)
-- Nobles now net positive from stipend alone before building income
+### Fixed
+- King AI festival code updated to use new Engine.startFestival() system with proper cooldowns
 
 ## [0.74.0] - Player King UI Parity, EM Growth & Treasury Spending
 
