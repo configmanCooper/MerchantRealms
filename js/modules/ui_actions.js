@@ -4167,7 +4167,7 @@ function clickTown(townId) {
         html += '</div>';
         html += '</div>';
 
-        openModal(sizeLabel + ' in ' + escapeHtml(townName), html, { width: '420px' });
+        openModal(sizeLabel + ' in ' + escapeHtml(townName), html, '<button class="btn-medieval" data-action="closeModal">Close</button>');
     }
 
     UI.registerAction('doFestivalAction', function(_t, d) {

@@ -3950,12 +3950,12 @@
     UI.registerAction('kingStartSmallFestival', function() {
         var t = document.getElementById('_roFestTown');
         if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
-        var r = Player.kingStartFestival(t.value, 'small'); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+        var r = Player.kingStartFestival(t.value, 'small'); if (r) { UI.toast(r.message, r.success ? 'success' : 'warning'); } else { UI.toast('Festival failed.', 'warning'); } UI.openKingPanel('decisions');
     });
     UI.registerAction('kingStartLargeFestival', function() {
         var t = document.getElementById('_roFestTown');
         if (!t || !t.value) { UI.toast('Select a town.', 'warning'); return; }
-        var r = Player.kingStartFestival(t.value, 'large'); UI.toast(r.message, r.success ? 'success' : 'warning'); UI.openKingPanel('decisions');
+        var r = Player.kingStartFestival(t.value, 'large'); if (r) { UI.toast(r.message, r.success ? 'success' : 'warning'); } else { UI.toast('Festival failed.', 'warning'); } UI.openKingPanel('decisions');
     });
     UI.registerAction('kingOrderPromoteOutpost', function() {
         var s = document.getElementById('_roPromoteOutpost');
