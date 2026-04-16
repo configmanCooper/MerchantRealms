@@ -6328,6 +6328,45 @@
                     }
                 }
             }
+            // ---- Parent rescue: nobles/EMs feed their starving children ----
+            if (p.needs.food <= 10 && p.age < CONFIG.COMING_OF_AGE && p.parentIds && p.parentIds.length > 0) {
+                for (var _pri = 0; _pri < p.parentIds.length; _pri++) {
+                    var _parent = findPerson(p.parentIds[_pri]);
+                    if (!_parent || !_parent.alive) continue;
+                    var _isWealthyParent = _parent.isEliteMerchant || _parent.isNoble ||
+                        (_parent.socialRank && Object.values(_parent.socialRank).some(function(r) { return r >= 4; }));
+                    if (!_isWealthyParent) {
+                        // Even common parents try if they have gold, just less aggressively
+                        if (_parent.gold >= 3 && p.needs.food <= 5) {
+                            _parent.gold -= 2;
+                            p.needs.food = Math.min(100, p.needs.food + 20);
+                            break;
+                        }
+                        continue;
+                    }
+                    // Wealthy parent: spend gold to feed child, buy food, or relocate child
+                    if (_parent.gold >= 5) {
+                        var _feedCost = Math.min(15, Math.floor(_parent.gold * 0.1));
+                        if (_feedCost >= 2) {
+                            _parent.gold -= _feedCost;
+                            p.needs.food = Math.min(100, p.needs.food + _feedCost * 5);
+                        }
+                    }
+                    // If child is still dangerously low and parent has gold, relocate child to parent's town
+                    if (p.needs.food <= 5 && _parent.townId !== p.townId && _parent.gold >= 20) {
+                        var _parentTown = findTown(_parent.townId);
+                        if (_parentTown && _parentTown.prosperity > 20) {
+                            if (town) town.population = Math.max(0, town.population - 1);
+                            p.townId = _parentTown.id;
+                            p.kingdomId = _parentTown.kingdomId;
+                            _parentTown.population++;
+                            _parent.gold -= 10;
+                            p.needs.food = Math.min(100, p.needs.food + 30);
+                        }
+                    }
+                    break; // one parent rescue per tick
+                }
+            }
             if (p.needs.food <= 0) {
                 if (world.rng.chance(0.003)) {
                     killPerson(p, 'starvation');

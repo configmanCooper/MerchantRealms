@@ -1692,6 +1692,142 @@
             }
         }
 
+        // ---- Parent rescue: nobles/EMs seek treatment for their sick children ----
+        for (var _pci = 0; _pci < world.people.length; _pci++) {
+            var _child = world.people[_pci];
+            if (!_child.alive || !_child.sick || _child._illnessTreatPaid) continue;
+            if (_child.age == null || _child.age >= (typeof CONFIG !== 'undefined' ? CONFIG.COMING_OF_AGE : 18)) continue;
+            if (!_child.parentIds || _child.parentIds.length === 0) continue;
+
+            // Find a living wealthy parent
+            var _rescueParent = null;
+            for (var _rpi = 0; _rpi < _child.parentIds.length; _rpi++) {
+                var _rp = findPerson(_child.parentIds[_rpi]);
+                if (!_rp || !_rp.alive) continue;
+                if (_rp.isEliteMerchant || _rp.isNoble || _rp.isKing ||
+                    (_rp.socialRank && Object.values(_rp.socialRank).some(function(r) { return r >= 4; }))) {
+                    _rescueParent = _rp;
+                    break;
+                }
+                // Common parents with enough gold also try (less aggressively)
+                if (_rp.gold >= 20 && rng.chance(0.4)) {
+                    _rescueParent = _rp;
+                    break;
+                }
+            }
+            if (!_rescueParent) continue;
+
+            var _childTown = findTown(_child.townId);
+            if (!_childTown) continue;
+
+            // If child not in same town as parent, move child to parent
+            if (_child.townId !== _rescueParent.townId && _rescueParent.gold >= 15) {
+                var _rpTown = findTown(_rescueParent.townId);
+                if (_rpTown) {
+                    _childTown.population = Math.max(0, _childTown.population - 1);
+                    _child.townId = _rpTown.id;
+                    _child.kingdomId = _rpTown.kingdomId;
+                    _rpTown.population++;
+                    _rescueParent.gold -= 10;
+                    _childTown = _rpTown;
+                }
+            }
+
+            // Try to get child treated at local facility
+            var _childHasFacility = townMedFacilities[_child.townId];
+            if (_childHasFacility) {
+                for (var _cfbi = 0; _cfbi < _childTown.buildings.length; _cfbi++) {
+                    var _cfBld = _childTown.buildings[_cfbi];
+                    if (_cfBld.type !== 'hospital' && _cfBld.type !== 'clinic') continue;
+                    if (!_cfBld._treatmentQueue) _cfBld._treatmentQueue = [];
+
+                    // Check not already queued
+                    var _childQueued = false;
+                    for (var _cqi = 0; _cqi < _cfBld._treatmentQueue.length; _cqi++) {
+                        if (_cfBld._treatmentQueue[_cqi].personId === _child.id) { _childQueued = true; break; }
+                    }
+                    if (_childQueued) break;
+
+                    var _childSev = _child.illnessSeverity || 'minor';
+                    var _childFee = NPC_HEALTH_CONFIG.TREATMENT_FEE ? (NPC_HEALTH_CONFIG.TREATMENT_FEE[_childSev] || 10) : 10;
+
+                    // Parent pays for child's treatment
+                    if (_rescueParent.gold >= _childFee) {
+                        _rescueParent.gold -= _childFee;
+                        _child._illnessTreatPaid = true;
+
+                        var _childTreatTicks = (NPC_HEALTH_CONFIG.TREATMENT_TICKS && NPC_HEALTH_CONFIG.TREATMENT_TICKS[_childSev]) || 25;
+                        if (_cfBld.type === 'clinic' && _childSev === 'severe') _childTreatTicks *= 2;
+
+                        // Revenue to building owner
+                        var _cOwnerK = findKingdom(_childTown.kingdomId);
+                        var _cTaxRate = (_cOwnerK && _cOwnerK.healthcareTaxRate) || 0.15;
+                        if (_cfBld.ownerId === 'kingdom' || (_cOwnerK && _cfBld.ownerId === _cOwnerK.id)) {
+                            if (_cOwnerK) _cOwnerK.gold = (_cOwnerK.gold || 0) + _childFee;
+                        } else if (_cfBld.ownerId === 'player') {
+                            _cfBld.retailRevenue = (_cfBld.retailRevenue || 0) + (_childFee - Math.floor(_childFee * _cTaxRate));
+                        } else if (_cfBld.ownerId) {
+                            var _cfOwner = findPerson(_cfBld.ownerId);
+                            if (_cfOwner && _cfOwner.alive) _cfOwner.gold = (_cfOwner.gold || 0) + (_childFee - Math.floor(_childFee * _cTaxRate));
+                        }
+
+                        // Children go to front of queue (priority)
+                        _cfBld._treatmentQueue.unshift({
+                            personId: _child.id,
+                            severity: _childSev,
+                            ticksRemaining: _childTreatTicks,
+                            fee: _childFee,
+                            isIllness: true,
+                        });
+                        break;
+                    }
+                }
+            } else if (_rescueParent.gold >= 30) {
+                // No local facility — parent pays for herbal remedy from market
+                var _childMarket = _childTown.market && _childTown.market.supply;
+                if (_childMarket) {
+                    var _remedyGoods = ['herbal_remedy', 'healing_tonic', 'fever_tonic'];
+                    for (var _rgi = 0; _rgi < _remedyGoods.length; _rgi++) {
+                        if ((_childMarket[_remedyGoods[_rgi]] || 0) > 0) {
+                            _childMarket[_remedyGoods[_rgi]]--;
+                            _rescueParent.gold -= 15;
+                            _child._illnessTreatPaid = true;
+                            _child.health = Math.min(100, (_child.health || 50) + 15);
+                            break;
+                        }
+                    }
+                }
+                // If still untreated, travel to a town with medical facility
+                if (!_child._illnessTreatPaid && _rescueParent.gold >= 25) {
+                    var _bestChildMed = null;
+                    var _bestChildDist = Infinity;
+                    for (var _mti = 0; _mti < world.towns.length; _mti++) {
+                        var _mt = world.towns[_mti];
+                        if (_mt.id === _child.townId) continue;
+                        if (!townMedFacilities[_mt.id]) continue;
+                        var _mdx = (_mt.x || 0) - (_childTown.x || 0);
+                        var _mdy = (_mt.y || 0) - (_childTown.y || 0);
+                        var _mdist = Math.sqrt(_mdx * _mdx + _mdy * _mdy);
+                        if (_mdist < _bestChildDist) { _bestChildDist = _mdist; _bestChildMed = _mt; }
+                    }
+                    if (_bestChildMed) {
+                        _childTown.population = Math.max(0, _childTown.population - 1);
+                        _child.townId = _bestChildMed.id;
+                        _child.kingdomId = _bestChildMed.kingdomId;
+                        _bestChildMed.population++;
+                        _rescueParent.gold -= 15;
+                        // Also move parent if in different town
+                        if (_rescueParent.townId !== _bestChildMed.id) {
+                            var _rpOldTown = findTown(_rescueParent.townId);
+                            if (_rpOldTown) _rpOldTown.population = Math.max(0, _rpOldTown.population - 1);
+                            _rescueParent.townId = _bestChildMed.id;
+                            _rescueParent.kingdomId = _bestChildMed.kingdomId;
+                            _bestChildMed.population++;
+                        }
+                    }
+                }
+            }
+        }
         // Return healed travelers to their origin towns
         for (var ri = 0; ri < world.people.length; ri++) {
             var rp = world.people[ri];
