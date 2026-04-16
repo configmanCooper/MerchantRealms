@@ -12727,10 +12727,10 @@
 
                 // Deduct expenses by rank (household, servants, upkeep)
                 var expense = 0;
-                if (rank >= 7) expense = 350;      // king: large household but funded by treasury
-                else if (rank === 6) expense = 80;  // RA: modest court lifestyle
-                else if (rank === 5) expense = 40;  // lord: estate upkeep
-                else expense = 15;                   // minor noble: basic noble living
+                if (rank >= 7) expense = 500;
+                else if (rank === 6) expense = 200;
+                else if (rank === 5) expense = 100;
+                else expense = 50;
                 noble.gold -= expense;
                 noble._incomeLog.expenses += expense;
 
