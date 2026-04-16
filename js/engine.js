@@ -18741,7 +18741,7 @@
                 var sickCount = 0;
                 var totalHere = townPeople.length;
                 // Aggressive daily infection — killRate scales with remaining uninfected
-                var baseInfectChance = ev.killRate * (ev.isSevere ? 4.0 : 2.5);
+                var baseInfectChance = ev.killRate * (ev.isSevere ? 3.6 : 2.25);
                 for (var pi = 0; pi < townPeople.length; pi++) {
                     var p = townPeople[pi];
                     if (p.sick) { sickCount++; continue; }

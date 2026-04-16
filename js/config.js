@@ -3958,7 +3958,7 @@ const NPC_HEALTH_CONFIG = {
         rash:           { name: 'Severe Rash',         severity: 'moderate', healthDrain: 0.8, daysToRecover: 16,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
         pneumonia:      { name: 'Pneumonia',           severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
         typhus:         { name: 'Typhus',              severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
-        plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.04, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
+        plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.036, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
     },
 
     // --- Health thresholds ---
@@ -3969,9 +3969,9 @@ const NPC_HEALTH_CONFIG = {
     DOCTOR_SKILL_BONUS: 0.02,          // per workerSkill point, extra heal rate
 
     // --- Contagion / spread ---
-    TOWN_SPREAD_BASE: 0.003,            // base daily chance of spreading to adjacent town
+    TOWN_SPREAD_BASE: 0.0027,            // base daily chance of spreading to adjacent town
     TOWN_SPREAD_SICK_RATIO_MULT: 2.0,  // multiplied by (sickNPCs / totalPop) in source town
-    TRADE_ROUTE_SPREAD_MULT: 1.5,      // towns connected by active trade routes spread faster
+    TRADE_ROUTE_SPREAD_MULT: 1.35,      // towns connected by active trade routes spread faster
 
     // --- Treatment supplies consumed per severity ---
     // Injuries use bandages + physical supplies; illnesses use medicines
@@ -4008,13 +4008,13 @@ const NPC_HEALTH_CONFIG = {
     },
 
     // --- Plague event specific ---
-    PLAGUE_INFECTION_RATE: { min: 0.08, max: 0.20 }, // 8-20% of town gets sick initially
+    PLAGUE_INFECTION_RATE: { min: 0.072, max: 0.18 }, // 7.2-18% of town gets sick initially
     PLAGUE_DAILY_DEATH_UNTREATED: 0.05,               // 5% daily death if untreated
-    PLAGUE_SPREAD_MULT: 2.0,                           // plague spreads 2x faster than normal
+    PLAGUE_SPREAD_MULT: 1.8,                           // plague spreads 1.8x faster than normal
 
     // --- Moderate plague (5-year event) ---
-    MODERATE_PLAGUE_INFECTION_RATE: { min: 0.04, max: 0.10 },
-    MODERATE_PLAGUE_SPREAD_MULT: 1.0,
+    MODERATE_PLAGUE_INFECTION_RATE: { min: 0.036, max: 0.09 },
+    MODERATE_PLAGUE_SPREAD_MULT: 0.9,
 };
 
 // Kingdom health policies the king AI can enact
