@@ -11773,12 +11773,134 @@
                         _startTownRevolt(town);
                     }
                 }
+
+                // ── Revolt Outreach: unhappy NPCs reach out to disloyal nobles for help ──
+                // Happens when pressure is building (>= 15 days) but revolt hasn't started yet
+                if ((town._revoltPressureDays || 0) >= 15 && !town._activeRevolt && world.day % 5 === 0) {
+                    _tickRevoltOutreach(town);
+                }
             } else {
                 // Town is no longer critically unhappy — rapidly decay pressure
                 if (town._revoltPressureDays && town._revoltPressureDays > 0) {
                     // Lose 3 days of pressure per day of recovery
                     town._revoltPressureDays = Math.max(0, town._revoltPressureDays - 3);
-                    if (town._revoltPressureDays === 0) delete town._revoltPressureDays;
+                    if (town._revoltPressureDays === 0) {
+                        delete town._revoltPressureDays;
+                        // Clear outreach state when pressure dissipates
+                        delete town._revoltOutreach;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Revolt Outreach: unhappy citizens reach out to disloyal nobles for revolt support.
+     * Nobles may pledge gold, equipment, or promise to join the revolt when it starts.
+     */
+    function _tickRevoltOutreach(town) {
+        var rng = world.rng;
+        var k = findKingdom(town.kingdomId);
+        if (!k) return;
+        var kId = k.id;
+
+        if (!town._revoltOutreach) {
+            town._revoltOutreach = { contactedNobles: [], pledgedNobles: [], pledgedGold: 0, pledgedEquipment: 0, day: world.day };
+        }
+        var outreach = town._revoltOutreach;
+
+        // Find a disloyal noble in this kingdom who hasn't been contacted yet
+        var eligibleNobles = world.people.filter(function(p) {
+            return p.alive && p.socialRank && typeof p.socialRank === 'object' &&
+                   p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 &&
+                   (p.kingLoyalty != null ? p.kingLoyalty : 50) < 40 &&
+                   outreach.contactedNobles.indexOf(p.id) < 0;
+        });
+
+        if (eligibleNobles.length === 0) return;
+
+        // Contact 1-2 nobles per cycle
+        var contactCount = Math.min(eligibleNobles.length, rng.randInt(1, 2));
+        for (var ci = 0; ci < contactCount; ci++) {
+            var noble = eligibleNobles[rng.randInt(0, eligibleNobles.length - 1)];
+            eligibleNobles = eligibleNobles.filter(function(n) { return n.id !== noble.id; });
+            outreach.contactedNobles.push(noble.id);
+
+            var nPers = noble.personality || {};
+            var nLoyalty = noble.kingLoyalty || 50;
+            var nAmbition = nPers.ambition || 50;
+            var nWealth = noble.gold || 0;
+
+            // Chance noble agrees to support revolt
+            var supportChance = 0.20; // base 20%
+            if (nLoyalty < 20) supportChance += 0.25;
+            else if (nLoyalty < 30) supportChance += 0.15;
+            if (nAmbition > 65) supportChance += 0.15;
+            if ((nPers.warmth || 50) > 60) supportChance += 0.10; // sympathizes with common people
+            if (noble.townId === town.id) supportChance += 0.10; // local noble more invested
+            if ((noble.fearOfKing || 0) > 50) supportChance -= 0.15; // afraid of consequences
+
+            if (rng.chance(Math.max(0.05, supportChance))) {
+                outreach.pledgedNobles.push(noble.id);
+                noble._revoltPledge = { townId: town.id, kingdomId: kId, day: world.day };
+
+                // Noble pledges gold based on wealth and commitment
+                var goldPledge = Math.floor(nWealth * rng.randFloat(0.05, 0.15));
+                goldPledge = Math.min(goldPledge, 500); // cap at 500g per noble
+                if (goldPledge > 10) {
+                    outreach.pledgedGold += goldPledge;
+                    noble.gold = Math.max(0, (noble.gold || 0) - goldPledge);
+                }
+
+                // Equipment pledge (abstract: each point = ~1 weapon worth)
+                var equipPledge = Math.floor(rng.randFloat(1, 4));
+                if (noble.socialRank[kId] >= 5) equipPledge += rng.randInt(1, 3); // Lords have more resources
+                outreach.pledgedEquipment += equipPledge;
+
+                logEvent('🤝 Noble ' + (noble.firstName || '?') + ' ' + (noble.lastName || '') +
+                    ' secretly pledges support to revolters in ' + town.name + '.', {
+                    type: 'revolt_outreach_success',
+                    town: town.name, kingdom: k.name,
+                    noble: noble.firstName + ' ' + (noble.lastName || ''),
+                    goldPledged: goldPledge, equipmentPledged: equipPledge
+                });
+            } else {
+                // Noble refuses — may report to the king (10% chance)
+                if (rng.chance(0.10) && (noble.kingLoyalty || 50) > 30) {
+                    // Noble reports outreach to king — reduces revolt pressure
+                    town._revoltPressureDays = Math.max(0, (town._revoltPressureDays || 0) - 10);
+                    logEvent('🕵️ ' + (noble.firstName || '?') + ' reports revolt plotting in ' + town.name + ' to the crown.', {
+                        type: 'revolt_outreach_reported',
+                        town: town.name, kingdom: k.name
+                    });
+                    // King might increase garrison
+                    if (rng.chance(0.3)) {
+                        town.garrison = (town.garrison || 0) + rng.randInt(2, 5);
+                    }
+                }
+            }
+
+            // Notify player if they are a noble in this kingdom and get approached
+            if (typeof Player !== 'undefined' && Player.state) {
+                var ps = Player.state;
+                var pRank = (ps.socialRank && ps.socialRank[kId]) || 0;
+                if (pRank >= 4 && pRank <= 6 && !ps.isKing &&
+                    (ps.citizenshipKingdomId === kId) &&
+                    (ps.kingLoyalty != null ? ps.kingLoyalty : 50) < 45 &&
+                    !outreach.playerContacted && rng.chance(0.30)) {
+                    outreach.playerContacted = true;
+                    // Store as a pending request the player can respond to via UI
+                    if (!ps._revoltSupportRequests) ps._revoltSupportRequests = [];
+                    ps._revoltSupportRequests.push({
+                        townId: town.id, townName: town.name,
+                        kingdomId: kId, kingdomName: k.name,
+                        day: world.day, pressureDays: town._revoltPressureDays || 0,
+                        pledgedNobles: outreach.pledgedNobles.length,
+                        pledgedGold: outreach.pledgedGold
+                    });
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('📜 Citizens of ' + town.name + ' seek your support for their cause against the crown!', 'warning');
+                    }
                 }
             }
         }
@@ -11934,6 +12056,31 @@
                 rebelIds.push(_noble.id);
                 _rebelEffectiveStr += 1.5; // nobles fight with higher effectiveness
             }
+        }
+
+        // ── Apply outreach pledges: nobles who pledged support auto-join and provide resources ──
+        if (town._revoltOutreach) {
+            var _outreach = town._revoltOutreach;
+            // Pledged nobles who weren't already selected as noble participants
+            for (var _opi = 0; _opi < (_outreach.pledgedNobles || []).length; _opi++) {
+                var _pledgedId = _outreach.pledgedNobles[_opi];
+                if (_nobleParticipants.some(function(n) { return n.id === _pledgedId; })) continue;
+                var _pledgedNoble = findPerson(_pledgedId);
+                if (_pledgedNoble && _pledgedNoble.alive) {
+                    _nobleParticipants.push(_pledgedNoble);
+                    rebelIds.push(_pledgedNoble.id);
+                    _rebelEffectiveStr += 1.5;
+                }
+            }
+            // Pledged gold converts to equipment for rebels (25g per weapon set)
+            var _outreachWeapons = Math.floor((_outreach.pledgedGold || 0) / 25);
+            _rebelSwords += _outreachWeapons;
+            _rebelArmor += Math.floor(_outreachWeapons * 0.5);
+            // Direct equipment pledges
+            _rebelSwords += Math.floor((_outreach.pledgedEquipment || 0) * 0.6);
+            _rebelArmor += Math.floor((_outreach.pledgedEquipment || 0) * 0.4);
+            // Clear outreach state
+            delete town._revoltOutreach;
         }
 
         // Pick revolt group name (avoid reusing active names)
@@ -26341,7 +26488,11 @@
 
             // If strength > 80: attempt the plot
             if (conspiracy.strength > 80) {
-                _attemptConspiracyPlot(k, conspiracy);
+                if (conspiracy.type === 'revolt_support') {
+                    _executeRevoltSupport(k, conspiracy);
+                } else {
+                    _attemptConspiracyPlot(k, conspiracy);
+                }
             }
             return;
         }
@@ -26365,25 +26516,180 @@
             }
 
             if (compatiblePlotters.length >= 2) {
-            // Form conspiracy
+            // Form conspiracy — determine type
             var plotterIds = compatiblePlotters.map(function(p) { return p.id; });
             var hasCoupLeader = dissidents.some(function(p) {
                 return p.personality && p.personality.ambition > 70;
             });
-            var plotType = hasCoupLeader ? 'coup' : 'assassination';
+
+            // Check if there's a brewing revolt to support instead of direct action
+            var revoltSupportTarget = null;
+            var kTowns = world.towns.filter(function(t) { return t.kingdomId === kId; });
+            for (var _rti = 0; _rti < kTowns.length; _rti++) {
+                if ((kTowns[_rti]._revoltPressureDays || 0) >= 15 && !kTowns[_rti]._activeRevolt) {
+                    revoltSupportTarget = kTowns[_rti];
+                    break;
+                }
+            }
+
+            var plotType;
+            if (revoltSupportTarget && rng.chance(0.35)) {
+                // 35% chance nobles choose to fund a revolt instead of assassination/coup
+                plotType = 'revolt_support';
+            } else {
+                plotType = hasCoupLeader ? 'coup' : 'assassination';
+            }
 
             k._conspiracy = {
                 plotters: plotterIds,
                 type: plotType,
                 startDay: world.day,
                 strength: 0,
-                detected: false
+                detected: false,
+                revoltTargetTownId: plotType === 'revolt_support' ? revoltSupportTarget.id : null,
+                revoltTargetTownName: plotType === 'revolt_support' ? revoltSupportTarget.name : null
             };
 
-            logEvent('🤫 Whispers of a ' + plotType + ' plot spread among the discontented nobles of ' + k.name + '.', {
-                type: 'conspiracy_formed', kingdomId: kId
+            var _conspMsg = plotType === 'revolt_support'
+                ? '🔥 Discontented nobles of ' + k.name + ' conspire to support popular unrest in ' + revoltSupportTarget.name + '.'
+                : '🤫 Whispers of a ' + plotType + ' plot spread among the discontented nobles of ' + k.name + '.';
+            logEvent(_conspMsg, {
+                type: 'conspiracy_formed', kingdomId: kId, plotType: plotType,
+                revoltTarget: plotType === 'revolt_support' ? revoltSupportTarget.name : null
             }, category);
             } // end compatiblePlotters >= 2
+        }
+    }
+
+    /**
+     * Noble conspiracy executes revolt support — funnels gold, weapons, and intel to revolt town.
+     */
+    function _executeRevoltSupport(k, conspiracy) {
+        var rng = world.rng;
+        var kId = k.id;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var targetTown = world.towns.find(function(t) { return t.id === conspiracy.revoltTargetTownId; });
+
+        if (!targetTown) {
+            // Town no longer exists or is in a different kingdom — conspiracy dissolves
+            k._conspiracy = null;
+            return;
+        }
+
+        // If revolt already started and won/lost, dissolve
+        if (targetTown.kingdomId !== kId) {
+            k._conspiracy = null;
+            return;
+        }
+
+        // Plotters contribute gold and equipment to the revolt cause
+        var totalGoldFunneled = 0;
+        var totalEquipment = 0;
+        var plotterPersons = [];
+        var playerIsPlotter = false;
+
+        for (var pi = 0; pi < conspiracy.plotters.length; pi++) {
+            var pid = conspiracy.plotters[pi];
+            if (pid === 'player') {
+                playerIsPlotter = true;
+                continue;
+            }
+            var plotter = findPerson(pid);
+            if (!plotter || !plotter.alive) continue;
+            plotterPersons.push(plotter);
+
+            // Each plotter contributes 10-20% of their gold
+            var goldContrib = Math.floor((plotter.gold || 0) * rng.randFloat(0.10, 0.20));
+            goldContrib = Math.min(goldContrib, 800); // cap at 800g per noble
+            if (goldContrib > 0) {
+                plotter.gold = Math.max(0, (plotter.gold || 0) - goldContrib);
+                totalGoldFunneled += goldContrib;
+            }
+
+            // Equipment from noble's resources (2-5 weapons per noble based on rank)
+            var rank = (plotter.socialRank && typeof plotter.socialRank === 'object') ? (plotter.socialRank[kId] || 4) : 4;
+            var equipContrib = rng.randInt(2, rank >= 5 ? 5 : 3);
+            totalEquipment += equipContrib;
+        }
+
+        // Player contribution (if involved)
+        if (playerIsPlotter && typeof Player !== 'undefined' && Player.state) {
+            var pGold = Player.state.gold || Player.gold || 0;
+            var pContrib = Math.floor(pGold * 0.10); // 10% of player gold
+            // Player can choose how much via UI — for now auto-contribute minimum
+            if (pContrib > 0) {
+                if (typeof Player.modifyGold === 'function') {
+                    Player.modifyGold(-pContrib, 'revolt_support');
+                } else if (Player.state) {
+                    Player.state.gold = Math.max(0, (Player.state.gold || 0) - pContrib);
+                }
+                totalGoldFunneled += pContrib;
+            }
+        }
+
+        // Apply support to town revolt preparations
+        if (!targetTown._revoltOutreach) {
+            targetTown._revoltOutreach = { contactedNobles: [], pledgedNobles: [], pledgedGold: 0, pledgedEquipment: 0, day: world.day };
+        }
+        targetTown._revoltOutreach.pledgedGold += totalGoldFunneled;
+        targetTown._revoltOutreach.pledgedEquipment += totalEquipment;
+
+        // Add plotters as pledged nobles
+        for (var ppi = 0; ppi < plotterPersons.length; ppi++) {
+            if (targetTown._revoltOutreach.pledgedNobles.indexOf(plotterPersons[ppi].id) < 0) {
+                targetTown._revoltOutreach.pledgedNobles.push(plotterPersons[ppi].id);
+                plotterPersons[ppi]._revoltPledge = { townId: targetTown.id, kingdomId: kId, day: world.day };
+            }
+        }
+
+        // Increase revolt pressure — the noble support makes revolt more likely
+        targetTown._revoltPressureDays = (targetTown._revoltPressureDays || 0) + 15;
+
+        // Detection chance: 12% (higher than standard conspiracy since involves common people)
+        var detected = rng.chance(0.12);
+
+        logEvent('🔥 Noble conspirators in ' + k.name + ' funnel ' + totalGoldFunneled + 'g and weapons to dissidents in ' + targetTown.name + '!', {
+            type: 'revolt_support_executed', kingdomId: kId,
+            town: targetTown.name,
+            goldFunneled: totalGoldFunneled,
+            equipment: totalEquipment,
+            plotterCount: plotterPersons.length,
+            detected: detected
+        }, category);
+
+        if (detected) {
+            // Some plotters get caught
+            logEvent('🕵️ The crown discovers noble involvement in fomenting revolt in ' + targetTown.name + '!', {
+                type: 'revolt_support_detected', kingdomId: kId
+            }, category);
+            for (var ci = 0; ci < plotterPersons.length; ci++) {
+                if (rng.chance(0.50)) { // 50% each caught
+                    plotterPersons[ci]._arrested = true;
+                    plotterPersons[ci].kingLoyalty = Math.min(100, (plotterPersons[ci].kingLoyalty || 0) + 30);
+                    // 30% execution for revolt support (less severe than assassination attempt)
+                    if (rng.chance(0.30)) {
+                        killPerson(plotterPersons[ci], 'executed');
+                        logEvent('⚔️ ' + (plotterPersons[ci].firstName || 'A noble') + ' executed for fomenting revolt in ' + k.name + '.', {
+                            type: 'conspiracy_execution', kingdomId: kId
+                        }, category);
+                    } else {
+                        logEvent('🔒 ' + (plotterPersons[ci].firstName || 'A noble') + ' arrested for revolt conspiracy in ' + k.name + '.', {
+                            type: 'conspiracy_arrest', kingdomId: kId
+                        }, category);
+                    }
+                }
+            }
+            if (playerIsPlotter) {
+                _playerConspiracyCaught(k, 'revolt_support', false);
+            }
+            k._conspiracy = null;
+        } else {
+            // Not detected — conspiracy can continue or dissolve
+            conspiracy.strength -= 40; // reset strength
+            if (conspiracy.strength <= 0 || rng.chance(0.40)) {
+                k._conspiracy = null; // mission complete, disperse
+            }
         }
     }
 
@@ -27826,7 +28132,9 @@
                 strength: c.strength,
                 startDay: c.startDay,
                 playerInvolved: playerIn,
-                detected: c.detected
+                detected: c.detected,
+                revoltTargetTownId: c.revoltTargetTownId || null,
+                revoltTargetTownName: c.revoltTargetTownName || null
             };
         },
 
@@ -27882,6 +28190,77 @@
                 type: 'conspiracy_formed', kingdomId: k.id
             }, 'my_kingdom');
             return { success: true, message: 'You and ' + noble.firstName + ' have begun plotting a ' + type + ' against the king of ' + k.name + '.' };
+        },
+
+        // Player supports a revolt by pledging gold and support
+        playerSupportRevolt(townId, goldAmount) {
+            if (!world || typeof Player === 'undefined' || !Player.state) return { success: false, message: 'No player state.' };
+            var town = findTown(townId);
+            if (!town) return { success: false, message: 'Town not found.' };
+            var k = findKingdom(town.kingdomId);
+            if (!k) return { success: false, message: 'Kingdom not found.' };
+
+            goldAmount = Math.max(0, Math.floor(goldAmount || 0));
+            var pGold = Player.state.gold || Player.gold || 0;
+            if (goldAmount > pGold) return { success: false, message: 'Not enough gold.' };
+
+            // Create/update outreach
+            if (!town._revoltOutreach) {
+                town._revoltOutreach = { contactedNobles: [], pledgedNobles: [], pledgedGold: 0, pledgedEquipment: 0, day: world.day };
+            }
+            town._revoltOutreach.pledgedGold += goldAmount;
+            if (town._revoltOutreach.pledgedNobles.indexOf('player') < 0) {
+                town._revoltOutreach.pledgedNobles.push('player');
+            }
+
+            // Deduct gold
+            if (typeof Player.modifyGold === 'function') {
+                Player.modifyGold(-goldAmount, 'revolt_support');
+            } else {
+                Player.state.gold = Math.max(0, (Player.state.gold || 0) - goldAmount);
+            }
+
+            // Increase revolt pressure
+            town._revoltPressureDays = (town._revoltPressureDays || 0) + 5;
+
+            // Mark player as having supported
+            Player.state._supportedRevolt = { townId: townId, townName: town.name, kingdomId: town.kingdomId, day: world.day, gold: goldAmount };
+
+            // Clear this request
+            if (Player.state._revoltSupportRequests) {
+                Player.state._revoltSupportRequests = Player.state._revoltSupportRequests.filter(function(r) { return r.townId !== townId; });
+            }
+
+            logEvent('🔥 You secretly pledge ' + goldAmount + 'g to support dissidents in ' + town.name + '.', {
+                type: 'player_revolt_support', townId: townId, kingdom: k.name, gold: goldAmount
+            }, 'my_kingdom');
+
+            return { success: true, message: 'You pledge ' + goldAmount + 'g to the rebels in ' + town.name + '. If they revolt, your support will strengthen them.' };
+        },
+
+        // Player declines revolt support request
+        playerDeclineRevoltSupport(townId) {
+            if (!Player || !Player.state || !Player.state._revoltSupportRequests) return { success: false };
+            Player.state._revoltSupportRequests = Player.state._revoltSupportRequests.filter(function(r) { return r.townId !== townId; });
+            return { success: true, message: 'You decline the request for support.' };
+        },
+
+        // Get brewing revolts in a kingdom (towns with pressure)
+        getBrewingRevolts(kingdomId) {
+            if (!world) return [];
+            return world.towns.filter(function(t) {
+                return t.kingdomId === kingdomId && (t._revoltPressureDays || 0) >= 10 && !t._activeRevolt;
+            }).map(function(t) {
+                var outreach = t._revoltOutreach || {};
+                return {
+                    townId: t.id, townName: t.name,
+                    pressureDays: t._revoltPressureDays || 0,
+                    happiness: t.happiness || 50,
+                    pledgedNobles: (outreach.pledgedNobles || []).length,
+                    pledgedGold: outreach.pledgedGold || 0,
+                    playerPledged: (outreach.pledgedNobles || []).indexOf('player') >= 0
+                };
+            });
         },
 
         addArmy(armyObj) {
@@ -29641,7 +30020,9 @@
                 type: k._conspiracy.type,
                 plotters: k._conspiracy.plotters.length,
                 strength: k._conspiracy.strength,
-                detected: k._conspiracy.detected
+                detected: k._conspiracy.detected,
+                revoltTargetTownId: k._conspiracy.revoltTargetTownId || null,
+                revoltTargetTownName: k._conspiracy.revoltTargetTownName || null
             };
         },
 

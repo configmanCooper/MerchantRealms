@@ -1216,20 +1216,29 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
         // Player is in an active conspiracy — show status
         var _cStrColor = _conspiracy.strength >= 80 ? '#2ecc71' : _conspiracy.strength >= 50 ? '#e67e22' : '#c44e52';
         var _cStrLabel = _conspiracy.strength >= 80 ? 'Ready to strike!' : _conspiracy.strength >= 50 ? 'Growing stronger' : 'Still gathering support';
+        var _cTypeLabel = _conspiracy.type === 'revolt_support' ? 'revolt support' : _conspiracy.type;
         html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
-        html += '<div style="font-size:0.85rem;color:#f0d0a0;">You are part of a <strong>' + _conspiracy.type + '</strong> conspiracy</div>';
+        html += '<div style="font-size:0.85rem;color:#f0d0a0;">You are part of a <strong>' + _cTypeLabel + '</strong> conspiracy</div>';
+        if (_conspiracy.type === 'revolt_support' && _conspiracy.revoltTargetTownName) {
+            html += '<div style="font-size:0.78rem;color:#e67e22;margin-top:2px;">Target: Funding revolt in <b>' + escapeHtml(_conspiracy.revoltTargetTownName) + '</b></div>';
+        }
         html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">Plotters: ' + escapeHtml(_conspiracy.plotterNames.join(', ')) + ' (' + _conspiracy.plotterCount + ' total)</div>';
         html += '<div style="font-size:0.78rem;color:' + _cStrColor + ';margin-top:2px;">Strength: ' + Math.floor(_conspiracy.strength) + '/80 — ' + _cStrLabel + '</div>';
         if (_conspiracy.strength >= 80) {
-            html += '<div style="font-size:0.78rem;color:#2ecc71;margin-top:4px;font-weight:bold;">⚡ The conspirators are ready to act! The plot will unfold soon.</div>';
+            var _readyMsg = _conspiracy.type === 'revolt_support' ? '⚡ Resources are ready to deliver to the rebels!' : '⚡ The conspirators are ready to act! The plot will unfold soon.';
+            html += '<div style="font-size:0.78rem;color:#2ecc71;margin-top:4px;font-weight:bold;">' + _readyMsg + '</div>';
         }
         html += '<div style="margin-top:6px;">';
         html += '<button class="btn-medieval" data-action="playerLeaveConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚪 Withdraw from Conspiracy</button>';
         html += '</div></div>';
     } else if (_conspiracy && !_conspiracy.playerInvolved) {
         // Active conspiracy exists that player could join
+        var _cTypeLabel2 = _conspiracy.type === 'revolt_support' ? 'revolt support' : _conspiracy.type;
         html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
-        html += '<div style="font-size:0.85rem;color:#e67e22;">🤫 Rumours of a <strong>' + _conspiracy.type + '</strong> plot are circulating...</div>';
+        html += '<div style="font-size:0.85rem;color:#e67e22;">🤫 Rumours of a <strong>' + _cTypeLabel2 + '</strong> plot are circulating...</div>';
+        if (_conspiracy.type === 'revolt_support' && _conspiracy.revoltTargetTownName) {
+            html += '<div style="font-size:0.75rem;color:#e67e22;margin-top:2px;">Nobles seek to fund revolt in <b>' + escapeHtml(_conspiracy.revoltTargetTownName) + '</b></div>';
+        }
         html += '<div style="font-size:0.78rem;color:#aaa;margin-top:4px;">' + _conspiracy.plotterCount + ' noble' + (_conspiracy.plotterCount > 1 ? 's' : '') + ' are involved. Strength: ' + Math.floor(_conspiracy.strength) + '/80</div>';
         html += '<div style="margin-top:6px;">';
         html += '<button class="btn-medieval" data-action="playerJoinConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Join the Conspiracy</button>';
@@ -1250,6 +1259,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
             html += '<select id="conspiracy_type" style="font-size:0.72rem;padding:2px;">';
             html += '<option value="assassination">Assassination</option>';
             html += '<option value="coup">Coup</option>';
+            html += '<option value="revolt_support">Revolt Support</option>';
             html += '</select>';
             html += '<button class="btn-medieval" data-action="playerFormConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Form Plot</button>';
             html += '</div>';
@@ -1258,6 +1268,72 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
         }
     }
     html += '</div>';
+
+    // ═══ Revolt Support Section ═══
+    var _revoltRequests = (typeof Player !== 'undefined' && Player.state && Player.state._revoltSupportRequests) || [];
+    var _brewingRevolts = [];
+    try { _brewingRevolts = Engine.getBrewingRevolts(citizenKingdomId) || []; } catch(e) {}
+    var _supportedRevolt = (typeof Player !== 'undefined' && Player.state) ? Player.state._supportedRevolt : null;
+
+    if (_revoltRequests.length > 0 || _brewingRevolts.length > 0 || _supportedRevolt) {
+        html += '<div style="background:rgba(196,78,82,0.10);border:1px solid rgba(196,78,82,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.95rem;font-weight:bold;color:#e67e22;margin-bottom:6px;">🔥 Revolt Support</div>';
+
+        // Active support pledge
+        if (_supportedRevolt && _supportedRevolt.kingdomId === citizenKingdomId) {
+            html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
+            html += '<div style="font-size:0.82rem;color:#e67e22;">You are supporting dissidents in <b>' + escapeHtml(_supportedRevolt.townName) + '</b></div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-top:2px;">Pledged: ' + (_supportedRevolt.gold || 0) + 'g on day ' + (_supportedRevolt.day || '?') + '</div>';
+            html += '</div>';
+        }
+
+        // Incoming requests from revolt organizers
+        for (var _rri = 0; _rri < _revoltRequests.length; _rri++) {
+            var _rr = _revoltRequests[_rri];
+            if (_rr.kingdomId !== citizenKingdomId) continue;
+            html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
+            html += '<div style="font-size:0.85rem;color:#f0d0a0;">📜 Citizens of <b>' + escapeHtml(_rr.townName) + '</b> seek your support!</div>';
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-top:2px;">';
+            html += 'Unrest level: <span style="color:#c44e52;">' + (_rr.pressureDays || 0) + ' days</span>';
+            if (_rr.pledgedNobles > 0) html += ' | <span style="color:#e67e22;">' + _rr.pledgedNobles + ' noble(s) already pledged</span>';
+            if (_rr.pledgedGold > 0) html += ' | <span style="color:var(--gold);">' + _rr.pledgedGold + 'g raised</span>';
+            html += '</div>';
+            html += '<div style="margin-top:6px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+            html += '<label style="font-size:0.72rem;color:#ccc;">Pledge gold:</label>';
+            html += '<input type="number" id="revolt_gold_' + _rri + '" value="100" min="10" max="5000" style="width:70px;font-size:0.72rem;padding:2px;">';
+            html += '<button class="btn-medieval" data-action="playerSupportRevolt" data-id="' + _rr.townId + '" data-idx="' + _rri + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🔥 Support Revolt</button>';
+            html += '<button class="btn-medieval" data-action="playerDeclineRevolt" data-id="' + _rr.townId + '" style="font-size:0.72rem;padding:4px 10px;">❌ Decline</button>';
+            html += '</div></div>';
+        }
+
+        // Brewing revolts the player can proactively support
+        var _hasRequests = {};
+        for (var _hri = 0; _hri < _revoltRequests.length; _hri++) _hasRequests[_revoltRequests[_hri].townId] = true;
+        for (var _bri = 0; _bri < _brewingRevolts.length; _bri++) {
+            var _br = _brewingRevolts[_bri];
+            if (_hasRequests[_br.townId] || _br.playerPledged) continue;
+            html += '<div style="background:rgba(0,0,0,0.15);border-radius:6px;padding:6px;margin-bottom:4px;">';
+            html += '<div style="font-size:0.78rem;color:#ccc;">';
+            html += '🏚️ <b>' + escapeHtml(_br.townName) + '</b> — happiness: <span style="color:#c44e52;">' + Math.floor(_br.happiness) + '</span>';
+            html += ' | pressure: ' + _br.pressureDays + ' days';
+            if (_br.pledgedNobles > 0) html += ' | ' + _br.pledgedNobles + ' noble backer(s)';
+            html += '</div>';
+            html += '<div style="margin-top:4px;">';
+            html += '<input type="number" id="revolt_proactive_' + _bri + '" value="100" min="10" max="5000" style="width:60px;font-size:0.7rem;padding:2px;">';
+            html += '<button class="btn-medieval" data-action="playerSupportRevolt" data-id="' + _br.townId + '" data-idx="proactive_' + _bri + '" style="font-size:0.7rem;padding:3px 8px;margin-left:4px;background:rgba(196,78,82,0.2);border-color:rgba(196,78,82,0.4);">🔥 Fund</button>';
+            html += '</div></div>';
+        }
+
+        html += '</div>';
+    }
+
+    // Also update conspiracy display for revolt_support type
+    if (_conspiracy && _conspiracy.type === 'revolt_support' && _conspiracy.playerInvolved) {
+        html += '<div style="background:rgba(196,78,82,0.12);border:1px solid rgba(196,78,82,0.25);border-radius:6px;padding:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.82rem;color:#e67e22;">🔥 Your conspiracy is funneling resources to revolt in <b>' + escapeHtml(_conspiracy.revoltTargetTownName || '?') + '</b></div>';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-top:2px;">When strength reaches 80, gold and weapons will be delivered to the dissidents.</div>';
+        html += '</div>';
+    }
 
     // Define all 5 schemes with their requirements
     var schemes = [
@@ -2781,6 +2857,32 @@ function _switchProposeActionTab(tabId, kingdomId) {
             toast(result.message, 'warning');
         }
         openNobilityDialog(); // refresh
+    });
+
+    // Revolt support actions
+    UI.registerAction('playerSupportRevolt', function(el) {
+        var townId = el.getAttribute('data-id');
+        var idx = el.getAttribute('data-idx');
+        if (!townId || typeof Engine === 'undefined') return;
+        var goldInput = document.getElementById('revolt_gold_' + idx) || document.getElementById('revolt_proactive_' + idx);
+        var goldAmount = goldInput ? parseInt(goldInput.value) || 100 : 100;
+        var result = Engine.playerSupportRevolt(townId, goldAmount);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openNobilityDialog();
+    });
+
+    UI.registerAction('playerDeclineRevolt', function(el) {
+        var townId = el.getAttribute('data-id');
+        if (!townId || typeof Engine === 'undefined') return;
+        var result = Engine.playerDeclineRevoltSupport(townId);
+        if (result.success) {
+            toast('You declined the revolt support request.', 'info');
+        }
+        openNobilityDialog();
     });
 
     // Register on UI namespace
