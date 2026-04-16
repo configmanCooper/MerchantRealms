@@ -4,6 +4,28 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.76.0] - Revolt Outreach, Military Supply Chains & Balance
+
+### Added — Revolt-Noble Outreach System
+- NPCs involved in brewing revolts now reach out to disloyal nobles for support
+- Nobles can pledge gold and equipment to revolts via `revolt_support` conspiracy type
+- Player UI: incoming revolt support requests with gold input, active pledges, brewing revolts display
+- `revolt_support` added to conspiracy type dropdown in Noble Intrigue tab
+
+### Improved — Military Supply Chains
+- Military supplier EMs now trade quality weapons/armor: good swords, excellent swords, good armor, excellent armor, good bows, excellent bows, good arrows
+- War profiteer EMs get the same quality goods in their trade lists
+- Both strategies now build armorers, fletchers, and arrow makers for vertical integration
+
+### Balance
+- Plague contagion reduced 10% across the board: spread chance, town spread base, trade route multiplier, infection rates, and daily infection multipliers all lowered
+
+### Fixed
+- **EM double land cost charge**: Elite merchants were paying land cost twice when building (once directly, once via effectiveCost), draining gold to 0
+- Added gold floor safety net — EM gold can no longer go negative
+- Festival modal footer rendering fix
+- Null check on king festival actions
+
 ## [0.75.0] - Festival System, Feast Invitations & Noble Influence
 
 ### Added — Town Festival System
