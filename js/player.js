@@ -5848,7 +5848,10 @@
             if (!town) continue;
 
             for (const resId in stored) {
-                const qty = stored[resId] || 0;
+                // Skip internal tracking fields (e.g. _foodAge objects)
+                if (resId.charAt(0) === '_') continue;
+                const qty = stored[resId];
+                if (typeof qty !== 'number' || isNaN(qty)) continue;
                 // Auto-sell anything over 20 units
                 if (qty <= 20) continue;
                 const sellQty = qty - 10; // Keep 10 in reserve
@@ -26773,6 +26776,55 @@
                 jobTypeKey: 'tavern_entertainer',
                 isEntertainment: true
             });
+
+            // Feast Musician — available when active feast in player's town/kingdom
+            var _pKingdom = Engine.findKingdom(town.kingdomId);
+            if (_pKingdom && _pKingdom._activeFeast && _pKingdom._activeFeast.townId === town.id) {
+                var _feastEntPay = getEntertainmentPayMultiplier(town.id);
+                var _feastBase = Math.round(25 * _feastEntPay.multiplier * payScale);
+                var _feastDesc = '🎺 Perform at the Royal Feast!';
+                if (_feastEntPay.instrumentName) {
+                    _feastDesc += ' 🎵 Playing ' + _feastEntPay.instrumentIcon + ' ' + _feastEntPay.instrumentName + ' (' + _feastEntPay.skillTier + ')';
+                    if (_feastEntPay.preferred) _feastDesc += ' — The court loves it!';
+                } else {
+                    _feastDesc += ' ⚠️ No instrument — reduced pay.';
+                }
+                _feastDesc += ' +Fame, +noble relationships';
+                jobs.push({
+                    name: '🎺 Feast Musician', hours: 8,
+                    pay: _feastBase, ticks: 20, type: 'feast',
+                    xpReward: 8, repGain: 3, fameGain: 5, description: _feastDesc,
+                    jobTypeKey: 'feast_musician',
+                    isEntertainment: true, isFeastPerformance: true
+                });
+            }
+
+            // Festival Musician — available when active festival in player's town
+            if (_pKingdom && _pKingdom._activeFestivals) {
+                var _hasLocalFestival = false;
+                for (var _fli = 0; _fli < _pKingdom._activeFestivals.length; _fli++) {
+                    if (_pKingdom._activeFestivals[_fli].townId === town.id) { _hasLocalFestival = true; break; }
+                }
+                if (_hasLocalFestival) {
+                    var _festEntPay = getEntertainmentPayMultiplier(town.id);
+                    var _festBase = Math.round(18 * _festEntPay.multiplier * payScale);
+                    var _festDesc = '🎉 Perform at the Festival!';
+                    if (_festEntPay.instrumentName) {
+                        _festDesc += ' 🎵 Playing ' + _festEntPay.instrumentIcon + ' ' + _festEntPay.instrumentName + ' (' + _festEntPay.skillTier + ')';
+                        if (_festEntPay.preferred) _festDesc += ' — Crowd goes wild!';
+                    } else {
+                        _festDesc += ' ⚠️ No instrument — reduced pay.';
+                    }
+                    _festDesc += ' +Reputation, +Fame';
+                    jobs.push({
+                        name: '🎉 Festival Musician', hours: 6,
+                        pay: _festBase, ticks: 15, type: 'festival',
+                        xpReward: 5, repGain: 2, fameGain: 3, description: _festDesc,
+                        jobTypeKey: 'festival_musician',
+                        isEntertainment: true, isFestivalPerformance: true
+                    });
+                }
+            }
         }
 
         // ── City-Tier Jobs ──
@@ -27039,6 +27091,8 @@
                     'kingdom_procurer': 0.35,
                     'kingdom_guard': 0.30,
                     'royal_guard': 0.35,
+                    'feast_musician': 0.7,
+                    'festival_musician': 0.6,
                 };
                 var _repChance = _repChances[job.jobTypeKey] !== undefined ? _repChances[job.jobTypeKey] : 0.3;
                 if (_repChance > 0 && rng.random() < _repChance) {
@@ -27077,9 +27131,39 @@
                         'kingdom_procurer': '📦 Procurement service appreciated by the crown.',
                         'kingdom_guard': '🛡️ Diligent patrol duty noticed by the watch commander.',
                         'royal_guard': '⚜️ Vigilant service guarding the monarch earned royal favor.',
+                        'feast_musician': '🎺 Your feast performance delighted the court!',
+                        'festival_musician': '🎉 The crowd loved your festival performance!',
                     };
                     var _repMsg = _repMsgs[job.jobTypeKey] || 'Your work earned kingdom recognition.';
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ +' + Math.round(repGainAmount) + ' Kingdom Rep: ' + _repMsg, 'success', 'my_actions');
+                }
+            }
+        }
+
+        // Feast/Festival musician performance bonuses: fame + noble relationships
+        if (job.isFeastPerformance || job.isFestivalPerformance) {
+            var _fameAmount = job.fameGain || 3;
+            // Master-tier performance at royal feast = massive fame boost
+            var _entPayInfo = getEntertainmentPayMultiplier(player.townId);
+            if (job.isFeastPerformance && _entPayInfo.skillTier === 'master') {
+                _fameAmount *= 3; // triple fame for master at feast
+            }
+            player.fame = Math.min(100, (player.fame || 0) + _fameAmount);
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🌟 +' + _fameAmount + ' Fame from your performance!', 'success', 'my_actions');
+
+            if (job.isFeastPerformance) {
+                // Build relationships with attending nobles
+                var _feastKingdom = Engine.findKingdom(town.kingdomId);
+                if (_feastKingdom && _feastKingdom._activeFeast && _feastKingdom._activeFeast.attendees) {
+                    var _attendees = _feastKingdom._activeFeast.attendees;
+                    for (var _ai = 0; _ai < _attendees.length && _ai < 5; _ai++) {
+                        if (_attendees[_ai] !== 'player' && _attendees[_ai]) {
+                            modifyRelationship(_attendees[_ai], 2, 'entertained');
+                        }
+                    }
+                    if (_attendees.length > 0 && typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('🤝 Nobles at the feast appreciate your performance!', 'info', 'my_actions');
+                    }
                 }
             }
         }
@@ -33596,8 +33680,9 @@
         for (var townId in player.townStorage) {
             var storage = player.townStorage[townId];
             for (var resId2 in storage) {
+                if (resId2.charAt(0) === '_') continue;
                 var qty2 = storage[resId2];
-                if (qty2 <= 0) continue;
+                if (typeof qty2 !== 'number' || qty2 <= 0) continue;
                 var res2 = findResource(resId2);
                 if (res2) value += res2.basePrice * qty2;
             }
@@ -33674,8 +33759,9 @@
         for (var townId in player.townStorage) {
             var storage = player.townStorage[townId];
             for (var resId2 in storage) {
+                if (resId2.charAt(0) === '_') continue;
                 var qty2 = storage[resId2];
-                if (qty2 <= 0) continue;
+                if (typeof qty2 !== 'number' || qty2 <= 0) continue;
                 var res2 = findResource(resId2);
                 if (res2) totalValue += res2.basePrice * qty2;
             }
@@ -38159,8 +38245,9 @@
             var stored = 0;
             for (var tid in player.townStorage) {
                 for (var resId in player.townStorage[tid]) {
+                    if (resId.charAt(0) === '_') continue;
                     var qty = player.townStorage[tid][resId] || 0;
-                    if (qty <= 0) continue;
+                    if (typeof qty !== 'number' || qty <= 0) continue;
                     var res = findResource(resId);
                     stored += (res ? res.basePrice * qty : 0);
                 }
