@@ -19812,6 +19812,10 @@
         // Retail building sales processing
         Player.tickRetailBuildings();
 
+        // Building manager AI and reputation
+        if (Player.tickBuildingManagers) Player.tickBuildingManagers();
+        if (Player.tickBuildingReputation) Player.tickBuildingReputation();
+
         // Outpost daily maintenance
         Player.payOutpostMaintenance();
 

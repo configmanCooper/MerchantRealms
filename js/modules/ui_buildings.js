@@ -1610,6 +1610,65 @@
 
         html += '</div></div>'; // close MAINTENANCE flex + border container
 
+        // ──── OPERATIONS (Work / Manager) ────
+        html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
+        html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:6px;">💼 OPERATIONS</div>';
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+
+        // Work Here Today button
+        if (Player.workAtBuilding && bld.townId === Player.townId && bld.active) {
+            var _workedToday = bld._playerWorkedDay === (Engine.getDay ? Engine.getDay() : -1);
+            if (_workedToday) {
+                html += '<button class="btn-trade" style="font-size:0.7rem;opacity:0.5;" disabled>✅ Already Worked Today</button>';
+            } else {
+                html += '<button class="btn-trade buy" style="font-size:0.7rem;background:rgba(80,160,80,0.15);border-color:rgba(80,160,80,0.3);" data-action="workHereTodayUI" data-id="' + bld.id + '">🔨 Work Here Today</button>';
+            }
+        }
+
+        // Manager section
+        if (bld._managerId) {
+            var _mgrSkillLabel = bld._managerSkill >= 70 ? '⭐ Skilled' : bld._managerSkill >= 40 ? 'Trained' : 'Learning';
+            var _mgrEff = bld._managerEfficiency ? Math.round(bld._managerEfficiency * 100) : 100;
+            html += '<div style="font-size:0.72rem;padding:4px 8px;background:rgba(100,150,220,0.1);border:1px solid rgba(100,150,220,0.3);border-radius:4px;width:100%;">';
+            html += '👔 <b>Manager:</b> ' + (bld._managerName || 'Unknown') + ' — ' + _mgrSkillLabel + ' (' + Math.round(bld._managerSkill || 0) + '/100) — ' + _mgrEff + '% efficiency — ' + (bld._managerSalary || 0) + 'g/day';
+            html += '<div style="margin-top:4px;display:flex;gap:4px;">';
+            html += '<button class="btn-trade sell" style="font-size:0.65rem;" data-action="fireManagerUI" data-id="' + bld.id + '">🚫 Fire</button>';
+            html += '<button class="btn-trade" style="font-size:0.65rem;" data-action="toggleManagerCaravansUI" data-id="' + bld.id + '">' + (bld._managerCaravans ? '🚫 Disable Caravans' : '🐫 Enable Caravans') + '</button>';
+            html += '</div>';
+            if (bld._managerRaiseRequest) {
+                html += '<div style="margin-top:4px;padding:4px;background:rgba(200,160,0,0.15);border:1px solid rgba(200,160,0,0.3);border-radius:3px;font-size:0.7rem;">⚠️ ' + (bld._managerRaiseRequest.managerName || bld._managerName) + ' wants a ' + bld._managerRaiseRequest.raisePercent + '% raise or they will leave! ';
+                html += '<button class="btn-trade buy" style="font-size:0.6rem;" data-action="respondManagerRaiseUI" data-id="' + bld.id + '" data-val="accept">✅ Accept</button> ';
+                html += '<button class="btn-trade sell" style="font-size:0.6rem;" data-action="respondManagerRaiseUI" data-id="' + bld.id + '" data-val="decline">❌ Decline</button>';
+                html += '</div>';
+            }
+            html += '</div>';
+        } else if (Player.hireManager) {
+            // Show hire manager button if player is guildmaster
+            var _isGM = false;
+            var _pState = Player.state;
+            if (_pState && _pState.guildMemberships) {
+                for (var _gk in _pState.guildMemberships) {
+                    if (_pState.guildMemberships[_gk].rank === 'guildmaster') { _isGM = true; break; }
+                }
+            }
+            if (_isGM) {
+                html += '<button class="btn-trade buy" style="font-size:0.7rem;background:rgba(100,150,220,0.15);border-color:rgba(100,150,220,0.3);" data-action="hireManagerUI" data-id="' + bld.id + '">👔 Hire Manager</button>';
+            } else {
+                html += '<span style="font-size:0.65rem;color:rgba(200,200,200,0.5);padding:4px;">👔 Manager (requires Guildmaster rank)</span>';
+            }
+        }
+
+        // Building name (for retail)
+        if (bt && bt.retailConfig) {
+            html += '<button class="btn-trade" style="font-size:0.7rem;background:rgba(200,160,80,0.15);border-color:rgba(200,160,80,0.3);" data-action="nameBuildingUI" data-id="' + bld.id + '">✏️ ' + (bld._repName ? 'Rename' : 'Name Your Shop') + '</button>';
+            if (bld._reputation != null) {
+                var _repLabel = bld._reputation >= 80 ? '⭐ Famous' : bld._reputation >= 60 ? '👍 Well-Known' : bld._reputation >= 40 ? 'Known' : bld._reputation >= 20 ? 'New' : '❌ Poor';
+                html += '<span style="font-size:0.7rem;padding:4px 8px;">📊 Reputation: ' + Math.round(bld._reputation) + '/100 (' + _repLabel + ')</span>';
+            }
+        }
+
+        html += '</div></div>'; // close OPERATIONS flex + border container
+
 
         html += `<div style="text-align:center;margin-top:8px;">
             <button class="btn-trade" style="font-size:0.75rem;" data-action="openBuildingManagement">← Back to All Buildings</button>
@@ -2168,6 +2227,53 @@
     UI.registerAction('demolishBuildingUI', function(_t, d) { UI.demolishBuildingUI(d.id, d.val); });
     UI.registerAction('executeFarmConvertUI', function(_t, d) { UI.executeFarmConvertUI(parseInt(d.idx), d.id, d.val); });
     UI.registerAction('installWarehouseSecurity', function(_t, d) { UI.installWarehouseSecurity(d.id, d.val); });
+
+    // ──── Building Management Actions ────
+    UI.registerAction('workHereTodayUI', function(_t, d) {
+        if (!Player.workAtBuilding) { UI.toast('Feature not available.', 'warning'); return; }
+        var r = Player.workAtBuilding(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.id);
+    });
+    UI.registerAction('hireManagerUI', function(_t, d) {
+        if (!Player.hireManager) { UI.toast('Feature not available.', 'warning'); return; }
+        var r = Player.hireManager(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.id);
+    });
+    UI.registerAction('fireManagerUI', function(_t, d) {
+        if (!Player.fireManager) { UI.toast('Feature not available.', 'warning'); return; }
+        var r = Player.fireManager(d.id);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.showBuildingDetail(d.id);
+    });
+    UI.registerAction('toggleManagerCaravansUI', function(_t, d) {
+        if (!Player.toggleManagerCaravans) { UI.toast('Feature not available.', 'warning'); return; }
+        var r = Player.toggleManagerCaravans(d.id);
+        UI.toast(r.message, r.success ? 'info' : 'warning');
+        UI.showBuildingDetail(d.id);
+    });
+    UI.registerAction('respondManagerRaiseUI', function(_t, d) {
+        if (!Player.respondToManagerRaise) { UI.toast('Feature not available.', 'warning'); return; }
+        var accept = d.val === 'accept';
+        var r = Player.respondToManagerRaise(d.id, accept);
+        UI.toast(r.message, accept ? 'success' : 'info');
+        UI.showBuildingDetail(d.id);
+    });
+    UI.registerAction('nameBuildingUI', function(_t, d) {
+        var current = '';
+        var pState = Player.state;
+        if (pState && pState.buildings) {
+            var b = pState.buildings.find(function(bb) { return bb.id === d.id; });
+            if (b) current = b._repName || '';
+        }
+        var name = prompt('Enter a name for your shop (2-40 characters):', current);
+        if (name !== null && name.length >= 2) {
+            var r = Player.nameBuildingRetail(d.id, name);
+            UI.toast(r.message, r.success ? 'success' : 'warning');
+            UI.showBuildingDetail(d.id);
+        }
+    });
 
     // =========================================================================
     // Building Detail Popup — shows info about a building type in a town
