@@ -2371,6 +2371,13 @@
                     html += '<button class="btn-medieval" data-action="showBuildingDetail" data-id="' + bld.id + '" style="font-size:0.6rem;padding:2px 6px;margin-top:3px;">🔧 Manage</button>';
                 }
 
+                // Enter/shop at NPC retail buildings
+                if (bld.ownerId !== 'player' && bt && bt.retailConfig && bld.condition !== 'destroyed' && bld.condition !== 'under_construction') {
+                    var _shopLabel = bt.category === 'service' ? '🛁 Visit' : bt.retailConfig.npcMotivation === 'happiness' ? '🍺 Visit' : '🛒 Shop Here';
+                    var _bldIdx2 = town.buildings.indexOf(bld);
+                    html += '<button class="btn-medieval" data-action="enterNPCRetailShop" data-id="' + townId + '" data-val="' + _bldIdx2 + '" style="font-size:0.6rem;padding:2px 6px;margin-top:3px;">' + _shopLabel + '</button>';
+                }
+
                 html += '</div>';
             }
         }
@@ -2452,6 +2459,312 @@
 
     UI.openBuildingDetail = openBuildingDetail;
 
+    // ── NPC Retail Shop Interaction ──
+    function enterNPCRetailShop(townId, buildingIndex) {
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Town not found.', 'warning'); return; }
+        var bld = town.buildings[buildingIndex];
+        if (!bld) { toast('Building not found.', 'warning'); return; }
+        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+        if (!bt || !bt.retailConfig) { toast('This is not a shop.', 'warning'); return; }
+
+        var rc = bt.retailConfig;
+        var bIcon = bt.icon || '🏠';
+        var bName = bld._repName || bt.name;
+        var ownerName = 'Unknown';
+        if (bld.ownerId) {
+            var owner = Engine.findPerson(bld.ownerId);
+            if (owner) ownerName = (owner.firstName || '') + ' ' + (owner.lastName || '');
+            else {
+                var k = Engine.findKingdom(bld.ownerId);
+                if (k) ownerName = k.name + ' (Crown)';
+            }
+        }
+
+        var html = '<div style="max-height:450px;overflow-y:auto;padding:4px;">';
+        html += '<div style="background:rgba(0,0,0,0.2);padding:8px;border-radius:6px;margin-bottom:8px;">';
+        html += '<div style="font-size:1rem;color:#d4c9a0;">' + bIcon + ' ' + bName + '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;">Owner: ' + ownerName + ' | Level ' + (bld.level || 1) + '</div>';
+        if (bld._reputation != null) {
+            var repLbl = bld._reputation >= 80 ? '⭐ Famous' : bld._reputation >= 60 ? '👍 Popular' : bld._reputation >= 40 ? 'Known' : bld._reputation >= 20 ? 'New' : 'Unknown';
+            html += '<div style="font-size:0.68rem;color:#888;">Reputation: ' + Math.round(bld._reputation) + '/100 (' + repLbl + ')</div>';
+        }
+        html += '</div>';
+
+        // Available goods for purchase
+        var stock = bld.retailStock || bld.outputBuffer || {};
+        var acceptsGoods = rc.acceptsGoods || [];
+        var markup = bld._retailMarkup || rc.baseMarkup || 1.3;
+        var hasStock = false;
+
+        // Service buildings (clinic, bathhouse)
+        if (rc.serviceFee) {
+            html += '<div style="padding:6px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px;">';
+            html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:4px;">🛎️ Services</div>';
+            var canServe = true;
+            if (rc.consumesPerService) {
+                for (var sRes in rc.consumesPerService) {
+                    var sNeeded = rc.consumesPerService[sRes];
+                    var sHave = (stock[sRes] || 0);
+                    if (sHave < sNeeded) canServe = false;
+                }
+            }
+            var fee = rc.serviceFee * markup;
+            var canAfford = (Player.gold || 0) >= fee;
+            var serviceLabel = bld.type === 'clinic' ? '💊 Get Treatment' : bld.type === 'bathhouse' ? '🛁 Take a Bath' : '🛎️ Use Service';
+            var serviceDesc = bld.type === 'clinic' ? 'Treats illness and disease. Reduces plague risk.' : bld.type === 'bathhouse' ? 'Improves hygiene and health. Reduces disease risk.' : 'Use this service.';
+            html += '<div style="font-size:0.72rem;color:#aaa;margin-bottom:4px;">' + serviceDesc + '</div>';
+            html += '<div style="font-size:0.75rem;">Cost: <span style="color:#ffd700;">' + Math.ceil(fee) + 'g</span></div>';
+            if (canServe && canAfford) {
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" data-action="useNPCServiceUI" data-id="' + townId + '" data-val="' + buildingIndex + '">' + serviceLabel + '</button>';
+            } else if (!canServe) {
+                html += '<div style="font-size:0.68rem;color:#c44e52;margin-top:3px;">⚠️ Out of supplies</div>';
+            } else {
+                html += '<div style="font-size:0.68rem;color:#c44e52;margin-top:3px;">⚠️ Not enough gold</div>';
+            }
+            html += '</div>';
+        }
+
+        // Goods for sale
+        html += '<div style="padding:6px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px;">';
+        html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:4px;">📦 Goods For Sale</div>';
+        var goodsHtml = '';
+        for (var gi = 0; gi < acceptsGoods.length; gi++) {
+            var gid = acceptsGoods[gi];
+            var qty = stock[gid] || 0;
+            if (qty <= 0) continue;
+            hasStock = true;
+            var gDef = CONFIG.ITEMS ? CONFIG.ITEMS[gid] : null;
+            var gName = gDef ? gDef.name : gid;
+            var basePrice = gDef ? (gDef.basePrice || 5) : 5;
+            // Check local market price for comparison
+            var mktPrice = (town.market && town.market.prices && town.market.prices[gid]) || basePrice;
+            var shopPrice = Math.ceil(mktPrice * markup);
+            var canBuy = (Player.gold || 0) >= shopPrice;
+            var priceDiff = shopPrice > mktPrice ? ' <span style="color:#c44e52;font-size:0.6rem;">(+' + Math.round((markup - 1) * 100) + '% markup)</span>' : '';
+            goodsHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
+            goodsHtml += '<span style="font-size:0.72rem;">' + gName + ' <span style="color:#888;">×' + Math.floor(qty) + '</span></span>';
+            goodsHtml += '<span style="font-size:0.7rem;">';
+            goodsHtml += '<span style="color:#ffd700;">' + shopPrice + 'g</span>' + priceDiff + ' ';
+            if (canBuy) {
+                goodsHtml += '<button class="btn-medieval" style="font-size:0.6rem;padding:2px 6px;" data-action="buyFromNPCShopUI" data-id="' + townId + '" data-val="' + buildingIndex + '" data-qty="' + gid + '">Buy 1</button>';
+                if (qty >= 5 && (Player.gold || 0) >= shopPrice * 5) {
+                    goodsHtml += ' <button class="btn-medieval" style="font-size:0.6rem;padding:2px 6px;" data-action="buyFromNPCShop5UI" data-id="' + townId + '" data-val="' + buildingIndex + '" data-qty="' + gid + '">Buy 5</button>';
+                }
+            }
+            goodsHtml += '</span></div>';
+        }
+        if (!hasStock && !rc.serviceFee) {
+            goodsHtml = '<div style="font-size:0.72rem;color:#888;">This shop has no stock right now.</div>';
+        }
+        html += goodsHtml;
+        html += '</div>';
+
+        // Social interaction (tavern: drink and converse; restaurant: eat)
+        if (bld.type === 'tavern') {
+            html += '<div style="padding:6px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px;">';
+            html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:4px;">🍻 Tavern Activities</div>';
+            var aleQty = (stock.ale || 0) + (stock.mead || 0) + (stock.wine || 0) + (stock.cider || 0);
+            if (aleQty > 0) {
+                var drinkPrice = Math.ceil(((town.market && town.market.prices && town.market.prices.ale) || 3) * markup);
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-right:4px;" data-action="tavernDrinkUI" data-id="' + townId + '" data-val="' + buildingIndex + '">🍺 Have a Drink (' + drinkPrice + 'g)</button>';
+            }
+            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" data-action="tavernConverseUI" data-id="' + townId + '" data-val="' + buildingIndex + '">💬 Chat with Patrons</button>';
+            html += '</div>';
+        }
+
+        // Player performance (if musician)
+        var pState = Player.state;
+        if (bld.type === 'tavern' && pState && pState.skills && pState.skills.musician) {
+            var hasInstrument = pState.inventory && (pState.inventory.lute || pState.inventory.drum || pState.inventory.flute || pState.inventory.harp);
+            html += '<div style="padding:6px;border:1px solid rgba(200,160,80,0.3);border-radius:4px;margin-bottom:6px;background:rgba(200,160,80,0.05);">';
+            html += '<div style="font-weight:bold;font-size:0.8rem;margin-bottom:4px;">🎵 Perform</div>';
+            if (hasInstrument) {
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" data-action="tavernPerformUI" data-id="' + townId + '" data-val="' + buildingIndex + '">🎶 Perform for Tips</button>';
+            } else {
+                html += '<div style="font-size:0.68rem;color:#888;">You need an instrument to perform.</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '<div style="font-size:0.65rem;color:#666;margin-top:6px;">💰 Your gold: <span style="color:#ffd700;">' + Math.floor(Player.gold || 0) + 'g</span></div>';
+        html += '</div>';
+
+        openModal(bIcon + ' ' + bName, html, '<button class="btn-medieval" data-action="openBuildingDetail" data-id="' + bld.type + '" data-val="' + townId + '">← Back</button> <button class="btn-medieval" data-action="closeModal">Close</button>');
+    }
+
+    // Buy goods from NPC shop
+    function buyFromNPCShop(townId, buildingIndex, resourceId, quantity) {
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Town not found.', 'warning'); return; }
+        var bld = town.buildings[buildingIndex];
+        if (!bld) { toast('Building not found.', 'warning'); return; }
+        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+        if (!bt || !bt.retailConfig) { toast('Not a shop.', 'warning'); return; }
+
+        var stock = bld.retailStock || bld.outputBuffer || {};
+        var available = stock[resourceId] || 0;
+        var qty = Math.min(quantity, Math.floor(available));
+        if (qty <= 0) { toast('Item not in stock.', 'warning'); return; }
+
+        var markup = bld._retailMarkup || bt.retailConfig.baseMarkup || 1.3;
+        var mktPrice = (town.market && town.market.prices && town.market.prices[resourceId]) || 5;
+        var shopPrice = Math.ceil(mktPrice * markup);
+        var totalCost = shopPrice * qty;
+
+        if ((Player.gold || 0) < totalCost) { toast('Not enough gold.', 'warning'); return; }
+
+        // Execute purchase
+        Player.state.gold -= totalCost;
+        if (bld.retailStock) bld.retailStock[resourceId] = (bld.retailStock[resourceId] || 0) - qty;
+        else if (bld.outputBuffer) bld.outputBuffer[resourceId] = (bld.outputBuffer[resourceId] || 0) - qty;
+
+        // Revenue goes to building owner
+        if (bld.ownerId && bld.ownerId !== 'player') {
+            var owner = Engine.findPerson(bld.ownerId);
+            if (owner) owner.gold = (owner.gold || 0) + totalCost;
+        }
+
+        // Add to player inventory
+        if (!Player.state.inventory) Player.state.inventory = {};
+        Player.state.inventory[resourceId] = (Player.state.inventory[resourceId] || 0) + qty;
+
+        // Track stats
+        Player.state.stats = Player.state.stats || {};
+        Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + totalCost;
+
+        // Building reputation boost from sale
+        if (bld._reputation != null) {
+            bld._reputation = Math.min(100, bld._reputation + (bt.retailConfig.repPerSale || 0.1));
+        }
+
+        var gDef = CONFIG.ITEMS ? CONFIG.ITEMS[resourceId] : null;
+        var gName = gDef ? gDef.name : resourceId;
+        toast('Bought ' + qty + ' ' + gName + ' for ' + totalCost + 'g.', 'success');
+        enterNPCRetailShop(townId, buildingIndex);
+    }
+
+    // Use NPC service (clinic, bathhouse)
+    function useNPCService(townId, buildingIndex) {
+        var town = Engine.findTown(townId);
+        if (!town) { toast('Town not found.', 'warning'); return; }
+        var bld = town.buildings[buildingIndex];
+        if (!bld) { toast('Building not found.', 'warning'); return; }
+        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+        if (!bt || !bt.retailConfig || !bt.retailConfig.serviceFee) { toast('No service available.', 'warning'); return; }
+
+        var rc = bt.retailConfig;
+        var markup = bld._retailMarkup || rc.baseMarkup || 1.0;
+        var fee = Math.ceil(rc.serviceFee * markup);
+        var stock = bld.retailStock || bld.outputBuffer || {};
+
+        if ((Player.gold || 0) < fee) { toast('Not enough gold.', 'warning'); return; }
+
+        // Check supplies
+        if (rc.consumesPerService) {
+            for (var sRes in rc.consumesPerService) {
+                if ((stock[sRes] || 0) < rc.consumesPerService[sRes]) {
+                    toast('Shop is out of supplies.', 'warning'); return;
+                }
+            }
+            // Consume supplies
+            for (var cRes in rc.consumesPerService) {
+                if (bld.retailStock) bld.retailStock[cRes] = (bld.retailStock[cRes] || 0) - rc.consumesPerService[cRes];
+                else if (bld.outputBuffer) bld.outputBuffer[cRes] = (bld.outputBuffer[cRes] || 0) - rc.consumesPerService[cRes];
+            }
+        }
+
+        Player.state.gold -= fee;
+        Player.state.stats = Player.state.stats || {};
+        Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + fee;
+
+        // Owner gets revenue
+        if (bld.ownerId && bld.ownerId !== 'player') {
+            var owner = Engine.findPerson(bld.ownerId);
+            if (owner) owner.gold = (owner.gold || 0) + fee;
+        }
+
+        // Apply health effects
+        var ps = Player.state;
+        if (bld.type === 'clinic') {
+            if (ps.health != null) ps.health = Math.min(100, ps.health + 15);
+            if (ps.diseased) { ps.diseased = false; toast('💊 Treatment received! Disease cured. (-' + fee + 'g)', 'success'); }
+            else { toast('💊 Treated at clinic. Health improved. (-' + fee + 'g)', 'success'); }
+        } else if (bld.type === 'bathhouse') {
+            if (ps.hygiene != null) ps.hygiene = Math.min(100, ps.hygiene + 25);
+            if (ps.health != null) ps.health = Math.min(100, ps.health + 5);
+            toast('🛁 Refreshing bath taken! Hygiene and health improved. (-' + fee + 'g)', 'success');
+        } else {
+            toast('🛎️ Service used. (-' + fee + 'g)', 'success');
+        }
+
+        enterNPCRetailShop(townId, buildingIndex);
+    }
+
+    // Tavern activities
+    function tavernDrink(townId, buildingIndex) {
+        var town = Engine.findTown(townId);
+        if (!town) return;
+        var bld = town.buildings[buildingIndex];
+        if (!bld) return;
+        var stock = bld.retailStock || bld.outputBuffer || {};
+        var drinkType = stock.ale > 0 ? 'ale' : stock.mead > 0 ? 'mead' : stock.wine > 0 ? 'wine' : stock.cider > 0 ? 'cider' : null;
+        if (!drinkType) { toast('No drinks available.', 'warning'); return; }
+
+        var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
+        var markup = (bld._retailMarkup || (bt && bt.retailConfig ? bt.retailConfig.baseMarkup : 1.5));
+        var price = Math.ceil(((town.market && town.market.prices && town.market.prices[drinkType]) || 3) * markup);
+        if ((Player.gold || 0) < price) { toast('Not enough gold for a drink.', 'warning'); return; }
+
+        Player.state.gold -= price;
+        if (bld.retailStock) bld.retailStock[drinkType] = (bld.retailStock[drinkType] || 0) - 1;
+        else if (bld.outputBuffer) bld.outputBuffer[drinkType] = (bld.outputBuffer[drinkType] || 0) - 1;
+        if (bld.ownerId && bld.ownerId !== 'player') {
+            var owner = Engine.findPerson(bld.ownerId);
+            if (owner) owner.gold = (owner.gold || 0) + price;
+        }
+
+        // Social/happiness effects
+        var ps = Player.state;
+        ps.happiness = Math.min(100, (ps.happiness || 50) + 3);
+        ps.xp = (ps.xp || 0) + 1;
+
+        var drinkName = drinkType.charAt(0).toUpperCase() + drinkType.slice(1);
+        toast('🍺 Enjoyed a ' + drinkName + '! Happiness +3. (-' + price + 'g)', 'success');
+        enterNPCRetailShop(townId, buildingIndex);
+    }
+
+    function tavernConverse(townId, buildingIndex) {
+        var town = Engine.findTown(townId);
+        if (!town) return;
+        // Generate a random rumor or social interaction
+        var rumors = [
+            'A merchant whispers about high prices for silk in the north.',
+            'A traveler mentions bandits on the eastern road.',
+            'You hear gossip about the king\'s latest feast.',
+            'A farmer complains about the poor harvest this season.',
+            'A soldier boasts about a recent battle victory.',
+            'Someone mentions a new trade route opening soon.',
+            'A noble\'s servant hints at political intrigue at court.',
+            'You overhear talk of a wealthy merchant looking for partners.',
+        ];
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var rumor = rumors[rng ? Math.floor(rng.random() * rumors.length) : Math.floor(Math.random() * rumors.length)];
+
+        // Slight social/fame boost
+        var ps = Player.state;
+        ps.fame = Math.min(1000, (ps.fame || 0) + 1);
+        ps.xp = (ps.xp || 0) + 1;
+
+        toast('💬 ' + rumor + ' (+1 fame, +1 XP)', 'info');
+    }
+
+    UI.enterNPCRetailShop = enterNPCRetailShop;
+    UI.buyFromNPCShop = buyFromNPCShop;
+    UI.useNPCService = useNPCService;
+    UI.tavernDrink = tavernDrink;
+    UI.tavernConverse = tavernConverse;
+
     UI.registerAction('openBuildingDetail', function(_t, d) { UI.openBuildingDetail(d.id, d.val); });
     UI.registerAction('searchBuildingEvidence', function(_t, d) {
         var r = Player.searchBuildingForEvidence ? Player.searchBuildingForEvidence(parseInt(d.id), parseInt(d.val)) : { success: false, message: 'Evidence search not available.' };
@@ -2462,6 +2775,28 @@
         var r = Player.searchBuildingForEvidence ? Player.searchBuildingForEvidence(d.id, parseInt(d.val)) : { success: false, message: 'Evidence search not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');
         if (r.success) UI.openTownMarket();
+    });
+
+    // NPC Retail Shop actions
+    UI.registerAction('enterNPCRetailShop', function(_t, d) { UI.enterNPCRetailShop(d.id, parseInt(d.val)); });
+    UI.registerAction('buyFromNPCShopUI', function(_t, d) { UI.buyFromNPCShop(d.id, parseInt(d.val), d.qty, 1); });
+    UI.registerAction('buyFromNPCShop5UI', function(_t, d) { UI.buyFromNPCShop(d.id, parseInt(d.val), d.qty, 5); });
+    UI.registerAction('useNPCServiceUI', function(_t, d) { UI.useNPCService(d.id, parseInt(d.val)); });
+    UI.registerAction('tavernDrinkUI', function(_t, d) { UI.tavernDrink ? UI.tavernDrink(d.id, parseInt(d.val)) : null; });
+    UI.registerAction('tavernConverseUI', function(_t, d) { UI.tavernConverse ? UI.tavernConverse(d.id, parseInt(d.val)) : null; });
+    UI.registerAction('tavernPerformUI', function(_t, d) {
+        // Perform at tavern for tips
+        var ps = Player.state;
+        if (!ps) return;
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var skillMult = ps.skills && ps.skills.musician ? 1.5 : 0.8;
+        var tips = Math.floor((5 + (rng ? Math.floor(rng.random() * 10) : 5)) * skillMult);
+        ps.gold = (ps.gold || 0) + tips;
+        ps.fame = Math.min(1000, (ps.fame || 0) + 2);
+        ps.xp = (ps.xp || 0) + 3;
+        ps.stats = ps.stats || {};
+        ps.stats.totalGoldEarned = (ps.stats.totalGoldEarned || 0) + tips;
+        UI.toast('🎶 You performed at the tavern! Earned ' + tips + 'g in tips. (+2 fame, +3 XP)', 'success');
     });
 
 })(window.UI);

@@ -528,29 +528,33 @@
     // ========================================================
     // §19A2  ELITE MERCHANT DEEP AI SIMULATION
     // ========================================================
-    const ELITE_STRATEGIES = ['food_monopoly', 'military_supplier', 'luxury_trader', 'diversified', 'political_climber', 'war_profiteer', 'land_baron', 'trade_network', 'medical_supplier'];
+    const ELITE_STRATEGIES = ['food_monopoly', 'military_supplier', 'luxury_trader', 'diversified', 'political_climber', 'war_profiteer', 'land_baron', 'trade_network', 'medical_supplier', 'culture_trader', 'retail_mogul'];
 
     const STRATEGY_GOODS = {
         food_monopoly:     ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
         military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good'],
-        luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture'],
+        luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture', 'fine_clothes', 'cloth', 'drum', 'lute', 'harp'],
         diversified:       ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
         war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
+        culture_trader:    ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy', 'gut_string', 'cloth', 'silk', 'fine_clothes', 'clothes', 'wool', 'dye'],
+        retail_mogul:      ['ale', 'mead', 'wine', 'bread', 'meat', 'clothes', 'fine_clothes', 'tools', 'furniture', 'jewelry', 'silk', 'leather'],
     };
 
     const STRATEGY_BUILDINGS = {
         food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant', 'warehouse_small'],
         military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright', 'powder_works', 'armorer', 'fletcher', 'arrow_maker'],
-        luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small'],
+        luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small', 'silk_weaver', 'fine_tailor'],
         diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small', 'wheelwright'],
         political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],
         war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse', 'armorer', 'fletcher', 'arrow_maker'],
         land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse', 'wheelwright'],
         trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse', 'wheelwright'],
         medical_supplier:  ['herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],
+        culture_trader:    ['instrument_workshop', 'drum_maker', 'weaver', 'silk_weaver', 'fine_tailor', 'clothing_shop', 'tanner', 'sheep_farm', 'tavern', 'warehouse_small'],
+        retail_mogul:      ['tavern', 'restaurant', 'clothing_shop', 'general_store', 'jewelers_boutique', 'armory_shop', 'brewery', 'bakery', 'weaver', 'warehouse_small'],
     };
 
     function ensureEliteMerchantFields(em) {
@@ -573,6 +577,7 @@
             // Pick strategy influenced by personality
             if (p.militarism > 65) em.strategy = rng.chance(0.5) ? 'military_supplier' : 'war_profiteer';
             else if (p.ambition > 70 && p.social > 60) em.strategy = 'political_climber';
+            else if (p.social > 70 && p.patience > 45) em.strategy = rng.chance(0.3) ? 'retail_mogul' : rng.chance(0.5) ? 'culture_trader' : 'luxury_trader';
             else if (p.greed > 65 && p.patience > 55) em.strategy = 'land_baron';
             else if (p.risk_tolerance > 65) em.strategy = rng.pick(['luxury_trader', 'trade_network']);
             else if ((em.personality.warmth || p.warmth || 0) > 70 && p.patience > 50) em.strategy = 'medical_supplier';
@@ -3106,6 +3111,7 @@
         if (!world || !world.towns) return;
         var rng = world.rng;
         if (!rng) return;
+        var day = world.day || 0;
 
         for (var ti = 0; ti < world.towns.length; ti++) {
             var town = world.towns[ti];
@@ -3158,8 +3164,48 @@
                 if (maxCust < 1) maxCust = 1;
                 var markup = bt.retailConfig.baseMarkup || 1.3;
 
+                // EM Employee delegation: better employees boost sales
+                if (bld._employees && bld._employees.length > 0) {
+                    var avgSkill = 0;
+                    var liveCount = 0;
+                    for (var ei = bld._employees.length - 1; ei >= 0; ei--) {
+                        var emp = findPerson(bld._employees[ei].id);
+                        if (!emp || !emp.alive) { bld._employees.splice(ei, 1); continue; }
+                        avgSkill += (bld._employees[ei].skill || 20);
+                        liveCount++;
+                    }
+                    if (liveCount > 0) {
+                        avgSkill /= liveCount;
+                        var empBonus = 1.0 + (avgSkill / 100) * 0.3; // up to +30% customers
+                        maxCust = Math.floor(maxCust * empBonus);
+                    }
+                }
+
+                // Reputation modifier on customers
+                if (bld._reputation != null) {
+                    var repMod = 0.7 + (bld._reputation / 100) * 0.6;
+                    maxCust = Math.floor(maxCust * repMod);
+                }
+
+                // Competition: count same-type retail buildings in town
+                var competitorCount = 0;
+                for (var cci = 0; cci < town.buildings.length; cci++) {
+                    if (town.buildings[cci].type === bld.type && cci !== bi && town.buildings[cci].ownerId) competitorCount++;
+                }
+                var baseVisitChance = 0.4;
+                if (competitorCount === 0) {
+                    // Monopoly bonus
+                    baseVisitChance = 0.6;
+                    if (markup < 2.0) markup = Math.min(bt.retailConfig.maxMarkup || 2.5, markup * 1.15); // can charge more
+                } else {
+                    // Split customers based on competition
+                    baseVisitChance = Math.max(0.15, 0.4 / (1 + competitorCount * 0.4));
+                    // Price competition: shops with lower markup steal customers
+                    if (bld._retailMarkup && bld._retailMarkup < markup) baseVisitChance += 0.05;
+                }
+
                 for (var ci = 0; ci < maxCust; ci++) {
-                    if (!rng.chance(0.4)) continue; // 40% base visit chance for NPC shops
+                    if (!rng.chance(baseVisitChance)) continue;
 
                     if (bt.retailConfig.serviceFee) {
                         var canServe = true;
@@ -3201,9 +3247,86 @@
                 if (bld.retailRevenue > 0) {
                     var owner = findPerson(bld.ownerId);
                     if (owner && owner.alive) {
-                        owner.gold = (owner.gold || 0) + bld.retailRevenue;
+                        // Pay employee wages first
+                        if (bld._employees && bld._employees.length > 0) {
+                            var totalWages = 0;
+                            for (var wi = 0; wi < bld._employees.length; wi++) {
+                                totalWages += (bld._employees[wi].wage || 5);
+                            }
+                            var netRevenue = Math.max(0, bld.retailRevenue - totalWages);
+                            // Pay wages from owner's pocket if revenue doesn't cover
+                            if (bld.retailRevenue < totalWages) {
+                                var deficit = totalWages - bld.retailRevenue;
+                                owner.gold = Math.max(0, (owner.gold || 0) - deficit);
+                            }
+                            owner.gold = (owner.gold || 0) + netRevenue;
+                        } else {
+                            owner.gold = (owner.gold || 0) + bld.retailRevenue;
+                        }
                         bld.retailRevenue = 0;
                     }
+                }
+
+                // EM Employee hiring/management (every 14 days)
+                if (day % 14 === 0 && bld.ownerId) {
+                    var emOwner = findPerson(bld.ownerId);
+                    if (emOwner && emOwner.alive && emOwner.isEliteMerchant) {
+                        if (!bld._employees) bld._employees = [];
+                        var neededEmp = Math.min(3, Math.max(1, (bld.level || 1)));
+                        // Hire if short-staffed
+                        if (bld._employees.length < neededEmp && (emOwner.gold || 0) > 100) {
+                            var townPeople = world.people.filter(function(np) {
+                                return np.alive && np.townId === town.id && np.age >= 16 && np.age <= 55 &&
+                                    !np.isEliteMerchant && !np.isKing && !np.isNoble &&
+                                    (!np.occupation || np.occupation === 'laborer' || np.occupation === 'none');
+                            });
+                            if (townPeople.length > 0) {
+                                // Pick best by social/intelligence
+                                townPeople.sort(function(a, b) {
+                                    var aS = ((a.personality && a.personality.social) || 30) + ((a.personality && a.personality.intelligence) || 30);
+                                    var bS = ((b.personality && b.personality.social) || 30) + ((b.personality && b.personality.intelligence) || 30);
+                                    return bS - aS;
+                                });
+                                var hire = townPeople[0];
+                                var wage = 3 + Math.floor(((hire.personality && hire.personality.social) || 30) * 0.08);
+                                bld._employees.push({
+                                    id: hire.id,
+                                    name: ((hire.firstName || '') + ' ' + (hire.lastName || '')).trim(),
+                                    skill: ((hire.personality && hire.personality.social) || 30),
+                                    wage: wage,
+                                    hireDay: day
+                                });
+                            }
+                        }
+                        // Fire underperformers (10% chance to evaluate)
+                        if (bld._employees.length > 1 && rng.chance(0.1)) {
+                            var worstIdx = 0;
+                            var worstSkill = 999;
+                            for (var fei = 0; fei < bld._employees.length; fei++) {
+                                if ((bld._employees[fei].skill || 0) < worstSkill) {
+                                    worstSkill = bld._employees[fei].skill || 0;
+                                    worstIdx = fei;
+                                }
+                            }
+                            if (worstSkill < 25) bld._employees.splice(worstIdx, 1);
+                        }
+                        // Employee skill growth
+                        for (var egi = 0; egi < bld._employees.length; egi++) {
+                            if ((bld._employees[egi].skill || 0) < 80) {
+                                bld._employees[egi].skill = (bld._employees[egi].skill || 20) + 0.1;
+                            }
+                        }
+                    }
+                }
+
+                // Building reputation growth for NPC buildings
+                if (day % 5 === 0 && bld._reputation == null) bld._reputation = 30;
+                if (bld._reputation != null) {
+                    var _sTotal = 0;
+                    for (var _rk in bld.retailStock) _sTotal += (bld.retailStock[_rk] || 0);
+                    if (_sTotal > maxStock * 0.3) bld._reputation = Math.min(100, bld._reputation + 0.1);
+                    else bld._reputation = Math.max(0, bld._reputation - 0.2);
+                    if (bld._employees && bld._employees.length > 0) bld._reputation = Math.min(100, bld._reputation + 0.05);
                 }
             }
         }
