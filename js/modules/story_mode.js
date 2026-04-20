@@ -537,23 +537,18 @@ var StoryMode = (function () {
 
         _log('Chapter ' + _storyState.chapter + ' complete.');
 
-        // If the chapter has an onComplete hook, call it first
-        // The hook can set _storyState.flags.deferAdvance to prevent immediate advancement
-        _storyState.flags.deferAdvance = false;
-        _callHook(ch.onComplete);
-
-        if (_storyState.flags.deferAdvance) {
-            // Hook is handling advancement (e.g., showing a dialog first)
-            // Show endDialog before the hook's dialog via queue
-            _showDialog(ch.endDialog);
-            return;
-        }
-
-        // Show endDialog and advance to next chapter only after it's dismissed
+        // Show endDialog first, then run onComplete hook or advance
         _showDialog(ch.endDialog, function() {
-            _advanceToNextChapter();
+            // If the chapter has an onComplete hook, call it
+            // The hook can set deferAdvance to handle advancement itself
+            _storyState.flags.deferAdvance = false;
+            _callHook(ch.onComplete);
+
+            if (!_storyState.flags.deferAdvance) {
+                _advanceToNextChapter();
+            }
+            // If deferAdvance, the hook is responsible for calling _advanceToNextChapter()
         });
-        // If there was no endDialog, _showDialog fires onComplete immediately
     }
 
     function _advanceToNextChapter() {
