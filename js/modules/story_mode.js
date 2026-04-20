@@ -380,12 +380,13 @@ var StoryMode = (function () {
     }
 
     /** Show a story dialog by key (delegates to UI layer). */
-    function _showDialog(key) {
-        if (!key) { return; }
+    function _showDialog(key, onComplete) {
+        if (!key) { if (typeof onComplete === 'function') onComplete(); return; }
         if (typeof STORY_DIALOGS !== 'undefined' && STORY_DIALOGS[key]) {
             if (typeof UI !== 'undefined' && UI.showStoryDialog) {
                 var dialogData = STORY_DIALOGS[key];
                 dialogData._dialogKey = key;
+                if (typeof onComplete === 'function') dialogData.onComplete = onComplete;
                 UI.showStoryDialog(dialogData);
             }
         }
@@ -680,9 +681,11 @@ var StoryMode = (function () {
                 _toast('Objective complete: ' + obj.desc);
                 _log('Objective complete: ' + obj.desc);
 
-                // Special: Ch3 arrive Ferrowdale — narrator introduces Harlan
+                // Special: Ch3 arrive Ferrowdale — narrator introduces Harlan, then Harlan greets
                 if (obj.id === 'ch3_arrive_ferrowdale') {
-                    _showDialog('ch3_harlan_intro');
+                    _showDialog('ch3_harlan_intro', function() {
+                        _showDialog('ch3_harlan_meet');
+                    });
                 }
 
                 // Special: Ch3 return to Ashford — father takes gold
@@ -734,11 +737,17 @@ var StoryMode = (function () {
         var earned = Math.max(0, currentGold - goldBefore);
         var halfEarned = Math.floor(earned / 2);
 
+        // Set flag to prevent auto-complete — we'll complete manually after dialog
+        _storyState.flags.ch3DeferComplete = true;
+
         if (halfEarned > 0 && currentGold >= halfEarned) {
             // Father takes his half, player keeps the rest as reward
             Player.state.gold -= halfEarned;
-            _showDialog('ch3_father_takes_gold');
             _log('Father takes ' + halfEarned + 'g — his share. You keep ' + (currentGold - halfEarned) + 'g as a reward.');
+            _showDialog('ch3_father_takes_gold', function() {
+                _storyState.flags.ch3DeferComplete = false;
+                if (_allObjectivesMet()) _completeChapter();
+            });
         } else {
             // Player doesn't have enough gold — father admonishes
             var took = Math.max(0, currentGold);
@@ -752,8 +761,12 @@ var StoryMode = (function () {
                     desc: 'Work an extra shift at the smithy (unpaid)',
                     done: false
                 });
+                _refreshTracker();
             }
-            _showDialog('ch3_father_admonish');
+            _showDialog('ch3_father_admonish', function() {
+                _storyState.flags.ch3DeferComplete = false;
+                if (_allObjectivesMet()) _completeChapter();
+            });
             _log('Father is disappointed. He takes your remaining ' + took + 'g and demands you work an extra unpaid shift.');
         }
     }
@@ -961,7 +974,7 @@ var StoryMode = (function () {
             }
         }
 
-        if (changed && _allObjectivesMet()) {
+        if (changed && _allObjectivesMet() && !_storyState.flags.ch3DeferComplete) {
             _completeChapter();
         }
     }
@@ -977,7 +990,7 @@ var StoryMode = (function () {
 
         _matchAction(actionType, data || {});
 
-        if (_allObjectivesMet()) {
+        if (_allObjectivesMet() && !_storyState.flags.ch3DeferComplete) {
             _completeChapter();
         }
     }
