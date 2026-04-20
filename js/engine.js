@@ -2418,6 +2418,17 @@
             }
         }
 
+        // Story mode: Ashford should never have iron deposits (drives ch8 plot)
+        if (town && town.name === 'Ashford' && town.naturalDeposits) {
+            // Check if story mode is active via Player state
+            var _isStory = (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.active);
+            // Also check if Ashford was created as a story town (it's the only fixed-name town)
+            if (!_isStory && typeof window !== 'undefined' && window._selectedStartConfig) {
+                _isStory = window._selectedStartConfig.special === 'story_mode';
+            }
+            if (_isStory) delete town.naturalDeposits.iron_ore;
+        }
+
         // Generate buildings to exploit natural deposits (~70% chance per deposit type)
         if (town && town.naturalDeposits) {
             var depBuildMap = [

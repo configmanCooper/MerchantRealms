@@ -394,6 +394,8 @@ var StoryMode = (function () {
         }
         if (_storyState.dialogsSeen.indexOf(key) === -1) {
             _storyState.dialogsSeen.push(key);
+            // Re-evaluate custom objectives that may depend on dialog being seen
+            _reEvalCustomObjectives();
         }
     }
 
@@ -607,6 +609,22 @@ var StoryMode = (function () {
         return false;
     }
 
+    /** Re-evaluate all custom objectives in the current chapter. */
+    function _reEvalCustomObjectives() {
+        var ch = _currentChapterDef();
+        if (!ch) return;
+        for (var i = 0; i < ch.objectives.length; i++) {
+            var obj = ch.objectives[i];
+            if (obj.done || obj.type !== 'custom' || !obj.fn) continue;
+            if (obj.after && !_storyState.objectives[obj.after]) continue;
+            if (_hooks[obj.fn] && _hooks[obj.fn]()) {
+                _markDone(obj.id);
+                _toast('Objective complete: ' + obj.desc);
+                _log('Objective complete: ' + obj.desc);
+            }
+        }
+    }
+
     /**
      * Map an action type + data to matching objective types and mark them done.
      *
@@ -619,16 +637,7 @@ var StoryMode = (function () {
 
         // Special action types that re-evaluate custom objectives
         if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building') {
-            for (var li = 0; li < ch.objectives.length; li++) {
-                var lobj = ch.objectives[li];
-                if (lobj.done || lobj.type !== 'custom' || !lobj.fn) continue;
-                if (lobj.after && !_storyState.objectives[lobj.after]) continue;
-                if (_hooks[lobj.fn] && _hooks[lobj.fn]()) {
-                    _markDone(lobj.id);
-                    _toast('Objective complete: ' + lobj.desc);
-                    _log('Objective complete: ' + lobj.desc);
-                }
-            }
+            _reEvalCustomObjectives();
             // buy_land and rest have no typed objectives — done here
             if (actionType === 'buy_land' || actionType === 'rest') return;
             // own_building falls through to also match typed objectives below
@@ -828,6 +837,22 @@ var StoryMode = (function () {
                 if (kA && kB && Engine.declareWar) Engine.declareWar(kA, kB, true);
             }
             if (Engine.banExport) { Engine.banExport('iron_bars'); }
+
+            // Remove iron ore from Ashford — war cuts off supply
+            var ashford = (w.towns || []).find(function(t) { return t.name === 'Ashford'; });
+            if (ashford) {
+                // Remove iron deposit so no mining is possible
+                if (ashford.naturalDeposits) ashford.naturalDeposits.iron_ore = 0;
+                // Drain market iron ore supply to near zero
+                if (ashford.market) {
+                    for (var mi = 0; mi < ashford.market.length; mi++) {
+                        if (ashford.market[mi].id === 'iron_ore') {
+                            ashford.market[mi].supply = Math.floor(Math.random() * 3);
+                            break;
+                        }
+                    }
+                }
+            }
         }
         _log('War has been declared between Valdren and Korvath.');
     };
