@@ -88,9 +88,9 @@ var StoryMode = (function () {
             startDialog: 'ch3_delivery_father',
             objectives: [
                 { id: 'ch3_rest_first',        type: 'custom',      fn: '_checkRestedForTravel', desc: 'Rest before your journey', done: false },
-                { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false },
-                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false },
-                { id: 'ch3_return_ashford',    type: 'arrive_town', town: 'Ashford',    desc: 'Return to Ashford',                          done: false }
+                { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false, after: 'ch3_rest_first' },
+                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false, after: 'ch3_arrive_ferrowdale' },
+                { id: 'ch3_return_ashford',    type: 'arrive_town', town: 'Ashford',    desc: 'Return to Ashford',                          done: false, after: 'ch3_sell_tools' }
             ],
             endDialog: null,
             unlockButtons: ['world'],
@@ -610,6 +610,8 @@ var StoryMode = (function () {
             var obj = ch.objectives[i];
             if (obj.done) { continue; }
             if (obj.type !== actionType) { continue; }
+            // Sequential gating: if objective has 'after' dependency, skip until that is done
+            if (obj.after && !_storyState.objectives[obj.after]) { continue; }
 
             var matched = false;
             switch (actionType) {
@@ -740,7 +742,8 @@ var StoryMode = (function () {
     // ── Ch 3: The Delivery ──
     _hooks._checkRestedForTravel = function () {
         if (typeof Player !== 'undefined') {
-            return Player.energy >= 80;
+            var maxE = Player.maxEnergy || 100;
+            return Player.energy >= maxE;
         }
         return false;
     };
@@ -991,6 +994,8 @@ var StoryMode = (function () {
         for (var i = 0; i < ch.objectives.length; i++) {
             var obj = ch.objectives[i];
             if (obj.done) { continue; }
+            // Sequential gating: if objective has 'after' dependency, skip until that is done
+            if (obj.after && !_storyState.objectives[obj.after]) { continue; }
             if (_checkObjective(obj)) {
                 _markDone(obj.id);
                 _toast('Objective complete: ' + obj.desc);
