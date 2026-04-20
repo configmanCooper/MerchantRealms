@@ -87,7 +87,7 @@ var StoryMode = (function () {
             id: 'ch3', title: 'The Delivery', act: 1,
             startDialog: 'ch3_delivery_father',
             objectives: [
-                { id: 'ch3_rest_first',        type: 'custom',      fn: '_checkRestedForTravel', desc: 'Rest before your journey', done: false },
+                { id: 'ch3_rest_first',        type: 'rest',        desc: 'Rest before your journey', done: false },
                 { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false, after: 'ch3_rest_first' },
                 { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false, after: 'ch3_arrive_ferrowdale' },
                 { id: 'ch3_return_ashford',    type: 'arrive_town', town: 'Ashford',    desc: 'Return to Ashford',                          done: false, after: 'ch3_sell_tools' }
@@ -693,6 +693,10 @@ var StoryMode = (function () {
                     matched = (typeof Player !== 'undefined') && Player.gold >= (obj.amount || 0);
                     break;
 
+                case 'rest':
+                    matched = true;
+                    break;
+
                 default:
                     break;
             }
@@ -1107,6 +1111,7 @@ var StoryMode = (function () {
         'attend_court':    '#btnKingdoms',
         'own_gold':        null,
         'reach_rank':      null,
+        'rest':            '#btnRest',
         'custom':          null
     };
 
@@ -1130,13 +1135,13 @@ var StoryMode = (function () {
         '#btnGuilds':    { tab: 'character', label: 'Guilds' },
         '#btnKingdoms':  { tab: 'world',     label: 'Kingdoms' },
         '#btnMap':       { tab: 'world',     label: 'Map' },
-        '#btnTreatment': { tab: 'character', label: 'Treatment' }
+        '#btnTreatment': { tab: 'character', label: 'Treatment' },
+        '#btnRest':      { tab: 'character', label: 'Rest' }
     };
 
     // Map custom hook functions to button hints
     var _customFnButtonMap = {
         '_checkOwnsLand':         '#btnHousing',
-        '_checkRestedForTravel':  '#btnRest',
         '_checkRested':           '#btnRest',
         '_checkWarDialogSeen':    '#btnTalk',
         '_checkFestivalAttended': '#btnStreet',

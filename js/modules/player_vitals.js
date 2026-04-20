@@ -826,9 +826,10 @@
             player.travelData.progress = savedTravelProgress.progress;
         }
 
-        // Restore energy
-        var restored = actualTicks * rate;
-        restoreEnergy(restored);
+        // Restore energy — clamp to exact max so last tick doesn't overshoot
+        var energyAfterRest = Math.min(max, (player.energy || 0) + actualTicks * rate);
+        player.energy = energyAfterRest;
+        player.fatigue = Math.max(0, max - player.energy);
 
         // Injury recovery bonus for sheltered rest
         if (locationId !== 'outside' && !isRoadsideRest && locationId !== 'barracks') {

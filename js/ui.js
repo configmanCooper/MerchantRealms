@@ -10805,7 +10805,12 @@ window.UI = (function () {
         // Pass a large tick count — restForTicks clamps to what's needed for full energy
         var result = Player.restForTicks(locationId, 9999);
         toast(result.message, result.success ? 'success' : 'error');
-        if (result.success) window._tutorialRested = true;
+        if (result.success) {
+            window._tutorialRested = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('rest', { locationId: locationId });
+            }
+        }
         closeModal();
     }
 
