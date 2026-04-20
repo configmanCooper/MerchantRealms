@@ -743,7 +743,9 @@ var StoryMode = (function () {
     _hooks._checkRestedForTravel = function () {
         if (typeof Player !== 'undefined') {
             var maxE = Player.maxEnergy || 100;
-            return Player.energy >= maxE;
+            // Use 95% threshold — passive energy drain (0.25/subtick) makes
+            // exact equality impossible after rest completes.
+            return Player.energy >= maxE * 0.95;
         }
         return false;
     };
