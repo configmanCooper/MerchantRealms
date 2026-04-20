@@ -89,11 +89,11 @@ var StoryMode = (function () {
             startDialog: 'ch3_delivery_father',
             objectives: [
                 { id: 'ch3_arrive_millhaven', type: 'arrive_town', town: 'Millhaven', desc: 'Travel to Millhaven',                       done: false },
-                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'iron_tools', desc: 'Deliver the tools (sell in Millhaven)', done: false }
+                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Millhaven)', done: false }
             ],
             endDialog: 'ch3_complete',
             unlockButtons: ['world'],
-            onStart: null,
+            onStart: '_onChapter3Start',
             onComplete: null
         },
 
@@ -703,6 +703,15 @@ var StoryMode = (function () {
         }
     };
 
+    // ── Ch 3: The Delivery ──
+    _hooks._onChapter3Start = function () {
+        // Father gives tools to deliver to Millhaven
+        if (typeof Player !== 'undefined' && Player.modifyInventory) {
+            Player.modifyInventory(Player.state.inventory, 'tools', 5);
+            _log('Father hands you 5 sets of tools to deliver to Millhaven.');
+        }
+    };
+
     // ── Ch 7: War ──
     _hooks._onChapter7Start = function () {
         _storyState.flags.warDeclared = true;
@@ -1045,32 +1054,27 @@ var StoryMode = (function () {
     };
 
     /**
-     * Returns an array of { tab, label } hints for incomplete objectives.
-     * Used by the UI to highlight the button chain the player needs to click.
+     * Returns an array of { tab, label } hints for the first incomplete objective.
+     * Only highlights the next action the player should take, not all at once.
      */
     function getButtonHints() {
         if (!_storyState.active || _storyState.complete) return [];
         var ch = _currentChapterDef();
         if (!ch) return [];
-        var hints = [];
-        var seenTabs = {};
+        // Find the first incomplete objective that maps to a button
         for (var i = 0; i < ch.objectives.length; i++) {
             var obj = ch.objectives[i];
             if (obj.done) continue;
             var btnId = _objectiveButtonMap[obj.type] || null;
-            // For custom objectives, look up the hook function name
             if (obj.type === 'custom' && obj.fn && _customFnButtonMap[obj.fn]) {
                 btnId = _customFnButtonMap[obj.fn];
             }
             if (!btnId) continue;
             var info = _btnToTabLabel[btnId];
             if (!info) continue;
-            var key = info.tab + '|' + info.label;
-            if (seenTabs[key]) continue;
-            seenTabs[key] = true;
-            hints.push({ tab: info.tab, label: info.label });
+            return [{ tab: info.tab, label: info.label }];
         }
-        return hints;
+        return [];
     }
 
     function getStoryFlags() {
