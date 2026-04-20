@@ -570,6 +570,15 @@ window.Game = (function () {
             if (!hasIronDeposit) {
                 ferrowdale.deposits.push({ type: 'iron', resource: 'iron_ore', quality: 70, remaining: 10000 });
             }
+
+            // Ferrowdale: high demand for tools, low supply
+            if (!ferrowdale.market) ferrowdale.market = { supply: {}, prices: {}, demand: {} };
+            if (!ferrowdale.market.supply) ferrowdale.market.supply = {};
+            if (!ferrowdale.market.prices) ferrowdale.market.prices = {};
+            if (!ferrowdale.market.demand) ferrowdale.market.demand = {};
+            ferrowdale.market.supply['tools'] = 2;       // very low supply
+            ferrowdale.market.demand['tools'] = 50;      // high demand
+            ferrowdale.market.prices['tools'] = 18;      // good sell price due to demand
         }
 
         // Name the Korvath king
