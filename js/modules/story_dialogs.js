@@ -87,7 +87,8 @@
             lines: [
                 "I've finished a set of tools for old Harlan over in Ferrowdale. Plowshares and sickles — the miners and smiths depend on them.",
                 "I need you to deliver them for me. Ferrowdale is a fair journey from here.",
-                "Sell the tools at the Ferrowdale market — Harlan will pay a fair price. Then bring the coin back to me."
+                "Sell the tools at the Ferrowdale market — Harlan will pay a fair price. Then bring the coin back to me.",
+                "But first, get some rest before you set out. It's a long journey and you'll need your strength."
             ]
         },
 

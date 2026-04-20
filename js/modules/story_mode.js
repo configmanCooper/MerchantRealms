@@ -87,6 +87,7 @@ var StoryMode = (function () {
             id: 'ch3', title: 'The Delivery', act: 1,
             startDialog: 'ch3_delivery_father',
             objectives: [
+                { id: 'ch3_rest_first',        type: 'custom',      fn: '_checkRestedForTravel', desc: 'Rest before your journey', done: false },
                 { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false },
                 { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false },
                 { id: 'ch3_return_ashford',    type: 'arrive_town', town: 'Ashford',    desc: 'Return to Ashford',                          done: false }
@@ -737,6 +738,13 @@ var StoryMode = (function () {
     };
 
     // ── Ch 3: The Delivery ──
+    _hooks._checkRestedForTravel = function () {
+        if (typeof Player !== 'undefined') {
+            return Player.energy >= 80;
+        }
+        return false;
+    };
+
     _hooks._onChapter3Start = function () {
         // Father gives tools to deliver to Ferrowdale
         if (typeof Player !== 'undefined' && Player.modifyInventory) {
@@ -1121,6 +1129,7 @@ var StoryMode = (function () {
     // Map custom hook functions to button hints
     var _customFnButtonMap = {
         '_checkOwnsLand':         '#btnHousing',
+        '_checkRestedForTravel':  '#btnRest',
         '_checkRested':           '#btnRest',
         '_checkWarDialogSeen':    '#btnTalk',
         '_checkFestivalAttended': '#btnStreet',
