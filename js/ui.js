@@ -8946,6 +8946,8 @@ window.UI = (function () {
         }
     }
 
+    var _subMenuOpenTime = 0;
+
     function _openSubMenu(category) {
         var subMenu = document.getElementById('subMenu');
         if (!subMenu) return;
@@ -8963,6 +8965,7 @@ window.UI = (function () {
             return;
         }
         _activeTabCategory = category;
+        _subMenuOpenTime = Date.now();
 
         // Update tab highlights
         var tabs = document.querySelectorAll('.tab-btn');
@@ -9147,6 +9150,8 @@ window.UI = (function () {
         document.addEventListener('click', function(e) {
             var sm = document.getElementById('subMenu');
             if (sm && sm.classList.contains('visible')) {
+                // Don't close if the menu just opened (prevents race with tab click)
+                if (Date.now() - _subMenuOpenTime < 200) return;
                 if (!e.target.closest('.bottom-tabs') && !e.target.closest('.sub-menu')) {
                     _closeSubMenu();
                 }
