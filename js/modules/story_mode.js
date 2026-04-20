@@ -88,8 +88,8 @@ var StoryMode = (function () {
             id: 'ch3', title: 'The Delivery', act: 1,
             startDialog: 'ch3_delivery_father',
             objectives: [
-                { id: 'ch3_arrive_millhaven', type: 'arrive_town', town: 'Millhaven', desc: 'Travel to Millhaven',                       done: false },
-                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Millhaven)', done: false }
+                { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false },
+                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false }
             ],
             endDialog: 'ch3_complete',
             unlockButtons: ['world'],
@@ -102,7 +102,7 @@ var StoryMode = (function () {
             id: 'ch4', title: 'The Art of the Deal', act: 1,
             startDialog: 'ch4_harlan_teaches',
             objectives: [
-                { id: 'ch4_buy_goods',  type: 'buy_item',  item: '*', qty: 1,  desc: 'Buy cheap goods in Millhaven',       done: false },
+                { id: 'ch4_buy_goods',  type: 'buy_item',  item: '*', qty: 1,  desc: 'Buy cheap goods in Ferrowdale',       done: false },
                 { id: 'ch4_sell_goods', type: 'sell_item',  item: '*',          desc: 'Sell goods for profit in Ashford',    done: false },
                 { id: 'ch4_own_gold',   type: 'own_gold',   amount: 30,         desc: 'Accumulate 30 gold',                 done: false }
             ],
@@ -708,7 +708,7 @@ var StoryMode = (function () {
         // Father gives tools to deliver to Millhaven
         if (typeof Player !== 'undefined' && Player.modifyInventory) {
             Player.modifyInventory(Player.state.inventory, 'tools', 5);
-            _log('Father hands you 5 sets of tools to deliver to Millhaven.');
+            _log('Father hands you 5 sets of tools to deliver to Ferrowdale.');
         }
     };
 

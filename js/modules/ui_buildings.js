@@ -164,7 +164,7 @@
             if (offers.length > 0) {
                 saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;text-align:center;">';
                 saleHtml += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:4px;">' + offers.length + ' existing building(s) for sale in this town</div>';
-                saleHtml += '<button class="btn-medieval" data-action="openTownMarket" style="font-size:0.75rem;padding:3px 10px;">🏪 Open Town Market</button>';
+                saleHtml += '<button class="btn-medieval" data-action="openTownMarket" style="font-size:0.75rem;padding:3px 10px;">🏗️ Browse Town Buildings</button>';
                 saleHtml += '</div>';
             }
 
@@ -407,9 +407,9 @@
         openModal('🏗️ Building Management', html);
     }
 
-    // ── Town Market: buildings, land, and apartments for sale ──
+    // ── Town Buildings: buildings, land, and apartments for sale ──
     function openTownMarket() {
-        if (typeof Player === 'undefined' || Player.traveling) { toast('Cannot browse market while traveling.', 'warning'); return; }
+        if (typeof Player === 'undefined' || Player.traveling) { toast('Cannot browse buildings while traveling.', 'warning'); return; }
         var townId = Player.townId;
         var town = Engine.findTown(townId);
         if (!town) { toast('Not in a town.', 'warning'); return; }
@@ -541,7 +541,7 @@
         }
 
         html += '</div>';
-        openModal('🏪 Town Market — ' + town.name, html);
+        openModal('🏗️ Town Buildings — ' + town.name, html);
     }
 
     function listLandForSaleUI(townId) {
@@ -2279,6 +2279,14 @@
     // Building Detail Popup — shows info about a building type in a town
     // Used by town market badges + quest interactions (search for evidence, etc.)
     // =========================================================================
+
+    var _WORKABLE_BUILDINGS = {
+        bakery:1, blacksmith:1, smelter:1, toolsmith:1, dock:1, fishery:1,
+        warehouse:1, market_stall:1, wheat_farm:1, sheep_farm:1, chicken_farm:1,
+        hemp_farm:1, tailor:1, weaver:1, lumber_camp:1, iron_mine:1, gold_mine:1, quarry:1
+    };
+    function _isWorkableBuilding(type) { return !!_WORKABLE_BUILDINGS[type]; }
+
     function openBuildingDetail(buildingType, townId) {
         var town = Engine.findTown(townId);
         if (!town) { toast('Town not found.', 'warning'); return; }
@@ -2336,17 +2344,38 @@
                 var cond = bld.condition || 'good';
                 var condColor = cond === 'good' || cond === 'new' ? '#55a868' : cond === 'worn' ? '#e67e22' : cond === 'damaged' ? '#c44e52' : cond === 'under_construction' ? '#5dade2' : '#d4c9a0';
 
-                html += '<div style="background:rgba(0,0,0,0.15);padding:6px;border-radius:4px;margin-bottom:4px;border-left:3px solid ' + condColor + ';">';
+                html += '<div style="background:rgba(0,0,0,0.15);padding:6px;border-radius:4px;margin-bottom:4px;border-left:3px solid ' + condColor + ';cursor:pointer;" data-action="_toggleBldExpand" data-id="bldExpand_' + _bi + '">';
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
                 html += '<span style="font-size:0.72rem;color:#d4c9a0;">' + bIcon + ' Lv.' + (bld.level || 1) + '</span>';
-                html += '<span style="font-size:0.65rem;color:' + condColor + ';">' + cond + '</span>';
+                html += '<span style="font-size:0.65rem;color:' + condColor + ';">' + cond + ' <span style="opacity:0.5;font-size:0.6rem;">▼</span></span>';
                 html += '</div>';
                 html += '<div style="font-size:0.65rem;color:#888;">Owner: ' + ownerName + '</div>';
 
+                // Expandable detail section
+                html += '<div id="bldExpand_' + _bi + '" style="display:none;margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.06);">';
+
                 // Workers
                 var workers = bld.workers || [];
-                if (workers.length > 0) {
-                    html += '<div style="font-size:0.65rem;color:#888;">Workers: ' + workers.length + '/' + (bt && bt.maxWorkers ? bt.maxWorkers : '?') + '</div>';
+                if (workers.length > 0 || (bt && bt.maxWorkers)) {
+                    html += '<div style="font-size:0.65rem;color:#888;">👷 Workers: ' + workers.length + '/' + (bt && bt.maxWorkers ? bt.maxWorkers : '?') + '</div>';
+                }
+
+                // Production rate (level affects rate)
+                if (bt && bt.produces) {
+                    var _prodRate = bt.rate || 1;
+                    var _lvlMult = 1 + ((bld.level || 1) - 1) * 0.15;
+                    var _condMult = cond === 'damaged' ? 0.5 : cond === 'worn' ? 0.75 : cond === 'used' ? 0.9 : 1.0;
+                    var _wMult = workers.length > 0 ? 1 : 0.3;
+                    var _dailyOut = (_prodRate * _lvlMult * _condMult * _wMult).toFixed(1);
+                    var _prodDef = CONFIG.ITEMS ? CONFIG.ITEMS[bt.produces] : null;
+                    html += '<div style="font-size:0.65rem;color:#55a868;">⚙️ Output: ~' + _dailyOut + ' ' + (_prodDef ? _prodDef.name : bt.produces) + '/day</div>';
+                }
+
+                // Building age
+                if (bld.builtDay != null && typeof Engine !== 'undefined' && Engine.getDay) {
+                    var _age = Engine.getDay() - bld.builtDay;
+                    var _ageYears = (_age / (CONFIG.DAYS_PER_SEASON || 90)).toFixed(1);
+                    if (_age > 0) html += '<div style="font-size:0.65rem;color:#888;">📅 Age: ' + _ageYears + ' years (' + _age + ' days)</div>';
                 }
 
                 // Output buffer
@@ -2378,7 +2407,17 @@
                     html += '<button class="btn-medieval" data-action="enterNPCRetailShop" data-id="' + townId + '" data-val="' + _bldIdx2 + '" style="font-size:0.6rem;padding:2px 6px;margin-top:3px;">' + _shopLabel + '</button>';
                 }
 
-                html += '</div>';
+                // Work at this building (if workable and player doesn't own it)
+                if (bld.ownerId !== 'player' && bld.condition !== 'destroyed' && bld.condition !== 'under_construction' && _isWorkableBuilding(buildingType)) {
+                    var _isHere = typeof Player !== 'undefined' && Player.townId === townId && !Player.traveling;
+                    if (_isHere) {
+                        var _bldIdx3 = town.buildings.indexOf(bld);
+                        html += ' <button class="btn-medieval" data-action="workAtSpecificBuilding" data-id="' + townId + '" data-val="' + _bldIdx3 + '" style="font-size:0.6rem;padding:2px 6px;margin-top:3px;background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.4);">💼 Work Here</button>';
+                    }
+                }
+
+                html += '</div>'; // close expandable section
+                html += '</div>'; // close building entry
             }
         }
 
@@ -2765,7 +2804,53 @@
     UI.tavernDrink = tavernDrink;
     UI.tavernConverse = tavernConverse;
 
+    // Work at a specific building from the building detail popup
+    function _workAtSpecificBuilding(townId, bldIdx) {
+        if (typeof Player === 'undefined') return;
+        if (Player.traveling) { toast('Cannot work while traveling.', 'warning'); return; }
+        var town = Engine.findTown(townId);
+        if (!town || !town.buildings || bldIdx < 0 || bldIdx >= town.buildings.length) {
+            toast('Building not found.', 'warning'); return;
+        }
+        var bld = town.buildings[bldIdx];
+        if (bld.ownerId === 'player') { toast('You own this building — manage it from Buildings.', 'info'); return; }
+        if (bld.condition === 'destroyed' || bld.condition === 'under_construction') {
+            toast('This building is not operational.', 'warning'); return;
+        }
+        // Find matching job index from getAvailableJobs
+        var jobs = Player.getAvailableJobs();
+        var matchIdx = -1;
+        for (var i = 0; i < jobs.length; i++) {
+            if (jobs[i].buildingType === bld.type && jobs[i].type === 'building') {
+                matchIdx = i; break;
+            }
+        }
+        if (matchIdx === -1) {
+            // Try apprentice jobs
+            for (var j = 0; j < jobs.length; j++) {
+                if (jobs[j].buildingType === bld.type && jobs[j].type === 'apprentice') {
+                    matchIdx = j; break;
+                }
+            }
+        }
+        if (matchIdx === -1) {
+            toast('No work available at this building right now.', 'warning'); return;
+        }
+        var result = Player.doWork(matchIdx);
+        if (result.success) {
+            toast(result.message, 'success');
+            closeModal();
+        } else {
+            toast(result.message, 'warning');
+        }
+    }
+
     UI.registerAction('openBuildingDetail', function(_t, d) { UI.openBuildingDetail(d.id, d.val); });
+    UI.registerAction('workAtSpecificBuilding', function(_t, d) { _workAtSpecificBuilding(d.id, parseInt(d.val)); });
+    UI.registerAction('_toggleBldExpand', function(_t, d) {
+        var el = document.getElementById(d.id);
+        if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+    });
     UI.registerAction('searchBuildingEvidence', function(_t, d) {
         var r = Player.searchBuildingForEvidence ? Player.searchBuildingForEvidence(parseInt(d.id), parseInt(d.val)) : { success: false, message: 'Evidence search not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');

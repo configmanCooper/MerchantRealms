@@ -4,6 +4,22 @@
     window.STORY_DIALOGS = {
 
         // =====================================================================
+        // CHAPTER 0: PROLOGUE
+        // =====================================================================
+
+        ch0_intro: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "Welcome to Merchant Realms — Story Mode.",
+                "You are about to begin a tale of trade, family, and war in the medieval kingdom of Valdren.",
+                "You are the child of Edmund, a blacksmith in the small town of Ashford. Today is your 18th birthday.",
+                "Pay attention to the quest tracker in the top-right corner — it will guide you through each chapter of your story.",
+                "Your journey begins now..."
+            ]
+        },
+
+        // =====================================================================
         // CHAPTER 1: "A Birthday Gift"
         // =====================================================================
 
@@ -69,8 +85,8 @@
             speaker: "father",
             portrait: "father",
             lines: [
-                "I've finished a set of tools for old Harlan over in Millhaven. Plowshares and sickles — the farmers depend on them.",
-                "I need you to deliver them for me. Millhaven is a day's journey to the east.",
+                "I've finished a set of tools for old Harlan over in Ferrowdale. Plowshares and sickles — the miners and smiths depend on them.",
+                "I need you to deliver them for me. Ferrowdale is a journey to the northeast.",
                 "Traveling between towns is simple — just follow the roads. But keep your wits about you. The world beyond Ashford is bigger than you think."
             ]
         },
@@ -105,7 +121,7 @@
                 "Back again, eh? Good. I've been meaning to show you something.",
                 "Every town has different prices, {boy|girl}. Flour is cheap in farming towns but dear in the cities. Iron is plentiful near the mines but scarce on the coast.",
                 "Buy where it's cheap, sell where it's not — that's the oldest trick in the merchant's book. That's where the real coin is.",
-                "Try it yourself. Buy something here in Millhaven and sell it back in Ashford. You'll see what I mean."
+                "Try it yourself. Buy something here in Ferrowdale and sell it back in Ashford. You'll see what I mean."
             ]
         },
 

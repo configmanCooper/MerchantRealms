@@ -492,7 +492,7 @@ function showTownDetail(town) {
         }
         html += '<div style="margin-top:6px;">';
         html += '<button class="btn-medieval" data-action="openHousingDialog" style="font-size:0.8rem;padding:4px 12px;">🏡 Manage Housing</button> ';
-        html += '<button class="btn-medieval" data-action="openTownMarket" style="font-size:0.8rem;padding:4px 12px;">🏪 Town Market</button> ';
+        html += '<button class="btn-medieval" data-action="openTownMarket" style="font-size:0.8rem;padding:4px 12px;">🏗️ Town Buildings</button> ';
         if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('local_market_analysis')) {
             html += '<button class="btn-medieval" data-action="openRealEstateReport" style="font-size:0.8rem;padding:4px 12px;">📊 Real Estate Report</button> ';
         }
@@ -941,9 +941,13 @@ function showTownDetail(town) {
         html += UI.buildNPCTransportSection();
     }
 
-    // Town contextual actions card (when player is here)
-    if (isPlayerHere && typeof UI._renderTownActionsCard === 'function') {
-        html = UI._renderTownActionsCard() + html;
+    // Town contextual treatment card (when player is here and injured/sick)
+    if (isPlayerHere && typeof Player !== 'undefined') {
+        var _isSick = Player.illnesses && Player.illnesses.length > 0;
+        var _isInjured = Player.injuries && Player.injuries.length > 0;
+        if (_isSick || _isInjured) {
+            html = '<div class="town-actions-card"><button class="town-action-btn highlight" data-action="seekTreatment"><span class="ta-icon">🏥</span>Treatment</button></div>' + html;
+        }
     }
 
     showRightPanel(`🏘 ${town.name}`, html);
