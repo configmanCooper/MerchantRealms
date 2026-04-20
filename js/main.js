@@ -734,51 +734,75 @@ window.Game = (function () {
 
         // Ensure road between Ashford and Ferrowdale is short (~2 days walk)
         var world = Engine.getWorld();
-        if (world && world.roads && valdrenTowns.length > 2) {
+        if (world && valdrenTowns.length > 2) {
             var ashfordId = valdrenTowns[0].id;
             var ferrowdaleId = valdrenTowns[2].id;
-            for (var ri = 0; ri < world.roads.length; ri++) {
-                var road = world.roads[ri];
-                if ((road.fromTownId === ashfordId && road.toTownId === ferrowdaleId) ||
-                    (road.fromTownId === ferrowdaleId && road.toTownId === ashfordId)) {
-                    // Shorten waypoints to make it ~2 days walk
-                    if (road.waypoints && road.waypoints.length > 2) {
-                        var startPt = road.waypoints[0];
-                        var endPt = road.waypoints[road.waypoints.length - 1];
-                        // Calculate target distance for ~2 days: baseSpeed is ~2-3 tiles/tick, 60 ticks/day
-                        // Interpolate to create a short straight-ish path
-                        var midPt = { x: (startPt.x + endPt.x) / 2, y: (startPt.y + endPt.y) / 2 };
-                        // Keep just 3 points for a short road
-                        road.waypoints = [startPt, midPt, endPt];
-                    }
-                    road.quality = 3; // Good road for faster travel
-                    break;
-                }
+            var ashford_t = valdrenTowns[0];
+            var ferrowdale_t = valdrenTowns[2];
+
+            // Move Ferrowdale close to Ashford if too far (max ~200 units for ~2 day walk on quality 3 road)
+            var dist = Math.hypot(ashford_t.x - ferrowdale_t.x, ashford_t.y - ferrowdale_t.y);
+            var maxDist = 200; // quality 3 road: effective = dist/2, walk speed 60/day → 2 days = 120 effective → 240 actual
+            if (dist > maxDist) {
+                // Move Ferrowdale to be ~180 units from Ashford in the same direction
+                var angle = Math.atan2(ferrowdale_t.y - ashford_t.y, ferrowdale_t.x - ashford_t.x);
+                ferrowdale_t.x = Math.round(ashford_t.x + Math.cos(angle) * 180);
+                ferrowdale_t.y = Math.round(ashford_t.y + Math.sin(angle) * 180);
             }
 
-            // If no direct road exists between Ashford and Ferrowdale, create one
-            var hasDirectRoad = world.roads.some(function(r) {
-                return (r.fromTownId === ashfordId && r.toTownId === ferrowdaleId) ||
-                       (r.fromTownId === ferrowdaleId && r.toTownId === ashfordId);
-            });
-            if (!hasDirectRoad) {
-                var ax = valdrenTowns[0].x, ay = valdrenTowns[0].y;
-                var fx = valdrenTowns[2].x, fy = valdrenTowns[2].y;
-                world.roads.push({
-                    fromTownId: ashfordId,
-                    toTownId: ferrowdaleId,
-                    quality: 3,
-                    safe: true,
-                    hasBridge: false,
-                    bridgeDestroyed: false,
-                    bridgeSegments: [],
-                    bridges: [],
-                    waypoints: [
-                        { x: ax, y: ay },
-                        { x: (ax + fx) / 2, y: (ay + fy) / 2 },
-                        { x: fx, y: fy }
-                    ]
+            // Ensure Ferrowdale is NOT a port (force land-only connection)
+            ferrowdale_t.isPort = false;
+            ferrowdale_t.hasHarbor = false;
+
+            // Remove any sea routes between Ashford and Ferrowdale
+            if (world.seaRoutes) {
+                world.seaRoutes = world.seaRoutes.filter(function(sr) {
+                    return !((sr.fromTownId === ashfordId && sr.toTownId === ferrowdaleId) ||
+                             (sr.fromTownId === ferrowdaleId && sr.toTownId === ashfordId));
                 });
+            }
+
+            // Ensure a quality 3 land road exists
+            if (world.roads) {
+                for (var ri = 0; ri < world.roads.length; ri++) {
+                    var road = world.roads[ri];
+                    if ((road.fromTownId === ashfordId && road.toTownId === ferrowdaleId) ||
+                        (road.fromTownId === ferrowdaleId && road.toTownId === ashfordId)) {
+                        road.quality = 3;
+                        road.type = 'land';
+                        // Update waypoints to match new positions
+                        road.waypoints = [
+                            { x: ashford_t.x, y: ashford_t.y },
+                            { x: (ashford_t.x + ferrowdale_t.x) / 2, y: (ashford_t.y + ferrowdale_t.y) / 2 },
+                            { x: ferrowdale_t.x, y: ferrowdale_t.y }
+                        ];
+                        break;
+                    }
+                }
+
+                // If no direct road exists, create one
+                var hasDirectRoad = world.roads.some(function(r) {
+                    return (r.fromTownId === ashfordId && r.toTownId === ferrowdaleId) ||
+                           (r.fromTownId === ferrowdaleId && r.toTownId === ashfordId);
+                });
+                if (!hasDirectRoad) {
+                    world.roads.push({
+                        fromTownId: ashfordId,
+                        toTownId: ferrowdaleId,
+                        quality: 3,
+                        type: 'land',
+                        safe: true,
+                        hasBridge: false,
+                        bridgeDestroyed: false,
+                        bridgeSegments: [],
+                        bridges: [],
+                        waypoints: [
+                            { x: ashford_t.x, y: ashford_t.y },
+                            { x: (ashford_t.x + ferrowdale_t.x) / 2, y: (ashford_t.y + ferrowdale_t.y) / 2 },
+                            { x: ferrowdale_t.x, y: ferrowdale_t.y }
+                        ]
+                    });
+                }
             }
         }
     }
