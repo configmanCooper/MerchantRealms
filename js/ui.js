@@ -957,6 +957,8 @@ window.UI = (function () {
             if (_sCh && _sCh.id === 'ch0') {
                 StoryMode.advanceChapter();
             }
+            // Apply tab highlights for story objectives immediately
+            _updateTabGlows();
         }
     }
 
@@ -8856,23 +8858,40 @@ window.UI = (function () {
         subMenu.innerHTML = html;
         subMenu.classList.add('visible');
 
-        // Apply story mode objective highlights to freshly rendered sub-menu buttons
+        // Apply story mode objective highlights to freshly rendered sub-menu buttons AND tab buttons
         if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && StoryMode.getButtonHints) {
             var stHints = StoryMode.getButtonHints();
-            if (stHints.length) _applyStorySubMenuHighlights(stHints);
+            if (stHints.length) {
+                _applyStorySubMenuHighlights(stHints);
+                // Also apply tab-level highlights immediately
+                var hintTabs = {};
+                for (var hi = 0; hi < stHints.length; hi++) { hintTabs[stHints[hi].tab] = true; }
+                for (var ti = 0; ti < tabs.length; ti++) {
+                    var tc = tabs[ti].dataset.category;
+                    if (tc && hintTabs[tc]) {
+                        tabs[ti].classList.add('tutorial-highlight');
+                    }
+                }
+            }
         }
         // Re-apply tutorial highlights if the tutorial system has an active highlight for this tab
         if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive() && Tutorial.getHighlightLabel) {
             var tutLabel = Tutorial.getHighlightLabel();
-            if (tutLabel && tutLabel.tab === category) {
-                setTimeout(function() {
-                    var sBtns = subMenu.querySelectorAll('.sub-menu-btn');
-                    for (var si = 0; si < sBtns.length; si++) {
-                        if (sBtns[si].textContent.indexOf(tutLabel.label) >= 0) {
-                            sBtns[si].classList.add('tutorial-highlight');
+            if (tutLabel) {
+                // Always re-apply tab button highlight
+                var tutTabEl = document.querySelector('.tab-btn[data-category="' + tutLabel.tab + '"]');
+                if (tutTabEl) tutTabEl.classList.add('tutorial-highlight');
+                // Re-apply sub-menu button highlight if matching tab is open
+                if (tutLabel.tab === category) {
+                    setTimeout(function() {
+                        var sBtns = subMenu.querySelectorAll('.sub-menu-btn');
+                        for (var si = 0; si < sBtns.length; si++) {
+                            if (sBtns[si].textContent.indexOf(tutLabel.label) >= 0) {
+                                sBtns[si].classList.add('tutorial-highlight');
+                            }
                         }
-                    }
-                }, 50);
+                    }, 50);
+                }
             }
         }
     }
@@ -8927,9 +8946,13 @@ window.UI = (function () {
                 }
             }
         }
-        // Tutorial mode: highlight tabs for active tutorial step
-        if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
-            // Tutorial manages its own highlights via enterStep/highlightElement
+        // Tutorial mode: re-apply tab highlight for active tutorial step
+        if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive() && Tutorial.getHighlightLabel) {
+            var tutInfo = Tutorial.getHighlightLabel();
+            if (tutInfo && tutInfo.tab) {
+                var tutTabBtn = document.querySelector('.tab-btn[data-category="' + tutInfo.tab + '"]');
+                if (tutTabBtn) tutTabBtn.classList.add('tutorial-highlight');
+            }
         }
     }
 
