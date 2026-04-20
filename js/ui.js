@@ -8757,11 +8757,8 @@ window.UI = (function () {
                 }
                 return false;
             case 'schemes': {
-                var schemesBtn = document.getElementById('btnSchemes');
-                var schemesVisible = schemesBtn && schemesBtn.style.display !== 'none';
-                if (!schemesVisible) return false;
                 // In story mode, disable schemes until chapter 15
-                if (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.active && !Player.storyMode.complete) {
+                if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
                     var chIdx = (typeof StoryMode !== 'undefined' && StoryMode.getChapterIndex) ? StoryMode.getChapterIndex() : 0;
                     if (chIdx < 15) return false;
                 }
