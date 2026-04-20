@@ -835,13 +835,28 @@ window.Game = (function () {
     // Touch support
     let touchStartPos = null;
     let touchStartDist = null;
+    let touchIsDragging = false;
+    let touchLastPos = null;
+    let lastTapTime = 0;
+    let longPressTimer = null;
 
     function onTouchStart(e) {
         e.preventDefault();
         if (typeof Renderer !== 'undefined' && Renderer.getMapMode() === 2) return;
         if (e.touches.length === 1) {
             touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            touchLastPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            touchIsDragging = false;
+            // Long-press (500ms) = context menu (right-click equivalent)
+            longPressTimer = setTimeout(function() {
+                if (!touchIsDragging && touchStartPos) {
+                    touchIsDragging = true; // prevent tap on release
+                    var hit = Renderer.hitTest(touchStartPos.x, touchStartPos.y);
+                    showContextMenuForHit(touchStartPos.x, touchStartPos.y, hit);
+                }
+            }, 500);
         } else if (e.touches.length === 2) {
+            touchIsDragging = true; // pinch-zoom counts as drag
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
             touchStartDist = Math.sqrt(dx * dx + dy * dy);
@@ -854,9 +869,16 @@ window.Game = (function () {
         if (e.touches.length === 1 && touchStartPos) {
             const dx = e.touches[0].clientX - touchStartPos.x;
             const dy = e.touches[0].clientY - touchStartPos.y;
-            Renderer.pan(-dx, -dy);
-            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                touchIsDragging = true;
+                if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+            }
+            if (touchLastPos) {
+                Renderer.pan(-(e.touches[0].clientX - touchLastPos.x), -(e.touches[0].clientY - touchLastPos.y));
+            }
+            touchLastPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         } else if (e.touches.length === 2 && touchStartDist) {
+            touchIsDragging = true;
             const dx = e.touches[0].clientX - e.touches[1].clientX;
             const dy = e.touches[0].clientY - e.touches[1].clientY;
             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -867,9 +889,27 @@ window.Game = (function () {
         }
     }
 
-    function onTouchEnd() {
+    function onTouchEnd(e) {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (!touchIsDragging && touchStartPos && (state === 'playing' || state === 'paused')) {
+            var now = Date.now();
+            if (now - lastTapTime < 350) {
+                // Double-tap: treat like double-click
+                var hit = Renderer.hitTest(touchStartPos.x, touchStartPos.y);
+                if (hit.type === 'town') {
+                    Renderer.panTo(hit.data.x, hit.data.y);
+                    UI.showTownDetail(hit.data);
+                }
+            } else {
+                // Single tap: open town/person/road detail
+                handleClick(touchStartPos.x, touchStartPos.y, false);
+            }
+            lastTapTime = now;
+        }
         touchStartPos = null;
         touchStartDist = null;
+        touchLastPos = null;
+        touchIsDragging = false;
     }
 
     function onMinimapClick(e) {

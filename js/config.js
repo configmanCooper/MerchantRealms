@@ -5046,6 +5046,24 @@ const INSTRUMENT_SKILL_TIERS = [
 const INSTRUMENT_PREFERENCE_BONUS = 0.50;
 const INSTRUMENT_FATIGUE_THRESHOLD = 50;
 
+// ── Kingdom Fashion Preferences ──
+const FASHION_STYLES = {
+    military_chic:   { name: 'Military Chic',   icon: '⚔️', goods: ['leather', 'armor', 'clothes', 'iron'],          demandBonus: 0.75 },
+    court_elegance:  { name: 'Court Elegance',  icon: '👑', goods: ['silk', 'fine_clothes', 'jewelry', 'dye'],       demandBonus: 1.0 },
+    rustic:          { name: 'Rustic',          icon: '🌾', goods: ['wool', 'cloth', 'clothes', 'leather'],          demandBonus: 0.5 },
+    exotic:          { name: 'Exotic',          icon: '✨', goods: ['dye', 'spices', 'silk', 'perfume', 'jewelry'],  demandBonus: 0.8 },
+};
+
+// ── Kingdom Musical Preference Map ──
+const KINGDOM_INSTRUMENT_MAP = {
+    military:  'drum',
+    mercantile: 'lute',
+    maritime:  'hurdy_gurdy',
+    seafaring: 'hurdy_gurdy',
+    traditional: 'harp',
+    rural:     'flute',
+};
+
 // Attach standalone constants to CONFIG for uniform access
 CONFIG.SKILLS = SKILLS;
 CONFIG.ACHIEVEMENTS = ACHIEVEMENTS;

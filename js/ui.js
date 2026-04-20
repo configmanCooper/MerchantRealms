@@ -1657,7 +1657,7 @@ window.UI = (function () {
         if (container) {
             container.querySelectorAll('.qty-btn').forEach(b => b.classList.remove('qty-selected'));
             container.querySelectorAll('.qty-btn').forEach(b => {
-                if (parseInt(b.dataset.qty) === qty || (b.dataset.qty === 'max' && parseInt(input.value) === qty)) {
+                if (parseInt(b.dataset.qty) === qty) {
                     b.classList.add('qty-selected');
                 }
             });
@@ -2006,8 +2006,8 @@ window.UI = (function () {
             }
             const buyMaxQty = Math.max(0, Math.min(maxByGold, maxByCapacity, qty));
             const buyQtyBtns = [1, 5, 10, 25].map(q =>
-                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${q}" data-price="${finalUnitPrice.toFixed(4)}">${q}</button>`
-            ).join('') + `<button class="qty-btn" data-qty="max" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${buyMaxQty}" data-price="${finalUnitPrice.toFixed(4)}">⬆Max</button>`;
+                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${q}" data-price="${finalUnitPrice.toFixed(4)}">${q}</button>`
+            ).join('') + `<button class="qty-btn" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${buyMaxQty}" data-price="${finalUnitPrice.toFixed(4)}">⬆Max (${buyMaxQty})</button>`;
 
             buyHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''}">
                 <div class="res-info">${res.icon} ${res.name} (${Math.floor(qty)}) ${statusBadge}${seasonTag}${trendTag}</div>
@@ -2109,8 +2109,8 @@ window.UI = (function () {
 
             const sellMaxQty = qty;
             const sellQtyBtns = [1, 5, 10, 25].map(q =>
-                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-qty="${q}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${q}" data-price="${finalSellPrice.toFixed(4)}">${q}</button>`
-            ).join('') + `<button class="qty-btn" data-qty="max" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${sellMaxQty}" data-price="${finalSellPrice.toFixed(4)}">⬆Max</button>`;
+                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${q}" data-price="${finalSellPrice.toFixed(4)}">${q}</button>`
+            ).join('') + `<button class="qty-btn" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${sellMaxQty}" data-price="${finalSellPrice.toFixed(4)}">⬆Max (${sellMaxQty})</button>`;
 
             sellHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''} ${isBanned ? 'banned-item' : ''} ${isRestricted && !hasLicense ? 'restricted-item' : ''}">
                 <div class="res-info">${res.icon} ${res.name} ${qtyLabel} ${statusBadge}</div>

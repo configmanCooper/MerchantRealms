@@ -1014,6 +1014,18 @@
                 warExhaustion: 0,           // 0-100 scale, accumulates during war, recovers during peace
                 healthPolicies: [],         // active health/quarantine policies
                 _activeVotes: [],           // Noble Council pending votes
+                // Cultural preferences
+                musicalPreference: (function() {
+                    if (militarism === 'warlike' || militarism === 'aggressive') return 'drum';
+                    if (culture === 'mercantile') return 'lute';
+                    if (culture === 'maritime' || culture === 'seafaring') return 'hurdy_gurdy';
+                    if (tradition === 'traditional') return 'harp';
+                    return rng.pick(['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy']);
+                })(),
+                _musicalPrefShiftDay: 0,
+                fashionPreference: rng.pick(['military_chic', 'court_elegance', 'rustic', 'exotic']),
+                _fashionShiftDay: 0,
+                _fashionShiftInterval: rng.randInt(60, 120),
             });
             // Bug 5: store starting gold for crisis detection
             kingdoms[kingdoms.length - 1]._startingGold = kingdoms[kingdoms.length - 1].gold;
@@ -11112,6 +11124,20 @@
             // Festival afterglow: +2/day for 15 days after festival
             if (town._festivalDay && (world.day - town._festivalDay) < 15) {
                 happinessDelta += 2.0;
+            }
+
+            // Tavern musician entertainment bonus: +1 per musician, max +4
+            if (town.buildings) {
+                var _tavernMusicians = 0;
+                for (var _tbi = 0; _tbi < town.buildings.length; _tbi++) {
+                    var _tbld = town.buildings[_tbi];
+                    if (_tbld.type === 'tavern' && _tbld._hiredMusicians) {
+                        _tavernMusicians += _tbld._hiredMusicians;
+                    }
+                }
+                if (_tavernMusicians > 0) {
+                    happinessDelta += Math.min(4, _tavernMusicians);
+                }
             }
 
             // Revolt success happiness boost: +30 for 30 days, +15 for 31-90 days
@@ -21247,7 +21273,7 @@
             // Kingdom
             if (!buyer) {
                 var kingdom = findKingdom(town.kingdomId);
-                if (kingdom && (kingdom.treasury || 0) >= bld.salePrice && rng.chance(Math.min(0.7, 0.2 * dealBonus))) {
+                if (kingdom && (kingdom.gold || 0) >= bld.salePrice && rng.chance(Math.min(0.7, 0.2 * dealBonus))) {
                     buyer = kingdom;
                     buyerType = 'kingdom';
                 }
@@ -21277,7 +21303,7 @@
             }
 
             if (buyerType === 'kingdom') {
-                buyer.treasury -= salePrice;
+                buyer.gold = (buyer.gold || 0) - salePrice;
             } else {
                 buyer.gold = (buyer.gold || 0) - salePrice;
             }
@@ -22292,6 +22318,70 @@
                 }
             }
         }
+
+        // ── Kingdom Fashion Preference Shifts ──
+        for (var _fki = 0; _fki < world.kingdoms.length; _fki++) {
+            var _fk = world.kingdoms[_fki];
+            // Initialize if missing
+            if (!_fk.fashionPreference) _fk.fashionPreference = world.rng.pick(['military_chic', 'court_elegance', 'rustic', 'exotic']);
+            if (!_fk._fashionShiftInterval) _fk._fashionShiftInterval = world.rng.randInt(60, 120);
+            if (!_fk._fashionShiftDay) _fk._fashionShiftDay = world.day + _fk._fashionShiftInterval;
+            if (!_fk.musicalPreference) _fk.musicalPreference = world.rng.pick(['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy']);
+
+            if (world.day >= _fk._fashionShiftDay) {
+                var _oldFashion = _fk.fashionPreference;
+                var _fashionOptions = ['military_chic', 'court_elegance', 'rustic', 'exotic'].filter(function(f) { return f !== _oldFashion; });
+                // Bias toward personality-appropriate styles
+                var _kp = _fk.kingPersonality || {};
+                if ((_kp.militarism === 'warlike' || _kp.militarism === 'aggressive') && world.rng.chance(0.4)) {
+                    _fk.fashionPreference = 'military_chic';
+                } else if ((_kp.generosity === 'generous' || _kp.tradition === 'traditional') && world.rng.chance(0.3)) {
+                    _fk.fashionPreference = 'court_elegance';
+                } else {
+                    _fk.fashionPreference = world.rng.pick(_fashionOptions);
+                }
+                _fk._fashionShiftDay = world.day + world.rng.randInt(60, 120);
+
+                var _fashionName = (typeof FASHION_STYLES !== 'undefined' && FASHION_STYLES[_fk.fashionPreference]) ? FASHION_STYLES[_fk.fashionPreference].name : _fk.fashionPreference;
+                logEvent('👗 Fashion shifts in ' + _fk.name + '! The new trend is ' + _fashionName + '.', {
+                    type: 'fashion_shift', kingdomId: _fk.id,
+                    cause: 'Cultural tastes are changing in ' + _fk.name + '.',
+                    effects: ['Demand for ' + _fashionName + ' goods increases', 'Savvy merchants can profit from the shift']
+                });
+            }
+
+            // Apply fashion demand bonus to kingdom towns (additive, not multiplicative, to prevent runaway)
+            if (typeof FASHION_STYLES !== 'undefined' && _fk.fashionPreference && FASHION_STYLES[_fk.fashionPreference]) {
+                var _style = FASHION_STYLES[_fk.fashionPreference];
+                for (var _fti = 0; _fti < world.towns.length; _fti++) {
+                    var _ft = world.towns[_fti];
+                    if (_ft.kingdomId !== _fk.id || !_ft.market || !_ft.market.demand) continue;
+                    for (var _fgi = 0; _fgi < _style.goods.length; _fgi++) {
+                        var _fg = _style.goods[_fgi];
+                        var _baseDemand = _ft.market.demand[_fg] || 0;
+                        if (_baseDemand > 0) {
+                            // Add a flat bonus of 50-100% of base demand (once per tick, not compounding)
+                            var _fashionBoost = Math.ceil(_baseDemand * _style.demandBonus);
+                            _ft.market.demand[_fg] = Math.min(_baseDemand + _fashionBoost, _baseDemand * 3);
+                        }
+                    }
+                }
+            }
+
+            // Apply musical preference: preferred instruments get slight demand boost (capped)
+            if (_fk.musicalPreference) {
+                for (var _mti = 0; _mti < world.towns.length; _mti++) {
+                    var _mt = world.towns[_mti];
+                    if (_mt.kingdomId !== _fk.id || !_mt.market || !_mt.market.demand) continue;
+                    var _prefInst = _fk.musicalPreference;
+                    var _instDemand = _mt.market.demand[_prefInst] || 0;
+                    if (_instDemand > 0) {
+                        var _instBoost = Math.ceil(_instDemand * 0.5);
+                        _mt.market.demand[_prefInst] = Math.min(_instDemand + _instBoost, _instDemand * 3);
+                    }
+                }
+            }
+        }
     }
 
     // ========================================================
@@ -23071,7 +23161,7 @@
             // Kingdom
             if (!buyer) {
                 var kingdom = findKingdom(town.kingdomId);
-                if (kingdom && (kingdom.treasury || 0) >= bld.salePrice && rng.chance(Math.min(0.7, 0.2 * dealBonus))) {
+                if (kingdom && (kingdom.gold || 0) >= bld.salePrice && rng.chance(Math.min(0.7, 0.2 * dealBonus))) {
                     buyer = kingdom;
                     buyerType = 'kingdom';
                 }
@@ -23101,7 +23191,7 @@
             }
 
             if (buyerType === 'kingdom') {
-                buyer.treasury -= salePrice;
+                buyer.gold = (buyer.gold || 0) - salePrice;
             } else {
                 buyer.gold = (buyer.gold || 0) - salePrice;
             }
@@ -23868,8 +23958,23 @@
                 _playerActionsToday: 0,
                 _playerActionDay: 0,
                 _kingHosted: pf._kingHosted,
-                _maxActionsPerDay: pf._maxActionsPerDay || 5
+                _maxActionsPerDay: pf._maxActionsPerDay || 5,
+                _hiredMusicians: [],
+                _musicianBonus: 0
             };
+            // Hire musicians for the feast (up to 20)
+            var _feastMusicians = hireMusiciansForEvent(k.id, pf.townId, 20);
+            k._activeFeast._hiredMusicians = _feastMusicians;
+            // Every 2 musicians gives a slight bonus
+            k._activeFeast._musicianBonus = Math.floor(_feastMusicians.length / 2);
+            if (_feastMusicians.length > 0) {
+                // Check for kingdom's preferred instrument
+                var _prefInstCount = 0;
+                for (var _fmi = 0; _fmi < _feastMusicians.length; _fmi++) {
+                    if (_feastMusicians[_fmi].instrument === k.musicalPreference) _prefInstCount++;
+                }
+                if (_prefInstCount > 0) k._activeFeast._musicianBonus += Math.floor(_prefInstCount / 2);
+            }
             // King always attends their own feast
             try {
                 var _pfPlayerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
@@ -23880,7 +23985,8 @@
             } catch(e) {}
 
             var isPlayerK2 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
-            logEvent('🎪 The Royal Feast in ' + (pf.townName || k.name) + ' has begun! ' + arrivedNobles.length + ' nobles in attendance.', {
+            var _musicMsg = _feastMusicians.length > 0 ? ' ' + _feastMusicians.length + ' musicians perform.' : '';
+            logEvent('🎪 The Royal Feast in ' + (pf.townName || k.name) + ' has begun! ' + arrivedNobles.length + ' nobles in attendance.' + _musicMsg, {
                 type: 'feast_started', kingdomId: k.id, townId: pf.townId
             }, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
             k._pendingFeast = null;
@@ -25637,11 +25743,13 @@
             case 1: { // Gossip Spreads
                 var target = rng.pick(townPeople);
                 if (target) {
+                    if (!target.reputation || typeof target.reputation !== 'object') target.reputation = {};
+                    var _gossipKid = town.kingdomId || '';
                     if (rng.chance(0.5)) {
-                        target.reputation = Math.min(100, (target.reputation || 50) + 2);
+                        target.reputation[_gossipKid] = Math.min(100, (target.reputation[_gossipKid] || 50) + 2);
                         festival.events.push('Gossip: Good word about ' + (target.firstName || 'someone') + ' spreads at the festival.');
                     } else {
-                        target.reputation = Math.max(0, (target.reputation || 50) - 2);
+                        target.reputation[_gossipKid] = Math.max(0, (target.reputation[_gossipKid] || 50) - 2);
                         festival.events.push('Gossip: Bad rumors about ' + (target.firstName || 'someone') + ' circulate at the festival.');
                     }
                 }
@@ -25656,7 +25764,9 @@
                     if (rng.chance(0.2)) {
                         var catcher = rng.pick(townPeople);
                         if (catcher && catcher.id !== victim.id) {
-                            catcher.reputation = Math.min(100, (catcher.reputation || 50) + 1);
+                            if (!catcher.reputation || typeof catcher.reputation !== 'object') catcher.reputation = {};
+                            var _catchKid = town.kingdomId || '';
+                            catcher.reputation[_catchKid] = Math.min(100, (catcher.reputation[_catchKid] || 50) + 1);
                             festival.events.push((catcher.firstName || 'A vigilant citizen') + ' caught the pickpocket!');
                         }
                     }
@@ -25680,7 +25790,9 @@
                 } else if (ems.length > 0) {
                     var em = rng.pick(ems);
                     var repShift = rng.randInt(-2, 2);
-                    em.reputation = Math.max(0, Math.min(100, (em.reputation || 50) + repShift));
+                    if (!em.reputation || typeof em.reputation !== 'object') em.reputation = {};
+                    var _emKid = town.kingdomId || '';
+                    em.reputation[_emKid] = Math.max(0, Math.min(100, (em.reputation[_emKid] || 50) + repShift));
                     festival.events.push('Rumor Mill: Talk about ' + (em.firstName || 'a merchant') + ' at the festival.');
                 }
                 break;
@@ -26017,8 +26129,25 @@
             events: [],
             _playerActionsToday: 0,
             _playerActionDay: 0,
-            _maxActionsPerDay: 5
+            _maxActionsPerDay: 5,
+            _hiredMusicians: [],
+            _musicianBonus: 0
         };
+        // Hire musicians for the festival (up to 10 for small, 20 for large)
+        var _festivalMaxMusicians = type === 'large' ? 20 : 10;
+        var _festMusicians = hireMusiciansForEvent(k.id, townId, _festivalMaxMusicians);
+        festival._hiredMusicians = _festMusicians;
+        festival._musicianBonus = Math.floor(_festMusicians.length / 2);
+        // Preferred instrument bonus
+        if (k.musicalPreference && _festMusicians.length > 0) {
+            var _fpCount = 0;
+            for (var _fpi = 0; _fpi < _festMusicians.length; _fpi++) {
+                if (_festMusicians[_fpi].instrument === k.musicalPreference) _fpCount++;
+            }
+            if (_fpCount > 0) festival._musicianBonus += Math.floor(_fpCount / 2);
+        }
+        // Apply musician bonus to happiness
+        festival.happinessBoost += festival._musicianBonus;
         k._activeFestivals.push(festival);
         town._lastFestivalDay = day;
 
@@ -26026,7 +26155,8 @@
         town.happiness = Math.min(100, (town.happiness || 50) + festival.happinessBoost * 0.5);
 
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
-        logEvent('🎉 A ' + type + ' festival has been declared in ' + (town.name || townId) + '! The people rejoice!', {
+        var _festMusicMsg = _festMusicians.length > 0 ? ' ' + _festMusicians.length + ' musicians entertain the crowds!' : '';
+        logEvent('🎉 A ' + type + ' festival has been declared in ' + (town.name || townId) + '! The people rejoice!' + _festMusicMsg, {
             type: 'festival_started', kingdomId: k.id, townId: townId, festivalType: type
         }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
 
@@ -27330,6 +27460,211 @@
     }
 
     // ========================================================
+    // §19a TRAVELING MUSICIANS & FEAST/FESTIVAL MUSICIANS
+    // ========================================================
+
+    /**
+     * Tick traveling musicians: some NPCs become musicians, travel between towns,
+     * perform at taverns for tips, buy instruments, and can be hired for events.
+     */
+    function tickTravelingMusicians() {
+        if (!world || !world.people) return;
+        if (world.day % 5 !== 0) return; // every 5 days for performance
+        var rng = world.rng;
+        var YOUNG_MUSICIAN_AGE = 16;
+        var INSTRUMENT_IDS_LOCAL = ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy'];
+
+        // Count existing musicians
+        var musicianCount = 0;
+        for (var i = 0; i < world.people.length; i++) {
+            if (world.people[i].alive && world.people[i]._isMusician) musicianCount++;
+        }
+
+        // Convert some low-rank NPCs with high social to musicians (target ~1% of population)
+        var targetMusicians = Math.max(5, Math.floor(world.people.filter(function(p) { return p.alive; }).length * 0.01));
+        if (musicianCount < targetMusicians) {
+            var candidates = world.people.filter(function(p) {
+                return p.alive && !p._isMusician && !p.isEliteMerchant && !p.isKing && !p.isNoble &&
+                    p.age >= YOUNG_MUSICIAN_AGE && p.age <= 50 &&
+                    (p.occupation === 'laborer' || p.occupation === 'none' || p.occupation === 'merchant') &&
+                    (!p.socialRank || Object.values(p.socialRank).every(function(r) { return r < 4; }));
+            });
+            // Pick candidates with high social personality
+            for (var ci = 0; ci < candidates.length && musicianCount < targetMusicians; ci++) {
+                var cand = candidates[ci];
+                var socialScore = (cand.personality && cand.personality.social) ? cand.personality.social : 30;
+                if (socialScore < 50 && !rng.chance(0.05)) continue;
+                if (socialScore >= 50 && rng.chance(0.3)) {
+                    cand._isMusician = true;
+                    cand._musicianSkill = rng.randInt(5, 40);
+                    cand._musicianInstrument = null;
+                    cand._musicianTips = 0;
+                    cand._lastPerformDay = 0;
+                    musicianCount++;
+                }
+            }
+        }
+
+        // Tick each musician
+        for (var mi = 0; mi < world.people.length; mi++) {
+            var m = world.people[mi];
+            if (!m.alive || !m._isMusician) continue;
+            var town = findTown(m.townId);
+            if (!town) continue;
+
+            // Buy an instrument if don't have one
+            if (!m._musicianInstrument && town.market && town.market.supply) {
+                for (var ii = 0; ii < INSTRUMENT_IDS_LOCAL.length; ii++) {
+                    var instId = INSTRUMENT_IDS_LOCAL[ii];
+                    if ((town.market.supply[instId] || 0) > 0) {
+                        var instPrice = (town.market.prices && town.market.prices[instId]) || 20;
+                        if (m.gold >= instPrice) {
+                            m.gold -= instPrice;
+                            town.market.supply[instId]--;
+                            m._musicianInstrument = instId;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Perform at tavern for tips
+            if (m._musicianInstrument && town.buildings) {
+                var tavern = null;
+                for (var ti = 0; ti < town.buildings.length; ti++) {
+                    if (town.buildings[ti].type === 'tavern') { tavern = town.buildings[ti]; break; }
+                }
+                if (tavern) {
+                    var skillTier = m._musicianSkill >= 76 ? 3.0 : m._musicianSkill >= 51 ? 2.0 : m._musicianSkill >= 26 ? 1.5 : 1.0;
+                    var baseTips = Math.floor(3 * skillTier);
+                    // Preferred instrument bonus
+                    var kingdom = findKingdom(town.kingdomId);
+                    if (kingdom && kingdom.musicalPreference === m._musicianInstrument) {
+                        baseTips = Math.floor(baseTips * 1.5);
+                    }
+                    m.gold += baseTips;
+                    m._musicianTips += baseTips;
+                    m._lastPerformDay = world.day;
+                    // Skill gain (diminishing returns)
+                    if (m._musicianSkill < 100) {
+                        m._musicianSkill = Math.min(100, m._musicianSkill + Math.max(0.2, (100 - m._musicianSkill) * 0.02));
+                    }
+                    // Track musician at tavern for happiness bonus
+                    if (!tavern._hiredMusicians) tavern._hiredMusicians = 0;
+                    tavern._hiredMusicians = Math.min(4, (tavern._hiredMusicians || 0));
+                    // Count actual performing musicians at this tavern today
+                    if (!tavern._performingMusiciansToday) tavern._performingMusiciansToday = 0;
+                    tavern._performingMusiciansToday++;
+                    tavern._hiredMusicians = Math.min(4, tavern._performingMusiciansToday);
+                }
+            }
+
+            // Travel to new town periodically (every 15-30 days)
+            if (!m._nextTravelDay) m._nextTravelDay = world.day + rng.randInt(15, 30);
+            if (world.day >= m._nextTravelDay) {
+                m._nextTravelDay = world.day + rng.randInt(15, 30);
+                // Pick a connected town or random town
+                var destTowns = world.towns.filter(function(t) {
+                    return t.id !== m.townId && !t.abandoned && !t.destroyed && t.population > 20;
+                });
+                if (destTowns.length > 0) {
+                    // Prefer towns with taverns and feasts/festivals
+                    var scoredDests = destTowns.map(function(t) {
+                        var score = t.prosperity || 50;
+                        if (t.buildings) {
+                            for (var bi = 0; bi < t.buildings.length; bi++) {
+                                if (t.buildings[bi].type === 'tavern') score += 20;
+                            }
+                        }
+                        // Check for active feasts/festivals in this kingdom
+                        var k = findKingdom(t.kingdomId);
+                        if (k && k._activeFeast && k._activeFeast.townId === t.id) score += 50;
+                        if (k && k._activeFestivals) {
+                            for (var fi = 0; fi < k._activeFestivals.length; fi++) {
+                                if (k._activeFestivals[fi].townId === t.id) score += 40;
+                            }
+                        }
+                        return { town: t, score: score };
+                    });
+                    scoredDests.sort(function(a, b) { return b.score - a.score; });
+                    var dest = scoredDests.length > 3 ? scoredDests[rng.randInt(0, 2)].town : scoredDests[0].town;
+                    if (town.population > 0) town.population--;
+                    m.townId = dest.id;
+                    m.kingdomId = dest.kingdomId;
+                    dest.population++;
+                    moveYoungChildrenWithParent(m, dest.id, dest.kingdomId);
+                }
+            }
+        }
+
+        // Reset tavern performing musician counts for next tick
+        for (var twi = 0; twi < world.towns.length; twi++) {
+            var tw = world.towns[twi];
+            if (!tw.buildings) continue;
+            for (var tbi = 0; tbi < tw.buildings.length; tbi++) {
+                if (tw.buildings[tbi].type === 'tavern') {
+                    tw.buildings[tbi]._performingMusiciansToday = 0;
+                }
+            }
+        }
+    }
+
+    /**
+     * When a feast or festival is being prepared, the king hires musicians.
+     * Musicians are NPCs with _isMusician=true in the feast town or nearby.
+     */
+    function hireMusiciansForEvent(kingdomId, townId, maxMusicians) {
+        var k = findKingdom(kingdomId);
+        if (!k) return [];
+        var town = findTown(townId);
+        if (!town) return [];
+        maxMusicians = maxMusicians || 20;
+
+        var hiredMusicians = [];
+        var musicianCandidates = world.people.filter(function(p) {
+            return p.alive && p._isMusician && p._musicianInstrument;
+        });
+
+        // Sort by proximity (same town first, then nearby), then by skill
+        musicianCandidates.sort(function(a, b) {
+            var aLocal = a.townId === townId ? 0 : 1;
+            var bLocal = b.townId === townId ? 0 : 1;
+            if (aLocal !== bLocal) return aLocal - bLocal;
+            return (b._musicianSkill || 0) - (a._musicianSkill || 0);
+        });
+
+        for (var i = 0; i < musicianCandidates.length && hiredMusicians.length < maxMusicians; i++) {
+            var musician = musicianCandidates[i];
+            var skillTier = musician._musicianSkill >= 76 ? 'master' : musician._musicianSkill >= 51 ? 'expert' : musician._musicianSkill >= 26 ? 'competent' : 'novice';
+            var hireCost = skillTier === 'master' ? 15 : skillTier === 'expert' ? 10 : skillTier === 'competent' ? 6 : 3;
+
+            if (k.gold >= hireCost) {
+                k.gold -= hireCost;
+                musician.gold += hireCost;
+
+                // Move musician to feast town if not there
+                if (musician.townId !== townId) {
+                    var oldTown = findTown(musician.townId);
+                    if (oldTown && oldTown.population > 0) oldTown.population--;
+                    musician.townId = townId;
+                    musician.kingdomId = town.kingdomId;
+                    town.population++;
+                }
+
+                hiredMusicians.push({
+                    id: musician.id,
+                    name: ((musician.firstName || '') + ' ' + (musician.lastName || '')).trim(),
+                    instrument: musician._musicianInstrument,
+                    skill: musician._musicianSkill || 0,
+                    pay: hireCost,
+                });
+            }
+        }
+
+        return hiredMusicians;
+    }
+
+    // ========================================================
     // §19b CHILD CUSTODY — Young children follow parents
     // ========================================================
 
@@ -28022,6 +28357,9 @@
 
             // Young children (under 12) follow parents
             tickChildCustody();
+
+            // Traveling musicians perform, travel, and get hired
+            tickTravelingMusicians();
 
             // Daily happiness fluctuation (drains + boosts)
             tickHappinessFluctuation();
@@ -28765,6 +29103,7 @@
         tickKingdomFestivals: tickKingdomFestivals,
         doFestivalAction: doFestivalAction,
         startFestival: startFestival,
+        hireMusiciansForEvent: hireMusiciansForEvent,
         tickKingdomCourt: tickKingdomCourt,
         tickNobleConspiracies: tickNobleConspiracies,
         tickNobleInfluence: tickNobleInfluence,
