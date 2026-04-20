@@ -37228,10 +37228,14 @@
             faceType: 0
         };
 
-        // Add to world people
+        // Add to world people and register in person index
         if (world.people) {
             world.people.push(edmund);
             world.people.push(margret);
+        }
+        if (Engine.registerPerson) {
+            Engine.registerPerson(edmund);
+            Engine.registerPerson(margret);
         }
 
         // Set up family relationships

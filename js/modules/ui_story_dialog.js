@@ -140,28 +140,31 @@
         // Try pre-generated audio file first
         var dialogKey = _currentDialogKey;
         var lineIdx = _lineIndex;
+        console.log('[TTS] _speakLine: key="' + dialogKey + '" idx=' + lineIdx);
         if (dialogKey) {
             var gender = (typeof Player !== 'undefined' && Player.sex === 'F') ? 'female' : 'male';
-            // Check if line has gender tokens — try gendered filename first
             var hasGender = _hasGenderTokens(_currentDialog.lines[lineIdx]);
-            var audioFile = hasGender
-                ? 'audio/story/' + dialogKey + '_' + lineIdx + '_' + gender + '.mp3'
-                : 'audio/story/' + dialogKey + '_' + lineIdx + '.mp3';
+            var audioFilename = hasGender
+                ? dialogKey + '_' + lineIdx + '_' + gender + '.mp3'
+                : dialogKey + '_' + lineIdx + '.mp3';
+            var audioUrl = 'audio/story/' + audioFilename;
 
-            var audio = new Audio(audioFile);
+            console.log('[TTS] Loading: ' + audioUrl);
+            var audio = new Audio(audioUrl);
             audio.volume = 1.0;
             _currentAudio = audio;
+
             audio.play().then(function() {
-                // Pre-generated audio playing successfully
-            }).catch(function() {
-                // File not found or error — fall back to browser TTS
+                console.log('[TTS] Playing audio OK: ' + audioUrl);
+            }).catch(function(err) {
+                console.warn('[TTS] play() failed for ' + audioUrl + ':', err.message);
                 _currentAudio = null;
                 _fallbackBrowserTTS(text, speakerKey);
             });
             return;
         }
 
-        // No dialog key — use browser TTS directly
+        console.log('[TTS] No dialogKey, using browser TTS');
         _fallbackBrowserTTS(text, speakerKey);
     }
 
@@ -207,7 +210,7 @@
     ];
 
     function _genderReplace(text) {
-        var gender = (typeof Player !== 'undefined' && Player.gender) ? Player.gender : 'male';
+        var gender = (typeof Player !== 'undefined' && Player.sex === 'F') ? 'female' : 'male';
         var idx = gender === 'female' ? 1 : 0;
         var result = text;
         for (var i = 0; i < GENDER_TOKENS.length; i++) {
@@ -426,6 +429,16 @@
         _ensureOverlay();
         _currentDialog = dialogData;
         _currentDialogKey = dialogData._dialogKey || '';
+        // If no _dialogKey, try to find it by reference matching STORY_DIALOGS
+        if (!_currentDialogKey && typeof STORY_DIALOGS !== 'undefined') {
+            var _sdKeys = Object.keys(STORY_DIALOGS);
+            for (var _ski = 0; _ski < _sdKeys.length; _ski++) {
+                if (STORY_DIALOGS[_sdKeys[_ski]] === dialogData) {
+                    _currentDialogKey = _sdKeys[_ski];
+                    break;
+                }
+            }
+        }
         _lineIndex = 0;
 
         // Portrait — try to use actual NPC portrait for dynamic skin tones
@@ -449,16 +462,33 @@
         var displayName = (dialogData.speaker || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
         // For mother/father, append their actual first name
         if (dialogData.speaker === 'mother' || dialogData.speaker === 'father') {
-            var _smNPCs = (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.storyNPCs) ? Player.storyMode.storyNPCs : null;
-            if (_smNPCs) {
-                var _npcId = dialogData.speaker === 'mother' ? _smNPCs.motherId : _smNPCs.fatherId;
-                if (_npcId && typeof Engine !== 'undefined' && Engine.findPerson) {
-                    var _npc = Engine.findPerson(_npcId);
-                    if (_npc && _npc.firstName) {
-                        displayName = displayName + ' - ' + _npc.firstName;
+            var _parentName = null;
+            // Try storyNPCs lookup first
+            try {
+                var _sm = (typeof Player !== 'undefined' && Player.storyMode) ? Player.storyMode : null;
+                if (_sm && _sm.storyNPCs) {
+                    var _pid = dialogData.speaker === 'mother' ? _sm.storyNPCs.motherId : _sm.storyNPCs.fatherId;
+                    if (_pid && typeof Engine !== 'undefined' && Engine.findPerson) {
+                        var _pnpc = Engine.findPerson(_pid);
+                        if (_pnpc && _pnpc.firstName) _parentName = _pnpc.firstName;
                     }
                 }
+            } catch(e) { /* ignore */ }
+            // Fallback: search world people by familyRole
+            if (!_parentName) {
+                try {
+                    var _w = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
+                    if (_w && _w.people) {
+                        for (var _pi = 0; _pi < _w.people.length; _pi++) {
+                            if (_w.people[_pi].familyRole === dialogData.speaker && _w.people[_pi].isStoryNPC) {
+                                _parentName = _w.people[_pi].firstName;
+                                break;
+                            }
+                        }
+                    }
+                } catch(e) { /* ignore */ }
             }
+            if (_parentName) displayName = displayName + ' - ' + _parentName;
         }
         speakerEl.textContent = displayName;
         speakerEl.style.color = SPEAKER_COLORS[dialogData.speaker] || '#e8dcc8';
