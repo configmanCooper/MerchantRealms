@@ -10672,8 +10672,7 @@ window.UI = (function () {
             var result = Player.buyLand(Player.townId, false);
             toast(result.message, result.success ? 'success' : 'error');
             if (result.success) {
-                var town = Engine.findTown(Player.townId);
-                if (town) UI.showTownDetail(town);
+                openHousingDialog();
                 update();
             }
         }
@@ -10684,8 +10683,7 @@ window.UI = (function () {
         var result = Player.buyLand(Player.townId, true);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            var town = Engine.findTown(Player.townId);
-            if (town) UI.showTownDetail(town);
+            openHousingDialog();
             update();
         }
     }
@@ -10695,8 +10693,7 @@ window.UI = (function () {
         var result = Player.buyLand(Player.townId, false);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            var town = Engine.findTown(Player.townId);
-            if (town) UI.showTownDetail(town);
+            openHousingDialog();
             update();
         }
     }

@@ -618,7 +618,7 @@ var StoryMode = (function () {
         if (!ch) { return; }
 
         // Special action types that re-evaluate custom objectives
-        if (actionType === 'buy_land') {
+        if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building') {
             for (var li = 0; li < ch.objectives.length; li++) {
                 var lobj = ch.objectives[li];
                 if (lobj.done || lobj.type !== 'custom' || !lobj.fn) continue;
@@ -894,7 +894,8 @@ var StoryMode = (function () {
     _hooks._checkRested = function () {
         // Check if player has rested (energy > 80) while owning housing
         if (typeof Player !== 'undefined') {
-            var hasHousing = Player.housing && Player.housing.length > 0;
+            var houses = Player.houses || [];
+            var hasHousing = houses.length > 0;
             var rested = Player.energy >= 80;
             return hasHousing && rested;
         }
