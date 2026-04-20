@@ -601,6 +601,21 @@ var StoryMode = (function () {
         var ch = _currentChapterDef();
         if (!ch) { return; }
 
+        // Special action types that re-evaluate custom objectives
+        if (actionType === 'buy_land') {
+            for (var li = 0; li < ch.objectives.length; li++) {
+                var lobj = ch.objectives[li];
+                if (lobj.done || lobj.type !== 'custom' || !lobj.fn) continue;
+                if (lobj.after && !_storyState.objectives[lobj.after]) continue;
+                if (_hooks[lobj.fn] && _hooks[lobj.fn]()) {
+                    _markDone(lobj.id);
+                    _toast('Objective complete: ' + lobj.desc);
+                    _log('Objective complete: ' + lobj.desc);
+                }
+            }
+            return;
+        }
+
         for (var i = 0; i < ch.objectives.length; i++) {
             var obj = ch.objectives[i];
             if (obj.done) { continue; }
@@ -690,20 +705,6 @@ var StoryMode = (function () {
 
                 case 'rest':
                     matched = true;
-                    break;
-
-                case 'buy_land':
-                    // Re-evaluate custom objectives that check land ownership
-                    for (var li = 0; li < ch.objectives.length; li++) {
-                        var lobj = ch.objectives[li];
-                        if (lobj.done || lobj.type !== 'custom' || !lobj.fn) continue;
-                        if (lobj.after && !_storyState.objectives[lobj.after]) continue;
-                        if (_hooks[lobj.fn] && _hooks[lobj.fn]()) {
-                            _markDone(lobj.id);
-                            _toast('Objective complete: ' + lobj.desc);
-                            _log('Objective complete: ' + lobj.desc);
-                        }
-                    }
                     break;
 
                 default:
