@@ -384,7 +384,9 @@ var StoryMode = (function () {
         if (!key) { return; }
         if (typeof STORY_DIALOGS !== 'undefined' && STORY_DIALOGS[key]) {
             if (typeof UI !== 'undefined' && UI.showStoryDialog) {
-                UI.showStoryDialog(STORY_DIALOGS[key]);
+                var dialogData = STORY_DIALOGS[key];
+                dialogData._dialogKey = key;
+                UI.showStoryDialog(dialogData);
             }
         }
         if (_storyState.dialogsSeen.indexOf(key) === -1) {

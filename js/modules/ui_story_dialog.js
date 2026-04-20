@@ -31,6 +31,7 @@
 
     var _overlay = null;         // root DOM element
     var _currentDialog = null;   // active dialogData
+    var _currentDialogKey = '';  // key into STORY_DIALOGS for audio lookup
     var _lineIndex = 0;          // current line in lines[]
     var _typeTimer = null;       // setInterval id for typewriter
     var _charIndex = 0;          // chars revealed so far
@@ -38,6 +39,7 @@
     var _typing = false;         // true while typewriter running
     var _dialogQueue = [];       // queued dialogData objects
     var _keyHandler = null;      // bound keydown listener
+    var _currentAudio = null;    // current Audio element for pre-generated speech
 
     // ── TTS Voice System ──────────────────────────────────────
     var _ttsEnabled = true;      // on by default
@@ -132,8 +134,48 @@
     }
 
     function _speakLine(text, speakerKey) {
-        if (!_ttsEnabled || !_ttsReady || typeof speechSynthesis === 'undefined') return;
-        speechSynthesis.cancel(); // stop any previous speech
+        if (!_ttsEnabled) return;
+        _stopSpeech();
+
+        // Try pre-generated audio file first
+        var dialogKey = _currentDialogKey;
+        var lineIdx = _lineIndex;
+        if (dialogKey) {
+            var gender = (typeof Player !== 'undefined' && Player.sex === 'F') ? 'female' : 'male';
+            // Check if line has gender tokens — try gendered filename first
+            var hasGender = _hasGenderTokens(_currentDialog.lines[lineIdx]);
+            var audioFile = hasGender
+                ? 'audio/story/' + dialogKey + '_' + lineIdx + '_' + gender + '.mp3'
+                : 'audio/story/' + dialogKey + '_' + lineIdx + '.mp3';
+
+            var audio = new Audio(audioFile);
+            audio.volume = 1.0;
+            _currentAudio = audio;
+            audio.play().then(function() {
+                // Pre-generated audio playing successfully
+            }).catch(function() {
+                // File not found or error — fall back to browser TTS
+                _currentAudio = null;
+                _fallbackBrowserTTS(text, speakerKey);
+            });
+            return;
+        }
+
+        // No dialog key — use browser TTS directly
+        _fallbackBrowserTTS(text, speakerKey);
+    }
+
+    function _hasGenderTokens(text) {
+        if (!text) return false;
+        for (var i = 0; i < GENDER_TOKENS.length; i++) {
+            if (text.indexOf('{' + GENDER_TOKENS[i][0] + '|' + GENDER_TOKENS[i][1] + '}') !== -1) return true;
+        }
+        return false;
+    }
+
+    function _fallbackBrowserTTS(text, speakerKey) {
+        if (!_ttsReady || typeof speechSynthesis === 'undefined') return;
+        speechSynthesis.cancel();
         var profile = VOICE_PROFILES[speakerKey] || (speakerKey && speakerKey.indexOf('lady') === 0 ? DEFAULT_FEMALE : DEFAULT_MALE);
         var utterance = new SpeechSynthesisUtterance(text);
         utterance.voice = profile.preferFemale ? _ttsFemaleVoice : _ttsMaleVoice;
@@ -144,6 +186,11 @@
     }
 
     function _stopSpeech() {
+        if (_currentAudio) {
+            _currentAudio.pause();
+            _currentAudio.currentTime = 0;
+            _currentAudio = null;
+        }
         if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     }
 
@@ -378,6 +425,7 @@
     function _beginDialog(dialogData) {
         _ensureOverlay();
         _currentDialog = dialogData;
+        _currentDialogKey = dialogData._dialogKey || '';
         _lineIndex = 0;
 
         // Portrait — try to use actual NPC portrait for dynamic skin tones
@@ -444,6 +492,7 @@
         if (_typeTimer) { clearInterval(_typeTimer); _typeTimer = null; }
         _typing = false;
         _currentDialog = null;
+        _currentDialogKey = '';
         _lineIndex = 0;
         _stopSpeech();
 
