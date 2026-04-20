@@ -31,7 +31,6 @@
 
     var _overlay = null;         // root DOM element
     var _currentDialog = null;   // active dialogData
-    var _currentDialogKey = '';  // key into STORY_DIALOGS for audio lookup
     var _lineIndex = 0;          // current line in lines[]
     var _typeTimer = null;       // setInterval id for typewriter
     var _charIndex = 0;          // chars revealed so far
@@ -39,7 +38,6 @@
     var _typing = false;         // true while typewriter running
     var _dialogQueue = [];       // queued dialogData objects
     var _keyHandler = null;      // bound keydown listener
-    var _currentAudio = null;    // current Audio element for pre-generated speech
 
     // ── TTS Voice System ──────────────────────────────────────
     var _ttsEnabled = true;      // on by default
@@ -134,57 +132,9 @@
     }
 
     function _speakLine(text, speakerKey) {
-        if (!_ttsEnabled) return;
+        if (!_ttsEnabled || !_ttsReady || typeof speechSynthesis === 'undefined') return;
         _stopSpeech();
 
-        // Try pre-generated audio file first
-        var dialogKey = _currentDialogKey;
-        var lineIdx = _lineIndex;
-        if (dialogKey) {
-            var gender = (typeof Player !== 'undefined' && Player.sex === 'F') ? 'female' : 'male';
-            var hasGender = _hasGenderTokens(_currentDialog.lines[lineIdx]);
-            var audioBase = hasGender
-                ? dialogKey + '_' + lineIdx + '_' + gender
-                : dialogKey + '_' + lineIdx;
-
-            // Try WAV first (Piper TTS), then MP3 (Edge TTS fallback)
-            var audioUrl = 'audio/story/' + audioBase + '.wav';
-            var audio = new Audio(audioUrl);
-            audio.volume = 1.0;
-            _currentAudio = audio;
-
-            audio.play().then(function() {
-                // Playing pre-generated audio
-            }).catch(function() {
-                // WAV failed, try MP3
-                var mp3Url = 'audio/story/' + audioBase + '.mp3';
-                var audio2 = new Audio(mp3Url);
-                audio2.volume = 1.0;
-                _currentAudio = audio2;
-                audio2.play().then(function() {
-                    // Playing MP3 fallback
-                }).catch(function() {
-                    _currentAudio = null;
-                    _fallbackBrowserTTS(text, speakerKey);
-                });
-            });
-            return;
-        }
-
-        _fallbackBrowserTTS(text, speakerKey);
-    }
-
-    function _hasGenderTokens(text) {
-        if (!text) return false;
-        for (var i = 0; i < GENDER_TOKENS.length; i++) {
-            if (text.indexOf('{' + GENDER_TOKENS[i][0] + '|' + GENDER_TOKENS[i][1] + '}') !== -1) return true;
-        }
-        return false;
-    }
-
-    function _fallbackBrowserTTS(text, speakerKey) {
-        if (!_ttsReady || typeof speechSynthesis === 'undefined') return;
-        speechSynthesis.cancel();
         var profile = VOICE_PROFILES[speakerKey] || (speakerKey && speakerKey.indexOf('lady') === 0 ? DEFAULT_FEMALE : DEFAULT_MALE);
         var utterance = new SpeechSynthesisUtterance(text);
         utterance.voice = profile.preferFemale ? _ttsFemaleVoice : _ttsMaleVoice;
@@ -195,11 +145,6 @@
     }
 
     function _stopSpeech() {
-        if (_currentAudio) {
-            _currentAudio.pause();
-            _currentAudio.currentTime = 0;
-            _currentAudio = null;
-        }
         if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     }
 
@@ -434,17 +379,6 @@
     function _beginDialog(dialogData) {
         _ensureOverlay();
         _currentDialog = dialogData;
-        _currentDialogKey = dialogData._dialogKey || '';
-        // If no _dialogKey, try to find it by reference matching STORY_DIALOGS
-        if (!_currentDialogKey && typeof STORY_DIALOGS !== 'undefined') {
-            var _sdKeys = Object.keys(STORY_DIALOGS);
-            for (var _ski = 0; _ski < _sdKeys.length; _ski++) {
-                if (STORY_DIALOGS[_sdKeys[_ski]] === dialogData) {
-                    _currentDialogKey = _sdKeys[_ski];
-                    break;
-                }
-            }
-        }
         _lineIndex = 0;
 
         // Portrait — try to use actual NPC portrait for dynamic skin tones
@@ -528,7 +462,6 @@
         if (_typeTimer) { clearInterval(_typeTimer); _typeTimer = null; }
         _typing = false;
         _currentDialog = null;
-        _currentDialogKey = '';
         _lineIndex = 0;
         _stopSpeech();
 
