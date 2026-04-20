@@ -357,16 +357,14 @@
         '\u{1F468}\u200D\u{1F9B1}',     // 👨‍🦱 curly
         '\u{1F468}\u200D\u{1F9B0}',     // 👨‍🦰 red hair
         '\u{1F468}\u200D\u{1F9B3}',     // 👨‍🦳 white/gray hair
-        '\u{1F468}\u200D\u{1F9B2}',     // 👨‍🦲 bald
-        '\u{1F9D1}\u200D\u2642\uFE0F'   // 🧑‍♂️ person (Asian-style on many platforms)
+        '\u{1F468}\u200D\u{1F9B2}'      // 👨‍🦲 bald
     ];
     var PORTRAIT_FACES_F = [
         '\u{1F469}',      // 👩 woman
         '\u{1F471}\u200D\u2640\uFE0F',  // 👱‍♀️ blond woman
         '\u{1F469}\u200D\u{1F9B1}',     // 👩‍🦱 curly
         '\u{1F469}\u200D\u{1F9B0}',     // 👩‍🦰 red hair
-        '\u{1F469}\u200D\u{1F9B3}',     // 👩‍🦳 white/silver hair
-        '\u{1F9D1}\u200D\u2640\uFE0F'   // 🧑‍♀️ person (Asian-style on many platforms)
+        '\u{1F469}\u200D\u{1F9B3}'      // 👩‍🦳 white/silver hair
     ];
     var SKIN_TONES = [
         '',               // default yellow
