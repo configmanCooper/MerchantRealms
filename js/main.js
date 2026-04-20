@@ -683,11 +683,13 @@ window.Game = (function () {
                 ferrowdale.buildings = ferrowdale.buildings || [];
                 ferrowdale.buildings.push({ type: 'iron_mine', level: 1, ownerId: null, builtDay: -1000, condition: 'used', lastRepairDay: 0 });
             }
-            // Ensure iron deposit
-            if (!ferrowdale.deposits) ferrowdale.deposits = [];
-            var hasIronDeposit = ferrowdale.deposits.some(function(d) { return d.type === 'iron' || d.resource === 'iron_ore'; });
-            if (!hasIronDeposit) {
-                ferrowdale.deposits.push({ type: 'iron', resource: 'iron_ore', quality: 70, remaining: 10000 });
+            // Ensure iron deposit (naturalDeposits is what the engine uses for mining)
+            if (!ferrowdale.naturalDeposits) ferrowdale.naturalDeposits = {};
+            if (!ferrowdale.naturalDeposits.iron_ore || ferrowdale.naturalDeposits.iron_ore < 5000) {
+                ferrowdale.naturalDeposits.iron_ore = 10000;
+            }
+            if (!ferrowdale.naturalDeposits.stone) {
+                ferrowdale.naturalDeposits.stone = 5000;
             }
 
             // Ferrowdale: high demand for tools, low supply
@@ -2905,7 +2907,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.76.0',
+                gameVersion: 'v0.76.1',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

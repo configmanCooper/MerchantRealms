@@ -3043,6 +3043,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var result = Engine.doCourtAction(kId, d.id);
         if (result && result.success) {
             UI.toast(result.message, 'success');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_court', { kingdomId: kId });
+            }
         } else {
             UI.toast(result ? result.message : 'Failed.', 'warning');
         }

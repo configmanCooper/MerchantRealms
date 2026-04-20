@@ -91,7 +91,7 @@ var StoryMode = (function () {
                 { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false, after: 'ch3_rest_first' },
                 { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false, after: 'ch3_arrive_ferrowdale' }
             ],
-            endDialog: null,
+            endDialog: 'ch3_complete',
             unlockButtons: ['world'],
             onStart: '_onChapter3Start',
             onComplete: null
@@ -365,6 +365,19 @@ var StoryMode = (function () {
             }
         }
         _refreshTracker();
+
+        // Auto-trigger follow-up dialogs when certain objectives complete
+        var _followUpDialogs = {
+            'ch12_attend_festival': 'ch12_lord_calder_meet',
+            'ch14_reach_burgher':   'ch14_calder_capital',
+            'ch17a_trade_route':    'ch17a_rask_meeting',
+            'ch17a_rask':           'ch17a_diplomatic_progress',
+            'ch17b_outpost':        'ch17b_battle_victory',
+            'ch18_arrive_ashford':  'ch18_father_freed'
+        };
+        if (_followUpDialogs[objId]) {
+            _showDialog(_followUpDialogs[objId]);
+        }
     }
 
     /** Get the chapter definition for the current chapter index. */
@@ -394,6 +407,19 @@ var StoryMode = (function () {
         }
         if (_storyState.dialogsSeen.indexOf(key) === -1) {
             _storyState.dialogsSeen.push(key);
+            // Auto-set story flags when specific dialogs are seen
+            var _dialogFlagMap = {
+                'ch12_lord_calder_meet':       'metLordCalder',
+                'ch14_calder_capital':         'metLordCalderCapital',
+                'ch17a_rask_meeting':          'convincedRask',
+                'ch17a_diplomatic_progress':   'diplomaticVictory',
+                'ch17b_battle_victory':        'battleWon',
+                'ch18_father_freed':           'talkedToEdmund',
+                'ch19_ceremony_start':         'ceremonyAttended'
+            };
+            if (_dialogFlagMap[key]) {
+                _storyState.flags[_dialogFlagMap[key]] = true;
+            }
             // Re-evaluate custom objectives that may depend on dialog being seen
             _reEvalCustomObjectives();
         }
@@ -636,10 +662,13 @@ var StoryMode = (function () {
         if (!ch) { return; }
 
         // Special action types that re-evaluate custom objectives
-        if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building') {
+        if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building' || actionType === 'attend_festival') {
+            if (actionType === 'attend_festival') {
+                _storyState.flags.festivalAttended = true;
+            }
             _reEvalCustomObjectives();
-            // buy_land and rest have no typed objectives — done here
-            if (actionType === 'buy_land' || actionType === 'rest') return;
+            // buy_land, rest, and attend_festival have no typed objectives — done here
+            if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'attend_festival') return;
             // own_building falls through to also match typed objectives below
         }
 
@@ -776,16 +805,6 @@ var StoryMode = (function () {
     };
 
     // ── Ch 3: The Delivery ──
-    _hooks._checkRestedForTravel = function () {
-        if (typeof Player !== 'undefined') {
-            var maxE = Player.maxEnergy || 100;
-            // Use 95% threshold — passive energy drain (0.25/subtick) makes
-            // exact equality impossible after rest completes.
-            return Player.energy >= maxE * 0.95;
-        }
-        return false;
-    };
-
     _hooks._onChapter3Start = function () {
         // Father gives tools to deliver to Ferrowdale
         if (typeof Player !== 'undefined' && Player.modifyInventory) {
@@ -1106,6 +1125,7 @@ var StoryMode = (function () {
         var ch = CHAPTERS[17]; // ch17
         if (ch && ch.branches && ch.branches[pathName]) {
             ch.objectives = _cloneObjectives(ch.branches[pathName]);
+            ch.endDialog = (pathName === 'diplomatic') ? 'ch17a_complete' : 'ch17b_complete';
             if (pathName === 'military') {
                 _unlockButtons(['world']); // outposts
             }

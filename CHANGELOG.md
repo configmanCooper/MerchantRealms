@@ -4,6 +4,21 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.76.1] - Story Mode Audit & Bug Fixes
+
+### Fixed — Story Mode Critical Bugs
+- **Ch3 endDialog null**: Missing completion dialog now shows 'ch3_complete' after chapter objectives
+- **Ch17 endDialog null**: Branch-specific end dialogs (ch17a_complete/ch17b_complete) now set dynamically in `setWarPath()`
+- **8 custom objective flags never set**: Added dialog-to-flag map — viewing specific mid-chapter dialogs now auto-sets story flags (metLordCalder, metLordCalderCapital, convincedRask, diplomaticVictory, battleWon, talkedToEdmund, ceremonyAttended)
+- **festivalAttended flag**: Festival UI action now fires `StoryMode.onPlayerAction('attend_festival')` to set flag
+- **attend_court action missing**: Court action UI now fires `StoryMode.onPlayerAction('attend_court')` for ch16 objective
+- **Ferrowdale iron deposit**: Fixed to use `naturalDeposits.iron_ore` instead of non-existent `deposits` array; also added stone deposit
+
+### Added — Story Mode Improvements
+- Follow-up dialog triggers: completing prerequisites auto-shows narrative dialogs (e.g., attend festival → meet Lord Calder)
+- New `ch14_calder_capital` dialog for meeting Lord Calder after reaching Burgher rank
+- Dead code `_checkRestedForTravel` removed
+
 ## [0.76.0] - Revolt Outreach, Military Supply Chains & Balance
 
 ### Added — Revolt-Noble Outreach System

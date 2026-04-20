@@ -4183,6 +4183,9 @@ function clickTown(townId) {
         var result = Engine.doFestivalAction(d.kingdom, d.festival, d.actionid);
         if (result && result.success) {
             UI.toast(result.message, 'success');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_festival', { kingdomId: d.kingdom });
+            }
         } else {
             UI.toast((result && result.message) || 'Action failed.', 'warning');
         }

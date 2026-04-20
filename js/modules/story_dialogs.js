@@ -511,6 +511,15 @@
             ]
         },
 
+        ch14_calder_capital: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "A Burgher at last! Well done. Now come — we must speak at the capital.",
+                "The crown needs to hear what you have to say, and I will make sure they listen."
+            ]
+        },
+
         ch14_complete: {
             speaker: "lord_calder",
             portrait: "lord_calder",
