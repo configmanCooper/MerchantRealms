@@ -1135,8 +1135,7 @@ var StoryMode = (function () {
         '#btnGuilds':    { tab: 'character', label: 'Guilds' },
         '#btnKingdoms':  { tab: 'world',     label: 'Kingdoms' },
         '#btnMap':       { tab: 'world',     label: 'Map' },
-        '#btnTreatment': { tab: 'character', label: 'Treatment' },
-        '#btnRest':      { tab: 'character', label: 'Rest' }
+        '#btnTreatment': { tab: 'character', label: 'Treatment' }
     };
 
     // Map custom hook functions to button hints
