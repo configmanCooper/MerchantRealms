@@ -38,6 +38,7 @@
     var _typing = false;         // true while typewriter running
     var _dialogQueue = [];       // queued dialogData objects
     var _keyHandler = null;      // bound keydown listener
+    var _currentAudio = null;    // currently playing Audio element (pre-gen MP3)
 
     // ── TTS Voice System ──────────────────────────────────────
     var _ttsEnabled = true;      // on by default
@@ -132,8 +133,42 @@
     }
 
     function _speakLine(text, speakerKey) {
-        if (!_ttsEnabled || !_ttsReady || typeof speechSynthesis === 'undefined') return;
+        if (!_ttsEnabled) return;
         _stopSpeech();
+
+        // Try pre-generated Kokoro MP3 first
+        var dialogKey = _currentDialog ? _currentDialog._dialogKey : null;
+        if (dialogKey) {
+            var hasGender = /\{[^|]+\|[^}]+\}/.test(_currentDialog.lines[_lineIndex] || '');
+            var suffix = '';
+            if (hasGender) {
+                var sex = (typeof Player !== 'undefined' && Player.sex === 'F') ? 'female' : 'male';
+                suffix = '_' + sex;
+            }
+            var audioFile = 'audio/story/' + dialogKey + '_' + _lineIndex + suffix + '.mp3';
+            var audio = new Audio(audioFile);
+            audio.volume = 0.9;
+            var playPromise = audio.play();
+            if (playPromise && playPromise.then) {
+                playPromise.then(function() {
+                    _currentAudio = audio;
+                }).catch(function() {
+                    // MP3 not found or playback failed — fall back to browser TTS
+                    _currentAudio = null;
+                    _browserTTS(text, speakerKey);
+                });
+            } else {
+                _currentAudio = audio;
+            }
+            return;
+        }
+
+        // No dialog key — use browser TTS directly
+        _browserTTS(text, speakerKey);
+    }
+
+    function _browserTTS(text, speakerKey) {
+        if (!_ttsReady || typeof speechSynthesis === 'undefined') return;
 
         var profile = VOICE_PROFILES[speakerKey] || (speakerKey && speakerKey.indexOf('lady') === 0 ? DEFAULT_FEMALE : DEFAULT_MALE);
         var utterance = new SpeechSynthesisUtterance(text);
@@ -145,6 +180,11 @@
     }
 
     function _stopSpeech() {
+        if (_currentAudio) {
+            _currentAudio.pause();
+            _currentAudio.currentTime = 0;
+            _currentAudio = null;
+        }
         if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     }
 
