@@ -879,13 +879,16 @@ window.Game = (function () {
                     if (typeof Player !== 'undefined' && Player.init) {
                         const world = Engine.getWorld ? Engine.getWorld() : {};
                         console.log('[StoryMode] Calling Player.init with town:', storyTownId, 'config:', startConfig.id);
+                        // Stash appearance so initStoryModeStart() can use it for parents
+                        Player.skinTone = playerSkinTone;
+                        Player.faceType = playerFaceType;
                         Player.init(world, playerFirstName, playerLastName, playerSex, storyTownId, startConfig);
-                        // Set portrait (story mode will use parent-compatible tones)
+                        // Set portrait after init (init may regenerate default portrait)
                         if (playerPortrait) {
                             Player.portrait = playerPortrait;
-                            Player.skinTone = playerSkinTone;
-                            Player.faceType = playerFaceType;
                         }
+                        Player.skinTone = playerSkinTone;
+                        Player.faceType = playerFaceType;
                         console.log('[StoryMode] Player.init complete. townId:', Player.townId, 'gold:', Player.gold, 'name:', Player.fullName);
                         delete window._selectedStartConfig;
                     }
