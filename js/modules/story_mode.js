@@ -89,8 +89,7 @@ var StoryMode = (function () {
             objectives: [
                 { id: 'ch3_rest_first',        type: 'rest',        desc: 'Rest before your journey', done: false },
                 { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false, after: 'ch3_rest_first' },
-                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false, after: 'ch3_arrive_ferrowdale' },
-                { id: 'ch3_return_ashford',    type: 'arrive_town', town: 'Ashford',    desc: 'Return to Ashford',                          done: false, after: 'ch3_sell_tools' }
+                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false, after: 'ch3_arrive_ferrowdale' }
             ],
             endDialog: null,
             unlockButtons: ['world'],
@@ -103,9 +102,10 @@ var StoryMode = (function () {
             id: 'ch4', title: 'The Art of the Deal', act: 1,
             startDialog: 'ch4_harlan_teaches',
             objectives: [
-                { id: 'ch4_buy_goods',  type: 'buy_item',  item: '*', qty: 1,  desc: 'Buy cheap goods in Ferrowdale',       done: false },
-                { id: 'ch4_sell_goods', type: 'sell_item',  item: '*',          desc: 'Sell goods for profit in Ashford',    done: false },
-                { id: 'ch4_own_gold',   type: 'own_gold',   amount: 30,         desc: 'Accumulate 30 gold',                 done: false }
+                { id: 'ch4_buy_goods',      type: 'buy_item',    item: '*', qty: 1,  desc: 'Buy cheap goods in Ferrowdale',       done: false },
+                { id: 'ch4_return_ashford', type: 'arrive_town', town: 'Ashford',     desc: 'Return to Ashford',                  done: false, after: 'ch4_buy_goods' },
+                { id: 'ch4_sell_goods',     type: 'sell_item',   item: '*',           desc: 'Sell goods for profit in Ashford',    done: false, after: 'ch4_return_ashford' },
+                { id: 'ch4_own_gold',       type: 'own_gold',    amount: 30,          desc: 'Accumulate 30 gold',                 done: false }
             ],
             endDialog: 'ch4_complete',
             unlockButtons: [],
@@ -711,11 +711,6 @@ var StoryMode = (function () {
                     _showDialog('ch3_harlan_intro', function() {
                         _showDialog('ch3_harlan_meet');
                     });
-                }
-
-                // Special: Ch3 return to Ashford
-                if (obj.id === 'ch3_return_ashford') {
-                    // No special action — father takes gold after ch4 instead
                 }
             }
         }

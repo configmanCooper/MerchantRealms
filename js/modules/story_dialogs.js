@@ -106,8 +106,7 @@
             portrait: "harlan",
             lines: [
                 "{son|daughter} of Edmund, is it? I'd know that craftsmanship anywhere. Fine tools, these — your father's best work.",
-                "Sell them here at the market — you'll get a good price. Tools are always in demand in Ferrowdale.",
-                "Once you've sold them, head back to Ashford and give your father his share. Safe travels, {boy|girl}."
+                "Sell them here at the market — you'll get a good price. Tools are always in demand in Ferrowdale."
             ]
         },
 
