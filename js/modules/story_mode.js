@@ -61,7 +61,7 @@ var StoryMode = (function () {
             startDialog: 'ch1_birthday_mother',
             objectives: [
                 { id: 'ch1_buy_food',  type: 'buy_item',  item: 'category:food',  qty: 2, desc: 'Buy 2 food from the market', done: false },
-                { id: 'ch1_buy_drink', type: 'buy_item',  item: 'water', qty: 1, desc: 'Buy a drink',                done: false }
+                { id: 'ch1_buy_drink', type: 'buy_item',  item: 'category:beverage', qty: 1, desc: 'Buy a drink',                done: false }
             ],
             endDialog: 'ch1_complete',
             unlockButtons: ['actions'],
