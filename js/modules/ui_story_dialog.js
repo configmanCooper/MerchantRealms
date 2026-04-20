@@ -39,6 +39,93 @@
     var _dialogQueue = [];       // queued dialogData objects
     var _keyHandler = null;      // bound keydown listener
 
+    // ── TTS Voice System ──────────────────────────────────────
+    var _ttsEnabled = true;      // on by default
+    var _ttsReady = false;
+    var _ttsVoices = [];
+    var _ttsMaleVoice = null;
+    var _ttsFemaleVoice = null;
+
+    // Voice profiles: { rate, pitch, volume, preferFemale }
+    var VOICE_PROFILES = {
+        father:              { rate: 0.85, pitch: 0.7,  volume: 1.0, preferFemale: false },
+        father_edmund:       { rate: 0.85, pitch: 0.7,  volume: 1.0, preferFemale: false },
+        mother:              { rate: 1.0,  pitch: 1.35, volume: 1.0, preferFemale: true  },
+        mother_margret:      { rate: 1.0,  pitch: 1.35, volume: 1.0, preferFemale: true  },
+        harlan:              { rate: 1.05, pitch: 0.95, volume: 1.0, preferFemale: false },
+        narrator:            { rate: 0.92, pitch: 1.0,  volume: 0.9, preferFemale: false },
+        king_aldric:         { rate: 0.8,  pitch: 0.8,  volume: 1.0, preferFemale: false },
+        lord_calder:         { rate: 0.85, pitch: 0.85, volume: 1.0, preferFemale: false },
+        lady_elowen:         { rate: 0.9,  pitch: 1.25, volume: 1.0, preferFemale: true  },
+        seraphine:           { rate: 0.88, pitch: 1.4,  volume: 0.95, preferFemale: true },
+        general_theron:      { rate: 0.88, pitch: 0.7,  volume: 1.0, preferFemale: false },
+        count_rask:          { rate: 1.0,  pitch: 0.82, volume: 1.0, preferFemale: false },
+        korvathi_commander:  { rate: 0.78, pitch: 0.6,  volume: 1.0, preferFemale: false },
+        guild_keeper:        { rate: 1.0,  pitch: 0.95, volume: 1.0, preferFemale: false },
+        town_crier:          { rate: 1.1,  pitch: 1.1,  volume: 1.0, preferFemale: false }
+    };
+
+    // Default profiles for unknown speakers
+    var DEFAULT_MALE   = { rate: 0.95, pitch: 0.9,  volume: 1.0, preferFemale: false };
+    var DEFAULT_FEMALE = { rate: 0.95, pitch: 1.2,  volume: 1.0, preferFemale: true  };
+
+    function _initTTS() {
+        if (typeof speechSynthesis === 'undefined') return;
+        function _pickVoices() {
+            _ttsVoices = speechSynthesis.getVoices();
+            if (!_ttsVoices || _ttsVoices.length === 0) return;
+            _ttsReady = true;
+            // Try to pick a good English male and female voice
+            var enVoices = _ttsVoices.filter(function(v) { return v.lang && v.lang.indexOf('en') === 0; });
+            if (enVoices.length === 0) enVoices = _ttsVoices;
+
+            // Heuristics: look for voice names containing gender hints
+            var maleHints = ['male', 'david', 'mark', 'james', 'george', 'daniel', 'guy'];
+            var femaleHints = ['female', 'zira', 'hazel', 'susan', 'samantha', 'karen', 'fiona', 'victoria', 'jenny'];
+
+            for (var i = 0; i < enVoices.length; i++) {
+                var n = enVoices[i].name.toLowerCase();
+                if (!_ttsMaleVoice) {
+                    for (var m = 0; m < maleHints.length; m++) {
+                        if (n.indexOf(maleHints[m]) !== -1) { _ttsMaleVoice = enVoices[i]; break; }
+                    }
+                }
+                if (!_ttsFemaleVoice) {
+                    for (var f = 0; f < femaleHints.length; f++) {
+                        if (n.indexOf(femaleHints[f]) !== -1) { _ttsFemaleVoice = enVoices[i]; break; }
+                    }
+                }
+            }
+            // Fallback: just use first two different voices, or same one
+            if (!_ttsMaleVoice) _ttsMaleVoice = enVoices[0];
+            if (!_ttsFemaleVoice) _ttsFemaleVoice = enVoices.length > 1 ? enVoices[1] : enVoices[0];
+        }
+        // Voices may load asynchronously
+        _pickVoices();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = _pickVoices;
+        }
+    }
+
+    function _speakLine(text, speakerKey) {
+        if (!_ttsEnabled || !_ttsReady || typeof speechSynthesis === 'undefined') return;
+        speechSynthesis.cancel(); // stop any previous speech
+        var profile = VOICE_PROFILES[speakerKey] || (speakerKey && speakerKey.indexOf('lady') === 0 ? DEFAULT_FEMALE : DEFAULT_MALE);
+        var utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = profile.preferFemale ? _ttsFemaleVoice : _ttsMaleVoice;
+        utterance.rate = profile.rate || 1.0;
+        utterance.pitch = profile.pitch || 1.0;
+        utterance.volume = profile.volume || 1.0;
+        speechSynthesis.speak(utterance);
+    }
+
+    function _stopSpeech() {
+        if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    }
+
+    // Initialize TTS on load
+    _initTTS();
+
     // ── Gender-aware text helper ───────────────────────────────
 
     var GENDER_TOKENS = [
@@ -110,7 +197,15 @@
         _overlay.innerHTML =
             '<div id="sdPortraitBox"></div>' +
             '<div id="sdContent">' +
-                '<div id="sdSpeaker"></div>' +
+                '<div style="display:flex;align-items:center;gap:8px;">' +
+                    '<div id="sdSpeaker" style="flex:1;"></div>' +
+                    '<button id="sdTtsToggle" title="Toggle voice narration" style="' +
+                        'background:none;border:1px solid rgba(180,160,120,0.4);border-radius:4px;' +
+                        'color:#e8dcc8;font-size:1.1rem;cursor:pointer;padding:2px 6px;opacity:0.7;' +
+                        'transition:opacity 0.2s;" >' +
+                        (_ttsEnabled ? '\u{1F50A}' : '\u{1F507}') +
+                    '</button>' +
+                '</div>' +
                 '<div id="sdText"></div>' +
                 '<div id="sdChoices"></div>' +
                 '<button id="sdContinue" class="btn-medieval">Continue ▸</button>' +
@@ -122,6 +217,7 @@
             // Ignore clicks on choice buttons or the continue button
             if (e.target.classList.contains('sd-choice-btn')) return;
             if (e.target.id === 'sdContinue') return;
+            if (e.target.id === 'sdTtsToggle') return;
             if (_typing) {
                 _skipTypewriter();
             }
@@ -130,6 +226,15 @@
         document.getElementById('sdContinue').addEventListener('click', function(e) {
             e.stopPropagation();
             _advance();
+        });
+
+        // TTS toggle
+        document.getElementById('sdTtsToggle').addEventListener('click', function(e) {
+            e.stopPropagation();
+            _ttsEnabled = !_ttsEnabled;
+            this.textContent = _ttsEnabled ? '\u{1F50A}' : '\u{1F507}';
+            this.title = _ttsEnabled ? 'Voice narration ON — click to mute' : 'Voice narration OFF — click to unmute';
+            if (!_ttsEnabled) _stopSpeech();
         });
     }
 
@@ -240,6 +345,8 @@
         var line = _currentDialog.lines[idx];
         var text = _genderReplace(line);
         _startTypewriter(text);
+        // Speak the line with character voice
+        _speakLine(text, _currentDialog.speaker || _currentDialog.portrait);
     }
 
     // ── Show / Begin ───────────────────────────────────────────
@@ -303,6 +410,7 @@
         _typing = false;
         _currentDialog = null;
         _lineIndex = 0;
+        _stopSpeech();
 
         if (_keyHandler) {
             document.removeEventListener('keydown', _keyHandler);
@@ -353,5 +461,11 @@
     UI.closeStoryDialog  = closeStoryDialog;
     UI.isStoryDialogOpen = isStoryDialogOpen;
     UI.queueStoryDialog  = queueStoryDialog;
+    UI.setStoryTTS       = function(enabled) {
+        _ttsEnabled = !!enabled;
+        var btn = document.getElementById('sdTtsToggle');
+        if (btn) btn.textContent = _ttsEnabled ? '\u{1F50A}' : '\u{1F507}';
+        if (!_ttsEnabled) _stopSpeech();
+    };
 
 })();

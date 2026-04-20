@@ -513,8 +513,8 @@ window.Game = (function () {
 
         // Skin tone modifiers
         var SKIN_TONES_LOCAL = ['', '\u{1F3FB}', '\u{1F3FC}', '\u{1F3FD}', '\u{1F3FE}', '\u{1F3FF}'];
-        var FACES_M = ['\u{1F468}', '\u{1F9D4}', '\u{1F471}\u200D\u2642\uFE0F', '\u{1F468}\u200D\u{1F9B1}', '\u{1F468}\u200D\u{1F9B0}'];
-        var FACES_F = ['\u{1F469}', '\u{1F471}\u200D\u2640\uFE0F', '\u{1F469}\u200D\u{1F9B1}', '\u{1F469}\u200D\u{1F9B0}', '\u{1F9D5}'];
+        var FACES_M = ['\u{1F468}', '\u{1F9D4}', '\u{1F471}\u200D\u2642\uFE0F', '\u{1F468}\u200D\u{1F9B1}', '\u{1F468}\u200D\u{1F9B0}', '\u{1F468}\u200D\u{1F9B3}', '\u{1F468}\u200D\u{1F9B2}'];
+        var FACES_F = ['\u{1F469}', '\u{1F471}\u200D\u2640\uFE0F', '\u{1F469}\u200D\u{1F9B1}', '\u{1F469}\u200D\u{1F9B0}', '\u{1F469}\u200D\u{1F9B3}'];
 
         function applyTone(base, tIdx) {
             if (!tIdx || tIdx < 1) return base;
@@ -535,9 +535,12 @@ window.Game = (function () {
             var faces = sex === 'F' ? FACES_F : FACES_M;
             var allowedTones = getAllowedTones();
             gridEl.innerHTML = '';
-            for (var fi = 0; fi < faces.length; fi++) {
-                for (var ti = 0; ti < allowedTones.length; ti++) {
-                    var tone = allowedTones[ti];
+            // Rows = skin tones, columns = hair/face types
+            for (var ti = 0; ti < allowedTones.length; ti++) {
+                var tone = allowedTones[ti];
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;justify-content:center;gap:2px;margin-bottom:2px;';
+                for (var fi = 0; fi < faces.length; fi++) {
                     var emoji = applyTone(faces[fi], tone);
                     var btn = document.createElement('span');
                     btn.textContent = emoji;
@@ -554,8 +557,9 @@ window.Game = (function () {
                         faceTypeInput.value = this.dataset.fi;
                         gridEl.style.display = 'none';
                     });
-                    gridEl.appendChild(btn);
+                    row.appendChild(btn);
                 }
+                gridEl.appendChild(row);
             }
         }
 
