@@ -1112,7 +1112,8 @@ window.UI = (function () {
 
                 // Player name and character info
                 if (el.playerName) {
-                    el.playerName.textContent = Player.fullName || 'Merchant';
+                    var portraitEmoji = Player.portrait || '';
+                    el.playerName.textContent = (portraitEmoji ? portraitEmoji + ' ' : '') + (Player.fullName || 'Merchant');
                 }
                 if (el.playerCharInfo) {
                     const sexIcon = Player.sex === 'F' ? '♀' : '♂';
@@ -4688,10 +4689,14 @@ window.UI = (function () {
 
         const sexIcon = Player.sex === 'F' ? '♀' : '♂';
         let spouseName = 'None';
+        var _spousePortrait = '';
         if (Player.spouseId) {
             try {
                 const spouse = Engine.findPerson(Player.spouseId);
-                if (spouse) spouseName = spouse.firstName + ' ' + spouse.lastName;
+                if (spouse) {
+                    _spousePortrait = (Player.getPersonPortrait) ? Player.getPersonPortrait(spouse) : '';
+                    spouseName = (_spousePortrait ? _spousePortrait + ' ' : '') + spouse.firstName + ' ' + spouse.lastName;
+                }
             } catch (e) { /* no-op */ }
         }
 
@@ -4702,10 +4707,11 @@ window.UI = (function () {
                 try {
                     const child = Engine.findPerson(childId);
                     if (child && child.alive) {
+                        const childPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(child) : '';
                         const childSexIcon = child.sex === 'F' ? '♀' : '♂';
                         const passed = (Player.skillPointsPassedToChild && Player.skillPointsPassedToChild[childId]) || 0;
                         childrenHtml += `<div class="detail-row">
-                            <span class="label">${childSexIcon} ${child.firstName}</span>
+                            <span class="label">${childPortrait || childSexIcon} ${child.firstName}</span>
                             <span class="value">Age ${child.age}${passed > 0 ? ' (📚 ' + passed + '/5 taught)' : ''}</span>
                         </div>`;
                         if (child.age >= 10 && passed < 5 && Player.skillPoints >= 3) {
@@ -4721,8 +4727,12 @@ window.UI = (function () {
         }
         if (!childrenHtml) childrenHtml = '<div class="text-dim">No children</div>';
 
+        var _playerPortrait = Player.portrait || '';
+        var _portraitDisplay = _playerPortrait ? '<span style="font-size:2.5rem;vertical-align:middle;margin-right:8px;">' + _playerPortrait + '</span>' : '';
+
         let html = `<div class="detail-section">
             <h3>Identity</h3>
+            <div style="text-align:center;margin-bottom:8px;">${_portraitDisplay}</div>
             <div class="detail-row"><span class="label">Name</span>
                 <span class="value">${Player.fullName || 'Unknown'} <button data-action="openRenamePlayer" style="cursor:pointer;background:none;border:none;padding:0 2px;font-size:0.85em;opacity:0.6;vertical-align:middle;" title="Change name">✏️</button></span></div>
             <div class="detail-row"><span class="label">Sex</span>

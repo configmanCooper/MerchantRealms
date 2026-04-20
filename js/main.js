@@ -490,6 +490,108 @@ window.Game = (function () {
                 lastNameEl.style.cursor = '';
             }
         }
+
+        // Portrait picker setup
+        _setupPortraitPicker();
+    }
+
+    function _setupPortraitPicker() {
+        var currentEl = document.getElementById('charPortraitCurrent');
+        var gridEl = document.getElementById('charPortraitGrid');
+        var portraitInput = document.getElementById('charPortrait');
+        var skinToneInput = document.getElementById('charSkinTone');
+        var faceTypeInput = document.getElementById('charFaceType');
+        if (!currentEl || !gridEl) return;
+
+        var isStory = window._selectedStartConfig && window._selectedStartConfig.id === 'story_mode';
+        var sexRadios = document.querySelectorAll('input[name="charSex"]');
+
+        function getSex() {
+            var checked = document.querySelector('input[name="charSex"]:checked');
+            return checked ? checked.value : 'M';
+        }
+
+        // Skin tone modifiers
+        var SKIN_TONES_LOCAL = ['', '\u{1F3FB}', '\u{1F3FC}', '\u{1F3FD}', '\u{1F3FE}', '\u{1F3FF}'];
+        var FACES_M = ['\u{1F468}', '\u{1F9D4}', '\u{1F471}\u200D\u2642\uFE0F', '\u{1F468}\u200D\u{1F9B1}', '\u{1F468}\u200D\u{1F9B0}'];
+        var FACES_F = ['\u{1F469}', '\u{1F471}\u200D\u2640\uFE0F', '\u{1F469}\u200D\u{1F9B1}', '\u{1F469}\u200D\u{1F9B0}', '\u{1F9D5}'];
+
+        function applyTone(base, tIdx) {
+            if (!tIdx || tIdx < 1) return base;
+            var cp = Array.from(base);
+            if (cp.length === 1) return cp[0] + SKIN_TONES_LOCAL[tIdx];
+            return cp[0] + SKIN_TONES_LOCAL[tIdx] + cp.slice(1).join('');
+        }
+
+        function getAllowedTones() {
+            if (!isStory) return [0, 1, 2, 3, 4, 5];
+            // Story mode: limit to tones compatible with parents (Edmund=3 medium, Margret=2 medium-light)
+            // Allow tones 1-4 (child could be anything in between the parents' range, plus one step)
+            return [1, 2, 3, 4];
+        }
+
+        function buildGrid() {
+            var sex = getSex();
+            var faces = sex === 'F' ? FACES_F : FACES_M;
+            var allowedTones = getAllowedTones();
+            gridEl.innerHTML = '';
+            for (var fi = 0; fi < faces.length; fi++) {
+                for (var ti = 0; ti < allowedTones.length; ti++) {
+                    var tone = allowedTones[ti];
+                    var emoji = applyTone(faces[fi], tone);
+                    var btn = document.createElement('span');
+                    btn.textContent = emoji;
+                    btn.style.cssText = 'font-size:2rem;cursor:pointer;padding:4px 6px;border:2px solid transparent;border-radius:6px;transition:all 0.15s;display:inline-block;';
+                    btn.dataset.fi = fi;
+                    btn.dataset.ti = tone;
+                    btn.dataset.emoji = emoji;
+                    btn.addEventListener('mouseenter', function() { this.style.borderColor = 'var(--gold)'; this.style.transform = 'scale(1.15)'; });
+                    btn.addEventListener('mouseleave', function() { this.style.borderColor = 'transparent'; this.style.transform = ''; });
+                    btn.addEventListener('click', function() {
+                        currentEl.textContent = this.dataset.emoji;
+                        portraitInput.value = this.dataset.emoji;
+                        skinToneInput.value = this.dataset.ti;
+                        faceTypeInput.value = this.dataset.fi;
+                        gridEl.style.display = 'none';
+                    });
+                    gridEl.appendChild(btn);
+                }
+            }
+        }
+
+        // Random initial portrait
+        function randomize() {
+            var sex = getSex();
+            var faces = sex === 'F' ? FACES_F : FACES_M;
+            var allowedTones = getAllowedTones();
+            var fi = Math.floor(Math.random() * faces.length);
+            var ti = allowedTones[Math.floor(Math.random() * allowedTones.length)];
+            var emoji = applyTone(faces[fi], ti);
+            currentEl.textContent = emoji;
+            portraitInput.value = emoji;
+            skinToneInput.value = ti;
+            faceTypeInput.value = fi;
+        }
+
+        // Toggle grid on click
+        currentEl.onclick = function() {
+            if (gridEl.style.display === 'none' || !gridEl.style.display) {
+                buildGrid();
+                gridEl.style.display = 'flex';
+            } else {
+                gridEl.style.display = 'none';
+            }
+        };
+
+        // Rebuild when sex changes
+        for (var ri = 0; ri < sexRadios.length; ri++) {
+            sexRadios[ri].addEventListener('change', function() {
+                randomize();
+                if (gridEl.style.display === 'flex') buildGrid();
+            });
+        }
+
+        randomize();
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -669,6 +771,13 @@ window.Game = (function () {
             const sexRadio = document.querySelector('input[name="charSex"]:checked');
 
             const playerSex = sexRadio ? sexRadio.value : 'M';
+            // Read portrait selection
+            const portraitInput = document.getElementById('charPortrait');
+            const skinToneInput = document.getElementById('charSkinTone');
+            const faceTypeInput = document.getElementById('charFaceType');
+            const playerPortrait = (portraitInput && portraitInput.value) || null;
+            const playerSkinTone = (skinToneInput && parseInt(skinToneInput.value)) || 0;
+            const playerFaceType = (faceTypeInput && parseInt(faceTypeInput.value)) || 0;
             // If name left blank, pick a random NPC-style name from NAMES pool
             const playerFirstName = (firstNameInput && firstNameInput.value.trim()) ||
                 (typeof NAMES !== 'undefined' ? NAMES[playerSex === 'F' ? 'female' : 'male'][Math.floor(Math.random() * NAMES[playerSex === 'F' ? 'female' : 'male'].length)] : 'Unknown');
@@ -722,6 +831,12 @@ window.Game = (function () {
                         const world = Engine.getWorld ? Engine.getWorld() : {};
                         console.log('[StoryMode] Calling Player.init with town:', storyTownId, 'config:', startConfig.id);
                         Player.init(world, playerFirstName, playerLastName, playerSex, storyTownId, startConfig);
+                        // Set portrait (story mode will use parent-compatible tones)
+                        if (playerPortrait) {
+                            Player.portrait = playerPortrait;
+                            Player.skinTone = playerSkinTone;
+                            Player.faceType = playerFaceType;
+                        }
                         console.log('[StoryMode] Player.init complete. townId:', Player.townId, 'gold:', Player.gold, 'name:', Player.fullName);
                         delete window._selectedStartConfig;
                     }
@@ -769,6 +884,11 @@ window.Game = (function () {
                         const world = Engine.getWorld ? Engine.getWorld() : {};
                         const startConfig = window._selectedStartConfig || CONFIG.GAME_STARTS.find(s => s.id === 'normal') || null;
                         Player.init(world, playerFirstName, playerLastName, playerSex, selectedTownId, startConfig);
+                        if (playerPortrait) {
+                            Player.portrait = playerPortrait;
+                            Player.skinTone = playerSkinTone;
+                            Player.faceType = playerFaceType;
+                        }
                         delete window._selectedStartConfig;
                     }
 

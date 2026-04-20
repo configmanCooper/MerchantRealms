@@ -10,19 +10,21 @@
     // ── Portrait & Color Maps ──────────────────────────────────
 
     var STORY_PORTRAITS = {
-        father_edmund: '\u{1F468}\u200D\u{1F527}', mother_margret: '\u{1F469}\u200D\u{1F373}',
-        harlan: '\u{1F9D4}', lord_calder: '\u{1F934}', seraphine: '\u{1F9D9}\u200D\u2640\uFE0F',
+        father: '\u{1F468}\u{1F3FD}', mother: '\u{1F469}\u{1F3FC}',
+        father_edmund: '\u{1F468}\u{1F3FD}', mother_margret: '\u{1F469}\u{1F3FC}',
+        harlan: '\u{1F9D4}\u{1F3FC}', lord_calder: '\u{1F934}', seraphine: '\u{1F9D9}\u200D\u2640\uFE0F',
         king_aldric: '\u{1F451}', lady_elowen: '\u{1F478}', general_theron: '\u2694\uFE0F',
         count_rask: '\u{1F98A}', korvathi_commander: '\u{1F480}',
-        narrator: '\u{1F4DC}', town_crier: '\u{1F4E2}'
+        narrator: '\u{1F4DC}', town_crier: '\u{1F4E2}', guild_keeper: '\u{1F9D1}\u200D\u{1F4BC}'
     };
 
     var SPEAKER_COLORS = {
+        father: '#d4a843', mother: '#d4a843',
         father_edmund: '#d4a843', mother_margret: '#d4a843',
         harlan: '#5588cc', lord_calder: '#5588cc', seraphine: '#bb88dd',
         king_aldric: '#ffd700', lady_elowen: '#5588cc', general_theron: '#cc6633',
         count_rask: '#cc4444', korvathi_commander: '#cc4444',
-        narrator: '#aaa', town_crier: '#aaa'
+        narrator: '#aaa', town_crier: '#aaa', guild_keeper: '#88aa66'
     };
 
     // ── State ──────────────────────────────────────────────────

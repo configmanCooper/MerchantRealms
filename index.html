@@ -64,6 +64,17 @@
                         </label>
                     </div>
                 </div>
+                <div class="char-form-group">
+                    <label class="char-label">Portrait</label>
+                    <div id="charPortraitPicker" style="text-align:center;">
+                        <div id="charPortraitCurrent" style="font-size:3rem;cursor:pointer;padding:8px;border:2px solid var(--border);border-radius:8px;display:inline-block;background:var(--bg-card);min-width:60px;transition:border-color 0.2s;" title="Click to change portrait">👨</div>
+                        <div id="charPortraitGrid" style="display:none;margin-top:8px;flex-wrap:wrap;gap:4px;justify-content:center;max-width:320px;margin-left:auto;margin-right:auto;"></div>
+                        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">Click to choose your face</div>
+                    </div>
+                    <input type="hidden" id="charPortrait" value="" />
+                    <input type="hidden" id="charSkinTone" value="0" />
+                    <input type="hidden" id="charFaceType" value="0" />
+                </div>
                 <button type="button" id="btnStartAdventure" class="btn-medieval btn-large" style="margin-top:20px;">Start Adventure</button>
                 <button type="button" id="btnBackToMenu" class="btn-medieval" style="display:block;margin:12px auto 0;font-size:0.9rem;padding:6px 18px;opacity:0.85;">← Back</button>
             </form>

@@ -87,7 +87,16 @@
             lines: [
                 "I've finished a set of tools for old Harlan over in Ferrowdale. Plowshares and sickles — the miners and smiths depend on them.",
                 "I need you to deliver them for me. Ferrowdale is a journey to the northeast.",
-                "Traveling between towns is simple — just follow the roads. But keep your wits about you. The world beyond Ashford is bigger than you think."
+                "Sell the tools at the Ferrowdale market — Harlan will pay a fair price. Then bring the coin back to me."
+            ]
+        },
+
+        ch3_harlan_intro: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "In Ferrowdale, you seek out Harlan — an old friend of your father's and a fellow tradesman. He's been buying Edmund's tools for years.",
+                "You find him near the market square, inspecting a cartload of iron ore with a practiced eye."
             ]
         },
 
@@ -96,8 +105,28 @@
             portrait: "harlan",
             lines: [
                 "{son|daughter} of Edmund, is it? I'd know that craftsmanship anywhere. Fine tools, these — your father's best work.",
-                "Here's the payment, as agreed. Count it carefully — a merchant who doesn't count {his|her} coin is a merchant who loses it.",
-                "You've come a long way for a delivery, {boy|girl}. Safe travels back to Ashford."
+                "Sell them here at the market — you'll get a good price. Tools are always in demand in Ferrowdale.",
+                "Once you've sold them, head back to Ashford and give your father his share. Safe travels, {boy|girl}."
+            ]
+        },
+
+        ch3_father_takes_gold: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "You're back! Let me see... aye, that's a fair price Harlan paid.",
+                "I'll take my half — that covers the iron and coal. The rest is yours to keep, {son|daughter}. You've earned it.",
+                "Well done. You've proven you can handle a real delivery. Perhaps there's a merchant in you after all."
+            ]
+        },
+
+        ch3_father_admonish: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Where's the coin? Those tools were worth good gold, and you come back with barely a copper to show for it?",
+                "I don't know what you did with the money, but I'm taking what's left. That iron doesn't pay for itself.",
+                "You'll work an extra shift at the forge — unpaid — to make up for it. Consider it a lesson in responsibility."
             ]
         },
 

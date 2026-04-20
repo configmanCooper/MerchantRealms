@@ -458,7 +458,8 @@
                 var person = Engine.findPerson(m.npcId);
                 if (!person) continue;
                 var rel = (Player.relationships[m.npcId] && Player.relationships[m.npcId].level) || 0;
-                var roleIcon = m.role === 'father' ? '👨' : (m.role === 'mother' ? '👩' : (m.role === 'brother' ? '👦' : (m.role === 'sister' ? '👧' : (m.role === 'spouse' ? '💍' : (m.role === 'son' ? '👦' : (m.role === 'daughter' ? '👧' : '👤'))))));
+                var personPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(person) : '';
+                var roleIcon = personPortrait || (m.role === 'father' ? '👨' : (m.role === 'mother' ? '👩' : (m.role === 'brother' ? '👦' : (m.role === 'sister' ? '👧' : (m.role === 'spouse' ? '💍' : (m.role === 'son' ? '👦' : (m.role === 'daughter' ? '👧' : '👤')))))));
                 var roleLabel = m.role.charAt(0).toUpperCase() + m.role.slice(1);
                 var townObj = Engine.findTown(person.townId);
                 var locationName = townObj ? townObj.name : 'Unknown';

@@ -88,9 +88,10 @@ var StoryMode = (function () {
             startDialog: 'ch3_delivery_father',
             objectives: [
                 { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false },
-                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false }
+                { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false },
+                { id: 'ch3_return_ashford',    type: 'arrive_town', town: 'Ashford',    desc: 'Return to Ashford',                          done: false }
             ],
-            endDialog: 'ch3_complete',
+            endDialog: null,
             unlockButtons: ['world'],
             onStart: '_onChapter3Start',
             onComplete: null
@@ -676,6 +677,16 @@ var StoryMode = (function () {
                 _markDone(obj.id);
                 _toast('Objective complete: ' + obj.desc);
                 _log('Objective complete: ' + obj.desc);
+
+                // Special: Ch3 arrive Ferrowdale — narrator introduces Harlan
+                if (obj.id === 'ch3_arrive_ferrowdale') {
+                    _showDialog('ch3_harlan_intro');
+                }
+
+                // Special: Ch3 return to Ashford — father takes gold
+                if (obj.id === 'ch3_return_ashford') {
+                    _handleCh3Return();
+                }
             }
         }
     }
@@ -704,12 +715,46 @@ var StoryMode = (function () {
 
     // ── Ch 3: The Delivery ──
     _hooks._onChapter3Start = function () {
-        // Father gives tools to deliver to Millhaven
+        // Father gives tools to deliver to Ferrowdale
         if (typeof Player !== 'undefined' && Player.modifyInventory) {
             Player.modifyInventory(Player.state.inventory, 'tools', 5);
             _log('Father hands you 5 sets of tools to deliver to Ferrowdale.');
+            // Track gold before selling so we know how much was earned
+            _storyState.flags.ch3GoldBefore = Player.gold || 0;
         }
     };
+
+    function _handleCh3Return() {
+        // Father takes half the gold earned from selling tools
+        if (typeof Player === 'undefined') return;
+        var goldBefore = _storyState.flags.ch3GoldBefore || 0;
+        var currentGold = Player.gold || 0;
+        var earned = Math.max(0, currentGold - goldBefore);
+        var halfEarned = Math.floor(earned / 2);
+
+        if (halfEarned > 0 && currentGold >= halfEarned) {
+            // Father takes his half, player keeps the rest as reward
+            Player.state.gold -= halfEarned;
+            _showDialog('ch3_father_takes_gold');
+            _log('Father takes ' + halfEarned + 'g — his share. You keep ' + (currentGold - halfEarned) + 'g as a reward.');
+        } else {
+            // Player doesn't have enough gold — father admonishes
+            var took = Math.max(0, currentGold);
+            if (took > 0) Player.state.gold = 0;
+            // Add extra unpaid work shift objective — blocks chapter completion
+            var ch = _currentChapterDef();
+            if (ch) {
+                ch.objectives.push({
+                    id: 'ch3_extra_work', type: 'work_shift',
+                    building: 'blacksmith|smelter|toolsmith',
+                    desc: 'Work an extra shift at the smithy (unpaid)',
+                    done: false
+                });
+            }
+            _showDialog('ch3_father_admonish');
+            _log('Father is disappointed. He takes your remaining ' + took + 'g and demands you work an extra unpaid shift.');
+        }
+    }
 
     // ── Ch 7: War ──
     _hooks._onChapter7Start = function () {

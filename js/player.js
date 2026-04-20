@@ -50,6 +50,9 @@
         lastName: 'Merchant',
         sex: 'M',
         fullName: 'Unknown Merchant',
+        portrait: null,         // emoji face portrait
+        skinTone: 0,            // skin tone index (0-5)
+        faceType: 0,            // face type index
         age: 25,
         alive: true,
         spouseId: null,
@@ -344,6 +347,87 @@
         // Scholar
         scholar: null,              // { active, townsVisited, knowledgeGathered, npcsTaughtBy, bookProgress, totalKnowledge }
     };
+
+    // ── Portrait System ──
+    // Emoji face portraits for all characters. Each person gets a portrait based on sex + skinTone + faceType.
+    var PORTRAIT_FACES_M = [
+        '\u{1F468}',      // 👨 man
+        '\u{1F9D4}',      // 🧔 bearded
+        '\u{1F471}\u200D\u2642\uFE0F',  // 👱‍♂️ blond man
+        '\u{1F468}\u200D\u{1F9B1}',     // 👨‍🦱 curly
+        '\u{1F468}\u200D\u{1F9B0}'      // 👨‍🦰 red hair
+    ];
+    var PORTRAIT_FACES_F = [
+        '\u{1F469}',      // 👩 woman
+        '\u{1F471}\u200D\u2640\uFE0F',  // 👱‍♀️ blond woman
+        '\u{1F469}\u200D\u{1F9B1}',     // 👩‍🦱 curly
+        '\u{1F469}\u200D\u{1F9B0}',     // 👩‍🦰 red hair
+        '\u{1F9D5}'       // 🧕 hijab
+    ];
+    var SKIN_TONES = [
+        '',               // default yellow
+        '\u{1F3FB}',      // 🏻 light
+        '\u{1F3FC}',      // 🏼 medium-light
+        '\u{1F3FD}',      // 🏽 medium
+        '\u{1F3FE}',      // 🏾 medium-dark
+        '\u{1F3FF}'       // 🏿 dark
+    ];
+    var SKIN_TONE_NAMES = ['Default', 'Light', 'Medium-Light', 'Medium', 'Medium-Dark', 'Dark'];
+
+    function _applyPortraitSkinTone(baseFace, toneIdx) {
+        if (!toneIdx || toneIdx < 1 || toneIdx > 5) return baseFace;
+        var tone = SKIN_TONES[toneIdx];
+        // For simple emoji (single codepoint), append tone directly
+        // For ZWJ sequences, insert tone after first codepoint
+        var codepoints = Array.from(baseFace);
+        if (codepoints.length === 1) return codepoints[0] + tone;
+        // Insert after first codepoint (before ZWJ or variation selector)
+        return codepoints[0] + tone + codepoints.slice(1).join('');
+    }
+
+    function generatePortrait(sex, skinTone, faceType) {
+        var faces = sex === 'F' ? PORTRAIT_FACES_F : PORTRAIT_FACES_M;
+        var fIdx = (typeof faceType === 'number') ? (faceType % faces.length) : 0;
+        return _applyPortraitSkinTone(faces[fIdx], skinTone || 0);
+    }
+
+    function generateRandomPortrait(sex, rng) {
+        var faces = sex === 'F' ? PORTRAIT_FACES_F : PORTRAIT_FACES_M;
+        var fIdx = rng ? Math.floor(rng.random() * faces.length) : Math.floor(Math.random() * faces.length);
+        var tIdx = rng ? Math.floor(rng.random() * SKIN_TONES.length) : Math.floor(Math.random() * SKIN_TONES.length);
+        return { portrait: _applyPortraitSkinTone(faces[fIdx], tIdx), skinTone: tIdx, faceType: fIdx };
+    }
+
+    function childSkinTone(parent1Tone, parent2Tone) {
+        // Children get a skin tone between or matching one of the parents
+        var t1 = parent1Tone || 0;
+        var t2 = parent2Tone || 0;
+        if (t1 === t2) return t1;
+        var lo = Math.min(t1, t2);
+        var hi = Math.max(t1, t2);
+        return lo + Math.floor(Math.random() * (hi - lo + 1));
+    }
+
+    function getPersonPortrait(person) {
+        if (!person) return '\u{1F464}';
+        if (person.portrait) return person.portrait;
+        // Generate deterministic portrait from person id hash
+        var hash = 0;
+        var idStr = (person.id || '') + '';
+        for (var ci = 0; ci < idStr.length; ci++) {
+            hash = ((hash << 5) - hash) + idStr.charCodeAt(ci);
+            hash = hash & hash;
+        }
+        hash = Math.abs(hash);
+        var sex = person.sex || 'M';
+        var faces = sex === 'F' ? PORTRAIT_FACES_F : PORTRAIT_FACES_M;
+        var fIdx = hash % faces.length;
+        var tIdx = (hash >> 4) % SKIN_TONES.length;
+        person.portrait = _applyPortraitSkinTone(faces[fIdx], tIdx);
+        person.skinTone = tIdx;
+        person.faceType = fIdx;
+        return person.portrait;
+    }
 
     let _nextCaravanId = 1;
     function caravanUid() { return 'caravan_' + (_nextCaravanId++); }
@@ -13912,6 +13996,14 @@
                     })(),
                 };
 
+                // Assign portrait based on parents' skin tones
+                var _parentTone = player.skinTone || 0;
+                var _spouseTone = (spouse && spouse.skinTone) ? spouse.skinTone : _parentTone;
+                child.skinTone = childSkinTone(_parentTone, _spouseTone);
+                var _childFaces = childSex === 'F' ? PORTRAIT_FACES_F : PORTRAIT_FACES_M;
+                child.faceType = Math.floor(rng.random() * _childFaces.length);
+                child.portrait = generatePortrait(childSex, child.skinTone, child.faceType);
+
                 const w = Engine.getWorld();
                 if (w && w.people) w.people.push(child);
 
@@ -17885,6 +17977,9 @@
         player.lastName = data.lastName || 'Merchant';
         player.sex = data.sex || 'M';
         player.fullName = data.fullName || (player.firstName + ' ' + player.lastName);
+        player.portrait = data.portrait || null;
+        player.skinTone = data.skinTone || 0;
+        player.faceType = data.faceType || 0;
         player.age = data.age != null ? data.age : 18;
         player.maxAge = data.maxAge || null;
         player.maxAgeBonus = data.maxAgeBonus || 0;
@@ -37015,7 +37110,10 @@
             health: 100,
             injuries: [],
             illnesses: [],
-            isStoryNPC: true
+            isStoryNPC: true,
+            portrait: '\u{1F468}\u{1F3FD}',
+            skinTone: 3,
+            faceType: 0
         };
 
         // Create Mother Margret
@@ -37039,7 +37137,10 @@
             health: 100,
             injuries: [],
             illnesses: [],
-            isStoryNPC: true
+            isStoryNPC: true,
+            portrait: '\u{1F469}\u{1F3FC}',
+            skinTone: 2,
+            faceType: 0
         };
 
         // Add to world people
@@ -37655,6 +37756,12 @@
         get lastName() { return player.lastName; },
         get sex() { return player.sex; },
         get fullName() { return player.fullName; },
+        get portrait() { return player.portrait; },
+        set portrait(v) { player.portrait = v; },
+        get skinTone() { return player.skinTone; },
+        set skinTone(v) { player.skinTone = v; },
+        get faceType() { return player.faceType; },
+        set faceType(v) { player.faceType = v; },
         get age() { return player.age; },
         get alive() { return player.alive; },
         get spouseId() { return player.spouseId; },
@@ -38494,6 +38601,16 @@
             }
             return Math.floor(worth);
         },
+
+        // Portrait system
+        getPersonPortrait: getPersonPortrait,
+        generatePortrait: generatePortrait,
+        generateRandomPortrait: generateRandomPortrait,
+        childSkinTone: childSkinTone,
+        PORTRAIT_FACES_M: PORTRAIT_FACES_M,
+        PORTRAIT_FACES_F: PORTRAIT_FACES_F,
+        SKIN_TONES: SKIN_TONES,
+        SKIN_TONE_NAMES: SKIN_TONE_NAMES,
     };
 
     // Bind the forward reference so code above can call Player.xxx() at runtime
