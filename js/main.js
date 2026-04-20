@@ -639,6 +639,10 @@ window.Game = (function () {
 
         // Ensure Ashford has required buildings
         var ashford = valdrenTowns[0];
+
+        // Remove iron deposits from Ashford — iron comes from Korvath (drives ch7-8 plot)
+        if (ashford.naturalDeposits) delete ashford.naturalDeposits.iron_ore;
+
         var requiredBuildings = ['blacksmith', 'bakery', 'clinic'];
         var existingTypes = (ashford.buildings || []).map(function(b) { return b.type || b; });
         for (var i = 0; i < requiredBuildings.length; i++) {
@@ -803,6 +807,82 @@ window.Game = (function () {
                         ]
                     });
                 }
+            }
+        }
+
+        // Connect Ashford to a Korvath border town that supplies iron
+        if (korvath && world) {
+            var korvathTowns = towns.filter(function(t) { return t.kingdomId === korvath.id; });
+            if (korvathTowns.length > 0) {
+                // Pick closest Korvath town to Ashford as the border/iron town
+                var ashfordT = valdrenTowns[0];
+                korvathTowns.sort(function(a, b) {
+                    var da = Math.hypot(a.x - ashfordT.x, a.y - ashfordT.y);
+                    var db = Math.hypot(b.x - ashfordT.x, b.y - ashfordT.y);
+                    return da - db;
+                });
+                var borderTown = korvathTowns[0];
+
+                // Ensure this town has iron deposits
+                if (!borderTown.naturalDeposits) borderTown.naturalDeposits = {};
+                if (!borderTown.naturalDeposits.iron_ore || borderTown.naturalDeposits.iron_ore < 2000) {
+                    borderTown.naturalDeposits.iron_ore = 3000;
+                }
+
+                // Ensure it has iron ore in its market
+                if (!borderTown.market) borderTown.market = { supply: {}, prices: {} };
+                if (!borderTown.market.supply) borderTown.market.supply = {};
+                if (!borderTown.market.prices) borderTown.market.prices = {};
+                borderTown.market.supply['iron_ore'] = 100;
+                borderTown.market.prices['iron_ore'] = 8;
+                borderTown.market.supply['iron_bars'] = 40;
+                borderTown.market.prices['iron_bars'] = 25;
+
+                // Seed Ashford market with Korvathi iron (pre-war supply)
+                if (ashfordT.market && ashfordT.market.supply) {
+                    ashfordT.market.supply['iron_ore'] = 30;
+                    ashfordT.market.prices['iron_ore'] = 14;
+                    ashfordT.market.supply['iron_bars'] = 15;
+                    ashfordT.market.prices['iron_bars'] = 35;
+                }
+
+                // Move border town closer if too far
+                var btDist = Math.hypot(ashfordT.x - borderTown.x, ashfordT.y - borderTown.y);
+                if (btDist > 250) {
+                    var btAngle = Math.atan2(borderTown.y - ashfordT.y, borderTown.x - ashfordT.x);
+                    borderTown.x = Math.round(ashfordT.x + Math.cos(btAngle) * 220);
+                    borderTown.y = Math.round(ashfordT.y + Math.sin(btAngle) * 220);
+                }
+
+                // Ensure a road exists between Ashford and the Korvath border town
+                var _ashId = ashfordT.id;
+                var _btId = borderTown.id;
+                if (world.roads) {
+                    var _hasRoad = world.roads.some(function(r) {
+                        return (r.fromTownId === _ashId && r.toTownId === _btId) ||
+                               (r.fromTownId === _btId && r.toTownId === _ashId);
+                    });
+                    if (!_hasRoad) {
+                        world.roads.push({
+                            fromTownId: _ashId,
+                            toTownId: _btId,
+                            quality: 2,
+                            type: 'land',
+                            safe: true,
+                            hasBridge: false,
+                            bridgeDestroyed: false,
+                            bridgeSegments: [],
+                            bridges: [],
+                            waypoints: [
+                                { x: ashfordT.x, y: ashfordT.y },
+                                { x: (ashfordT.x + borderTown.x) / 2, y: (ashfordT.y + borderTown.y) / 2 },
+                                { x: borderTown.x, y: borderTown.y }
+                            ]
+                        });
+                    }
+                }
+
+                console.log('[StoryMode] Korvath border town: ' + borderTown.name + ' connected to Ashford with iron supply');
             }
         }
     }
