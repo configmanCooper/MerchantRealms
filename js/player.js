@@ -38333,6 +38333,8 @@
         offerNobleLoan,
         getNobleLoans,
         // interactWithNPC, getAvailableInteractions — see js/modules/player_quests.js
+        getInteractionCooldown,
+        calculateInteractionGain,
         canTalkTo,
         getNPCSocialRank,
         getAvailableIntroducers,

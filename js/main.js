@@ -2582,6 +2582,12 @@ window.Game = (function () {
             if (typeof UI !== 'undefined' && UI.closeModal) {
                 try { UI.closeModal(); } catch(e) {}
             }
+            // Close story dialog overlay if open
+            if (typeof UI !== 'undefined' && UI.closeStoryDialog) {
+                try { UI.closeStoryDialog(); } catch(e) {}
+            }
+            // Stop TTS
+            if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 
             // Run save migrations before deserializing
             _migrateSaveData(data);

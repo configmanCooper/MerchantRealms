@@ -140,31 +140,37 @@
         // Try pre-generated audio file first
         var dialogKey = _currentDialogKey;
         var lineIdx = _lineIndex;
-        console.log('[TTS] _speakLine: key="' + dialogKey + '" idx=' + lineIdx);
         if (dialogKey) {
             var gender = (typeof Player !== 'undefined' && Player.sex === 'F') ? 'female' : 'male';
             var hasGender = _hasGenderTokens(_currentDialog.lines[lineIdx]);
-            var audioFilename = hasGender
-                ? dialogKey + '_' + lineIdx + '_' + gender + '.mp3'
-                : dialogKey + '_' + lineIdx + '.mp3';
-            var audioUrl = 'audio/story/' + audioFilename;
+            var audioBase = hasGender
+                ? dialogKey + '_' + lineIdx + '_' + gender
+                : dialogKey + '_' + lineIdx;
 
-            console.log('[TTS] Loading: ' + audioUrl);
+            // Try WAV first (Piper TTS), then MP3 (Edge TTS fallback)
+            var audioUrl = 'audio/story/' + audioBase + '.wav';
             var audio = new Audio(audioUrl);
             audio.volume = 1.0;
             _currentAudio = audio;
 
             audio.play().then(function() {
-                console.log('[TTS] Playing audio OK: ' + audioUrl);
-            }).catch(function(err) {
-                console.warn('[TTS] play() failed for ' + audioUrl + ':', err.message);
-                _currentAudio = null;
-                _fallbackBrowserTTS(text, speakerKey);
+                // Playing pre-generated audio
+            }).catch(function() {
+                // WAV failed, try MP3
+                var mp3Url = 'audio/story/' + audioBase + '.mp3';
+                var audio2 = new Audio(mp3Url);
+                audio2.volume = 1.0;
+                _currentAudio = audio2;
+                audio2.play().then(function() {
+                    // Playing MP3 fallback
+                }).catch(function() {
+                    _currentAudio = null;
+                    _fallbackBrowserTTS(text, speakerKey);
+                });
             });
             return;
         }
 
-        console.log('[TTS] No dialogKey, using browser TTS');
         _fallbackBrowserTTS(text, speakerKey);
     }
 

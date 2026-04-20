@@ -16161,4 +16161,57 @@ window.UI = (function () {
         _toggleLeftDrawer,
         openPlayerInventory,
     };
+
+    // ── Mobile Long-Press Tooltip System ──────────────────────────
+    // Shows title attribute as a tooltip when user long-presses on mobile
+    (function _initMobileLongPress() {
+        var _lpTimer = null;
+        var _lpTooltip = null;
+
+        function _showTooltip(text, x, y) {
+            _hideTooltip();
+            _lpTooltip = document.createElement('div');
+            _lpTooltip.className = 'mobile-tooltip';
+            _lpTooltip.textContent = text;
+            _lpTooltip.style.cssText = 'position:fixed;z-index:100000;background:#2a1f14;color:#e8dcc8;'
+                + 'border:1px solid rgba(196,168,124,0.4);border-radius:6px;padding:8px 12px;'
+                + 'font-size:0.82rem;max-width:260px;line-height:1.4;pointer-events:none;'
+                + 'box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+            document.body.appendChild(_lpTooltip);
+            // Position near touch point
+            var rect = _lpTooltip.getBoundingClientRect();
+            var left = Math.min(x - 10, window.innerWidth - rect.width - 10);
+            var top = y - rect.height - 15;
+            if (top < 5) top = y + 20;
+            _lpTooltip.style.left = Math.max(5, left) + 'px';
+            _lpTooltip.style.top = top + 'px';
+        }
+
+        function _hideTooltip() {
+            if (_lpTooltip && _lpTooltip.parentNode) _lpTooltip.parentNode.removeChild(_lpTooltip);
+            _lpTooltip = null;
+        }
+
+        document.addEventListener('touchstart', function(e) {
+            var el = e.target.closest('[title]');
+            if (!el || !el.title) return;
+            var touch = e.touches[0];
+            var tx = touch.clientX, ty = touch.clientY;
+            var titleText = el.title;
+            _lpTimer = setTimeout(function() {
+                _showTooltip(titleText, tx, ty);
+                // Auto-hide after 4 seconds
+                setTimeout(_hideTooltip, 4000);
+            }, 500);
+        }, { passive: true });
+
+        document.addEventListener('touchend', function() {
+            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+        }, { passive: true });
+
+        document.addEventListener('touchmove', function() {
+            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+            _hideTooltip();
+        }, { passive: true });
+    })();
 })();

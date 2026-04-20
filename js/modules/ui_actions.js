@@ -1907,22 +1907,22 @@ function showPersonDetail(person) {
                 <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
 
             if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('discrete')) {
-            html += `<button class="btn-medieval" data-action="stealFromPerson" data-id="${person.id}" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💰 Steal</button>`;
+            html += `<button class="btn-medieval" data-action="stealFromPerson" data-id="${person.id}" title="Attempt to pickpocket gold from this person. Risk of being caught and reported." style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💰 Steal</button>`;
             }
             if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('silver_tongue_dark') || Player.hasSkill('discrete'))) {
-            html += `<button class="btn-medieval" data-action="spreadRumorsAbout" data-id="${person.id}" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🤫 Rumors</button>`;
+            html += `<button class="btn-medieval" data-action="spreadRumorsAbout" data-id="${person.id}" title="Spread damaging rumors to lower this person's reputation and standing in town." style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🤫 Rumors</button>`;
             }
             if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('shadow_dealings') || Player.hasSkill('silver_tongue_dark'))) {
-            html += `<button class="btn-medieval" data-action="blackmailPerson" data-id="${person.id}" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">📜 Blackmail</button>`;
+            html += `<button class="btn-medieval" data-action="blackmailPerson" data-id="${person.id}" title="Extort gold from this person using their secrets. Higher reward but more dangerous." style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">📜 Blackmail</button>`;
             }
             if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('dark_connections') || Player.hasSkill('assassin'))) {
-            html += `<button class="btn-medieval" data-action="hireAssassinFor" data-id="${person.id}" style="font-size:0.9rem;padding:6px 12px;background:rgba(160,30,30,0.4);border-color:rgba(160,30,30,0.6);color:#f0d0a0;">🗡️ Assassin</button>`;
+            html += `<button class="btn-medieval" data-action="hireAssassinFor" data-id="${person.id}" title="Hire an assassin to eliminate this person. Extremely dangerous if discovered." style="font-size:0.9rem;padding:6px 12px;background:rgba(160,30,30,0.4);border-color:rgba(160,30,30,0.6);color:#f0d0a0;">🗡️ Assassin</button>`;
             }
             if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('poisoner')) {
-            html += `<button class="btn-medieval" data-action="poisonPerson" data-id="${person.id}" style="font-size:0.9rem;padding:6px 12px;background:rgba(100,140,30,0.35);border-color:rgba(100,140,30,0.6);color:#f0d0a0;">☠️ Poison</button>`;
+            html += `<button class="btn-medieval" data-action="poisonPerson" data-id="${person.id}" title="Secretly poison this person, causing illness or death over time." style="font-size:0.9rem;padding:6px 12px;background:rgba(100,140,30,0.35);border-color:rgba(100,140,30,0.6);color:#f0d0a0;">☠️ Poison</button>`;
             }
             if (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('shadow_dealings') || Player.hasSkill('master_forger'))) {
-            html += `<button class="btn-medieval" data-action="framePerson" data-id="${person.id}" style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🎭 Frame</button>`;
+            html += `<button class="btn-medieval" data-action="framePerson" data-id="${person.id}" title="Plant evidence to frame this person for a crime they didn't commit." style="font-size:0.9rem;padding:6px 12px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">🎭 Frame</button>`;
             }
 
             html += `</div>
