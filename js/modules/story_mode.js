@@ -104,8 +104,7 @@ var StoryMode = (function () {
             objectives: [
                 { id: 'ch4_buy_goods',      type: 'buy_item',    item: '*', qty: 1,  desc: 'Buy cheap goods in Ferrowdale',       done: false },
                 { id: 'ch4_return_ashford', type: 'arrive_town', town: 'Ashford',     desc: 'Return to Ashford',                  done: false, after: 'ch4_buy_goods' },
-                { id: 'ch4_sell_goods',     type: 'sell_item',   item: '*',           desc: 'Sell goods for profit in Ashford',    done: false, after: 'ch4_return_ashford' },
-                { id: 'ch4_own_gold',       type: 'own_gold',    amount: 30,          desc: 'Accumulate 30 gold',                 done: false }
+                { id: 'ch4_sell_goods',     type: 'sell_item',   item: '*',           desc: 'Sell goods for profit in Ashford',    done: false, after: 'ch4_return_ashford' }
             ],
             endDialog: 'ch4_complete',
             unlockButtons: [],
