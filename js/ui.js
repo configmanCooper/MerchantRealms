@@ -11447,6 +11447,51 @@ window.UI = (function () {
         }
 
         openModal('💼 Find Work', html);
+
+        // Story mode: highlight the relevant job item + dropdown + WORK button
+        if (Player.storyMode && Player.storyMode.active && !Player.storyMode.complete &&
+            typeof StoryMode !== 'undefined' && StoryMode.getCurrentChapter) {
+            var _wsCh = StoryMode.getCurrentChapter();
+            if (_wsCh && _wsCh.objectives) {
+                for (var _wsOi = 0; _wsOi < _wsCh.objectives.length; _wsOi++) {
+                    var _wsObj = _wsCh.objectives[_wsOi];
+                    if (_wsObj.type === 'work_shift' && !_wsObj.done) {
+                        var _wsAllowed = (_wsObj.building || '').split('|');
+                        // Find matching job items and highlight them
+                        var _wsJobItems = document.querySelectorAll('.job-item');
+                        for (var _wsJi = 0; _wsJi < _wsJobItems.length; _wsJi++) {
+                            var _wsJob = jobs[_wsJi];
+                            if (_wsJob && _wsJob.buildingType && _wsAllowed.indexOf(_wsJob.buildingType) !== -1) {
+                                // Highlight the job card
+                                _wsJobItems[_wsJi].style.border = '2px solid var(--gold)';
+                                _wsJobItems[_wsJi].style.boxShadow = '0 0 12px rgba(218,165,32,0.5)';
+                                _wsJobItems[_wsJi].style.background = 'rgba(218,165,32,0.08)';
+                                // Highlight the WORK button
+                                var _wsWorkBtn = _wsJobItems[_wsJi].querySelector('[data-action="executeWork"]');
+                                if (_wsWorkBtn) _wsWorkBtn.classList.add('tutorial-highlight');
+                                // Highlight the building dropdown if present
+                                var _wsSelect = _wsJobItems[_wsJi].querySelector('select');
+                                if (_wsSelect) {
+                                    _wsSelect.style.border = '2px solid var(--gold)';
+                                    _wsSelect.style.boxShadow = '0 0 8px rgba(218,165,32,0.5)';
+                                    _wsSelect.style.background = 'rgba(218,165,32,0.15)';
+                                    // Pre-select father's building if available
+                                    var _wsOpts = _wsSelect.querySelectorAll('option');
+                                    for (var _wsOptI = 0; _wsOptI < _wsOpts.length; _wsOptI++) {
+                                        if (_wsOpts[_wsOptI].textContent.indexOf('Edmund') !== -1 ||
+                                            _wsOpts[_wsOptI].textContent.indexOf('Ashford') !== -1) {
+                                            _wsSelect.value = _wsOpts[_wsOptI].value;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     function enlistAsSoldier(kingdomId) {

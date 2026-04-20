@@ -37661,6 +37661,7 @@
         get weddingPlan() { return player.weddingPlan; },
         get weddingMemory() { return player.weddingMemory; },
         get childrenIds() { return player.childrenIds; },
+        get parentIds() { return player.parentIds || []; },
         get weapon() { return player.weapon; },
         get armor() { return player.armor; },
         get ships() { return player.ships; },
