@@ -31429,6 +31429,7 @@
             ? 'Bought subsidized land in ' + town.name + ' for ' + cost + 'g (must build: ' + btName + '). 🏗️'
             : 'Bought land in ' + town.name + ' for ' + cost + 'g. 🏗️';
         Engine.logEvent(player.fullName + ' purchased a land plot in ' + town.name + ' for ' + cost + 'g.' + (lockedType ? ' (Subsidized — ' + btName + ' only)' : ''));
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) StoryMode.onPlayerAction('buy_land', { townId: townId });
         return { success: true, message: msg };
     }
 
