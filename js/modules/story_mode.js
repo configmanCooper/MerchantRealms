@@ -1136,7 +1136,7 @@ var StoryMode = (function () {
     // Map custom hook functions to button hints
     var _customFnButtonMap = {
         '_checkOwnsLand':         '#btnHousing',
-        '_checkRested':           '#btnRest',
+        '_checkRested':           '#btnHousing',
         '_checkWarDialogSeen':    '#btnTalk',
         '_checkFestivalAttended': '#btnStreet',
         '_checkMetCalder':        '#btnTalk',
