@@ -585,6 +585,66 @@ window.Game = (function () {
         if (valdrenKing) {
             valdrenKing.firstName = 'Aldric';
         }
+
+        // Story mode protections: remove tools from banned/restricted in Valdren
+        if (valdren.laws) {
+            if (valdren.laws.bannedGoods) {
+                valdren.laws.bannedGoods = valdren.laws.bannedGoods.filter(function(g) { return g !== 'tools'; });
+            }
+            if (valdren.laws.restrictedGoods) {
+                valdren.laws.restrictedGoods = valdren.laws.restrictedGoods.filter(function(g) { return g !== 'tools'; });
+            }
+        }
+
+        // Ensure road between Ashford and Ferrowdale is short (~2 days walk)
+        var world = Engine.getWorld();
+        if (world && world.roads && valdrenTowns.length > 2) {
+            var ashfordId = valdrenTowns[0].id;
+            var ferrowdaleId = valdrenTowns[2].id;
+            for (var ri = 0; ri < world.roads.length; ri++) {
+                var road = world.roads[ri];
+                if ((road.fromTownId === ashfordId && road.toTownId === ferrowdaleId) ||
+                    (road.fromTownId === ferrowdaleId && road.toTownId === ashfordId)) {
+                    // Shorten waypoints to make it ~2 days walk
+                    if (road.waypoints && road.waypoints.length > 2) {
+                        var startPt = road.waypoints[0];
+                        var endPt = road.waypoints[road.waypoints.length - 1];
+                        // Calculate target distance for ~2 days: baseSpeed is ~2-3 tiles/tick, 60 ticks/day
+                        // Interpolate to create a short straight-ish path
+                        var midPt = { x: (startPt.x + endPt.x) / 2, y: (startPt.y + endPt.y) / 2 };
+                        // Keep just 3 points for a short road
+                        road.waypoints = [startPt, midPt, endPt];
+                    }
+                    road.quality = 3; // Good road for faster travel
+                    break;
+                }
+            }
+
+            // If no direct road exists between Ashford and Ferrowdale, create one
+            var hasDirectRoad = world.roads.some(function(r) {
+                return (r.fromTownId === ashfordId && r.toTownId === ferrowdaleId) ||
+                       (r.fromTownId === ferrowdaleId && r.toTownId === ashfordId);
+            });
+            if (!hasDirectRoad) {
+                var ax = valdrenTowns[0].x, ay = valdrenTowns[0].y;
+                var fx = valdrenTowns[2].x, fy = valdrenTowns[2].y;
+                world.roads.push({
+                    fromTownId: ashfordId,
+                    toTownId: ferrowdaleId,
+                    quality: 3,
+                    safe: true,
+                    hasBridge: false,
+                    bridgeDestroyed: false,
+                    bridgeSegments: [],
+                    bridges: [],
+                    waypoints: [
+                        { x: ax, y: ay },
+                        { x: (ax + fx) / 2, y: (ay + fy) / 2 },
+                        { x: fx, y: fy }
+                    ]
+                });
+            }
+        }
     }
 
     function startNewGame() {

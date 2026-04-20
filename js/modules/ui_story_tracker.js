@@ -455,14 +455,18 @@
         var actLabel = _container.querySelector('.st-act-label');
         var barFill = _container.querySelector('.st-progress-bar-fill');
 
+        // Extract numeric chapter index from id like 'ch0', 'ch7', etc.
+        var chNum = typeof chapterId === 'string' ? parseInt(chapterId.replace(/\D/g, ''), 10) : (chapterId || 0);
+        if (isNaN(chNum)) chNum = 0;
+
         if (progressText) {
-            progressText.textContent = 'Chapter ' + chapterId + ' of ' + TOTAL_CHAPTERS;
+            progressText.textContent = 'Chapter ' + (chNum + 1) + ' of ' + TOTAL_CHAPTERS;
         }
         if (actLabel) {
-            actLabel.textContent = _getActLabel(chapterId);
+            actLabel.textContent = _getActLabel(chNum);
         }
         if (barFill) {
-            var pct = Math.round((chapterId / TOTAL_CHAPTERS) * 100);
+            var pct = Math.round(((chNum + 1) / TOTAL_CHAPTERS) * 100);
             barFill.style.width = pct + '%';
         }
     }

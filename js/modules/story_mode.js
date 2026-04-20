@@ -33,7 +33,7 @@ var StoryMode = (function () {
             metSeraphine: false,
             warDeclared: false
         },
-        buttonsUnlocked: ['character'],
+        buttonsUnlocked: ['character', 'system'],
         dialogsSeen: [],
         chapterStartDay: 0
     };
@@ -74,7 +74,6 @@ var StoryMode = (function () {
             id: 'ch2', title: 'The Forge', act: 1,
             startDialog: 'ch2_forge_father',
             objectives: [
-                { id: 'ch2_arrive_forge', type: 'arrive_town',  town: 'Ashford',    desc: 'Go to father\'s blacksmith', done: false },
                 { id: 'ch2_work_shift',   type: 'work_shift',   building: 'blacksmith|smelter|toolsmith', desc: 'Work a shift at the forge', done: false }
             ],
             endDialog: 'ch2_complete',
@@ -262,7 +261,7 @@ var StoryMode = (function () {
                 { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false }
             ],
             endDialog: 'ch15_complete',
-            unlockButtons: ['system'],
+            unlockButtons: [],
             onStart: null,
             onComplete: null
         },
@@ -865,7 +864,7 @@ var StoryMode = (function () {
         _storyState.complete = false;
         _storyState.objectives = {};
         _storyState.dialogsSeen = [];
-        _storyState.buttonsUnlocked = ['character'];
+        _storyState.buttonsUnlocked = ['character', 'system'];
         _storyState.chapterStartDay = 0;
 
         // Reset flags

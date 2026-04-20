@@ -8696,7 +8696,8 @@ window.UI = (function () {
             { icon: '🤝', label: 'Street', fn: 'openStreetTrading' },
             { icon: '💤', label: 'Rest', fn: 'openRestDialog' },
             { icon: '💬', label: 'Talk', fn: 'talkToTownsfolk' },
-            { icon: '🛤️', label: 'Travel', fn: 'showTollRoutesPanel' }
+            { icon: '🛤️', label: 'Travel', fn: 'showTollRoutesPanel' },
+            { icon: '🗡️', label: 'Schemes', fn: 'openSchemesDialog', conditional: 'schemes' }
         ],
         business: [
             { icon: '🐴', label: 'Caravan', action: 'openCaravanDialog' },
@@ -8717,6 +8718,7 @@ window.UI = (function () {
         ],
         world: [
             { icon: '🏘️', label: 'Town View', fn: '_showCurrentTown', conditional: 'intown' },
+            { icon: '🏗️', label: 'Buildings', action: 'openTownMarket', conditional: 'intown' },
             { icon: '👑', label: 'Kingdoms', action: 'openKingdomsDialog' },
             { icon: '🗺️', label: 'Map', action: 'openMapView' },
             { icon: '📍', label: 'Find Me', fn: 'locatePlayer' },
@@ -8730,7 +8732,6 @@ window.UI = (function () {
             { icon: '📂', label: 'Load', fn: '_loadGame' },
             { icon: '🏠', label: 'Main Menu', fn: '_mainMenu' },
             { icon: '❓', label: 'Help', fn: 'openHelpDialog' },
-            { icon: '🗡️', label: 'Schemes', fn: 'openSchemesDialog', conditional: 'schemes' },
             { icon: '🔮', label: 'God Mode', fn: 'openGodModePanel', conditional: 'godmode' }
         ]
     };
@@ -8745,8 +8746,18 @@ window.UI = (function () {
                     if ((Player.socialRank[k] || 0) >= 4) return true;
                 }
                 return false;
-            case 'schemes': return document.getElementById('btnSchemes') && document.getElementById('btnSchemes').style.display !== 'none';
-            case 'family': return Player.spouseId || (Player.childrenIds && Player.childrenIds.length > 0);
+            case 'schemes': {
+                var schemesBtn = document.getElementById('btnSchemes');
+                var schemesVisible = schemesBtn && schemesBtn.style.display !== 'none';
+                if (!schemesVisible) return false;
+                // In story mode, disable schemes until chapter 15
+                if (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.active && !Player.storyMode.complete) {
+                    var chIdx = (typeof StoryMode !== 'undefined' && StoryMode.getChapterIndex) ? StoryMode.getChapterIndex() : 0;
+                    if (chIdx < 15) return false;
+                }
+                return true;
+            }
+            case 'family': return Player.spouseId || (Player.childrenIds && Player.childrenIds.length > 0) || (Player.parentIds && Player.parentIds.length > 0);
             case 'deposits': return document.getElementById('btnDeposits') && document.getElementById('btnDeposits').style.display !== 'none';
             case 'godmode': return document.getElementById('btnGodMode') && document.getElementById('btnGodMode').style.display !== 'none';
             case 'intown': return Player.townId && !Player.traveling;

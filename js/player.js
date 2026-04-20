@@ -467,6 +467,7 @@
     function declareBankruptcy() {
         if (!player.debts || player.debts.length === 0) return { success: false, message: 'No debts to discharge.' };
         if (player.isKing) return { success: false, message: 'As ruler, you cannot declare bankruptcy. Use the royal treasury to pay your debts.' };
+        if (player.storyMode && player.storyMode.active && !player.storyMode.complete) return { success: false, message: 'Bankruptcy is not available during the story.' };
         var totalDebt = getTotalDebt();
         // Consequences: lose all gold, lose all inventory, rep loss with all creditors
         player.gold = 0;
@@ -591,8 +592,9 @@
         // Clean up fully paid debts
         player.debts = player.debts.filter(function(d) { return d.amount > 0.5; });
 
-        // Debt reminders and bankruptcy countdown warnings
-        if (player.debts.length > 0 && !(player.bankruptcy && player.bankruptcy.active)) {
+        // Debt reminders and bankruptcy countdown warnings (skip in story mode)
+        var _storyDebtSkip = player.storyMode && player.storyMode.active && !player.storyMode.complete;
+        if (!_storyDebtSkip && player.debts.length > 0 && !(player.bankruptcy && player.bankruptcy.active)) {
             var oldestUnpaidAge = 0;
             for (var dk = 0; dk < player.debts.length; dk++) {
                 var dAge = day - (player.debts[dk].dayIncurred || 0);
@@ -653,6 +655,10 @@
         if (player.dead) return { blocked: true, message: 'You are dead.' };
         if (!opts.allowTravel && player.traveling) return { blocked: true, message: 'Cannot do this while traveling.' };
         var day = Engine.getDay ? Engine.getDay() : 0;
+        // Story mode: never jailed
+        if (player.storyMode && player.storyMode.active && !player.storyMode.complete && player.jailedUntilDay > 0) {
+            player.jailedUntilDay = 0;
+        }
         if (!opts.allowJail && player.jailedUntilDay && player.jailedUntilDay > day) return { blocked: true, message: 'You are in jail.' };
         if (opts.requireTown && player.townId !== opts.requireTown) return { blocked: true, message: 'You are not in the right town.' };
         return null;
@@ -1548,13 +1554,16 @@
             }
         }
 
+        // Story mode: skip banned/restricted goods checks entirely
+        var _storyActive = player.storyMode && player.storyMode.active && !player.storyMode.complete;
+
         // Check if the good is banned in this kingdom
-        if (kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(resourceId)) {
+        if (!_storyActive && kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(resourceId)) {
             return Player.attemptSmuggle(resourceId, qty, town, kingdom, price);
         }
 
         // Check if the good is restricted and player lacks license
-        if (kingdom && kingdom.laws && kingdom.laws.restrictedGoods && kingdom.laws.restrictedGoods.includes(resourceId)) {
+        if (!_storyActive && kingdom && kingdom.laws && kingdom.laws.restrictedGoods && kingdom.laws.restrictedGoods.includes(resourceId)) {
             if (!hasLicense(kingdom.id, resourceId)) {
                 player.restrictedTradesWithoutLicense = (player.restrictedTradesWithoutLicense || 0) + 1;
                 if (player.restrictedTradesWithoutLicense >= 10) unlockAchievement('tax_evader');
@@ -36973,7 +36982,7 @@
                 metSeraphine: false,
                 warDeclared: false
             },
-            buttonsUnlocked: ['character'],
+            buttonsUnlocked: ['character', 'system'],
             dialogsSeen: [],
             chapterStartDay: 0,
             storyNPCs: {}
