@@ -351,20 +351,22 @@
     // ── Portrait System ──
     // Emoji face portraits for all characters. Each person gets a portrait based on sex + skinTone + faceType.
     var PORTRAIT_FACES_M = [
-        '\u{1F468}',      // 👨 man
+        '\u{1F468}',      // 👨 man (default)
         '\u{1F9D4}',      // 🧔 bearded
         '\u{1F471}\u200D\u2642\uFE0F',  // 👱‍♂️ blond man
         '\u{1F468}\u200D\u{1F9B1}',     // 👨‍🦱 curly
         '\u{1F468}\u200D\u{1F9B0}',     // 👨‍🦰 red hair
         '\u{1F468}\u200D\u{1F9B3}',     // 👨‍🦳 white/gray hair
-        '\u{1F468}\u200D\u{1F9B2}'      // 👨‍🦲 bald
+        '\u{1F468}\u200D\u{1F9B2}',     // 👨‍🦲 bald
+        '\u{1F9D1}\u200D\u2642\uFE0F'   // 🧑‍♂️ person (Asian-style on many platforms)
     ];
     var PORTRAIT_FACES_F = [
         '\u{1F469}',      // 👩 woman
         '\u{1F471}\u200D\u2640\uFE0F',  // 👱‍♀️ blond woman
         '\u{1F469}\u200D\u{1F9B1}',     // 👩‍🦱 curly
         '\u{1F469}\u200D\u{1F9B0}',     // 👩‍🦰 red hair
-        '\u{1F469}\u200D\u{1F9B3}'      // 👩‍🦳 white/silver hair
+        '\u{1F469}\u200D\u{1F9B3}',     // 👩‍🦳 white/silver hair
+        '\u{1F9D1}\u200D\u2640\uFE0F'   // 🧑‍♀️ person (Asian-style on many platforms)
     ];
     var SKIN_TONES = [
         '',               // default yellow
@@ -37854,6 +37856,7 @@
         get weddingMemory() { return player.weddingMemory; },
         get childrenIds() { return player.childrenIds; },
         get parentIds() { return player.parentIds || []; },
+        get storyMode() { return player.storyMode; },
         get weapon() { return player.weapon; },
         get armor() { return player.armor; },
         get ships() { return player.ships; },

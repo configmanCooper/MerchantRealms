@@ -513,8 +513,8 @@ window.Game = (function () {
 
         // Skin tone modifiers
         var SKIN_TONES_LOCAL = ['', '\u{1F3FB}', '\u{1F3FC}', '\u{1F3FD}', '\u{1F3FE}', '\u{1F3FF}'];
-        var FACES_M = ['\u{1F468}', '\u{1F9D4}', '\u{1F471}\u200D\u2642\uFE0F', '\u{1F468}\u200D\u{1F9B1}', '\u{1F468}\u200D\u{1F9B0}', '\u{1F468}\u200D\u{1F9B3}', '\u{1F468}\u200D\u{1F9B2}'];
-        var FACES_F = ['\u{1F469}', '\u{1F471}\u200D\u2640\uFE0F', '\u{1F469}\u200D\u{1F9B1}', '\u{1F469}\u200D\u{1F9B0}', '\u{1F469}\u200D\u{1F9B3}'];
+        var FACES_M = ['\u{1F468}', '\u{1F9D4}', '\u{1F471}\u200D\u2642\uFE0F', '\u{1F468}\u200D\u{1F9B1}', '\u{1F468}\u200D\u{1F9B0}', '\u{1F468}\u200D\u{1F9B3}', '\u{1F468}\u200D\u{1F9B2}', '\u{1F9D1}\u200D\u2642\uFE0F'];
+        var FACES_F = ['\u{1F469}', '\u{1F471}\u200D\u2640\uFE0F', '\u{1F469}\u200D\u{1F9B1}', '\u{1F469}\u200D\u{1F9B0}', '\u{1F469}\u200D\u{1F9B3}', '\u{1F9D1}\u200D\u2640\uFE0F'];
 
         function applyTone(base, tIdx) {
             if (!tIdx || tIdx < 1) return base;
