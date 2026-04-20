@@ -2507,10 +2507,10 @@
                 for (var ui = 0; ui < numUnits; ui++) {
                     buildings[abi].units.push({ unitIndex: ui, occupantId: null, occupantType: null, purchaseDay: null, purchasePrice: 0 });
                 }
-                // Dynamic pricing: 10% of construction cost for unit purchase, 0.083% for monthly maintenance
+                // Dynamic pricing: 10% of construction cost for unit purchase, weekly maintenance (3x old monthly rate)
                 var baseBuildCost = (aptBt && aptBt.cost) || 2500;
                 buildings[abi].unitPrice = Math.floor(baseBuildCost * 0.10);
-                buildings[abi].monthlyFee = Math.max(1, Math.floor(baseBuildCost * 0.00083));
+                buildings[abi].monthlyFee = Math.max(3, Math.floor(baseBuildCost * 0.0025));
                 // Assign to kingdom or elite merchant
                 if (!buildings[abi].ownerId) {
                     buildings[abi].ownerId = kingdom ? kingdom.id : null;
@@ -20817,9 +20817,9 @@
                         var aptBld = townBlds2[api];
                         if (aptBld.type !== 'apartment_building' || !aptBld.units) continue;
                         var unitPrice = aptBld.unitPrice || 250;
-                        var monthlyFee = aptBld.monthlyFee || 2;
-                        // Need unit price + 6 months of fees as buffer
-                        if (pGold >= unitPrice + monthlyFee * 6) {
+                        var monthlyFee = aptBld.monthlyFee || 6;
+                        // Need unit price + 24 weeks of fees as buffer
+                        if (pGold >= unitPrice + monthlyFee * 24) {
                             for (var aui = 0; aui < aptBld.units.length; aui++) {
                                 var unit = aptBld.units[aui];
                                 if (unit.occupantId) continue;
@@ -21267,7 +21267,7 @@
     // --- Restored from pre-H1 extraction ---
     function tickApartmentFees() {
         if (!world) return;
-        if (world.day % 30 !== 15) return; // Monthly, offset from tent rent
+        if (world.day % 7 !== 3) return; // Weekly maintenance
         for (var ti = 0; ti < world.towns.length; ti++) {
             var town = world.towns[ti];
             if (!town || !town.buildings) continue;

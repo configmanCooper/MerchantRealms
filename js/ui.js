@@ -10140,7 +10140,7 @@ window.UI = (function () {
                     }
                 }
                 if (h.monthlyMaintenance) {
-                    html += '<div style="font-size:0.78rem;color:#c4a35a;">🏢 Apartment — monthly maintenance: ' + h.monthlyMaintenance + 'g</div>';
+                    html += '<div style="font-size:0.78rem;color:#c4a35a;">🏢 Apartment — weekly maintenance: ' + h.monthlyMaintenance + 'g</div>';
                 }
                 html += '<div style="margin-top:4px;">';
                 if (!isPrimary) html += '<button class="btn-medieval" data-action="setPrimaryHouseUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">⭐ Set Primary</button>';
@@ -10249,6 +10249,37 @@ window.UI = (function () {
                         html += ' <span style="font-size:0.7rem;color:#aaa;">Requires: ' + reqName + '</span>';
                     }
                     html += '</div>';
+                }
+
+                // === Apartments for sale in current town ===
+                var aptBuildings = (town.buildings || []).filter(function(b) { return b.type === 'apartment_building'; });
+                if (aptBuildings.length > 0) {
+                    html += '<h3 style="margin-top:12px;margin-bottom:6px;">🏢 Apartments For Sale</h3>';
+                    for (var ai = 0; ai < aptBuildings.length; ai++) {
+                        var aptBld = aptBuildings[ai];
+                        var units = aptBld.units || [];
+                        var availableUnits = units.filter(function(u) { return !u.occupantId; });
+                        var ownerName = 'Unknown';
+                        if (aptBld.ownerId === 'player') { ownerName = 'You'; }
+                        else if (aptBld.ownerId) {
+                            var _aptOwner = Engine.findPerson(aptBld.ownerId);
+                            if (_aptOwner) ownerName = (_aptOwner.firstName || '') + ' ' + (_aptOwner.lastName || '');
+                            else {
+                                var _aptK = Engine.findKingdom(aptBld.ownerId);
+                                if (_aptK) ownerName = _aptK.name;
+                            }
+                        }
+                        var _aptUnitPrice = aptBld.unitPrice || 0;
+                        var _aptWeeklyFee = aptBld.monthlyFee || 0;
+                        html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
+                        html += '<div><strong>🏢 Apartment Building</strong> — Owner: ' + ownerName + '</div>';
+                        html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(_aptUnitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(_aptWeeklyFee) + 'g</span></div>';
+                        if (availableUnits.length > 0 && aptBld.ownerId !== 'player') {
+                            var _canAffordApt = (Player.gold || 0) >= _aptUnitPrice;
+                            html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (_canAffordApt ? '' : 'disabled') + ' data-action="buyApartmentUnit" data-id="' + aptBld._id + '">🏢 Buy Apartment (' + Math.ceil(_aptUnitPrice) + 'g)</button>';
+                        }
+                        html += '</div>';
+                    }
                 }
             }
         }

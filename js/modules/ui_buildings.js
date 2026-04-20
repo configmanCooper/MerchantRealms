@@ -483,7 +483,7 @@
                 var monthlyFee = aptBld.monthlyFee || 0;
                 html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
                 html += '<div><strong>🏢 Apartment Building</strong> — Owner: ' + ownerName + '</div>';
-                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Monthly: <span style="color:#ffd700;">' + Math.ceil(monthlyFee) + 'g</span></div>';
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(monthlyFee) + 'g</span></div>';
                 if (availableUnits.length > 0 && aptBld.ownerId !== 'player') {
                     var canAffordApt = (Player.gold || 0) >= unitPrice;
                     html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' data-action="buyApartmentUnit" data-id="' + aptBld._id + '">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>';
@@ -640,7 +640,7 @@
         Player.state.houses.push(house);
         if (!Player.state.primaryHouseId) Player.state.primaryHouseId = house.id;
 
-        toast('🏢 Apartment purchased for ' + price + 'g! Monthly maintenance: ' + (aptBld.monthlyFee || 0) + 'g.', 'success');
+        toast('🏢 Apartment purchased for ' + price + 'g! Weekly maintenance: ' + (aptBld.monthlyFee || 0) + 'g.', 'success');
         Engine.logEvent('🏢 ' + Player.state.fullName + ' bought an apartment in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.');
         if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) StoryMode.onPlayerAction('own_building', { building: 'housing' });
         openTownMarket(); // Refresh
