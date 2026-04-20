@@ -14,6 +14,64 @@
     var modifyRelationship = Player.modifyRelationship;
     var _applyConditionHealthHit = Player._applyConditionHealthHit;
 
+    // Find a family member's house in the given town
+    function _getFamilyHouseInTown(townId) {
+        _sync();
+        if (!townId) return null;
+        // Check world.familyHouses registry first
+        var world = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
+        if (world && world.familyHouses) {
+            for (var i = 0; i < world.familyHouses.length; i++) {
+                var fh = world.familyHouses[i];
+                if (fh.townId === townId) {
+                    // Verify owner is a family member
+                    var isFamily = false;
+                    if (player.spouseId && fh.ownerId === player.spouseId) isFamily = true;
+                    if (!isFamily && player.parentIds) {
+                        for (var p = 0; p < player.parentIds.length; p++) {
+                            if (player.parentIds[p] === fh.ownerId) { isFamily = true; break; }
+                        }
+                    }
+                    if (!isFamily && player.childrenIds) {
+                        for (var c = 0; c < player.childrenIds.length; c++) {
+                            if (player.childrenIds[c] === fh.ownerId) { isFamily = true; break; }
+                        }
+                    }
+                    if (!isFamily && player.siblingIds) {
+                        for (var s = 0; s < player.siblingIds.length; s++) {
+                            if (player.siblingIds[s] === fh.ownerId) { isFamily = true; break; }
+                        }
+                    }
+                    if (isFamily) return fh;
+                }
+            }
+        }
+        // Fallback: check family members for houseTownId
+        var famIds = [];
+        if (player.spouseId) famIds.push(player.spouseId);
+        if (player.parentIds) famIds = famIds.concat(player.parentIds);
+        if (player.childrenIds) famIds = famIds.concat(player.childrenIds);
+        if (player.siblingIds) famIds = famIds.concat(player.siblingIds);
+        for (var f = 0; f < famIds.length; f++) {
+            try {
+                var person = Engine.findPerson(famIds[f]);
+                if (person && person.alive && person.houseTownId === townId && person.houseId) {
+                    // Check if the house still exists in world.familyHouses or player.houses
+                    var house = null;
+                    if (world && world.familyHouses) {
+                        for (var h = 0; h < world.familyHouses.length; h++) {
+                            if (world.familyHouses[h].id === person.houseId) { house = world.familyHouses[h]; break; }
+                        }
+                    }
+                    if (house) return house;
+                    // Construct minimal house object from person data
+                    return { id: person.houseId, townId: townId, ownerId: famIds[f], type: 'cottage' };
+                }
+            } catch(e) { /* person not found */ }
+        }
+        return null;
+    }
+
     // Check if the next food to be consumed (oldest FIFO cohort) is stale
     function _isNextFoodStale(storageObj, foodId) {
         if (!CONFIG.PERISHABLE_FOODS || !CONFIG.PERISHABLE_FOODS[foodId]) return false;
@@ -612,6 +670,25 @@
                 energyPerTick: getRestEnergyRate(house.type),
                 risks: [],
             });
+        }
+
+        // Family member's home — check if a family member has a house in this town
+        if (!house) {
+            var famHouse = _getFamilyHouseInTown(player.townId);
+            if (famHouse) {
+                var famHt = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === famHouse.type; });
+                var famOwner = famHouse.ownerId ? Engine.findPerson(famHouse.ownerId) : null;
+                var ownerName = famOwner ? famOwner.firstName : 'Family';
+                options.push({
+                    id: 'family_house',
+                    name: '🏠 ' + ownerName + '\'s ' + (famHt ? famHt.name : 'Home'),
+                    cost: 0,
+                    energyPerTick: getRestEnergyRate(famHouse.type),
+                    risks: [],
+                    isFamilyHouse: true,
+                    desc: 'Rest at your family\'s home — free.',
+                });
+            }
         }
 
         // Master's quarters

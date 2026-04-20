@@ -36874,6 +36874,51 @@
                 name: sib.firstName + ' ' + sib.lastName
             });
         }
+
+        // Give the family a house matching their wealth level
+        if (parentCount > 0) {
+            var world = Engine.getWorld();
+            if (!world.familyHouses) world.familyHouses = [];
+            var houseType = 'shack';
+            if (familyGold >= 2000) houseType = 'townhouse';
+            else if (familyGold >= 500) houseType = 'cottage';
+            else if (familyGold >= 100) houseType = 'cottage';
+            var parentNpc = player.familyMembers.find(function(m) { return m.role === 'father' || m.role === 'mother'; });
+            if (parentNpc) {
+                var _famOwnerId = parentNpc.npcId;
+                var _famHouseId = 'family_house_' + _famOwnerId;
+                var _famOccupants = player.familyMembers.map(function(m) { return m.npcId; });
+                var famHouse = {
+                    id: _famHouseId,
+                    type: houseType,
+                    townId: player.townId,
+                    purchaseDay: -3650,
+                    builtDay: -3650,
+                    condition: 'used',
+                    lastRepairDay: 0,
+                    occupants: _famOccupants,
+                    homeStorage: {},
+                    isRental: false,
+                    rentAccumulated: 0,
+                    isFamilyHouse: true,
+                    ownerId: _famOwnerId
+                };
+                world.familyHouses.push(famHouse);
+                // Set house references on parent NPCs
+                for (var fi = 0; fi < player.familyMembers.length; fi++) {
+                    var fm = player.familyMembers[fi];
+                    if (fm.role === 'father' || fm.role === 'mother') {
+                        try {
+                            var fmNpc = Engine.findPerson(fm.npcId);
+                            if (fmNpc) {
+                                fmNpc.houseId = _famHouseId;
+                                fmNpc.houseTownId = player.townId;
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        }
     }
 
     function initIndenturedStart() {
@@ -37291,6 +37336,33 @@
         if (town.buildings) {
             town.buildings.push(blacksmithBld);
         }
+
+        // Give the family a cottage in the starting town — player can rest here
+        var familyHouseId = 'family_house_' + Date.now();
+        var familyHouse = {
+            id: familyHouseId,
+            type: 'cottage',
+            townId: player.townId,
+            purchaseDay: -3650,
+            builtDay: -3650,
+            condition: 'used',
+            lastRepairDay: 0,
+            occupants: [edmundId, margretId],
+            homeStorage: {},
+            isRental: false,
+            rentAccumulated: 0,
+            isFamilyHouse: true,
+            ownerId: edmundId
+        };
+        // Store on the NPC so we can look it up later
+        edmund.houseId = familyHouseId;
+        edmund.houseTownId = player.townId;
+        margret.houseId = familyHouseId;
+        margret.houseTownId = player.townId;
+
+        // Store family houses in a world-level registry for lookup
+        if (!world.familyHouses) world.familyHouses = [];
+        world.familyHouses.push(familyHouse);
 
         // Initialize story mode controller if available
         if (typeof StoryMode !== 'undefined' && StoryMode.init) {

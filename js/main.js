@@ -683,6 +683,18 @@ window.Game = (function () {
             ferrowdale.market.supply['tools'] = 2;       // very low supply
             ferrowdale.market.demand['tools'] = 50;      // high demand
             ferrowdale.market.prices['tools'] = 18;      // good sell price due to demand
+
+            // Ferrowdale has cheap raw materials from mining (story: buy cheap here, sell in Ashford)
+            ferrowdale.market.supply['iron_ore'] = 80;
+            ferrowdale.market.prices['iron_ore'] = 6;     // base 12, cheap here
+            ferrowdale.market.supply['stone'] = 60;
+            ferrowdale.market.prices['stone'] = 3;        // base 6, cheap from quarries
+            ferrowdale.market.supply['salt'] = 40;
+            ferrowdale.market.prices['salt'] = 4;         // base 7, mined locally
+            ferrowdale.market.supply['wood'] = 50;
+            ferrowdale.market.prices['wood'] = 3;         // base 5, nearby forests
+            ferrowdale.market.supply['hide'] = 30;
+            ferrowdale.market.prices['hide'] = 3;         // base 5, local ranching
         }
 
         // Name the Korvath king

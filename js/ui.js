@@ -800,6 +800,23 @@ window.UI = (function () {
         registerAction('depositToStorage', function(_t, d) { if (d.id && d.qty) UI.depositToStorage(d.id, d.qty); });
         registerAction('executeSell', function(_t, d) { if (d.id && d.town) UI.executeSell(d.id, d.town); });
         registerAction('executeBuy', function(_t, d) { if (d.id && d.town) UI.executeBuy(d.id, d.town); });
+        registerAction('tradeFilter', function(_t, d) {
+            if (!d.cat) return;
+            _activeTradeFilter = d.cat;
+            // Toggle visibility of trade items
+            var items = document.querySelectorAll('.trade-item[data-filter-cat]');
+            for (var i = 0; i < items.length; i++) {
+                items[i].style.display = (d.cat === 'all' || items[i].getAttribute('data-filter-cat') === d.cat) ? '' : 'none';
+            }
+            // Update button styles
+            var btns = document.querySelectorAll('#tradeFilterBar button[data-action="tradeFilter"]');
+            for (var j = 0; j < btns.length; j++) {
+                var isActive = btns[j].getAttribute('data-cat') === d.cat;
+                btns[j].style.background = isActive ? 'rgba(100,180,255,0.3)' : 'rgba(255,255,255,0.05)';
+                btns[j].style.borderColor = isActive ? 'rgba(100,180,255,0.6)' : 'rgba(255,255,255,0.15)';
+                btns[j].style.color = isActive ? '#fff' : 'var(--text-muted)';
+            }
+        });
         registerAction('quitAutoTravelJobUI', function() { UI.quitAutoTravelJobUI(); });
         registerAction('turnBackUI', function() { UI.turnBackUI(); });
         registerAction('drinkUntilFull', function() { UI.drinkUntilFull(); });
@@ -1804,6 +1821,16 @@ window.UI = (function () {
         openModal('📦 Inventory', html);
     }
 
+    // Trade filter: map resource to user-friendly filter category
+    var _INSTRUMENT_IDS = { drum:1, flute:1, lute:1, harp:1, hurdy_gurdy:1, gut_string:1 };
+    var _CLOTHING_IDS = { clothes:1, fine_clothes:1 };
+    function _getTradeFilterCat(resId, res) {
+        if (_INSTRUMENT_IDS[resId]) return 'instrument';
+        if (_CLOTHING_IDS[resId]) return 'clothing';
+        return res.category || 'other';
+    }
+    var _activeTradeFilter = 'all';
+
     function openTradeDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
             if (Player.traveling) { openPlayerInventory(); return; }
@@ -2078,7 +2105,8 @@ window.UI = (function () {
                 `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${q}" data-price="${finalUnitPrice.toFixed(4)}">${q}</button>`
             ).join('') + `<button class="qty-btn" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${buyMaxQty}" data-price="${finalUnitPrice.toFixed(4)}">⬆Max (${buyMaxQty})</button>`;
 
-            buyHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''}">
+            const _filterCat = _getTradeFilterCat(resId, res);
+            buyHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''}" data-filter-cat="${_filterCat}">
                 <div class="res-info">${res.icon} ${res.name} (${Math.floor(qty)}) ${statusBadge}${seasonTag}${trendTag}</div>
                 <div class="trade-controls">
                     <span class="price ${priceClass}" title="${breakdownTooltip}" style="cursor:help;">${finalUnitPrice.toFixed(1)}g</span>
@@ -2181,7 +2209,8 @@ window.UI = (function () {
                 `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${q}" data-price="${finalSellPrice.toFixed(4)}">${q}</button>`
             ).join('') + `<button class="qty-btn" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${sellMaxQty}" data-price="${finalSellPrice.toFixed(4)}">⬆Max (${sellMaxQty})</button>`;
 
-            sellHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''} ${isBanned ? 'banned-item' : ''} ${isRestricted && !hasLicense ? 'restricted-item' : ''}">
+            const _filterCatS = _getTradeFilterCat(resId, res);
+            sellHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''} ${isBanned ? 'banned-item' : ''} ${isRestricted && !hasLicense ? 'restricted-item' : ''}" data-filter-cat="${_filterCatS}">
                 <div class="res-info">${res.icon} ${res.name} ${qtyLabel} ${statusBadge}</div>
                 <div class="trade-controls">
                     <span class="price ${priceClass}" title="${breakdownTooltip}" style="cursor:help;">${finalSellPrice.toFixed(1)}g</span>
@@ -2302,12 +2331,86 @@ window.UI = (function () {
             </details>`;
         }
 
-        const html = `${marketDayBanner}${capacityHtml}${tradeInfoHtml}<div class="trade-columns">
+        // Filter buttons for trade categories
+        var _filterBtns = [
+            { id: 'all',        label: '📋 All' },
+            { id: 'food',       label: '🍞 Food' },
+            { id: 'beverage',   label: '🍺 Drinks' },
+            { id: 'raw',        label: '🌾 Raw' },
+            { id: 'processed',  label: '⚙️ Crafted' },
+            { id: 'finished',   label: '🔧 Goods' },
+            { id: 'clothing',   label: '👕 Clothing' },
+            { id: 'instrument', label: '🎵 Instruments' },
+            { id: 'luxury',     label: '💎 Luxury' },
+            { id: 'military',   label: '⚔️ Military' },
+            { id: 'medical',    label: '🩹 Medical' },
+            { id: 'livestock',  label: '🐄 Livestock' },
+            { id: 'supplies',   label: '⛺ Supplies' },
+        ];
+        var filterBarHtml = '<div id="tradeFilterBar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:4px 0;">';
+        for (var _fb = 0; _fb < _filterBtns.length; _fb++) {
+            var _f = _filterBtns[_fb];
+            var _sel = (_activeTradeFilter === _f.id) ? 'background:rgba(100,180,255,0.3);border-color:rgba(100,180,255,0.6);color:#fff;' : 'background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.15);color:var(--text-muted);';
+            filterBarHtml += '<button data-action="tradeFilter" data-cat="' + _f.id + '" style="font-size:0.7rem;padding:3px 8px;border-radius:12px;border:1px solid;cursor:pointer;' + _sel + '">' + _f.label + '</button>';
+        }
+        filterBarHtml += '</div>';
+
+        // Build remembered prices section
+        var rememberedHtml = '';
+        var remPrices = Player.rememberedPrices || {};
+        var remTownIds = Object.keys(remPrices).filter(function(tid) { return tid !== town.id; });
+        if (remTownIds.length > 0) {
+            var curDay = Engine.getDay();
+            rememberedHtml = '<details style="border-top:1px solid var(--border);padding-top:6px;margin-top:8px;">';
+            rememberedHtml += '<summary style="cursor:pointer;font-size:0.8rem;font-weight:bold;">📔 Remembered Prices (' + remTownIds.length + ' locations)</summary>';
+            rememberedHtml += '<div style="margin-top:6px;">';
+            for (var _rti = 0; _rti < remTownIds.length; _rti++) {
+                var _rtId = remTownIds[_rti];
+                var _rtData = remPrices[_rtId];
+                if (!_rtData || !_rtData.prices) continue;
+                var _rtAge = curDay - (_rtData.day || 0);
+                var _rtTown = null;
+                try { _rtTown = Engine.findTown(_rtId); } catch(e) {}
+                var _rtName = _rtTown ? _rtTown.name : _rtId;
+                var _rtAgeLabel = _rtAge <= 1 ? 'today' : _rtAge + ' days ago';
+                var _rtAgeColor = _rtAge <= 7 ? '#55a868' : _rtAge <= 20 ? 'var(--gold)' : 'var(--danger)';
+                rememberedHtml += '<div style="margin-bottom:8px;padding:6px 8px;background:rgba(0,0,0,0.15);border-radius:4px;">';
+                rememberedHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">';
+                rememberedHtml += '<span style="font-weight:bold;font-size:0.8rem;">🏘️ ' + _rtName + '</span>';
+                rememberedHtml += '<span style="font-size:0.7rem;color:' + _rtAgeColor + ';">📅 ' + _rtAgeLabel + '</span>';
+                rememberedHtml += '</div>';
+                rememberedHtml += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+                var _rtPriceKeys = Object.keys(_rtData.prices);
+                for (var _rpk = 0; _rpk < _rtPriceKeys.length; _rpk++) {
+                    var _rpId = _rtPriceKeys[_rpk];
+                    var _rpRes = findResource(_rpId);
+                    if (!_rpRes) continue;
+                    var _rpPrice = _rtData.prices[_rpId];
+                    var _rpSupply = (_rtData.supply && _rtData.supply[_rpId]) || 0;
+                    // Compare with current town price
+                    var _curPrice = prices[_rpId] || 0;
+                    var _priceDiff = '';
+                    if (_curPrice > 0 && _rpPrice > 0) {
+                        if (_rpPrice < _curPrice * 0.9) _priceDiff = ' style="color:#55a868;" title="Cheaper than here"';
+                        else if (_rpPrice > _curPrice * 1.1) _priceDiff = ' style="color:var(--danger);" title="More expensive than here"';
+                    }
+                    rememberedHtml += '<span style="font-size:0.7rem;padding:2px 5px;background:rgba(255,255,255,0.05);border-radius:3px;border:1px solid rgba(255,255,255,0.08);">';
+                    rememberedHtml += _rpRes.icon + ' <span' + _priceDiff + '>' + _rpPrice.toFixed(1) + 'g</span>';
+                    if (_rpSupply > 0) rememberedHtml += ' <span style="color:var(--text-muted);font-size:0.65rem;">(' + Math.floor(_rpSupply) + ')</span>';
+                    rememberedHtml += '</span>';
+                }
+                rememberedHtml += '</div></div>';
+            }
+            rememberedHtml += '</div></details>';
+        }
+
+        const html = `${marketDayBanner}${capacityHtml}${tradeInfoHtml}${filterBarHtml}<div class="trade-columns">
             <div class="trade-column"><h3>Buy from Market</h3>${buyHtml}</div>
             <div class="trade-column"><h3>Sell to Market</h3>${sellHtml}</div>
         </div>
         ${storageManageHtml}
         ${licenseHtml}
+        ${rememberedHtml}
         ${marketIntelHtml}
         <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;">
             <button class="btn-trade" style="font-size:0.7rem;background:rgba(100,150,200,0.15);border-color:rgba(100,150,200,0.3);" data-action="askTavernFoodTrends">📊 Food Trends (5g)</button>
@@ -2316,6 +2419,14 @@ window.UI = (function () {
         <div class="trade-summary">Your gold: <span class="gold-value">🪙 ${formatGold(Player.gold)}</span></div>`;
 
         openModal(`📊 Trade — ${town.name}`, html);
+
+        // Re-apply active filter after rebuild (so buy/sell refresh preserves filter)
+        if (_activeTradeFilter && _activeTradeFilter !== 'all') {
+            var _fitems = document.querySelectorAll('.trade-item[data-filter-cat]');
+            for (var _fi = 0; _fi < _fitems.length; _fi++) {
+                _fitems[_fi].style.display = (_fitems[_fi].getAttribute('data-filter-cat') === _activeTradeFilter) ? '' : 'none';
+            }
+        }
     }
 
     function executeBuy(resId, townId) {
@@ -11454,6 +11565,10 @@ window.UI = (function () {
         }
 
         openModal('💼 Find Work', html);
+
+        // Scroll modal body to top so jobs list is visible
+        var _wMb = el.modalBody || document.getElementById('modalBody');
+        if (_wMb) _wMb.scrollTop = 0;
 
         // Story mode: highlight the relevant job item + dropdown + WORK button
         if (Player.storyMode && Player.storyMode.active && !Player.storyMode.complete &&
