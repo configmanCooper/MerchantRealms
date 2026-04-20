@@ -629,7 +629,9 @@ var StoryMode = (function () {
                     _log('Objective complete: ' + lobj.desc);
                 }
             }
-            return;
+            // buy_land and rest have no typed objectives — done here
+            if (actionType === 'buy_land' || actionType === 'rest') return;
+            // own_building falls through to also match typed objectives below
         }
 
         for (var i = 0; i < ch.objectives.length; i++) {
