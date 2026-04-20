@@ -416,10 +416,10 @@
 
     // ── Show / Begin ───────────────────────────────────────────
 
-    function _beginDialog(dialogData) {
+    function _beginDialog(dialogData, startLine) {
         _ensureOverlay();
         _currentDialog = dialogData;
-        _lineIndex = 0;
+        _lineIndex = (typeof startLine === 'number' && startLine > 0) ? startLine : 0;
 
         // Portrait — try to use actual NPC portrait for dynamic skin tones
         var portraitKey = dialogData.portrait || dialogData.speaker;
@@ -492,9 +492,9 @@
         };
         document.addEventListener('keydown', _keyHandler);
 
-        // Play first line
-        if (dialogData.lines && dialogData.lines.length > 0) {
-            _playLine(0);
+        // Play starting line
+        if (dialogData.lines && _lineIndex < dialogData.lines.length) {
+            _playLine(_lineIndex);
         }
     }
 
@@ -518,14 +518,14 @@
 
     // ── Public API ─────────────────────────────────────────────
 
-    function showStoryDialog(dialogData) {
+    function showStoryDialog(dialogData, startLine) {
         if (!dialogData || !dialogData.lines || dialogData.lines.length === 0) return;
         // If a dialog is active, queue this one
         if (_currentDialog) {
             _dialogQueue.push(dialogData);
             return;
         }
-        _beginDialog(dialogData);
+        _beginDialog(dialogData, startLine);
     }
 
     function closeStoryDialog() {
@@ -539,6 +539,14 @@
         return !!_currentDialog;
     }
 
+    function getStoryDialogState() {
+        if (!_currentDialog || !_currentDialog._dialogKey) return null;
+        return {
+            dialogKey: _currentDialog._dialogKey,
+            lineIndex: _lineIndex
+        };
+    }
+
     function queueStoryDialog(dialogData) {
         if (!dialogData || !dialogData.lines || dialogData.lines.length === 0) return;
         if (_currentDialog) {
@@ -550,10 +558,11 @@
 
     // ── Expose on UI ───────────────────────────────────────────
 
-    UI.showStoryDialog   = showStoryDialog;
-    UI.closeStoryDialog  = closeStoryDialog;
-    UI.isStoryDialogOpen = isStoryDialogOpen;
-    UI.queueStoryDialog  = queueStoryDialog;
+    UI.showStoryDialog      = showStoryDialog;
+    UI.closeStoryDialog     = closeStoryDialog;
+    UI.isStoryDialogOpen    = isStoryDialogOpen;
+    UI.getStoryDialogState  = getStoryDialogState;
+    UI.queueStoryDialog     = queueStoryDialog;
     UI.setStoryTTS       = function(enabled) {
         _ttsEnabled = !!enabled;
         var btn = document.getElementById('sdTtsToggle');

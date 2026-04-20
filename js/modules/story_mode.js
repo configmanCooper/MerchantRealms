@@ -1201,6 +1201,11 @@ var StoryMode = (function () {
     // ── Serialization ──
 
     function serialize() {
+        // Capture active dialog state so save/load resumes mid-dialog
+        var dialogState = null;
+        if (typeof UI !== 'undefined' && UI.getStoryDialogState) {
+            dialogState = UI.getStoryDialogState();
+        }
         return {
             active:           _storyState.active,
             chapter:          _storyState.chapter,
@@ -1210,7 +1215,8 @@ var StoryMode = (function () {
             flags:            JSON.parse(JSON.stringify(_storyState.flags)),
             buttonsUnlocked:  _storyState.buttonsUnlocked.slice(),
             dialogsSeen:      _storyState.dialogsSeen.slice(),
-            chapterStartDay:  _storyState.chapterStartDay
+            chapterStartDay:  _storyState.chapterStartDay,
+            activeDialog:     dialogState
         };
     }
 
@@ -1251,6 +1257,22 @@ var StoryMode = (function () {
                 }
             }
             _refreshTracker();
+
+            // Restore active dialog if one was in progress at save time
+            if (data.activeDialog && data.activeDialog.dialogKey) {
+                var dKey = data.activeDialog.dialogKey;
+                var dLine = data.activeDialog.lineIndex || 0;
+                if (typeof STORY_DIALOGS !== 'undefined' && STORY_DIALOGS[dKey]) {
+                    // Slight delay so UI is ready
+                    setTimeout(function() {
+                        var dialogData = STORY_DIALOGS[dKey];
+                        dialogData._dialogKey = dKey;
+                        if (typeof UI !== 'undefined' && UI.showStoryDialog) {
+                            UI.showStoryDialog(dialogData, dLine);
+                        }
+                    }, 500);
+                }
+            }
         }
     }
 
