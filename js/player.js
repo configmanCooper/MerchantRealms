@@ -27266,10 +27266,11 @@
         let finalPay = Math.round(job.pay * efficiency);
 
         // Prosperity wage scaling
+        var town = null;
         try {
-            var currentTown = Engine.findTown(player.townId);
-            if (currentTown && typeof currentTown.prosperity === 'number') {
-                var wageMultiplier = 1 + (currentTown.prosperity - 50) * 0.003;
+            town = Engine.findTown(player.townId);
+            if (town && typeof town.prosperity === 'number') {
+                var wageMultiplier = 1 + (town.prosperity - 50) * 0.003;
                 finalPay = Math.round(finalPay * wageMultiplier);
             }
         } catch(e) {}
