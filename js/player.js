@@ -37373,6 +37373,12 @@
         if (!world.familyHouses) world.familyHouses = [];
         world.familyHouses.push(familyHouse);
 
+        // Story mode players start as citizens (rank 1) in their home kingdom
+        if (player.citizenshipKingdomId) {
+            if (!player.socialRank) player.socialRank = {};
+            player.socialRank[player.citizenshipKingdomId] = 1;
+        }
+
         // Initialize story mode controller if available
         if (typeof StoryMode !== 'undefined' && StoryMode.init) {
             StoryMode.init(player);
