@@ -660,6 +660,17 @@ window.Game = (function () {
             }
         }
 
+        // Ensure Ashford has building materials for cheapest houses (shack: wood 6, rope 1)
+        var _buildMats = { wood: { qty: 30, price: 5 }, rope: { qty: 15, price: 10 }, planks: { qty: 20, price: 12 }, stone: { qty: 20, price: 6 } };
+        for (var _bm in _buildMats) {
+            if (!ashford.market.supply[_bm] || ashford.market.supply[_bm] < _buildMats[_bm].qty) {
+                ashford.market.supply[_bm] = _buildMats[_bm].qty;
+            }
+            if (!ashford.market.prices[_bm] || ashford.market.prices[_bm] > _buildMats[_bm].price * 2) {
+                ashford.market.prices[_bm] = _buildMats[_bm].price;
+            }
+        }
+
         // Ensure Ferrowdale has iron mine
         if (valdrenTowns.length > 2) {
             var ferrowdale = valdrenTowns[2];

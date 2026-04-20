@@ -116,9 +116,11 @@ var StoryMode = (function () {
         {
             id: 'ch5', title: 'A Place to Call Home', act: 1,
             startDialog: 'ch5_mother_housing',
+            note: 'Keep earning gold until you can afford land and a house.',
             objectives: [
-                { id: 'ch5_buy_housing', type: 'own_building', building: 'housing', desc: 'Acquire housing',        done: false },
-                { id: 'ch5_rest',        type: 'custom',       fn: '_checkRested',  desc: 'Rest at your new home',  done: false }
+                { id: 'ch5_buy_land',    type: 'custom',       fn: '_checkOwnsLand',   desc: 'Buy a plot of land',      done: false },
+                { id: 'ch5_buy_housing', type: 'own_building', building: 'housing', desc: 'Build or acquire housing', done: false },
+                { id: 'ch5_rest',        type: 'custom',       fn: '_checkRested',  desc: 'Rest at your new home',    done: false }
             ],
             endDialog: 'ch5_complete',
             unlockButtons: [],
@@ -840,6 +842,17 @@ var StoryMode = (function () {
     };
 
     // ── Ch 5 ──
+    _hooks._checkOwnsLand = function () {
+        if (typeof Player === 'undefined') return false;
+        var totalLand = 0;
+        if (Player.state && Player.state.landOwned) {
+            for (var tid in Player.state.landOwned) totalLand += (Player.state.landOwned[tid] || 0);
+        } else if (Player.landOwned) {
+            for (var tid2 in Player.landOwned) totalLand += (Player.landOwned[tid2] || 0);
+        }
+        return totalLand > 0;
+    };
+
     _hooks._checkRested = function () {
         // Check if player has rested (energy > 80) while owning housing
         if (typeof Player !== 'undefined') {
@@ -1107,6 +1120,7 @@ var StoryMode = (function () {
 
     // Map custom hook functions to button hints
     var _customFnButtonMap = {
+        '_checkOwnsLand':         '#btnHousing',
         '_checkRested':           '#btnRest',
         '_checkWarDialogSeen':    '#btnTalk',
         '_checkFestivalAttended': '#btnStreet',
@@ -1129,6 +1143,10 @@ var StoryMode = (function () {
             var obj = ch.objectives[i];
             if (obj.done) continue;
             var btnId = _objectiveButtonMap[obj.type] || null;
+            // Housing objectives should point to Character → Housing, not Build
+            if (obj.type === 'own_building' && obj.building === 'housing') {
+                btnId = '#btnHousing';
+            }
             if (obj.type === 'custom' && obj.fn && _customFnButtonMap[obj.fn]) {
                 btnId = _customFnButtonMap[obj.fn];
             }

@@ -173,7 +173,7 @@
             lines: [
                 "We need to talk, {son|daughter}. You're eighteen now, earning your own coin, making your own way.",
                 "It's time to find lodging of your own. I love having you here, but a grown {man|woman} needs {his|her} own roof.",
-                "Ask around town about rooms for rent. Even a humble room is a start — every great merchant began somewhere small."
+                "You'll need to buy a plot of land first, then build a home on it. Save up your gold, check under Character, then Housing."
             ]
         },
 

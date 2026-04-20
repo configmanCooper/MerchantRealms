@@ -193,7 +193,27 @@
 
         }
 
-        const html = `<div class="build-categories">${catHtml}</div>
+        // Land purchase section at top of build dialog
+        let landHtml = '';
+        if (town) {
+            const ownedLand = Player.getOwnedLand ? Player.getOwnedLand(town.id) : 0;
+            const playerTownCat = town.category || 'village';
+            const maxPlots = (CONFIG.LAND_PLOTS_BASE && CONFIG.LAND_PLOTS_BASE[playerTownCat]) || 5;
+            const landCost = Player.getLandCost ? Player.getLandCost(town.id) : CONFIG.LAND_COST_BASE;
+            const usedLand = Player.getUsedLandSlots ? Player.getUsedLandSlots(town.id) : 0;
+            const freeLand = Math.max(0, ownedLand - usedLand);
+            landHtml += '<div style="padding:8px;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;background:rgba(60,50,30,0.15);">';
+            landHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">🏞️ Land Plots</div>';
+            landHtml += '<div style="font-size:0.8rem;color:#ccc;margin-bottom:6px;">Owned: ' + ownedLand + ' (' + freeLand + ' free, ' + usedLand + ' used) | Max: ' + maxPlots + '</div>';
+            if (ownedLand < maxPlots) {
+                landHtml += '<button class="btn-medieval" data-action="buyLandUI" style="font-size:0.8rem;padding:4px 12px;">🏗️ Buy Land (' + landCost + 'g)</button>';
+            } else {
+                landHtml += '<div style="font-size:0.75rem;color:#888;">Maximum land plots reached.</div>';
+            }
+            landHtml += '</div>';
+        }
+
+        const html = `${landHtml}<div class="build-categories">${catHtml}</div>
             <div class="build-grid" id="buildGrid">${gridHtml}</div>${saleHtml}`;
 
         openModal(`🏗️ Build — ${town ? town.name : ''}`, html);

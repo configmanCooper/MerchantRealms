@@ -31312,6 +31312,11 @@
     function getLandCost(townId) {
         var town = Engine.findTown(townId);
         if (!town) return CONFIG.LAND_COST_BASE;
+        // Story mode: first plot in player's home town costs 500g
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            var ownedHere = (player.landOwned && player.landOwned[townId]) || 0;
+            if (ownedHere === 0 && town.name === 'Ashford') return 500;
+        }
         var cat = town.category || 'town';
         var sizeMultiplier = (CONFIG.LAND_COST_MULTIPLIER && CONFIG.LAND_COST_MULTIPLIER[cat]) || (CONFIG.HOUSING_LABOR_MULTIPLIER && CONFIG.HOUSING_LABOR_MULTIPLIER[cat]) || 1.0;
         var prosperityMultiplier = Math.max(0.5, (town.prosperity || 50) / 50);

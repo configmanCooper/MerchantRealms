@@ -485,6 +485,22 @@
         }
 
         _renderObjectives(_currentObjectives);
+
+        // Render chapter note/subnote if present
+        var noteEl = _container.querySelector('.st-chapter-note');
+        if (chapter && chapter.note) {
+            if (!noteEl) {
+                noteEl = document.createElement('div');
+                noteEl.className = 'st-chapter-note';
+                noteEl.style.cssText = 'font-size:0.75rem;color:#b0a080;font-style:italic;padding:4px 8px 0;margin-top:2px;';
+                var list = _container.querySelector('.st-objectives');
+                if (list && list.parentNode) list.parentNode.insertBefore(noteEl, list.nextSibling);
+            }
+            noteEl.textContent = '\u{1F4AC} ' + chapter.note;
+        } else if (noteEl) {
+            noteEl.remove();
+        }
+
         _renderFooter(chapter ? chapter.id : 1);
     }
 
