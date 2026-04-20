@@ -10802,13 +10802,8 @@ window.UI = (function () {
 
     function restUI(locationId) {
         if (!Player.restForTicks) { toast('Rest system not available.', 'error'); return; }
-        // Rest enough ticks to reach full energy
-        var maxEnergy = Player.maxEnergy || 100;
-        var energy = Player.energy != null ? Player.energy : 100;
-        var rate = 3.0; // default, will be calculated by restForTicks
-        var ticksNeeded = Math.ceil((maxEnergy - energy) / rate);
-        if (ticksNeeded < 1) ticksNeeded = 1;
-        var result = Player.restForTicks(locationId, ticksNeeded);
+        // Pass a large tick count — restForTicks clamps to what's needed for full energy
+        var result = Player.restForTicks(locationId, 9999);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) window._tutorialRested = true;
         closeModal();
