@@ -3007,7 +3007,7 @@
 
             for (var bi = 0; bi < town.buildings.length; bi++) {
                 var bld = town.buildings[bi];
-                if (!bld.ownerId || bld.ownerId === 'player') continue;
+                if (bld.ownerId === 'player') continue;
                 var bt = findBuildingType(bld.type);
                 if (!bt) continue;
 
@@ -3044,6 +3044,12 @@
                         if (pSupply === 0 && pDemand >= 10) demandBonus = 15;
                         else if (pDemand > pSupply * 1.5) demandBonus = 5;
                         else if (pDemand > pSupply) demandBonus = 2;
+
+                        // Wartime boost for military goods and steel
+                        if (isAtWar) {
+                            var warGoods = ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'arrows', 'arrows_good', 'steel', 'blasting_powder', 'demolition_tools'];
+                            if (warGoods.indexOf(recipe.produces) >= 0) demandBonus += 10;
+                        }
 
                         var margin = ((sellPrice * (recipe.rate || 1)) - inputCost) + demandBonus;
                         if (!inputsAvailable) margin *= 0.3;
@@ -3099,6 +3105,54 @@
                     if (newTier !== currentTier) {
                         bld.productionTier = newTier;
                     }
+                }
+            }
+        }
+
+        // ── Kingdom wartime production directives ──
+        // Warring kingdoms ensure at least one smelter produces steel
+        // and prioritize military output from blacksmiths/armorers
+        if (world.kingdoms) {
+            for (var ki = 0; ki < world.kingdoms.length; ki++) {
+                var k = world.kingdoms[ki];
+                if (!k.atWar || k.atWar.size === 0) continue;
+
+                var kTowns = world.towns.filter(function(t) { return k.territories.has(t.id); });
+                var hasSteelProd = false;
+                var idleSmelters = [];
+
+                for (var kti = 0; kti < kTowns.length; kti++) {
+                    var kt = kTowns[kti];
+                    if (!kt.buildings) continue;
+                    for (var kbi = 0; kbi < kt.buildings.length; kbi++) {
+                        var kb = kt.buildings[kbi];
+                        if (kb.ownerId === 'player') continue;
+                        if (kb.type === 'smelter') {
+                            if (kb.currentProduct === 'steel') {
+                                hasSteelProd = true;
+                            } else {
+                                idleSmelters.push(kb);
+                            }
+                        }
+                    }
+                }
+
+                // If no steel production during war, convert one smelter
+                if (!hasSteelProd && idleSmelters.length > 0) {
+                    // Pick smelter in town with charcoal supply
+                    var bestSmelter = null;
+                    for (var si = 0; si < idleSmelters.length; si++) {
+                        var sTown = kTowns.find(function(t) {
+                            return t.buildings && t.buildings.indexOf(idleSmelters[si]) >= 0;
+                        });
+                        if (sTown && (sTown.market.supply.charcoal || 0) > 0 && (sTown.market.supply.iron || 0) > 0) {
+                            bestSmelter = idleSmelters[si];
+                            break;
+                        }
+                    }
+                    if (!bestSmelter) bestSmelter = idleSmelters[0];
+                    bestSmelter.currentProduct = 'steel';
+                    bestSmelter.productionChoice = 'steel';
                 }
             }
         }
@@ -4335,9 +4389,9 @@
             if (ownedBt.availableProducts) {
                 var currentProd = ownedBld.currentProduct || ownedBld.productionChoice;
                 var recipe = currentProd ? ownedBt.availableProducts[currentProd] : null;
-                if (recipe && recipe.inputs) {
-                    for (var rInputId in recipe.inputs) {
-                        inputNeeds[rInputId] = (inputNeeds[rInputId] || 0) + (recipe.inputs[rInputId] || 1);
+                if (recipe && recipe.consumes) {
+                    for (var rInputId in recipe.consumes) {
+                        inputNeeds[rInputId] = (inputNeeds[rInputId] || 0) + (recipe.consumes[rInputId] || 1);
                     }
                 }
             }

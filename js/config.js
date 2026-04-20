@@ -649,7 +649,7 @@ const CONFIG = {
     LICENSE_FEE_MAX: 3000,         // Maximum a king can set license fees
     LICENSE_FEE_WAR_MIN: 500,      // Minimum for war goods
     LICENSE_FEE_WAR_MAX: 5000,     // Maximum for war goods
-    WAR_GOODS: ['swords', 'armor', 'blasting_powder', 'demolition_tools', 'steel'],
+    WAR_GOODS: ['swords', 'armor', 'bows', 'arrows', 'blasting_powder', 'demolition_tools', 'steel'],
     LICENSE_MIN_REPUTATION: 40,
     LICENSE_MIN_RANK: 1,           // Freeman (index 1)
     LICENSE_WEAPON_MIN_RANK: 3,    // Guildmaster (index 3) for weapons
@@ -1793,7 +1793,12 @@ const RESOURCE_TYPES = {
 
 const BUILDING_TYPES = {
     WHEAT_FARM:    { id: 'wheat_farm',    name: 'Wheat Farm',    cost: 200,  workers: 3, produces: 'wheat',    consumes: {},                       rate: 8, category: 'farm',       storage: 80, optionalBoost: { resource: 'manure', bonusPct: 25, consumeRate: 1, storageName: 'Manure Storage', storageMax: 20 }, materials: { wood: 10, stone: 5 } },
-    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide'], byproduct: { resource: 'manure', rate: 3 }, byproductStorage: 30, materials: { wood: 15, planks: 5 } },
+    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide'], byproduct: { resource: 'manure', rate: 3 }, byproductStorage: 30, materials: { wood: 15, planks: 5 },
+        availableProducts: {
+            meat: { produces: 'meat', consumes: { wheat: 2 }, rate: 4 },
+            hide: { produces: 'hide', consumes: { wheat: 2 }, rate: 3 },
+        },
+    },
     SHEEP_FARM:    { id: 'sheep_farm',    name: 'Sheep Farm',    cost: 250,  workers: 2, produces: 'wool',     consumes: { wheat: 1 },             rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 } },
     CHICKEN_FARM:  { id: 'chicken_farm',  name: 'Chicken Farm',  cost: 150,  workers: 2, produces: 'eggs',     consumes: { wheat: 1 },             rate: 10, category: 'farm',      storage: 60, byproduct: { resource: 'manure', rate: 1 }, byproductStorage: 30, materials: { wood: 8 } },
     IRON_MINE:     { id: 'iron_mine',     name: 'Iron Mine',     cost: 500,  workers: 5, produces: 'iron_ore', consumes: {},                       rate: 5, category: 'mine',       storage: 80, materials: { wood: 20, stone: 15, tools: 3 } },
@@ -1838,7 +1843,7 @@ const BUILDING_TYPES = {
         availableProducts: {
             swords:           { produces: 'swords',           consumes: { iron: 2, wood: 1 },              rate: 3 },
             swords_good:      { produces: 'swords_good',      consumes: { iron: 3, wood: 2 },              rate: 2 },
-            swords_excellent: { produces: 'swords_excellent',  consumes: { steel: 3, wood: 2 },             rate: 1 },
+            swords_excellent: { produces: 'swords_excellent',  consumes: { steel: 2, iron: 1, wood: 2 },    rate: 1 },
             tools:            { produces: 'tools',            consumes: { iron: 1, wood: 1 },              rate: 3 },
             iron:             { produces: 'iron',             consumes: { iron_ore: 2, wood: 1 },          rate: 4 },
             demolition_tools: { produces: 'demolition_tools', consumes: { iron: 3, rope: 2, wood: 3 },    rate: 1 },
@@ -1848,7 +1853,7 @@ const BUILDING_TYPES = {
         availableProducts: {
             armor:            { produces: 'armor',            consumes: { iron: 3, leather: 2 },           rate: 2 },
             armor_good:       { produces: 'armor_good',       consumes: { iron: 5, leather: 3 },           rate: 1 },
-            armor_excellent:  { produces: 'armor_excellent',   consumes: { steel: 4, leather: 3 },          rate: 1 },
+            armor_excellent:  { produces: 'armor_excellent',   consumes: { steel: 2, iron: 2, leather: 3 }, rate: 1 },
         },
     },
     WAREHOUSE:     { id: 'warehouse',     name: 'Warehouse',     cost: 500,  workers: 1, produces: null,       consumes: {},                       rate: 0, category: 'storage',    storage: 800, materials: { wood: 20, stone: 10, planks: 10, bricks: 5 } },
@@ -1860,8 +1865,8 @@ const BUILDING_TYPES = {
     FLETCHER:      { id: 'fletcher',      name: 'Fletcher',      cost: 400,  workers: 2, produces: 'bows',           consumes: { wood: 2, hemp: 1 },        rate: 3, category: 'military',   storage: 40, materials: { wood: 12, stone: 8 }, canProduce: ['bows', 'bows_good', 'bows_excellent'],
         availableProducts: {
             bows:             { produces: 'bows',             consumes: { wood: 2, hemp: 1 },              rate: 3 },
-            bows_good:        { produces: 'bows_good',        consumes: { wood: 3, hemp: 2 },              rate: 2 },
-            bows_excellent:   { produces: 'bows_excellent',   consumes: { wood: 5, hemp: 3 },              rate: 1 },
+            bows_good:        { produces: 'bows_good',        consumes: { wood: 3, hemp: 2, iron: 1 },    rate: 2 },
+            bows_excellent:   { produces: 'bows_excellent',   consumes: { wood: 4, hemp: 2, iron: 1, steel: 1 }, rate: 1 },
         },
     },
     ARROW_MAKER:   { id: 'arrow_maker',   name: 'Arrow Maker',   cost: 250,  workers: 2, produces: 'arrows',         consumes: { wood: 1, iron: 1 },        rate: 8, category: 'military',   storage: 60, materials: { wood: 10, stone: 5 }, canProduce: ['arrows', 'arrows_good'],

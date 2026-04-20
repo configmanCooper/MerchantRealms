@@ -2710,6 +2710,11 @@ window.Game = (function () {
             delete window._tutorialSmallTalkDone;
             delete window._tutorialRested;
 
+            // Clear any stale tutorial/story highlight classes from tab buttons
+            document.querySelectorAll('.tab-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
+            document.querySelectorAll('.tab-btn.active').forEach(function(t) { t.classList.remove('active'); });
+            document.querySelectorAll('.sub-menu-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
+
             // Close any open modal from previous game
             if (typeof UI !== 'undefined' && UI.closeModal) {
                 try { UI.closeModal(); } catch(e) {}
@@ -2907,7 +2912,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.76.1',
+                gameVersion: 'v0.76.2',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

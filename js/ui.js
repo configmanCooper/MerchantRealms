@@ -10673,7 +10673,7 @@ window.UI = (function () {
             var result = Player.buyLand(Player.townId, false);
             toast(result.message, result.success ? 'success' : 'error');
             if (result.success) {
-                openHousingDialog();
+                _refreshAfterLandChange();
                 update();
             }
         }
@@ -10684,7 +10684,7 @@ window.UI = (function () {
         var result = Player.buyLand(Player.townId, true);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            openHousingDialog();
+            _refreshAfterLandChange();
             update();
         }
     }
@@ -10694,15 +10694,26 @@ window.UI = (function () {
         var result = Player.buyLand(Player.townId, false);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            openHousingDialog();
+            _refreshAfterLandChange();
             update();
+        }
+    }
+
+    /** After buying/selling land, refresh whichever dialog is currently open */
+    function _refreshAfterLandChange() {
+        var titleEl = document.getElementById('modalTitle');
+        var titleText = titleEl ? titleEl.textContent : '';
+        if (titleText.indexOf('Build') !== -1 && typeof UI !== 'undefined' && UI.openBuildDialog) {
+            UI.openBuildDialog();
+        } else {
+            openHousingDialog();
         }
     }
 
     function sellLandUI() {
         var result = Player.sellLand(Player.townId);
         toast(result.message, result.success ? 'success' : 'error');
-        if (result.success) openHousingDialog();
+        if (result.success) _refreshAfterLandChange();
     }
 
     // ═══════════════════════════════════════════════════════════

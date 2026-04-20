@@ -5036,6 +5036,16 @@
                     // Determine the base product (strip _good/_excellent from activeProduces)
                     var baseProduct = activeProduces.replace(/_good$/, '').replace(/_excellent$/, '');
 
+                    // Determine the minimum tier from the explicitly selected recipe
+                    // (don't downgrade below what was explicitly chosen via currentProduct)
+                    var selectedTier = 'basic';
+                    if (activeProduces.endsWith('_excellent')) selectedTier = 'excellent';
+                    else if (activeProduces.endsWith('_good')) selectedTier = 'good';
+                    var tierRank = { basic: 0, good: 1, excellent: 2 };
+                    if ((tierRank[targetTier] || 0) < (tierRank[selectedTier] || 0)) {
+                        targetTier = selectedTier;
+                    }
+
                     // Look up quality recipe from availableProducts if tier is non-basic
                     var tierOutputId = baseProduct;
                     var tierRate = activeRate;
@@ -5614,19 +5624,25 @@
                 var iBld = town.buildings[ibi];
                 var iBt = findBuildingType(iBld.type);
                 if (!iBt) continue;
-                // Main consumes field
-                if (iBt.consumes) {
-                    for (var iKey in iBt.consumes) {
-                        intermediateDemand[iKey] = (intermediateDemand[iKey] || 0) + (iBt.consumes[iKey] || 0) * (iBt.rate || 1) * (iBld.level || 1);
+                // Determine active recipe for this building
+                var iActiveProduct = iBld.currentProduct || iBld.productionChoice;
+                var iActiveRecipe = (iActiveProduct && iBt.availableProducts && iBt.availableProducts[iActiveProduct]) ? iBt.availableProducts[iActiveProduct] : null;
+                var iActiveConsumes = iActiveRecipe ? iActiveRecipe.consumes : (iBt.consumes || {});
+                var iActiveRate = iActiveRecipe ? (iActiveRecipe.rate || iBt.rate || 1) : (iBt.rate || 1);
+                // Add active recipe demand at full weight
+                if (iActiveConsumes) {
+                    for (var iKey in iActiveConsumes) {
+                        intermediateDemand[iKey] = (intermediateDemand[iKey] || 0) + (iActiveConsumes[iKey] || 0) * iActiveRate * (iBld.level || 1);
                     }
                 }
-                // Also check availableProducts recipes (multi-product buildings)
+                // Add alternative recipes at low weight (signals potential switching)
                 if (iBt.availableProducts) {
                     for (var iProdKey in iBt.availableProducts) {
+                        if (iProdKey === iActiveProduct) continue; // skip active (already counted)
                         var iRecipe = iBt.availableProducts[iProdKey];
                         if (iRecipe && iRecipe.consumes) {
                             for (var irKey in iRecipe.consumes) {
-                                intermediateDemand[irKey] = (intermediateDemand[irKey] || 0) + (iRecipe.consumes[irKey] || 0) * (iRecipe.rate || 1) * (iBld.level || 1) * 0.5;
+                                intermediateDemand[irKey] = (intermediateDemand[irKey] || 0) + (iRecipe.consumes[irKey] || 0) * (iRecipe.rate || 1) * (iBld.level || 1) * 0.2;
                             }
                         }
                     }

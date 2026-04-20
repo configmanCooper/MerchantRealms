@@ -4,6 +4,31 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.76.2] - Production & Economy Fixes
+
+### Fixed — Production System
+- **NPC buildings skipped by recipe optimizer**: Community-owned buildings (ownerId: null) were skipped by `npcOptimizeProduction()` — now properly included
+- **Military tier downgrade bug**: Explicitly selected excellent recipes (consuming steel) could be downgraded to basic tier by low-skill workers — tier floor now prevents this
+- **EM input-needs tracking**: `recipe.inputs` → `recipe.consumes` fix for vertical integration decisions
+- **Intermediate demand accuracy**: Active recipe inputs now weighted at full demand; alternative recipes at 0.2× (was 0.5× for all recipes regardless of active selection)
+
+### Changed — Weapon & Armor Recipes
+- **Excellent Swords**: Now require steel(2) + iron(1) + wood(2) (was steel(3) + wood(2))
+- **Excellent Armor**: Now require steel(2) + iron(2) + leather(3) (was steel(4) + leather(3))
+- **Good Bows**: Now require wood(3) + hemp(2) + iron(1) (was wood(3) + hemp(2))
+- **Excellent Bows**: Now require wood(4) + hemp(2) + iron(1) + steel(1) (was wood(5) + hemp(3))
+- **WAR_GOODS**: Added bows and arrows to war goods list
+
+### Added — Economy Improvements
+- Cattle ranch `availableProducts` for meat/hide recipe switching
+- Wartime +10 demand bonus for military goods in NPC recipe optimizer
+- Kingdom wartime steel production directive (auto-converts smelter to steel when at war)
+
+### Fixed — UI
+- **Buy Land in Build dialog**: Now refreshes building list instead of switching to housing panel
+- **Tab button glow on load**: Stale tutorial-highlight classes cleared when loading non-story saves
+- **Sell Land**: Also refreshes correct dialog context
+
 ## [0.76.1] - Story Mode Audit & Bug Fixes
 
 ### Fixed — Story Mode Critical Bugs
