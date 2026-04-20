@@ -1597,6 +1597,8 @@
 
     function tickSpouseHealth(spouse) {
         var player = ps();
+        // Story Mode: protect family from random health events
+        if (player.storyMode && player.storyMode.active && player.storyMode.flags && player.storyMode.flags.protectFamily) return;
         var ai = player.spouseAI;
         var rng = Engine.getRng();
         var cfg = CONFIG.SPOUSE_AI;

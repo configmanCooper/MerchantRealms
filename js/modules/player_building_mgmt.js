@@ -138,6 +138,11 @@
         var prodRes = findResource(activeProduces);
         var prodName = prodRes ? prodRes.name : activeProduces;
 
+        // Story Mode: notify of work shift
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('work_shift', { buildingType: bld.type, buildingId: buildingId });
+        }
+
         return {
             success: true,
             message: '🔨 Worked a shift at ' + bt.name + '! Produced ' + output + ' ' + prodName + '. (+3 XP)',

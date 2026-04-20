@@ -939,8 +939,22 @@ window.UI = (function () {
         _initMobileTabBar();
         _initLeftDrawer();
         _initModalImprovements();
-        // Initialize guidance system
-        if (typeof Guidance !== 'undefined' && Guidance.init) Guidance.init();
+        // Initialize guidance system (suppress during story mode)
+        if (typeof Guidance !== 'undefined' && Guidance.init) {
+            var _pState = typeof Player !== 'undefined' ? Player.state : null;
+            if (!(_pState && _pState.storyMode && _pState.storyMode.active)) {
+                Guidance.init();
+            }
+        }
+        // Initialize Story Mode UI if active
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            if (typeof UI !== 'undefined' && UI.showStoryTracker) UI.showStoryTracker();
+            // Start chapter 1 if at prologue
+            var _sCh = StoryMode.getCurrentChapter ? StoryMode.getCurrentChapter() : null;
+            if (_sCh && _sCh.id === 'ch0') {
+                StoryMode.advanceChapter();
+            }
+        }
     }
 
     function hideGameUI() {
@@ -8802,6 +8816,14 @@ window.UI = (function () {
         var subMenu = document.getElementById('subMenu');
         if (!subMenu) return;
 
+        // Story Mode: check if this tab is unlocked
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            if (!StoryMode.isButtonUnlocked(category)) {
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔒 This feature will unlock later in the story.', 'info');
+                return;
+            }
+        }
+
         if (_activeTabCategory === category) {
             _closeSubMenu();
             return;
@@ -8847,6 +8869,19 @@ window.UI = (function () {
                 charTab.classList.add('needs-attention');
             } else {
                 charTab.classList.remove('needs-attention');
+            }
+        }
+        // Story Mode: dim locked tabs
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            var allTabs = document.querySelectorAll('.tab-btn');
+            for (var ti = 0; ti < allTabs.length; ti++) {
+                var cat = allTabs[ti].dataset.category;
+                if (cat && !StoryMode.isButtonUnlocked(cat)) {
+                    allTabs[ti].style.opacity = '0.35';
+                    allTabs[ti].style.pointerEvents = 'auto';
+                } else {
+                    allTabs[ti].style.opacity = '';
+                }
             }
         }
     }

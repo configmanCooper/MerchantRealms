@@ -139,6 +139,8 @@
 
     function inflictRandomIllness(source) {
         _sync();
+        // Story Mode: suppress random diseases
+        if (player.storyMode && player.storyMode.active && player.storyMode.flags && player.storyMode.flags.suppressDisease) return;
         const rng = Engine.getRng();
         if (!rng) return;
         // Housing disease resistance — player's primary home reduces illness chance
@@ -1277,7 +1279,13 @@
     Player.getMedicalFacilities = getMedicalFacilities;
     Player.selfTreat = selfTreat;
     Player.treatOther = treatOther;
-    Player.treatCompanion = treatCompanion;
+    Player.treatCompanion = function(targetType, targetId, method) {
+        var result = treatCompanion(targetType, targetId, method);
+        if (result && result.success && player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('treat_person', { targetType: targetType, targetId: targetId, method: method });
+        }
+        return result;
+    };
     Player.getTreatableCompanions = getTreatableCompanions;
     Player.tickInjuriesAndIllnesses = tickInjuriesAndIllnesses;
     Player._tickFamilyAutoTreatment = _tickFamilyAutoTreatment;

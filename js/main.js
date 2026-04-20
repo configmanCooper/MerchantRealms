@@ -315,6 +315,85 @@ window.Game = (function () {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    //  STORY MODE WORLD SETUP
+    // ═══════════════════════════════════════════════════════════
+    function _setupStoryWorld() {
+        var towns = Engine.getTowns();
+        var kingdoms = Engine.getKingdoms();
+        if (!towns || towns.length < 4 || !kingdoms || kingdoms.length < 2) return;
+
+        // Pick two kingdoms: Valdren (player's) and Korvath (enemy)
+        var valdren = kingdoms[0];
+        var korvath = kingdoms.length > 1 ? kingdoms[1] : null;
+        valdren.name = 'Valdren';
+        if (korvath) korvath.name = 'Korvath';
+
+        // Find towns in Valdren
+        var valdrenTowns = towns.filter(function(t) { return t.kingdomId === valdren.id; });
+        if (valdrenTowns.length < 3) {
+            // Fallback: just use first 3 towns
+            valdrenTowns = towns.slice(0, 3);
+        }
+
+        // Rename first 3 Valdren towns to story towns
+        valdrenTowns[0].name = 'Ashford';
+        if (valdrenTowns.length > 1) valdrenTowns[1].name = 'Millhaven';
+        if (valdrenTowns.length > 2) valdrenTowns[2].name = 'Ferrowdale';
+
+        // Set capital
+        if (valdren.capitalTownId) {
+            var capital = Engine.findTown(valdren.capitalTownId);
+            if (capital && capital.name !== 'Ashford' && capital.name !== 'Millhaven' && capital.name !== 'Ferrowdale') {
+                // Keep capital name but ensure it's not one of our story towns
+            } else if (valdrenTowns.length > 3) {
+                // Use 4th town as capital
+                valdren.capitalTownId = valdrenTowns[3].id;
+            }
+        }
+
+        // Ensure Ashford has required buildings
+        var ashford = valdrenTowns[0];
+        var requiredBuildings = ['blacksmith', 'bakery', 'clinic'];
+        var existingTypes = (ashford.buildings || []).map(function(b) { return b.type || b; });
+        for (var i = 0; i < requiredBuildings.length; i++) {
+            if (existingTypes.indexOf(requiredBuildings[i]) === -1) {
+                ashford.buildings = ashford.buildings || [];
+                ashford.buildings.push({ type: requiredBuildings[i], level: 1, ownerId: null, builtDay: -1000, condition: 'used', lastRepairDay: 0 });
+            }
+        }
+
+        // Ensure Ferrowdale has iron mine
+        if (valdrenTowns.length > 2) {
+            var ferrowdale = valdrenTowns[2];
+            var hasIronMine = (ferrowdale.buildings || []).some(function(b) { return (b.type || b) === 'iron_mine'; });
+            if (!hasIronMine) {
+                ferrowdale.buildings = ferrowdale.buildings || [];
+                ferrowdale.buildings.push({ type: 'iron_mine', level: 1, ownerId: null, builtDay: -1000, condition: 'used', lastRepairDay: 0 });
+            }
+            // Ensure iron deposit
+            if (!ferrowdale.deposits) ferrowdale.deposits = [];
+            var hasIronDeposit = ferrowdale.deposits.some(function(d) { return d.type === 'iron' || d.resource === 'iron_ore'; });
+            if (!hasIronDeposit) {
+                ferrowdale.deposits.push({ type: 'iron', resource: 'iron_ore', quality: 70, remaining: 10000 });
+            }
+        }
+
+        // Name the Korvath king
+        if (korvath) {
+            var korvathKing = Engine.findPerson(korvath.king);
+            if (korvathKing) {
+                korvathKing.firstName = 'Mordain';
+            }
+        }
+
+        // Name the Valdren king
+        var valdrenKing = Engine.findPerson(valdren.king);
+        if (valdrenKing) {
+            valdrenKing.firstName = 'Aldric';
+        }
+    }
+
     function startNewGame() {
         try {
             // Clean up tutorial if it was running
@@ -346,9 +425,59 @@ window.Game = (function () {
                 Engine.generate(Math.floor(Math.random() * 999999) + 1);
             }
 
+            // Story Mode: set up story towns in the generated world
+            const startConfig = window._selectedStartConfig || CONFIG.GAME_STARTS.find(s => s.id === 'normal') || null;
+            if (startConfig && startConfig.special === 'story_mode') {
+                _setupStoryWorld();
+            }
+
             // Show kingdom/town selection screen
             // After player picks a town, finalize game start
             UI.init(); // init UI so modal system works
+
+            // Story Mode: skip town selection, auto-select Ashford
+            if (startConfig && startConfig.special === 'story_mode') {
+                var storyTown = null;
+                var allTowns = Engine.getTowns();
+                for (var sti = 0; sti < allTowns.length; sti++) {
+                    if (allTowns[sti].name === 'Ashford') { storyTown = allTowns[sti]; break; }
+                }
+                if (!storyTown && allTowns.length > 0) storyTown = allTowns[0];
+                var storyTownId = storyTown ? storyTown.id : null;
+
+                // Hide char create screen
+                var cc2 = document.getElementById('charCreateScreen');
+                if (cc2) { cc2.classList.add('hidden'); cc2.style.display = 'none'; }
+
+                try {
+                    if (typeof Player !== 'undefined' && Player.init) {
+                        const world = Engine.getWorld ? Engine.getWorld() : {};
+                        Player.init(world, playerFirstName, playerLastName, playerSex, storyTownId, startConfig);
+                        delete window._selectedStartConfig;
+                    }
+                    const canvas = document.getElementById('gameCanvas');
+                    const world = Engine.getWorld ? Engine.getWorld() : {};
+                    Renderer.init(canvas, world);
+                    UI.showGameUI();
+                    try { UI.update(); } catch (e) { /* no-op */ }
+                    setupInput();
+                    state = 'playing';
+                    speed = 1;
+                    lastTickTime = performance.now();
+                    tickAccumulator = 0;
+                    tickCounter = 0;
+                    lastFrameTime = performance.now();
+                    var _initEvents = Engine.getEvents ? Engine.getEvents() : [];
+                    lastProcessedEventCount = _initEvents ? _initEvents.length : 0;
+                    if (!animFrameId) { loop(performance.now()); }
+                    if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
+                    startAutosave();
+                    UI.toast(`Welcome, ${playerFirstName}! Your story begins in Ashford.`, 'info');
+                } catch (e) {
+                    console.error('Failed to start story mode:', e);
+                }
+                return;
+            }
 
             UI.showKingdomSelection(function (selectedTownId) {
                 try {

@@ -207,6 +207,9 @@
         for (var i = 0; i < world.people.length; i++) {
             var p = world.people[i];
             if (!p.alive) continue;
+            // Story Mode: protect story NPCs from random health events
+            if (p.isStoryNPC && typeof Player !== 'undefined' && Player.state && Player.state.storyMode &&
+                Player.state.storyMode.active && Player.state.storyMode.flags && Player.state.storyMode.flags.protectFamily) continue;
             var tid = p.townId;
             if (!tid) continue;
 

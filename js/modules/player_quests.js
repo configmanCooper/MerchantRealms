@@ -3235,6 +3235,11 @@
         // Journal — guild membership
         Player.recordJournalEntry('guild', 'Joined the ' + guild.name + ' as a ' + type + ' member for ' + price + 'g. New opportunities and connections await.', { mood: 'hopeful' });
 
+        // Story Mode: notify of guild join
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('join_guild', { guildId: guildId });
+        }
+
         return { success: true, message: 'Joined ' + guild.name + '! Membership until Day ' + (currentExpiry + duration) + '.' };
     }
 

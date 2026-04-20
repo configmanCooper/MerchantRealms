@@ -4819,6 +4819,10 @@ CONFIG.KINGDOM_BUILD_TIMES = {
 // Game Start Scenarios
 // ============================================================
 CONFIG.GAME_STARTS = [
+    { id: 'story_mode', name: 'Story Mode', icon: '📖', difficulty: '★ Recommended', color: '#44cc88',
+      description: '★ Recommended for new players. Begin as a blacksmith\'s child and rise to nobility through an epic tale of war, family, and trade.',
+      startGold: 15, startRank: 0, startCitizen: true, hasFamily: false, age: 18, special: 'story_mode',
+      sortOrder: -1, badge: 'recommended' },
     { id: 'very_hard', name: 'Indentured Servant', icon: '⛓️', difficulty: 'Very Hard', color: '#ff3333',
       description: 'Bound to a traveling merchant for 7 years. Find a way out — or serve your time.',
       startGold: 0, startRank: 0, startCitizen: false, special: 'indentured' },

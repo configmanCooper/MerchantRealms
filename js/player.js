@@ -1415,6 +1415,10 @@
 
         addTradeLog(resourceId, qty, price, tid, 'buy');
         Player.consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
+        // Story Mode: notify story controller of buy action
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('buy_item', { item: resourceId, qty: qty, townId: tid });
+        }
         // Trading builds slight town reputation: +0.02 per 500g traded, capped at 0.02/day
         if (totalCost > 0) {
             var _tradeRepGain = Math.min(0.02, totalCost / 25000);
@@ -1782,6 +1786,10 @@
 
         addTradeLog(resourceId, qty, effectivePrice, tid, 'sell');
         Player.consumeEnergy(ENERGY_CONFIG.TRADE_COST || 2);
+        // Story Mode: notify story controller of sell action
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('sell_item', { item: resourceId, qty: qty, townId: tid, revenue: totalRevenue });
+        }
         // Trading builds slight town reputation: +0.02 per 500g traded, capped at 0.02/day
         if (totalRevenue > 0) {
             var _tradeRepGain2 = Math.min(0.02, totalRevenue / 25000);
@@ -2068,6 +2076,11 @@
         autoJournalCapture('building', 'I built a ' + bt.name + ' in ' + town.name + '. My empire grows.', { mood: 'hopeful' });
         grantXP(XP_REWARDS.BUILD, 'build');
         Player.consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
+        // Story Mode: notify of building construction
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('build_building', { type: buildingType, townId: tid });
+            StoryMode.onPlayerAction('own_building', { type: buildingType, townId: tid });
+        }
         return { success: true, message: `Built ${bt.name} in ${town.name}.`, building: bld };
     }
 
@@ -2543,6 +2556,10 @@
         player.employees.push(person.id);
         player.stats.employeesHired++;
         grantXP(XP_REWARDS.HIRE, 'hire');
+        // Story Mode: notify of hiring
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('hire_worker', { personId: personId });
+        }
         return { success: true, message: `Hired ${person.firstName} ${person.lastName}.` };
     }
 
@@ -3004,6 +3021,10 @@
         crewMsg += ')';
         const tripType = recurring ? ' [Recurring Route]' : (roundTrip ? ' [Round Trip]' : '');
         Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType, null, 'my_business');
+        // Story Mode: notify of caravan send
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('send_caravan', { fromTownId: fromTownId, toTownId: toTownId });
+        }
         return { success: true, message: 'Caravan sent to ' + toTown.name + '.' + crewMsg + tripType, caravan: caravan };
     }
 
@@ -5040,6 +5061,10 @@
 
             const town = Engine.findTown(player.townId);
             Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`, null, 'travel_events');
+            // Story Mode: notify of arrival
+            if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('arrive_town', { townId: player.townId, townName: town ? town.name : '' });
+            }
 
             // Auto-pause on arrival so the player can decide what to do
             if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
@@ -8812,6 +8837,10 @@
         }
         player._feastInvitations.splice(feastIndex, 1);
         Engine.logEvent('✅ You accepted the feast invitation in ' + inv.townName + '.', null, 'my_kingdom');
+        // Story Mode hook
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('attend_feast', { kingdomId: inv.kingdomId, townName: inv.townName });
+        }
         return { success: true, message: 'Accepted! Attend the feast in ' + inv.townName + ' before day ' + inv.endDay + '.' };
     }
 
@@ -17755,6 +17784,8 @@
             _corruptionPoints: player._corruptionPoints || 0,
             _corruptionTrait: player._corruptionTrait || false,
             _militarySalesTotal: player._militarySalesTotal || 0,
+            // Story Mode — serialize from controller if active
+            storyMode: (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && StoryMode.serialize) ? StoryMode.serialize() : (player.storyMode ? structuredClone(player.storyMode) : null),
         };
     }
 
@@ -17866,6 +17897,11 @@
         player._corruptionPoints = data._corruptionPoints || 0;
         player._corruptionTrait = data._corruptionTrait || false;
         player._militarySalesTotal = data._militarySalesTotal || 0;
+        // Story Mode
+        player.storyMode = data.storyMode ? structuredClone(data.storyMode) : null;
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
+            StoryMode.deserialize(player.storyMode);
+        }
         player.alive = data.alive != null ? data.alive : true;
         player.spouseId = data.spouseId || null;
         // Validate spouseId against loaded world
@@ -21121,6 +21157,10 @@
         grantXP(XP_REWARDS.NEW_RANK || 100, 'rank');
         Engine.logEvent(`\uD83C\uDF96\uFE0F ${player.fullName} has been promoted to ${rank.name} in ${Engine.findKingdom(kId) ? Engine.findKingdom(kId).name : 'the kingdom'}!`);
         autoJournalCapture('rank', 'I have been promoted to ' + rank.name + '! The kingdom recognizes my worth.', { mood: 'triumphant' });
+        // Story Mode: notify of rank change
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('reach_rank', { rank: newIdx, kingdomId: kId });
+        }
 
         // Show graduation ceremony
         showRankCeremony(newIdx, kId);
@@ -25744,6 +25784,11 @@
 
         // Journal — skill learning
         recordJournalEntry('skill', 'Studied and mastered ' + skill.name + '. ' + (skill.desc || 'A useful ability that should serve me well.'), { mood: 'content' });
+
+        // Story Mode: notify of skill purchase
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('buy_skill', { skillId: skillId });
+        }
 
         return true;
     }
@@ -31871,6 +31916,8 @@
     function checkDailyEncounter() {
         if (!player.traveling) return;
         if (player.encounterPending) return; // already awaiting resolution
+        // Story Mode: suppress random encounters
+        if (player.storyMode && player.storyMode.active && player.storyMode.flags && player.storyMode.flags.suppressEncounters) return;
         var rng = Engine.getRng();
         if (!rng) return;
 
@@ -36548,6 +36595,8 @@
             initMilitaryLeaderStart();
         } else if (startConfig.special === 'scholar') {
             initScholarStart();
+        } else if (startConfig.special === 'story_mode') {
+            initStoryModeStart();
         }
 
         Engine.logEvent(player.fullName + ' begins their journey as ' + (startConfig.name || 'an adventurer') + '.', null, 'my_actions');
@@ -36891,6 +36940,156 @@
         }
     }
 
+    function initStoryModeStart() {
+        // Initialize story mode state on the player object
+        player.age = 18;
+        player.storyMode = {
+            active: true,
+            chapter: 0,
+            path: null,
+            complete: false,
+            objectives: {},
+            flags: {
+                suppressEncounters: true,
+                suppressDisease: true,
+                protectFamily: true,
+                edmundInjured: false,
+                edmundImprisoned: false,
+                edmundFreed: false,
+                margretIll: false,
+                ashfordCaptured: false,
+                ashfordLiberated: false,
+                metLordCalder: false,
+                metSeraphine: false,
+                warDeclared: false
+            },
+            buttonsUnlocked: ['character'],
+            dialogsSeen: [],
+            chapterStartDay: 0,
+            storyNPCs: {}
+        };
+
+        // Create story NPCs: Father Edmund and Mother Margret
+        var world = Engine.getWorld();
+        var rng = Engine.getRng();
+        var town = Engine.findTown(player.townId);
+        if (!town) return;
+
+        // Create Father Edmund as a real NPC
+        var edmundId = 'story_edmund_' + Date.now();
+        var edmund = {
+            id: edmundId,
+            firstName: 'Edmund',
+            lastName: player.lastName,
+            fullName: 'Edmund ' + player.lastName,
+            sex: 'M',
+            age: 48,
+            alive: true,
+            townId: player.townId,
+            occupation: 'blacksmith',
+            wealthClass: 'middle',
+            gold: 200,
+            relationship: {},
+            skills: { smithing: true, metallurgy: true },
+            isPlayerFamily: true,
+            familyRole: 'father',
+            health: 100,
+            injuries: [],
+            illnesses: [],
+            isStoryNPC: true
+        };
+
+        // Create Mother Margret
+        var margretId = 'story_margret_' + Date.now();
+        var margret = {
+            id: margretId,
+            firstName: 'Margret',
+            lastName: player.lastName,
+            fullName: 'Margret ' + player.lastName,
+            sex: 'F',
+            age: 45,
+            alive: true,
+            townId: player.townId,
+            occupation: 'homemaker',
+            wealthClass: 'middle',
+            gold: 50,
+            relationship: {},
+            skills: { cooking: true, herbalism: true },
+            isPlayerFamily: true,
+            familyRole: 'mother',
+            health: 100,
+            injuries: [],
+            illnesses: [],
+            isStoryNPC: true
+        };
+
+        // Add to world people
+        if (world.people) {
+            world.people.push(edmund);
+            world.people.push(margret);
+        }
+
+        // Set up family relationships
+        edmund.relationship[margretId] = 90;
+        edmund.relationship['player'] = 85;
+        margret.relationship[edmundId] = 90;
+        margret.relationship['player'] = 85;
+
+        // Track story NPC IDs
+        player.storyMode.storyNPCs = {
+            fatherId: edmundId,
+            motherId: margretId,
+            harlanId: null,
+            lordCalderId: null,
+            seraphineId: null,
+            kingAldricId: null,
+            ladyElowenId: null,
+            generalTheronId: null,
+            countRaskId: null
+        };
+
+        // Set up family members on player
+        player.familyMembers = player.familyMembers || [];
+        player.familyMembers.push({
+            id: edmundId,
+            role: 'father',
+            name: edmund.fullName,
+            relationship: 85,
+            alive: true
+        });
+        player.familyMembers.push({
+            id: margretId,
+            role: 'mother',
+            name: margret.fullName,
+            relationship: 85,
+            alive: true
+        });
+        player.parentIds = [edmundId, margretId];
+
+        // Place a blacksmith building owned by Edmund in the starting town
+        var blacksmithBld = {
+            type: 'blacksmith',
+            level: 2,
+            ownerId: edmundId,
+            builtDay: -3650,
+            condition: 'used',
+            lastRepairDay: 0,
+            workers: [],
+            active: true,
+            isStoryBuilding: true
+        };
+        if (town.buildings) {
+            town.buildings.push(blacksmithBld);
+        }
+
+        // Initialize story mode controller if available
+        if (typeof StoryMode !== 'undefined' && StoryMode.init) {
+            StoryMode.init(player);
+        }
+
+        Engine.logEvent('📖 Story Mode begins! You are ' + player.fullName + ', ' + (player.sex === 'F' ? 'daughter' : 'son') + ' of Edmund the blacksmith in ' + (town.name || 'your hometown') + '.', null, 'story');
+    }
+
     function initScholarStart() {
         player.scholar = {
             active: true,
@@ -36914,6 +37113,10 @@
         if (player.musician && (player.musician.active || player.musician.legacyChoice)) tickMusician();
         if (player.militaryLeader && player.militaryLeader.active) tickMilitaryLeader();
         if (player.scholar && (player.scholar.active || player.scholar.royaltiesActive)) tickScholar();
+        // Story Mode tick
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined') {
+            StoryMode.tick(player);
+        }
         // Military Service (from enlistment escape)
         if (player.militaryService && player.militaryService.active) {
             var msDay = Engine.getDay();
