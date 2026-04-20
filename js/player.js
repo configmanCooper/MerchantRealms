@@ -17682,6 +17682,8 @@
             alive: player.alive,
             spouseId: player.spouseId,
             childrenIds: [...player.childrenIds],
+            parentIds: player.parentIds ? [...player.parentIds] : [],
+            siblingIds: player.siblingIds ? [...player.siblingIds] : [],
             pregnantDay: player.pregnantDay || 0,
             _lastTryForBabyDay: player._lastTryForBabyDay || 0,
             generation: player.generation || 1,
@@ -18101,6 +18103,8 @@
                 return people.some(function(pp) { return pp.id === cid; });
             });
         }
+        player.parentIds = data.parentIds || [];
+        player.siblingIds = data.siblingIds || [];
         player.pregnantDay = data.pregnantDay || 0;
         player._lastTryForBabyDay = data._lastTryForBabyDay || 0;
         player.generation = data.generation || 1;

@@ -29869,6 +29869,7 @@
                 treaties: world.treaties || [],
                 fashionTrends: world.fashionTrends || [],
                 npcCaravans: world.npcCaravans || [],
+                familyHouses: world.familyHouses || [],
                 _nextId,
             };
         },
@@ -30404,6 +30405,7 @@
             world.treaties = data.treaties || [];
             world.fashionTrends = data.fashionTrends || [];
             world.npcCaravans = data.npcCaravans || [];
+            world.familyHouses = data.familyHouses || [];
             _nextId = data._nextId || world.people.length + world.towns.length + 1000;
 
             rebuildIndexes();
