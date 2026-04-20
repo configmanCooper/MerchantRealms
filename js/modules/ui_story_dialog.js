@@ -146,14 +146,17 @@
                 suffix = '_' + sex;
             }
             var audioFile = 'audio/story/' + dialogKey + '_' + _lineIndex + suffix + '.mp3';
+            console.log('[TTS] dialogKey=' + dialogKey + ' lineIndex=' + _lineIndex + ' suffix="' + suffix + '" file=' + audioFile + ' text="' + text.substring(0, 60) + '..."');
             var audio = new Audio(audioFile);
             audio.volume = 0.9;
             var playPromise = audio.play();
             if (playPromise && playPromise.then) {
                 playPromise.then(function() {
                     _currentAudio = audio;
-                }).catch(function() {
+                    console.log('[TTS] Playing: ' + audioFile);
+                }).catch(function(err) {
                     // MP3 not found or playback failed — fall back to browser TTS
+                    console.log('[TTS] MP3 failed (' + err.message + '), falling back to browser TTS');
                     _currentAudio = null;
                     _browserTTS(text, speakerKey);
                 });
