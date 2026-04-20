@@ -356,9 +356,20 @@
         _currentDialog = dialogData;
         _lineIndex = 0;
 
-        // Portrait
+        // Portrait — try to use actual NPC portrait for dynamic skin tones
         var portraitKey = dialogData.portrait || dialogData.speaker;
         var emoji = STORY_PORTRAITS[portraitKey] || '\u{1F464}';
+        // For father/mother, look up live NPC portrait (may have dynamic skin tone)
+        if (portraitKey === 'father' || portraitKey === 'mother' || portraitKey === 'father_edmund' || portraitKey === 'mother_margret') {
+            var _smNPCsP = (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.storyNPCs) ? Player.storyMode.storyNPCs : null;
+            if (_smNPCsP) {
+                var _npcIdP = (portraitKey === 'mother' || portraitKey === 'mother_margret') ? _smNPCsP.motherId : _smNPCsP.fatherId;
+                if (_npcIdP && typeof Engine !== 'undefined' && Engine.findPerson) {
+                    var _npcP = Engine.findPerson(_npcIdP);
+                    if (_npcP && _npcP.portrait) emoji = _npcP.portrait;
+                }
+            }
+        }
         document.getElementById('sdPortraitBox').textContent = emoji;
 
         // Speaker name

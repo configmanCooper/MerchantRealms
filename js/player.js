@@ -410,8 +410,83 @@
         return lo + Math.floor(Math.random() * (hi - lo + 1));
     }
 
+    // Age-based emoji faces (with skin tone support)
+    var BABY_EMOJI = '\u{1F476}';           // 👶
+    var CHILD_EMOJI_M = '\u{1F466}';        // 👦
+    var CHILD_EMOJI_F = '\u{1F467}';        // 👧
+    var ELDER_EMOJI_M = '\u{1F474}';        // 👴
+    var ELDER_EMOJI_F = '\u{1F475}';        // 👵
+
     function getPersonPortrait(person) {
         if (!person) return '\u{1F464}';
+        // Age-based portraits override cached portrait
+        var age = person.age;
+        var sex = person.sex || 'M';
+        var tone = (typeof person.skinTone === 'number') ? person.skinTone : -1;
+
+        // Baby (0-4): always use baby emoji
+        if (typeof age === 'number' && age < 5) {
+            // Determine skin tone from parents if not set
+            if (tone < 0 && person.parentIds && person.parentIds.length >= 2) {
+                var p1 = null, p2 = null;
+                try {
+                    for (var pi = 0; pi < person.parentIds.length; pi++) {
+                        var pid = person.parentIds[pi];
+                        if (pid === 'player') {
+                            tone = player.skinTone || 0;
+                        } else {
+                            var pp = Engine.findPerson(pid);
+                            if (pp) {
+                                if (!p1) p1 = pp; else p2 = pp;
+                            }
+                        }
+                    }
+                    if (tone < 0 && p1) tone = p1.skinTone || 0;
+                } catch (e) { /* ignore */ }
+                if (tone < 0) tone = 0;
+                person.skinTone = tone;
+            }
+            if (tone < 0) tone = 0;
+            person.portrait = _applyPortraitSkinTone(BABY_EMOJI, tone);
+            return person.portrait;
+        }
+
+        // Child (5-16): use boy/girl emoji
+        if (typeof age === 'number' && age >= 5 && age <= 16) {
+            if (tone < 0) {
+                // Try to derive from parents or hash
+                var hash2 = 0;
+                var idStr2 = (person.id || '') + '';
+                for (var c2 = 0; c2 < idStr2.length; c2++) {
+                    hash2 = ((hash2 << 5) - hash2) + idStr2.charCodeAt(c2);
+                    hash2 = hash2 & hash2;
+                }
+                tone = Math.abs(hash2 >> 4) % SKIN_TONES.length;
+                person.skinTone = tone;
+            }
+            var childBase = sex === 'F' ? CHILD_EMOJI_F : CHILD_EMOJI_M;
+            person.portrait = _applyPortraitSkinTone(childBase, tone);
+            return person.portrait;
+        }
+
+        // Elder (60+): use old man/woman emoji
+        if (typeof age === 'number' && age >= 60) {
+            if (tone < 0) {
+                var hash3 = 0;
+                var idStr3 = (person.id || '') + '';
+                for (var c3 = 0; c3 < idStr3.length; c3++) {
+                    hash3 = ((hash3 << 5) - hash3) + idStr3.charCodeAt(c3);
+                    hash3 = hash3 & hash3;
+                }
+                tone = Math.abs(hash3 >> 4) % SKIN_TONES.length;
+                person.skinTone = tone;
+            }
+            var elderBase = sex === 'F' ? ELDER_EMOJI_F : ELDER_EMOJI_M;
+            person.portrait = _applyPortraitSkinTone(elderBase, tone);
+            return person.portrait;
+        }
+
+        // Standard adult (17-59) — use cached if available
         if (person.portrait) return person.portrait;
         // Generate deterministic portrait from person id hash
         var hash = 0;
@@ -37091,6 +37166,14 @@
         var town = Engine.findTown(player.townId);
         if (!town) return;
 
+        // Derive parent skin tones from player's chosen skin tone
+        var playerTone = player.skinTone || 0;
+        var fatherTone = Math.min(playerTone + 1, 5); // father slightly darker
+        var motherTone = Math.max(playerTone - 1, 0); // mother slightly lighter
+        // If player is at extremes, keep parents close
+        if (playerTone <= 0) { fatherTone = 1; motherTone = 0; }
+        if (playerTone >= 5) { fatherTone = 5; motherTone = 4; }
+
         // Create Father Edmund as a real NPC
         var edmundId = 'story_edmund_' + Date.now();
         var edmund = {
@@ -37113,8 +37196,8 @@
             injuries: [],
             illnesses: [],
             isStoryNPC: true,
-            portrait: '\u{1F468}\u{1F3FD}',
-            skinTone: 3,
+            portrait: _applyPortraitSkinTone(PORTRAIT_FACES_M[0], fatherTone),
+            skinTone: fatherTone,
             faceType: 0
         };
 
@@ -37140,8 +37223,8 @@
             injuries: [],
             illnesses: [],
             isStoryNPC: true,
-            portrait: '\u{1F469}\u{1F3FC}',
-            skinTone: 2,
+            portrait: _applyPortraitSkinTone(PORTRAIT_FACES_F[0], motherTone),
+            skinTone: motherTone,
             faceType: 0
         };
 

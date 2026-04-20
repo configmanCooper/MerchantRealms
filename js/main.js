@@ -524,10 +524,8 @@ window.Game = (function () {
         }
 
         function getAllowedTones() {
-            if (!isStory) return [0, 1, 2, 3, 4, 5];
-            // Story mode: limit to tones compatible with parents (Edmund=3 medium, Margret=2 medium-light)
-            // Allow tones 1-4 (child could be anything in between the parents' range, plus one step)
-            return [1, 2, 3, 4];
+            // All tones available — parent tones will be derived from player's choice
+            return [0, 1, 2, 3, 4, 5];
         }
 
         function buildGrid() {
@@ -2931,6 +2929,10 @@ window.Game = (function () {
             if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
                 Tutorial.cleanup();
             }
+            // Close story dialog if open
+            if (typeof UI !== 'undefined' && UI.closeStoryDialog) UI.closeStoryDialog();
+            // Stop TTS
+            if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
             if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI();
             var ts = document.getElementById('titleScreen');
             if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }
