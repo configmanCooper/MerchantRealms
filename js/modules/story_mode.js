@@ -820,9 +820,14 @@ var StoryMode = (function () {
     // ── Ch 7: War ──
     _hooks._onChapter7Start = function () {
         _storyState.flags.warDeclared = true;
-        if (typeof Engine !== 'undefined') {
-            if (Engine.declareWar)     { Engine.declareWar('Valdren', 'Korvath'); }
-            if (Engine.banExport)      { Engine.banExport('iron_bars'); }
+        if (typeof Engine !== 'undefined' && Engine.getWorld) {
+            var w = Engine.getWorld();
+            if (w && w.kingdoms) {
+                var kA = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+                var kB = w.kingdoms.find(function(k) { return k.name === 'Korvath'; });
+                if (kA && kB && Engine.declareWar) Engine.declareWar(kA, kB, true);
+            }
+            if (Engine.banExport) { Engine.banExport('iron_bars'); }
         }
         _log('War has been declared between Valdren and Korvath.');
     };
