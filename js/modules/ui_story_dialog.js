@@ -255,6 +255,19 @@
         // Speaker name
         var speakerEl = document.getElementById('sdSpeaker');
         var displayName = (dialogData.speaker || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+        // For mother/father, append their actual first name
+        if (dialogData.speaker === 'mother' || dialogData.speaker === 'father') {
+            var _smNPCs = (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.storyNPCs) ? Player.storyMode.storyNPCs : null;
+            if (_smNPCs) {
+                var _npcId = dialogData.speaker === 'mother' ? _smNPCs.motherId : _smNPCs.fatherId;
+                if (_npcId && typeof Engine !== 'undefined' && Engine.findPerson) {
+                    var _npc = Engine.findPerson(_npcId);
+                    if (_npc && _npc.firstName) {
+                        displayName = displayName + ' - ' + _npc.firstName;
+                    }
+                }
+            }
+        }
         speakerEl.textContent = displayName;
         speakerEl.style.color = SPEAKER_COLORS[dialogData.speaker] || '#e8dcc8';
 
