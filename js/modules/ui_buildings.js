@@ -642,6 +642,7 @@
 
         toast('🏢 Apartment purchased for ' + price + 'g! Monthly maintenance: ' + (aptBld.monthlyFee || 0) + 'g.', 'success');
         Engine.logEvent('🏢 ' + Player.state.fullName + ' bought an apartment in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.');
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) StoryMode.onPlayerAction('own_building', { building: 'housing' });
         openTownMarket(); // Refresh
     }
 

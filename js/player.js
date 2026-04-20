@@ -30723,6 +30723,7 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
         Engine.logEvent('🏗️ ' + player.fullName + ' built a ' + ht.name + ' in ' + town.name + ' (materials: ' + costInfo.materialCost + 'g, labor: ' + laborCost + 'g).');
         grantXP(5, 'build house');
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) StoryMode.onPlayerAction('own_building', { building: 'housing' });
 
         // Journal — housing construction
         recordJournalEntry('building', 'Built a ' + ht.name + ' in ' + town.name + ' for ' + totalGoldNeeded + 'g. A proper roof over my head is worth every coin.', { mood: 'hopeful' });

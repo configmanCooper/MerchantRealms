@@ -470,12 +470,28 @@ var StoryMode = (function () {
 
     /** Check if the player owns a building matching a pattern (supports pipe-delimited alternatives). */
     function _playerOwnsBuilding(pattern) {
-        if (typeof Player === 'undefined' || !Player.buildings) { return false; }
+        if (typeof Player === 'undefined') { return false; }
         var types = (pattern || '').split('|');
-        for (var i = 0; i < Player.buildings.length; i++) {
-            var b = Player.buildings[i];
-            for (var t = 0; t < types.length; t++) {
-                if (b.type === types[t] || b.subtype === types[t]) { return true; }
+        // Check commercial buildings
+        if (Player.buildings) {
+            for (var i = 0; i < Player.buildings.length; i++) {
+                var b = Player.buildings[i];
+                for (var t = 0; t < types.length; t++) {
+                    if (b.type === types[t] || b.subtype === types[t]) { return true; }
+                }
+            }
+        }
+        // Check housing (Player.houses stores residential properties)
+        if (Player.houses && Player.houses.length > 0) {
+            for (var h = 0; h < types.length; h++) {
+                if (types[h] === 'housing') { return true; }
+            }
+            // Also match specific housing types (shack, cottage, townhouse, etc.)
+            for (var hi = 0; hi < Player.houses.length; hi++) {
+                var house = Player.houses[hi];
+                for (var ht = 0; ht < types.length; ht++) {
+                    if (house.type === types[ht]) { return true; }
+                }
             }
         }
         return false;
