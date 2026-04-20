@@ -259,7 +259,7 @@
             portrait: "father",
             lines: [
                 "We can't sit here waiting for the war to end. If Korvath won't sell us iron, we'll find it elsewhere.",
-                "I've heard tell of iron deposits to the north, near Ferrowdale. It won't be easy, but it's our best hope."
+                "I've heard tell of iron deposits near Ferrowdale. It won't be easy, but it's our best hope."
             ]
         },
 
