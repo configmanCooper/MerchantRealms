@@ -473,6 +473,23 @@ window.Game = (function () {
             charCreateScreen.classList.remove('hidden');
             charCreateScreen.style.display = 'flex';
         }
+
+        // Story mode: lock last name to "Ashford"
+        var lastNameEl = document.getElementById('charLastName');
+        if (lastNameEl) {
+            var isStory = window._selectedStartConfig && window._selectedStartConfig.id === 'story_mode';
+            if (isStory) {
+                lastNameEl.value = 'Ashford';
+                lastNameEl.readOnly = true;
+                lastNameEl.style.opacity = '0.6';
+                lastNameEl.style.cursor = 'not-allowed';
+            } else {
+                lastNameEl.value = '';
+                lastNameEl.readOnly = false;
+                lastNameEl.style.opacity = '';
+                lastNameEl.style.cursor = '';
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -481,7 +498,11 @@ window.Game = (function () {
     function _setupStoryWorld() {
         var towns = Engine.getTowns();
         var kingdoms = Engine.getKingdoms();
-        if (!towns || towns.length < 4 || !kingdoms || kingdoms.length < 2) return;
+        console.log('[StoryMode] _setupStoryWorld: towns=' + (towns ? towns.length : 0) + ' kingdoms=' + (kingdoms ? kingdoms.length : 0));
+        if (!towns || towns.length < 4 || !kingdoms || kingdoms.length < 2) {
+            console.warn('[StoryMode] _setupStoryWorld BAILED — not enough towns/kingdoms');
+            return;
+        }
 
         // Pick two kingdoms: Valdren (player's) and Korvath (enemy)
         var valdren = kingdoms[0];
@@ -520,6 +541,18 @@ window.Game = (function () {
             if (existingTypes.indexOf(requiredBuildings[i]) === -1) {
                 ashford.buildings = ashford.buildings || [];
                 ashford.buildings.push({ type: requiredBuildings[i], level: 1, ownerId: null, builtDay: -1000, condition: 'used', lastRepairDay: 0 });
+            }
+        }
+
+        // Ensure Ashford market has cheap food and water for ch1 objectives
+        if (!ashford.market) ashford.market = { supply: {}, prices: {} };
+        var _storyFoods = { bread: 4, fish: 4, vegetables: 3, eggs: 2, water: 1 };
+        for (var _sf in _storyFoods) {
+            if (!ashford.market.supply[_sf] || ashford.market.supply[_sf] < 10) {
+                ashford.market.supply[_sf] = 20;
+            }
+            if (!ashford.market.prices[_sf] || ashford.market.prices[_sf] > _storyFoods[_sf] * 2) {
+                ashford.market.prices[_sf] = _storyFoods[_sf];
             }
         }
 
@@ -599,29 +632,46 @@ window.Game = (function () {
             if (startConfig && startConfig.special === 'story_mode') {
                 var storyTown = null;
                 var allTowns = Engine.getTowns();
+                console.log('[StoryMode] Towns generated:', allTowns.length);
                 for (var sti = 0; sti < allTowns.length; sti++) {
                     if (allTowns[sti].name === 'Ashford') { storyTown = allTowns[sti]; break; }
                 }
                 if (!storyTown && allTowns.length > 0) storyTown = allTowns[0];
                 var storyTownId = storyTown ? storyTown.id : null;
+                console.log('[StoryMode] Story town:', storyTown ? storyTown.name : 'NONE', 'id:', storyTownId);
 
-                // Hide char create screen and game mode screen
+                // Hide ALL overlays — char create, game mode screen, title screen
                 var cc2 = document.getElementById('charCreateScreen');
                 if (cc2) { cc2.classList.add('hidden'); cc2.style.display = 'none'; }
                 var gms = document.getElementById('gameModeScreen');
-                if (gms) { gms.style.display = 'none'; }
+                if (gms) { gms.classList.add('hidden'); gms.style.display = 'none'; }
+                var ts2 = document.getElementById('titleScreen');
+                if (ts2) { ts2.classList.add('hidden'); ts2.style.display = 'none'; }
 
                 try {
                     if (typeof Player !== 'undefined' && Player.init) {
                         const world = Engine.getWorld ? Engine.getWorld() : {};
+                        console.log('[StoryMode] Calling Player.init with town:', storyTownId, 'config:', startConfig.id);
                         Player.init(world, playerFirstName, playerLastName, playerSex, storyTownId, startConfig);
+                        console.log('[StoryMode] Player.init complete. townId:', Player.townId, 'gold:', Player.gold, 'name:', Player.fullName);
                         delete window._selectedStartConfig;
                     }
+                } catch (e) {
+                    console.error('[StoryMode] Player.init FAILED:', e);
+                    console.error('[StoryMode] Stack:', e.stack);
+                    // Show error to user instead of silently failing
+                    alert('Story mode failed to initialize: ' + e.message + '\nCheck console for details.');
+                    return;
+                }
+
+                try {
                     const canvas = document.getElementById('gameCanvas');
                     const world = Engine.getWorld ? Engine.getWorld() : {};
+                    console.log('[StoryMode] World terrain:', world.terrain ? world.terrain.length : 'NONE', 'towns:', (world.towns || []).length);
                     Renderer.init(canvas, world);
+                    console.log('[StoryMode] Renderer.init complete. Player.townId:', Player.townId);
                     UI.showGameUI();
-                    try { UI.update(); } catch (e) { /* no-op */ }
+                    try { UI.update(); } catch (e) { console.warn('[StoryMode] UI.update warning:', e); }
                     setupInput();
                     state = 'playing';
                     speed = 1;
@@ -634,9 +684,11 @@ window.Game = (function () {
                     if (!animFrameId) { loop(performance.now()); }
                     if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
                     startAutosave();
-                    UI.toast(`Welcome, ${playerFirstName}! Your story begins in Ashford.`, 'info');
+                    UI.toast('Welcome, ' + playerFirstName + '! Your story begins in ' + (storyTown ? storyTown.name : 'your hometown') + '.', 'info');
+                    console.log('[StoryMode] Game started successfully');
                 } catch (e) {
-                    console.error('Failed to start story mode:', e);
+                    console.error('[StoryMode] Game start FAILED:', e);
+                    console.error('[StoryMode] Stack:', e.stack);
                 }
                 return;
             }
