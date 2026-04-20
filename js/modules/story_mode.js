@@ -109,7 +109,7 @@ var StoryMode = (function () {
             endDialog: 'ch4_complete',
             unlockButtons: [],
             onStart: null,
-            onComplete: null
+            onComplete: '_onChapter4Complete'
         },
 
         // Ch 5
@@ -533,11 +533,27 @@ var StoryMode = (function () {
         var ch = _currentChapterDef();
         if (!ch) { return; }
 
-        _showDialog(ch.endDialog);
-        _callHook(ch.onComplete);
         _log('Chapter ' + _storyState.chapter + ' complete.');
 
+        // If the chapter has an onComplete hook, call it first
+        // The hook can set _storyState.flags.deferAdvance to prevent immediate advancement
+        _storyState.flags.deferAdvance = false;
+        _callHook(ch.onComplete);
+
+        if (_storyState.flags.deferAdvance) {
+            // Hook is handling advancement (e.g., showing a dialog first)
+            // Show endDialog before the hook's dialog via queue
+            _showDialog(ch.endDialog);
+            return;
+        }
+
+        _showDialog(ch.endDialog);
+
         // Advance to the next chapter
+        _advanceToNextChapter();
+    }
+
+    function _advanceToNextChapter() {
         var next = _storyState.chapter + 1;
         if (next < CHAPTERS.length) {
             _beginChapter(next);
@@ -688,9 +704,9 @@ var StoryMode = (function () {
                     });
                 }
 
-                // Special: Ch3 return to Ashford — father takes gold
+                // Special: Ch3 return to Ashford
                 if (obj.id === 'ch3_return_ashford') {
-                    _handleCh3Return();
+                    // No special action — father takes gold after ch4 instead
                 }
             }
         }
@@ -729,47 +745,35 @@ var StoryMode = (function () {
         }
     };
 
-    function _handleCh3Return() {
-        // Father takes half the gold earned from selling tools
-        if (typeof Player === 'undefined') return;
+    // ── Ch 4: The Art of the Deal — Father takes tool gold on completion ──
+    _hooks._onChapter4Complete = function () {
+        // Father takes half the gold earned from the tool delivery (ch3)
+        if (typeof Player === 'undefined') { return; }
         var goldBefore = _storyState.flags.ch3GoldBefore || 0;
         var currentGold = Player.gold || 0;
         var earned = Math.max(0, currentGold - goldBefore);
         var halfEarned = Math.floor(earned / 2);
 
-        // Set flag to prevent auto-complete — we'll complete manually after dialog
-        _storyState.flags.ch3DeferComplete = true;
+        // Defer chapter advancement until father dialog is dismissed
+        _storyState.flags.deferAdvance = true;
 
         if (halfEarned > 0 && currentGold >= halfEarned) {
-            // Father takes his half, player keeps the rest as reward
+            // Father takes his half, player keeps the rest
             Player.state.gold -= halfEarned;
-            _log('Father takes ' + halfEarned + 'g — his share. You keep ' + (currentGold - halfEarned) + 'g as a reward.');
+            _log('Father takes ' + halfEarned + 'g — his share of the tools. You keep ' + (currentGold - halfEarned) + 'g.');
             _showDialog('ch3_father_takes_gold', function() {
-                _storyState.flags.ch3DeferComplete = false;
-                if (_allObjectivesMet()) _completeChapter();
+                _advanceToNextChapter();
             });
         } else {
-            // Player doesn't have enough gold — father admonishes
+            // Player doesn't have enough — father admonishes
             var took = Math.max(0, currentGold);
             if (took > 0) Player.state.gold = 0;
-            // Add extra unpaid work shift objective — blocks chapter completion
-            var ch = _currentChapterDef();
-            if (ch) {
-                ch.objectives.push({
-                    id: 'ch3_extra_work', type: 'work_shift',
-                    building: 'blacksmith|smelter|toolsmith',
-                    desc: 'Work an extra shift at the smithy (unpaid)',
-                    done: false
-                });
-                _refreshTracker();
-            }
+            _log('Father is disappointed. He takes your remaining ' + took + 'g and scolds you.');
             _showDialog('ch3_father_admonish', function() {
-                _storyState.flags.ch3DeferComplete = false;
-                if (_allObjectivesMet()) _completeChapter();
+                _advanceToNextChapter();
             });
-            _log('Father is disappointed. He takes your remaining ' + took + 'g and demands you work an extra unpaid shift.');
         }
-    }
+    };
 
     // ── Ch 7: War ──
     _hooks._onChapter7Start = function () {
@@ -974,7 +978,7 @@ var StoryMode = (function () {
             }
         }
 
-        if (changed && _allObjectivesMet() && !_storyState.flags.ch3DeferComplete) {
+        if (changed && _allObjectivesMet()) {
             _completeChapter();
         }
     }
@@ -990,7 +994,7 @@ var StoryMode = (function () {
 
         _matchAction(actionType, data || {});
 
-        if (_allObjectivesMet() && !_storyState.flags.ch3DeferComplete) {
+        if (_allObjectivesMet()) {
             _completeChapter();
         }
     }
