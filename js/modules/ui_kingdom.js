@@ -220,8 +220,20 @@
     }
 
     function selectTown(townId) {
-        // Don't hide screen yet — show start scenario selection first
         window._selectedTownId = townId;
+        // If origin was already chosen on the mode selection screen, skip scenario picker
+        if (window._selectedStartConfig) {
+            window._selectedStartId = window._selectedStartConfig.id;
+            // Still need to show military kingdom picker for military leader
+            if (window._selectedStartConfig.special === 'military_leader') {
+                showStartScenarioSelection(townId);
+                // Auto-select the military card
+                setTimeout(function() { selectStartScenario('military'); }, 100);
+                return;
+            }
+            confirmStartScenario();
+            return;
+        }
         showStartScenarioSelection(townId);
     }
 

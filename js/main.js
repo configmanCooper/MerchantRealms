@@ -133,7 +133,7 @@ window.Game = (function () {
         if (btnNew) {
             btnNew.addEventListener('click', function () {
                 startTitleMusic();
-                showCharacterCreation();
+                showGameModeSelection();
             });
         }
 
@@ -179,14 +179,14 @@ window.Game = (function () {
             btnStartAdventure.addEventListener('click', startNewGame);
         }
 
-        // Character creation — Back to Main Menu
+        // Character creation — Back to Mode Selection
         const btnBackToMenu = document.getElementById('btnBackToMenu');
         if (btnBackToMenu) {
             btnBackToMenu.addEventListener('click', function () {
                 var charScreen = document.getElementById('charCreateScreen');
-                var titleScr = document.getElementById('titleScreen');
                 if (charScreen) { charScreen.classList.add('hidden'); charScreen.style.display = 'none'; }
-                if (titleScr) { titleScr.classList.remove('hidden'); titleScr.style.display = 'flex'; }
+                delete window._selectedStartConfig;
+                showGameModeSelection();
             });
         }
 
@@ -300,6 +300,166 @@ window.Game = (function () {
         } catch (e) {
             // Silently ignore — music is non-critical
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  GAME MODE SELECTION (replaces direct char creation)
+    // ═══════════════════════════════════════════════════════════
+    var _MODE_CATEGORIES = [
+        {
+            id: 'story', title: 'Story Modes', icon: '📖', color: '#44cc88',
+            subtitle: 'Guided campaigns with narrative and tutorials',
+            starts: ['story_mode']
+        },
+        {
+            id: 'sandbox', title: 'Sandbox Modes', icon: '⚖️', color: '#DAA520',
+            subtitle: 'Classic open-world trading — choose your difficulty',
+            starts: ['very_hard', 'hard', 'normal', 'easy', 'very_easy']
+        },
+        {
+            id: 'unique', title: 'Unique Sandbox Modes', icon: '✨', color: '#dd88ff',
+            subtitle: 'Specialized origins with unique mechanics',
+            starts: ['pilgrim', 'shipwrecked', 'musician', 'military', 'scholar']
+        }
+    ];
+
+    function _getGameModeScreenEl() {
+        var el = document.getElementById('gameModeScreen');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'gameModeScreen';
+            el.className = 'overlay';
+            el.style.cssText = 'display:flex;align-items:center;justify-content:center;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:radial-gradient(ellipse at center, #1a1408 0%, #0a0a04 100%);';
+            document.body.appendChild(el);
+        }
+        return el;
+    }
+
+    function showGameModeSelection() {
+        var titleScreen = document.getElementById('titleScreen');
+        if (titleScreen) { titleScreen.classList.add('hidden'); titleScreen.style.display = 'none'; }
+        var charScreen = document.getElementById('charCreateScreen');
+        if (charScreen) { charScreen.classList.add('hidden'); charScreen.style.display = 'none'; }
+
+        var el = _getGameModeScreenEl();
+        el.style.display = 'flex';
+
+        var html = '<div class="title-content" style="max-width:700px;width:95%;">';
+        html += '<h1 class="game-title" style="font-size:2.4rem;margin-bottom:4px;">Choose Your Path</h1>';
+        html += '<div class="title-divider">⚜</div>';
+        html += '<p style="color:#b8a878;margin-bottom:24px;font-size:0.95rem;">How would you like to experience Merchant Realms?</p>';
+        html += '<div style="display:flex;flex-direction:column;gap:16px;">';
+
+        for (var i = 0; i < _MODE_CATEGORIES.length; i++) {
+            var cat = _MODE_CATEGORIES[i];
+            html += '<button class="btn-medieval" data-mode-cat="' + cat.id + '" style="';
+            html += 'display:flex;align-items:center;gap:14px;padding:18px 22px;font-size:1.1rem;';
+            html += 'border:2px solid ' + cat.color + ';background:linear-gradient(135deg, rgba(30,25,15,0.95), rgba(50,40,20,0.95));';
+            html += 'text-align:left;cursor:pointer;transition:all 0.2s;">';
+            html += '<span style="font-size:2.2rem;min-width:40px;text-align:center;">' + cat.icon + '</span>';
+            html += '<div style="flex:1;">';
+            html += '<div style="color:#e8d5b0;font-weight:bold;font-size:1.15rem;">' + cat.title + '</div>';
+            html += '<div style="color:#9a8a6a;font-size:0.85rem;margin-top:3px;">' + cat.subtitle + '</div>';
+            html += '</div>';
+            html += '<span style="color:#d4af37;font-size:1.4rem;">›</span>';
+            html += '</button>';
+        }
+
+        html += '</div>';
+        html += '<button id="btnModeBackToMenu" class="btn-medieval" style="display:block;margin:20px auto 0;font-size:0.9rem;padding:6px 18px;opacity:0.85;">🏠 Back to Main Menu</button>';
+        html += '</div>';
+        el.innerHTML = html;
+
+        // Bind clicks
+        el.querySelectorAll('[data-mode-cat]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var catId = btn.getAttribute('data-mode-cat');
+                _showCategoryStarts(catId);
+            });
+        });
+        var backBtn = document.getElementById('btnModeBackToMenu');
+        if (backBtn) {
+            backBtn.addEventListener('click', function() {
+                el.style.display = 'none';
+                if (titleScreen) { titleScreen.classList.remove('hidden'); titleScreen.style.display = 'flex'; }
+            });
+        }
+    }
+
+    function _showCategoryStarts(catId) {
+        var cat = _MODE_CATEGORIES.find(function(c) { return c.id === catId; });
+        if (!cat) return;
+
+        var el = _getGameModeScreenEl();
+        var starts = CONFIG.GAME_STARTS;
+        var catStarts = [];
+        for (var i = 0; i < cat.starts.length; i++) {
+            var s = starts.find(function(st) { return st.id === cat.starts[i]; });
+            if (s) catStarts.push(s);
+        }
+
+        // Custom display names for story mode
+        var displayNames = { 'story_mode': "The Blacksmith's Child" };
+
+        var html = '<div class="title-content" style="max-width:750px;width:95%;">';
+        html += '<h1 class="game-title" style="font-size:2rem;margin-bottom:4px;">' + cat.icon + ' ' + cat.title + '</h1>';
+        html += '<div class="title-divider">⚜</div>';
+        html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">';
+
+        for (var j = 0; j < catStarts.length; j++) {
+            var s = catStarts[j];
+            var name = displayNames[s.id] || s.name;
+            html += '<button class="btn-medieval" data-start-pick="' + s.id + '" style="';
+            html += 'display:flex;align-items:center;gap:14px;padding:16px 20px;font-size:1rem;';
+            html += 'border:2px solid ' + (s.color || '#555') + ';background:linear-gradient(135deg, rgba(30,25,15,0.95), rgba(50,40,20,0.95));';
+            html += 'text-align:left;cursor:pointer;transition:all 0.2s;">';
+            html += '<span style="font-size:2rem;min-width:36px;text-align:center;">' + s.icon + '</span>';
+            html += '<div style="flex:1;">';
+            html += '<div style="color:#e8d5b0;font-weight:bold;font-size:1.05rem;">' + name + '</div>';
+            html += '<div style="color:#9a8a6a;font-size:0.82rem;margin-top:3px;">' + s.description + '</div>';
+            html += '<div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;font-size:0.78rem;color:#b8a878;">';
+            html += '<span>💰 ' + s.startGold + 'g</span>';
+            if (s.difficulty) html += '<span style="color:' + (s.color || '#aaa') + ';">' + s.difficulty + '</span>';
+            if (s.hasFamily) html += '<span>👨‍👩‍👧 Family</span>';
+            if (s.startHouse) html += '<span>🏠 House</span>';
+            if (s.startBuilding || s.startBuildings) html += '<span>🏗️ Buildings</span>';
+            html += '</div>';
+            html += '</div>';
+            html += '</button>';
+        }
+
+        html += '</div>';
+        html += '<button id="btnStartBackToCats" class="btn-medieval" style="display:block;margin:20px auto 0;font-size:0.9rem;padding:6px 18px;opacity:0.85;">← Back</button>';
+        html += '</div>';
+        el.innerHTML = html;
+
+        // Bind clicks
+        el.querySelectorAll('[data-start-pick]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var startId = btn.getAttribute('data-start-pick');
+                _selectGameStart(startId);
+            });
+        });
+        var backBtn = document.getElementById('btnStartBackToCats');
+        if (backBtn) {
+            backBtn.addEventListener('click', function() {
+                showGameModeSelection();
+            });
+        }
+    }
+
+    function _selectGameStart(startId) {
+        var startConfig = CONFIG.GAME_STARTS.find(function(s) { return s.id === startId; });
+        if (!startConfig) return;
+
+        // Store the selected start config
+        window._selectedStartConfig = startConfig;
+
+        // Hide mode selection, show char creation
+        var el = _getGameModeScreenEl();
+        el.style.display = 'none';
+
+        showCharacterCreation();
     }
 
     function showCharacterCreation() {
@@ -2463,6 +2623,7 @@ window.Game = (function () {
         importSaveToSlot,
         startNewGame,
         showCharacterCreation,
+        showGameModeSelection,
         advanceTicks,
         isGodMode,
         downloadDebugFile,
