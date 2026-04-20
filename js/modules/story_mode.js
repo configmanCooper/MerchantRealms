@@ -60,10 +60,10 @@ var StoryMode = (function () {
             id: 'ch1', title: 'A Birthday Gift', act: 1,
             startDialog: 'ch1_birthday_mother',
             objectives: [
-                { id: 'ch1_buy_food',  type: 'buy_item',  item: 'food',  qty: 2, desc: 'Buy 2 food from the market', done: false },
+                { id: 'ch1_buy_food',  type: 'buy_item',  item: 'category:food',  qty: 2, desc: 'Buy 2 food from the market', done: false },
                 { id: 'ch1_buy_drink', type: 'buy_item',  item: 'water', qty: 1, desc: 'Buy a drink',                done: false }
             ],
-            endDialog: 'ch1_done_father',
+            endDialog: 'ch1_complete',
             unlockButtons: ['actions'],
             onStart: '_onChapter1Start',
             onComplete: null
@@ -72,12 +72,12 @@ var StoryMode = (function () {
         // Ch 2
         {
             id: 'ch2', title: 'The Forge', act: 1,
-            startDialog: 'ch2_father_forge',
+            startDialog: 'ch2_forge_father',
             objectives: [
                 { id: 'ch2_arrive_forge', type: 'arrive_town',  town: 'Ashford',    desc: 'Go to father\'s blacksmith', done: false },
-                { id: 'ch2_work_shift',   type: 'work_shift',   building: 'blacksmith', desc: 'Work a shift at the forge', done: false }
+                { id: 'ch2_work_shift',   type: 'work_shift',   building: 'blacksmith|smelter|toolsmith', desc: 'Work a shift at the forge', done: false }
             ],
-            endDialog: 'ch2_done_forge',
+            endDialog: 'ch2_complete',
             unlockButtons: ['business'],
             onStart: null,
             onComplete: null
@@ -86,12 +86,12 @@ var StoryMode = (function () {
         // Ch 3
         {
             id: 'ch3', title: 'The Delivery', act: 1,
-            startDialog: 'ch3_father_delivery',
+            startDialog: 'ch3_delivery_father',
             objectives: [
                 { id: 'ch3_arrive_millhaven', type: 'arrive_town', town: 'Millhaven', desc: 'Travel to Millhaven',                       done: false },
                 { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'iron_tools', desc: 'Deliver the tools (sell in Millhaven)', done: false }
             ],
-            endDialog: 'ch3_done_harlan',
+            endDialog: 'ch3_complete',
             unlockButtons: ['world'],
             onStart: null,
             onComplete: null
@@ -100,13 +100,13 @@ var StoryMode = (function () {
         // Ch 4
         {
             id: 'ch4', title: 'The Art of the Deal', act: 1,
-            startDialog: 'ch4_harlan_trade',
+            startDialog: 'ch4_harlan_teaches',
             objectives: [
                 { id: 'ch4_buy_goods',  type: 'buy_item',  item: '*', qty: 1,  desc: 'Buy cheap goods in Millhaven',       done: false },
                 { id: 'ch4_sell_goods', type: 'sell_item',  item: '*',          desc: 'Sell goods for profit in Ashford',    done: false },
                 { id: 'ch4_own_gold',   type: 'own_gold',   amount: 30,         desc: 'Accumulate 30 gold',                 done: false }
             ],
-            endDialog: 'ch4_done_harlan',
+            endDialog: 'ch4_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -115,12 +115,12 @@ var StoryMode = (function () {
         // Ch 5
         {
             id: 'ch5', title: 'A Place to Call Home', act: 1,
-            startDialog: 'ch5_housing_intro',
+            startDialog: 'ch5_mother_housing',
             objectives: [
                 { id: 'ch5_buy_housing', type: 'own_building', building: 'housing', desc: 'Acquire housing',        done: false },
                 { id: 'ch5_rest',        type: 'custom',       fn: '_checkRested',  desc: 'Rest at your new home',  done: false }
             ],
-            endDialog: 'ch5_done_rest',
+            endDialog: 'ch5_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -129,12 +129,12 @@ var StoryMode = (function () {
         // Ch 6
         {
             id: 'ch6', title: 'The Apprentice', act: 1,
-            startDialog: 'ch6_apprentice_intro',
+            startDialog: 'ch6_father_skills',
             objectives: [
                 { id: 'ch6_buy_skill',  type: 'buy_skill',   skill: '*', desc: 'Learn a new skill',  done: false },
                 { id: 'ch6_join_guild', type: 'join_guild',   guild: '*', desc: 'Join a guild',       done: false }
             ],
-            endDialog: 'ch6_done_guild',
+            endDialog: 'ch6_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -145,11 +145,11 @@ var StoryMode = (function () {
         // Ch 7
         {
             id: 'ch7', title: 'Drums of War', act: 2,
-            startDialog: 'ch7_war_announcement',
+            startDialog: 'ch7_war_crier',
             objectives: [
                 { id: 'ch7_read_announcement', type: 'custom', fn: '_checkWarDialogSeen', desc: 'Read the war announcement', done: false }
             ],
-            endDialog: 'ch7_done_war',
+            endDialog: 'ch7_complete',
             unlockButtons: [],
             onStart: '_onChapter7Start',
             onComplete: null
@@ -158,12 +158,12 @@ var StoryMode = (function () {
         // Ch 8
         {
             id: 'ch8', title: 'Fire and Iron', act: 2,
-            startDialog: 'ch8_iron_quest',
+            startDialog: 'ch8_father_plan',
             objectives: [
                 { id: 'ch8_arrive_ferrowdale', type: 'arrive_town',  town: 'Ferrowdale',                          desc: 'Travel to Ferrowdale',              done: false },
                 { id: 'ch8_own_iron',          type: 'own_building',  building: 'iron_mine|smelter',               desc: 'Build an iron mine or smelter',     done: false }
             ],
-            endDialog: 'ch8_done_iron',
+            endDialog: 'ch8_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -172,11 +172,11 @@ var StoryMode = (function () {
         // Ch 9
         {
             id: 'ch9', title: 'Roads of Fortune', act: 2,
-            startDialog: 'ch9_caravan_intro',
+            startDialog: 'ch9_father_caravan',
             objectives: [
                 { id: 'ch9_send_caravan', type: 'send_caravan', desc: 'Send a trade caravan', done: false }
             ],
-            endDialog: 'ch9_done_caravan',
+            endDialog: 'ch9_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -185,12 +185,12 @@ var StoryMode = (function () {
         // Ch 10
         {
             id: 'ch10', title: 'Bread and Butter', act: 2,
-            startDialog: 'ch10_bread_intro',
+            startDialog: 'ch10_mother_bread',
             objectives: [
                 { id: 'ch10_own_mill',    type: 'own_building', building: 'flour_mill|bakery', desc: 'Build a flour mill or bakery', done: false },
                 { id: 'ch10_hire_worker', type: 'hire_worker',                                  desc: 'Hire a worker',               done: false }
             ],
-            endDialog: 'ch10_done_bread',
+            endDialog: 'ch10_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -199,12 +199,12 @@ var StoryMode = (function () {
         // Ch 11
         {
             id: 'ch11', title: 'Fever and Steel', act: 2,
-            startDialog: 'ch11_family_crisis',
+            startDialog: 'ch11_father_injury',
             objectives: [
                 { id: 'ch11_treat_father', type: 'treat_person', person: 'Edmund',  desc: 'Treat father\'s injury',  done: false },
                 { id: 'ch11_treat_mother', type: 'treat_person', person: 'Margret', desc: 'Treat mother\'s illness', done: false }
             ],
-            endDialog: 'ch11_done_healed',
+            endDialog: 'ch11_complete',
             unlockButtons: [],
             onStart: '_onChapter11Start',
             onComplete: '_onChapter11Complete'
@@ -213,12 +213,12 @@ var StoryMode = (function () {
         // Ch 12
         {
             id: 'ch12', title: 'The Grand Festival', act: 2,
-            startDialog: 'ch12_festival_intro',
+            startDialog: 'ch12_festival_start',
             objectives: [
                 { id: 'ch12_attend_festival', type: 'custom', fn: '_checkFestivalAttended', desc: 'Attend the grand festival', done: false },
                 { id: 'ch12_meet_calder',     type: 'custom', fn: '_checkMetCalder',        desc: 'Speak with Lord Calder',    done: false }
             ],
-            endDialog: 'ch12_done_festival',
+            endDialog: 'ch12_complete',
             unlockButtons: [],
             onStart: '_onChapter12Start',
             onComplete: null
@@ -233,7 +233,7 @@ var StoryMode = (function () {
             objectives: [
                 { id: 'ch13_escape', type: 'arrive_town', town: '!Ashford', desc: 'Escape to a safe town', done: false }
             ],
-            endDialog: 'ch13_done_escape',
+            endDialog: 'ch13_escape_complete',
             unlockButtons: [],
             onStart: '_onChapter13Start',
             onComplete: null
@@ -242,12 +242,12 @@ var StoryMode = (function () {
         // Ch 14
         {
             id: 'ch14', title: 'A Petition to the Crown', act: 3,
-            startDialog: 'ch14_petition_intro',
+            startDialog: 'ch14_calder_plan',
             objectives: [
                 { id: 'ch14_reach_burgher', type: 'reach_rank', rank: 3,         desc: 'Reach the rank of Burgher',    done: false },
                 { id: 'ch14_meet_calder',   type: 'custom',     fn: '_checkMetCalderCapital', desc: 'Meet Lord Calder at the capital', done: false }
             ],
-            endDialog: 'ch14_done_petition',
+            endDialog: 'ch14_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -256,12 +256,12 @@ var StoryMode = (function () {
         // Ch 15
         {
             id: 'ch15', title: 'Master of the Guild', act: 3,
-            startDialog: 'ch15_guildmaster_intro',
+            startDialog: 'ch15_calder_wealth',
             objectives: [
                 { id: 'ch15_guildmaster', type: 'reach_rank', rank: 3,       desc: 'Attain Guildmaster standing',   done: false },
                 { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false }
             ],
-            endDialog: 'ch15_done_guild',
+            endDialog: 'ch15_complete',
             unlockButtons: ['system'],
             onStart: null,
             onComplete: null
@@ -270,13 +270,13 @@ var StoryMode = (function () {
         // Ch 16
         {
             id: 'ch16', title: 'Halls of Power', act: 3,
-            startDialog: 'ch16_nobility_intro',
+            startDialog: 'ch16_calder_nobility',
             objectives: [
                 { id: 'ch16_reach_noble',   type: 'reach_rank',   rank: 4,  desc: 'Become a Minor Noble',   done: false },
                 { id: 'ch16_attend_feast',  type: 'attend_feast',           desc: 'Attend a noble feast',   done: false },
                 { id: 'ch16_attend_court',  type: 'attend_court',           desc: 'Attend the royal court', done: false }
             ],
-            endDialog: 'ch16_done_power',
+            endDialog: 'ch16_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -285,9 +285,9 @@ var StoryMode = (function () {
         // Ch 17 — BRANCHING
         {
             id: 'ch17', title: 'The War Effort', act: 3,
-            startDialog: 'ch17_war_choice',
+            startDialog: 'ch17_choice',
             objectives: [],   // populated dynamically based on path
-            endDialog: 'ch17_done_war',
+            endDialog: null,   // branch-specific: ch17a_complete or ch17b_complete
             unlockButtons: [], // path B adds 'world' (outposts)
             onStart: '_onChapter17Start',
             onComplete: null,
@@ -308,12 +308,12 @@ var StoryMode = (function () {
         // Ch 18
         {
             id: 'ch18', title: 'Reunion', act: 3,
-            startDialog: 'ch18_liberation',
+            startDialog: 'ch18_ashford_liberated',
             objectives: [
                 { id: 'ch18_arrive_ashford', type: 'arrive_town', town: 'Ashford',                        desc: 'Return to Ashford',     done: false },
                 { id: 'ch18_talk_edmund',    type: 'custom',      fn: '_checkTalkedToEdmund',             desc: 'Speak with your father', done: false }
             ],
-            endDialog: 'ch18_done_reunion',
+            endDialog: 'ch18_complete',
             unlockButtons: [],
             onStart: '_onChapter18Start',
             onComplete: null
@@ -322,11 +322,11 @@ var StoryMode = (function () {
         // Ch 19
         {
             id: 'ch19', title: 'A New Dawn', act: 4,
-            startDialog: 'ch19_ceremony',
+            startDialog: 'ch19_ceremony_start',
             objectives: [
                 { id: 'ch19_ceremony', type: 'custom', fn: '_checkCeremonyAttended', desc: 'Attend the ceremony', done: false }
             ],
-            endDialog: 'ch19_done_dawn',
+            endDialog: 'ch19_sandbox_unlock',
             unlockButtons: [],
             onStart: null,
             onComplete: '_onChapter19Complete'
@@ -438,6 +438,18 @@ var StoryMode = (function () {
             case 'own_building':
                 return _playerOwnsBuilding(obj.building);
 
+            case 'arrive_town':
+                // Check if player is currently in the target town
+                if (typeof Player !== 'undefined' && Player.townId && !Player.traveling) {
+                    var curTown = (typeof Engine !== 'undefined' && Engine.findTown) ? Engine.findTown(Player.townId) : null;
+                    var curName = curTown ? curTown.name : '';
+                    if (obj.town && obj.town.charAt(0) === '!') {
+                        return curName !== obj.town.substring(1);
+                    }
+                    return curName === obj.town;
+                }
+                return false;
+
             case 'custom':
                 if (obj.fn && typeof _hooks[obj.fn] === 'function') {
                     return !!_hooks[obj.fn]();
@@ -538,6 +550,31 @@ var StoryMode = (function () {
     // ───────────────────────────────────────────────
 
     /**
+     * Check if a bought/sold item matches an objective item spec.
+     * Supports: '*' (any), exact id, or 'category:food' style category match.
+     */
+    function _itemMatches(spec, actualItem) {
+        if (spec === '*') { return true; }
+        if (spec === actualItem) { return true; }
+        // Category match: 'category:food' matches any item with category 'food'
+        if (spec && spec.indexOf('category:') === 0) {
+            var cat = spec.substring(9);
+            var rt = (typeof CONFIG !== 'undefined' && CONFIG.RESOURCE_TYPES)
+                ? CONFIG.RESOURCE_TYPES : null;
+            if (!rt) {
+                // Fallback: check RESOURCE_TYPES on window
+                rt = (typeof RESOURCE_TYPES !== 'undefined') ? RESOURCE_TYPES : null;
+            }
+            if (rt) {
+                for (var k in rt) {
+                    if (rt[k].id === actualItem && rt[k].category === cat) { return true; }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Map an action type + data to matching objective types and mark them done.
      *
      * @param {string} actionType  e.g. 'buy_item', 'sell_item', 'arrive_town' …
@@ -555,20 +592,26 @@ var StoryMode = (function () {
             var matched = false;
             switch (actionType) {
                 case 'buy_item':
-                    matched = (obj.item === '*' || obj.item === data.item) &&
-                              (data.qty === undefined || data.qty >= (obj.qty || 1));
+                    if (_itemMatches(obj.item, data.item)) {
+                        var needed = obj.qty || 1;
+                        var bought = data.qty || 1;
+                        // Accumulate progress for multi-purchase objectives
+                        if (!obj._progress) { obj._progress = 0; }
+                        obj._progress += bought;
+                        matched = obj._progress >= needed;
+                    }
                     break;
 
                 case 'sell_item':
-                    matched = (obj.item === '*' || obj.item === data.item);
+                    matched = _itemMatches(obj.item, data.item);
                     break;
 
                 case 'arrive_town':
+                    var arrTown = data.town || data.townName || '';
                     if (obj.town && obj.town.charAt(0) === '!') {
-                        // Negation: any town that is NOT the named one
-                        matched = data.town !== obj.town.substring(1);
+                        matched = arrTown !== obj.town.substring(1);
                     } else {
-                        matched = (data.town === obj.town);
+                        matched = (arrTown === obj.town);
                     }
                     break;
 
@@ -582,7 +625,12 @@ var StoryMode = (function () {
                     break;
 
                 case 'work_shift':
-                    matched = !obj.building || data.building === obj.building;
+                    var wsBldg = data.building || data.buildingType || '';
+                    if (!obj.building) { matched = true; }
+                    else {
+                        var wsAllowed = obj.building.split('|');
+                        matched = wsAllowed.indexOf(wsBldg) !== -1;
+                    }
                     break;
 
                 case 'send_caravan':
@@ -649,7 +697,8 @@ var StoryMode = (function () {
     _hooks._onChapter1Start = function () {
         // Mother gives 15 gold
         if (typeof Player !== 'undefined') {
-            Player.gold = (Player.gold || 0) + 15;
+            if (Player.modifyGold) { Player.modifyGold(15, 'Birthday gift from mother'); }
+            else { Player.state.gold += 15; }
             _log('Mother gives you 15 gold for your 18th birthday.');
         }
     };
@@ -665,7 +714,7 @@ var StoryMode = (function () {
     };
 
     _hooks._checkWarDialogSeen = function () {
-        return _storyState.dialogsSeen.indexOf('ch7_war_announcement') !== -1;
+        return _storyState.dialogsSeen.indexOf('ch7_war_crier') !== -1;
     };
 
     // ── Ch 11: Family Crisis ──
@@ -695,7 +744,7 @@ var StoryMode = (function () {
     };
 
     _hooks._checkFestivalAttended = function () {
-        return _storyState.dialogsSeen.indexOf('ch12_festival_event') !== -1;
+        return !!_storyState.flags.festivalAttended;
     };
 
     _hooks._checkMetCalder = function () {
@@ -715,13 +764,18 @@ var StoryMode = (function () {
 
     // ── Ch 14 ──
     _hooks._checkMetCalderCapital = function () {
-        return _storyState.flags.metLordCalder &&
-               _storyState.dialogsSeen.indexOf('ch14_calder_capital') !== -1;
+        return !!_storyState.flags.metLordCalderCapital;
     };
 
     // ── Ch 5 ──
     _hooks._checkRested = function () {
-        return _storyState.dialogsSeen.indexOf('ch5_rested') !== -1;
+        // Check if player has rested (energy > 80) while owning housing
+        if (typeof Player !== 'undefined') {
+            var hasHousing = Player.housing && Player.housing.length > 0;
+            var rested = Player.energy >= 80;
+            return hasHousing && rested;
+        }
+        return false;
     };
 
     // ── Ch 17: Branching ──
@@ -732,15 +786,15 @@ var StoryMode = (function () {
     };
 
     _hooks._checkConvincedRask = function () {
-        return _storyState.dialogsSeen.indexOf('ch17a_rask_convinced') !== -1;
+        return !!_storyState.flags.convincedRask;
     };
 
     _hooks._checkDiplomaticVictory = function () {
-        return _storyState.dialogsSeen.indexOf('ch17a_diplomatic_victory') !== -1;
+        return !!_storyState.flags.diplomaticVictory;
     };
 
     _hooks._checkBattleWon = function () {
-        return _storyState.dialogsSeen.indexOf('ch17b_battle_won') !== -1;
+        return !!_storyState.flags.battleWon;
     };
 
     // ── Ch 18: Reunion ──
@@ -757,12 +811,12 @@ var StoryMode = (function () {
     };
 
     _hooks._checkTalkedToEdmund = function () {
-        return _storyState.dialogsSeen.indexOf('ch18_edmund_reunion') !== -1;
+        return !!_storyState.flags.talkedToEdmund;
     };
 
     // ── Ch 19: Finale ──
     _hooks._checkCeremonyAttended = function () {
-        return _storyState.dialogsSeen.indexOf('ch19_ceremony_event') !== -1;
+        return !!_storyState.flags.ceremonyAttended;
     };
 
     _hooks._onChapter19Complete = function () {
@@ -789,10 +843,12 @@ var StoryMode = (function () {
      * "story_mode" is created.
      */
     function init(player) {
+        console.log('[StoryMode] StoryMode.init called. player?', !!player, 'gameStart:', player ? player.gameStart : 'N/A', 'origin:', player ? player.origin : 'N/A');
         if (!player) { return; }
         // Accept either player.origin or player.gameStart for compatibility
         var startId = player.origin || player.gameStart || '';
-        if (startId !== 'story_mode') { return; }
+        console.log('[StoryMode] startId resolved to:', startId);
+        if (startId !== 'story_mode') { console.warn('[StoryMode] startId !== story_mode, ABORTING init'); return; }
 
         _storyState.active  = true;
         _storyState.chapter = 0;
@@ -933,6 +989,90 @@ var StoryMode = (function () {
         return _storyState.complete;
     }
 
+    // Map objective types to the button selector(s) needed to complete them.
+    // Each entry is a button ID used by the tutorial highlight system.
+    var _objectiveButtonMap = {
+        'buy_item':        '#btnTrade',
+        'sell_item':       '#btnTrade',
+        'work_shift':      '#btnWork',
+        'arrive_town':     '#btnRoutes',
+        'own_building':    '#btnBuild',
+        'build_building':  '#btnBuild',
+        'hire_worker':     '#btnHire',
+        'buy_skill':       '#btnSkills',
+        'join_guild':      '#btnGuilds',
+        'send_caravan':    '#btnCaravan',
+        'treat_person':    '#btnTreatment',   // Treatment is under character tab
+        'attend_feast':    '#btnKingdoms',
+        'attend_court':    '#btnKingdoms',
+        'own_gold':        null,
+        'reach_rank':      null,
+        'custom':          null
+    };
+
+    // Map button IDs to { tab, label } for highlighting both the tab and sub-button
+    var _btnToTabLabel = {
+        '#btnTrade':     { tab: 'actions',   label: 'Trade' },
+        '#btnBuild':     { tab: 'actions',   label: 'Build' },
+        '#btnHire':      { tab: 'actions',   label: 'Hire' },
+        '#btnWork':      { tab: 'actions',   label: 'Work' },
+        '#btnStreet':    { tab: 'actions',   label: 'Street' },
+        '#btnRest':      { tab: 'actions',   label: 'Rest' },
+        '#btnRoutes':    { tab: 'actions',   label: 'Travel' },
+        '#btnTalk':      { tab: 'actions',   label: 'Talk' },
+        '#btnCaravan':   { tab: 'business',  label: 'Caravan' },
+        '#btnBuildings': { tab: 'business',  label: 'Buildings' },
+        '#btnShips':     { tab: 'business',  label: 'Ships' },
+        '#btnCharacter': { tab: 'character', label: 'Character' },
+        '#btnSkills':    { tab: 'character', label: 'Skills' },
+        '#btnFamily':    { tab: 'character', label: 'Family' },
+        '#btnHousing':   { tab: 'character', label: 'Housing' },
+        '#btnGuilds':    { tab: 'character', label: 'Guilds' },
+        '#btnKingdoms':  { tab: 'world',     label: 'Kingdoms' },
+        '#btnMap':       { tab: 'world',     label: 'Map' },
+        '#btnTreatment': { tab: 'character', label: 'Treatment' }
+    };
+
+    // Map custom hook functions to button hints
+    var _customFnButtonMap = {
+        '_checkRested':           '#btnRest',
+        '_checkWarDialogSeen':    '#btnTalk',
+        '_checkFestivalAttended': '#btnStreet',
+        '_checkMetCalder':        '#btnTalk',
+        '_checkMetCalderCapital': '#btnTalk',
+        '_checkTalkedToEdmund':   '#btnTalk',
+        '_checkCeremonyAttended': '#btnKingdoms'
+    };
+
+    /**
+     * Returns an array of { tab, label } hints for incomplete objectives.
+     * Used by the UI to highlight the button chain the player needs to click.
+     */
+    function getButtonHints() {
+        if (!_storyState.active || _storyState.complete) return [];
+        var ch = _currentChapterDef();
+        if (!ch) return [];
+        var hints = [];
+        var seenTabs = {};
+        for (var i = 0; i < ch.objectives.length; i++) {
+            var obj = ch.objectives[i];
+            if (obj.done) continue;
+            var btnId = _objectiveButtonMap[obj.type] || null;
+            // For custom objectives, look up the hook function name
+            if (obj.type === 'custom' && obj.fn && _customFnButtonMap[obj.fn]) {
+                btnId = _customFnButtonMap[obj.fn];
+            }
+            if (!btnId) continue;
+            var info = _btnToTabLabel[btnId];
+            if (!info) continue;
+            var key = info.tab + '|' + info.label;
+            if (seenTabs[key]) continue;
+            seenTabs[key] = true;
+            hints.push({ tab: info.tab, label: info.label });
+        }
+        return hints;
+    }
+
     function getStoryFlags() {
         // Return a shallow copy
         var copy = {};
@@ -1031,6 +1171,7 @@ var StoryMode = (function () {
         isButtonUnlocked:  isButtonUnlocked,
         isActive:          isActive,
         isComplete:        isComplete,
+        getButtonHints:    getButtonHints,
         getStoryFlags:     getStoryFlags,
         getPath:           getPath,
 

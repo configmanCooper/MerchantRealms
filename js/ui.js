@@ -8855,6 +8855,26 @@ window.UI = (function () {
         }
         subMenu.innerHTML = html;
         subMenu.classList.add('visible');
+
+        // Apply story mode objective highlights to freshly rendered sub-menu buttons
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && StoryMode.getButtonHints) {
+            var stHints = StoryMode.getButtonHints();
+            if (stHints.length) _applyStorySubMenuHighlights(stHints);
+        }
+        // Re-apply tutorial highlights if the tutorial system has an active highlight for this tab
+        if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive() && Tutorial.getHighlightLabel) {
+            var tutLabel = Tutorial.getHighlightLabel();
+            if (tutLabel && tutLabel.tab === category) {
+                setTimeout(function() {
+                    var sBtns = subMenu.querySelectorAll('.sub-menu-btn');
+                    for (var si = 0; si < sBtns.length; si++) {
+                        if (sBtns[si].textContent.indexOf(tutLabel.label) >= 0) {
+                            sBtns[si].classList.add('tutorial-highlight');
+                        }
+                    }
+                }, 50);
+            }
+        }
     }
 
     function _closeSubMenu() {
@@ -8874,18 +8894,69 @@ window.UI = (function () {
                 charTab.classList.remove('needs-attention');
             }
         }
-        // Story Mode: dim locked tabs
+        // Story Mode: dim locked tabs AND highlight tabs for active objectives
         if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
             var allTabs = document.querySelectorAll('.tab-btn');
+            var hints = (StoryMode.getButtonHints && StoryMode.getButtonHints()) || [];
+            var hintTabs = {};
+            for (var h = 0; h < hints.length; h++) { hintTabs[hints[h].tab] = true; }
             for (var ti = 0; ti < allTabs.length; ti++) {
                 var cat = allTabs[ti].dataset.category;
                 if (cat && !StoryMode.isButtonUnlocked(cat)) {
                     allTabs[ti].style.opacity = '0.35';
                     allTabs[ti].style.pointerEvents = 'auto';
+                    allTabs[ti].classList.remove('tutorial-highlight');
                 } else {
                     allTabs[ti].style.opacity = '';
+                    if (hintTabs[cat]) {
+                        allTabs[ti].classList.add('tutorial-highlight');
+                    } else {
+                        allTabs[ti].classList.remove('tutorial-highlight');
+                    }
                 }
             }
+            // Also highlight sub-menu buttons if the sub-menu is currently open
+            _applyStorySubMenuHighlights(hints);
+        } else {
+            // Not story mode: clear any story-applied highlights from tabs
+            var clearTabs = document.querySelectorAll('.tab-btn.tutorial-highlight');
+            for (var ci = 0; ci < clearTabs.length; ci++) {
+                // Only remove if not being managed by tutorial system
+                if (typeof Tutorial === 'undefined' || !Tutorial.isActive || !Tutorial.isActive()) {
+                    clearTabs[ci].classList.remove('tutorial-highlight');
+                }
+            }
+        }
+        // Tutorial mode: highlight tabs for active tutorial step
+        if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+            // Tutorial manages its own highlights via enterStep/highlightElement
+        }
+    }
+
+    /** Apply story objective highlights to visible sub-menu buttons */
+    function _applyStorySubMenuHighlights(hints) {
+        if (!hints || !hints.length) return;
+        var subMenu = document.getElementById('subMenu');
+        if (!subMenu || !subMenu.classList.contains('visible')) return;
+        // Build lookup of labels to highlight for the active tab
+        var labelsToHighlight = {};
+        for (var i = 0; i < hints.length; i++) {
+            if (hints[i].tab === _activeTabCategory) {
+                labelsToHighlight[hints[i].label] = true;
+            }
+        }
+        if (Object.keys(labelsToHighlight).length === 0) return;
+        var btns = subMenu.querySelectorAll('.sub-menu-btn');
+        for (var j = 0; j < btns.length; j++) {
+            var txt = btns[j].textContent || '';
+            var matched = false;
+            for (var lbl in labelsToHighlight) {
+                if (txt.indexOf(lbl) >= 0) { matched = true; break; }
+            }
+            if (matched) {
+                btns[j].classList.add('tutorial-highlight');
+            }
+            // Don't remove highlights from non-matching buttons (tutorial may have set them)
         }
     }
 
@@ -11299,6 +11370,39 @@ window.UI = (function () {
                     }
                 }
                 html += '</div>';
+
+                // Building selector dropdown — if multiple buildings of same type exist
+                if (job.type === 'building' && job.buildingType) {
+                    var _wTown = Engine.findTown(Player.townId);
+                    if (_wTown) {
+                        var _sameBlds = (_wTown.buildings || []).filter(function(b) {
+                            return b.type === job.buildingType && b.ownerId !== 'player' &&
+                                   b.condition !== 'destroyed' && b.condition !== 'under_construction';
+                        });
+                        if (_sameBlds.length > 1) {
+                            html += '<div style="margin-top:3px;font-size:0.7rem;">';
+                            html += '<label style="color:var(--text-muted);">Work at: </label>';
+                            html += '<select id="bldSelect_' + i + '" style="font-size:0.7rem;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:1px 4px;">';
+                            for (var _si = 0; _si < _sameBlds.length; _si++) {
+                                var _sb = _sameBlds[_si];
+                                var _sbOwner = 'Unknown';
+                                if (_sb.ownerId) {
+                                    var _sbP = Engine.findPerson(_sb.ownerId);
+                                    if (_sbP) _sbOwner = (_sbP.firstName || '') + ' ' + (_sbP.lastName || '');
+                                    else {
+                                        var _sbK = Engine.findKingdom(_sb.ownerId);
+                                        if (_sbK) _sbOwner = _sbK.name;
+                                    }
+                                }
+                                var _sbCond = _sb.condition || 'good';
+                                html += '<option value="' + _si + '">Lv.' + (_sb.level || 1) + ' — ' + _sbOwner + ' (' + _sbCond + ')</option>';
+                            }
+                            html += '</select>';
+                            html += '</div>';
+                        }
+                    }
+                }
+
                 html += '<div style="display:flex;gap:4px;">';
                 html += '<button class="btn-medieval btn-work" data-action="executeWork" data-id="' + i + '">Work</button>';
                 html += '<button class="btn-medieval" data-action="startAutoWorkUI" data-id="' + i + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(80,160,80,0.35);border-color:rgba(120,200,120,0.5);color:#c8e6c9;text-shadow:1px 1px 2px rgba(0,0,0,0.7);" title="Repeat this job automatically">&#x27F3; Auto</button>';

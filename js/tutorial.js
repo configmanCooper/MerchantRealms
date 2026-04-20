@@ -10,6 +10,7 @@ window.Tutorial = (function () {
     var currentStep = 0;
     var panelEl = null;
     var highlightedEls = [];
+    var _currentHighlightInfo = null; // { tab, label } for re-application on sub-menu rebuild
     var completedSteps = {}; // Track completed interactive steps: "chapter:step" → true
 
     // Polling / waitFor state
@@ -100,10 +101,13 @@ window.Tutorial = (function () {
 
     // Open a tab category and optionally highlight a sub-menu button by label
     function openTabCategory(category, highlightLabel) {
+        // Close first to avoid toggle-close if already open
+        if (typeof UI !== 'undefined' && UI._closeSubMenu) {
+            UI._closeSubMenu();
+        }
         if (typeof UI !== 'undefined' && UI._openSubMenu) {
             UI._openSubMenu(category);
         } else {
-            // Fallback: click the tab button
             var tabBtn = document.querySelector('.tab-btn[data-category="' + category + '"]');
             if (tabBtn) tabBtn.click();
         }
@@ -1838,12 +1842,14 @@ window.Tutorial = (function () {
 
     function highlightElement(selector) {
         clearHighlights();
+        _currentHighlightInfo = null;
         if (!selector) return;
         try {
             // Check if this is an old bottom bar button that's now in the tab system
             if (_btnToTab[selector]) {
                 var cat = _btnToTab[selector];
                 var label = _btnToLabel[selector];
+                _currentHighlightInfo = { tab: cat, label: label };
                 // Open the tab category and highlight the matching sub-menu button
                 openTabCategory(cat, label);
                 // Also highlight the tab button itself
@@ -2349,6 +2355,7 @@ window.Tutorial = (function () {
         skip: end,
         cleanup: cleanup,
         getCurrentChapter: function () { return currentChapter; },
-        getCurrentStep: function () { return currentStep; }
+        getCurrentStep: function () { return currentStep; },
+        getHighlightLabel: function () { return _currentHighlightInfo; }
     };
 })();

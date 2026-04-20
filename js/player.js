@@ -27495,6 +27495,11 @@
         // Journal — job completion
         autoJournalCapture('job', 'Worked as ' + job.name + ' and earned ' + finalPay + 'g for ' + job.hours + ' hours of labor.' + (lootMsg ? ' Found some extra goods too.' : ''), { mood: finalPay >= 30 ? 'content' : 'weary' });
 
+        // Story Mode: notify of work shift at any building job
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('work_shift', { buildingType: job.buildingType || '', building: job.buildingType || '' });
+        }
+
         return { success: true, message: `Completed ${job.name} (${job.hours}hrs, ${ticksRequired} ticks) — earned ${finalPay}g (${payPerTick}g/tick).${lootMsg}${spyEventMsg}${instrumentMsg}${customsMsg}${medHealMsg}${jobPerkMsg}` };
     }
 
@@ -36941,6 +36946,11 @@
     }
 
     function initStoryModeStart() {
+        console.log('[StoryMode] initStoryModeStart called. player.townId:', player.townId, 'player.gold:', player.gold, 'player.gameStart:', player.gameStart);
+        // Force Ashford surname for story mode
+        player.lastName = 'Ashford';
+        player.fullName = player.firstName + ' Ashford';
+
         // Initialize story mode state on the player object
         player.age = 18;
         player.storyMode = {
