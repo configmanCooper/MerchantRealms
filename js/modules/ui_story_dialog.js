@@ -47,22 +47,23 @@
     var _ttsFemaleVoice = null;
 
     // Voice profiles: { rate, pitch, volume, preferFemale }
+    // Tuned for Windows Neural/Natural voices which handle rate/pitch more naturally
     var VOICE_PROFILES = {
-        father:              { rate: 0.85, pitch: 0.7,  volume: 1.0, preferFemale: false },
-        father_edmund:       { rate: 0.85, pitch: 0.7,  volume: 1.0, preferFemale: false },
-        mother:              { rate: 1.0,  pitch: 1.35, volume: 1.0, preferFemale: true  },
-        mother_margret:      { rate: 1.0,  pitch: 1.35, volume: 1.0, preferFemale: true  },
-        harlan:              { rate: 1.05, pitch: 0.95, volume: 1.0, preferFemale: false },
-        narrator:            { rate: 0.92, pitch: 1.0,  volume: 0.9, preferFemale: false },
-        king_aldric:         { rate: 0.8,  pitch: 0.8,  volume: 1.0, preferFemale: false },
-        lord_calder:         { rate: 0.85, pitch: 0.85, volume: 1.0, preferFemale: false },
-        lady_elowen:         { rate: 0.9,  pitch: 1.25, volume: 1.0, preferFemale: true  },
-        seraphine:           { rate: 0.88, pitch: 1.4,  volume: 0.95, preferFemale: true },
-        general_theron:      { rate: 0.88, pitch: 0.7,  volume: 1.0, preferFemale: false },
-        count_rask:          { rate: 1.0,  pitch: 0.82, volume: 1.0, preferFemale: false },
-        korvathi_commander:  { rate: 0.78, pitch: 0.6,  volume: 1.0, preferFemale: false },
-        guild_keeper:        { rate: 1.0,  pitch: 0.95, volume: 1.0, preferFemale: false },
-        town_crier:          { rate: 1.1,  pitch: 1.1,  volume: 1.0, preferFemale: false }
+        father:              { rate: 0.88, pitch: 0.85, volume: 1.0, preferFemale: false },
+        father_edmund:       { rate: 0.88, pitch: 0.85, volume: 1.0, preferFemale: false },
+        mother:              { rate: 1.0,  pitch: 1.1,  volume: 1.0, preferFemale: true  },
+        mother_margret:      { rate: 1.0,  pitch: 1.1,  volume: 1.0, preferFemale: true  },
+        harlan:              { rate: 1.02, pitch: 0.95, volume: 1.0, preferFemale: false },
+        narrator:            { rate: 0.92, pitch: 1.0,  volume: 0.85, preferFemale: false },
+        king_aldric:         { rate: 0.85, pitch: 0.9,  volume: 1.0, preferFemale: false },
+        lord_calder:         { rate: 0.88, pitch: 0.92, volume: 1.0, preferFemale: false },
+        lady_elowen:         { rate: 0.92, pitch: 1.08, volume: 1.0, preferFemale: true  },
+        seraphine:           { rate: 0.9,  pitch: 1.15, volume: 0.95, preferFemale: true },
+        general_theron:      { rate: 0.9,  pitch: 0.82, volume: 1.0, preferFemale: false },
+        count_rask:          { rate: 0.98, pitch: 0.88, volume: 1.0, preferFemale: false },
+        korvathi_commander:  { rate: 0.82, pitch: 0.78, volume: 1.0, preferFemale: false },
+        guild_keeper:        { rate: 0.98, pitch: 0.95, volume: 1.0, preferFemale: false },
+        town_crier:          { rate: 1.05, pitch: 1.05, volume: 1.0, preferFemale: false }
     };
 
     // Default profiles for unknown speakers
@@ -75,28 +76,51 @@
             _ttsVoices = speechSynthesis.getVoices();
             if (!_ttsVoices || _ttsVoices.length === 0) return;
             _ttsReady = true;
-            // Try to pick a good English male and female voice
+
+            // Filter to English voices
             var enVoices = _ttsVoices.filter(function(v) { return v.lang && v.lang.indexOf('en') === 0; });
             if (enVoices.length === 0) enVoices = _ttsVoices;
 
-            // Heuristics: look for voice names containing gender hints
-            var maleHints = ['male', 'david', 'mark', 'james', 'george', 'daniel', 'guy'];
-            var femaleHints = ['female', 'zira', 'hazel', 'susan', 'samantha', 'karen', 'fiona', 'victoria', 'jenny'];
+            // Prioritize Neural/Natural/Online voices (much higher quality)
+            var naturalVoices = enVoices.filter(function(v) {
+                var n = v.name.toLowerCase();
+                return n.indexOf('natural') !== -1 || n.indexOf('neural') !== -1 || n.indexOf('online') !== -1;
+            });
 
-            for (var i = 0; i < enVoices.length; i++) {
-                var n = enVoices[i].name.toLowerCase();
-                if (!_ttsMaleVoice) {
-                    for (var m = 0; m < maleHints.length; m++) {
-                        if (n.indexOf(maleHints[m]) !== -1) { _ttsMaleVoice = enVoices[i]; break; }
-                    }
-                }
-                if (!_ttsFemaleVoice) {
-                    for (var f = 0; f < femaleHints.length; f++) {
-                        if (n.indexOf(femaleHints[f]) !== -1) { _ttsFemaleVoice = enVoices[i]; break; }
+            // Pick from natural voices first, fall back to all English voices
+            var malePool = naturalVoices.length > 0 ? naturalVoices : enVoices;
+            var femalePool = naturalVoices.length > 0 ? naturalVoices : enVoices;
+
+            // Male voice preferences (in order): Guy, Andrew, Ryan, Mark, David, Eric, Christopher
+            var malePrefs = ['guy', 'andrew', 'ryan', 'mark', 'david', 'eric', 'christopher', 'james', 'daniel', 'george'];
+            // Female voice preferences (in order): Jenny, Aria, Sara, Zira, Hazel, Susan, Samantha
+            var femalePrefs = ['jenny', 'aria', 'sara', 'zira', 'hazel', 'susan', 'samantha', 'karen', 'fiona', 'victoria'];
+
+            _ttsMaleVoice = null;
+            _ttsFemaleVoice = null;
+
+            // Try preferred names in natural voices first, then all
+            for (var mp = 0; mp < malePrefs.length && !_ttsMaleVoice; mp++) {
+                for (var i = 0; i < malePool.length; i++) {
+                    if (malePool[i].name.toLowerCase().indexOf(malePrefs[mp]) !== -1) {
+                        _ttsMaleVoice = malePool[i]; break;
                     }
                 }
             }
-            // Fallback: just use first two different voices, or same one
+            for (var fp = 0; fp < femalePrefs.length && !_ttsFemaleVoice; fp++) {
+                for (var j = 0; j < femalePool.length; j++) {
+                    if (femalePool[j].name.toLowerCase().indexOf(femalePrefs[fp]) !== -1) {
+                        _ttsFemaleVoice = femalePool[j]; break;
+                    }
+                }
+            }
+
+            // If still no match from preferred names, grab any natural voice
+            if (!_ttsMaleVoice && naturalVoices.length > 0) _ttsMaleVoice = naturalVoices[0];
+            if (!_ttsFemaleVoice && naturalVoices.length > 1) _ttsFemaleVoice = naturalVoices[1];
+            if (!_ttsFemaleVoice && naturalVoices.length > 0) _ttsFemaleVoice = naturalVoices[0];
+
+            // Final fallback to any English voice
             if (!_ttsMaleVoice) _ttsMaleVoice = enVoices[0];
             if (!_ttsFemaleVoice) _ttsFemaleVoice = enVoices.length > 1 ? enVoices[1] : enVoices[0];
         }
