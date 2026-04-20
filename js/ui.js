@@ -609,6 +609,7 @@ window.UI = (function () {
         registerAction('_handler_12', function() { Player.state.energy=100;Player.state.hunger=0;Player.state.thirst=0;UI.toast('💪 Full energy/food/drink','success') });
         registerAction('_godAddGold100k', function() { Player.state.gold+=100000;UI.toast('💰 +100,000 gold','success') });
         registerAction('_godAddGold10k', function() { Player.state.gold+=10000;UI.toast('💰 +10,000 gold','success') });
+        registerAction('_godSkipChapter', function() { if (typeof StoryMode !== 'undefined' && StoryMode.skipChapter) { StoryMode.skipChapter(); UI.toast('⏭️ Chapter skipped!', 'warning'); } else { UI.toast('Story mode not active', 'error'); } });
         registerAction('closeGodModePanel', function() { UI.closeGodModePanel(); });
         registerAction('_setIconCategory', function(_t, d) { window._iconCat=d.param1; window._filterIcons() });
         registerAction('_handler_13', function() { document.getElementById('icons-glossary-overlay').remove() });
@@ -13796,6 +13797,14 @@ window.UI = (function () {
 
         // World Analytics button
         html += '<br><button data-action="openWorldAnalytics" style="margin:4px 2px; padding:6px 14px; background:linear-gradient(135deg,#1a3a5c,#2a5a8c); color:#FFD700; border:2px solid #FFD700; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">🌍 World Analytics</button> ';
+
+        // Story Mode Skip Chapter (only show if story mode is active)
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && !StoryMode.isComplete()) {
+            var _gmChInfo = StoryMode.getCurrentChapter ? StoryMode.getCurrentChapter() : null;
+            var _gmChIdx = StoryMode.getChapterIndex ? StoryMode.getChapterIndex() : '?';
+            var _gmChTitle = _gmChInfo ? _gmChInfo.title : '';
+            html += '<br><button data-action="_godSkipChapter" style="margin:4px 2px; padding:6px 14px; background:linear-gradient(135deg,#5c1a3a,#8c2a5a); color:#FFD700; border:2px solid #f4a; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">⏭️ Skip Chapter ' + _gmChIdx + ': ' + _gmChTitle + '</button> ';
+        }
 
         // Give Player Illness/Injury
         html += '<br><div style="margin-top:6px; padding-top:6px; border-top:1px solid #444;">';

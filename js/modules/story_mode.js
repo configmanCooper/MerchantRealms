@@ -1256,6 +1256,36 @@ var StoryMode = (function () {
         _completeChapter();
     }
 
+    /** God mode: skip current chapter instantly — mark all objectives done, unlock buttons, advance. */
+    function skipChapter() {
+        if (_storyState.complete) return;
+        var ch = _currentChapterDef();
+        if (!ch) return;
+
+        // Mark all objectives as done
+        for (var i = 0; i < ch.objectives.length; i++) {
+            ch.objectives[i].done = true;
+            _storyState.objectives[ch.objectives[i].id] = true;
+        }
+
+        // Unlock buttons for this chapter AND all prior chapters
+        for (var ci = 0; ci <= _storyState.chapter; ci++) {
+            if (CHAPTERS[ci] && CHAPTERS[ci].unlockButtons) {
+                _unlockButtons(CHAPTERS[ci].unlockButtons);
+            }
+        }
+
+        // Run onStart hook if it hasn't run (some set important flags like warDeclared)
+        _callHook(ch.onStart);
+
+        // Run onComplete hook (some set important flags)
+        _storyState.flags.deferAdvance = false;
+        _callHook(ch.onComplete);
+
+        // Advance regardless of deferAdvance
+        _advanceToNextChapter();
+    }
+
     // ── Serialization ──
 
     function serialize() {
@@ -1357,6 +1387,7 @@ var StoryMode = (function () {
         getPath:           getPath,
 
         advanceChapter:    advanceChapter,
+        skipChapter:       skipChapter,
         serialize:         serialize,
         deserialize:       deserialize
     };
