@@ -605,9 +605,11 @@ window.Game = (function () {
                 if (!storyTown && allTowns.length > 0) storyTown = allTowns[0];
                 var storyTownId = storyTown ? storyTown.id : null;
 
-                // Hide char create screen
+                // Hide char create screen and game mode screen
                 var cc2 = document.getElementById('charCreateScreen');
                 if (cc2) { cc2.classList.add('hidden'); cc2.style.display = 'none'; }
+                var gms = document.getElementById('gameModeScreen');
+                if (gms) { gms.style.display = 'none'; }
 
                 try {
                     if (typeof Player !== 'undefined' && Player.init) {
@@ -2359,6 +2361,7 @@ window.Game = (function () {
             // Hide title screen and char creation
             const titleScreen = document.getElementById('titleScreen');
             const charCreateScreen = document.getElementById('charCreateScreen');
+            const gameModeScreen = document.getElementById('gameModeScreen');
             if (titleScreen) {
                 titleScreen.classList.add('hidden');
                 titleScreen.style.display = 'none';
@@ -2366,6 +2369,28 @@ window.Game = (function () {
             if (charCreateScreen) {
                 charCreateScreen.classList.add('hidden');
                 charCreateScreen.style.display = 'none';
+            }
+            if (gameModeScreen) {
+                gameModeScreen.style.display = 'none';
+            }
+            // Hide kingdom select screen if open
+            var kingdomScreen = document.getElementById('kingdomSelectScreen');
+            if (kingdomScreen) { kingdomScreen.classList.add('hidden'); kingdomScreen.style.display = 'none'; }
+
+            // Reset story mode if loaded save isn't a story save
+            if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+                var _loadedP = Player.state;
+                if (!_loadedP || !_loadedP.storyMode || !_loadedP.storyMode.active) {
+                    // Loaded a non-story save but StoryMode was active from a previous session
+                    StoryMode.deserialize({ active: false, chapter: 0, complete: false });
+                }
+            }
+            // Hide story tracker if not in story mode
+            if (typeof UI !== 'undefined' && UI.hideStoryTracker) {
+                var _lp = Player.state;
+                if (!_lp || !_lp.storyMode || !_lp.storyMode.active) {
+                    UI.hideStoryTracker();
+                }
             }
 
             // Re-init renderer with loaded world

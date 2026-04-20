@@ -927,6 +927,9 @@ window.UI = (function () {
     function showGameUI() {
         el.titleScreen.classList.add('hidden');
         el.titleScreen.style.display = 'none';
+        // Hide game mode selection if lingering
+        var gms = document.getElementById('gameModeScreen');
+        if (gms) gms.style.display = 'none';
         el.topBar.classList.remove('hidden');
         el.leftPanel.classList.remove('hidden');
         el.bottomBar.classList.remove('hidden');
