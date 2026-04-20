@@ -549,10 +549,11 @@ var StoryMode = (function () {
             return;
         }
 
-        _showDialog(ch.endDialog);
-
-        // Advance to the next chapter
-        _advanceToNextChapter();
+        // Show endDialog and advance to next chapter only after it's dismissed
+        _showDialog(ch.endDialog, function() {
+            _advanceToNextChapter();
+        });
+        // If there was no endDialog, _showDialog fires onComplete immediately
     }
 
     function _advanceToNextChapter() {
