@@ -941,6 +941,11 @@ function showTownDetail(town) {
         html += UI.buildNPCTransportSection();
     }
 
+    // Town contextual actions card (when player is here)
+    if (isPlayerHere && typeof UI._renderTownActionsCard === 'function') {
+        html = UI._renderTownActionsCard() + html;
+    }
+
     showRightPanel(`🏘 ${town.name}`, html);
     // Make the panel title clickable to pan camera to this town
     if (_rpTitleEl() && town.x != null && town.y != null) {

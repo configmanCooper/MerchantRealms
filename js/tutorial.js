@@ -98,6 +98,54 @@ window.Tutorial = (function () {
         return !!document.getElementById(id);
     }
 
+    // Open a tab category and optionally highlight a sub-menu button by label
+    function openTabCategory(category, highlightLabel) {
+        if (typeof UI !== 'undefined' && UI._openSubMenu) {
+            UI._openSubMenu(category);
+        } else {
+            // Fallback: click the tab button
+            var tabBtn = document.querySelector('.tab-btn[data-category="' + category + '"]');
+            if (tabBtn) tabBtn.click();
+        }
+        if (highlightLabel) {
+            setTimeout(function() {
+                var btns = document.querySelectorAll('.sub-menu-btn');
+                for (var i = 0; i < btns.length; i++) {
+                    if (btns[i].textContent.indexOf(highlightLabel) >= 0) {
+                        btns[i].classList.add('tutorial-highlight');
+                        highlightedEls.push(btns[i]);
+                    }
+                }
+            }, 100);
+        }
+    }
+
+    // Map old button IDs to tab categories for the tutorial highlight system
+    var _btnToTab = {
+        '#btnTrade': 'actions', '#btnBuild': 'actions', '#btnHire': 'actions',
+        '#btnWork': 'actions', '#btnStreet': 'actions', '#btnRest': 'actions',
+        '#btnTalk': 'actions', '#btnRoutes': 'actions',
+        '#btnCaravan': 'business', '#btnBuildings': 'business', '#btnShips': 'business',
+        '#btnOutposts': 'business',
+        '#btnCharacter': 'character', '#btnSkills': 'character', '#btnFamily': 'character',
+        '#btnHousing': 'character', '#btnGuilds': 'character',
+        '#btnKingdoms': 'world', '#btnMap': 'world', '#btnLocate': 'world',
+        '#btnLog': 'world', '#btnAchievements': 'world', '#btnRankings': 'world',
+        '#btnHelp': 'system', '#btnSchemes': 'system', '#btnKing': 'system'
+    };
+    var _btnToLabel = {
+        '#btnTrade': 'Trade', '#btnBuild': 'Build', '#btnHire': 'Hire',
+        '#btnWork': 'Work', '#btnStreet': 'Street', '#btnRest': 'Rest',
+        '#btnTalk': 'Talk', '#btnRoutes': 'Travel',
+        '#btnCaravan': 'Caravan', '#btnBuildings': 'Buildings', '#btnShips': 'Ships',
+        '#btnOutposts': 'Outposts',
+        '#btnCharacter': 'Character', '#btnSkills': 'Skills', '#btnFamily': 'Family',
+        '#btnHousing': 'Housing', '#btnGuilds': 'Guilds',
+        '#btnKingdoms': 'Kingdoms', '#btnMap': 'Map', '#btnLocate': 'Find Me',
+        '#btnLog': 'Log', '#btnAchievements': 'Feats', '#btnRankings': 'Rankings',
+        '#btnHelp': 'Help', '#btnSchemes': 'Schemes', '#btnKing': 'King'
+    };
+
     // ═══════════════════════════════════════════════════════════
     //  CHEATS (tutorial aids only)
     // ═══════════════════════════════════════════════════════════
@@ -246,9 +294,9 @@ window.Tutorial = (function () {
                     title: 'Your Goals',
                     text: '🏰 <strong>Merchant Realms</strong> is an open-ended sandbox — there are no structured goals or win conditions. You make your own story! However, here are some aspirations you may want to pursue:' +
                         '<ul style="margin:8px 0;padding-left:18px;font-size:0.85rem;line-height:1.6;">' +
-                        '<li>👑 <strong>Reach Royal Advisor rank</strong> — climb the social ladder until you advise the king. <em>(Check your rank in the Character button on the bottom panel.)</em></li>' +
-                        '<li>💰 <strong>Become the richest merchant in the world</strong> — amass more wealth than anyone else. <em>(See your ranking via the Rank button on the bottom panel.)</em></li>' +
-                        '<li>🏆 <strong>Achieve all feats</strong> — complete every challenge the game tracks. <em>(View them through the Feats button on the bottom panel.)</em></li>' +
+                        '<li>👑 <strong>Reach Royal Advisor rank</strong> — climb the social ladder until you advise the king. <em>(Click the 🧑 Character tab → 👤 Character.)</em></li>' +
+                        '<li>💰 <strong>Become the richest merchant in the world</strong> — amass more wealth than anyone else. <em>(Click the 🗺️ World tab → 🏆 Rankings.)</em></li>' +
+                        '<li>🏆 <strong>Achieve all feats</strong> — complete every challenge the game tracks. <em>(Click the 🗺️ World tab → 🎖️ Feats.)</em></li>' +
                         '<li>⚔️ <strong>Help a kingdom dominate the world</strong> — pick a side and use supply chain logistics to fuel their conquests.</li>' +
                         '<li>🕊️ <strong>Keep the world at peace</strong> — optimize trade routes, fill supply gaps, and keep all kingdoms happy and prosperous.</li>' +
                         '<li>🏗️ <strong>Build a trade empire</strong> — own buildings in every town, hire workers, and control production across the map.</li>' +
@@ -321,7 +369,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Your Player Icon',
-                    text: '\uD83D\uDD36 See that <strong>golden pulsing diamond</strong>? That\u2019s <strong>you</strong>! If you ever lose track of yourself, click the <strong>\uD83D\uDCCD Find</strong> button on the bottom panel. Try it now \u2014 pan away with W/A/S/D, then click <strong>\uD83D\uDCCD Find</strong>!',
+                    text: '\uD83D\uDD36 See that <strong>golden pulsing diamond</strong>? That\u2019s <strong>you</strong>! If you ever lose track of yourself, click the <strong>\uD83D\uDDFA\uFE0F World</strong> tab, then <strong>\uD83D\uDCCD Find Me</strong>. Try it now \u2014 pan away with W/A/S/D, then click <strong>\uD83D\uDCCD Find Me</strong>!',
                     highlight: '#btnLocate',
                     onEnter: function () {
                         // Pan to player's town and zoom to 3x
@@ -443,7 +491,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'The Talk Button',
-                    text: '\uD83D\uDCAC The <strong>\uD83D\uDCAC Talk</strong> button on the bottom panel lets you talk to random locals and get information. Use it to hear rumors about prices, wars, or trade tips around town.',
+                    text: '\uD83D\uDCAC Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDCAC Talk</strong> to talk to random locals and get information. Use it to hear rumors about prices, wars, or trade tips around town.',
                     highlight: '#btnTalk'
                 },
                 {
@@ -535,7 +583,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Open the Market',
-                    text: '\uD83D\uDCB0 Time for your first trade! We\u2019ve given you <strong>300 bonus gold</strong>. Click the <strong>\uD83D\uDCCA Trade</strong> button on the bottom panel to open the market.',
+                    text: '\uD83D\uDCB0 Time for your first trade! We\u2019ve given you <strong>300 bonus gold</strong>. Click the <strong>\u2694\uFE0F Actions</strong> tab at the bottom, then click <strong>\uD83D\uDCCA Trade</strong> to open the market.',
                     highlight: '#btnTrade',
                     onEnter: function () {
                         giveGold(300);
@@ -617,7 +665,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Street Trading',
-                    text: '\uD83E\uDD1D Click the <strong>\uD83E\uDD1D Street</strong> button on the bottom panel to trade directly with townspeople! Street trading lets you find items that may be scarce or unavailable at the regular market. Try it now!',
+                    text: '\uD83E\uDD1D Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83E\uDD1D Street</strong> to trade directly with townspeople! Street trading lets you find items that may be scarce or unavailable at the regular market. Try it now!',
                     highlight: '#btnStreet',
                     waitFor: function () { return isModalOpen(); },
                     onComplete: function () {
@@ -628,7 +676,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Trade Licenses',
-                    text: '📜 Some valuable goods require a <strong>Trade License</strong>. Click the <strong>👑 Kingdoms</strong> button on the bottom panel, then click <strong>📜 Buy Licenses</strong> on any kingdom card to purchase one. We\u2019ve given you <strong>500 gold</strong> for the license fee.',
+                    text: '📜 Some valuable goods require a <strong>Trade License</strong>. Click the <strong>\uD83D\uDDFA\uFE0F World</strong> tab, then <strong>👑 Kingdoms</strong>, and click <strong>📜 Buy Licenses</strong> on any kingdom card to purchase one. We\u2019ve given you <strong>500 gold</strong> for the license fee.',
                     highlight: '#btnKingdoms',
                     onEnter: function () {
                         giveGold(500);
@@ -666,7 +714,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Why Skills Matter',
-                    text: '\uD83D\uDCDA Skills are <strong>critical to success</strong> in Merchant Realms. They unlock abilities, boost earnings, and compound over time. We\u2019ve given you <strong>5 skill points</strong>. Click <strong>\uD83D\uDCDA Skills</strong> on the bottom panel to browse!',
+                    text: '\uD83D\uDCDA Skills are <strong>critical to success</strong> in Merchant Realms. They unlock abilities, boost earnings, and compound over time. We\u2019ve given you <strong>5 skill points</strong>. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83D\uDCDA Skills</strong> to browse!',
                     highlight: '#btnSkills',
                     onEnter: function () {
                         giveSkillPoints(5);
@@ -703,7 +751,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Road Travel',
-                    text: '\uD83D\uDEB6 Two ways to travel: Click the <strong>\uD83D\uDDFA\uFE0F Routes</strong> button on the bottom panel to see road connections, or <strong>right-click</strong> a town and select <strong>Travel Here</strong>. Road quality affects speed. Try the <strong>\uD83D\uDDFA\uFE0F Routes</strong> button first!',
+                    text: '\uD83D\uDEB6 Two ways to travel: Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDDFA\uFE0F Travel</strong> to see road connections, or <strong>right-click</strong> a town and select <strong>Travel Here</strong>. Road quality affects speed. Try the <strong>\uD83D\uDDFA\uFE0F Travel</strong> button first!',
                     highlight: '#btnRoutes',
                     onEnter: function () {
                         closeModal();
@@ -914,7 +962,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Transport & Carry Capacity',
-                    text: '\uD83D\uDCE6 Your carry capacity determines how much you can haul. <strong>This is upgraded in the character menu</strong>, not the caravan panel. Open <strong>\uD83D\uDC64 Character</strong> on the bottom panel to see your carry capacity and upgrade options.',
+                    text: '\uD83D\uDCE6 Your carry capacity determines how much you can haul. <strong>This is upgraded in the character menu</strong>, not the caravan panel. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83D\uDC64 Character</strong> to see your carry capacity and upgrade options.',
                     highlight: '#btnCharacter',
                     waitFor: function () { return isModalOpen(); },
                     onComplete: function () {
@@ -933,7 +981,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Buy a Home',
-                    text: '\uD83C\uDFE0 We\u2019ve given you <strong>gold, land, and materials</strong>. Open <strong>\uD83C\uDFE1 Housing</strong> on the bottom panel and build a home \u2014 even a <strong>Shack</strong> is better than sleeping outside! Housing gives you rest, storage, security, and a home for your family.',
+                    text: '\uD83C\uDFE0 We\u2019ve given you <strong>gold, land, and materials</strong>. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83C\uDFE1 Housing</strong> and build a home \u2014 even a <strong>Shack</strong> is better than sleeping outside! Housing gives you rest, storage, security, and a home for your family.',
                     highlight: '#btnHousing',
                     onEnter: function () {
                         giveGold(500);
@@ -961,7 +1009,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Rest at Home',
-                    text: '\uD83D\uDCA4 Now that you own a home, <strong>rest there for free</strong>! Click the <strong>\uD83D\uDE34 Rest</strong> button on the bottom panel. Resting at home gives full recovery at no cost. Better housing means faster rest. Inns cost gold, so always rest at home when possible!',
+                    text: '\uD83D\uDCA4 Now that you own a home, <strong>rest there for free</strong>! Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDE34 Rest</strong>. Resting at home gives full recovery at no cost. Better housing means faster rest. Inns cost gold, so always rest at home when possible!',
                     highlight: '#btnRest',
                     onEnter: function () {
                         // Drain energy so rest is meaningful
@@ -1096,7 +1144,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Your Journal',
-                    text: '\uD83D\uDCD6 Your character keeps a <strong>journal</strong> that records key life events \u2014 trades, encounters, marriages, promotions, and more. Open <strong>\uD83D\uDC64 Character</strong> on the bottom panel and click <strong>\uD83D\uDCD6 Read My Journal</strong> to see your story so far!',
+                    text: '\uD83D\uDCD6 Your character keeps a <strong>journal</strong> that records key life events \u2014 trades, encounters, marriages, promotions, and more. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83D\uDC64 Character</strong>, and click <strong>\uD83D\uDCD6 Read My Journal</strong> to see your story so far!',
                     highlight: '#btnCharacter',
                     onEnter: function () { closeModal(); },
                     waitFor: function () {
@@ -1129,7 +1177,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Finding Work',
-                    text: '\uD83D\uDCBC <strong>Jobs</strong> are the best early-game income! Click the <strong>\uD83D\uDCBC Work</strong> button on the bottom panel to see available jobs in your current town. Jobs pay gold, give XP, and some unlock new skills!',
+                    text: '\uD83D\uDCBC <strong>Jobs</strong> are the best early-game income! Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDCBC Work</strong> to see available jobs in your current town. Jobs pay gold, give XP, and some unlock new skills!',
                     highlight: '#btnWork',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); },
@@ -1171,7 +1219,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Build Your First Business',
-                    text: '\uD83C\uDFD7\uFE0F We\u2019ve given you <strong>2,000 gold</strong> and extra land. Click <strong>\uD83C\uDFD7\uFE0F Build</strong> on the bottom panel to see available buildings!',
+                    text: '\uD83C\uDFD7\uFE0F We\u2019ve given you <strong>2,000 gold</strong> and extra land. Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83C\uDFD7\uFE0F Build</strong> to see available buildings!',
                     highlight: '#btnBuild',
                     onEnter: function () {
                         giveGold(2000);
@@ -1236,7 +1284,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Workers & Hiring',
-                    text: '\uD83D\uDC77 Click <strong>\uD83D\uDC65 Hire</strong> on the bottom panel to recruit workers. Four skill levels from Unskilled (cheap, 100% output) to Master (expensive, 160% output). Better workers = more profit!',
+                    text: '\uD83D\uDC77 Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDC65 Hire</strong> to recruit workers. Four skill levels from Unskilled (cheap, 100% output) to Master (expensive, 160% output). Better workers = more profit!',
                     highlight: '#btnHire',
                     waitFor: function () { return isModalOpen(); },
                     onComplete: function () {
@@ -1247,7 +1295,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Building Management',
-                    text: '\uD83C\uDFED Buildings you own can be maintained and managed through the <strong>\uD83C\uDFED Buildings</strong> button on the bottom panel. Click it to see your properties!',
+                    text: '\uD83C\uDFED Buildings you own can be maintained and managed through the <strong>\uD83D\uDCB0 Business</strong> tab, then <strong>\uD83C\uDFED Buildings</strong>. Click it to see your properties!',
                     highlight: '#btnBuildings',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); },
@@ -1263,7 +1311,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Social Ranks',
-                    text: '\uD83D\uDC51 <strong>7 social ranks</strong> to climb \u2014 scroll down to see them all:<br>\uD83C\uDF3E Peasant \u2192 \uD83C\uDFE0 Citizen \u2192 \u2696\uFE0F Burgher \u2192 \uD83D\uDD28 Guildmaster \u2192 \uD83D\uDC51 Noble \u2192 \uD83C\uDFF0 Lord \u2192 \uD83D\uDCDC Royal Advisor<br>Each unlocks more buildings, workers, and political power. Open <strong>\uD83D\uDC64 Character</strong> on the bottom panel to view your rank.',
+                    text: '\uD83D\uDC51 <strong>7 social ranks</strong> to climb \u2014 scroll down to see them all:<br>\uD83C\uDF3E Peasant \u2192 \uD83C\uDFE0 Citizen \u2192 \u2696\uFE0F Burgher \u2192 \uD83D\uDD28 Guildmaster \u2192 \uD83D\uDC51 Noble \u2192 \uD83C\uDFF0 Lord \u2192 \uD83D\uDCDC Royal Advisor<br>Each unlocks more buildings, workers, and political power. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83D\uDC64 Character</strong> to view your rank.',
                     highlight: '#btnCharacter',
                     waitFor: function () { return isModalOpen(); }
                 },
@@ -1278,7 +1326,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Kingdom Licenses',
-                    text: '📜 Click <strong>👑 Kingdoms</strong> on the bottom panel, then click <strong>📜 Buy Licenses</strong> on a kingdom card to purchase a trade license. We\u2019ve given you <strong>500 gold</strong>.',
+                    text: '📜 Click the <strong>\uD83D\uDDFA\uFE0F World</strong> tab, then <strong>👑 Kingdoms</strong>, and click <strong>📜 Buy Licenses</strong> on a kingdom card to purchase a trade license. We\u2019ve given you <strong>500 gold</strong>.',
                     highlight: '#btnKingdoms',
                     onEnter: function () {
                         giveGold(500);
@@ -1320,7 +1368,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Arm Yourself',
-                    text: '\u2694\uFE0F We\u2019ve <strong>equipped you with a sword and armor</strong>. Open <strong>\uD83D\uDC64 Character</strong> on the bottom panel to see your gear! Equipment improves your <strong>combat rating</strong> for bandit encounters, military service, and self-defense.',
+                    text: '\u2694\uFE0F We\u2019ve <strong>equipped you with a sword and armor</strong>. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83D\uDC64 Character</strong> to see your gear! Equipment improves your <strong>combat rating</strong> for bandit encounters, military service, and self-defense.',
                     highlight: '#btnCharacter',
                     onEnter: function () {
                         try {
@@ -1333,7 +1381,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Military Enlistment',
-                    text: '\uD83D\uDEE1\uFE0F The option to enlist is in the <strong>\uD83D\uDCBC Work</strong> button on the bottom panel if your kingdom is at war. Enlistment has ranks: Militiaman \u2192 Footman \u2192 Sergeant \u2192 Knight. Reaching Knight auto-grants <strong>Citizen status</strong>!',
+                    text: '\uD83D\uDEE1\uFE0F The option to enlist is in the <strong>\u2694\uFE0F Actions</strong> tab → <strong>\uD83D\uDCBC Work</strong> if your kingdom is at war. Enlistment has ranks: Militiaman \u2192 Footman \u2192 Sergeant \u2192 Knight. Reaching Knight auto-grants <strong>Citizen status</strong>!',
                     onEnter: function () { closeModal(); }
                 },
                 {
@@ -1370,7 +1418,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Caravans',
-                    text: '\uD83D\uDC2A <strong>Caravans</strong> send goods between towns automatically! We\u2019ve given you <strong>500 gold</strong> and <strong>20 wheat</strong>. Click <strong>\uD83D\uDC2A Caravan</strong> on the bottom panel and set up a caravan route to start automated trading!',
+                    text: '\uD83D\uDC2A <strong>Caravans</strong> send goods between towns automatically! We\u2019ve given you <strong>500 gold</strong> and <strong>20 wheat</strong>. Click the <strong>\uD83D\uDCB0 Business</strong> tab, then <strong>\uD83D\uDC2A Caravan</strong> and set up a caravan route to start automated trading!',
                     highlight: '#btnCaravan',
                     onEnter: function () {
                         giveGold(500);
@@ -1397,7 +1445,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Elite Merchants',
-                    text: '\uD83E\uDD16 <strong>Elite NPC merchants</strong> are fierce rivals \u2014 they build, trade, hire, and compete for market share! Click the <strong>\uD83C\uDFC6 Rankings</strong> button on the bottom panel to see the leaderboard and track your competition.',
+                    text: '\uD83E\uDD16 <strong>Elite NPC merchants</strong> are fierce rivals \u2014 they build, trade, hire, and compete for market share! Click the <strong>\uD83D\uDDFA\uFE0F World</strong> tab, then <strong>\uD83C\uDFC6 Rankings</strong> to see the leaderboard and track your competition.',
                     highlight: '#btnRankings',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); },
@@ -1421,7 +1469,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'The Guilds Panel',
-                    text: '\uD83C\uDFDB\uFE0F We\u2019ve given you <strong>500 gold</strong> for guild dues. Click the <strong>\uD83C\uDFDB\uFE0F Guilds</strong> button on the bottom panel to see all available guilds!',
+                    text: '\uD83C\uDFDB\uFE0F We\u2019ve given you <strong>500 gold</strong> for guild dues. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83C\uDFDB\uFE0F Guilds</strong> to see all available guilds!',
                     highlight: '#btnGuilds',
                     onEnter: function () {
                         closeModal();
@@ -1476,7 +1524,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Dark Deeds & Schemes',
-                    text: '\uD83D\uDEA8 The <strong>\uD83D\uDD75\uFE0F Schemes</strong> panel lets you plot sabotage, political schemes, assassinations, tax evasion, and market manipulation. High risk, high reward! Click <strong>\uD83D\uDD75\uFE0F Schemes</strong> on the bottom panel to take a look!',
+                    text: '\uD83D\uDEA8 The <strong>\uD83D\uDD75\uFE0F Schemes</strong> panel lets you plot sabotage, political schemes, assassinations, tax evasion, and market manipulation. High risk, high reward! Click the <strong>\u2699\uFE0F System</strong> tab, then <strong>\uD83D\uDD75\uFE0F Schemes</strong> to take a look!',
                     highlight: '#btnSchemes',
                     onEnter: function () {
                         closeModal();
@@ -1490,7 +1538,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'The Leaderboard',
-                    text: '\uD83C\uDFC6 Click <strong>\uD83C\uDFC6 Rankings</strong> on the bottom panel to see the top merchants! The leaderboard tracks the top 10 by <strong>net worth</strong>. Compete against elite NPCs for the #1 spot!',
+                    text: '\uD83C\uDFC6 Click the <strong>\uD83D\uDDFA\uFE0F World</strong> tab, then <strong>\uD83C\uDFC6 Rankings</strong> to see the top merchants! The leaderboard tracks the top 10 by <strong>net worth</strong>. Compete against elite NPCs for the #1 spot!',
                     highlight: '#btnRankings',
                     onEnter: function () { closeModal(); },
                     waitFor: function () { return isModalOpen(); }
@@ -1570,7 +1618,20 @@ window.Tutorial = (function () {
         panelEl.id = 'tutorialPanel';
         document.body.appendChild(panelEl);
 
-        // Make panel draggable by its header
+        // On mobile, add collapse/expand toggle and skip dragging
+        if (window.innerWidth <= 600) {
+            panelEl.classList.add('tutorial-mobile-dock');
+            var toggleBtn = document.createElement('button');
+            toggleBtn.className = 'tutorial-collapse-btn';
+            toggleBtn.textContent = '▼ Collapse';
+            toggleBtn.style.cssText = 'position:absolute;top:-28px;right:8px;background:rgba(40,35,28,0.9);color:#d4a843;border:1px solid rgba(212,168,67,0.4);border-radius:4px 4px 0 0;padding:2px 10px;font-size:0.7rem;cursor:pointer;z-index:1001;';
+            panelEl.appendChild(toggleBtn);
+            toggleBtn.addEventListener('click', function() {
+                panelEl.classList.toggle('tutorial-collapsed');
+                toggleBtn.textContent = panelEl.classList.contains('tutorial-collapsed') ? '▲ Expand' : '▼ Collapse';
+            });
+        } else {
+        // Make panel draggable by its header (desktop only)
         var dragOffsetX = 0, dragOffsetY = 0, dragging = false;
         panelEl.addEventListener('mousedown', function (e) {
             // Only drag from header area (not buttons)
@@ -1602,6 +1663,7 @@ window.Tutorial = (function () {
                 panelEl.style.cursor = '';
             }
         });
+        } // end desktop-only drag
 
         // Watch for modal open/close to auto-reposition panel and nudge modal
         var overlay = document.getElementById('modalOverlay');
@@ -1759,7 +1821,7 @@ window.Tutorial = (function () {
             }
         }
         highlightedEls = [];
-        // Remove greyed-out state from bottom bar buttons
+        // Remove greyed-out state from bottom bar buttons (legacy)
         var dimmed = document.querySelectorAll('#bottomBar .btn-action.tutorial-dimmed');
         for (var j = 0; j < dimmed.length; j++) {
             dimmed[j].classList.remove('tutorial-dimmed');
@@ -1767,41 +1829,36 @@ window.Tutorial = (function () {
             dimmed[j].style.pointerEvents = '';
             dimmed[j].style.filter = '';
         }
+        // Remove highlights from sub-menu buttons
+        var subHighlighted = document.querySelectorAll('.sub-menu-btn.tutorial-highlight');
+        for (var k = 0; k < subHighlighted.length; k++) {
+            subHighlighted[k].classList.remove('tutorial-highlight');
+        }
     }
 
     function highlightElement(selector) {
         clearHighlights();
         if (!selector) return;
         try {
+            // Check if this is an old bottom bar button that's now in the tab system
+            if (_btnToTab[selector]) {
+                var cat = _btnToTab[selector];
+                var label = _btnToLabel[selector];
+                // Open the tab category and highlight the matching sub-menu button
+                openTabCategory(cat, label);
+                // Also highlight the tab button itself
+                var tabBtn = document.querySelector('.tab-btn[data-category="' + cat + '"]');
+                if (tabBtn) {
+                    tabBtn.classList.add('tutorial-highlight');
+                    highlightedEls.push(tabBtn);
+                }
+                return;
+            }
+
             var els = document.querySelectorAll(selector);
-            var isBottomBarBtn = false;
             for (var i = 0; i < els.length; i++) {
                 els[i].classList.add('tutorial-highlight');
                 highlightedEls.push(els[i]);
-                if (els[i].closest && els[i].closest('#bottomBar')) isBottomBarBtn = true;
-            }
-            // Grey out all other bottom bar buttons when highlighting one
-            if (isBottomBarBtn) {
-                var allBtns = document.querySelectorAll('#bottomBar .btn-action');
-                for (var j = 0; j < allBtns.length; j++) {
-                    if (!allBtns[j].classList.contains('tutorial-highlight')) {
-                        allBtns[j].classList.add('tutorial-dimmed');
-                        allBtns[j].style.opacity = '0.3';
-                        allBtns[j].style.filter = 'grayscale(100%)';
-                    }
-                }
-                // Clear glow + grey as soon as the highlighted button is clicked
-                for (var k = 0; k < els.length; k++) {
-                    (function (el) {
-                        var handler = function () {
-                            el.removeEventListener('click', handler);
-                            clearHighlights();
-                        };
-                        el.addEventListener('click', handler);
-                        // Store for cleanup if step changes before click
-                        el._tutHighlightHandler = handler;
-                    })(els[k]);
-                }
             }
         } catch (e) {
             // Invalid selector, ignore

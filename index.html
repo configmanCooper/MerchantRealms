@@ -106,6 +106,22 @@
         </div>
     </div>
 
+    <!-- Mobile Vital Stats HUD -->
+    <div id="mobileHud" class="mobile-hud">
+        <span class="hud-gold">💰 <span id="hudGoldVal">0</span></span>
+        <span class="hud-bar ok" id="hudHungerBar" title="Hunger">🍖<progress id="hudHunger" max="100" value="80"></progress></span>
+        <span class="hud-bar ok" id="hudThirstBar" title="Thirst">💧<progress id="hudThirst" max="100" value="80"></progress></span>
+        <span class="hud-bar ok" id="hudEnergyBar" title="Energy">⚡<progress id="hudEnergy" max="100" value="100"></progress></span>
+        <span class="hud-bar ok hidden" id="hudHealthBar" title="Health">❤️<progress id="hudHealth" max="100" value="100"></progress></span>
+        <span class="hud-location" id="hudLocation">📍 —</span>
+    </div>
+
+    <!-- Health Alert Banner -->
+    <div id="healthAlert" class="health-alert">
+        ⚠️ <span id="healthAlertText">You are injured!</span>
+        <button data-action="seekTreatment">Seek Treatment</button>
+    </div>
+
     <!-- Speed Warning Banner -->
     <div id="speedWarningBanner" style="display:none;position:fixed;top:52px;left:0;right:0;z-index:100000;background:rgba(180,60,0,0.95);border-bottom:2px solid #ff6400;padding:5px 12px;text-align:center;color:#ffcc66;font-size:0.85rem;font-weight:bold;letter-spacing:0.5px;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.5);">⏩ Fast Forwarding — Map Frozen Until Speed Is Lowered ⏩</div>
 
@@ -116,6 +132,9 @@
 
     <!-- Pause Indicator -->
     <div id="pauseIndicator" class="pause-indicator" style="display:none;">⏸ PAUSED</div>
+
+    <!-- Drawer Backdrop (for left panel slide-in on mobile) -->
+    <div id="drawerBackdrop" class="drawer-backdrop"></div>
 
     <!-- Left Panel -->
     <div id="leftPanel" class="ui-panel left-panel hidden">
@@ -205,6 +224,7 @@
     <!-- Modal Container -->
     <div id="modalOverlay" class="modal-overlay hidden">
         <div id="modalDialog" class="modal-dialog">
+            <div class="modal-handle"></div>
             <div class="modal-header">
                 <span id="modalTitle" class="modal-title">Dialog</span>
                 <button id="btnCloseModal" class="btn-close">✕</button>
@@ -213,6 +233,16 @@
             <div id="modalFooter" class="modal-footer"></div>
         </div>
     </div>
+
+    <!-- Mobile Bottom Tab Bar -->
+    <nav id="bottomTabs" class="bottom-tabs">
+        <button class="tab-btn" data-category="actions"><span class="tab-icon">⚔️</span>Actions</button>
+        <button class="tab-btn" data-category="business"><span class="tab-icon">💰</span>Business</button>
+        <button class="tab-btn" data-category="character"><span class="tab-icon">🧑</span>Character</button>
+        <button class="tab-btn" data-category="world"><span class="tab-icon">🗺️</span>World</button>
+        <button class="tab-btn" data-category="system"><span class="tab-icon">⚙️</span>System</button>
+    </nav>
+    <div id="subMenu" class="sub-menu"></div>
 
     <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>

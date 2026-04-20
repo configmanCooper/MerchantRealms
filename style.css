@@ -60,7 +60,7 @@ body {
 
 #minimapCanvas {
     position: fixed;
-    bottom: 60px;
+    bottom: 50px;
     right: 12px;
     width: 200px;
     height: 160px;
@@ -2125,16 +2125,35 @@ body {
 }
 
 .tutorial-highlight {
-    animation: tutorial-pulse 1.5s ease-in-out infinite !important;
-    box-shadow: 0 0 20px rgba(212, 175, 55, 0.6) !important;
-    border-color: #d4af37 !important;
+    animation: tutorial-pulse 1.2s ease-in-out infinite !important;
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.6), 0 0 40px rgba(212, 175, 55, 0.3) !important;
+    border: 2px solid #d4af37 !important;
     position: relative;
     z-index: 9999;
+    outline: 3px solid rgba(212,175,55,0.4) !important;
+    outline-offset: 3px;
+}
+.tutorial-highlight::after {
+    content: '▼';
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffd700;
+    font-size: 1.1rem;
+    animation: tutorial-bounce 0.8s ease-in-out infinite;
+    text-shadow: 0 0 8px rgba(255,215,0,0.8);
+    pointer-events: none;
+    z-index: 10000;
 }
 
 @keyframes tutorial-pulse {
-    0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.3); }
-    50% { box-shadow: 0 0 25px rgba(212, 175, 55, 0.8); }
+    0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.3), 0 0 20px rgba(212,175,55,0.15); }
+    50% { box-shadow: 0 0 30px rgba(212, 175, 55, 0.9), 0 0 50px rgba(212,175,55,0.4); }
+}
+@keyframes tutorial-bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(-6px); }
 }
 
 .tutorial-part-label {
@@ -3366,3 +3385,586 @@ body {
 #god-mode-panel::-webkit-scrollbar { width: 6px; }
 #god-mode-panel::-webkit-scrollbar-thumb { background: #FFD700; border-radius: 3px; }
 #god-mode-panel::-webkit-scrollbar-track { background: #1a1a2e; }
+
+/* ============================================================
+   MOBILE & UI OVERHAUL v0.75.0
+   ============================================================ */
+
+/* --- Mobile HUD Strip --- */
+.mobile-hud {
+    display: none;
+    height: 32px;
+    background: rgba(20, 15, 10, 0.92);
+    border-bottom: 1px solid rgba(180,160,120,0.3);
+    padding: 2px 10px;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    z-index: 10001;
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+}
+.mobile-hud .hud-gold {
+    color: #d4af37;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+.mobile-hud .hud-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.75rem;
+}
+.mobile-hud .hud-bar progress {
+    width: 38px;
+    height: 8px;
+    border-radius: 4px;
+    border: none;
+    appearance: none;
+    -webkit-appearance: none;
+}
+.mobile-hud .hud-bar progress::-webkit-progress-bar {
+    background: rgba(0,0,0,0.5);
+    border-radius: 4px;
+}
+.mobile-hud .hud-bar.ok progress::-webkit-progress-value { background: #2ecc71; border-radius: 4px; }
+.mobile-hud .hud-bar.warning progress::-webkit-progress-value { background: #f39c12; border-radius: 4px; }
+.mobile-hud .hud-bar.critical progress::-webkit-progress-value { background: #e74c3c; border-radius: 4px; }
+.mobile-hud .hud-bar.ok progress { accent-color: #2ecc71; }
+.mobile-hud .hud-bar.warning progress { accent-color: #f39c12; }
+.mobile-hud .hud-bar.critical progress { accent-color: #e74c3c; }
+.mobile-hud .hud-location {
+    color: #c4a882;
+    font-size: 0.7rem;
+    margin-left: auto;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    max-width: 100px;
+}
+
+/* --- Health Alert Banner --- */
+.health-alert {
+    display: none;
+    background: linear-gradient(90deg, #8b0000, #a00);
+    color: #fff;
+    padding: 6px 12px;
+    text-align: center;
+    font-size: 0.85rem;
+    animation: pulse-bg 2s infinite;
+    position: fixed;
+    top: 80px;
+    left: 0;
+    right: 0;
+    z-index: 10000;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+}
+.health-alert.visible {
+    display: flex;
+}
+.health-alert button {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.5);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    min-height: 32px;
+}
+.health-alert button:hover {
+    background: rgba(255,255,255,0.35);
+}
+@keyframes pulse-bg {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
+}
+
+/* --- Bottom Tab Bar (Hierarchical Categories) --- */
+.bottom-tabs {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: rgba(20, 15, 10, 0.95);
+    border-top: 1px solid rgba(180,160,120,0.4);
+    justify-content: space-around;
+    align-items: center;
+    z-index: 10002;
+    padding: 0 4px;
+}
+.tab-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #c4a882;
+    font-size: 0.65rem;
+    cursor: pointer;
+    padding: 4px 2px;
+    min-width: 56px;
+    min-height: 44px;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
+    font-family: var(--font-body, 'MedievalSharp', cursive);
+}
+.tab-btn .tab-icon {
+    font-size: 1.3rem;
+    line-height: 1;
+    margin-bottom: 1px;
+}
+.tab-btn:active, .tab-btn.active {
+    background: rgba(212, 175, 55, 0.15);
+    color: #d4af37;
+}
+
+/* Sub-menu (slides up above tab bar) */
+.sub-menu {
+    display: none;
+    position: fixed;
+    bottom: 57px;
+    left: 0;
+    right: 0;
+    background: rgba(30, 22, 15, 0.96);
+    border-top: 1px solid rgba(180,160,120,0.4);
+    padding: 8px;
+    z-index: 10001;
+    animation: slideUpSubMenu 0.15s ease;
+}
+.sub-menu.visible {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+.sub-menu-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(90, 69, 48, 0.5);
+    border: 1px solid rgba(180,160,120,0.3);
+    color: var(--parchment, #e8dcc8);
+    font-size: 0.78rem;
+    padding: 10px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    min-height: 48px;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--font-body, 'MedievalSharp', cursive);
+}
+.sub-menu-btn .sub-icon {
+    font-size: 1.1rem;
+    margin-bottom: 2px;
+}
+.sub-menu-btn:active {
+    background: rgba(212, 175, 55, 0.2);
+    border-color: #d4af37;
+}
+.sub-menu-btn:hover {
+    background: rgba(212, 175, 55, 0.15);
+    border-color: rgba(212, 168, 67, 0.5);
+}
+.tab-btn.active {
+    color: #d4a843;
+    border-top: 2px solid #d4a843;
+}
+.tab-btn.needs-attention {
+    animation: pulse-border 1.5s infinite;
+    color: #ff6b6b;
+}
+.tab-btn.needs-attention .tab-icon {
+    animation: pulse-glow 1.5s infinite;
+}
+@keyframes pulse-glow {
+    0%, 100% { text-shadow: 0 0 4px rgba(196,78,82,0.3); }
+    50% { text-shadow: 0 0 10px rgba(255,107,107,0.7); }
+}
+.sub-menu-btn.highlight {
+    border-color: #c44e52;
+    animation: pulse-border 1.5s infinite;
+}
+@keyframes pulse-border {
+    0%, 100% { border-color: #c44e52; box-shadow: 0 0 4px rgba(196,78,82,0.3); }
+    50% { border-color: #ff6b6b; box-shadow: 0 0 8px rgba(196,78,82,0.6); }
+}
+.sub-menu-btn:disabled, .sub-menu-btn.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+@keyframes slideUpSubMenu {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* --- Left Panel Drawer (Mobile) --- */
+.drawer-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 899;
+}
+.drawer-backdrop.visible { display: block; }
+
+/* --- Town Context Actions Card --- */
+.town-actions-card {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 10px 0;
+    padding: 8px;
+    background: rgba(30, 22, 15, 0.6);
+    border: 1px solid rgba(180,160,120,0.3);
+    border-radius: 8px;
+}
+.town-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(90, 69, 48, 0.5);
+    border: 1px solid rgba(180,160,120,0.25);
+    color: var(--parchment, #e8dcc8);
+    font-size: 0.78rem;
+    padding: 10px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    min-height: 52px;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--font-body, 'MedievalSharp', cursive);
+}
+.town-action-btn .ta-icon {
+    font-size: 1.2rem;
+    margin-bottom: 3px;
+}
+.town-action-btn:hover, .town-action-btn:active {
+    background: rgba(212, 175, 55, 0.15);
+    border-color: rgba(212,175,55,0.5);
+}
+.town-action-btn.highlight {
+    border-color: #c44e52;
+    animation: pulse-border 1.5s infinite;
+}
+
+/* --- Trade Dialog Mobile Improvements --- */
+.trade-qty-presets {
+    display: flex;
+    gap: 4px;
+    margin: 4px 0;
+}
+.trade-qty-presets button {
+    flex: 1;
+    min-height: 36px;
+    font-size: 0.85rem;
+    background: rgba(90, 69, 48, 0.5);
+    border: 1px solid rgba(180,160,120,0.3);
+    color: var(--parchment, #e8dcc8);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 4px 2px;
+}
+.trade-qty-presets button:active {
+    background: rgba(212, 175, 55, 0.2);
+    border-color: #d4af37;
+}
+.trade-qty-btn-large {
+    width: 48px;
+    height: 48px;
+    font-size: 1.4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(90, 69, 48, 0.5);
+    border: 1px solid rgba(180,160,120,0.4);
+    color: var(--parchment, #e8dcc8);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.trade-qty-btn-large:active {
+    background: rgba(212, 175, 55, 0.25);
+}
+
+/* --- King Panel Scrollable Tabs --- */
+@media (max-width: 600px) {
+    .king-tabs-container {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 2px;
+        padding: 2px 0;
+        position: relative;
+    }
+    .king-tabs-container::-webkit-scrollbar { display: none; }
+    .king-tabs-container .king-tab-btn {
+        scroll-snap-align: start;
+        flex-shrink: 0;
+        min-width: 80px;
+        padding: 8px 12px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+    /* Fade indicators */
+    .king-tabs-wrapper {
+        position: relative;
+    }
+    .king-tabs-wrapper::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 24px;
+        background: linear-gradient(to right, transparent, rgba(20,15,10,0.9));
+        pointer-events: none;
+        z-index: 1;
+    }
+}
+
+/* --- Tutorial Mobile Dock --- */
+@media (max-width: 600px) {
+    .tutorial-panel, #tutorialPanel, [id*="tutorial"] .tutorial-panel {
+        position: fixed !important;
+        bottom: 57px !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: auto !important;
+        max-height: 35vh;
+        border-radius: 12px 12px 0 0;
+        z-index: 9500;
+        transition: transform 0.25s ease;
+        cursor: default !important;
+    }
+    .tutorial-panel.collapsed {
+        transform: translateY(calc(100% - 40px));
+    }
+    .tutorial-collapse-btn {
+        display: inline-block;
+        margin-left: auto;
+        background: none;
+        border: none;
+        color: #d4af37;
+        font-size: 1rem;
+        cursor: pointer;
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+@media (min-width: 601px) {
+    .tutorial-collapse-btn { display: none; }
+}
+
+/* --- Mobile Responsive Overhaul (600px) --- */
+@media (max-width: 600px) {
+    /* Show mobile elements */
+    .mobile-hud { display: flex; }
+    .bottom-tabs { display: flex; }
+    
+    /* Hide old bottom bar on mobile — replaced by tab system */
+    .bottom-bar { display: none !important; }
+    
+    /* Left panel → slide-in drawer */
+    .left-panel {
+        display: flex !important;
+        position: fixed !important;
+        left: -280px;
+        top: 0;
+        width: 280px;
+        height: 100vh;
+        z-index: 900;
+        transition: left 0.25s ease;
+        border-radius: 0;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .left-panel.drawer-open { left: 0; }
+    
+    /* Full-screen modals */
+    .modal-dialog {
+        min-width: unset !important;
+        max-width: 100vw !important;
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh !important;
+        border-radius: 0;
+        margin: 0;
+    }
+    .modal-header {
+        padding: 10px 16px;
+        min-height: 48px;
+    }
+    .modal-body {
+        padding: 12px 16px;
+        max-height: none;
+        flex: 1;
+    }
+    .modal-handle {
+        display: block;
+        width: 40px;
+        height: 4px;
+        background: rgba(255,255,255,0.3);
+        border-radius: 2px;
+        margin: 6px auto 0;
+    }
+    
+    /* Font & touch target minimums */
+    button, .btn, .action-btn, .tab-btn, .sub-menu-btn,
+    select, input[type="button"], input[type="submit"] {
+        font-size: max(0.875rem, 14px);
+        min-height: 44px;
+        min-width: 44px;
+    }
+    
+    /* Fix small text throughout */
+    .stat-label, .stat-value, .meter-label, .supply-info {
+        font-size: max(0.8rem, 13px);
+    }
+    .detail-row, .modal-body p, .modal-body div {
+        font-size: max(0.85rem, 14px);
+    }
+    
+    /* Button contrast improvement */
+    .btn-action, .sub-menu-btn {
+        color: #f0e6d2;
+        background: rgba(90, 69, 48, 0.6);
+        border: 1px solid rgba(180,160,120,0.4);
+    }
+    .btn-action:disabled, .sub-menu-btn:disabled {
+        opacity: 0.45;
+        text-decoration: line-through;
+    }
+
+    /* Right panel full width */
+    .right-panel {
+        width: 100vw;
+        max-width: 100vw;
+        border-radius: 0;
+    }
+    
+    /* Trade dialog mobile adjustments */
+    .trade-columns {
+        grid-template-columns: 1fr !important;
+    }
+    .trade-item-row {
+        padding: 8px 6px;
+    }
+    .trade-item-row button {
+        min-height: 44px;
+        min-width: 44px;
+        font-size: 1rem;
+    }
+    
+    /* Canvas adjustments for HUD + tab bar space */
+    #gameCanvas {
+        margin-top: 80px;
+        margin-bottom: 57px;
+    }
+
+    /* Minimap repositioning */
+    #minimapCanvas {
+        bottom: 62px !important;
+    }
+    
+    /* Quest tracker repositioning */
+    #questTrackerHud {
+        top: 84px !important;
+    }
+}
+
+/* Desktop: hide mobile-only elements */
+@media (min-width: 601px) {
+    .mobile-hud { display: none !important; }
+    .modal-handle { display: none; }
+    .drawer-backdrop { display: none !important; }
+    
+    /* Use the same tab bar on desktop but styled as a toolbar */
+    .bottom-bar { display: none !important; }
+    .bottom-tabs {
+        display: flex !important;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 42px;
+        background: linear-gradient(to top, rgba(28,24,18,0.97), rgba(40,35,28,0.95));
+        border-top: 1px solid rgba(180,160,120,0.25);
+        z-index: 800;
+        justify-content: center;
+        gap: 2px;
+        padding: 0 8px;
+    }
+    .bottom-tabs .tab-btn {
+        flex-direction: row;
+        gap: 4px;
+        font-size: 0.78rem;
+        padding: 4px 14px;
+        min-height: 36px;
+        min-width: unset;
+    }
+    .bottom-tabs .tab-btn .tab-icon {
+        font-size: 1rem;
+    }
+    .sub-menu {
+        bottom: 43px;
+        left: 50%;
+        transform: translateX(-50%);
+        right: auto;
+        max-width: 600px;
+        min-width: 320px;
+        border-radius: 8px 8px 0 0;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    }
+}
+
+/* Modal drag handle (visible only on mobile via .modal-handle above) */
+.modal-handle {
+    display: none;
+    width: 40px;
+    height: 4px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 2px;
+    margin: 6px auto 0;
+}
+
+/* Desktop button grouping (5 categories) */
+@media (min-width: 601px) {
+    .action-buttons {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 2px;
+    }
+    .bar-row {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+    }
+    .bar-row::after {
+        content: '';
+        width: 1px;
+        height: 20px;
+        background: rgba(180,160,120,0.3);
+        margin: 0 4px;
+    }
+    .bar-row:last-child::after {
+        display: none;
+    }
+}
+
+/* Speed warning banner repositioning for mobile */
+@media (max-width: 600px) {
+    #speedWarningBanner {
+        top: 80px !important;
+    }
+}

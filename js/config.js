@@ -649,7 +649,7 @@ const CONFIG = {
     LICENSE_FEE_MAX: 3000,         // Maximum a king can set license fees
     LICENSE_FEE_WAR_MIN: 500,      // Minimum for war goods
     LICENSE_FEE_WAR_MAX: 5000,     // Maximum for war goods
-    WAR_GOODS: ['swords', 'armor', 'blasting_powder', 'demolition_tools'],
+    WAR_GOODS: ['swords', 'armor', 'blasting_powder', 'demolition_tools', 'steel'],
     LICENSE_MIN_REPUTATION: 40,
     LICENSE_MIN_RANK: 1,           // Freeman (index 1)
     LICENSE_WEAPON_MIN_RANK: 3,    // Guildmaster (index 3) for weapons
@@ -1603,9 +1603,9 @@ CONFIG.TERRAIN_PRICE_MODIFIERS = {
 // ============================================================
 
 CONFIG.QUALITY_TIERS = {
-    basic:     { name: 'Basic',     priceMultiplier: 1, effectivenessBonus: 0.00, icon: '⚪' },
-    good:      { name: 'Good',      priceMultiplier: 3, effectivenessBonus: 0.10, icon: '🔵' },
-    excellent: { name: 'Excellent', priceMultiplier: 9, effectivenessBonus: 0.20, icon: '🟣' },
+    basic:     { name: 'Basic',     priceMultiplier: 1, effectivenessBonus: 0.00, attritionReduction: 0.00, icon: '⚪' },
+    good:      { name: 'Good',      priceMultiplier: 3, effectivenessBonus: 0.10, attritionReduction: 0.08, icon: '🔵' },
+    excellent: { name: 'Excellent', priceMultiplier: 9, effectivenessBonus: 0.20, attritionReduction: 0.15, icon: '🟣' },
 };
 
 // Quality Crafting RNG Chances
@@ -1743,6 +1743,7 @@ const RESOURCE_TYPES = {
 
     // --- Industrial / Processing goods ---
     CHARCOAL:         { id: 'charcoal',         name: 'Charcoal',         category: 'processed', basePrice: 6,  icon: '⬛', weight: 1 },
+    STEEL:            { id: 'steel',             name: 'Steel',            category: 'processed', basePrice: 45, icon: '🔩', weight: 3 },
     MANURE:           { id: 'manure',            name: 'Manure',           category: 'raw',       basePrice: 1,  icon: '💩', weight: 2 },
     SULFUR:           { id: 'sulfur',            name: 'Sulfur',           category: 'raw',       basePrice: 12, icon: '🟡', weight: 1 },
     SALTPETER:        { id: 'saltpeter',         name: 'Saltpeter',       category: 'processed', basePrice: 18, icon: '🧂', weight: 1 },
@@ -1802,7 +1803,12 @@ const BUILDING_TYPES = {
     VINEYARD:      { id: 'vineyard',      name: 'Vineyard',      cost: 400,  workers: 3, produces: 'grapes',   consumes: {},                       rate: 4, category: 'farm',       storage: 60, optionalBoost: { resource: 'manure', bonusPct: 25, consumeRate: 1, storageName: 'Manure Storage', storageMax: 20 }, materials: { wood: 12, stone: 5 } },
     HORSE_RANCH:   { id: 'horse_ranch',   name: 'Horse Ranch',   cost: 600,  workers: 3, produces: 'horses',   consumes: { wheat: 3 },             rate: 2, category: 'farm',       storage: 30, byproduct: { resource: 'manure', rate: 4 }, byproductStorage: 30, materials: { wood: 20, planks: 8, stone: 5 } },
     FLOUR_MILL:    { id: 'flour_mill',    name: 'Flour Mill',    cost: 300,  workers: 2, produces: 'flour',    consumes: { wheat: 3 },             rate: 6, category: 'processing', storage: 60, materials: { wood: 12, stone: 10 } },
-    SMELTER:       { id: 'smelter',       name: 'Smelter',       cost: 400,  workers: 3, produces: 'iron',     consumes: { iron_ore: 2, wood: 1 }, rate: 4, category: 'processing', storage: 60, optionalBoost: { resource: 'charcoal', bonusPct: 25, consumeRate: 1, storageName: 'Charcoal Storage', storageMax: 30 }, materials: { stone: 20, bricks: 5, iron: 2 } },
+    SMELTER:       { id: 'smelter',       name: 'Smelter',       cost: 400,  workers: 3, produces: 'iron',     consumes: { iron_ore: 2, wood: 1 }, rate: 4, category: 'processing', storage: 60, optionalBoost: { resource: 'charcoal', bonusPct: 25, consumeRate: 1, storageName: 'Charcoal Storage', storageMax: 30 }, materials: { stone: 20, bricks: 5, iron: 2 }, canProduce: ['iron', 'steel'],
+        availableProducts: {
+            iron:  { produces: 'iron',  consumes: { iron_ore: 2, wood: 1 },      rate: 4 },
+            steel: { produces: 'steel', consumes: { iron: 2, charcoal: 1 },      rate: 2 },
+        },
+    },
     SAWMILL:       { id: 'sawmill',       name: 'Sawmill',       cost: 250,  workers: 2, produces: 'planks',   consumes: { wood: 2 },              rate: 5, category: 'processing', storage: 60, materials: { wood: 10, stone: 5, iron: 1 } },
     WEAVER:        { id: 'weaver',        name: 'Weaver',        cost: 300,  workers: 2, produces: 'cloth',    consumes: { wool: 2 },              rate: 5, category: 'processing', storage: 50, materials: { wood: 10, planks: 5 }, canProduce: ['cloth', 'rope', 'rope_from_cloth'],
         availableProducts: {
@@ -1832,7 +1838,7 @@ const BUILDING_TYPES = {
         availableProducts: {
             swords:           { produces: 'swords',           consumes: { iron: 2, wood: 1 },              rate: 3 },
             swords_good:      { produces: 'swords_good',      consumes: { iron: 3, wood: 2 },              rate: 2 },
-            swords_excellent: { produces: 'swords_excellent',  consumes: { iron: 5, wood: 3, charcoal: 2 }, rate: 1 },
+            swords_excellent: { produces: 'swords_excellent',  consumes: { steel: 3, wood: 2 },             rate: 1 },
             tools:            { produces: 'tools',            consumes: { iron: 1, wood: 1 },              rate: 3 },
             iron:             { produces: 'iron',             consumes: { iron_ore: 2, wood: 1 },          rate: 4 },
             demolition_tools: { produces: 'demolition_tools', consumes: { iron: 3, rope: 2, wood: 3 },    rate: 1 },
@@ -1842,7 +1848,7 @@ const BUILDING_TYPES = {
         availableProducts: {
             armor:            { produces: 'armor',            consumes: { iron: 3, leather: 2 },           rate: 2 },
             armor_good:       { produces: 'armor_good',       consumes: { iron: 5, leather: 3 },           rate: 1 },
-            armor_excellent:  { produces: 'armor_excellent',   consumes: { iron: 8, leather: 5, charcoal: 2 }, rate: 1 },
+            armor_excellent:  { produces: 'armor_excellent',   consumes: { steel: 4, leather: 3 },          rate: 1 },
         },
     },
     WAREHOUSE:     { id: 'warehouse',     name: 'Warehouse',     cost: 500,  workers: 1, produces: null,       consumes: {},                       rate: 0, category: 'storage',    storage: 800, materials: { wood: 20, stone: 10, planks: 10, bricks: 5 } },

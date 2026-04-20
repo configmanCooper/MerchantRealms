@@ -532,11 +532,11 @@
 
     const STRATEGY_GOODS = {
         food_monopoly:     ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
-        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good'],
+        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal'],
         luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture', 'fine_clothes', 'cloth', 'drum', 'lute', 'harp'],
         diversified:       ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
-        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good'],
+        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
         culture_trader:    ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy', 'gut_string', 'cloth', 'silk', 'fine_clothes', 'clothes', 'wool', 'dye'],
@@ -545,11 +545,11 @@
 
     const STRATEGY_BUILDINGS = {
         food_monopoly:     ['wheat_farm', 'flour_mill', 'bakery', 'cattle_ranch', 'fishery', 'smokehouse', 'chicken_farm', 'restaurant', 'warehouse_small'],
-        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright', 'powder_works', 'armorer', 'fletcher', 'arrow_maker'],
+        military_supplier: ['blacksmith', 'iron_mine', 'smelter', 'toolsmith', 'armory_shop', 'warehouse_small', 'wheelwright', 'powder_works', 'armorer', 'fletcher', 'arrow_maker', 'charcoal_kiln', 'lumber_camp'],
         luxury_trader:     ['jeweler', 'vineyard', 'winery', 'weaver', 'jewelers_boutique', 'clothing_shop', 'warehouse_small', 'silk_weaver', 'fine_tailor'],
         diversified:       ['wheat_farm', 'bakery', 'blacksmith', 'weaver', 'sawmill', 'tanner', 'general_store', 'tavern', 'warehouse_small', 'wheelwright'],
         political_climber: ['vineyard', 'winery', 'jeweler', 'market_stall', 'jewelers_boutique', 'warehouse_small'],
-        war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse', 'armorer', 'fletcher', 'arrow_maker'],
+        war_profiteer:     ['blacksmith', 'smelter', 'iron_mine', 'bakery', 'armory_shop', 'warehouse', 'armorer', 'fletcher', 'arrow_maker', 'charcoal_kiln', 'lumber_camp'],
         land_baron:        ['wheat_farm', 'cattle_ranch', 'sheep_farm', 'lumber_camp', 'iron_mine', 'pig_farm', 'restaurant', 'warehouse', 'wheelwright'],
         trade_network:     ['market_stall', 'weaver', 'salt_works', 'tanner', 'toolsmith', 'brewery', 'smokehouse', 'general_store', 'warehouse', 'wheelwright'],
         medical_supplier:  ['herb_garden', 'apothecary', 'advanced_apothecary', 'bandage_workshop', 'clinic', 'herbalist_hut', 'warehouse_small'],

@@ -70,13 +70,13 @@
             { id: 'finances', icon: '💰', label: 'Finances' },
             { id: 'threats', icon: '⚠️', label: 'Threats' }
         ];
-        html += '<div style="display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap;">';
+        html += '<div class="king-tabs-wrapper"><div class="king-tabs-container" style="display:flex;gap:3px;margin-bottom:10px;flex-wrap:wrap;">';
         for (var _ti = 0; _ti < tabs.length; _ti++) {
             var _tab = tabs[_ti];
             var _active = _kingTab === _tab.id;
-            html += '<button class="btn-medieval" data-action="openKingPanel" data-id="' + _tab.id + '" style="flex:0 1 auto;min-width:auto;font-size:0.68rem;padding:5px 6px;white-space:nowrap;' + (_active ? 'background:rgba(212,168,67,0.35) !important;border-color:rgba(212,168,67,0.6) !important;color:#d4a843;' : '') + '">' + _tab.icon + ' ' + _tab.label + '</button>';
+            html += '<button class="btn-medieval king-tab-btn" data-action="openKingPanel" data-id="' + _tab.id + '" style="flex:0 1 auto;min-width:auto;font-size:0.68rem;padding:5px 6px;white-space:nowrap;' + (_active ? 'background:rgba(212,168,67,0.35) !important;border-color:rgba(212,168,67,0.6) !important;color:#d4a843;' : '') + '">' + _tab.icon + ' ' + _tab.label + '</button>';
         }
-        html += '</div>';
+        html += '</div></div>';
 
         // Tab content
         if (_kingTab === 'overview') html += _kingOverviewTab(kingdom, ks);

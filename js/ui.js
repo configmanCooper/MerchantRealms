@@ -496,6 +496,25 @@ window.UI = (function () {
         registerAction('closeAndOpenSpouse', function() { closeModal(); UI.openSpousePanel(); });
         registerAction('openLeaderboard', function() { openLeaderboard(); });
 
+        // Seek Treatment action (from health alert banner and town action card)
+        registerAction('seekTreatment', function() {
+            // Try opening health detail panel which shows treatment options
+            if (typeof openHealthDetailPanel === 'function') {
+                openHealthDetailPanel();
+            } else if (typeof UI !== 'undefined' && UI.openHealthDetailPanel) {
+                UI.openHealthDetailPanel();
+            }
+        });
+
+        // Town action card function handler delegation
+        document.addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-town-action-fn]');
+            if (!btn || btn.disabled) return;
+            var fn = btn.dataset.townActionFn;
+            if (typeof UI !== 'undefined' && UI[fn]) { UI[fn](); }
+            else if (typeof window[fn] === 'function') { window[fn](); }
+        });
+
         // Conquest choice — buttons in the conquest modal (must be registered here, not engine.js, because engine loads before UI)
         registerAction('conquestChoice', function(_t, d) {
             var town = null, kingdom = null;
@@ -911,6 +930,15 @@ window.UI = (function () {
         el.topBar.classList.remove('hidden');
         el.leftPanel.classList.remove('hidden');
         el.bottomBar.classList.remove('hidden');
+        // Show mobile elements
+        var mobileHud = document.getElementById('mobileHud');
+        if (mobileHud) mobileHud.style.display = '';
+        var bottomTabs = document.getElementById('bottomTabs');
+        if (bottomTabs) bottomTabs.style.display = '';
+        // Initialize mobile systems
+        _initMobileTabBar();
+        _initLeftDrawer();
+        _initModalImprovements();
         // Initialize guidance system
         if (typeof Guidance !== 'undefined' && Guidance.init) Guidance.init();
     }
@@ -918,6 +946,12 @@ window.UI = (function () {
     function hideGameUI() {
         el.topBar.classList.add('hidden');
         el.leftPanel.classList.add('hidden');
+        // Hide mobile elements
+        var mobileHud = document.getElementById('mobileHud');
+        if (mobileHud) mobileHud.style.display = 'none';
+        var bottomTabs = document.getElementById('bottomTabs');
+        if (bottomTabs) bottomTabs.style.display = 'none';
+        _closeSubMenu();
         el.bottomBar.classList.add('hidden');
         el.rightPanel.classList.add('hidden');
         _rightPanelTownId = null;
@@ -964,6 +998,9 @@ window.UI = (function () {
         try { updateHungerBar(); } catch (_e) { /* no-op */ }
         try { updateFatigueBar(); } catch (_e) { /* no-op */ }
         try { updateHealthBar(); } catch (_e) { /* no-op */ }
+        try { updateMobileHud(); } catch (_e) { /* no-op */ }
+        try { updateHealthAlert(); } catch (_e) { /* no-op */ }
+        try { _updateTabGlows(); } catch (_e) { /* no-op */ }
     }
 
     function update() {
@@ -1509,6 +1546,8 @@ window.UI = (function () {
     var _modalDragState = null;
 
     function _makeModalDraggable(dlgEl) {
+        // Disable dragging on mobile — full-screen modals don't need repositioning
+        if (window.innerWidth <= 600) return;
         var header = dlgEl.querySelector('.modal-header');
         if (!header) return;
         // Avoid re-binding if already draggable
@@ -1599,6 +1638,12 @@ window.UI = (function () {
         if (mf) mf.innerHTML = footerHtml || '';
         if (mo) mo.classList.remove('hidden');
 
+        // Push history state for back-button-closes-modal on mobile
+        if (window.innerWidth <= 600 && !_modalHistoryPushed) {
+            history.pushState({ modal: true }, '');
+            _modalHistoryPushed = true;
+        }
+
         // Reset position, width and make draggable
         var dlg = document.getElementById('modalDialog');
         if (dlg) {
@@ -1619,6 +1664,10 @@ window.UI = (function () {
         if (_conquestLocked) return;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
+        // Clear modal history state
+        _modalHistoryPushed = false;
+        // Close sub-menu if open
+        _closeSubMenu();
         // Reset drag position so next modal opens centered
         var dlg = document.getElementById('modalDialog');
         if (dlg) {
@@ -5668,18 +5717,15 @@ window.UI = (function () {
     function openMapView() {
         if (typeof Renderer === 'undefined') return;
 
-        _mapModeState = (_mapModeState + 1) % 3;
-
         if (_mapModeState === 0) {
+            _mapModeState = 2;
+            Renderer.setMapMode(2);
+            toast('World Map — click Map again to return', 'info');
+        } else {
+            _mapModeState = 0;
             Renderer.setMapMode(0);
             Renderer.centerOnPlayer();
             toast('Normal view restored', 'info');
-        } else if (_mapModeState === 1) {
-            Renderer.setMapMode(1);
-            toast('Strategic Map — click Map again for World Map', 'info');
-        } else if (_mapModeState === 2) {
-            Renderer.setMapMode(2);
-            toast('World Map — click Map to return to game', 'info');
         }
     }
 
@@ -8523,6 +8569,472 @@ window.UI = (function () {
         else if (healthPct > 40) healthFill.style.background = '#ccb974';
         else if (healthPct > 20) healthFill.style.background = '#e8a040';
         else healthFill.style.background = '#c44e52';
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  MOBILE HUD & HEALTH ALERT
+    // ═══════════════════════════════════════════════════════════
+
+    function _abbreviateGold(g) {
+        if (g == null || isNaN(g)) return '0';
+        g = Math.floor(g);
+        if (g >= 1000000) return (g / 1000000).toFixed(1) + 'M';
+        if (g >= 10000) return (g / 1000).toFixed(1) + 'K';
+        if (g >= 1000) return (g / 1000).toFixed(1) + 'K';
+        return String(g);
+    }
+
+    function _setHudBarClass(barEl, pct) {
+        if (!barEl) return;
+        barEl.className = 'hud-bar ' + (pct > 50 ? 'ok' : pct > 25 ? 'warning' : 'critical');
+    }
+
+    function updateMobileHud() {
+        if (window.innerWidth > 600) return;
+        if (typeof Player === 'undefined') return;
+        var goldEl = document.getElementById('hudGoldVal');
+        if (goldEl) goldEl.textContent = _abbreviateGold(Player.gold);
+
+        var hunger = Player.hunger != null ? Player.hunger : 80;
+        var hungerProg = document.getElementById('hudHunger');
+        if (hungerProg) hungerProg.value = Math.max(0, Math.min(100, hunger));
+        _setHudBarClass(document.getElementById('hudHungerBar'), hunger);
+
+        var thirst = Player.thirst != null ? Player.thirst : 80;
+        var thirstProg = document.getElementById('hudThirst');
+        if (thirstProg) thirstProg.value = Math.max(0, Math.min(100, thirst));
+        _setHudBarClass(document.getElementById('hudThirstBar'), thirst);
+
+        var energy = Player.energy != null ? Player.energy : 100;
+        var maxEnergy = Player.maxEnergy || 100;
+        var energyPct = (energy / maxEnergy) * 100;
+        var energyProg = document.getElementById('hudEnergy');
+        if (energyProg) energyProg.value = Math.max(0, Math.min(100, energyPct));
+        _setHudBarClass(document.getElementById('hudEnergyBar'), energyPct);
+
+        var health = Player.health != null ? Player.health : 100;
+        var maxHealth = Player.maxHealth || 100;
+        var healthPct = (health / maxHealth) * 100;
+        var healthBar = document.getElementById('hudHealthBar');
+        var healthProg = document.getElementById('hudHealth');
+        if (healthBar) {
+            if (healthPct < 100) {
+                healthBar.classList.remove('hidden');
+                if (healthProg) healthProg.value = Math.max(0, Math.min(100, healthPct));
+                _setHudBarClass(healthBar, healthPct);
+            } else {
+                healthBar.classList.add('hidden');
+            }
+        }
+
+        var locEl = document.getElementById('hudLocation');
+        if (locEl) {
+            var locName = '—';
+            if (Player.traveling) {
+                locName = '🚶 Traveling...';
+            } else if (Player.townId != null) {
+                try {
+                    var t = Engine.getTown(Player.townId);
+                    if (t) locName = t.name;
+                } catch (e) { /* no-op */ }
+            }
+            locEl.textContent = '📍 ' + locName;
+        }
+    }
+
+    function updateHealthAlert() {
+        var alertEl = document.getElementById('healthAlert');
+        var alertText = document.getElementById('healthAlertText');
+        if (!alertEl || typeof Player === 'undefined') return;
+
+        var isSick = Player.illnesses && Player.illnesses.length > 0;
+        var isInjured = Player.injuries && Player.injuries.length > 0;
+        var healthLow = (Player.health != null && Player.health < 50);
+
+        if (isSick || isInjured || healthLow) {
+            var msgs = [];
+            if (isInjured) msgs.push('injured');
+            if (isSick) msgs.push('sick');
+            if (healthLow && !isInjured && !isSick) msgs.push('low health');
+            if (alertText) alertText.textContent = 'You are ' + msgs.join(' & ') + '!';
+            alertEl.classList.add('visible');
+        } else {
+            alertEl.classList.remove('visible');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  MOBILE BOTTOM TAB BAR
+    // ═══════════════════════════════════════════════════════════
+
+    var _activeTabCategory = null;
+    var _subMenuItems = {
+        actions: [
+            { icon: '🛒', label: 'Trade', action: 'openTradeDialog' },
+            { icon: '🏗️', label: 'Build', action: 'openBuildDialog' },
+            { icon: '👥', label: 'Hire', action: 'openHireDialog' },
+            { icon: '💼', label: 'Work', fn: 'openWorkDialog' },
+            { icon: '🤝', label: 'Street', fn: 'openStreetTrading' },
+            { icon: '💤', label: 'Rest', fn: 'openRestDialog' },
+            { icon: '💬', label: 'Talk', fn: 'talkToTownsfolk' },
+            { icon: '🛤️', label: 'Travel', fn: 'showTollRoutesPanel' }
+        ],
+        business: [
+            { icon: '🐴', label: 'Caravan', action: 'openCaravanDialog' },
+            { icon: '🏠', label: 'Buildings', fn: 'openBuildingManagement' },
+            { icon: '⛵', label: 'Ships', fn: 'openShipsDialog' },
+            { icon: '⛺', label: 'Outposts', fn: 'openOutpostDialog' }
+        ],
+        character: [
+            { icon: '👤', label: 'Character', action: 'openCharacterDialog' },
+            { icon: '📦', label: 'Inventory', fn: 'openPlayerInventory' },
+            { icon: '🩺', label: 'Treatment', fn: 'openHealthDetailPanel', conditional: 'treatment' },
+            { icon: '📚', label: 'Skills', fn: 'openSkillsDialog' },
+            { icon: '👨‍👩‍👧‍👦', label: 'Family', fn: 'openFamilyPanel', conditional: 'family' },
+            { icon: '🏡', label: 'Housing', fn: 'openHousingDialog' },
+            { icon: '🏛️', label: 'Guilds', fn: 'openGuildsPanel' },
+            { icon: '🏅', label: 'Nobility', fn: 'openNobilityDialog', conditional: 'nobility' },
+            { icon: '👑', label: 'King', fn: 'openKingPanel', conditional: 'king' }
+        ],
+        world: [
+            { icon: '🏘️', label: 'Town View', fn: '_showCurrentTown', conditional: 'intown' },
+            { icon: '👑', label: 'Kingdoms', action: 'openKingdomsDialog' },
+            { icon: '🗺️', label: 'Map', action: 'openMapView' },
+            { icon: '📍', label: 'Find Me', fn: 'locatePlayer' },
+            { icon: '📋', label: 'Log', action: 'openEventLog' },
+            { icon: '🎖️', label: 'Feats', fn: 'openAchievementsDialog' },
+            { icon: '🏆', label: 'Rankings', fn: 'openLeaderboard' },
+            { icon: '⛏', label: 'Deposits', fn: '_toggleDeposits', conditional: 'deposits' }
+        ],
+        system: [
+            { icon: '💾', label: 'Save', fn: '_saveGame' },
+            { icon: '📂', label: 'Load', fn: '_loadGame' },
+            { icon: '🏠', label: 'Main Menu', fn: '_mainMenu' },
+            { icon: '❓', label: 'Help', fn: 'openHelpDialog' },
+            { icon: '🗡️', label: 'Schemes', fn: 'openSchemesDialog', conditional: 'schemes' },
+            { icon: '🔮', label: 'God Mode', fn: 'openGodModePanel', conditional: 'godmode' }
+        ]
+    };
+
+    function _shouldShowConditional(cond) {
+        if (typeof Player === 'undefined') return false;
+        switch (cond) {
+            case 'king': return Player.isPlayerKing && Player.isPlayerKing();
+            case 'nobility':
+                if (!Player.socialRank) return false;
+                for (var k in Player.socialRank) {
+                    if ((Player.socialRank[k] || 0) >= 4) return true;
+                }
+                return false;
+            case 'schemes': return document.getElementById('btnSchemes') && document.getElementById('btnSchemes').style.display !== 'none';
+            case 'family': return Player.spouseId || (Player.childrenIds && Player.childrenIds.length > 0);
+            case 'deposits': return document.getElementById('btnDeposits') && document.getElementById('btnDeposits').style.display !== 'none';
+            case 'godmode': return document.getElementById('btnGodMode') && document.getElementById('btnGodMode').style.display !== 'none';
+            case 'intown': return Player.townId && !Player.traveling;
+            case 'treatment': return true; // Always show — glow handled separately
+            default: return true;
+        }
+    }
+
+    // Check if anyone in the player's party needs treatment
+    function _needsTreatment() {
+        if (typeof Player === 'undefined') return false;
+        var injuries = Player.injuries || [];
+        var illnesses = Player.illnesses || [];
+        if (injuries.length > 0 || illnesses.length > 0 || (Player.health !== undefined && Player.health < 50)) return true;
+        // Check family members
+        try {
+            if (Player.spouseId) {
+                var spouse = Engine.findPerson(Player.spouseId);
+                if (spouse && ((spouse.injuries && spouse.injuries.length > 0) || (spouse.illnesses && spouse.illnesses.length > 0))) return true;
+            }
+            var childIds = Player.childrenIds || [];
+            for (var i = 0; i < childIds.length; i++) {
+                var child = Engine.findPerson(childIds[i]);
+                if (child && ((child.injuries && child.injuries.length > 0) || (child.illnesses && child.illnesses.length > 0))) return true;
+            }
+        } catch (e) { /* ignore */ }
+        return false;
+    }
+
+    function _executeSubAction(item) {
+        if (item.action && _actionHandlers[item.action]) {
+            _actionHandlers[item.action](null, {});
+        } else if (item.fn) {
+            // Special cases
+            if (item.fn === '_toggleDeposits') {
+                if (typeof Renderer !== 'undefined' && Renderer.toggleDeposits) Renderer.toggleDeposits();
+                return;
+            }
+            if (item.fn === '_saveGame') {
+                if (typeof Game !== 'undefined' && Game.save) Game.save();
+                return;
+            }
+            if (item.fn === '_loadGame') {
+                if (typeof Game !== 'undefined' && Game.load) Game.load();
+                return;
+            }
+            if (item.fn === '_mainMenu') {
+                if (confirm('Return to main menu? Unsaved progress will be lost!')) {
+                    if (typeof Game !== 'undefined' && Game.showTitleScreen) Game.showTitleScreen();
+                }
+                return;
+            }
+            if (item.fn === '_showCurrentTown') {
+                if (typeof Player !== 'undefined' && Player.townId && !Player.traveling) {
+                    try {
+                        var town = Engine.findTown(Player.townId) || Engine.getTown(Player.townId);
+                        if (town && typeof UI !== 'undefined' && UI.showTownDetail) UI.showTownDetail(town);
+                    } catch (e) { /* ignore */ }
+                }
+                return;
+            }
+            // Try UI method first, then global function
+            if (typeof UI !== 'undefined' && UI[item.fn]) {
+                UI[item.fn]();
+            } else if (typeof window[item.fn] === 'function') {
+                window[item.fn]();
+            }
+        }
+    }
+
+    function _openSubMenu(category) {
+        var subMenu = document.getElementById('subMenu');
+        if (!subMenu) return;
+
+        if (_activeTabCategory === category) {
+            _closeSubMenu();
+            return;
+        }
+        _activeTabCategory = category;
+
+        // Update tab highlights
+        var tabs = document.querySelectorAll('.tab-btn');
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].classList.toggle('active', tabs[i].dataset.category === category);
+        }
+
+        var items = _subMenuItems[category] || [];
+        var html = '';
+        var needsTreat = _needsTreatment();
+        var visIdx = 0;
+        for (var j = 0; j < items.length; j++) {
+            var it = items[j];
+            if (it.conditional && !_shouldShowConditional(it.conditional)) continue;
+            var isKingMode = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing();
+            var disabled = isKingMode && (it.action === 'openTradeDialog' || it.action === 'openBuildDialog' || it.action === 'openHireDialog' || it.action === 'openCaravanDialog');
+            var glowing = (it.conditional === 'treatment' && needsTreat);
+            html += '<button class="sub-menu-btn' + (disabled ? ' disabled' : '') + (glowing ? ' highlight' : '') + '" data-sub-action="' + visIdx + '" data-sub-cat="' + category + '"' + (disabled ? ' disabled' : '') + '>';
+            html += '<span class="sub-icon">' + it.icon + '</span>' + it.label + '</button>';
+            visIdx++;
+        }
+        subMenu.innerHTML = html;
+        subMenu.classList.add('visible');
+    }
+
+    function _closeSubMenu() {
+        var subMenu = document.getElementById('subMenu');
+        if (subMenu) subMenu.classList.remove('visible');
+        _activeTabCategory = null;
+        var tabs = document.querySelectorAll('.tab-btn');
+        for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+    }
+
+    function _updateTabGlows() {
+        var charTab = document.querySelector('.tab-btn[data-category="character"]');
+        if (charTab) {
+            if (_needsTreatment()) {
+                charTab.classList.add('needs-attention');
+            } else {
+                charTab.classList.remove('needs-attention');
+            }
+        }
+    }
+
+    function _initMobileTabBar() {
+        // Tab button click handlers
+        var tabBtns = document.querySelectorAll('.tab-btn');
+        for (var i = 0; i < tabBtns.length; i++) {
+            tabBtns[i].addEventListener('click', function(e) {
+                e.stopPropagation();
+                _openSubMenu(this.dataset.category);
+            });
+        }
+
+        // Sub-menu button delegation
+        var subMenu = document.getElementById('subMenu');
+        if (subMenu) {
+            subMenu.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var btn = e.target.closest('.sub-menu-btn');
+                if (!btn || btn.disabled) return;
+                var cat = btn.dataset.subCat;
+                var idx = parseInt(btn.dataset.subAction);
+                var items = _subMenuItems[cat] || [];
+                // Filter for visible items to get correct index
+                var visibleItems = items.filter(function(it) {
+                    return !it.conditional || _shouldShowConditional(it.conditional);
+                });
+                if (visibleItems[idx]) {
+                    _executeSubAction(visibleItems[idx]);
+                    _closeSubMenu();
+                }
+            });
+        }
+
+        // Close sub-menu when clicking elsewhere
+        document.addEventListener('click', function(e) {
+            var sm = document.getElementById('subMenu');
+            if (sm && sm.classList.contains('visible')) {
+                if (!e.target.closest('.bottom-tabs') && !e.target.closest('.sub-menu')) {
+                    _closeSubMenu();
+                }
+            }
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  LEFT PANEL DRAWER (MOBILE)
+    // ═══════════════════════════════════════════════════════════
+
+    function _toggleLeftDrawer(open) {
+        var leftPanel = document.getElementById('leftPanel');
+        var backdrop = document.getElementById('drawerBackdrop');
+        if (!leftPanel) return;
+        if (open) {
+            leftPanel.classList.add('drawer-open');
+            if (backdrop) backdrop.classList.add('visible');
+        } else {
+            leftPanel.classList.remove('drawer-open');
+            if (backdrop) backdrop.classList.remove('visible');
+        }
+    }
+
+    function _initLeftDrawer() {
+        // Tapping the mobile HUD opens the left panel drawer
+        var mobileHud = document.getElementById('mobileHud');
+        if (mobileHud) {
+            mobileHud.addEventListener('click', function(e) {
+                if (e.target.closest('button')) return; // don't trigger on buttons
+                _toggleLeftDrawer(true);
+            });
+        }
+
+        // Backdrop click closes drawer
+        var backdrop = document.getElementById('drawerBackdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', function() {
+                _toggleLeftDrawer(false);
+            });
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  MODAL SYSTEM IMPROVEMENTS
+    // ═══════════════════════════════════════════════════════════
+
+    var _modalHistoryPushed = false;
+    var _modalSwipeStartY = 0;
+
+    function _initModalImprovements() {
+        // Back button closes modal instead of navigating away
+        window.addEventListener('popstate', function(e) {
+            var mo = document.getElementById('modalOverlay');
+            if (mo && !mo.classList.contains('hidden')) {
+                closeModal();
+                // Don't navigate away
+            }
+        });
+
+        // Escape key closes modal
+        window.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                var mo = document.getElementById('modalOverlay');
+                if (mo && !mo.classList.contains('hidden')) {
+                    closeModal();
+                }
+            }
+        });
+
+        // Swipe-down-to-close on mobile modals
+        var modalDialog = document.getElementById('modalDialog');
+        if (modalDialog) {
+            modalDialog.addEventListener('touchstart', function(e) {
+                if (window.innerWidth > 600) return;
+                _modalSwipeStartY = e.touches[0].clientY;
+            }, { passive: true });
+
+            modalDialog.addEventListener('touchend', function(e) {
+                if (window.innerWidth > 600) return;
+                var deltaY = e.changedTouches[0].clientY - _modalSwipeStartY;
+                if (deltaY > 120) {
+                    closeModal();
+                }
+            }, { passive: true });
+        }
+    }
+
+    // Override openModal to push history state and disable drag on mobile
+    var _origOpenModal = null;
+
+    function _wrapOpenModal() {
+        // Push history state when modal opens (for back button support)
+        if (!_modalHistoryPushed) {
+            history.pushState({ modal: true }, '');
+            _modalHistoryPushed = true;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  TOWN CONTEXT ACTIONS CARD
+    // ═══════════════════════════════════════════════════════════
+
+    function _renderTownActionsCard() {
+        if (typeof Player === 'undefined' || Player.townId == null || Player.traveling) return '';
+        var isSick = Player.illnesses && Player.illnesses.length > 0;
+        var isInjured = Player.injuries && Player.injuries.length > 0;
+        var isKing = Player.isPlayerKing && Player.isPlayerKing();
+
+        var actions = [
+            { icon: '🛒', label: 'Trade', action: 'openTradeDialog', disabled: isKing },
+            { icon: '🏗️', label: 'Build', action: 'openBuildDialog', disabled: isKing },
+            { icon: '💼', label: 'Work', fn: 'openWorkDialog' },
+            { icon: '💬', label: 'Talk', fn: 'talkToTownsfolk' },
+            { icon: '💤', label: 'Rest', fn: 'openRestDialog' }
+        ];
+        if (isSick || isInjured) {
+            actions.push({ icon: '🏥', label: 'Treatment', action: 'seekTreatment', highlight: true });
+        }
+
+        var html = '<div class="town-actions-card">';
+        for (var i = 0; i < actions.length; i++) {
+            var a = actions[i];
+            var cls = 'town-action-btn' + (a.highlight ? ' highlight' : '') + (a.disabled ? ' disabled' : '');
+            var actionAttr = a.action ? ' data-action="' + a.action + '"' : '';
+            var fnAttr = a.fn ? ' data-town-action-fn="' + a.fn + '"' : '';
+            html += '<button class="' + cls + '"' + actionAttr + fnAttr + (a.disabled ? ' disabled' : '') + '>';
+            html += '<span class="ta-icon">' + a.icon + '</span>' + a.label + '</button>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  TRADE DIALOG MOBILE IMPROVEMENTS
+    // ═══════════════════════════════════════════════════════════
+
+    function _addTradePresets(containerId, resourceId, type) {
+        if (window.innerWidth > 600) return;
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        var presets = [1, 5, 10];
+        var html = '<div class="trade-qty-presets">';
+        for (var i = 0; i < presets.length; i++) {
+            html += '<button data-action="setTradeQty" data-type="' + type + '" data-id="' + resourceId + '" data-qty="' + presets[i] + '">' + presets[i] + '</button>';
+        }
+        html += '<button data-action="setTradeQty" data-type="' + type + '" data-id="' + resourceId + '" data-qty="max">Max</button>';
+        html += '</div>';
+        container.insertAdjacentHTML('beforeend', html);
     }
 
     function updateConditionsIndicator() {
@@ -15413,5 +15925,12 @@ window.UI = (function () {
 
         // Performance: mark right panel for immediate refresh
         markPanelDirty: function() { _rightPanelDirty = true; },
+
+        // Mobile UI functions
+        _renderTownActionsCard,
+        _closeSubMenu,
+        _openSubMenu,
+        _toggleLeftDrawer,
+        openPlayerInventory,
     };
 })();

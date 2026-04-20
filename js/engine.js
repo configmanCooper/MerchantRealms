@@ -1469,6 +1469,53 @@
             }
         }
 
+        // --- Post-processing: ensure at least 1 kingdom produces steel ---
+        // Find a kingdom with both a smelter and a charcoal kiln, set the smelter to produce steel
+        var _steelSetUp = false;
+        for (var _stki = 0; _stki < kingdoms.length && !_steelSetUp; _stki++) {
+            var _stk = kingdoms[_stki];
+            var _stkTowns = towns.filter(function(t) { return _stk.territories.has(t.id); });
+            var _hasSmelter = false, _hasCharcoal = false, _smelterTown = null, _smelterBld = null;
+            for (var _stTi = 0; _stTi < _stkTowns.length; _stTi++) {
+                for (var _stBi = 0; _stBi < _stkTowns[_stTi].buildings.length; _stBi++) {
+                    var _stBld = _stkTowns[_stTi].buildings[_stBi];
+                    if (_stBld.type === 'smelter' && !_smelterBld) { _hasSmelter = true; _smelterTown = _stkTowns[_stTi]; _smelterBld = _stBld; }
+                    if (_stBld.type === 'charcoal_kiln') _hasCharcoal = true;
+                }
+            }
+            if (_hasSmelter && _hasCharcoal && _smelterBld) {
+                // Set this smelter to produce steel
+                _smelterBld.currentProduct = 'steel';
+                // Seed some steel in the town market
+                if (_smelterTown.market && _smelterTown.market.supply) {
+                    _smelterTown.market.supply.steel = rng.randInt(5, 15);
+                }
+                _steelSetUp = true;
+            }
+        }
+        // If no kingdom had both, add a charcoal kiln to a kingdom with a smelter
+        if (!_steelSetUp) {
+            for (var _stki2 = 0; _stki2 < kingdoms.length && !_steelSetUp; _stki2++) {
+                var _stk2 = kingdoms[_stki2];
+                var _stk2Towns = towns.filter(function(t) { return _stk2.territories.has(t.id); });
+                for (var _st2Ti = 0; _st2Ti < _stk2Towns.length && !_steelSetUp; _st2Ti++) {
+                    for (var _st2Bi = 0; _st2Bi < _stk2Towns[_st2Ti].buildings.length; _st2Bi++) {
+                        if (_stk2Towns[_st2Ti].buildings[_st2Bi].type === 'smelter') {
+                            // Add charcoal kiln to this town
+                            _stk2Towns[_st2Ti].buildings.push({ type: 'charcoal_kiln', ownerId: _stk2.id, level: 1, condition: 'new', workers: [], storage: {} });
+                            // Set smelter to produce steel
+                            _stk2Towns[_st2Ti].buildings[_st2Bi].currentProduct = 'steel';
+                            if (_stk2Towns[_st2Ti].market && _stk2Towns[_st2Ti].market.supply) {
+                                _stk2Towns[_st2Ti].market.supply.steel = rng.randInt(5, 15);
+                            }
+                            _steelSetUp = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         // --- Post-processing: global production gap filling ---
         // Ensure most producible goods have at least some production somewhere
         // in the world. Without this, many building types (perfumery, canvas_workshop,
@@ -2609,6 +2656,7 @@
             'wheelwright': { cart: 5, small_wagon: 2, wagon: 1 },
             'powder_works': { saltpeter: 8, blasting_powder: 3 },
             'charcoal_kiln': { charcoal: 10 },
+            'smelter': { iron: 15, steel: 3 },
         };
 
         // Seed manure in towns that have animal buildings
@@ -12179,18 +12227,76 @@
         var groupName = availableNames.length > 0 ? rng.pick(availableNames) : ('Rebels of ' + town.name);
 
         // Auto-equip rebels from kingdom stockpile (swords, armor, bows, arrows ONLY)
+        // Rebels prefer higher-tier weapons if available
         var ms = k.militaryStockpile || {};
         var equippedSwords = 0, equippedArmor = 0, equippedBows = 0, equippedArrows = 0;
+        var rebelSwordQuality = 'basic', rebelArmorQuality = 'basic';
 
         // NO horses, blasting powder, or demolition tools
         for (var ri = 0; ri < rebels.length; ri++) {
-            if ((ms.swords || 0) > 0) { ms.swords--; equippedSwords++; }
-            if ((ms.armor || 0) > 0) { ms.armor--; equippedArmor++; }
+            // Try excellent → good → basic swords from stockpile
+            if ((ms.swords_excellent || 0) > 0) { ms.swords_excellent--; equippedSwords++; rebelSwordQuality = 'excellent'; }
+            else if ((ms.swords_good || 0) > 0) { ms.swords_good--; equippedSwords++; rebelSwordQuality = 'good'; }
+            else if ((ms.swords || 0) > 0) { ms.swords--; equippedSwords++; }
+            // Try excellent → good → basic armor from stockpile
+            if ((ms.armor_excellent || 0) > 0) { ms.armor_excellent--; equippedArmor++; rebelArmorQuality = 'excellent'; }
+            else if ((ms.armor_good || 0) > 0) { ms.armor_good--; equippedArmor++; rebelArmorQuality = 'good'; }
+            else if ((ms.armor || 0) > 0) { ms.armor--; equippedArmor++; }
         }
-        // Bows for ~30% of rebels
+        // Also try to buy tiered weapons from town market using rebel personal gold
+        var rebelGold = 0;
+        for (var _rgi = 0; _rgi < rebels.length; _rgi++) {
+            rebelGold += Math.floor((rebels[_rgi].gold || 0) * 0.5); // rebels spend up to half their gold
+        }
+        // Noble participants also contribute gold for weapons
+        for (var _npgi = 0; _npgi < _nobleParticipants.length; _npgi++) {
+            rebelGold += Math.floor((_nobleParticipants[_npgi].gold || 0) * 0.3);
+        }
+        if (rebelGold > 0 && town.market && town.market.supply) {
+            var mkt = town.market;
+            // Buy excellent swords first, then good, for unequipped rebels
+            var unequippedCount = Math.max(0, rebels.length - equippedSwords);
+            var tiersToBuy = [
+                { res: 'swords_excellent', quality: 'excellent', price: 495 },
+                { res: 'swords_good', quality: 'good', price: 165 },
+                { res: 'swords', quality: 'basic', price: 55 }
+            ];
+            for (var ti = 0; ti < tiersToBuy.length && unequippedCount > 0; ti++) {
+                var t = tiersToBuy[ti];
+                var available = Math.min(mkt.supply[t.res] || 0, unequippedCount, Math.floor(rebelGold / t.price));
+                if (available > 0) {
+                    mkt.supply[t.res] -= available;
+                    equippedSwords += available;
+                    rebelGold -= available * t.price;
+                    unequippedCount -= available;
+                    if (t.quality !== 'basic') rebelSwordQuality = t.quality;
+                }
+            }
+            // Buy armor tiers too
+            var unequippedArmor = Math.max(0, rebels.length - equippedArmor);
+            var armorTiersToBuy = [
+                { res: 'armor_excellent', quality: 'excellent', price: 810 },
+                { res: 'armor_good', quality: 'good', price: 270 },
+                { res: 'armor', quality: 'basic', price: 90 }
+            ];
+            for (var ai = 0; ai < armorTiersToBuy.length && unequippedArmor > 0; ai++) {
+                var at = armorTiersToBuy[ai];
+                var avail = Math.min(mkt.supply[at.res] || 0, unequippedArmor, Math.floor(rebelGold / at.price));
+                if (avail > 0) {
+                    mkt.supply[at.res] -= avail;
+                    equippedArmor += avail;
+                    rebelGold -= avail * at.price;
+                    unequippedArmor -= avail;
+                    if (at.quality !== 'basic') rebelArmorQuality = at.quality;
+                }
+            }
+        }
+        // Bows for ~30% of rebels (try tiered)
         var bowsNeeded = Math.floor(rebels.length * 0.3);
         for (var bi = 0; bi < bowsNeeded; bi++) {
-            if ((ms.bows || 0) > 0 && (ms.arrows || 0) >= 5) {
+            if ((ms.bows_excellent || 0) > 0 && (ms.arrows || 0) >= 5) { ms.bows_excellent--; ms.arrows -= 5; equippedBows++; equippedArrows += 5; }
+            else if ((ms.bows_good || 0) > 0 && (ms.arrows || 0) >= 5) { ms.bows_good--; ms.arrows -= 5; equippedBows++; equippedArrows += 5; }
+            else if ((ms.bows || 0) > 0 && (ms.arrows || 0) >= 5) {
                 ms.bows--; ms.arrows -= 5;
                 equippedBows++; equippedArrows += 5;
             }
@@ -12204,8 +12310,12 @@
         var rebelStrength = Math.floor(_rebelEffectiveStr); // already accounts for job effectiveness
         var totalRebelGear = equippedSwords + equippedArmor + equippedBows;
         var equipMult = 1.0;
-        if (equippedSwords > 0) equipMult += 0.3 * (equippedSwords / Math.max(1, rebels.length));
-        if (equippedArmor > 0) equipMult += 0.2 * (equippedArmor / Math.max(1, rebels.length));
+        // Weapon quality bonus: basic=0.3, good=0.4, excellent=0.5
+        var swordQualityMult = (CONFIG.QUALITY_TIERS[rebelSwordQuality] || {}).effectivenessBonus || 0;
+        if (equippedSwords > 0) equipMult += (0.3 + swordQualityMult) * (equippedSwords / Math.max(1, rebels.length));
+        // Armor quality bonus: basic=0.2, good=0.28, excellent=0.35
+        var armorQualityMult = (CONFIG.QUALITY_TIERS[rebelArmorQuality] || {}).attritionReduction || 0;
+        if (equippedArmor > 0) equipMult += (0.2 + armorQualityMult) * (equippedArmor / Math.max(1, rebels.length));
         if (equippedBows > 0) equipMult += 0.15 * (equippedBows / Math.max(1, rebels.length));
         rebelStrength = Math.max(1, Math.floor(rebelStrength * equipMult));
 
@@ -16751,11 +16861,11 @@
             var combat = (s.skills && s.skills.combat) || 10;
             // Veterans have lower risk: -2% per 10 combat skill above 20
             var rankReduction = Math.max(0, (combat - 20) / 10 * 0.02);
-            // Equipment helps: good armor = -15%, excellent = -25%
+            // Equipment helps: armor quality reduces attrition (death/injury)
             var equipBonus = 0;
-            if (s.equipment) {
-                if (s.equipment.armor === 'excellent') equipBonus = 0.25;
-                else if (s.equipment.armor === 'good') equipBonus = 0.15;
+            if (s.equipment && s.equipment.armor) {
+                var armorTier = CONFIG.QUALITY_TIERS[s.equipment.armor];
+                if (armorTier) equipBonus = armorTier.attritionReduction || 0;
                 else if (s.equipment.armor === 'basic') equipBonus = 0.05;
             }
             var deathChance = Math.max(0.005, baseDeathRate - rankReduction - equipBonus * 0.5);
@@ -16818,9 +16928,9 @@
         var combat = (ps.skills && ps.skills.combat) || 10;
         var rankReduction = Math.max(0, (combat - 20) / 10 * 0.02);
         var equipBonus = 0;
-        if (ps.equipment) {
-            if (ps.equipment.armor === 'excellent') equipBonus = 0.25;
-            else if (ps.equipment.armor === 'good') equipBonus = 0.15;
+        if (ps.equipment && ps.equipment.armor) {
+            var armorTier = CONFIG.QUALITY_TIERS[ps.equipment.armor];
+            if (armorTier) equipBonus = armorTier.attritionReduction || 0;
             else if (ps.equipment.armor === 'basic') equipBonus = 0.05;
         }
 
@@ -20040,7 +20150,7 @@
                 }
             }
 
-            // Quality weapon procurement during wartime
+            // Quality weapon procurement during wartime (includes steel for excellent weapons/armor)
             if (isAtWar) {
                 var qualityMilitary = [
                     { id: 'swords_good', needed: Math.max(0, Math.floor(armySize * 0.1)) },
@@ -20049,7 +20159,9 @@
                     { id: 'armor_excellent', needed: Math.max(0, Math.floor(armySize * 0.02)) },
                     { id: 'bows_good', needed: Math.max(0, Math.floor(armySize * 0.05)) },
                     { id: 'bows_excellent', needed: Math.max(0, Math.floor(armySize * 0.01)) },
-                    { id: 'arrows_good', needed: Math.max(0, Math.floor(armySize * 0.3)) }
+                    { id: 'arrows_good', needed: Math.max(0, Math.floor(armySize * 0.3)) },
+                    { id: 'steel', needed: Math.max(0, Math.floor(armySize * 0.05)) },
+                    { id: 'charcoal', needed: Math.max(0, Math.floor(armySize * 0.03)) }
                 ];
                 for (var qmi = 0; qmi < qualityMilitary.length; qmi++) {
                     var qmg = qualityMilitary[qmi];

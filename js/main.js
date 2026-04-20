@@ -839,9 +839,14 @@ window.Game = (function () {
     let touchLastPos = null;
     let lastTapTime = 0;
     let longPressTimer = null;
+    let touchVelocity = { x: 0, y: 0 };
+    let lastTouchMoveTime = 0;
+    let momentumId = null;
 
     function onTouchStart(e) {
         e.preventDefault();
+        // Cancel any ongoing momentum panning
+        if (momentumId) { cancelAnimationFrame(momentumId); momentumId = null; }
         if (typeof Renderer !== 'undefined' && Renderer.getMapMode() === 2) return;
         if (e.touches.length === 1) {
             touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -874,7 +879,17 @@ window.Game = (function () {
                 if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
             }
             if (touchLastPos) {
-                Renderer.pan(-(e.touches[0].clientX - touchLastPos.x), -(e.touches[0].clientY - touchLastPos.y));
+                var moveX = e.touches[0].clientX - touchLastPos.x;
+                var moveY = e.touches[0].clientY - touchLastPos.y;
+                Renderer.pan(-moveX, -moveY);
+                // Track velocity for momentum panning
+                var now = Date.now();
+                var dt = now - lastTouchMoveTime;
+                if (dt > 0 && dt < 100) {
+                    touchVelocity.x = moveX / dt * 16;
+                    touchVelocity.y = moveY / dt * 16;
+                }
+                lastTouchMoveTime = now;
             }
             touchLastPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         } else if (e.touches.length === 2 && touchStartDist) {
@@ -894,22 +909,42 @@ window.Game = (function () {
         if (!touchIsDragging && touchStartPos && (state === 'playing' || state === 'paused')) {
             var now = Date.now();
             if (now - lastTapTime < 350) {
-                // Double-tap: treat like double-click
+                // Double-tap: zoom in at tap location OR show town detail
                 var hit = Renderer.hitTest(touchStartPos.x, touchStartPos.y);
                 if (hit.type === 'town') {
                     Renderer.panTo(hit.data.x, hit.data.y);
                     UI.showTownDetail(hit.data);
+                } else {
+                    // Double-tap zoom on empty area
+                    Renderer.zoomAt(-120, touchStartPos.x, touchStartPos.y);
                 }
             } else {
                 // Single tap: open town/person/road detail
                 handleClick(touchStartPos.x, touchStartPos.y, false);
             }
             lastTapTime = now;
+        } else if (touchIsDragging && e.touches.length === 0) {
+            // Momentum panning after swipe
+            var vx = touchVelocity.x;
+            var vy = touchVelocity.y;
+            if (Math.abs(vx) > 0.5 || Math.abs(vy) > 0.5) {
+                if (momentumId) cancelAnimationFrame(momentumId);
+                var friction = 0.92;
+                function momentumStep() {
+                    if (Math.abs(vx) < 0.3 && Math.abs(vy) < 0.3) return;
+                    Renderer.pan(-vx, -vy);
+                    vx *= friction;
+                    vy *= friction;
+                    momentumId = requestAnimationFrame(momentumStep);
+                }
+                momentumId = requestAnimationFrame(momentumStep);
+            }
         }
         touchStartPos = null;
         touchStartDist = null;
         touchLastPos = null;
         touchIsDragging = false;
+        touchVelocity = { x: 0, y: 0 };
     }
 
     function onMinimapClick(e) {
