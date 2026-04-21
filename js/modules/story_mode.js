@@ -754,7 +754,10 @@ var StoryMode = (function () {
                 return false;
 
             case 'buy_horse':
-                return typeof Player !== 'undefined' && Player.horses && Player.horses.length > 0;
+                return typeof Player !== 'undefined' && (
+                    (Player.horses && Player.horses.length > 0) ||
+                    (Player.inventory && Player.inventory.horses > 0)
+                );
 
             case 'mount_horse':
                 return typeof Player !== 'undefined' && Player.horses && Player.horses.length > 0;
@@ -1120,6 +1123,10 @@ var StoryMode = (function () {
                     matched = obj._progress >= needed;
                     if (!matched) _refreshTracker();
                 }
+            }
+            // Handle buy_horse objectives when action is buy_item with horses
+            else if (obj.type === 'buy_horse' && actionType === 'buy_item' && data.item === 'horses') {
+                matched = true;
             } else {
             // Standard action type matching
             switch (actionType) {
