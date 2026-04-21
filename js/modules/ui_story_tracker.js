@@ -18,7 +18,7 @@
 
     // ── Constants ────────────────────────────────────────────
 
-    var TOTAL_CHAPTERS = 19;
+    var TOTAL_CHAPTERS = 28;
     var PANEL_ID = 'storyTrackerPanel';
 
     var ACT_RANGES = [
