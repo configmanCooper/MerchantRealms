@@ -167,7 +167,7 @@ var StoryMode = (function () {
             ],
             endDialog: 'ch8_complete',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter8Start',
             onComplete: null
         },
 
@@ -1195,16 +1195,9 @@ var StoryMode = (function () {
             // Remove iron ore from Ashford — war cuts off supply
             var ashford = (w.towns || []).find(function(t) { return t.name === 'Ashford'; });
             if (ashford) {
-                // Remove iron deposit so no mining is possible
                 if (ashford.naturalDeposits) ashford.naturalDeposits.iron_ore = 0;
-                // Drain market iron ore supply to near zero
-                if (ashford.market) {
-                    for (var mi = 0; mi < ashford.market.length; mi++) {
-                        if (ashford.market[mi].id === 'iron_ore') {
-                            ashford.market[mi].supply = Math.floor(Math.random() * 3);
-                            break;
-                        }
-                    }
+                if (ashford.market && ashford.market.supply) {
+                    ashford.market.supply['iron_ore'] = 0;
                 }
             }
         }
@@ -1213,6 +1206,16 @@ var StoryMode = (function () {
 
     _hooks._checkWarDialogSeen = function () {
         return _storyState.dialogsSeen.indexOf('ch7_war_crier') !== -1;
+    };
+
+    // ── Ch 8: Fire and Iron — clear iron ore from Ashford ──
+    _hooks._onChapter8Start = function () {
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        if (!w || !w.towns) return;
+        var ashford = w.towns.find(function(t) { return t.name === 'Ashford'; });
+        if (ashford && ashford.market && ashford.market.supply) {
+            ashford.market.supply['iron_ore'] = 0;
+        }
     };
 
     // ── Ch 10: Bread and Butter — seed bricks in Ashford & Ferrowdale ──
