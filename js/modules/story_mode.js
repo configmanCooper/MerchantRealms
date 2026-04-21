@@ -179,7 +179,7 @@ var StoryMode = (function () {
                   done: false },
                 { id: 'ch5b_craft_item', type: 'home_craft', qty: 1,
                   desc: 'Craft an item at your home workshop',
-                  hint: 'Open Housing panel \u2192 click Craft \u2192 select a recipe like bandages or candles',
+                  hint: 'Open Housing panel \u2192 click Craft \u2192 select a recipe like bandages or leather',
                   done: false, after: 'ch5b_install_workshop' }
             ],
             endDialog: 'ch5b_complete',

@@ -31378,7 +31378,7 @@
         { id: 'herbal_remedy', name: 'Herbal Remedy', inputs: { herbs: 3 }, output: 'herbal_remedy', qty: 1, ticks: 5, skill: 'herbalist' },
         { id: 'herbal_poultice', name: 'Herbal Poultice', inputs: { herbs: 2, cloth: 1 }, output: 'herbal_poultice', qty: 1, ticks: 4, skill: 'first_aid' },
         { id: 'rope', name: 'Rope', inputs: { hemp: 3 }, output: 'rope', qty: 2, ticks: 4 },
-        { id: 'candles', name: 'Candles', inputs: { hide: 1 }, output: 'candles', qty: 3, ticks: 2 },
+        { id: 'leather', name: 'Leather', inputs: { hide: 1 }, output: 'leather', qty: 3, ticks: 2 },
         { id: 'preserved_food', name: 'Preserved Food', inputs: { meat: 2, salt: 1 }, output: 'preserved_food', qty: 2, ticks: 5 },
     ];
 
@@ -31398,6 +31398,10 @@
 
     function craftAtHome(recipeId) {
         if (player.traveling) return { success: false, message: 'Cannot craft while traveling.' };
+
+        // Once per day limit
+        var today = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+        if (player._lastHomeCraftDay === today) return { success: false, message: 'You can only craft at home once per day. Try again tomorrow.' };
 
         // Energy check
         var eCraft = Player.checkEnergyForAction(ENERGY_CONFIG.CRAFT_COST || 2);
@@ -31435,6 +31439,7 @@
 
         // Produce output
         player.inventory[recipe.output] = (player.inventory[recipe.output] || 0) + recipe.qty;
+        player._lastHomeCraftDay = today;
         grantXP(2, 'crafting');
         Player.consumeEnergy(ENERGY_CONFIG.CRAFT_COST || 2);
 

@@ -957,7 +957,7 @@
             speaker: "father",
             portrait: "father",
             lines: [
-                "Now that you have a home, let's make it useful. A workshop lets you craft supplies — bandages for injuries, candles for light, preserved food for long journeys.",
+                "Now that you have a home, let's make it useful. A workshop lets you craft supplies — bandages for injuries, leather from hides, preserved food for long journeys.",
                 "Open the Housing panel and look for upgrades. A workshop is the first thing every merchant should install."
             ]
         },
