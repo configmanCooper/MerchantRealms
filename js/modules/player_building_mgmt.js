@@ -118,10 +118,9 @@
             }
         }
 
-        // Store output
-        if (!player.townStorage) player.townStorage = {};
-        if (!player.townStorage[bld.townId]) player.townStorage[bld.townId] = {};
-        player.townStorage[bld.townId][activeProduces] = (player.townStorage[bld.townId][activeProduces] || 0) + output;
+        // Store output in building's own inventory (output storage), matching daily production
+        if (!bld.inventory) bld.inventory = {};
+        bld.inventory[activeProduces] = (bld.inventory[activeProduces] || 0) + output;
 
         // Mark as worked today
         bld._playerWorkedDay = day;
