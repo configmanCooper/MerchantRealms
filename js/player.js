@@ -31992,13 +31992,16 @@
 
         if (isFirstStoryGuard) {
             Engine.logEvent('🛡️ ' + guardName + ' has volunteered to guard you — a favor owed to your father. (FREE)');
-            // Show dialog from the guard NPC
+            // Show dialog from the guard NPC with gender-appropriate voice & portrait
             if (typeof UI !== 'undefined' && UI.queueStoryDialog) {
+                var guardIsFemale = chosen.sex === 'F';
+                var guardPortrait = chosen.portrait || (guardIsFemale ? '\u{1F482}\u{200D}\u{2640}\u{FE0F}' : '\u{1F482}');
                 UI.queueStoryDialog({
                     speaker: guardName,
-                    portrait: 'townsperson',
+                    portrait: guardPortrait,
+                    _dialogKey: guardIsFemale ? 'ch4b_first_guard_f' : 'ch4b_first_guard_m',
                     lines: [
-                        "You\'re Edmund\'s " + (player.sex === 'F' ? 'daughter' : 'son') + "? Your father saved my life years ago. I owe him a debt I can never repay. Let me guard you on the roads — free of charge."
+                        "You're Edmund's {son|daughter}? Your father saved my life years ago. I owe him a debt I can never repay. Let me guard you on the roads \u2014 free of charge."
                     ]
                 });
             }

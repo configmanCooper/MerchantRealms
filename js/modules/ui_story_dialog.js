@@ -435,7 +435,11 @@
 
         // Portrait — try to use actual NPC portrait for dynamic skin tones
         var portraitKey = dialogData.portrait || dialogData.speaker;
-        var emoji = STORY_PORTRAITS[portraitKey] || '\u{1F464}';
+        var emoji = STORY_PORTRAITS[portraitKey] || null;
+        // If portrait is already an emoji (not a lookup key), use it directly
+        if (!emoji) {
+            emoji = (portraitKey && /[^\x00-\x7F]/.test(portraitKey)) ? portraitKey : '\u{1F464}';
+        }
         // For father/mother, look up live NPC portrait (may have dynamic skin tone)
         if (portraitKey === 'father' || portraitKey === 'mother' || portraitKey === 'father_edmund' || portraitKey === 'mother_margret') {
             var _smNPCsP = (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.storyNPCs) ? Player.storyMode.storyNPCs : null;
