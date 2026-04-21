@@ -5937,6 +5937,9 @@ window.UI = (function () {
     }
 
     function openEventLog() {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+            Player.state.storyMode._viewedEventLog = true;
+        }
         let events;
         try { events = (Engine.getAllEvents ? Engine.getAllEvents() : Engine.getEvents()); } catch (e) { events = []; }
 
@@ -6442,6 +6445,9 @@ window.UI = (function () {
     }
 
     function setNotifFilter(key, value) {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+            Player.state.storyMode._toggledFilter = true;
+        }
         if (typeof Player !== 'undefined' && Player.setNotifFilter) {
             Player.setNotifFilter(key, value);
             openSettings(); // refresh
@@ -11067,6 +11073,9 @@ window.UI = (function () {
 
 
     function openAchievementsDialog(category, tierFilter) {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+            Player.state.storyMode._viewedFeats = true;
+        }
         if (category && typeof category === 'string') _achCategory = category;
         if (tierFilter !== undefined) _achTierFilter = tierFilter;
 
@@ -13486,6 +13495,9 @@ window.UI = (function () {
     }
 
     function openHelpDialog() {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+            Player.state.storyMode._openedHelp = true;
+        }
         const html = `
         <div class="help-section" style="display:flex; gap:10px; margin-bottom:8px;">
             <button class="btn btn-primary" data-action="openIconsGlossary" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">🗺️ Icons Guide</button>

@@ -1250,6 +1250,10 @@
             if (townBld) townBld.level = bld.level;
         }
 
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('upgrade_building', { buildingType: bld.type });
+        }
+
         return { success: true, message: 'Upgraded ' + bt.name + ' to level ' + bld.level + '.' };
     }
 

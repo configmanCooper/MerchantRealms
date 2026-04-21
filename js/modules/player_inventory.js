@@ -73,6 +73,11 @@
         };
         player.horses.push(horse);
         Engine.logEvent('🐴 You bought a horse named ' + horse.name + '!');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('buy_horse', {});
+        }
+
         return { success: true, message: '🐴 Bought ' + horse.name + '! (Stamina: ' + horse.stamina + ', Speed: ' + horse.speed.toFixed(1) + 'x)', horse: horse };
     }
 
@@ -159,6 +164,11 @@
         player.horses.push(horse);
         player.travelMode = 'horse';
         Engine.logEvent('🐴 You mounted ' + horse.name + '!');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('mount_horse', {});
+        }
+
         return { success: true, message: '🐴 Mounted ' + horse.name + '! (Stamina: ' + horse.stamina + ', Speed: ' + horse.speed.toFixed(1) + 'x)' };
     }
 
@@ -681,6 +691,11 @@
         house.addons.push(addonId);
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 3);
         Engine.logEvent(player.fullName + ' installed ' + addon.icon + ' ' + addon.name + ' in their ' + house.type + '.');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('install_addon', { addon: addonId });
+        }
+
         return { success: true, message: addon.icon + ' ' + addon.name + ' installed!' };
     }
 

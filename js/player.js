@@ -3315,6 +3315,11 @@
         if (!bld) return { success: false, message: 'Building not found.' };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.toggle_auto_buy || 1);
         bld.autoBuy = !bld.autoBuy;
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('toggle_autobuy', { buildingId: buildingId });
+        }
+
         return { success: true, message: bld.autoBuy ? 'Auto-buy enabled.' : 'Auto-buy disabled.' };
     }
 
@@ -3746,6 +3751,11 @@
         player.ships.push(ship);
         Player.consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
         Engine.logEvent('You commissioned a ' + shipType.name + ' at ' + town.name + ' for ' + Math.round(shipCost) + 'g.', null, 'my_business');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('build_ship', {});
+        }
+
         return { success: true, message: 'Built ' + shipType.name + ' for ' + Math.round(shipCost) + 'g!', ship: ship, cost: shipCost };
     }
 
@@ -4880,6 +4890,10 @@
         player.horses.push({ name: 'Horse', stamina: 100, maxStamina: 100, speed: 1.0 });
 
         Engine.logEvent('🐴 Bought a horse for ' + cost + 'g!', { type: 'purchase' }, 'my_actions');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('buy_horse', {});
+        }
 
         // Now travel with horse
         return Player.travelTo(townId, { mode: 'horse', skipQuarantineCheck: options.skipQuarantineCheck, bringFamily: options.bringFamily });
@@ -16578,6 +16592,11 @@
 
         player.weapon = { id: eq.id, name: eq.name, quality: eq.quality, combatBonus: eq.combatBonus };
 
+        // Story Mode: notify of equip
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('equip_item', { slot: 'weapon' });
+        }
+
         return { success: true, message: 'Equipped ' + eq.name + '! (+' + Math.round(eq.combatBonus * 100) + '% combat survival)' };
     }
 
@@ -16603,6 +16622,10 @@
         }
 
         player.armor = { id: eq.id, name: eq.name, quality: eq.quality, combatBonus: eq.combatBonus };
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('equip_item', { slot: 'armor' });
+        }
 
         return { success: true, message: 'Equipped ' + eq.name + '! (+' + Math.round(eq.combatBonus * 100) + '% combat survival)' };
     }
@@ -24249,6 +24272,10 @@
         if (player.stats) player.stats.guildCrafts = (player.stats.guildCrafts || 0) + 1;
         grantXP(3 * qty, 'guild_crafting');
 
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('guild_craft', { item: _craftProduces, qty: qty });
+        }
+
         return { success: true, message: msg };
     }
 
@@ -28591,6 +28618,11 @@
         }
 
         Engine.logEvent(`${player.fullName} sold ${trade.qty} ${trade.resourceName} to ${trade.npcName} for ${totalRevenue}g (${taxAmount}g tax).`);
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('street_trade', { item: trade.resourceId, qty: trade.qty });
+        }
+
         return { success: true, message: `Sold ${trade.qty} ${trade.resourceName} to ${trade.npcName} for ${totalRevenue}g (${taxAmount}g tax).` };
     }
 
@@ -31396,6 +31428,11 @@
         Player.consumeEnergy(ENERGY_CONFIG.CRAFT_COST || 2);
 
         Engine.logEvent('🔨 Crafted ' + recipe.qty + 'x ' + recipe.name + ' at home workshop.');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('home_craft', { item: recipeId, qty: 1 });
+        }
+
         return { success: true, message: 'Crafted ' + recipe.qty + 'x ' + recipe.name + '!' };
     }
 
@@ -31942,6 +31979,11 @@
         player.guards.push(guard);
         player.personalGuards = player.guards.length;
         Engine.logEvent('\uD83D\uDEE1\uFE0F Hired ' + guardName + ' as a personal guard for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')');
+
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('hire_guard', {});
+        }
+
         return { success: true, message: '\uD83D\uDEE1\uFE0F ' + guardName + ' hired for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')', guard: guard };
     }
 

@@ -97,6 +97,22 @@ var StoryMode = (function () {
             onComplete: null
         },
 
+        // Ch 3b — The Open Market
+        {
+            id: 'ch3b', title: 'The Open Market', act: 1,
+            startDialog: 'ch3b_street_trade',
+            objectives: [
+                { id: 'ch3b_street_sell', type: 'street_trade', qty: 1,
+                  desc: 'Complete a street trade',
+                  hint: 'Click the Street Trading (\uD83E\uDD1D) button to see what locals are looking to buy \u2014 they often pay above market price!',
+                  done: false }
+            ],
+            endDialog: 'ch3b_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
+        },
+
         // Ch 4
         {
             id: 'ch4', title: 'The Art of the Deal', act: 1,
@@ -110,6 +126,30 @@ var StoryMode = (function () {
             unlockButtons: [],
             onStart: null,
             onComplete: '_onChapter4Complete'
+        },
+
+        // Ch 4b — The Road is Dangerous
+        {
+            id: 'ch4b', title: 'The Road is Dangerous', act: 1,
+            startDialog: 'ch4b_ambush',
+            objectives: [
+                { id: 'ch4b_buy_weapon', type: 'buy_item', item: 'category:weapon', qty: 1,
+                  desc: 'Buy a weapon from the market',
+                  hint: 'Open Trade and look for swords or bows to arm yourself',
+                  done: false },
+                { id: 'ch4b_equip_weapon', type: 'equip_item', slot: 'weapon',
+                  desc: 'Equip your weapon',
+                  hint: 'Open your Character panel and find the Equipment section to equip your weapon',
+                  done: false, after: 'ch4b_buy_weapon' },
+                { id: 'ch4b_hire_guard', type: 'hire_guard',
+                  desc: 'Hire a personal guard',
+                  hint: 'Open Character panel \u2192 scroll to Guards section \u2192 click Hire Guard (6g/day)',
+                  done: false }
+            ],
+            endDialog: 'ch4b_complete',
+            unlockButtons: [],
+            onStart: '_onChapter4bStart',
+            onComplete: null
         },
 
         // Ch 5
@@ -128,6 +168,26 @@ var StoryMode = (function () {
             onComplete: null
         },
 
+        // Ch 5b — Settling In
+        {
+            id: 'ch5b', title: 'Settling In', act: 1,
+            startDialog: 'ch5b_home_upgrade',
+            objectives: [
+                { id: 'ch5b_install_workshop', type: 'install_addon', addon: 'workshop',
+                  desc: 'Install a workshop in your home',
+                  hint: 'Open Housing panel \u2192 look for available upgrades \u2192 install the Workshop',
+                  done: false },
+                { id: 'ch5b_craft_item', type: 'home_craft', qty: 1,
+                  desc: 'Craft an item at your home workshop',
+                  hint: 'Open Housing panel \u2192 click Craft \u2192 select a recipe like bandages or candles',
+                  done: false, after: 'ch5b_install_workshop' }
+            ],
+            endDialog: 'ch5b_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
+        },
+
         // Ch 6
         {
             id: 'ch6', title: 'The Apprentice', act: 1,
@@ -137,6 +197,26 @@ var StoryMode = (function () {
                 { id: 'ch6_join_guild', type: 'join_guild',   guild: '*', desc: 'Join a guild',       done: false }
             ],
             endDialog: 'ch6_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
+        },
+
+        // Ch 6b — The Guildsman's Craft
+        {
+            id: 'ch6b', title: 'The Guildsman\'s Craft', act: 1,
+            startDialog: 'ch6b_guild_craft',
+            objectives: [
+                { id: 'ch6b_guild_craft', type: 'guild_craft', qty: 1,
+                  desc: 'Craft an item at a guild building',
+                  hint: 'Click your town name \u2192 Buildings tab \u2192 find a guild-affiliated building \u2192 click the Craft button',
+                  done: false },
+                { id: 'ch6b_open_help', type: 'custom', fn: '_checkOpenedHelp',
+                  desc: 'Open the Help & Guide menu',
+                  hint: 'Click the \u2753 Help button to explore the game guide \u2014 it covers goods, notables, kingdoms, and more',
+                  done: false }
+            ],
+            endDialog: 'ch6b_complete',
             unlockButtons: [],
             onStart: null,
             onComplete: null
@@ -206,6 +286,27 @@ var StoryMode = (function () {
             onComplete: null
         },
 
+        // Ch 9b — Saddle and Steel
+        {
+            id: 'ch9b', title: 'Saddle and Steel', act: 2,
+            startDialog: 'ch9b_horse_cart',
+            objectives: [
+                { id: 'ch9b_buy_horse', type: 'buy_horse',
+                  desc: 'Buy a horse',
+                  hint: 'Click the town name \u2192 Services tab \u2192 Stables \u2192 Buy Horse',
+                  done: false },
+                { id: 'ch9b_mount_horse', type: 'mount_horse',
+                  desc: 'Mount your horse',
+                  hint: 'Open Character panel \u2192 scroll to Horses \u2192 click Mount Horse from Inventory',
+                  done: false, after: 'ch9b_buy_horse' }
+            ],
+            endDialog: 'ch9b_complete',
+            note: 'Tip: Carts add carry capacity without a horse. Small Wagons need 1 horse, Wagons need 2. Upgrade when you can afford it!',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
+        },
+
         // Ch 10
         {
             id: 'ch10', title: 'Bread and Butter', act: 2,
@@ -219,6 +320,26 @@ var StoryMode = (function () {
             endDialog: 'ch10_complete',
             unlockButtons: [],
             onStart: '_onChapter10Start',
+            onComplete: null
+        },
+
+        // Ch 10b — Building an Empire
+        {
+            id: 'ch10b', title: 'Building an Empire', act: 2,
+            startDialog: 'ch10b_upgrades',
+            objectives: [
+                { id: 'ch10b_upgrade', type: 'upgrade_building',
+                  desc: 'Upgrade one of your buildings',
+                  hint: 'Open Business \u2192 Buildings \u2192 click a building \u2192 scroll to Upgrade section \u2192 click Upgrade',
+                  done: false },
+                { id: 'ch10b_autobuy', type: 'toggle_autobuy',
+                  desc: 'Enable auto-buy on a production building',
+                  hint: 'In your building details, find the Auto-Buy checkbox and enable it \u2014 your building will automatically purchase raw materials from the market',
+                  done: false }
+            ],
+            endDialog: 'ch10b_complete',
+            unlockButtons: [],
+            onStart: null,
             onComplete: null
         },
 
@@ -276,6 +397,23 @@ var StoryMode = (function () {
             endDialog: 'ch14_complete',
             unlockButtons: [],
             onStart: '_onChapter14Start',
+            onComplete: null
+        },
+
+        // Ch 14b — The Merchant Fleet
+        {
+            id: 'ch14b', title: 'The Merchant Fleet', act: 3,
+            startDialog: 'ch14b_shipbuilding',
+            objectives: [
+                { id: 'ch14b_build_ship', type: 'build_ship',
+                  desc: 'Build or buy a ship',
+                  hint: 'Travel to a port town and look for shipyard services, or check if ships are available for purchase',
+                  done: false }
+            ],
+            endDialog: 'ch14b_complete',
+            note: 'Ships unlock sea routes for faster trade between distant coastal towns. Upgrade with cargo holds and armories!',
+            unlockButtons: [],
+            onStart: null,
             onComplete: null
         },
 
@@ -376,6 +514,30 @@ var StoryMode = (function () {
             unlockButtons: [],
             onStart: null,
             onComplete: '_onChapter19Complete'
+        },
+
+        // Ch 19b — Legacy (final chapter)
+        {
+            id: 'ch19b', title: 'Legacy', act: 4,
+            startDialog: 'ch19b_legacy',
+            objectives: [
+                { id: 'ch19b_view_log', type: 'custom', fn: '_checkViewedEventLog',
+                  desc: 'Review the event log',
+                  hint: 'Click the \uD83D\uDCDC Event Log button to see everything that has happened in your journey',
+                  done: false },
+                { id: 'ch19b_filter_notifs', type: 'custom', fn: '_checkToggledFilter',
+                  desc: 'Customize your notification filters',
+                  hint: 'Open Settings (\u2699\uFE0F) \u2192 Notification Filters \u2014 toggle categories on/off to control what alerts you see',
+                  done: false },
+                { id: 'ch19b_view_feats', type: 'custom', fn: '_checkViewedFeats',
+                  desc: 'Review your feats and achievements',
+                  hint: 'Click the \uD83C\uDF96\uFE0F Feats button to see what you have unlocked \u2014 and what challenges remain',
+                  done: false }
+            ],
+            endDialog: 'ch19b_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
         }
     ];
 
@@ -1058,6 +1220,52 @@ var StoryMode = (function () {
                     }
                     break;
 
+                case 'street_trade':
+                    matched = true;
+                    break;
+
+                case 'equip_item':
+                    if (obj.slot && data.slot !== obj.slot) break;
+                    matched = true;
+                    break;
+
+                case 'hire_guard':
+                    matched = true;
+                    break;
+
+                case 'install_addon':
+                    if (obj.addon && data.addon !== obj.addon) break;
+                    matched = true;
+                    break;
+
+                case 'home_craft':
+                    matched = true;
+                    break;
+
+                case 'guild_craft':
+                    matched = true;
+                    break;
+
+                case 'buy_horse':
+                    matched = true;
+                    break;
+
+                case 'mount_horse':
+                    matched = true;
+                    break;
+
+                case 'upgrade_building':
+                    matched = true;
+                    break;
+
+                case 'toggle_autobuy':
+                    matched = true;
+                    break;
+
+                case 'build_ship':
+                    matched = true;
+                    break;
+
                 case 'collect_output':
                     if (obj.item && data.item !== obj.item) break;
                     if (obj.qty) {
@@ -1683,6 +1891,33 @@ var StoryMode = (function () {
         _toast('Congratulations! Sandbox mode unlocked.');
     };
 
+    // ── Ch 4b: The Road is Dangerous ──
+    _hooks._onChapter4bStart = function () {
+        // Scripted bandit encounter — take some gold, don't kill player
+        if (!_player) return;
+        var goldLost = Math.min(Math.max(5, Math.floor(_player.gold * 0.15)), 50);
+        _player.gold = Math.max(0, _player.gold - goldLost);
+        _player.storyMode._ch4b_robbed = true;
+        _player.storyMode._ch4b_goldLost = goldLost;
+    };
+
+    // ── Custom check functions for b-chapters ──
+    _hooks._checkOpenedHelp = function () {
+        return _player && _player.storyMode && _player.storyMode._openedHelp;
+    };
+
+    _hooks._checkViewedEventLog = function () {
+        return _player && _player.storyMode && _player.storyMode._viewedEventLog;
+    };
+
+    _hooks._checkToggledFilter = function () {
+        return _player && _player.storyMode && _player.storyMode._toggledFilter;
+    };
+
+    _hooks._checkViewedFeats = function () {
+        return _player && _player.storyMode && _player.storyMode._viewedFeats;
+    };
+
     // ───────────────────────────────────────────────
     //  Public API
     // ───────────────────────────────────────────────
@@ -1890,6 +2125,17 @@ var StoryMode = (function () {
         'own_gold':        null,
         'reach_rank':      null,
         'rest':            '#btnRest',
+        'street_trade':    null,
+        'equip_item':      '#btnCharacter',
+        'hire_guard':      '#btnCharacter',
+        'install_addon':   '#btnHousing',
+        'home_craft':      '#btnHousing',
+        'guild_craft':     null,
+        'buy_horse':       null,
+        'mount_horse':     '#btnCharacter',
+        'upgrade_building': '#btnBuildings',
+        'toggle_autobuy':  '#btnBuildings',
+        'build_ship':      null,
         'custom':          null
     };
 
@@ -1925,7 +2171,11 @@ var StoryMode = (function () {
         '_checkMetCalder':        '#btnTalk',
         '_checkMetCalderCapital': '#btnTalk',
         '_checkTalkedToEdmund':   '#btnTalk',
-        '_checkCeremonyAttended': '#btnKingdoms'
+        '_checkCeremonyAttended': '#btnKingdoms',
+        '_checkOpenedHelp':       null,
+        '_checkViewedEventLog':   null,
+        '_checkToggledFilter':    null,
+        '_checkViewedFeats':      null
     };
 
     /**

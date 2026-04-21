@@ -902,6 +902,170 @@
                 "All protections have been removed. All features are unlocked. Every town, every trade route, every opportunity — the world is yours.",
                 "Build your empire. Forge your legacy. The realm of MerchantRealms is yours to conquer."
             ]
+        },
+
+        // =====================================================================
+        // B-CHAPTERS
+        // =====================================================================
+
+        // Ch 3b — The Open Market
+        ch3b_street_trade: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "See those vendors calling out in the street? Not all trade happens at the market stall. Sometimes the best deals are found haggling directly with people.",
+                "Check the street trading — locals often pay above market price for goods they need urgently. It's quick coin if you have what they want."
+            ]
+        },
+
+        ch3b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Well done! Street trading is a merchant's secret weapon. Keep your eyes open for opportunities like that."
+            ]
+        },
+
+        // Ch 4b — The Road is Dangerous
+        ch4b_ambush: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "The road between towns is not always safe. Bandits lurk in the shadows, waiting for unwary travelers."
+            ],
+            next: 'ch4b_ambush_father'
+        },
+
+        ch4b_ambush_father: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "We were robbed on the road! Those brigands took our coin. We need to be better prepared — buy a weapon, equip it, and consider hiring a guard."
+            ]
+        },
+
+        ch4b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Good. Armed and guarded — now you travel like a true merchant. The roads will think twice before troubling us again."
+            ]
+        },
+
+        // Ch 5b — Settling In
+        ch5b_home_upgrade: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Now that you have a home, let's make it useful. A workshop lets you craft supplies — bandages for injuries, candles for light, preserved food for long journeys.",
+                "Open the Housing panel and look for upgrades. A workshop is the first thing every merchant should install."
+            ]
+        },
+
+        ch5b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "A well-equipped home is the foundation of a merchant's life. You can craft what you need without depending on the market."
+            ]
+        },
+
+        // Ch 6b — The Guildsman's Craft
+        ch6b_guild_craft: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Now that you're a guild member, you can craft items at any guild-affiliated building in town — even ones you don't own. That's one of the greatest benefits of membership.",
+                "Also, take a moment to explore the Help guide. It covers everything about goods, notables, kingdoms, and more. A wise merchant studies before {he|she} acts."
+            ]
+        },
+
+        ch6b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Excellent work. The guild opens many doors. And remember — the Help guide is always there when you need answers."
+            ]
+        },
+
+        // Ch 9b — Saddle and Steel
+        ch9b_horse_cart: {
+            speaker: "harlan",
+            portrait: "harlan",
+            lines: [
+                "You've been hauling goods on foot like a peasant! A real merchant rides. Get yourself a horse — it'll carry more and get you there faster.",
+                "And look into carts and wagons. A simple cart adds carry capacity without needing a horse. Wagons carry even more but need horses to pull them."
+            ]
+        },
+
+        ch9b_complete: {
+            speaker: "harlan",
+            portrait: "harlan",
+            lines: [
+                "Now you look like a proper merchant! Remember — Small Wagons need one horse, full Wagons need two. Upgrade your transport as your business grows."
+            ]
+        },
+
+        // Ch 10b — Building an Empire
+        ch10b_upgrades: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Your buildings are producing, but they could do more. Upgrading a building increases its output and storage. And enabling auto-buy means it will purchase its own raw materials.",
+                "Open your building details and look for the Upgrade section. Also find the Auto-Buy toggle — it saves you from manually stocking inputs every day."
+            ]
+        },
+
+        ch10b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Smart management is what separates a merchant from a mogul. Your buildings will run themselves now while you focus on the bigger picture."
+            ]
+        },
+
+        // Ch 14b — The Merchant Fleet
+        ch14b_shipbuilding: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "The seas call to those bold enough to answer. Coastal towns with shipyards offer the chance to build vessels for overseas trade."
+            ],
+            next: 'ch14b_shipbuilding_father'
+        },
+
+        ch14b_shipbuilding_father: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "A ship opens routes that no road can match. Distant ports, exotic goods, fortunes waiting across the waves. Find a port town and build your first vessel."
+            ]
+        },
+
+        ch14b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "A merchant with a fleet commands respect across every shore. Send caravans by sea, trade between distant ports, and let the ocean work for you."
+            ]
+        },
+
+        // Ch 19b — Legacy
+        ch19b_legacy: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "Your story is written in the ledgers of every kingdom. But a wise merchant never stops learning the tools of {his|her} trade.",
+                "Review your event log to see the full history of your journey. Customize your notification filters to focus on what matters. And check your feats — see what you have achieved and what challenges still await."
+            ]
+        },
+
+        ch19b_complete: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "You have mastered the tools of power. The realm is yours to shape. Your legacy begins now."
+            ]
         }
     };
 })();
