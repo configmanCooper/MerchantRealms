@@ -630,6 +630,9 @@ var StoryMode = (function () {
             if (_storyState.path === 'military') {
                 _unlockButtons(['world']); // outposts
             }
+        } else if (ch.branches && !_storyState.path) {
+            // Path not yet chosen — show placeholder objective and ensure choice dialog appears
+            ch.objectives = [{ id: '_awaiting_path', type: 'custom', fn: '_checkPathChosen', desc: 'Choose your path: Diplomacy or Military', done: false }];
         } else {
             ch.objectives = _cloneObjectives(ch.objectives.length ? ch.objectives : []);
         }
@@ -1193,6 +1196,10 @@ var StoryMode = (function () {
         return !!_storyState.flags.convincedRask;
     };
 
+    _hooks._checkPathChosen = function () {
+        return !!_storyState.path;
+    };
+
     _hooks._checkDiplomaticVictory = function () {
         return !!_storyState.flags.diplomaticVictory;
     };
@@ -1357,7 +1364,15 @@ var StoryMode = (function () {
         if (pathName !== 'diplomatic' && pathName !== 'military') { return; }
         _storyState.path = pathName;
 
-        var ch = CHAPTERS[17]; // ch17
+        // Find the branching chapter (should be current chapter)
+        var chIdx = _storyState.chapter;
+        var ch = CHAPTERS[chIdx];
+        if (!ch || !ch.branches) {
+            // Fallback: scan for branching chapter
+            for (var i = 0; i < CHAPTERS.length; i++) {
+                if (CHAPTERS[i].branches) { ch = CHAPTERS[i]; chIdx = i; break; }
+            }
+        }
         if (ch && ch.branches && ch.branches[pathName]) {
             ch.objectives = _cloneObjectives(ch.branches[pathName]);
             ch.endDialog = (pathName === 'diplomatic') ? 'ch17a_complete' : 'ch17b_complete';
@@ -1596,6 +1611,10 @@ var StoryMode = (function () {
             if (ch) {
                 if (ch.branches && _storyState.path) {
                     ch.objectives = _cloneObjectives(ch.branches[_storyState.path] || []);
+                } else if (ch.branches && !_storyState.path) {
+                    // Branching chapter but path not chosen — show placeholder and re-show choice dialog
+                    ch.objectives = [{ id: '_awaiting_path', type: 'custom', fn: '_checkPathChosen', desc: 'Choose your path: Diplomacy or Military', done: false }];
+                    setTimeout(function() { _showDialog(ch.startDialog); }, 500);
                 } else {
                     ch.objectives = _cloneObjectives(ch.objectives.length ? ch.objectives : []);
                 }
