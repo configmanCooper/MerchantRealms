@@ -754,7 +754,10 @@ var StoryMode = (function () {
                 return false;
 
             case 'buy_horse':
-                return typeof Player !== 'undefined' && Player.state && Player.state.horses && Player.state.horses.length > 0;
+                return typeof Player !== 'undefined' && Player.horses && Player.horses.length > 0;
+
+            case 'mount_horse':
+                return typeof Player !== 'undefined' && Player.horses && Player.horses.length > 0;
 
             // The remaining types (buy_item, sell_item, arrive_town, etc.)
             // are event-driven — they get marked done via onPlayerAction().
