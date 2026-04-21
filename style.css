@@ -3767,9 +3767,9 @@ body {
 
 /* --- Mobile Responsive Overhaul (600px) --- */
 @media (max-width: 600px) {
-    /* Show mobile elements */
-    .mobile-hud { display: flex; }
-    .bottom-tabs { display: flex; }
+    /* Show mobile elements only when game is active (body has .game-active class) */
+    body.game-active .mobile-hud { display: flex; }
+    body.game-active .bottom-tabs { display: flex; }
     
     /* Hide old bottom bar on mobile — replaced by tab system */
     .bottom-bar { display: none !important; }

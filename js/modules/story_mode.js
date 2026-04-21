@@ -317,9 +317,11 @@ var StoryMode = (function () {
             onComplete: null,
             branches: {
                 diplomatic: [
-                    { id: 'ch17a_trade_route', type: 'send_caravan',              desc: 'Establish a luxury trade route',     done: false },
-                    { id: 'ch17a_rask',        type: 'custom', fn: '_checkConvincedRask', desc: 'Convince Count Rask to defect', done: false },
-                    { id: 'ch17a_victory',     type: 'custom', fn: '_checkDiplomaticVictory', desc: 'Achieve diplomatic victory', done: false }
+                    { id: 'ch17a_kingmaker', type: 'buy_skill', skill: 'kingmaker_skill', desc: 'Learn the Kingmaker skill', done: false },
+                    { id: 'ch17a_undermine_loyalty',    type: 'custom', fn: '_checkUndermineLoyalty',    desc: 'Turn nobles against their king \u2014 reduce loyalty by 100 total (0/100)', done: false, after: 'ch17a_kingmaker' },
+                    { id: 'ch17a_undermine_perceived',  type: 'custom', fn: '_checkUnderminePerceived',  desc: 'Discredit nobles \u2014 reduce perceived loyalty by 50 total (0/50)', done: false, after: 'ch17a_kingmaker' },
+                    { id: 'ch17a_undermine_reputation', type: 'custom', fn: '_checkUndermineReputation', desc: 'Sow discord \u2014 damage noble reputation by 50 total (0/50)', done: false, after: 'ch17a_kingmaker' },
+                    { id: 'ch17a_victory',   type: 'custom', fn: '_checkDiplomaticVictory', desc: 'The nobles depose the Korvathi king', done: false }
                 ],
                 military: [
                     { id: 'ch17b_supply_weapons', type: 'supply_kingdom', item: 'base:swords|base:bows', qty: 500, desc: 'Supply 500 weapons to the kingdom (0/500)', done: false },
@@ -395,8 +397,6 @@ var StoryMode = (function () {
             'ch14_reach_burgher':   'ch14_calder_capital',
             'ch16_reach_noble':     'ch16_feast_announcement',
             'ch16_attend_feast':    'ch16_feast_success',
-            'ch17a_trade_route':    'ch17a_rask_meeting',
-            'ch17a_rask':           'ch17a_diplomatic_progress',
             'ch18_arrive_ashford':  'ch18_father_freed'
         };
         if (_followUpDialogs[objId]) {
@@ -487,8 +487,7 @@ var StoryMode = (function () {
         var _dialogFlagMap = {
             'ch12_lord_calder_meet':       'metLordCalder',
             'ch14_calder_capital':         'metLordCalderCapital',
-            'ch17a_rask_meeting':          'convincedRask',
-            'ch17a_diplomatic_progress':   'diplomaticVictory',
+            'ch17a_conspiracy_success':    'diplomaticVictory',
             'ch17b_battle_victory':        'battleWon',
             'ch18_father_freed':           'talkedToEdmund',
             'ch19_ceremony_start':         'ceremonyAttended'
@@ -775,6 +774,51 @@ var StoryMode = (function () {
     function _matchAction(actionType, data) {
         var ch = _currentChapterDef();
         if (!ch) { return; }
+
+        // Noble intrigue actions: track all three metrics for diplomatic path
+        if (actionType === 'noble_intrigue' && data) {
+            // Check if target kingdom is the enemy (Korvath) during diplomatic path
+            if (_storyState.path === 'diplomatic' && data.targetKingdomId) {
+                var enemyKingdom = _storyState.flags.enemyKingdomId;
+                if (data.targetKingdomId === enemyKingdom) {
+                    // Track loyalty reduction (from turnNobleAgainstKing)
+                    if (data.loyaltyReduced) {
+                        _storyState.flags._loyaltyTotal = (_storyState.flags._loyaltyTotal || 0) + data.loyaltyReduced;
+                        for (var li = 0; li < ch.objectives.length; li++) {
+                            if (ch.objectives[li].id === 'ch17a_undermine_loyalty') {
+                                var lt = Math.min(_storyState.flags._loyaltyTotal, 100);
+                                ch.objectives[li].desc = 'Turn nobles against their king \u2014 reduce loyalty by 100 total (' + lt + '/100)';
+                                break;
+                            }
+                        }
+                    }
+                    // Track perceived loyalty reduction (from discreditNoble, exposeNobleSecrets)
+                    if (data.perceivedLoyaltyReduced) {
+                        _storyState.flags._perceivedTotal = (_storyState.flags._perceivedTotal || 0) + data.perceivedLoyaltyReduced;
+                        for (var pi = 0; pi < ch.objectives.length; pi++) {
+                            if (ch.objectives[pi].id === 'ch17a_undermine_perceived') {
+                                var pt = Math.min(_storyState.flags._perceivedTotal, 50);
+                                ch.objectives[pi].desc = 'Discredit nobles \u2014 reduce perceived loyalty by 50 total (' + pt + '/50)';
+                                break;
+                            }
+                        }
+                    }
+                    // Track reputation/relationship damage between nobles (from pitNobles, discreditNoble, exposeSecrets)
+                    if (data.relationshipDamage) {
+                        _storyState.flags._reputationTotal = (_storyState.flags._reputationTotal || 0) + data.relationshipDamage;
+                        for (var ri = 0; ri < ch.objectives.length; ri++) {
+                            if (ch.objectives[ri].id === 'ch17a_undermine_reputation') {
+                                var rt = Math.min(_storyState.flags._reputationTotal, 50);
+                                ch.objectives[ri].desc = 'Sow discord \u2014 damage noble reputation by 50 total (' + rt + '/50)';
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            _reEvalCustomObjectives();
+            return;
+        }
 
         // Special action types that re-evaluate custom objectives
         if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building' || actionType === 'attend_festival') {
@@ -1254,6 +1298,36 @@ var StoryMode = (function () {
         return !!_storyState.path;
     };
 
+    _hooks._checkUndermineLoyalty = function () {
+        var done = (_storyState.flags._loyaltyTotal || 0) >= 100;
+        if (done) _tryTriggerConspiracy();
+        return done;
+    };
+
+    _hooks._checkUnderminePerceived = function () {
+        var done = (_storyState.flags._perceivedTotal || 0) >= 50;
+        if (done) _tryTriggerConspiracy();
+        return done;
+    };
+
+    _hooks._checkUndermineReputation = function () {
+        var done = (_storyState.flags._reputationTotal || 0) >= 50;
+        if (done) _tryTriggerConspiracy();
+        return done;
+    };
+
+    function _tryTriggerConspiracy() {
+        if (_storyState.flags._conspiracyTriggered) return;
+        if ((_storyState.flags._loyaltyTotal || 0) >= 100 &&
+            (_storyState.flags._perceivedTotal || 0) >= 50 &&
+            (_storyState.flags._reputationTotal || 0) >= 50) {
+            _storyState.flags._conspiracyTriggered = true;
+            _showDialog('ch17a_conspiracy_success', function () {
+                // Dialog completion sets diplomaticVictory via _dialogFlagMap
+            });
+        }
+    }
+
     _hooks._checkDiplomaticVictory = function () {
         return !!_storyState.flags.diplomaticVictory;
     };
@@ -1276,15 +1350,21 @@ var StoryMode = (function () {
 
     // ── Ch 18: Reunion ──
     _hooks._onChapter18Start = function () {
-        _storyState.flags.ashfordLiberated  = true;
-        _storyState.flags.ashfordCaptured   = false;
         _storyState.flags.edmundImprisoned  = false;
         _storyState.flags.edmundFreed       = true;
         if (typeof Engine !== 'undefined') {
-            if (Engine.captureTown)     { Engine.captureTown('Ashford', 'Valdren'); }
             if (Engine.setNPCCondition) { Engine.setNPCCondition('Edmund', 'imprisoned', false); }
+            // Military path: Valdren recaptures Ashford
+            if (_storyState.path === 'military') {
+                _storyState.flags.ashfordLiberated = true;
+                _storyState.flags.ashfordCaptured  = false;
+                if (Engine.captureTown) { Engine.captureTown('Ashford', 'Valdren'); }
+                _log('Ashford has been liberated. Father is free.');
+            } else {
+                // Diplomatic path: Ashford stays under Korvath, but father is released
+                _log('The Korvathi nobles have freed your father. Ashford remains under their control, but Edmund walks free.');
+            }
         }
-        _log('Ashford has been liberated. Father is free.');
     };
 
     _hooks._checkTalkedToEdmund = function () {
@@ -1429,6 +1509,15 @@ var StoryMode = (function () {
     function setWarPath(pathName) {
         if (pathName !== 'diplomatic' && pathName !== 'military') { return; }
         _storyState.path = pathName;
+
+        // Set enemy kingdom reference for diplomatic path tracking
+        if (typeof Engine !== 'undefined' && Engine.getWorldState) {
+            var w = Engine.getWorldState();
+            if (w && w.kingdoms) {
+                var korvath = w.kingdoms.find(function(k) { return k.name === 'Korvath'; });
+                if (korvath) { _storyState.flags.enemyKingdomId = korvath.id; }
+            }
+        }
 
         // Find the branching chapter (should be current chapter)
         var chIdx = _storyState.chapter;
@@ -1717,6 +1806,34 @@ var StoryMode = (function () {
                         var needed = ch.objectives[i].qty || 0;
                         if (needed > 0) {
                             ch.objectives[i].desc = ch.objectives[i].desc.replace(/\(\d+\/\d+\)/, '(' + Math.min(ch.objectives[i]._progress, needed) + '/' + needed + ')');
+                        }
+                    }
+                }
+                // Restore undermine progress descriptions for diplomatic path
+                if (_storyState.flags._loyaltyTotal) {
+                    for (var uli = 0; uli < ch.objectives.length; uli++) {
+                        if (ch.objectives[uli].id === 'ch17a_undermine_loyalty') {
+                            var lt = Math.min(_storyState.flags._loyaltyTotal, 100);
+                            ch.objectives[uli].desc = 'Turn nobles against their king \u2014 reduce loyalty by 100 total (' + lt + '/100)';
+                            break;
+                        }
+                    }
+                }
+                if (_storyState.flags._perceivedTotal) {
+                    for (var upi = 0; upi < ch.objectives.length; upi++) {
+                        if (ch.objectives[upi].id === 'ch17a_undermine_perceived') {
+                            var pt = Math.min(_storyState.flags._perceivedTotal, 50);
+                            ch.objectives[upi].desc = 'Discredit nobles \u2014 reduce perceived loyalty by 50 total (' + pt + '/50)';
+                            break;
+                        }
+                    }
+                }
+                if (_storyState.flags._reputationTotal) {
+                    for (var uri = 0; uri < ch.objectives.length; uri++) {
+                        if (ch.objectives[uri].id === 'ch17a_undermine_reputation') {
+                            var rt = Math.min(_storyState.flags._reputationTotal, 50);
+                            ch.objectives[uri].desc = 'Sow discord \u2014 damage noble reputation by 50 total (' + rt + '/50)';
+                            break;
                         }
                     }
                 }

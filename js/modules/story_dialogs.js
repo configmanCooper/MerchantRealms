@@ -708,9 +708,10 @@
             portrait: "lady_elowen",
             lines: [
                 "War is a blunt instrument, {boy|girl}. The sharpest blade is one that never needs to be drawn.",
-                "Count Rask of the Borderlands supplies Korvath with grain and timber. Without him, their war machine starves.",
-                "Convince Rask to switch sides — show him that Valdren is the winning bet — and we end this war without another drop of blood.",
-                "It will require gifts, trade agreements, and no small amount of charm. Are you ready?"
+                "Korvath's king rules through fear, but his nobles are restless. If we can turn enough of them against him, the kingdom crumbles from within.",
+                "First, you'll need the Kingmaker skill — visit a skill trainer. Then travel to Korvathi towns and use noble intrigue against their nobles.",
+                "Turn nobles against their king to erode real loyalty. Discredit them to undermine how the king perceives their worth. Pit them against each other to shatter their unity.",
+                "Be careful — getting caught in enemy territory carries severe consequences. But succeed, and we end this war without a single battle."
             ]
         },
 
@@ -726,23 +727,14 @@
         },
 
         // Chapter 17A: Diplomacy Path
-        ch17a_rask_meeting: {
-            speaker: "count_rask",
-            portrait: "count_rask",
-            lines: [
-                "A Valdren noble? In my court? You have courage, I'll grant you that. Or perhaps just foolishness.",
-                "What can Valdren offer that Korvath cannot? King Malachar pays well for my loyalty.",
-                "Convince me, merchant. Show me why I should risk everything to change sides."
-            ]
-        },
-
-        ch17a_diplomatic_progress: {
+        ch17a_conspiracy_success: {
             speaker: "lady_elowen",
             portrait: "lady_elowen",
             lines: [
-                "Rask is wavering — I can feel it. But he needs more convincing. He's a practical man above all else.",
-                "Send luxuries to his court. Fine wines, exotic spices, Valdren silk. Show him that peace with us is profitable.",
-                "And keep the trade flowing. Nothing speaks louder than a steady stream of gold."
+                "It's done! The Korvathi nobles have turned on their king! A conspiracy led by his own court has deposed King Malachar!",
+                "The new ruler has agreed to release all Valdren prisoners — including your father, Edmund.",
+                "You did it, {boy|girl}. You toppled a tyrant with whispers and intrigue, not swords and sieges.",
+                "Ashford remains under Korvathi control, but your father walks free. Sometimes that is victory enough."
             ]
         },
 
@@ -750,9 +742,9 @@
             speaker: "lady_elowen",
             portrait: "lady_elowen",
             lines: [
-                "Rask has declared for Valdren! Without his grain and timber, Korvath's armies will wither on the vine!",
-                "You did it, {boy|girl}. You ended a war with ledgers and handshakes instead of swords and graves.",
-                "History will remember this day — and your name will be written large upon it."
+                "The Korvathi court is in chaos. Their nobles fight amongst themselves while we grow stronger.",
+                "You did it, {boy|girl}. You ended a war with schemes and shadows instead of swords and graves.",
+                "History will remember this day — and your name will be whispered in every court from here to the sea."
             ]
         },
 

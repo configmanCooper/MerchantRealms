@@ -951,6 +951,8 @@ window.UI = (function () {
         el.topBar.classList.remove('hidden');
         el.leftPanel.classList.remove('hidden');
         el.bottomBar.classList.remove('hidden');
+        // Mark body as game-active so mobile CSS kicks in
+        document.body.classList.add('game-active');
         // Show mobile elements
         var mobileHud = document.getElementById('mobileHud');
         if (mobileHud) mobileHud.style.display = '';
@@ -981,6 +983,7 @@ window.UI = (function () {
     }
 
     function hideGameUI() {
+        document.body.classList.remove('game-active');
         el.topBar.classList.add('hidden');
         el.leftPanel.classList.add('hidden');
         // Hide mobile elements
@@ -9123,7 +9126,10 @@ window.UI = (function () {
         }
     }
 
+    var _mobileTabBarInitialized = false;
     function _initMobileTabBar() {
+        if (_mobileTabBarInitialized) return;
+        _mobileTabBarInitialized = true;
         // Tab button click handlers
         var tabBtns = document.querySelectorAll('.tab-btn');
         for (var i = 0; i < tabBtns.length; i++) {
@@ -9184,7 +9190,10 @@ window.UI = (function () {
         }
     }
 
+    var _leftDrawerInitialized = false;
     function _initLeftDrawer() {
+        if (_leftDrawerInitialized) return;
+        _leftDrawerInitialized = true;
         // Tapping the mobile HUD opens the left panel drawer
         var mobileHud = document.getElementById('mobileHud');
         if (mobileHud) {
@@ -9210,7 +9219,10 @@ window.UI = (function () {
     var _modalHistoryPushed = false;
     var _modalSwipeStartY = 0;
 
+    var _modalImprovementsInitialized = false;
     function _initModalImprovements() {
+        if (_modalImprovementsInitialized) return;
+        _modalImprovementsInitialized = true;
         // Back button closes modal instead of navigating away
         window.addEventListener('popstate', function(e) {
             var mo = document.getElementById('modalOverlay');

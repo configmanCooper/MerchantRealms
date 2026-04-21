@@ -2917,10 +2917,6 @@
             var damage = rng.randInt(15, 30);
             nobleA._nobleRelationships[nobleBId] = Math.max(-100, (nobleA._nobleRelationships[nobleBId] || 0) - damage);
             nobleB._nobleRelationships[nobleAId] = Math.max(-100, (nobleB._nobleRelationships[nobleAId] || 0) - damage);
-            // Internal strife also weakens loyalty to king
-            var pitLoyDrop = rng.randInt(3, 8);
-            nobleA.kingLoyalty = Math.max(0, (nobleA.kingLoyalty || 50) - pitLoyDrop);
-            nobleB.kingLoyalty = Math.max(0, (nobleB.kingLoyalty || 50) - pitLoyDrop);
             recordCorruptAction('pit_nobles', false);
             grantXP(20, 'Pitted nobles against each other');
             player.notoriety += 5;
@@ -2931,9 +2927,9 @@
             var _msg = '🗡️ Successfully pitted ' + nobleA.firstName + ' against ' + nobleB.firstName + '! Their relationship dropped by ' + damage + '. (' + Math.round(successChance * 100) + '% chance)';
             _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, true, false, _msg);
             Engine.logEvent('🗡️ Tensions rise between ' + nobleA.firstName + ' and ' + nobleB.firstName + '.');
-            // Notify story mode of loyalty reduction (both nobles combined)
+            // Notify story mode — relationship damage between nobles
             if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
-                StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: pitLoyDrop * 2, targetKingdomId: kingdom.id, nobleId: nobleAId });
+                StoryMode.onPlayerAction('noble_intrigue', { relationshipDamage: damage * 2, targetKingdomId: kingdom.id, nobleId: nobleAId });
             }
             return { success: true, message: _msg };
         }
@@ -3145,9 +3141,11 @@
                 }
             }
             if (noble.reputation === undefined) noble.reputation = {};
-            noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - rng.randInt(10, 20));
-            var discreditLoyDrop = rng.randInt(5, 12);
-            noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) - discreditLoyDrop);
+            var repDrop = rng.randInt(10, 20);
+            noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - repDrop);
+            // Discrediting lowers how loyal the king *perceives* the noble to be
+            var perceivedDrop = rng.randInt(8, 15);
+            noble.perceivedKingLoyalty = Math.max(0, (noble.perceivedKingLoyalty !== undefined ? noble.perceivedKingLoyalty : (noble.kingLoyalty || 50)) - perceivedDrop);
 
             recordCorruptAction('discredit_noble', false);
             grantXP(20, 'Discredited noble');
@@ -3158,9 +3156,9 @@
             var _sMsg = '📜 Successfully discredited ' + noble.firstName + '! Their standing with the court has dropped. (' + Math.round(successChance * 100) + '% chance)';
             _logSchemeOutcome('discredit', noble.firstName, true, false, _sMsg);
             Engine.logEvent('📜 Rumors about ' + noble.firstName + '\'s incompetence spread through the court.');
-            // Notify story mode of loyalty reduction
+            // Notify story mode — perceived loyalty and reputation damage
             if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
-                StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: discreditLoyDrop, targetKingdomId: kingdom.id, nobleId: nobleId });
+                StoryMode.onPlayerAction('noble_intrigue', { perceivedLoyaltyReduced: perceivedDrop, relationshipDamage: repDrop, targetKingdomId: kingdom.id, nobleId: nobleId });
             }
             return { success: true, message: _sMsg };
         }
@@ -3341,8 +3339,8 @@
                 };
             }
 
-            var exposeLoyDrop = rng.randInt(8, 18);
-            noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) - exposeLoyDrop);
+            var exposePerceivedDrop = rng.randInt(12, 25);
+            noble.perceivedKingLoyalty = Math.max(0, (noble.perceivedKingLoyalty !== undefined ? noble.perceivedKingLoyalty : (noble.kingLoyalty || 50)) - exposePerceivedDrop);
 
             recordCorruptAction('expose_secrets', false);
             grantXP(30, 'Exposed noble secrets');
@@ -3353,9 +3351,10 @@
             var _sMsg = '💥 ' + noble.firstName + '\'s secrets exposed (' + secretType.replace(/_/g, ' ') + ')! Reputation devastated, all nobles distance themselves. You now have blackmail leverage. (' + Math.round(successChance * 100) + '% chance)';
             _logSchemeOutcome('expose_secrets', noble.firstName, true, false, _sMsg);
             Engine.logEvent('💥 Scandalous revelations about ' + noble.firstName + ' ' + (noble.lastName || '') + ' rock the court of ' + kingdom.name + '!');
-            // Notify story mode of loyalty reduction
+            // Notify story mode — perceived loyalty and relationship damage
             if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
-                StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: exposeLoyDrop, targetKingdomId: kingdom.id, nobleId: nobleId });
+                var exposeRelDmg = 20; // average of 15-30 per noble
+                StoryMode.onPlayerAction('noble_intrigue', { perceivedLoyaltyReduced: exposePerceivedDrop, relationshipDamage: exposeRelDmg, targetKingdomId: kingdom.id, nobleId: nobleId });
             }
             return { success: true, message: _sMsg };
         }
