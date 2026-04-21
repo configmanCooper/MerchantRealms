@@ -16594,6 +16594,7 @@
 
         // Story Mode: notify of equip
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            console.log('[Story] equipWeapon hook firing: equip_item, slot=weapon');
             StoryMode.onPlayerAction('equip_item', { slot: 'weapon' });
         }
 
