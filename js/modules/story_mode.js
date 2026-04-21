@@ -324,6 +324,9 @@ var StoryMode = (function () {
                     { id: 'ch17a_victory',   type: 'custom', fn: '_checkDiplomaticVictory', desc: 'The nobles depose the Korvathi king', done: false }
                 ],
                 military: [
+                    { id: 'ch17b_produce_weapons', type: 'produce_item', item: 'base:swords|base:bows', qty: 500, desc: 'Produce 500 weapons in your buildings (0/500)', done: false },
+                    { id: 'ch17b_produce_armor',   type: 'produce_item', item: 'base:armor',            qty: 500, desc: 'Produce 500 armor in your buildings (0/500)',   done: false },
+                    { id: 'ch17b_produce_horses',  type: 'produce_item', item: 'horses',                qty: 100, desc: 'Produce 100 horses in your buildings (0/100)',  done: false },
                     { id: 'ch17b_supply_weapons', type: 'supply_kingdom', item: 'base:swords|base:bows', qty: 500, desc: 'Supply 500 weapons to the kingdom (0/500)', done: false },
                     { id: 'ch17b_supply_armor',   type: 'supply_kingdom', item: 'base:armor',            qty: 500, desc: 'Supply 500 armor to the kingdom (0/500)',   done: false },
                     { id: 'ch17b_supply_horses',  type: 'supply_kingdom', item: 'horses',                qty: 100, desc: 'Supply 100 horses to the kingdom (0/100)',  done: false },
@@ -836,14 +839,26 @@ var StoryMode = (function () {
             if (obj.done) { continue; }
             // Map action types to objective types (supply_kingdom objectives match sell_to_kingdom and deliver_commission actions)
             var objTypeMatch = (obj.type === actionType) ||
-                               (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission'));
+                               (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission')) ||
+                               (obj.type === 'produce_item' && actionType === 'produce_item');
             if (!objTypeMatch) { continue; }
             // Sequential gating: if objective has 'after' dependency, skip until that is done
             if (obj.after && !_storyState.objectives[obj.after]) { continue; }
 
             var matched = false;
+            // Handle produce_item objectives (matches produce_item actions from player buildings)
+            if (obj.type === 'produce_item' && actionType === 'produce_item') {
+                if (_itemMatches(obj.item, data.item)) {
+                    if (!obj._progress) obj._progress = 0;
+                    obj._progress += (data.qty || 1);
+                    var needed = obj.qty || 1;
+                    obj.desc = obj.desc.replace(/\(\d+\/\d+\)/, '(' + Math.min(obj._progress, needed) + '/' + needed + ')');
+                    matched = obj._progress >= needed;
+                    if (!matched) _refreshTracker();
+                }
+            }
             // Handle supply_kingdom objectives (matches sell_to_kingdom and deliver_commission actions)
-            if (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission')) {
+            else if (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission')) {
                 if (_itemMatches(obj.item, data.item)) {
                     if (!obj._progress) obj._progress = 0;
                     obj._progress += (data.qty || 1);
@@ -1334,8 +1349,11 @@ var StoryMode = (function () {
 
     _hooks._checkBattleWon = function () {
         if (_storyState.flags.battleWon) return true;
-        // Auto-trigger battle once all 3 supply objectives are done
-        if (_storyState.objectives.ch17b_supply_weapons &&
+        // Auto-trigger battle once all 6 objectives are done (3 produce + 3 supply)
+        if (_storyState.objectives.ch17b_produce_weapons &&
+            _storyState.objectives.ch17b_produce_armor &&
+            _storyState.objectives.ch17b_produce_horses &&
+            _storyState.objectives.ch17b_supply_weapons &&
             _storyState.objectives.ch17b_supply_armor &&
             _storyState.objectives.ch17b_supply_horses &&
             !_storyState.flags._battleTriggered) {
@@ -1586,6 +1604,7 @@ var StoryMode = (function () {
         'build_building':  '#btnBuild',
         'hire_worker':     '#btnHire',
         'assign_worker':   '#btnBuildings',
+        'produce_item':    '#btnBuildings',
         'buy_skill':       '#btnSkills',
         'join_guild':      '#btnGuilds',
         'send_caravan':    '#btnCaravan',

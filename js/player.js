@@ -5906,6 +5906,11 @@
                 }
             }
 
+            // Notify story mode of player building production
+            if (actualOutput > 0 && player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('produce_item', { item: _activeProduces, qty: actualOutput, buildingType: bld.type, townId: bld.townId });
+            }
+
             // ═══════════════════════════════════════════════════════════
             // STEP 7: STORE OUTPUT — with supply chain transfer support
             // ═══════════════════════════════════════════════════════════
