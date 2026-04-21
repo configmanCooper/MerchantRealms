@@ -26639,32 +26639,37 @@
 
         // Generate jobs from town buildings
         for (const bld of town.buildings) {
-            if (bld.ownerId === 'player') continue;
             const bt = Engine.findBuildingType(bld.type);
             if (!bt) continue;
+            const isOwn = bld.ownerId === 'player';
 
             let jobName, ticks, pay, jobType = 'building', description = '', xpReward = 2, skillGain = null, repGain = 0;
             switch (bld.type) {
-                case 'bakery': jobName = 'Help at the bakery'; ticks = 10; pay = 3; description = 'Knead dough and tend the ovens'; break;
+                case 'bakery': jobName = isOwn ? 'Work at your bakery' : 'Help at the bakery'; ticks = 10; pay = isOwn ? 0 : 3; description = isOwn ? 'Bake goods — produces ' + (bt.produces || 'bread') + ' for your storage' : 'Knead dough and tend the ovens'; break;
                 case 'blacksmith': case 'smelter': case 'toolsmith':
-                    jobName = 'Assist at the smithy'; ticks = 20; pay = 5; description = 'Work the forge and shape metal'; xpReward = 3; break;
+                    jobName = isOwn ? 'Work at your ' + bt.name : 'Assist at the smithy'; ticks = 20; pay = isOwn ? 0 : 5; description = isOwn ? 'Work the forge — produces ' + (bt.produces || 'goods') + ' for your storage' : 'Work the forge and shape metal'; xpReward = 3; break;
                 case 'dock': case 'fishery':
-                    jobName = 'Load cargo at the dock'; ticks = 10; pay = 4; description = 'Haul crates and manage shipments'; break;
-                case 'warehouse': jobName = 'Organize warehouse inventory'; ticks = 20; pay = 5; description = 'Sort and count stored goods'; xpReward = 3; break;
-                case 'market_stall': jobName = 'Tend a market stall'; ticks = 20; pay = 4; description = 'Sell goods and learn prices'; xpReward = 4; break;
+                    jobName = isOwn ? 'Work at your ' + bt.name : 'Load cargo at the dock'; ticks = 10; pay = isOwn ? 0 : 4; description = isOwn ? 'Work your ' + bt.name + ' — produces ' + (bt.produces || 'goods') + ' for your storage' : 'Haul crates and manage shipments'; break;
+                case 'warehouse': jobName = isOwn ? 'Work at your warehouse' : 'Organize warehouse inventory'; ticks = 20; pay = isOwn ? 0 : 5; description = isOwn ? 'Organize your warehouse — boosts sales for the day' : 'Sort and count stored goods'; xpReward = 3; break;
+                case 'market_stall': jobName = isOwn ? 'Tend your market stall' : 'Tend a market stall'; ticks = 20; pay = isOwn ? 0 : 4; description = isOwn ? 'Work the counter — attracts extra customers today' : 'Sell goods and learn prices'; xpReward = 4; break;
                 case 'wheat_farm': case 'sheep_farm': case 'chicken_farm': case 'hemp_farm':
-                    jobName = 'Help on the farm'; ticks = 10; pay = 3; description = 'Till fields and tend livestock'; break;
+                    jobName = isOwn ? 'Work on your farm' : 'Help on the farm'; ticks = 10; pay = isOwn ? 0 : 3; description = isOwn ? 'Tend your fields — produces ' + (bt.produces || 'crops') + ' for your storage' : 'Till fields and tend livestock'; break;
                 case 'tailor': case 'weaver':
-                    jobName = 'Assist the tailor'; ticks = 10; pay = 3; description = 'Cut cloth and sew garments'; break;
-                case 'lumber_camp': jobName = 'Chop wood at the camp'; ticks = 20; pay = 5; description = 'Fell trees and split logs — heavy labor'; break;
+                    jobName = isOwn ? 'Work at your ' + bt.name : 'Assist the tailor'; ticks = 10; pay = isOwn ? 0 : 3; description = isOwn ? 'Work at your ' + bt.name + ' — produces ' + (bt.produces || 'cloth') + ' for your storage' : 'Cut cloth and sew garments'; break;
+                case 'lumber_camp': jobName = isOwn ? 'Work at your lumber camp' : 'Chop wood at the camp'; ticks = 20; pay = isOwn ? 0 : 5; description = isOwn ? 'Chop wood — produces lumber for your storage' : 'Fell trees and split logs — heavy labor'; break;
                 case 'iron_mine': case 'gold_mine': case 'quarry':
-                    jobName = 'Work in the mine'; ticks = 20; pay = 7; description = 'Dig ore from the depths — grueling physical labor'; xpReward = 3; break;
-                default: continue;
+                    jobName = isOwn ? 'Work in your ' + bt.name : 'Work in the mine'; ticks = 20; pay = isOwn ? 0 : 7; description = isOwn ? 'Work your ' + bt.name + ' — produces ' + (bt.produces || 'ore') + ' for your storage' : 'Dig ore from the depths — grueling physical labor'; xpReward = 3; break;
+                default:
+                    if (isOwn && bt.produces) {
+                        jobName = 'Work at your ' + bt.name; ticks = 15; pay = 0; description = 'Work a shift — produces ' + bt.produces + ' for your storage'; xpReward = 3;
+                        break;
+                    }
+                    continue;
             }
-            pay = Math.round(pay * payScale);
+            if (!isOwn) pay = Math.round(pay * payScale);
             var hours = Math.round(ticks * 0.4);
             if (jobs.some(j => j.name === jobName)) continue;
-            jobs.push({ name: jobName, hours, ticks, pay, buildingType: bld.type, type: jobType, description, xpReward, skillGain, repGain });
+            jobs.push({ name: jobName, hours, ticks, pay, buildingType: bld.type, type: jobType, description, xpReward, skillGain, repGain, isOwnBuilding: isOwn, buildingId: isOwn ? bld.id : undefined });
         }
 
         // Apprenticeships
@@ -27308,6 +27313,11 @@
         const job = jobs[jobIndex];
         const rng = Engine.getRng();
         const ticksRequired = job.ticks || 20;
+
+        // Own building: route to workAtBuilding instead of regular job flow
+        if (job.isOwnBuilding && job.buildingId && typeof Player.workAtBuilding === 'function') {
+            return Player.workAtBuilding(job.buildingId);
+        }
 
         // Tournament: special multi-round handler
         if (job.isTournament) {

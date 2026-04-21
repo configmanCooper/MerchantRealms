@@ -11570,7 +11570,15 @@ window.UI = (function () {
                 if (job.autoTravel) {
                     html += '<span style="font-size:0.7rem;color:#60a5fa;margin-left:4px;background:rgba(96,165,250,0.12);padding:1px 5px;border-radius:3px;">🗺️ Auto-Travel</span>';
                 }
-                html += '<span class="job-details">⏱ ' + job.hours + ' hours — 🪙 ' + job.pay + 'g';
+                if (job.isOwnBuilding) {
+                    html += '<span style="font-size:0.7rem;color:#2ecc71;margin-left:6px;background:rgba(46,204,113,0.1);padding:1px 5px;border-radius:3px;">🏠 Your Building</span>';
+                }
+                html += '<span class="job-details">⏱ ' + job.hours + ' hours';
+                if (job.isOwnBuilding) {
+                    html += ' — 📦 Produces goods for storage';
+                } else {
+                    html += ' — 🪙 ' + job.pay + 'g';
+                }
                 if (job.xpReward) html += ' — ⭐ ' + job.xpReward + ' XP';
                 if (job.repGain) html += ' — 👑 +' + job.repGain + ' Rep';
                 if (job.skillGain) html += ' — 📚 ' + job.skillGain;

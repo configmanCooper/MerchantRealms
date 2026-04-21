@@ -50,9 +50,11 @@
             return { success: false, message: 'You must be in the same town as this building.' };
         }
 
-        // Check if player has ticks remaining
-        if ((player.ticksRemaining || 0) < 15) {
-            return { success: false, message: 'Not enough time remaining today (need 15 ticks).' };
+        // Deduct ticks if available (but don't block — owner can always work their building)
+        if ((player.ticksRemaining || 0) >= 15) {
+            player.ticksRemaining -= 15;
+        } else {
+            player.ticksRemaining = 0;
         }
 
         var bt = findBuildingType(bld.type);
@@ -123,9 +125,6 @@
 
         // Mark as worked today
         bld._playerWorkedDay = day;
-
-        // Consume player ticks
-        player.ticksRemaining = (player.ticksRemaining || 0) - 15;
 
         // Player gains XP
         player.xp = (player.xp || 0) + 3;

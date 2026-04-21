@@ -281,9 +281,8 @@
             speaker: "narrator",
             portrait: "narrator",
             lines: [
-                "The road to Ferrowdale winds through rocky hills scarred with mine shafts and smelting pits.",
                 "The air tastes of ash and iron. Miners with blackened faces trudge along the paths, pickaxes over their shoulders.",
-                "There is iron here — mountains of it. Enough to keep every forge in Valdren burning for a hundred years."
+                "There is iron here, mountains of it. Enough to fill the forges of Ashford for years."
             ]
         },
 
