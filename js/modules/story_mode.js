@@ -694,6 +694,10 @@ var StoryMode = (function () {
             _storyState.complete = true;
             _toast('Story complete — sandbox mode unlocked!');
             _log('The story is complete. All protections removed. Welcome to sandbox mode.');
+            // Hide the quest tracker
+            if (typeof UI !== 'undefined' && UI.hideStoryTracker) {
+                UI.hideStoryTracker();
+            }
         }
     }
 
@@ -1636,6 +1640,16 @@ var StoryMode = (function () {
         if (typeof UI !== 'undefined' && UI.getStoryDialogState) {
             dialogState = UI.getStoryDialogState();
         }
+        // Save objective progress (e.g. supply_kingdom partial counts)
+        var progressMap = {};
+        var ch = _currentChapterDef();
+        if (ch && ch.objectives) {
+            for (var pi = 0; pi < ch.objectives.length; pi++) {
+                if (ch.objectives[pi]._progress) {
+                    progressMap[ch.objectives[pi].id] = ch.objectives[pi]._progress;
+                }
+            }
+        }
         return {
             active:           _storyState.active,
             chapter:          _storyState.chapter,
@@ -1646,7 +1660,8 @@ var StoryMode = (function () {
             buttonsUnlocked:  _storyState.buttonsUnlocked.slice(),
             dialogsSeen:      _storyState.dialogsSeen.slice(),
             chapterStartDay:  _storyState.chapterStartDay,
-            activeDialog:     dialogState
+            activeDialog:     dialogState,
+            progressMap:      progressMap
         };
     }
 
@@ -1671,6 +1686,13 @@ var StoryMode = (function () {
             }
         }
 
+        // If story is already complete, hide the tracker
+        if (_storyState.complete) {
+            if (typeof UI !== 'undefined' && UI.hideStoryTracker) {
+                UI.hideStoryTracker();
+            }
+        }
+
         // Rebuild live chapter objectives from definitions + saved completion
         if (_storyState.active && !_storyState.complete) {
             var ch = CHAPTERS[_storyState.chapter];
@@ -1688,12 +1710,23 @@ var StoryMode = (function () {
                     if (_storyState.objectives[ch.objectives[i].id]) {
                         ch.objectives[i].done = true;
                     }
+                    // Restore partial progress (e.g. supply_kingdom counts)
+                    if (data.progressMap && data.progressMap[ch.objectives[i].id]) {
+                        ch.objectives[i]._progress = data.progressMap[ch.objectives[i].id];
+                        // Update description with restored progress
+                        var needed = ch.objectives[i].qty || 0;
+                        if (needed > 0) {
+                            ch.objectives[i].desc = ch.objectives[i].desc.replace(/\(\d+\/\d+\)/, '(' + Math.min(ch.objectives[i]._progress, needed) + '/' + needed + ')');
+                        }
+                    }
                 }
             }
             _refreshTracker();
 
             // Restore active dialog if one was in progress at save time
-            if (data.activeDialog && data.activeDialog.dialogKey) {
+            // Skip if branching dialog will already be shown (no path chosen)
+            var _branchDialogShown = ch && ch.branches && !_storyState.path;
+            if (!_branchDialogShown && data.activeDialog && data.activeDialog.dialogKey) {
                 var dKey = data.activeDialog.dialogKey;
                 var dLine = data.activeDialog.lineIndex || 0;
                 if (typeof STORY_DIALOGS !== 'undefined' && STORY_DIALOGS[dKey]) {

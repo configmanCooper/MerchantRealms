@@ -10218,14 +10218,26 @@
         var comm = k.directedPlayerCommission;
         if (comm.status !== 'accepted') return { success: false, reason: 'Commission not accepted' };
 
-        // Check if player has the goods
+        // Check if player has the goods (inventory + town storage)
         if (typeof Player === 'undefined' || !Player.state) return { success: false, reason: 'Player not available' };
         var inv = Player.state.inventory || {};
-        var has = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
-        if (has < comm.quantity) return { success: false, reason: 'Not enough ' + (comm.resourceId || 'goods') + ' (have ' + has + ', need ' + comm.quantity + ')' };
+        var held = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
+        var storedQty = 0;
+        var townId = Player.state.townId;
+        if (townId && Player.state.townStorage && Player.state.townStorage[townId]) {
+            storedQty = Player.state.townStorage[townId][comm.resourceId] || 0;
+        }
+        var totalAvailable = held + storedQty;
+        if (totalAvailable < comm.quantity) return { success: false, reason: 'Not enough ' + (comm.resourceId || 'goods') + ' (have ' + totalAvailable + ', need ' + comm.quantity + ')' };
 
-        // Deduct goods
-        Player.state.inventory[comm.resourceId] -= comm.quantity;
+        // Deduct goods — from carried inventory first, then town storage
+        var remaining = comm.quantity;
+        var fromCarried = Math.min(remaining, held);
+        Player.state.inventory[comm.resourceId] = (Player.state.inventory[comm.resourceId] || 0) - fromCarried;
+        remaining -= fromCarried;
+        if (remaining > 0 && townId && Player.state.townStorage && Player.state.townStorage[townId]) {
+            Player.state.townStorage[townId][comm.resourceId] = (Player.state.townStorage[townId][comm.resourceId] || 0) - remaining;
+        }
 
         // Grant rewards
         comm.status = 'completed';
