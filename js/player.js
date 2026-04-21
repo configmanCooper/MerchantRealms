@@ -11829,6 +11829,10 @@
             grantXP(result.reward / 10, 'commission');
             autoJournalCapture('politics', 'I delivered on the king\'s commission! Earned ' + result.reward + 'g and the king\'s favor.', { mood: 'proud' });
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('✅ Commission delivered! +' + result.reward + 'g, +' + result.repReward + ' rep!', 'success');
+            // Notify story mode — commission goods count toward kingdom supply
+            if (result.resourceId && result.qty && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('deliver_commission', { item: result.resourceId, qty: result.qty, kingdomId: kingdomId });
+            }
         }
         return result;
     }
@@ -20898,6 +20902,11 @@
 
         // Track gold earned in kingdom
         player.goldEarnedInKingdom[kingdomId] = (player.goldEarnedInKingdom[kingdomId] || 0) + totalPrice;
+
+        // Notify story mode of kingdom supply
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('sell_to_kingdom', { item: resourceId, qty: qty, kingdomId: kingdomId });
+        }
 
         Engine.logEvent(player.fullName + ' sold ' + qty + ' ' + resourceId + ' directly to ' + kingdom.name + ' for ' + totalPrice + 'g (' + reason + ').');
         return { success: true, message: 'Sold ' + qty + ' ' + resourceId + ' to ' + kingdom.name + ' for ' + totalPrice + 'g.', totalPrice: totalPrice, multiplier: multiplier, reason: reason };

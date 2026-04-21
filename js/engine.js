@@ -10239,7 +10239,7 @@
         logKingAction(k, '✅ Commission completed: ' + comm.description + ' (+' + comm.reward + 'g, +' + comm.repReward + ' rep)');
         logEvent('✅ Commission fulfilled for ' + k.name + '! Reward: ' + comm.reward + 'g + ' + comm.repReward + ' reputation!');
 
-        return { success: true, reward: comm.reward, repReward: comm.repReward };
+        return { success: true, reward: comm.reward, repReward: comm.repReward, resourceId: comm.resourceId, qty: comm.quantity };
     }
 
     function checkDirectedCommissionDeadline(k) {

@@ -719,9 +719,9 @@
             portrait: "general_theron",
             lines: [
                 "Diplomacy is for cowards and fools. Korvath understands one language: steel.",
-                "We need weapons — swords, shields, armor, siege equipment. More than our forges can currently produce.",
-                "Build outposts along the border. Establish forward supply lines. Arm our soldiers to the teeth.",
-                "You're a merchant, {boy|girl}. Supply me with what I need, and I'll deliver you a victory."
+                "I need 500 weapons — swords, bows, any quality will do. And 500 sets of armor to protect the soldiers who'll wield them.",
+                "We also need 100 horses for cavalry and supply lines. Sell them directly to the kingdom, fulfill commissions — I don't care how you do it.",
+                "You're a merchant, {boy|girl}. Supply me with what I need, and I'll deliver you a victory. Once our army is armed, we march on Ashford."
             ]
         },
 

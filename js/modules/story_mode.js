@@ -322,9 +322,10 @@ var StoryMode = (function () {
                     { id: 'ch17a_victory',     type: 'custom', fn: '_checkDiplomaticVictory', desc: 'Achieve diplomatic victory', done: false }
                 ],
                 military: [
-                    { id: 'ch17b_weapons',  type: 'own_building',  building: 'weapons_smith', desc: 'Produce weapons',          done: false },
-                    { id: 'ch17b_outpost',  type: 'build_building', building: 'outpost',      desc: 'Build a military outpost', done: false },
-                    { id: 'ch17b_battle',   type: 'custom', fn: '_checkBattleWon',            desc: 'Win the decisive battle',  done: false }
+                    { id: 'ch17b_supply_weapons', type: 'supply_kingdom', item: 'base:swords|base:bows', qty: 500, desc: 'Supply 500 weapons to the kingdom (0/500)', done: false },
+                    { id: 'ch17b_supply_armor',   type: 'supply_kingdom', item: 'base:armor',            qty: 500, desc: 'Supply 500 armor to the kingdom (0/500)',   done: false },
+                    { id: 'ch17b_supply_horses',  type: 'supply_kingdom', item: 'horses',                qty: 100, desc: 'Supply 100 horses to the kingdom (0/100)',  done: false },
+                    { id: 'ch17b_battle',         type: 'custom', fn: '_checkBattleWon', desc: 'Win the decisive battle for Ashford', done: false }
                 ]
             }
         },
@@ -396,7 +397,6 @@ var StoryMode = (function () {
             'ch16_attend_feast':    'ch16_feast_success',
             'ch17a_trade_route':    'ch17a_rask_meeting',
             'ch17a_rask':           'ch17a_diplomatic_progress',
-            'ch17b_outpost':        'ch17b_outpost_built',
             'ch18_arrive_ashford':  'ch18_father_freed'
         };
         if (_followUpDialogs[objId]) {
@@ -708,18 +708,38 @@ var StoryMode = (function () {
     function _itemMatches(spec, actualItem) {
         if (spec === '*') { return true; }
         if (spec === actualItem) { return true; }
+        // Multi-item: 'swords|bows' matches either
+        if (spec && spec.indexOf('|') !== -1) {
+            var parts = spec.split('|');
+            for (var p = 0; p < parts.length; p++) {
+                if (_itemMatches(parts[p].trim(), actualItem)) return true;
+            }
+            return false;
+        }
         // Category match: 'category:food' matches any item with category 'food'
         if (spec && spec.indexOf('category:') === 0) {
             var cat = spec.substring(9);
             var rt = (typeof CONFIG !== 'undefined' && CONFIG.RESOURCE_TYPES)
                 ? CONFIG.RESOURCE_TYPES : null;
             if (!rt) {
-                // Fallback: check RESOURCE_TYPES on window
                 rt = (typeof RESOURCE_TYPES !== 'undefined') ? RESOURCE_TYPES : null;
             }
             if (rt) {
                 for (var k in rt) {
                     if (rt[k].id === actualItem && rt[k].category === cat) { return true; }
+                }
+            }
+        }
+        // Base item match: 'base:swords' matches swords, swords_good, swords_excellent
+        if (spec && spec.indexOf('base:') === 0) {
+            var baseId = spec.substring(5);
+            if (actualItem === baseId) return true;
+            var rt2 = (typeof CONFIG !== 'undefined' && CONFIG.RESOURCE_TYPES)
+                ? CONFIG.RESOURCE_TYPES : null;
+            if (!rt2) rt2 = (typeof RESOURCE_TYPES !== 'undefined') ? RESOURCE_TYPES : null;
+            if (rt2) {
+                for (var k2 in rt2) {
+                    if (rt2[k2].id === actualItem && rt2[k2].baseItem === baseId) return true;
                 }
             }
         }
@@ -766,11 +786,27 @@ var StoryMode = (function () {
         for (var i = 0; i < ch.objectives.length; i++) {
             var obj = ch.objectives[i];
             if (obj.done) { continue; }
-            if (obj.type !== actionType) { continue; }
+            // Map action types to objective types (supply_kingdom objectives match sell_to_kingdom and deliver_commission actions)
+            var objTypeMatch = (obj.type === actionType) ||
+                               (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission'));
+            if (!objTypeMatch) { continue; }
             // Sequential gating: if objective has 'after' dependency, skip until that is done
             if (obj.after && !_storyState.objectives[obj.after]) { continue; }
 
             var matched = false;
+            // Handle supply_kingdom objectives (matches sell_to_kingdom and deliver_commission actions)
+            if (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission')) {
+                if (_itemMatches(obj.item, data.item)) {
+                    if (!obj._progress) obj._progress = 0;
+                    obj._progress += (data.qty || 1);
+                    // Update description with progress
+                    var needed = obj.qty || 1;
+                    obj.desc = obj.desc.replace(/\(\d+\/\d+\)/, '(' + Math.min(obj._progress, needed) + '/' + needed + ')');
+                    matched = obj._progress >= needed;
+                    if (!matched) _refreshTracker();
+                }
+            } else {
+            // Standard action type matching
             switch (actionType) {
                 case 'buy_item':
                     if (_itemMatches(obj.item, data.item)) {
@@ -920,6 +956,7 @@ var StoryMode = (function () {
                 default:
                     break;
             }
+            } // end else (standard action type matching)
 
             if (matched) {
                 _markDone(obj.id);
@@ -1218,7 +1255,19 @@ var StoryMode = (function () {
     };
 
     _hooks._checkBattleWon = function () {
-        return !!_storyState.flags.battleWon;
+        if (_storyState.flags.battleWon) return true;
+        // Auto-trigger battle once all 3 supply objectives are done
+        if (_storyState.objectives.ch17b_supply_weapons &&
+            _storyState.objectives.ch17b_supply_armor &&
+            _storyState.objectives.ch17b_supply_horses &&
+            !_storyState.flags._battleTriggered) {
+            _storyState.flags._battleTriggered = true;
+            // Scripted battle for Ashford — Valdren army recaptures it
+            _showDialog('ch17b_battle_victory', function() {
+                // Battle victory dialog sets battleWon flag via _onDialogCompleted
+            });
+        }
+        return false;
     };
 
     // ── Ch 18: Reunion ──
@@ -1450,6 +1499,7 @@ var StoryMode = (function () {
         'treat_person':    null,              // Treatment shows in actions panel when companions are sick
         'attend_feast':    '#btnNobility',
         'attend_court':    '#btnNobility',
+        'supply_kingdom':  '#btnKingdoms',
         'own_gold':        null,
         'reach_rank':      null,
         'rest':            '#btnRest',
