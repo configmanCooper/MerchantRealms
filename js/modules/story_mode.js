@@ -348,8 +348,12 @@ var StoryMode = (function () {
             id: 'ch11', title: 'Fever and Steel', act: 2,
             startDialog: 'ch11_father_injury',
             objectives: [
-                { id: 'ch11_treat_father', type: 'treat_person', person: 'Edmund',  desc: 'Treat father\'s injury',  done: false },
-                { id: 'ch11_treat_mother', type: 'treat_person', person: 'Margret', desc: 'Treat mother\'s illness', done: false }
+                { id: 'ch11_treat_father', type: 'treat_person', person: 'Edmund',  desc: 'Treat father\'s injury',
+                  hint: 'Open Character \u2192 click Caretake on the Family panel \u2192 treat Edmund\'s injury',
+                  done: false },
+                { id: 'ch11_treat_mother', type: 'treat_person', person: 'Margret', desc: 'Treat mother\'s illness',
+                  hint: 'Open Character \u2192 click Caretake on the Family panel \u2192 treat Margret\'s illness',
+                  done: false }
             ],
             endDialog: 'ch11_complete',
             unlockButtons: [],
@@ -1500,24 +1504,41 @@ var StoryMode = (function () {
         _storyState.flags.margretIll    = true;
         // Apply conditions directly to story NPCs
         if (typeof Engine !== 'undefined' && typeof Player !== 'undefined') {
+            var edmund = null, margret = null;
+            // Try storyNPCs first
             var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
             if (sNPCs) {
-                var edmund = sNPCs.fatherId ? Engine.findPerson(sNPCs.fatherId) : null;
-                var margret = sNPCs.motherId ? Engine.findPerson(sNPCs.motherId) : null;
-                if (edmund) {
-                    edmund.injuries = edmund.injuries || [];
-                    if (!edmund.injuries.some(function(inj) { return inj.type === 'burn'; })) {
-                        edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
-                    }
-                    edmund.health = Math.min(edmund.health || 100, 60);
+                edmund = sNPCs.fatherId ? Engine.findPerson(sNPCs.fatherId) : null;
+                margret = sNPCs.motherId ? Engine.findPerson(sNPCs.motherId) : null;
+            }
+            // Fallback: find via familyMembers
+            if (!edmund && Player.familyMembers) {
+                var fatherEntry = Player.familyMembers.find(function(f) { return f.role === 'father' && f.alive; });
+                if (fatherEntry) edmund = Engine.findPerson(fatherEntry.npcId || fatherEntry.id);
+            }
+            if (!margret && Player.familyMembers) {
+                var motherEntry = Player.familyMembers.find(function(f) { return f.role === 'mother' && f.alive; });
+                if (motherEntry) margret = Engine.findPerson(motherEntry.npcId || motherEntry.id);
+            }
+            if (edmund) {
+                edmund.injuries = edmund.injuries || [];
+                if (!edmund.injuries.some(function(inj) { return inj.type === 'burn'; })) {
+                    edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
                 }
-                if (margret) {
-                    margret.illnesses = margret.illnesses || [];
-                    if (!margret.illnesses.some(function(ill) { return ill.type === 'fever'; })) {
-                        margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
-                    }
-                    margret.health = Math.min(margret.health || 100, 50);
+                edmund.health = Math.min(edmund.health || 100, 60);
+                _log('Applied burn injury to Edmund (health: ' + edmund.health + ')');
+            } else {
+                _log('WARNING: Could not find Edmund NPC for ch11 injury');
+            }
+            if (margret) {
+                margret.illnesses = margret.illnesses || [];
+                if (!margret.illnesses.some(function(ill) { return ill.type === 'fever'; })) {
+                    margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
                 }
+                margret.health = Math.min(margret.health || 100, 50);
+                _log('Applied fever illness to Margret (health: ' + margret.health + ')');
+            } else {
+                _log('WARNING: Could not find Margret NPC for ch11 illness');
             }
         }
         _log('Father has been injured at the forge. Mother has fallen ill.');
@@ -2177,7 +2198,7 @@ var StoryMode = (function () {
         'buy_skill':       '#btnSkills',
         'join_guild':      '#btnGuilds',
         'send_caravan':    '#btnCaravan',
-        'treat_person':    null,              // Treatment shows in actions panel when companions are sick
+        'treat_person':    '#btnCharacter',
         'attend_feast':    '#btnNobility',
         'attend_court':    '#btnNobility',
         'supply_kingdom':  '#btnKingdoms',
