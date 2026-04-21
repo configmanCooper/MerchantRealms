@@ -807,10 +807,14 @@ window.UI = (function () {
         registerAction('tradeFilter', function(_t, d) {
             if (!d.cat) return;
             _activeTradeFilter = d.cat;
+            var searchInput = document.getElementById('tradeSearchInput');
+            var query = searchInput ? searchInput.value.toLowerCase().trim() : '';
             // Toggle visibility of trade items
             var items = document.querySelectorAll('.trade-item[data-filter-cat]');
             for (var i = 0; i < items.length; i++) {
-                items[i].style.display = (d.cat === 'all' || items[i].getAttribute('data-filter-cat') === d.cat) ? '' : 'none';
+                var catMatch = (d.cat === 'all' || items[i].getAttribute('data-filter-cat') === d.cat);
+                var searchMatch = !query || items[i].textContent.toLowerCase().indexOf(query) >= 0;
+                items[i].style.display = (catMatch && searchMatch) ? '' : 'none';
             }
             // Update button styles
             var btns = document.querySelectorAll('#tradeFilterBar button[data-action="tradeFilter"]');
@@ -2354,7 +2358,8 @@ window.UI = (function () {
             { id: 'livestock',  label: '🐄 Livestock' },
             { id: 'supplies',   label: '⛺ Supplies' },
         ];
-        var filterBarHtml = '<div id="tradeFilterBar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:4px 0;">';
+        var filterBarHtml = '<div style="margin-bottom:6px;"><input type="text" id="tradeSearchInput" placeholder="🔍 Search goods..." style="width:100%;padding:5px 10px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(0,0,0,0.3);color:#e8dcc8;outline:none;" /></div>';
+        filterBarHtml += '<div id="tradeFilterBar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:4px 0;">';
         for (var _fb = 0; _fb < _filterBtns.length; _fb++) {
             var _f = _filterBtns[_fb];
             var _sel = (_activeTradeFilter === _f.id) ? 'background:rgba(100,180,255,0.3);border-color:rgba(100,180,255,0.6);color:#fff;' : 'background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.15);color:var(--text-muted);';
@@ -2433,6 +2438,21 @@ window.UI = (function () {
             for (var _fi = 0; _fi < _fitems.length; _fi++) {
                 _fitems[_fi].style.display = (_fitems[_fi].getAttribute('data-filter-cat') === _activeTradeFilter) ? '' : 'none';
             }
+        }
+
+        // Trade search box listener
+        var _searchInput = document.getElementById('tradeSearchInput');
+        if (_searchInput) {
+            _searchInput.addEventListener('input', function() {
+                var query = _searchInput.value.toLowerCase().trim();
+                var items = document.querySelectorAll('.trade-item[data-filter-cat]');
+                for (var si = 0; si < items.length; si++) {
+                    var itemText = items[si].textContent.toLowerCase();
+                    var catMatch = (_activeTradeFilter === 'all' || items[si].getAttribute('data-filter-cat') === _activeTradeFilter);
+                    var searchMatch = !query || itemText.indexOf(query) >= 0;
+                    items[si].style.display = (catMatch && searchMatch) ? '' : 'none';
+                }
+            });
         }
     }
 
