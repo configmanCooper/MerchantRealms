@@ -396,7 +396,7 @@ var StoryMode = (function () {
             'ch16_attend_feast':    'ch16_feast_success',
             'ch17a_trade_route':    'ch17a_rask_meeting',
             'ch17a_rask':           'ch17a_diplomatic_progress',
-            'ch17b_outpost':        'ch17b_battle_victory',
+            'ch17b_outpost':        'ch17b_outpost_built',
             'ch18_arrive_ashford':  'ch18_father_freed'
         };
         if (_followUpDialogs[objId]) {
@@ -460,7 +460,10 @@ var StoryMode = (function () {
                 // If this dialog has a 'next' key, chain to the next dialog on completion
                 var nextKey = dialogData.next || null;
                 var userCb = onComplete;
+                var capturedKey = key;
                 dialogData.onComplete = function () {
+                    // Set story flags now that dialog is fully dismissed
+                    _onDialogCompleted(capturedKey);
                     if (nextKey) {
                         _showDialog(nextKey, userCb);
                     } else if (typeof userCb === 'function') {
@@ -472,22 +475,28 @@ var StoryMode = (function () {
         }
         if (_storyState.dialogsSeen.indexOf(key) === -1) {
             _storyState.dialogsSeen.push(key);
-            // Auto-set story flags when specific dialogs are seen
-            var _dialogFlagMap = {
-                'ch12_lord_calder_meet':       'metLordCalder',
-                'ch14_calder_capital':         'metLordCalderCapital',
-                'ch17a_rask_meeting':          'convincedRask',
-                'ch17a_diplomatic_progress':   'diplomaticVictory',
-                'ch17b_battle_victory':        'battleWon',
-                'ch18_father_freed':           'talkedToEdmund',
-                'ch19_ceremony_start':         'ceremonyAttended'
-            };
-            if (_dialogFlagMap[key]) {
-                _storyState.flags[_dialogFlagMap[key]] = true;
-            }
-            // Re-evaluate custom objectives that may depend on dialog being seen
-            _reEvalCustomObjectives();
         }
+    }
+
+    /**
+     * Called when a story dialog is fully dismissed (all lines read / choice made).
+     * Sets story flags that depend on the player having seen a dialog.
+     */
+    function _onDialogCompleted(key) {
+        if (!key) return;
+        var _dialogFlagMap = {
+            'ch12_lord_calder_meet':       'metLordCalder',
+            'ch14_calder_capital':         'metLordCalderCapital',
+            'ch17a_rask_meeting':          'convincedRask',
+            'ch17a_diplomatic_progress':   'diplomaticVictory',
+            'ch17b_battle_victory':        'battleWon',
+            'ch18_father_freed':           'talkedToEdmund',
+            'ch19_ceremony_start':         'ceremonyAttended'
+        };
+        if (_dialogFlagMap[key]) {
+            _storyState.flags[_dialogFlagMap[key]] = true;
+        }
+        _reEvalCustomObjectives();
     }
 
     /** Notify the quest tracker UI. */
@@ -618,6 +627,7 @@ var StoryMode = (function () {
 
     function _beginChapter(index) {
         if (index < 0 || index >= CHAPTERS.length) { return; }
+        _completing = false;
 
         _storyState.chapter = index;
         _storyState.chapterStartDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
@@ -653,9 +663,12 @@ var StoryMode = (function () {
         _refreshTracker();
     }
 
+    var _completing = false;
     function _completeChapter() {
+        if (_completing) { return; }
         var ch = _currentChapterDef();
         if (!ch) { return; }
+        _completing = true;
 
         _log('Chapter ' + _storyState.chapter + ' complete.');
 
@@ -1595,7 +1608,7 @@ var StoryMode = (function () {
         _storyState.path            = data.path || null;
         _storyState.complete        = !!data.complete;
         _storyState.objectives      = data.objectives || {};
-        _storyState.buttonsUnlocked = data.buttonsUnlocked || ['character'];
+        _storyState.buttonsUnlocked = data.buttonsUnlocked || ['character', 'system'];
         _storyState.dialogsSeen     = data.dialogsSeen || [];
         _storyState.chapterStartDay = data.chapterStartDay || 0;
 
