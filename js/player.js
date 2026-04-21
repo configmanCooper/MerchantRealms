@@ -17953,6 +17953,7 @@
             // Game Start
             gameStart: player.gameStart || null,
             indentured: player.indentured ? structuredClone(player.indentured) : null,
+            _wasIndentured: player._wasIndentured || false,
             conquestServitude: player.conquestServitude ? structuredClone(player.conquestServitude) : null,
             pilgrim: player.pilgrim ? structuredClone(player.pilgrim) : null,
             shipwrecked: player.shipwrecked ? structuredClone(player.shipwrecked) : null,
@@ -18482,6 +18483,7 @@
         // Game Start
         player.gameStart = data.gameStart || null;
         player.indentured = data.indentured || null;
+        player._wasIndentured = data._wasIndentured || false;
         if (player.indentured) {
             player.indentured.masterMood = player.indentured.masterMood || 'neutral';
             player.indentured.masterMoodSince = player.indentured.masterMoodSince || 0;
@@ -26204,7 +26206,7 @@
         for (const kId in p.socialRank) {
             if ((p.socialRank[kId] || 0) > citizenRank) citizenRank = p.socialRank[kId];
         }
-        if (citizenRank >= 1) unlockAchievement('social_climber');
+        if (citizenRank >= 1 && p._wasIndentured) unlockAchievement('social_climber');
         if (citizenRank >= 3) unlockAchievement('guild_elite');
         if (citizenRank >= 4) unlockAchievement('noble_blood');
         if (citizenRank >= 5) unlockAchievement('lord_of_the_land');
@@ -34313,6 +34315,7 @@
         var totalDebt = debtAmount + 1000;
         var contractDays = Math.max(CONFIG.DAYS_PER_SEASON, Math.floor(totalDebt / 2000 * CONFIG.DAYS_PER_SEASON));
 
+        player._wasIndentured = true;
         player.indentured = {
             active: true,
             masterId: masterId,
@@ -37036,6 +37039,7 @@
             pool.splice(idx, 1);
         }
 
+        player._wasIndentured = true;
         player.indentured = {
             active: true,
             masterId: masterId,

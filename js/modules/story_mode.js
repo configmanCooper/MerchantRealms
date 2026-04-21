@@ -910,9 +910,9 @@ var StoryMode = (function () {
                 _storyState.flags.festivalAttended = true;
             }
             _reEvalCustomObjectives();
-            // buy_land, rest, and attend_festival have no typed objectives — done here
-            if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'attend_festival') return;
-            // own_building falls through to also match typed objectives below
+            // buy_land and attend_festival have no typed objectives — done here
+            if (actionType === 'buy_land' || actionType === 'attend_festival') return;
+            // rest and own_building fall through to match typed objectives below
         }
 
         for (var i = 0; i < ch.objectives.length; i++) {
