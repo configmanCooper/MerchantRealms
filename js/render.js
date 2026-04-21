@@ -381,6 +381,29 @@ window.Renderer = (function () {
                wy >= vb.top - margin && wy <= vb.bottom + margin;
     }
 
+    // ── Event indicator emojis for map town labels ──
+    function _getTownEventIndicators(townId) {
+        let indicators = '';
+        try {
+            for (let ki = 0; ki < _frameKingdoms.length; ki++) {
+                const k = _frameKingdoms[ki];
+                // Festival
+                if (k._activeFestivals && k._activeFestivals.length > 0) {
+                    for (let fi = 0; fi < k._activeFestivals.length; fi++) {
+                        if (k._activeFestivals[fi].townId === townId) { indicators += '🎪'; break; }
+                    }
+                }
+                // Feast
+                if (k._activeFeast && k._activeFeast.townId === townId) { indicators += '🍷'; }
+                // Court (active interactive session or formal court)
+                if ((k._activeCourtSession || k._courtSession) && (k.capital === townId || k.capitalTownId === townId)) { indicators += '⚖️'; }
+                // Tournament
+                if (k.tournament && k.tournament.active && k.tournament.townId === townId) { indicators += '⚔️'; }
+            }
+        } catch (e) { /* ignore */ }
+        return indicators;
+    }
+
     // ═══════════════════════════════════════════════════════════
     //  RENDER — MAIN ENTRY
     // ═══════════════════════════════════════════════════════════
@@ -1555,6 +1578,13 @@ window.Renderer = (function () {
                     ctx.font = `bold ${Math.max(8, 10 / camera.zoom * 0.5)}px serif`;
                     ctx.textAlign = 'center';
                     ctx.fillText(town.name, cx, cy - r - 4);
+
+                    // Event indicators (festival, feast, court, tournament)
+                    const _evtInd = _getTownEventIndicators(town.id);
+                    if (_evtInd) {
+                        ctx.font = `${Math.max(7, 9)}px sans-serif`;
+                        ctx.fillText(_evtInd, cx, cy - r - 14);
+                    }
 
                     // Security warning for low-security towns
                     if ((town.security || 0) < 25) {
@@ -4411,6 +4441,14 @@ window.Renderer = (function () {
             ctx.textBaseline = 'top';
             ctx.fillText(town.name, cx, boxY + 2 * labelScale);
 
+            // Event indicators
+            const _sEvtInd = _getTownEventIndicators(town.id);
+            if (_sEvtInd) {
+                ctx.fillStyle = '#f0e0a0';
+                ctx.font = Math.round(8 * labelScale) + 'px sans-serif';
+                ctx.fillText(_sEvtInd, cx, boxY - 10 * labelScale);
+            }
+
             // Category + population
             ctx.fillStyle = '#b8a87a';
             ctx.font = Math.round(7 * labelScale) + 'px sans-serif';
@@ -4905,6 +4943,14 @@ window.Renderer = (function () {
                 wctx.lineWidth = 2;
                 wctx.strokeText(town.name, tpx, tpy + markerR + 2);
                 wctx.fillText(town.name, tpx, tpy + markerR + 2);
+
+                // Event indicators on world map
+                const _wEvtInd = _getTownEventIndicators(town.id);
+                if (_wEvtInd) {
+                    wctx.font = Math.round(nameFontSize * 0.7) + 'px sans-serif';
+                    wctx.fillStyle = '#f0c040';
+                    wctx.fillText(_wEvtInd, tpx, tpy - markerR - 4);
+                }
 
                 // Port indicator
                 if (town.isPort) {

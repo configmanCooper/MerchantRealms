@@ -623,10 +623,26 @@
         const detection = calculateCorruptDetection(0.20, town);
         const caught = rng && rng.chance(detection);
 
-        // Combat check — having weapon/armor helps
+        // Combat check — having weapon/armor helps, bows need arrows
         const hasWeapon = !!player.weapon;
         const hasArmor = !!player.armor;
-        const combatPower = (hasWeapon ? 30 : 5) + (hasArmor ? 20 : 0) + (player.militaryRank ? 15 : 0);
+        var weaponPower = 5;
+        if (hasWeapon) {
+            var isBowDD = player.weapon && typeof player.weapon === 'object' &&
+                (player.weapon.id === 'short_bow' || player.weapon.id === 'hunting_bow' || player.weapon.id === 'longbow' || player.weapon.id === 'war_bow');
+            if (isBowDD) {
+                var inv = player.inventory || {};
+                if ((inv.arrows_excellent || 0) > 0 || (inv.arrows_good || 0) > 0 || (inv.arrows || 0) > 0) {
+                    weaponPower = 30;
+                    if (isBowDD && typeof Player !== 'undefined' && Player.consumePlayerArrows) Player.consumePlayerArrows();
+                } else {
+                    weaponPower = 5; // bow without arrows = useless
+                }
+            } else {
+                weaponPower = 30;
+            }
+        }
+        const combatPower = weaponPower + (hasArmor ? 20 : 0) + (player.militaryRank ? 15 : 0);
         const travelerFight = 10 + Math.floor(Math.random() * 40); // 10-50
         const playerWins = combatPower > travelerFight;
 

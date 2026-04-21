@@ -5060,13 +5060,6 @@
                             tierRate = bt.availableProducts[tierOutputId].rate;
                         }
                     }
-                    // Arrows have no excellent tier — fall back to good
-                    if (tierOutputId === 'arrows_excellent') {
-                        tierOutputId = 'arrows_good';
-                        if (bt.availableProducts && bt.availableProducts['arrows_good']) {
-                            tierRate = bt.availableProducts['arrows_good'].rate;
-                        }
-                    }
 
                     var successRate;
                     if (targetTier === 'basic') {
@@ -6982,6 +6975,15 @@
     }
 
     function killPerson(p, cause) {
+        // Story mode protection — story NPCs cannot die during story mode
+        if (p.isStoryNPC && world._storyMode && !world._storyMode.complete) {
+            return; // fully immune during active story
+        }
+        // Also check player's storyMode flag
+        if (p.isStoryNPC && typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.active && !Player.storyMode.complete) {
+            return;
+        }
+
         // Child protection system — children are much harder to kill
         if (cause !== 'old age' && cause !== 'natural causes') {
             const isPlayerChild = p.id && p.id.startsWith('p_child_');
@@ -16385,7 +16387,7 @@
             for (const baseGood of qualityGoods) {
                 const basicQty = town.market.supply[baseGood] || 0;
                 const goodQty = town.market.supply[baseGood + '_good'] || 0;
-                const excelQty = (baseGood !== 'arrows') ? (town.market.supply[baseGood + '_excellent'] || 0) : 0;
+                const excelQty = town.market.supply[baseGood + '_excellent'] || 0;
                 totalItems += basicQty + goodQty + excelQty;
                 totalBonus += goodQty * (CONFIG.QUALITY_TIERS.good.effectivenessBonus) +
                               excelQty * (CONFIG.QUALITY_TIERS.excellent.effectivenessBonus);
@@ -16426,10 +16428,20 @@
         if (unitType === 'archer') {
             equip.weapon = _takeWeapon(stockpile, supply, 'bows');
             equip.armor = _takeWeapon(stockpile, supply, 'armor');
-            // Consume arrows from stockpile or market
-            var arrowsNeeded = 5;
-            if (stockpile && (stockpile.arrows || 0) >= arrowsNeeded) { stockpile.arrows -= arrowsNeeded; }
-            else if (supply) { supply.arrows = Math.max(0, (supply.arrows || 0) - arrowsNeeded); }
+            // Equip arrows — take best quality available, track quality
+            equip.arrowQuality = _takeWeapon(stockpile, supply, 'arrows');
+            var arrowsToTake = 20;
+            // Already consumed 1 via _takeWeapon, take the rest
+            if (equip.arrowQuality !== 'none') {
+                var arrowKey = equip.arrowQuality === 'excellent' ? 'arrows_excellent' :
+                               equip.arrowQuality === 'good' ? 'arrows_good' : 'arrows';
+                for (var _ari = 1; _ari < arrowsToTake; _ari++) {
+                    if (stockpile && (stockpile[arrowKey] || 0) > 0) { stockpile[arrowKey]--; }
+                    else if (supply && (supply[arrowKey] || 0) > 0) { supply[arrowKey]--; }
+                    else break;
+                }
+            }
+            equip.arrowCount = (equip.arrowQuality !== 'none') ? arrowsToTake : 0;
         }
         if (unitType === 'cavalry') {
             var gotHorse = false;
@@ -16512,6 +16524,21 @@
                     var newArmor = _takeWeapon(stockpile, null, 'armor');
                     if (newArmor !== 'none') equip.armor = newArmor;
                 }
+                // Resupply arrows for archers
+                if (uType === 'archer' && (!equip.arrowCount || equip.arrowCount < 10)) {
+                    var newArrowQ = _takeWeapon(stockpile, null, 'arrows');
+                    if (newArrowQ !== 'none') {
+                        equip.arrowQuality = newArrowQ;
+                        var arKey = newArrowQ === 'excellent' ? 'arrows_excellent' :
+                                    newArrowQ === 'good' ? 'arrows_good' : 'arrows';
+                        var resupplyCount = 19; // already took 1 via _takeWeapon
+                        for (var _rai = 0; _rai < resupplyCount; _rai++) {
+                            if ((stockpile[arKey] || 0) > 0) stockpile[arKey]--;
+                            else break;
+                        }
+                        equip.arrowCount = 20;
+                    }
+                }
             }
         }
     }
@@ -16523,6 +16550,19 @@
         var equip = person.equipment || {};
         var qualityMults = CONFIG.SOLDIER_EQUIPMENT_QUALITY_MULT || { none: 0.4, basic: 1.0, good: 1.3, excellent: 1.6 };
         var weaponMult = qualityMults[equip.weapon || 'none'] || 0.4;
+        // Bows require arrows to be effective — no arrows means no bow benefit
+        if (equip.unitType === 'archer' && equip.weapon !== 'none') {
+            if (!equip.arrowCount || equip.arrowCount <= 0) {
+                weaponMult = qualityMults['none']; // bow without arrows = useless
+            } else {
+                // Arrow quality bonus applied to bow effectiveness
+                // Regular arrows: 0% bonus, good: +25%, excellent: +50%
+                var arrowBonus = 1.0;
+                if (equip.arrowQuality === 'good') arrowBonus = 1.25;
+                else if (equip.arrowQuality === 'excellent') arrowBonus = 1.50;
+                weaponMult *= arrowBonus;
+            }
+        }
         var armorMult = 0.5 + (qualityMults[equip.armor || 'none'] || 0.4) * 0.5;
         var mountBonus = (equip.mount && equip.unitType === 'cavalry') ? 1.5 : 1.0;
         var battleXP = person.battlesWon || 0;
@@ -16570,6 +16610,13 @@
                 if ((supply.horses || 0) < _hReturnCap) supply.horses = (supply.horses || 0) + 1;
                 supply.saddles = (supply.saddles || 0) + 1;
             }
+        }
+        // Return remaining arrows
+        if (equip.arrowCount && equip.arrowCount > 0 && equip.arrowQuality && equip.arrowQuality !== 'none') {
+            var arrowRetKey = equip.arrowQuality === 'excellent' ? 'arrows_excellent' :
+                              equip.arrowQuality === 'good' ? 'arrows_good' : 'arrows';
+            if (stockpile) stockpile[arrowRetKey] = (stockpile[arrowRetKey] || 0) + equip.arrowCount;
+            else if (supply) supply[arrowRetKey] = (supply[arrowRetKey] || 0) + equip.arrowCount;
         }
         person.occupation = person.previousOccupation || 'laborer';
         delete person.previousOccupation;
@@ -16920,6 +16967,20 @@
         }
     }
 
+    // Consume arrows from archers during a battle (10-20 per archer)
+    function consumeBattleArrows(kingdom) {
+        if (!kingdom) return;
+        var soldiers = (_tickCache.soldiersByKingdom[kingdom.id] || []);
+        for (var si = 0; si < soldiers.length; si++) {
+            var s = soldiers[si];
+            if (!s.alive || !s.equipment || s.equipment.unitType !== 'archer') continue;
+            var equip = s.equipment;
+            if (!equip.arrowCount || equip.arrowCount <= 0) continue;
+            var used = 10 + Math.floor((world.rng ? world.rng.random() : Math.random()) * 11); // 10-20
+            equip.arrowCount = Math.max(0, (equip.arrowCount || 0) - used);
+        }
+    }
+
     // Retreat surviving soldiers to nearest friendly town
     function retreatSurvivors(army, survivorCount) {
         if (survivorCount <= 0) return;
@@ -17163,7 +17224,8 @@
             // Individual soldier death/injury rolls for both sides
             // ~4% death chance per battle for footmen, ~8% injury, reduced by rank/veterancy
             applySoldierCasualties(attackK, town, rng, 'attacker_win');
-            if (defendK) applySoldierCasualties(defendK, town, rng, 'defender_loss');
+            consumeBattleArrows(attackK);
+            if (defendK) { applySoldierCasualties(defendK, town, rng, 'defender_loss'); consumeBattleArrows(defendK); }
 
             // Player soldier battle outcome
             if (_playerInBattle) {
@@ -17310,7 +17372,8 @@
 
             // Individual soldier casualties — losers take heavier casualties
             applySoldierCasualties(attackK, town, rng, 'attacker_loss');
-            if (defendK) applySoldierCasualties(defendK, town, rng, 'defender_win');
+            consumeBattleArrows(attackK);
+            if (defendK) { applySoldierCasualties(defendK, town, rng, 'defender_win'); consumeBattleArrows(defendK); }
 
             // Player soldier battle outcome
             if (_playerInBattle) {
@@ -19088,6 +19151,53 @@
     // Keep person index updated for new births
     function registerPerson(p) {
         personIndex[p.id] = p;
+    }
+
+    /**
+     * Transfer a town from its current kingdom to another kingdom (by name).
+     * Used by story mode for invasion / liberation events.
+     * @param {string} townName   e.g. 'Ashford'
+     * @param {string} newKingdomName  e.g. 'Korvathi' or 'Valdren'
+     */
+    function captureTown(townName, newKingdomName) {
+        var town = null;
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            if (world.towns[ti].name === townName) { town = world.towns[ti]; break; }
+        }
+        if (!town) return;
+
+        var newK = null;
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            if (world.kingdoms[ki].name === newKingdomName) { newK = world.kingdoms[ki]; break; }
+        }
+        if (!newK) return;
+
+        // Remove from old kingdom's territories
+        var oldK = findKingdom(town.kingdomId);
+        if (oldK && oldK.territories) {
+            if (Array.isArray(oldK.territories)) {
+                var idx = oldK.territories.indexOf(town.id);
+                if (idx !== -1) oldK.territories.splice(idx, 1);
+            } else if (oldK.territories instanceof Set) {
+                oldK.territories.delete(town.id);
+            }
+        }
+
+        // Add to new kingdom's territories
+        if (newK.territories) {
+            if (Array.isArray(newK.territories)) {
+                if (newK.territories.indexOf(town.id) === -1) newK.territories.push(town.id);
+            } else if (newK.territories instanceof Set) {
+                newK.territories.add(town.id);
+            }
+        }
+
+        // Update town's kingdom reference
+        town.kingdomId = newK.id;
+
+        logEvent('⚔️ ' + townName + ' is now under the control of ' + newKingdomName + '!', {
+            type: 'town_captured', townId: town.id, newKingdomId: newK.id
+        }, 'my_kingdom');
     }
 
     // ========================================================
@@ -24128,6 +24238,29 @@
             logEvent('🎪 The Royal Feast in ' + (pf.townName || k.name) + ' has begun! ' + arrivedNobles.length + ' nobles in attendance.' + _musicMsg, {
                 type: 'feast_started', kingdomId: k.id, townId: pf.townId
             }, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
+
+            // Create player feast invitation if player is a noble in this kingdom (not king)
+            try {
+                if (isPlayerK2) {
+                    var _pfPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+                    var _pfPerson = findPerson(_pfPersonId);
+                    var _pfIsKing = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+                    if (!_pfIsKing && _pfPerson && _pfPerson.socialRank && _pfPerson.socialRank[k.id] >= 4) {
+                        if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
+                        Player.state._feastInvitations.push({
+                            kingdomId: k.id,
+                            feastId: k._activeFeast.id,
+                            townId: pf.townId,
+                            townName: pf.townName || k.name,
+                            kingdomName: k.name,
+                            endDay: k._activeFeast.endDay,
+                            inviteDay: world.day
+                        });
+                        logEvent('📨 You have been invited to the Royal Feast in ' + (pf.townName || k.name) + '! Open the Nobility panel to RSVP.', null, 'my_kingdom');
+                    }
+                }
+            } catch (e) { /* Player not loaded */ }
+
             k._pendingFeast = null;
         }
 
@@ -26298,6 +26431,61 @@
         logEvent('🎉 A ' + type + ' festival has been declared in ' + (town.name || townId) + '! The people rejoice!' + _festMusicMsg, {
             type: 'festival_started', kingdomId: k.id, townId: townId, festivalType: type
         }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+
+        return festival;
+    }
+
+    /**
+     * Story-mode helper: trigger a festival in a town by name, bypassing cost/cooldown.
+     * @param {string} townName  e.g. 'Ashford'
+     * @param {string} [type]   'small' or 'large' (default 'large')
+     * @returns {object|null}    the festival object, or null on failure
+     */
+    function triggerFestival(townName, type) {
+        type = type || 'large';
+        var town = null;
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            if (world.towns[ti].name === townName) { town = world.towns[ti]; break; }
+        }
+        if (!town) return null;
+
+        var k = findKingdom(town.kingdomId);
+        if (!k) return null;
+        if (!k._activeFestivals) k._activeFestivals = [];
+
+        // Skip cooldown & cost — build the festival directly
+        var day = world.day;
+        var festival = {
+            id: 'festival_' + day + '_' + town.id,
+            townId: town.id,
+            townName: town.name,
+            kingdomId: k.id,
+            type: type,
+            startDay: day,
+            endDay: day + 5,
+            cost: 0,
+            happinessBoost: type === 'large' ? 20 : 10,
+            afterglowBoost: type === 'large' ? 10 : 5,
+            afterglowEndDay: day + 5 + 15,
+            events: [],
+            _playerActionsToday: 0,
+            _playerActionDay: 0,
+            _maxActionsPerDay: 5,
+            _hiredMusicians: [],
+            _musicianBonus: 0
+        };
+        var _festMusicians = hireMusiciansForEvent(k.id, town.id, type === 'large' ? 20 : 10);
+        festival._hiredMusicians = _festMusicians;
+        festival._musicianBonus = Math.floor(_festMusicians.length / 2);
+        festival.happinessBoost += festival._musicianBonus;
+        k._activeFestivals.push(festival);
+
+        // Boost happiness
+        town.happiness = Math.min(100, (town.happiness || 50) + festival.happinessBoost * 0.5);
+
+        logEvent('🎊 A Grand Festival has been declared in ' + town.name + '! The people rejoice!', {
+            type: 'festival_started', kingdomId: k.id, townId: town.id, festivalType: type
+        }, 'my_kingdom');
 
         return festival;
     }
@@ -29242,6 +29430,8 @@
         tickKingdomFestivals: tickKingdomFestivals,
         doFestivalAction: doFestivalAction,
         startFestival: startFestival,
+        triggerFestival: triggerFestival,
+        captureTown: captureTown,
         hireMusiciansForEvent: hireMusiciansForEvent,
         tickKingdomCourt: tickKingdomCourt,
         tickNobleConspiracies: tickNobleConspiracies,

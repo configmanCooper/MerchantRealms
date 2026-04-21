@@ -384,6 +384,18 @@
         orderBuilderHtml += '<label style="font-size:0.85rem;color:var(--gold);font-weight:bold;">📋 Caravan Orders</label>';
         orderBuilderHtml += '<div class="text-dim" style="font-size:0.7rem;margin-bottom:6px;">Orders tell the caravan what to buy, sell, store, or pick up at each location.</div>';
 
+        // Story mode hint for caravan orders
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            var _smCh = StoryMode.getCurrentChapter ? StoryMode.getCurrentChapter() : null;
+            if (_smCh && _smCh.id === 'ch9') {
+                orderBuilderHtml += '<div style="margin-bottom:8px;padding:8px 10px;background:rgba(255,200,50,0.12);border:1px solid rgba(255,200,50,0.3);border-radius:6px;font-size:0.75rem;color:#f0d060;">';
+                orderBuilderHtml += '💡 <strong>Story Hint:</strong> Add two orders for this caravan:<br>';
+                orderBuilderHtml += '&nbsp;&nbsp;1. Search "<strong>iron ore</strong>", set action to <strong>📦 Pickup</strong>, location to <strong>📍 Source</strong> (Ferrowdale)<br>';
+                orderBuilderHtml += '&nbsp;&nbsp;2. Search "<strong>iron ore</strong>", set action to <strong>💰 Sell</strong>, location to <strong>🏁 Destination</strong> (Ashford)<br>';
+                orderBuilderHtml += 'This tells the caravan to load iron ore in Ferrowdale and sell it in Ashford!</div>';
+            }
+        }
+
         // Order list
         orderBuilderHtml += '<div id="caravanOrderList" style="max-height:150px;overflow-y:auto;margin-bottom:8px;">';
         orderBuilderHtml += '<div class="text-dim" style="text-align:center;font-size:0.75rem;">No orders added yet. Use ➕ to add orders.</div>';

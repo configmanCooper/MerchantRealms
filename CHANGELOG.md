@@ -4,6 +4,78 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.77.0] - Map Event Indicators, Notification Filters & Story Mode Fixes
+
+### Added — Map Event Indicators
+- **Town event emoji indicators** on map: 🎪 festival, 🍷 feast, ⚖️ court, ⚔️ tournament
+- Indicators appear at all 3 map zoom levels (normal, strategic, world map)
+- `_getTownEventIndicators(townId)` helper checks all kingdoms for active events
+
+### Added — Notification Filter Sub-Categories
+- **Feast/Court/Tournament sub-filters** for both `my_kingdom` and `foreign_kingdoms`
+- Players can now individually toggle: festivals, feasts, court sessions, tournaments
+- Pattern matching in `_detectEventSubKey` for feast, court, and tournament events
+
+### Added — Story Mode Ch16 "Halls of Power"
+- Royal feast scheduled at capital 7 days after reaching Minor Noble rank
+- Lord Calder feast announcement and congratulations dialogs
+- Royal Court scheduled 3 days after feast attendance
+- Nobility panel shows upcoming feast/court with location, days, and travel reminders
+- Attend Feast / Attend Court buttons properly map to Nobility panel
+
+### Fixed
+- **Dialog choice bug**: String actions in story dialog choices (e.g. Ch17 war path) now execute correctly
+- **Feast invitation bug**: Player now correctly receives feast invitation when scheduled `_pendingFeast` converts to `_activeFeast`
+- **Ch17 skip**: `skipChapter()` auto-defaults to `'diplomatic'` path for branching chapters
+- **God mode**: War path chapter skip now properly initializes branch objectives
+
+## [0.76.3] - Arrow Combat System & Story Chapter
+
+### Added — Arrow Combat System
+- **Excellent Arrows**: New resource type (wood:2, iron:1, steel:1) added to arrow maker recipes
+- **Bow+Arrow dependency**: Bows without arrows provide no combat benefit for soldiers AND player
+- **Arrow quality bonuses**: Regular arrows +0%, Good arrows +25%, Excellent arrows +50% to bow effectiveness
+- **Arrow consumption**: 10-20 arrows consumed per archer per battle (best quality used first)
+- **Soldier arrow tracking**: `arrowQuality` and `arrowCount` tracked on soldier equipment
+- **Arrow resupply**: Kingdom re-equip tick now resupplies archers with fewer than 10 arrows
+- **Arrow return on discharge**: Remaining arrows returned to kingdom stockpile when soldiers are discharged
+- **Player combat arrows**: Bow+arrow combo mechanics for `playerCombatSurvival()` and `getCombatSurvivalMultiplier()`
+- **Dark deeds combat**: Bow+arrow check for robbery/fight combat power calculations
+- **AI awareness**: Elite merchants and kingdoms include excellent arrows in wartime goods lists
+
+### Added — Story Mode
+- **New Chapter: "The Mine Master"**: Inserted between "Fire and Iron" and "Roads of Fortune"
+  - Harlan teaches player about working in their iron mine, hiring employees, and managing the building
+  - Objectives: work a shift in iron mine, hire a worker, sell 5 iron ore in Ashford
+  - Full dialog with Harlan as speaker
+- **Caravan chapter enhanced**: Now requires specific orders (pickup iron_ore in Ferrowdale, sell iron_ore in Ashford)
+  - Story hint banner in caravan UI guides player through order setup step-by-step
+  - Dialog updated with explicit instructions
+- **Bread and Butter chapter**: Added assign_worker and return to Ashford objectives; seeds 20 bricks in Ashford & Ferrowdale
+- **Sell item objectives**: Now support town restrictions and quantity tracking
+- **Assign worker objective type**: New story objective type with building filter
+
+### Fixed — Story Mode Bugs
+- **Chapter not advancing on load**: Added `_allObjectivesMet()` check at start of `tick()` to auto-advance chapters with all objectives already done
+- **Story NPCs dying**: Story NPCs (Edmund, Margret) are now fully immune to death during active story mode
+- **Family member npcId missing**: Fixed story mode family member creation to include `npcId` field (was only `id`)
+- **Chapter 11 conditions not applied**: `Engine.setNPCCondition` didn't exist; replaced with direct NPC manipulation for injuries/illnesses
+- **Treatment button highlight**: Fixed `treat_person` button mapping (old `#btnTreatment` didn't exist)
+- **treat_person matching**: Now resolves `targetId` to person firstName for proper matching
+
+### Changed — World Generation
+- **Ferrowdale**: No longer gets pre-built iron mine at world gen (player builds their own in story)
+- **Ferrowdale**: Iron ore market supply set to 0 at world gen (no mines producing yet)
+- **Ferrowdale**: Still has iron ore natural deposit (geological resource for building mines)
+- **Valdren kingdom**: Guild restrictions forced off in story mode (no burgher rank requirement for production buildings)
+- **Sell item town restriction**: `sell_item` objectives can now require a specific town
+- **Sell item quantity tracking**: `sell_item` objectives can now track accumulated quantity
+
+### Changed — World Generation
+- **Ferrowdale**: No longer gets pre-built iron mine at world gen (player builds their own in story)
+- **Ferrowdale**: Iron ore market supply set to 0 at world gen (no mines producing yet)
+- **Ferrowdale**: Still has iron ore natural deposit (geological resource for building mines)
+
 ## [0.76.2] - Production & Economy Fixes
 
 ### Fixed — Production System

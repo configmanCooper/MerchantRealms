@@ -297,6 +297,33 @@
         },
 
         // =====================================================================
+        // CHAPTER 8b: "The Mine Master"
+        // =====================================================================
+
+        ch8b_harlan_mine: {
+            speaker: "harlan",
+            portrait: "harlan",
+            lines: [
+                "So you've got yourself an iron mine! Not bad for a {lad|lass} from Ashford.",
+                "But owning a mine and running one are two different things. Let me show you the ropes.",
+                "First — you need to work a shift yourself. Get your hands dirty. Learn what the ore feels like, how the rock splits.",
+                "A merchant who knows the work gets more respect from the miners — and catches lazy workers quick.",
+                "After that, hire some hands. Good workers mean steady output, and you can't mine iron and sell it at the same time.",
+                "Once you've got iron coming out of the ground, load it up and haul it back to Ashford. Your father's forge is hungry for ore."
+            ]
+        },
+
+        ch8b_complete: {
+            speaker: "harlan",
+            portrait: "harlan",
+            lines: [
+                "Ha! Look at you — mine operator, employer, and iron trader all in one season!",
+                "Your father will be pleased. Ashford needs that iron more than you know.",
+                "Keep those miners working, keep the iron flowing, and you'll have a proper business on your hands."
+            ]
+        },
+
+        // =====================================================================
         // CHAPTER 9: "Roads of Fortune"
         // =====================================================================
 
@@ -305,7 +332,8 @@
             portrait: "father",
             lines: [
                 "Iron sitting in Ferrowdale does us no good here in Ashford. We need to move it — and move it regular.",
-                "You need a caravan, {son|daughter}. Hire guards, buy wagons, set up a route between Ferrowdale and home.",
+                "You need a caravan, {son|daughter}. Open the Business tab and set up a caravan from Ferrowdale to Ashford.",
+                "Add orders to pick up iron ore in Ferrowdale and sell it in Ashford. The caravan will handle the rest.",
                 "A steady supply line is worth more than any single deal. Keep the iron flowing, and the coin will follow."
             ]
         },
@@ -407,6 +435,26 @@
                 "Hear ye! Hear ye! By order of His Majesty, a Grand Festival shall be held across the realm!",
                 "Merchants, craftsmen, and nobles from every corner of Valdren are invited to display their finest wares!",
                 "Let the festivities begin! May Valdren's prosperity shine even in these times of war!"
+            ],
+            next: 'ch12_parents_encourage'
+        },
+
+        ch12_parents_encourage: {
+            speaker: "margret",
+            portrait: "margret",
+            lines: [
+                "Oh, how wonderful! A Grand Festival right here in Ashford! You should go, dear — it's been so long since we've had anything to celebrate.",
+                "I hear Lord Calder himself will be attending. He's the lord of Ashford, you know."
+            ],
+            next: 'ch12_father_encourage'
+        },
+
+        ch12_father_encourage: {
+            speaker: "edmund",
+            portrait: "edmund",
+            lines: [
+                "Your mother's right. You've earned a break, {boy|girl}. You've built a business, kept the forges burning, and helped this town more than most grown merchants ever have.",
+                "Go to the festival and enjoy yourself. But while you're there, seek out Lord Calder. He has concerns about the war — and I think you're just the person to hear them."
             ]
         },
 
@@ -573,6 +621,28 @@
                 "The time has come. I'll sponsor you for nobility — vouch for your character before the court.",
                 "But my word alone won't suffice. You must prove yourself worthy at court. Attend the royal feast, meet the nobles, make your case.",
                 "Be warned: the court is full of vipers. Smile at everyone, trust no one."
+            ]
+        },
+
+        ch16_feast_announcement: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "Well done — you've earned your title. You are now a Minor Noble of Valdren.",
+                "And your timing is perfect. A royal feast has been announced at the capital. It begins in seven days.",
+                "This is your chance to be seen among your peers. Attend the feast, mingle with the lords and ladies, and prove you belong.",
+                "Open the Nobility panel under Character to see the feast details and accept your invitation when it arrives."
+            ]
+        },
+
+        ch16_feast_success: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "Splendid work at the feast. You handled yourself admirably — even the old lords were impressed.",
+                "Now comes the true test. The king has called a Royal Court in three days. You've been invited to attend.",
+                "Court is where real power changes hands — alliances are forged, laws are debated, and fortunes are made.",
+                "Check the Nobility panel — the court session will appear there when it begins. Don't miss it."
             ]
         },
 

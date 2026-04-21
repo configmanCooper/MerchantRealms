@@ -6277,7 +6277,10 @@ window.UI = (function () {
                 { key: 'laws', label: '📋 Law Changes' },
                 { key: 'taxes', label: '💰 Tax Changes' },
                 { key: 'king', label: '👑 King & Court' },
-                { key: 'festivals', label: '🎉 Festivals & Events' },
+                { key: 'festivals', label: '🎪 Festivals' },
+                { key: 'feasts', label: '🍷 Royal Feasts' },
+                { key: 'court', label: '⚖️ Royal Court' },
+                { key: 'tournaments', label: '⚔️ Tournaments' },
                 { key: 'commissions', label: '📜 Royal Commissions' },
                 { key: 'political', label: '🏛️ Political Events' },
             ]},
@@ -6292,6 +6295,10 @@ window.UI = (function () {
                 { key: 'laws', label: '📋 Law Changes' },
                 { key: 'diplomacy', label: '🤝 Diplomacy & Treaties' },
                 { key: 'political', label: '🏛️ Political Events' },
+                { key: 'festivals', label: '🎪 Festivals' },
+                { key: 'feasts', label: '🍷 Royal Feasts' },
+                { key: 'court', label: '⚖️ Royal Court' },
+                { key: 'tournaments', label: '⚔️ Tournaments' },
             ]},
             { key: 'world_economy', label: '📈 World Economy', desc: 'Trade crazes, embargoes, price controls', subs: [
                 { key: 'trade_craze', label: '📈 Trade Crazes' },
@@ -14611,6 +14618,10 @@ window.UI = (function () {
 
         var names = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble', 'Lord', 'Royal Advisor', 'King'];
         toast('Set rank to ' + (names[r] || r) + ' in ' + kid + (r >= 6 ? ' (+' + (r >= 7 ? '10' : '3') + ' political capital)' : ''), 'success');
+        // Notify story mode of rank change
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('reach_rank', { rank: r, kingdomId: kid });
+        }
         if (r >= 1 && typeof Player.showRankCeremony === 'function') {
             Player.showRankCeremony(r, kid);
         }

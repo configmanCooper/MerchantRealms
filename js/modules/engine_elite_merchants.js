@@ -3047,7 +3047,7 @@
 
                         // Wartime boost for military goods and steel
                         if (isAtWar) {
-                            var warGoods = ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'arrows', 'arrows_good', 'steel', 'blasting_powder', 'demolition_tools'];
+                            var warGoods = ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'arrows', 'arrows_good', 'arrows_excellent', 'steel', 'blasting_powder', 'demolition_tools'];
                             if (warGoods.indexOf(recipe.produces) >= 0) demandBonus += 10;
                         }
 

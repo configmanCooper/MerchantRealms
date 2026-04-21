@@ -614,6 +614,9 @@ window.Game = (function () {
         valdren.name = 'Valdren';
         if (korvath) korvath.name = 'Korvath';
 
+        // Story mode: Valdren should NOT have guild restrictions (player needs to build freely)
+        if (valdren.laws) valdren.laws.guildRestrictions = false;
+
         // Find towns in Valdren
         var valdrenTowns = towns.filter(function(t) { return t.kingdomId === valdren.id; });
         if (valdrenTowns.length < 3) {
@@ -626,21 +629,26 @@ window.Game = (function () {
         if (valdrenTowns.length > 1) valdrenTowns[1].name = 'Millhaven';
         if (valdrenTowns.length > 2) valdrenTowns[2].name = 'Ferrowdale';
 
-        // Set capital
+        // Set capital — must NOT be Ashford (it gets captured in story)
         if (valdren.capitalTownId) {
             var capital = Engine.findTown(valdren.capitalTownId);
-            if (capital && capital.name !== 'Ashford' && capital.name !== 'Millhaven' && capital.name !== 'Ferrowdale') {
-                // Keep capital name but ensure it's not one of our story towns
-            } else if (valdrenTowns.length > 3) {
-                // Use 4th town as capital
-                valdren.capitalTownId = valdrenTowns[3].id;
+            if (!capital || capital.name === 'Ashford' || capital.name === 'Millhaven' || capital.name === 'Ferrowdale') {
+                // Reassign capital to a non-story town
+                if (valdrenTowns.length > 3) {
+                    valdren.capitalTownId = valdrenTowns[3].id;
+                } else {
+                    // No other Valdren towns — pick any non-Ashford town
+                    for (var ci = valdrenTowns.length - 1; ci >= 0; ci--) {
+                        if (valdrenTowns[ci].name !== 'Ashford') { valdren.capitalTownId = valdrenTowns[ci].id; break; }
+                    }
+                }
             }
         }
 
         // Ensure Ashford has required buildings
         var ashford = valdrenTowns[0];
 
-        // Remove iron deposits from Ashford — iron comes from Korvath (drives ch7-8 plot)
+        // Remove iron deposits from Ashford — iron comes from Korvathi (drives ch7-8 plot)
         if (ashford.naturalDeposits) delete ashford.naturalDeposits.iron_ore;
 
         var requiredBuildings = ['blacksmith', 'bakery', 'clinic'];
@@ -675,13 +683,12 @@ window.Game = (function () {
             }
         }
 
-        // Ensure Ferrowdale has iron mine
+        // Ensure Ferrowdale has iron deposit but NO pre-built iron mine and NO iron ore in market
         if (valdrenTowns.length > 2) {
             var ferrowdale = valdrenTowns[2];
-            var hasIronMine = (ferrowdale.buildings || []).some(function(b) { return (b.type || b) === 'iron_mine'; });
-            if (!hasIronMine) {
-                ferrowdale.buildings = ferrowdale.buildings || [];
-                ferrowdale.buildings.push({ type: 'iron_mine', level: 1, ownerId: null, builtDay: -1000, condition: 'used', lastRepairDay: 0 });
+            // Remove any pre-existing iron mines (player builds their own in story)
+            if (ferrowdale.buildings && ferrowdale.buildings.length) {
+                ferrowdale.buildings = ferrowdale.buildings.filter(function(b) { return (b.type || b) !== 'iron_mine'; });
             }
             // Ensure iron deposit (naturalDeposits is what the engine uses for mining)
             if (!ferrowdale.naturalDeposits) ferrowdale.naturalDeposits = {};
@@ -701,9 +708,9 @@ window.Game = (function () {
             ferrowdale.market.demand['tools'] = 50;      // high demand
             ferrowdale.market.prices['tools'] = 18;      // good sell price due to demand
 
-            // Ferrowdale has cheap raw materials from mining (story: buy cheap here, sell in Ashford)
-            ferrowdale.market.supply['iron_ore'] = 80;
-            ferrowdale.market.prices['iron_ore'] = 6;     // base 12, cheap here
+            // Ferrowdale has cheap raw materials from quarrying (but NO iron ore supply — no mines yet)
+            ferrowdale.market.supply['iron_ore'] = 0;
+            ferrowdale.market.prices['iron_ore'] = 12;    // base price, no cheap mining yet
             ferrowdale.market.supply['stone'] = 60;
             ferrowdale.market.prices['stone'] = 3;        // base 6, cheap from quarries
             ferrowdale.market.supply['salt'] = 40;
@@ -714,7 +721,7 @@ window.Game = (function () {
             ferrowdale.market.prices['hide'] = 3;         // base 5, local ranching
         }
 
-        // Name the Korvath king
+        // Name the Korvathi king
         if (korvath) {
             var korvathKing = Engine.findPerson(korvath.king);
             if (korvathKing) {
@@ -725,7 +732,7 @@ window.Game = (function () {
         // Name the Valdren king
         var valdrenKing = Engine.findPerson(valdren.king);
         if (valdrenKing) {
-            valdrenKing.firstName = 'Aldric';
+            valdrenKing.lastName = 'Aldric';
         }
 
         // Story mode protections: remove tools from banned/restricted in Valdren
@@ -812,11 +819,11 @@ window.Game = (function () {
             }
         }
 
-        // Connect Ashford to a Korvath border town that supplies iron
+        // Connect Ashford to a Korvathi border town that supplies iron
         if (korvath && world) {
             var korvathTowns = towns.filter(function(t) { return t.kingdomId === korvath.id; });
             if (korvathTowns.length > 0) {
-                // Pick closest Korvath town to Ashford as the border/iron town
+                // Pick closest Korvathi town to Ashford as the border/iron town
                 var ashfordT = valdrenTowns[0];
                 korvathTowns.sort(function(a, b) {
                     var da = Math.hypot(a.x - ashfordT.x, a.y - ashfordT.y);
@@ -856,7 +863,7 @@ window.Game = (function () {
                     borderTown.y = Math.round(ashfordT.y + Math.sin(btAngle) * 220);
                 }
 
-                // Ensure a road exists between Ashford and the Korvath border town
+                // Ensure a road exists between Ashford and the Korvathi border town
                 var _ashId = ashfordT.id;
                 var _btId = borderTown.id;
                 if (world.roads) {
@@ -884,7 +891,7 @@ window.Game = (function () {
                     }
                 }
 
-                console.log('[StoryMode] Korvath border town: ' + borderTown.name + ' connected to Ashford with iron supply');
+                console.log('[StoryMode] Korvathi border town: ' + borderTown.name + ' connected to Ashford with iron supply');
             }
         }
     }
@@ -2912,7 +2919,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.76.2',
+                gameVersion: 'v0.77.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,

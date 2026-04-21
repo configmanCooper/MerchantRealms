@@ -1736,6 +1736,7 @@ const RESOURCE_TYPES = {
     BOWS_GOOD:        { id: 'bows_good',          name: 'Good Bows',        category: 'military', basePrice: 75,  icon: '🏹🔵', weight: 2, tier: 'good',      baseItem: 'bows' },
     BOWS_EXCELLENT:   { id: 'bows_excellent',     name: 'Excellent Bows',   category: 'military', basePrice: 225, icon: '🏹🟣', weight: 2, tier: 'excellent', baseItem: 'bows' },
     ARROWS_GOOD:      { id: 'arrows_good',        name: 'Good Arrows',      category: 'military', basePrice: 15,  icon: '➳🔵',  weight: 1, tier: 'good',      baseItem: 'arrows' },
+    ARROWS_EXCELLENT: { id: 'arrows_excellent',    name: 'Excellent Arrows', category: 'military', basePrice: 45,  icon: '➳🟣',  weight: 1, tier: 'excellent', baseItem: 'arrows' },
 
     // --- Demolition & Sabotage goods ---
     BLASTING_POWDER:  { id: 'blasting_powder',  name: 'Blasting Powder',  category: 'military', basePrice: 50, icon: '💥', weight: 2 },
@@ -1869,10 +1870,11 @@ const BUILDING_TYPES = {
             bows_excellent:   { produces: 'bows_excellent',   consumes: { wood: 4, hemp: 2, iron: 1, steel: 1 }, rate: 1 },
         },
     },
-    ARROW_MAKER:   { id: 'arrow_maker',   name: 'Arrow Maker',   cost: 250,  workers: 2, produces: 'arrows',         consumes: { wood: 1, iron: 1 },        rate: 8, category: 'military',   storage: 60, materials: { wood: 10, stone: 5 }, canProduce: ['arrows', 'arrows_good'],
+    ARROW_MAKER:   { id: 'arrow_maker',   name: 'Arrow Maker',   cost: 250,  workers: 2, produces: 'arrows',         consumes: { wood: 1, iron: 1 },        rate: 8, category: 'military',   storage: 60, materials: { wood: 10, stone: 5 }, canProduce: ['arrows', 'arrows_good', 'arrows_excellent'],
         availableProducts: {
             arrows:           { produces: 'arrows',           consumes: { wood: 1, iron: 1 },              rate: 8 },
             arrows_good:      { produces: 'arrows_good',      consumes: { wood: 2, iron: 2 },              rate: 5 },
+            arrows_excellent: { produces: 'arrows_excellent',  consumes: { wood: 2, iron: 1, steel: 1 },    rate: 3 },
         },
     },
     CARPENTER:     { id: 'carpenter',     name: 'Carpenter',     cost: 450,  workers: 2, produces: 'furniture',       consumes: { planks: 3 },               rate: 2, category: 'finished',   storage: 40, materials: { wood: 15, planks: 8, stone: 5 }, canProduce: ['furniture', 'planks'],
@@ -2067,7 +2069,7 @@ const BUILDING_TYPES = {
     },
     ARMORY_SHOP:      { id: 'armory_shop',      name: 'Armory',          cost: 700,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'retail',    materials: { stone: 15, iron: 5, planks: 10 }, icon: '🗡️', description: 'Sells weapons and armor. Soldiers, guards, and adventurers pay premium prices.',
         retailConfig: {
-            acceptsGoods: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'arrows', 'arrows_good'],
+            acceptsGoods: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'arrows', 'arrows_good', 'arrows_excellent'],
             baseMarkup: 1.3,
             maxMarkup: 1.8,
             maxCustomersPerDay: 3,

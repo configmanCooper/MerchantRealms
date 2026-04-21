@@ -374,7 +374,16 @@
                     e.stopPropagation();
                     var cb = choice.action;
                     _closeAndDequeue();
-                    if (typeof cb === 'function') cb();
+                    if (typeof cb === 'function') {
+                        cb();
+                    } else if (typeof cb === 'string') {
+                        // Map string actions to story mode functions
+                        if (cb === 'path_diplomacy' && typeof StoryMode !== 'undefined' && StoryMode.setWarPath) {
+                            StoryMode.setWarPath('diplomatic');
+                        } else if (cb === 'path_military' && typeof StoryMode !== 'undefined' && StoryMode.setWarPath) {
+                            StoryMode.setWarPath('military');
+                        }
+                    }
                 };
             })(choices[i]));
             choicesEl.appendChild(btn);

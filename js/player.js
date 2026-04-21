@@ -2831,6 +2831,10 @@
         }
 
         bld.workers.push(personId);
+        // Story Mode: notify of worker assignment
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('assign_worker', { building: bld.type, buildingId: buildingId });
+        }
         return { success: true, message: `Assigned worker to ${bt.name}.` };
     }
 
@@ -3193,7 +3197,24 @@
         Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType, null, 'my_business');
         // Story Mode: notify of caravan send
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
-            StoryMode.onPlayerAction('send_caravan', { fromTownId: fromTownId, toTownId: toTownId });
+            var _storyOrders = [];
+            if (caravan.orders) {
+                for (var _soi = 0; _soi < caravan.orders.length; _soi++) {
+                    var _so = caravan.orders[_soi];
+                    // Resolve location to town name
+                    var _soTownName = '';
+                    if (_so.location === 'source') {
+                        _soTownName = fromTown ? fromTown.name : '';
+                    } else if (_so.location === 'destination') {
+                        _soTownName = toTown ? toTown.name : '';
+                    } else if (_so.location && _so.location.indexOf('waypoint:') === 0) {
+                        var _wpTown = Engine.findTown(_so.location.replace('waypoint:', ''));
+                        _soTownName = _wpTown ? _wpTown.name : '';
+                    }
+                    _storyOrders.push({ action: _so.action, item: _so.good, townName: _soTownName });
+                }
+            }
+            StoryMode.onPlayerAction('send_caravan', { fromTownId: fromTownId, toTownId: toTownId, orders: _storyOrders });
         }
         return { success: true, message: 'Caravan sent to ' + toTown.name + '.' + crewMsg + tripType, caravan: caravan };
     }
@@ -16648,12 +16669,58 @@
      * Player combat survival check (e.g., bandit attack on caravan they're traveling with).
      * Returns true if player survives.
      */
+    // Get player weapon combat bonus, accounting for bow+arrow dependency
+    function _getPlayerWeaponBonus() {
+        if (!player.weapon) return 0;
+        var bonus = (typeof player.weapon === 'object') ? player.weapon.combatBonus : 0.20;
+        // Check if weapon is a bow — bows need arrows to be effective
+        var isBow = player.weapon && typeof player.weapon === 'object' &&
+            (player.weapon.resource === 'bows' || player.weapon.resource === 'bows_good' || player.weapon.resource === 'bows_excellent' ||
+             player.weapon.id === 'short_bow' || player.weapon.id === 'hunting_bow' || player.weapon.id === 'longbow' || player.weapon.id === 'war_bow');
+        if (isBow) {
+            // Find best arrows in inventory
+            var inv = player.inventory || {};
+            if ((inv.arrows_excellent || 0) > 0) {
+                bonus *= 1.50; // +50% bow effectiveness
+            } else if ((inv.arrows_good || 0) > 0) {
+                bonus *= 1.25; // +25% bow effectiveness
+            } else if ((inv.arrows || 0) > 0) {
+                // Regular arrows: no bonus, just base bow effectiveness
+            } else {
+                bonus = 0; // No arrows = bow provides no combat benefit
+            }
+        }
+        return bonus;
+    }
+
+    // Consume arrows from player inventory after a fight (10-20 arrows, best first)
+    function _consumePlayerArrows() {
+        var inv = player.inventory || {};
+        var rng = Engine.getRng();
+        var toConsume = 10 + Math.floor((rng ? rng.random() : Math.random()) * 11); // 10-20
+        // Consume best first
+        var tiers = ['arrows_excellent', 'arrows_good', 'arrows'];
+        for (var ti = 0; ti < tiers.length && toConsume > 0; ti++) {
+            var key = tiers[ti];
+            var have = inv[key] || 0;
+            var take = Math.min(have, toConsume);
+            if (take > 0) {
+                inv[key] = have - take;
+                toConsume -= take;
+            }
+        }
+    }
+
     function playerCombatSurvival() {
         let chance = 0.50;
-        if (player.weapon) chance += (typeof player.weapon === 'object') ? player.weapon.combatBonus : 0.20;
+        chance += _getPlayerWeaponBonus();
         if (player.armor) chance += (typeof player.armor === 'object') ? player.armor.combatBonus : 0.30;
         if (hasSkill('battle_hardened')) chance += 0.30;
         else if (hasSkill('combat_trained')) chance += 0.15;
+        // Consume arrows if bow equipped
+        var isBow = player.weapon && typeof player.weapon === 'object' &&
+            (player.weapon.id === 'short_bow' || player.weapon.id === 'hunting_bow' || player.weapon.id === 'longbow' || player.weapon.id === 'war_bow');
+        if (isBow) _consumePlayerArrows();
         const rng = Engine.getRng();
         const survived = rng ? rng.random() < chance : true;
         if (survived) {
@@ -16669,7 +16736,7 @@
 
     function getCombatSurvivalMultiplier() {
         let mult = 1.0;
-        if (player.weapon) mult += (typeof player.weapon === 'object') ? player.weapon.combatBonus : 0.20;
+        mult += _getPlayerWeaponBonus();
         if (player.armor) mult += (typeof player.armor === 'object') ? player.armor.combatBonus : 0.30;
         if (hasSkill('battle_hardened')) mult += 0.30;
         else if (hasSkill('combat_trained')) mult += 0.15;
@@ -25801,9 +25868,9 @@
     var _notifSubKeys = {
         my_actions: ['trade', 'travel', 'work', 'social', 'skills', 'reputation'],
         my_business: ['caravan_dispatch', 'caravan_trades', 'caravan_arrival', 'caravan_problems', 'building_output', 'workers', 'agents', 'license'],
-        my_kingdom: ['laws', 'taxes', 'king', 'festivals', 'commissions', 'political'],
+        my_kingdom: ['laws', 'taxes', 'king', 'festivals', 'feasts', 'court', 'tournaments', 'commissions', 'political'],
         local_town: ['disasters', 'infrastructure', 'resources', 'population'],
-        foreign_kingdoms: ['wars', 'laws', 'diplomacy', 'political'],
+        foreign_kingdoms: ['wars', 'laws', 'diplomacy', 'political', 'festivals', 'feasts', 'court', 'tournaments'],
         world_economy: ['trade_craze', 'embargo', 'price_control', 'tariffs'],
         military: ['battles', 'troop_movements', 'promotions', 'equipment'],
         npc_activity: ['elite_merchants', 'npc_life'],
@@ -25847,8 +25914,11 @@
         } else if (category === 'my_kingdom') {
             if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1 || ml.indexOf('enacted') !== -1 || ml.indexOf('repealed') !== -1) return 'my_kingdom.laws';
             else if (ml.indexOf('tax') !== -1 || ml.indexOf('levy') !== -1 || ml.indexOf('tariff') !== -1) return 'my_kingdom.taxes';
-            else if (ml.indexOf('king') !== -1 || ml.indexOf('regent') !== -1 || ml.indexOf('succession') !== -1 || ml.indexOf('counsel') !== -1 || ml.indexOf('court') !== -1 || ml.indexOf('coronation') !== -1) return 'my_kingdom.king';
-            else if (ml.indexOf('festival') !== -1 || ml.indexOf('tournament') !== -1 || ml.indexOf('celebration') !== -1) return 'my_kingdom.festivals';
+            else if (ml.indexOf('feast') !== -1 || ml.indexOf('rsvp') !== -1) return 'my_kingdom.feasts';
+            else if (ml.indexOf('court') !== -1 && (ml.indexOf('session') !== -1 || ml.indexOf('holding court') !== -1 || ml.indexOf('in session') !== -1 || ml.indexOf('concluded') !== -1)) return 'my_kingdom.court';
+            else if (ml.indexOf('tournament') !== -1) return 'my_kingdom.tournaments';
+            else if (ml.indexOf('festival') !== -1 || ml.indexOf('celebration') !== -1) return 'my_kingdom.festivals';
+            else if (ml.indexOf('king') !== -1 || ml.indexOf('regent') !== -1 || ml.indexOf('succession') !== -1 || ml.indexOf('counsel') !== -1 || ml.indexOf('coronation') !== -1) return 'my_kingdom.king';
             else if (ml.indexOf('commission') !== -1 || ml.indexOf('petition') !== -1) return 'my_kingdom.commissions';
             else return 'my_kingdom.political';
         } else if (category === 'local_town') {
@@ -25860,6 +25930,10 @@
             if (ml.indexOf('war') !== -1 || ml.indexOf('invasion') !== -1 || ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1) return 'foreign_kingdoms.wars';
             else if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1) return 'foreign_kingdoms.laws';
             else if (ml.indexOf('treaty') !== -1 || ml.indexOf('alliance') !== -1 || ml.indexOf('peace') !== -1 || ml.indexOf('surrender') !== -1) return 'foreign_kingdoms.diplomacy';
+            else if (ml.indexOf('feast') !== -1) return 'foreign_kingdoms.feasts';
+            else if (ml.indexOf('court') !== -1 && (ml.indexOf('session') !== -1 || ml.indexOf('holding court') !== -1 || ml.indexOf('in session') !== -1)) return 'foreign_kingdoms.court';
+            else if (ml.indexOf('tournament') !== -1) return 'foreign_kingdoms.tournaments';
+            else if (ml.indexOf('festival') !== -1 || ml.indexOf('celebration') !== -1) return 'foreign_kingdoms.festivals';
             else return 'foreign_kingdoms.political';
         } else if (category === 'world_economy') {
             if (ml.indexOf('craze') !== -1 || ml.indexOf('trend') !== -1 || ml.indexOf('demand') !== -1) return 'world_economy.trade_craze';
@@ -37318,6 +37392,7 @@
         player.familyMembers = player.familyMembers || [];
         player.familyMembers.push({
             id: edmundId,
+            npcId: edmundId,
             role: 'father',
             name: edmund.fullName,
             relationship: 85,
@@ -37325,6 +37400,7 @@
         });
         player.familyMembers.push({
             id: margretId,
+            npcId: margretId,
             role: 'mother',
             name: margret.fullName,
             relationship: 85,
@@ -38280,6 +38356,7 @@
         unequipWeapon,
         unequipArmor,
         playerCombatSurvival,
+        consumePlayerArrows: _consumePlayerArrows,
 
         // Dynasty Marriages
         arrangeChildMarriage,

@@ -876,6 +876,64 @@ function openNobilityDialog() {
         html += '</div>';
     }
 
+    // ── PENDING / SCHEDULED FEAST ──
+    var _pendingFeast = null;
+    try { _pendingFeast = Engine.getPendingFeast ? Engine.getPendingFeast(citizenKingdomId) : null; } catch (e) {}
+    if (_pendingFeast && !_activeFeast) {
+        var _pfDaysUntil = Math.max(0, (_pendingFeast.startDay || 0) - day);
+        var _pfTownName = _pendingFeast.townName || '';
+        if (!_pfTownName) {
+            try { var _pfT = Engine.findTown(_pendingFeast.townId); _pfTownName = _pfT ? _pfT.name : 'the capital'; } catch (e) { _pfTownName = 'the capital'; }
+        }
+        html += '<div style="background:rgba(200,150,50,0.08);border:1px solid rgba(200,150,50,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#f0c040;">📅 Upcoming Feast</h3>';
+        html += '<div style="font-size:0.78rem;color:#ccc;">A Royal Feast is scheduled in <strong>' + escapeHtml(_pfTownName) + '</strong> in <strong>' + _pfDaysUntil + ' day' + (_pfDaysUntil !== 1 ? 's' : '') + '</strong>.</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">Begins day ' + (_pendingFeast.startDay || '?') + ' • Ends day ' + (_pendingFeast.endDay || '?') + '</div>';
+        html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 Make sure to travel to ' + escapeHtml(_pfTownName) + ' before it begins!</div>';
+        html += '</div>';
+    }
+
+    // ── PENDING / SCHEDULED COURT ──
+    var _pendingCourt = null;
+    try { _pendingCourt = Engine.getPendingCourt ? Engine.getPendingCourt(citizenKingdomId) : null; } catch (e) {}
+    // Also check _nextCourtDay on the kingdom for upcoming court without _pendingCourt
+    var _nextCourtDay = null;
+    if (!_pendingCourt) {
+        try {
+            var _ckk = Engine.findKingdom(citizenKingdomId);
+            if (_ckk && _ckk._nextCourtDay && _ckk._nextCourtDay > day) {
+                _nextCourtDay = _ckk._nextCourtDay;
+            }
+        } catch (e) {}
+    }
+    if (_pendingCourt) {
+        var _pcDaysUntil = Math.max(0, (_pendingCourt.courtDay || 0) - day);
+        var _pcTownName = '';
+        try { var _pcT = Engine.findTown(_pendingCourt.townId); _pcTownName = _pcT ? _pcT.name : 'the capital'; } catch (e) { _pcTownName = 'the capital'; }
+        html += '<div style="background:rgba(80,120,200,0.08);border:1px solid rgba(80,120,200,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#5dade2;">📅 Upcoming Royal Court</h3>';
+        html += '<div style="font-size:0.78rem;color:#ccc;">A Royal Court session is scheduled in <strong>' + escapeHtml(_pcTownName) + '</strong> in <strong>' + _pcDaysUntil + ' day' + (_pcDaysUntil !== 1 ? 's' : '') + '</strong>.</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">Court day: day ' + (_pendingCourt.courtDay || '?') + '</div>';
+        html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 Make sure to travel to ' + escapeHtml(_pcTownName) + ' before it begins!</div>';
+        html += '</div>';
+    } else if (_nextCourtDay) {
+        var _ncdDaysUntil = _nextCourtDay - day;
+        var _ncdTownName = 'the capital';
+        try {
+            var _ckk2 = Engine.findKingdom(citizenKingdomId);
+            if (_ckk2) {
+                var _ncdTown = Engine.findTown(_ckk2.capital || _ckk2.capitalTownId || '');
+                if (_ncdTown) _ncdTownName = _ncdTown.name;
+            }
+        } catch (e) {}
+        html += '<div style="background:rgba(80,120,200,0.08);border:1px solid rgba(80,120,200,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#5dade2;">📅 Upcoming Royal Court</h3>';
+        html += '<div style="font-size:0.78rem;color:#ccc;">The king will hold court in <strong>' + escapeHtml(_ncdTownName) + '</strong> in <strong>' + _ncdDaysUntil + ' day' + (_ncdDaysUntil !== 1 ? 's' : '') + '</strong>.</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">Court day: day ' + _nextCourtDay + '</div>';
+        html += '<div style="font-size:0.72rem;color:#e67e22;margin-top:4px;">📍 Make sure to be at ' + escapeHtml(_ncdTownName) + ' before it begins!</div>';
+        html += '</div>';
+    }
+
     // ── PRIVILEGES SUMMARY ──
     html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
     html += '<h3 style="margin:0 0 8px 0;font-size:0.9rem;color:var(--gold);">🏅 Noble Privileges</h3>';

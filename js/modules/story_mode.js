@@ -171,12 +171,32 @@ var StoryMode = (function () {
             onComplete: null
         },
 
+        // Ch 8b — The Mine Master (inserted between Fire and Iron and Roads of Fortune)
+        {
+            id: 'ch8b', title: 'The Mine Master', act: 2,
+            startDialog: 'ch8b_harlan_mine',
+            objectives: [
+                { id: 'ch8b_work_mine',     type: 'work_shift',  building: 'iron_mine', desc: 'Work a shift in your iron mine',                     done: false },
+                { id: 'ch8b_hire_worker',   type: 'hire_worker',                        desc: 'Hire a worker for your mine',                        done: false },
+                { id: 'ch8b_sell_iron',     type: 'sell_item',   item: 'iron_ore', qty: 5, town: 'Ashford', desc: 'Sell 5 iron ore in Ashford',  done: false }
+            ],
+            endDialog: 'ch8b_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
+        },
+
         // Ch 9
         {
             id: 'ch9', title: 'Roads of Fortune', act: 2,
             startDialog: 'ch9_father_caravan',
             objectives: [
-                { id: 'ch9_send_caravan', type: 'send_caravan', desc: 'Send a trade caravan', done: false }
+                { id: 'ch9_send_caravan', type: 'send_caravan', desc: 'Send a trade caravan with iron ore orders', done: false,
+                  requiredOrders: [
+                      { action: 'pickup', item: 'iron_ore', town: 'Ferrowdale' },
+                      { action: 'sell',   item: 'iron_ore', town: 'Ashford' }
+                  ]
+                }
             ],
             endDialog: 'ch9_complete',
             unlockButtons: [],
@@ -189,12 +209,14 @@ var StoryMode = (function () {
             id: 'ch10', title: 'Bread and Butter', act: 2,
             startDialog: 'ch10_mother_bread',
             objectives: [
-                { id: 'ch10_own_mill',    type: 'own_building', building: 'flour_mill|bakery', desc: 'Build a flour mill or bakery', done: false },
-                { id: 'ch10_hire_worker', type: 'hire_worker',                                  desc: 'Hire a worker',               done: false }
+                { id: 'ch10_own_mill',      type: 'own_building',   building: 'flour_mill|bakery', desc: 'Build a flour mill or bakery',           done: false },
+                { id: 'ch10_hire_worker',   type: 'hire_worker',                                   desc: 'Hire a worker',                          done: false },
+                { id: 'ch10_assign_worker', type: 'assign_worker',  building: 'flour_mill|bakery', desc: 'Assign the worker to your building',     done: false, after: 'ch10_hire_worker' },
+                { id: 'ch10_return_ashford', type: 'arrive_town',   town: 'Ashford',               desc: 'Travel back to Ashford',                 done: false }
             ],
             endDialog: 'ch10_complete',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter10Start',
             onComplete: null
         },
 
@@ -233,7 +255,7 @@ var StoryMode = (function () {
             id: 'ch13', title: 'The Fall of Ashford', act: 3,
             startDialog: 'ch13_invasion',
             objectives: [
-                { id: 'ch13_escape', type: 'arrive_town', town: '!Ashford', desc: 'Escape to a safe town', done: false }
+                { id: 'ch13_escape', type: 'arrive_town', town: '!Ashford', kingdom: 'Valdren', desc: 'Escape to a Valdren town', done: false }
             ],
             endDialog: 'ch13_escape_complete',
             unlockButtons: [],
@@ -246,12 +268,12 @@ var StoryMode = (function () {
             id: 'ch14', title: 'A Petition to the Crown', act: 3,
             startDialog: 'ch14_calder_plan',
             objectives: [
-                { id: 'ch14_reach_burgher', type: 'reach_rank', rank: 3,         desc: 'Reach the rank of Burgher',    done: false },
+                { id: 'ch14_reach_burgher', type: 'reach_rank', rank: 2,         desc: 'Reach the rank of Burgher',    done: false },
                 { id: 'ch14_meet_calder',   type: 'custom',     fn: '_checkMetCalderCapital', desc: 'Meet Lord Calder at the capital', done: false }
             ],
             endDialog: 'ch14_complete',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter14Start',
             onComplete: null
         },
 
@@ -275,12 +297,12 @@ var StoryMode = (function () {
             startDialog: 'ch16_calder_nobility',
             objectives: [
                 { id: 'ch16_reach_noble',   type: 'reach_rank',   rank: 4,  desc: 'Become a Minor Noble',   done: false },
-                { id: 'ch16_attend_feast',  type: 'attend_feast',           desc: 'Attend a noble feast',   done: false },
-                { id: 'ch16_attend_court',  type: 'attend_court',           desc: 'Attend the royal court', done: false }
+                { id: 'ch16_attend_feast',  type: 'attend_feast',           desc: 'Attend a noble feast',   done: false, after: 'ch16_reach_noble' },
+                { id: 'ch16_attend_court',  type: 'attend_court',           desc: 'Attend the royal court', done: false, after: 'ch16_attend_feast' }
             ],
             endDialog: 'ch16_complete',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter16Start',
             onComplete: null
         },
 
@@ -370,6 +392,8 @@ var StoryMode = (function () {
         var _followUpDialogs = {
             'ch12_attend_festival': 'ch12_lord_calder_meet',
             'ch14_reach_burgher':   'ch14_calder_capital',
+            'ch16_reach_noble':     'ch16_feast_announcement',
+            'ch16_attend_feast':    'ch16_feast_success',
             'ch17a_trade_route':    'ch17a_rask_meeting',
             'ch17a_rask':           'ch17a_diplomatic_progress',
             'ch17b_outpost':        'ch17b_battle_victory',
@@ -377,6 +401,38 @@ var StoryMode = (function () {
         };
         if (_followUpDialogs[objId]) {
             _showDialog(_followUpDialogs[objId]);
+        }
+
+        // Schedule engine events when specific objectives complete
+        if (objId === 'ch16_reach_noble') {
+            // Player just became Minor Noble — schedule a feast at the capital in 7 days
+            // Also unlock the Nobility button
+            _unlockButtons(['#btnNobility']);
+            try {
+                var _valdrenK = null;
+                var _allKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                for (var _ki = 0; _ki < _allKingdoms.length; _ki++) {
+                    if (_allKingdoms[_ki].name === 'Valdren') { _valdrenK = _allKingdoms[_ki]; break; }
+                }
+                if (_valdrenK) {
+                    Engine.startRoyalFeast(_valdrenK.id, 7);
+                }
+            } catch (e) { /* feast scheduling failed */ }
+        } else if (objId === 'ch16_attend_feast') {
+            // Player just attended feast — schedule royal court in 3 days
+            // Set _nextCourtDay so tickKingdomCourt creates _activeCourtSession for player
+            try {
+                var _valdrenK2 = null;
+                var _allK2 = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                for (var _ki2 = 0; _ki2 < _allK2.length; _ki2++) {
+                    if (_allK2[_ki2].name === 'Valdren') { _valdrenK2 = _allK2[_ki2]; break; }
+                }
+                if (_valdrenK2) {
+                    var _w = Engine.getWorld ? Engine.getWorld() : null;
+                    var _courtDay = (_w ? _w.day : 0) + 3;
+                    _valdrenK2._nextCourtDay = _courtDay;
+                }
+            } catch (e) { /* court scheduling failed */ }
         }
     }
 
@@ -401,7 +457,16 @@ var StoryMode = (function () {
             if (typeof UI !== 'undefined' && UI.showStoryDialog) {
                 var dialogData = STORY_DIALOGS[key];
                 dialogData._dialogKey = key;
-                if (typeof onComplete === 'function') dialogData.onComplete = onComplete;
+                // If this dialog has a 'next' key, chain to the next dialog on completion
+                var nextKey = dialogData.next || null;
+                var userCb = onComplete;
+                dialogData.onComplete = function () {
+                    if (nextKey) {
+                        _showDialog(nextKey, userCb);
+                    } else if (typeof userCb === 'function') {
+                        userCb();
+                    }
+                };
                 UI.showStoryDialog(dialogData);
             }
         }
@@ -466,7 +531,9 @@ var StoryMode = (function () {
                 return typeof Player !== 'undefined' && Player.gold >= (obj.amount || 0);
 
             case 'reach_rank':
-                return typeof Player !== 'undefined' && Player.rank >= (obj.rank || 0);
+                if (typeof Player === 'undefined') return false;
+                var curRank = (Player.getEffectiveRank) ? Player.getEffectiveRank() : (Player.rank || 0);
+                return curRank >= (obj.rank || 0);
 
             case 'own_building':
                 return _playerOwnsBuilding(obj.building);
@@ -476,10 +543,18 @@ var StoryMode = (function () {
                 if (typeof Player !== 'undefined' && Player.townId && !Player.traveling) {
                     var curTown = (typeof Engine !== 'undefined' && Engine.findTown) ? Engine.findTown(Player.townId) : null;
                     var curName = curTown ? curTown.name : '';
+                    var townMatch = true;
                     if (obj.town && obj.town.charAt(0) === '!') {
-                        return curName !== obj.town.substring(1);
+                        townMatch = curName !== obj.town.substring(1);
+                    } else if (obj.town) {
+                        townMatch = curName === obj.town;
                     }
-                    return curName === obj.town;
+                    // Optional kingdom filter
+                    if (townMatch && obj.kingdom && curTown) {
+                        var curK = (typeof Engine !== 'undefined' && Engine.getKingdom) ? Engine.getKingdom(curTown.kingdomId) : null;
+                        if (!curK || curK.name !== obj.kingdom) townMatch = false;
+                    }
+                    return townMatch;
                 }
                 return false;
 
@@ -693,7 +768,24 @@ var StoryMode = (function () {
                     break;
 
                 case 'sell_item':
-                    matched = _itemMatches(obj.item, data.item);
+                    if (_itemMatches(obj.item, data.item)) {
+                        // Check town restriction if specified
+                        if (obj.town) {
+                            var sellTown = data.town || data.townName || '';
+                            if (typeof Player !== 'undefined' && !sellTown) {
+                                var pt = Engine.findTown ? Engine.findTown(Player.townId) : null;
+                                if (pt) sellTown = pt.name;
+                            }
+                            if (sellTown !== obj.town) break;
+                        }
+                        if (obj.qty) {
+                            if (!obj._progress) obj._progress = 0;
+                            obj._progress += (data.qty || 1);
+                            matched = obj._progress >= obj.qty;
+                        } else {
+                            matched = true;
+                        }
+                    }
                     break;
 
                 case 'arrive_town':
@@ -702,6 +794,14 @@ var StoryMode = (function () {
                         matched = arrTown !== obj.town.substring(1);
                     } else {
                         matched = (arrTown === obj.town);
+                    }
+                    // Optional kingdom filter
+                    if (matched && obj.kingdom && data.townId) {
+                        var arrTownObj = (typeof Engine !== 'undefined' && Engine.findTown) ? Engine.findTown(data.townId) : null;
+                        if (arrTownObj) {
+                            var arrK = (typeof Engine !== 'undefined' && Engine.getKingdom) ? Engine.getKingdom(arrTownObj.kingdomId) : null;
+                            if (!arrK || arrK.name !== obj.kingdom) matched = false;
+                        }
                     }
                     break;
 
@@ -725,14 +825,52 @@ var StoryMode = (function () {
 
                 case 'send_caravan':
                     matched = true;
+                    // Check requiredOrders if specified
+                    if (obj.requiredOrders && data.orders) {
+                        for (var roi = 0; roi < obj.requiredOrders.length; roi++) {
+                            var req = obj.requiredOrders[roi];
+                            var found = false;
+                            for (var oi = 0; oi < data.orders.length; oi++) {
+                                var ord = data.orders[oi];
+                                var actMatch = (req.action === 'pickup' && ord.action === 'pickup') ||
+                                               (req.action === 'sell' && ord.action === 'sell') ||
+                                               (req.action === 'buy' && ord.action === 'buy') ||
+                                               (req.action === 'store' && ord.action === 'store');
+                                if (actMatch && (!req.item || ord.item === req.item)) {
+                                    if (!req.town || ord.townName === req.town || ord.town === req.town) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!found) { matched = false; break; }
+                        }
+                    }
                     break;
 
                 case 'hire_worker':
                     matched = true;
                     break;
 
+                case 'assign_worker':
+                    if (!obj.building) { matched = true; }
+                    else {
+                        var awAllowed = obj.building.split('|');
+                        matched = awAllowed.indexOf(data.building) !== -1;
+                    }
+                    break;
+
                 case 'treat_person':
-                    matched = !obj.person || data.person === obj.person;
+                    if (!obj.person) { matched = true; }
+                    else {
+                        // Match by person name — resolve targetId to name
+                        var tpName = data.person || '';
+                        if (!tpName && data.targetId && typeof Engine !== 'undefined' && Engine.findPerson) {
+                            var tpPerson = Engine.findPerson(data.targetId);
+                            if (tpPerson) tpName = tpPerson.firstName || tpPerson.fullName || '';
+                        }
+                        matched = tpName === obj.person;
+                    }
                     break;
 
                 case 'buy_skill':
@@ -880,15 +1018,44 @@ var StoryMode = (function () {
         return _storyState.dialogsSeen.indexOf('ch7_war_crier') !== -1;
     };
 
+    // ── Ch 10: Bread and Butter — seed bricks in Ashford & Ferrowdale ──
+    _hooks._onChapter10Start = function () {
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        if (!w || !w.towns) return;
+        var storyTowns = ['Ashford', 'Ferrowdale'];
+        for (var sti = 0; sti < storyTowns.length; sti++) {
+            var t = w.towns.find(function(tt) { return tt.name === storyTowns[sti]; });
+            if (t && t.market && t.market.supply) {
+                t.market.supply.bricks = (t.market.supply.bricks || 0) + 20;
+            }
+        }
+        _log('Building materials are now available in local markets.');
+    };
+
     // ── Ch 11: Family Crisis ──
     _hooks._onChapter11Start = function () {
         _storyState.flags.edmundInjured = true;
         _storyState.flags.margretIll    = true;
-        // Bypass protections to apply conditions via engine
-        if (typeof Engine !== 'undefined') {
-            if (Engine.setNPCCondition) {
-                Engine.setNPCCondition('Edmund', 'injured', true);
-                Engine.setNPCCondition('Margret', 'illness', true);
+        // Apply conditions directly to story NPCs
+        if (typeof Engine !== 'undefined' && typeof Player !== 'undefined') {
+            var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
+            if (sNPCs) {
+                var edmund = sNPCs.fatherId ? Engine.findPerson(sNPCs.fatherId) : null;
+                var margret = sNPCs.motherId ? Engine.findPerson(sNPCs.motherId) : null;
+                if (edmund) {
+                    edmund.injuries = edmund.injuries || [];
+                    if (!edmund.injuries.some(function(inj) { return inj.type === 'burn'; })) {
+                        edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
+                    }
+                    edmund.health = Math.min(edmund.health || 100, 60);
+                }
+                if (margret) {
+                    margret.illnesses = margret.illnesses || [];
+                    if (!margret.illnesses.some(function(ill) { return ill.type === 'fever'; })) {
+                        margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
+                    }
+                    margret.health = Math.min(margret.health || 100, 50);
+                }
             }
         }
         _log('Father has been injured at the forge. Mother has fallen ill.');
@@ -897,6 +1064,16 @@ var StoryMode = (function () {
     _hooks._onChapter11Complete = function () {
         _storyState.flags.edmundInjured = false;
         _storyState.flags.margretIll    = false;
+        // Heal story NPCs
+        if (typeof Engine !== 'undefined' && typeof Player !== 'undefined') {
+            var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
+            if (sNPCs) {
+                var edmund = sNPCs.fatherId ? Engine.findPerson(sNPCs.fatherId) : null;
+                var margret = sNPCs.motherId ? Engine.findPerson(sNPCs.motherId) : null;
+                if (edmund) { edmund.injuries = []; edmund.health = 100; }
+                if (margret) { margret.illnesses = []; margret.health = 100; }
+            }
+        }
     };
 
     // ── Ch 12: Festival ──
@@ -926,8 +1103,60 @@ var StoryMode = (function () {
     };
 
     // ── Ch 14 ──
+    _hooks._onChapter14Start = function () {
+        // Update objective description with actual capital name
+        if (typeof Engine !== 'undefined' && Engine.getWorld) {
+            var w = Engine.getWorld();
+            if (w && w.kingdoms) {
+                var valdren = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+                if (valdren && valdren.capitalTownId) {
+                    var capTown = Engine.findTown(valdren.capitalTownId);
+                    if (capTown) {
+                        var ch = _currentChapterDef();
+                        if (ch) {
+                            for (var i = 0; i < ch.objectives.length; i++) {
+                                if (ch.objectives[i].id === 'ch14_meet_calder') {
+                                    ch.objectives[i].desc = 'Meet Lord Calder in ' + capTown.name;
+                                    break;
+                                }
+                            }
+                        }
+                        _refreshTracker();
+                    }
+                }
+            }
+        }
+    };
+
     _hooks._checkMetCalderCapital = function () {
         return !!_storyState.flags.metLordCalderCapital;
+    };
+
+    // ── Ch 16 ──
+    _hooks._onChapter16Start = function () {
+        // Update feast/court objective descriptions with actual capital town name
+        if (typeof Engine !== 'undefined' && Engine.getWorld) {
+            var w = Engine.getWorld();
+            if (w && w.kingdoms) {
+                var valdren = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+                if (valdren && valdren.capitalTownId) {
+                    var capTown = Engine.findTown(valdren.capitalTownId);
+                    if (capTown) {
+                        var ch = _currentChapterDef();
+                        if (ch) {
+                            for (var i = 0; i < ch.objectives.length; i++) {
+                                if (ch.objectives[i].id === 'ch16_attend_feast') {
+                                    ch.objectives[i].desc = 'Attend a noble feast in ' + capTown.name;
+                                } else if (ch.objectives[i].id === 'ch16_attend_court') {
+                                    ch.objectives[i].desc = 'Attend the royal court in ' + capTown.name;
+                                }
+                            }
+                        }
+                        _refreshTracker();
+                    }
+                }
+            }
+        }
     };
 
     // ── Ch 5 ──
@@ -1068,6 +1297,12 @@ var StoryMode = (function () {
             return;
         }
 
+        // Check if all objectives are already met (e.g. after save/load)
+        if (_allObjectivesMet()) {
+            _completeChapter();
+            return;
+        }
+
         // Poll state-based objectives
         var changed = false;
         for (var i = 0; i < ch.objectives.length; i++) {
@@ -1177,12 +1412,13 @@ var StoryMode = (function () {
         'own_building':    '#btnBuild',
         'build_building':  '#btnBuild',
         'hire_worker':     '#btnHire',
+        'assign_worker':   '#btnBuildings',
         'buy_skill':       '#btnSkills',
         'join_guild':      '#btnGuilds',
         'send_caravan':    '#btnCaravan',
-        'treat_person':    '#btnTreatment',   // Treatment is under character tab
-        'attend_feast':    '#btnKingdoms',
-        'attend_court':    '#btnKingdoms',
+        'treat_person':    null,              // Treatment shows in actions panel when companions are sick
+        'attend_feast':    '#btnNobility',
+        'attend_court':    '#btnNobility',
         'own_gold':        null,
         'reach_rank':      null,
         'rest':            '#btnRest',
@@ -1207,9 +1443,9 @@ var StoryMode = (function () {
         '#btnFamily':    { tab: 'character', label: 'Family' },
         '#btnHousing':   { tab: 'character', label: 'Housing' },
         '#btnGuilds':    { tab: 'character', label: 'Guilds' },
+        '#btnNobility':  { tab: 'character', label: 'Nobility' },
         '#btnKingdoms':  { tab: 'world',     label: 'Kingdoms' },
-        '#btnMap':       { tab: 'world',     label: 'Map' },
-        '#btnTreatment': { tab: 'character', label: 'Treatment' }
+        '#btnMap':       { tab: 'world',     label: 'Map' }
     };
 
     // Map custom hook functions to button hints
@@ -1281,6 +1517,11 @@ var StoryMode = (function () {
         if (_storyState.complete) return;
         var ch = _currentChapterDef();
         if (!ch) return;
+
+        // For branching chapter (ch17), auto-set path if not chosen
+        if (ch.branches && !_storyState.path) {
+            setWarPath('diplomatic');
+        }
 
         // Mark all objectives as done
         for (var i = 0; i < ch.objectives.length; i++) {
