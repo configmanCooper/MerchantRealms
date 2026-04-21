@@ -1368,7 +1368,6 @@ var StoryMode = (function () {
         var chIdx = _storyState.chapter;
         var ch = CHAPTERS[chIdx];
         if (!ch || !ch.branches) {
-            // Fallback: scan for branching chapter
             for (var i = 0; i < CHAPTERS.length; i++) {
                 if (CHAPTERS[i].branches) { ch = CHAPTERS[i]; chIdx = i; break; }
             }
@@ -1381,6 +1380,10 @@ var StoryMode = (function () {
             }
             _refreshTracker();
             _log('You chose the ' + pathName + ' path.');
+
+            // Show the ally's intro dialog confirming the choice
+            var introDialog = (pathName === 'diplomatic') ? 'ch17_elowen_intro' : 'ch17_theron_intro';
+            _showDialog(introDialog);
         }
     }
 
