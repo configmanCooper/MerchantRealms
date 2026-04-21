@@ -175,7 +175,7 @@ var StoryMode = (function () {
             objectives: [
                 { id: 'ch5b_install_workshop', type: 'install_addon', addon: 'workshop',
                   desc: 'Install a workshop in your home',
-                  hint: 'Open Housing panel \u2192 look for available upgrades \u2192 install the Workshop',
+                  hint: 'Open Housing panel \u2192 look for available addons \u2192 install the Workshop',
                   done: false },
                 { id: 'ch5b_craft_item', type: 'home_craft', qty: 1,
                   desc: 'Craft an item at your home workshop',

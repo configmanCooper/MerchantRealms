@@ -679,6 +679,7 @@ window.UI = (function () {
         registerAction('_homeDeposit', function(_t, d) { if (d.id && d.key) UI._homeDeposit(d.id, d.key, d.qty); });
         registerAction('_homeWithdraw', function(_t, d) { if (d.id && d.key) UI._homeWithdraw(d.id, d.key, d.qty); });
         registerAction('doInstallAddon', function(_t, d) { if (d.id && d.val) UI.doInstallAddon(d.id, d.val); });
+        registerAction('doHomeCraft', function(_t, d) { if (d.id && d.val) UI.doHomeCraft(d.id, d.val); });
         registerAction('buyHouseUI', function(_t, d) { if (d.id) UI.buyHouseUI(d.id); });
         registerAction('buyLandUI', function() { UI.buyLandUI(); });
         registerAction('sellHouseUI', function(_t, d) { if (d.id) UI.sellHouseUI(d.id); });
@@ -688,6 +689,7 @@ window.UI = (function () {
         registerAction('leaveTentUI', function(_t, d) { if (d.id) UI.leaveTentUI(d.id); });
         registerAction('setPrimaryHouseUI', function(_t, d) { if (d.id) UI.setPrimaryHouseUI(d.id); });
         registerAction('openHouseAddonsUI', function(_t, d) { if (d.id) UI.openHouseAddonsUI(d.id); });
+        registerAction('openHomeCraftUI', function(_t, d) { if (d.id) UI.openHomeCraftUI(d.id); });
         registerAction('stableHorseUI', function(_t, d) { if (d.id) UI.stableHorseUI(d.id); });
         registerAction('openHomeStorageUI', function(_t, d) { if (d.id) UI.openHomeStorageUI(d.id); });
         registerAction('unstableHorseUI', function(_t, d) { if (d.id && d.val) UI.unstableHorseUI(d.id, d.val); });
@@ -10151,6 +10153,12 @@ window.UI = (function () {
                     if (_availAddons.length > 0) {
                         html += '<button class="btn-medieval" data-action="openHouseAddonsUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔧 Addons (' + _availAddons.length + ')</button>';
                     }
+                    // Craft button if house has a workshop (built-in or addon)
+                    var _htForCraft = CONFIG.HOUSING_TYPES.find(function(t) { return t.id === h.type; });
+                    var _hasWorkshop = (_htForCraft && _htForCraft.hasWorkshop) || (h.addons && h.addons.indexOf('workshop') >= 0);
+                    if (_hasWorkshop) {
+                        html += '<button class="btn-medieval" data-action="openHomeCraftUI" data-id="' + h.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">🔨 Craft</button>';
+                    }
                 }
                 if (h.isRental) {
                     html += '<div style="color:#5ac85a;font-size:0.8rem;">💰 Rented — ' + (h.monthlyRent || 0) + 'g/month (total earned: ' + (h.rentAccumulated || 0) + 'g)</div>';
@@ -10380,6 +10388,51 @@ window.UI = (function () {
             toast(result.message, 'warning');
         }
         openHouseAddonsUI(houseId); // refresh
+    }
+
+    // ── HOME CRAFT UI ──
+    function openHomeCraftUI(houseId) {
+        var recipes = Player.getHomeCraftRecipes ? Player.getHomeCraftRecipes() : [];
+        var html = '<div style="max-height:450px;overflow-y:auto;">';
+        html += '<div style="font-size:0.85rem;margin-bottom:8px;">🔨 <strong>Workshop Crafting</strong></div>';
+        if (recipes.length === 0) {
+            html += '<div style="color:#888;">No recipes available.</div>';
+        } else {
+            for (var ri = 0; ri < recipes.length; ri++) {
+                var r = recipes[ri];
+                html += '<div style="border:1px solid #555;padding:6px;margin:4px 0;border-radius:4px;background:rgba(0,0,0,0.2);">';
+                html += '<div><strong>' + r.name + '</strong> <span style="color:#5ac85a;">→ ' + r.qty + 'x</span></div>';
+                // Show inputs
+                var inputParts = [];
+                for (var resId in r.inputs) {
+                    var rDef = Object.values(RESOURCE_TYPES).find(function(res) { return res.id === resId; });
+                    var held = (Player.inventory[resId] || 0);
+                    var houseObj = (Player.state.houses || Player.houses || []).find(function(h) { return h.id === houseId; });
+                    var homeHeld = houseObj && houseObj.homeStorage ? (houseObj.homeStorage[resId] || 0) : 0;
+                    var total = held + homeHeld;
+                    var needed = r.inputs[resId];
+                    var color = total >= needed ? '#5ac85a' : '#c44e52';
+                    inputParts.push((rDef ? rDef.icon + ' ' : '') + '<span style="color:' + color + ';">' + total + '/' + needed + '</span> ' + (rDef ? rDef.name : resId));
+                }
+                html += '<div style="font-size:0.78rem;margin:2px 0;">Needs: ' + inputParts.join(', ') + '</div>';
+                if (r.skill) html += '<div style="font-size:0.72rem;color:#c4a35a;">Requires: ' + r.skill + ' skill</div>';
+                html += '<button class="btn-medieval" data-action="doHomeCraft" data-id="' + houseId + '" data-val="' + r.id + '" style="font-size:0.75rem;padding:3px 10px;margin-top:4px;">🔨 Craft</button>';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+        openModal('🔨 Home Workshop', html,
+            '<button class="btn-medieval" data-action="openHousingDialog">Back to Housing</button>');
+    }
+
+    function doHomeCraft(houseId, recipeId) {
+        var result = Player.craftAtHome(recipeId);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'warning');
+        }
+        openHomeCraftUI(houseId);
     }
 
     // ── HOME STORAGE TRANSFER UI ──
@@ -16316,6 +16369,8 @@ window.UI = (function () {
         openHomeStorageUI,
         openHouseAddonsUI,
         doInstallAddon,
+        openHomeCraftUI,
+        doHomeCraft,
         _homeDeposit,
         _homeWithdraw,
         stableHorseUI,

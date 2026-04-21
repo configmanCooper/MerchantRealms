@@ -31383,11 +31383,12 @@
     ];
 
     function getHomeCraftRecipes() {
-        // Only available if player has a workshop house in current town
+        // Only available if player has a workshop house in current town (built-in or via addon)
         var house = getHouseInTown(player.townId);
         if (!house) return [];
         var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
-        if (!ht || !ht.hasWorkshop) return [];
+        var workshopAvailable = (ht && ht.hasWorkshop) || (house.addons && house.addons.indexOf('workshop') >= 0);
+        if (!workshopAvailable) return [];
 
         return HOME_CRAFT_RECIPES.filter(function(r) {
             if (r.skill && !hasSkill(r.skill)) return false;
@@ -31405,7 +31406,8 @@
         var house = getHouseInTown(player.townId);
         if (!house) return { success: false, message: 'No house in this town.' };
         var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === house.type; });
-        if (!ht || !ht.hasWorkshop) return { success: false, message: 'Your home needs a workshop to craft items.' };
+        var workshopAvailable = (ht && ht.hasWorkshop) || (house.addons && house.addons.indexOf('workshop') >= 0);
+        if (!workshopAvailable) return { success: false, message: 'Your home needs a workshop to craft items.' };
 
         var recipe = HOME_CRAFT_RECIPES.find(function(r) { return r.id === recipeId; });
         if (!recipe) return { success: false, message: 'Unknown recipe.' };
