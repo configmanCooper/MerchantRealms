@@ -4,6 +4,45 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.78.0] - Ch17 Story Expansion, Diplomatic Agents & Audio Overhaul
+
+### Added — Ch17 Story Mode Expansion
+- **Military path** expanded to 16 objectives: hire agent, assign agent hostile to enemy noble, found military outpost with security upgrades, grow outpost population to 10, build roads to Ferrowdale and Ashford, sabotage 3 enemy buildings, donate 10k gold to treasury, produce 500 weapons/armor/100 horses, supply 500 weapons/armor/100 horses, final battle
+- **Diplomatic path** expanded to 11 objectives: get kingmaker skill, hire agent, assign agent to diplomatic task, found diplomatic outpost connected to Ashford, grow outpost population to 10, maintain outpost happiness above 60, trade 10k gold via cross-kingdom caravans, 3 undermine objectives (loyalty/perceived loyalty/reputation by 50), victory conspiracy
+- All path objectives must be complete before battle/conspiracy triggers
+- Progress tracking with save/load persistence for sabotage count, treasury donations, cross-kingdom trade value
+- Ally intro dialog shown after Ch17 path choice
+- Placeholder + re-show choice dialog on load for blank objectives fix
+
+### Added — Diplomatic Agent Tasks
+- **5 diplomatic task definitions** in AGENT_TASK_DEFS: build_noble_relationship, diplomatic_courier, noble_intrigue_turn, noble_intrigue_discredit, noble_intrigue_expose
+- Full detection/caught/penalty handling with 3 tiers (own kingdom, foreign, at-war)
+- **Diplomatic tab** (🕊️) in agent task assignment UI with noble targeting dropdown and detection % display
+- StoryMode action notifications from agent task assignments and sabotage/arson
+
+### Added — Noble Intrigue Foreign Kingdom Support
+- Noble intrigue actions now work on nobles in **foreign kingdoms** when visiting their towns
+- Foreign kingdom: 2x cost, +15% detection
+- At war: 4x cost, +25% total detection
+- Penalties for getting caught: criminal charges, relationship damage, loyalty reduction, jail, execution (at-war)
+- `nobleNotoriety` tracking with passive decay
+
+### Changed — Audio Overhaul
+- All story dialog audio regenerated with **Kokoro TTS** (replacing Edge TTS)
+- Narrator voice changed to **British male** (bm_lewis)
+- Voice mapping: narrator→bm_lewis, lady_elowen→bf_emma, general_theron→am_liam, father→am_michael, mother→af_bella, king_aldric→bm_fable, harlan→bm_george
+- 310+ audio files total, 13 MB
+- Missing ch0_intro narrator audio files added (quest tracker line, journey line)
+
+### Fixed
+- **"Rest before your journey" objective** not completing (rest was in early-return list)
+- **"Escaped indentured servitude" achievement** incorrectly triggering in story mode (now requires `_wasIndentured` flag)
+- **Ch7 market structure** — was using array iteration instead of `market.supply` object
+- **Iron ore cleared from Ashford market** at Ch8 "Fire and Iron" start
+- **Tracker hide/progress save-load/commission storage** bugs from audit
+- **Narrator audio alignment** and Ashford iron ore clearing at Ch8
+- **Ch0 intro audio** — quest tracker line (index 3) and journey line (index 4)
+
 ## [0.77.0] - Map Event Indicators, Notification Filters & Story Mode Fixes
 
 ### Added — Map Event Indicators
