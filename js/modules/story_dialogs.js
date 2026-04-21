@@ -708,9 +708,11 @@
             portrait: "lady_elowen",
             lines: [
                 "War is a blunt instrument, {boy|girl}. The sharpest blade is one that never needs to be drawn.",
-                "Korvath's king rules through fear, but his nobles are restless. If we can turn enough of them against him, the kingdom crumbles from within.",
-                "First, you'll need the Kingmaker skill — visit a skill trainer. Then travel to Korvathi towns and use noble intrigue against their nobles.",
-                "Turn nobles against their king to erode real loyalty. Discredit them to undermine how the king perceives their worth. Pit them against each other to shatter their unity.",
+                "We must weaken Korvath from within. First, learn the Kingmaker skill — no schemer can succeed without it.",
+                "Hire an agent — someone discreet who can work on our behalf in enemy territory. Set them to diplomatic tasks — building relationships with Korvathi nobles, carrying messages, winning trust we can exploit later.",
+                "Establish an outpost near Ashford and grow it. A thriving settlement with happy people shows Korvathi nobles what Valdren stands for. Build roads to connect it — let prosperity do the talking.",
+                "Send caravans between the kingdoms. Trade builds bridges — and bridges let our whispers travel. We need at least ten thousand gold worth of goods flowing across the border.",
+                "Once your influence is spread wide enough, travel to Korvathi towns yourself. Turn nobles against their king to erode real loyalty. Discredit them to undermine how the king perceives their worth. Pit them against each other to shatter their unity.",
                 "Be careful — getting caught in enemy territory carries severe consequences. But succeed, and we end this war without a single battle."
             ]
         },
@@ -720,9 +722,12 @@
             portrait: "general_theron",
             lines: [
                 "Diplomacy is for cowards and fools. Korvath understands one language: steel.",
-                "I need 500 weapons — swords, bows, any quality will do. And 500 sets of armor to protect the soldiers who'll wield them.",
-                "We also need 100 horses for cavalry and supply lines. Sell them directly to the kingdom, fulfill commissions — I don't care how you do it.",
-                "You're a merchant, {boy|girl}. Supply me with what I need, and I'll deliver you a victory. Once our army is armed, we march on Ashford."
+                "First things first — hire an agent. Someone who can operate behind enemy lines. Set them against a Korvathi noble — sabotage, intimidation, whatever keeps the enemy off balance.",
+                "Build a forward outpost near the border. Fortify it with walls, grow the population to at least ten souls, and build roads connecting it to Ferrowdale and Ashford. We need supply lines for the assault.",
+                "While your outpost grows, sabotage three of their buildings in enemy territory. Cripple their ability to produce weapons and supplies. Your agent can help, or do it yourself if you've got the nerve.",
+                "I need ten thousand gold donated to the kingdom treasury. War isn't cheap — soldiers need to be paid, siege weapons built, supply wagons provisioned.",
+                "Then I need 500 weapons — swords, bows, any quality will do. And 500 sets of armor. We also need 100 horses for cavalry and supply lines.",
+                "You're a merchant, {boy|girl}. Produce them in your buildings, then supply them to the kingdom. Once our army is armed and funded, we march on Ashford."
             ]
         },
 

@@ -1696,7 +1696,8 @@ function _buildAgentExpandedUI(agent, data) {
         var cats = [
             { id: 'hostile', label: '⚔️ Hostile', color: '#c44e52' },
             { id: 'business', label: '📊 Business', color: '#55a868' },
-            { id: 'intel', label: '🕵️ Intel', color: '#5dade2' }
+            { id: 'intel', label: '🕵️ Intel', color: '#5dade2' },
+            { id: 'diplomatic', label: '🕊️ Diplomatic', color: '#d4a017' }
         ];
         for (var ci = 0; ci < cats.length; ci++) {
             var cat = cats[ci];
@@ -1780,6 +1781,8 @@ function showAgentTaskCategory(agentId, category) {
         html += _buildBusinessTaskUI(agentId, defs);
     } else if (category === 'intel') {
         html += _buildIntelTaskUI(agentId, defs);
+    } else if (category === 'diplomatic') {
+        html += _buildDiplomaticTaskUI(agentId, defs);
     }
 
     area.innerHTML = html;
@@ -1910,6 +1913,46 @@ function _buildIntelTaskUI(agentId, defs) {
     return html;
 }
 
+function _buildDiplomaticTaskUI(agentId, defs) {
+    var html = '';
+    // Target selection dropdown (nobles only)
+    html += '<div style="margin-bottom:6px;">';
+    html += '<label style="font-size:0.7rem;color:#ccc;">Target Noble:</label> ';
+    html += '<select id="agentDiploTarget_' + agentId + '" style="font-size:0.7rem;padding:2px;max-width:200px;">';
+
+    try {
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        if (world && world.people) {
+            for (var pi = 0; pi < world.people.length; pi++) {
+                var p = world.people[pi];
+                if (!p.alive || p.occupation !== 'noble') continue;
+                var pTown = Engine.findTown(p.townId);
+                var pKingdom = pTown && pTown.kingdomId ? (Engine.findKingdom ? Engine.findKingdom(pTown.kingdomId) : null) : null;
+                var label = (p.firstName || '') + ' ' + (p.lastName || '') + ' (Noble' + (pTown ? ', ' + pTown.name : '') + (pKingdom ? ', ' + pKingdom.name : '') + ')';
+                html += '<option value="' + p.id + '">' + escapeHtml(label.trim()) + '</option>';
+            }
+        }
+    } catch(e) {}
+    html += '</select>';
+    html += '</div>';
+
+    // Action checkboxes
+    html += '<div style="font-size:0.68rem;color:#ccc;margin-bottom:4px;">Allowed Actions:</div>';
+    var diploTasks = ['build_noble_relationship', 'diplomatic_courier', 'noble_intrigue_turn', 'noble_intrigue_discredit', 'noble_intrigue_expose'];
+    for (var di = 0; di < diploTasks.length; di++) {
+        var dt = diploTasks[di];
+        var dd = defs[dt];
+        if (!dd) continue;
+        html += '<label style="font-size:0.68rem;color:#ddd;display:block;margin:2px 0;cursor:pointer;">';
+        html += '<input type="checkbox" id="agentAction_' + agentId + '_' + dt + '" value="' + dt + '" style="margin-right:4px;">';
+        html += dd.icon + ' ' + dd.label + ' <span style="color:#888;">(' + Math.round(dd.baseDetection * 100) + '% base detection)</span>';
+        html += '</label>';
+    }
+
+    html += '<button class="btn-medieval" data-action="assignDiplomaticTask" data-id="' + agentId + '" style="font-size:0.7rem;padding:4px 10px;margin-top:6px;background:rgba(212,160,23,0.2);border-color:rgba(212,160,23,0.4);color:#d4a017;">⚡ Assign Diplomatic Task</button>';
+    return html;
+}
+
 function onAgentBizTaskChange(agentId) {
     var sel = document.getElementById('agentBizTask_' + agentId);
     var descEl = document.getElementById('agentBizDesc_' + agentId);
@@ -1969,6 +2012,30 @@ function assignIntelTask(agentId) {
         params.targetId = targetSel.value;
     }
     var result = Player.assignAgentTask(agentId, taskSel.value, params);
+    toast(result.message, result.success ? 'success' : 'warning');
+    if (result.success) openNobilityDialog();
+}
+
+function assignDiplomaticTask(agentId) {
+    var targetSel = document.getElementById('agentDiploTarget_' + agentId);
+    if (!targetSel || !targetSel.value) { toast('Select a target noble.', 'warning'); return; }
+
+    var diploTasks = ['build_noble_relationship', 'diplomatic_courier', 'noble_intrigue_turn', 'noble_intrigue_discredit', 'noble_intrigue_expose'];
+    var allowedActions = {};
+    var firstChecked = null;
+    for (var i = 0; i < diploTasks.length; i++) {
+        var cb = document.getElementById('agentAction_' + agentId + '_' + diploTasks[i]);
+        if (cb && cb.checked) {
+            allowedActions[diploTasks[i]] = true;
+            if (!firstChecked) firstChecked = diploTasks[i];
+        }
+    }
+    if (!firstChecked) { toast('Check at least one action.', 'warning'); return; }
+
+    var result = Player.assignAgentTask(agentId, firstChecked, {
+        targetId: targetSel.value,
+        allowedActions: allowedActions
+    });
     toast(result.message, result.success ? 'success' : 'warning');
     if (result.success) openNobilityDialog();
 }
@@ -3036,6 +3103,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.assignHostileTask = assignHostileTask;
     UI.assignBusinessTask = assignBusinessTask;
     UI.assignIntelTask = assignIntelTask;
+    UI.assignDiplomaticTask = assignDiplomaticTask;
     // -- Revolt Deal --
     UI.openRevoltDealDialog = openRevoltDealDialog;
     UI.checkRevoltDealOffer = checkRevoltDealOffer;
@@ -3065,6 +3133,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('assignHostileTask', function(_t, d) { if (d.id) UI.assignHostileTask(d.id); });
     UI.registerAction('assignBusinessTask', function(_t, d) { if (d.id) UI.assignBusinessTask(d.id); });
     UI.registerAction('assignIntelTask', function(_t, d) { if (d.id) UI.assignIntelTask(d.id); });
+    UI.registerAction('assignDiplomaticTask', function(_t, d) { if (d.id) UI.assignDiplomaticTask(d.id); });
     UI.registerAction('_switchProposeActionTab', function(_t, d) { if (d.id && d.val) UI._switchProposeActionTab(d.id, d.val); });
     UI.registerAction('_nobilityRequestBuilding', function(_t, d) { if (d.id) UI._nobilityRequestBuilding(d.id); });
     UI.registerAction('_nobilityProposeLaw', function(_t, d) { if (d.id) UI._nobilityProposeLaw(d.id); });

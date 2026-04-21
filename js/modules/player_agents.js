@@ -79,6 +79,10 @@
         };
         player.agents.push(agent);
         Engine.logEvent(player.fullName + ' hired agent ' + agent.name + ' in ' + (Engine.findTown(townId) || {}).name + '.', null, 'my_business');
+        // Notify story mode
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('hire_agent', { agentId: agent.id });
+        }
         return { success: true, message: '✅ Hired ' + agent.name + ' for ' + hireFee + 'g (' + cost + 'g/day). Skills: ⚔️' + agent.skills.combat + ' 🥷' + agent.skills.stealth + ' 📊' + agent.skills.trade + ' 🗣️' + agent.skills.persuasion, agent: agent };
     }
 
@@ -121,7 +125,13 @@
         guard_properties: { category: 'business', label: 'Guard Properties', icon: '🛡️', duration: 0, skillKey: 'combat', baseDetection: 0, desc: 'Protect your buildings from sabotage and theft' },
         // INTELLIGENCE tasks
         spy_on_target: { category: 'intel', label: 'Spy on Target', icon: '🕵️', duration: 7, skillKey: 'stealth', baseDetection: 0.20, desc: 'Gather intel on target\'s assets, income, and weaknesses' },
-        counter_intel: { category: 'intel', label: 'Counter-Intelligence', icon: '🛡️', duration: 0, skillKey: 'stealth', baseDetection: 0, desc: 'Detect and prevent schemes against you' }
+        counter_intel: { category: 'intel', label: 'Counter-Intelligence', icon: '🛡️', duration: 0, skillKey: 'stealth', baseDetection: 0, desc: 'Detect and prevent schemes against you' },
+        // DIPLOMATIC tasks
+        build_noble_relationship: { category: 'diplomatic', label: 'Build Noble Relationship', icon: '🤝', duration: 0, skillKey: 'persuasion', baseDetection: 0.10, desc: 'Gradually improve relationship between player and target noble' },
+        diplomatic_courier: { category: 'diplomatic', label: 'Diplomatic Courier', icon: '📜', duration: 10, skillKey: 'persuasion', baseDetection: 0.05, desc: 'Carry diplomatic messages and gifts to improve standing' },
+        noble_intrigue_turn: { category: 'diplomatic', label: 'Turn Noble Against King', icon: '🏴', duration: 0, skillKey: 'persuasion', baseDetection: 0.30, desc: 'Undermine target noble\'s loyalty to their king' },
+        noble_intrigue_discredit: { category: 'diplomatic', label: 'Discredit Noble', icon: '📜', duration: 0, skillKey: 'persuasion', baseDetection: 0.25, desc: 'Spread misinformation to damage noble\'s perceived loyalty' },
+        noble_intrigue_expose: { category: 'diplomatic', label: 'Expose Noble Secrets', icon: '💥', duration: 0, skillKey: 'stealth', baseDetection: 0.20, desc: 'Investigate and expose damaging information about a noble' }
     };
 
     function assignAgentTask(agentId, taskType, params) {
@@ -139,6 +149,11 @@
         // For hostile tasks, need a target
         if (def.category === 'hostile' && !params.targetId) {
             return { success: false, message: 'Must select a target for hostile tasks.' };
+        }
+
+        // For diplomatic tasks, need a target noble
+        if (def.category === 'diplomatic' && !params.targetId) {
+            return { success: false, message: 'Must select a target noble for diplomatic tasks.' };
         }
 
         // For business tasks with budget, validate
@@ -173,6 +188,11 @@
         // If agent is not in the target town, they need to travel first
         if (targetTown && targetTown !== agent.townId) {
             _startAgentTravel(agent, targetTown);
+        }
+
+        // Notify story mode of agent task assignment
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('assign_agent_task', { agentId: agent.id, taskType: taskType, category: def.category, targetId: params.targetId || null });
         }
 
         return { success: true, message: '✅ ' + agent.name + ' assigned: ' + def.icon + ' ' + def.label + (targetTown && targetTown !== agent.townId ? ' (traveling to target)' : '') };
@@ -329,6 +349,8 @@
             _executeBusinessAction(agent, day, rng);
         } else if (def.category === 'intel') {
             _executeIntelAction(agent, day, rng);
+        } else if (def.category === 'diplomatic') {
+            _executeDiplomaticAction(agent, day, rng);
         }
     }
 
@@ -477,6 +499,9 @@
         var bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
         bld._disabledUntil = day + 15 + (rng ? rng.randInt(0, 15) : 10);
         agent.reports.push({ day: day, msg: '🔨 Sabotaged ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + '. Disabled for ' + (bld._disabledUntil - day) + ' days.' });
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('agent_sabotage', { agentId: agent.id, townId: agent.townId, targetId: agent.task.targetId });
+        }
     }
 
     function _agentArsonBuilding(agent, target, town, day, rng) {
@@ -496,6 +521,9 @@
         if (town.prosperity) town.prosperity = Math.max(0, town.prosperity - 3);
         agent.reports.push({ day: day, msg: '🔥 Burned down ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + ' in ' + town.name + '!' });
         Engine.logEvent('A building in ' + town.name + ' was destroyed by fire!');
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('agent_sabotage', { agentId: agent.id, townId: agent.townId, targetId: agent.task.targetId });
+        }
     }
 
     function _agentRaidCaravan(agent, target, day, rng) {
@@ -821,6 +849,209 @@
         var detectChance = 0.03 + agent.skills.stealth * 0.015;
         if (rng ? rng.chance(detectChance) : Math.random() < detectChance) {
             agent.reports.push({ day: day, msg: '🛡️ Counter-intelligence detected suspicious activity near your operations!' });
+        }
+    }
+
+    // ── DIPLOMATIC TASK EXECUTION ──
+    function _executeDiplomaticAction(agent, day, rng) {
+        _sync();
+        var task = agent.task;
+        var def = AGENT_TASK_DEFS[task.type];
+        var target = Engine.findPerson(task.targetId);
+        if (!target || !target.alive) {
+            agent.reports.push({ day: day, msg: '❌ Target noble no longer available. Task cancelled.' });
+            agent.task = null;
+            agent.status = 'idle';
+            return;
+        }
+
+        // Detection chance reduced by persuasion skill (diplomatic tasks use persuasion primarily)
+        var skillKey = def.skillKey || 'persuasion';
+        var detection = def.baseDetection * (1 - agent.skills[skillKey] * 0.06);
+        detection = Math.max(0.03, Math.min(0.90, detection));
+
+        // Foreign kingdom detection increase
+        var agentTown = Engine.findTown(agent.townId);
+        var agentKingdomId = agentTown ? agentTown.kingdomId : '';
+        var isOwnKingdom = agentKingdomId === player.citizenshipKingdomId;
+        var isForeignKingdom = agentKingdomId && !isOwnKingdom;
+        if (isForeignKingdom) detection += 0.15;
+
+        var caught = rng ? rng.chance(detection) : Math.random() < detection;
+
+        if (caught) {
+            agent.catchCount++;
+            agent.reports.push({ day: day, msg: '🚨 ' + agent.name + ' was CAUGHT during ' + def.label + '!' });
+
+            // Use same caught penalty logic as hostile (own/foreign/at-war tiers)
+            var isForeignAtWar = false;
+            if (isForeignKingdom) {
+                var w = Engine.getWorldState ? Engine.getWorldState() : null;
+                if (w && w.wars) {
+                    for (var wi = 0; wi < w.wars.length; wi++) {
+                        var war = w.wars[wi];
+                        if ((war.attackerId === player.citizenshipKingdomId && war.defenderId === agentKingdomId) ||
+                            (war.defenderId === player.citizenshipKingdomId && war.attackerId === agentKingdomId)) {
+                            isForeignAtWar = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (isOwnKingdom) {
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + 20);
+                agent.status = 'caught';
+                agent._cooldownUntil = day + 10;
+                agent.task = null;
+            } else if (isForeignAtWar) {
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + 25);
+                var agentExecuted = rng ? rng.chance(0.30) : Math.random() < 0.30;
+                if (agentExecuted) {
+                    agent.reports.push({ day: day, msg: '☠️ ' + agent.name + ' was executed as a spy!' });
+                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed in a hostile kingdom!', null, 'my_business');
+                    agent.status = 'dead';
+                    agent.task = null;
+                    agent._dead = true;
+                    if (player.agents) {
+                        for (var _ari = player.agents.length - 1; _ari >= 0; _ari--) {
+                            if (player.agents[_ari].id === agent.id) {
+                                player.agents.splice(_ari, 1);
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    agent.status = 'jailed';
+                    agent._jailUntil = day + 10;
+                    agent.task = null;
+                }
+            } else if (isForeignKingdom) {
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + 12);
+                agent.status = 'jailed';
+                agent._jailUntil = day + 5;
+                agent.task = null;
+            } else {
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + 15);
+                agent.status = 'caught';
+                agent._cooldownUntil = day + 7;
+                agent.task = null;
+            }
+
+            if (player.reputation && agentKingdomId) {
+                player.reputation[agentKingdomId] = Math.max(0, (player.reputation[agentKingdomId] || 50) - 2);
+            }
+            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during diplomatic intrigue.', null, 'my_business');
+            return;
+        }
+
+        // Success — execute specific diplomatic action
+        var targetTown = Engine.findTown(target.townId || agent.townId);
+        switch (task.type) {
+            case 'build_noble_relationship':
+                _agentBuildRelationship(agent, target, targetTown, day, rng);
+                break;
+            case 'diplomatic_courier':
+                _agentDiplomaticCourier(agent, target, targetTown, day, rng);
+                break;
+            case 'noble_intrigue_turn':
+                _agentIntrigueTurnNoble(agent, target, targetTown, day, rng);
+                break;
+            case 'noble_intrigue_discredit':
+                _agentIntrigueDiscredit(agent, target, targetTown, day, rng);
+                break;
+            case 'noble_intrigue_expose':
+                _agentIntrigueExpose(agent, target, targetTown, day, rng);
+                break;
+        }
+    }
+
+    function _agentBuildRelationship(agent, target, town, day, rng) {
+        _sync();
+        // Improve player's relationship with this noble
+        var relGain = 3 + Math.floor(agent.skills.persuasion / 2);
+        if (Player.modifyRelationship) Player.modifyRelationship(target.id, relGain);
+        agent.reports.push({ day: day, msg: '🤝 ' + agent.name + ' strengthened your relationship with ' + target.firstName + ' (+' + relGain + ' rel).' });
+        // Notify story mode
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('agent_diplomatic', { action: 'build_relationship', targetId: target.id, targetKingdomId: town ? town.kingdomId : '' });
+        }
+    }
+
+    function _agentDiplomaticCourier(agent, target, town, day, rng) {
+        _sync();
+        // Improve reputation in target's kingdom
+        var repGain = 2 + Math.floor(agent.skills.persuasion / 3);
+        if (town && town.kingdomId && player.reputation) {
+            player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + repGain);
+        }
+        var relGain = 1 + Math.floor(agent.skills.persuasion / 4);
+        if (Player.modifyRelationship) Player.modifyRelationship(target.id, relGain);
+        agent.reports.push({ day: day, msg: '📜 ' + agent.name + ' delivered diplomatic messages to ' + target.firstName + '. Rep +' + repGain + ', rel +' + relGain + '.' });
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('agent_diplomatic', { action: 'diplomatic_courier', targetId: target.id, targetKingdomId: town ? town.kingdomId : '' });
+        }
+    }
+
+    function _agentIntrigueTurnNoble(agent, target, town, day, rng) {
+        _sync();
+        // Reduce noble's loyalty to their king
+        var loyaltyDrop = rng ? rng.randInt(5, 15) : 10;
+        target.kingLoyalty = Math.max(0, (target.kingLoyalty || 50) - loyaltyDrop);
+        if (!target._nobleRelationships) target._nobleRelationships = {};
+        // Find the king of this noble's kingdom
+        var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
+        if (kingdom && kingdom.king) {
+            target._nobleRelationships[kingdom.king] = Math.max(-100, (target._nobleRelationships[kingdom.king] || 0) - loyaltyDrop);
+        }
+        agent.reports.push({ day: day, msg: '🏴 ' + agent.name + ' undermined ' + target.firstName + '\'s loyalty to the king (-' + loyaltyDrop + ' loyalty).' });
+        // Notify story mode
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: loyaltyDrop, targetKingdomId: town ? town.kingdomId : '', nobleId: target.id });
+        }
+    }
+
+    function _agentIntrigueDiscredit(agent, target, town, day, rng) {
+        _sync();
+        // Reduce noble's perceived loyalty
+        var percDrop = rng ? rng.randInt(4, 12) : 8;
+        target.perceivedKingLoyalty = Math.max(0, (target.perceivedKingLoyalty !== undefined ? target.perceivedKingLoyalty : (target.kingLoyalty || 50)) - percDrop);
+        // Also damage reputation
+        var repDrop = rng ? rng.randInt(5, 12) : 8;
+        if (target.reputation === undefined) target.reputation = {};
+        var kId = town ? town.kingdomId : '';
+        if (kId) target.reputation[kId] = Math.max(0, (target.reputation[kId] || 50) - repDrop);
+        agent.reports.push({ day: day, msg: '📜 ' + agent.name + ' discredited ' + target.firstName + '. Perceived loyalty -' + percDrop + ', reputation -' + repDrop + '.' });
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('noble_intrigue', { perceivedLoyaltyReduced: percDrop, relationshipDamage: repDrop, targetKingdomId: kId, nobleId: target.id });
+        }
+    }
+
+    function _agentIntrigueExpose(agent, target, town, day, rng) {
+        _sync();
+        // Expose secrets — damage relationships between nobles
+        var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
+        var kId = town ? town.kingdomId : '';
+        if (kingdom) {
+            var allNobles = [];
+            var people = Engine.getPeople ? Engine.getPeople() : [];
+            for (var ni = 0; ni < people.length; ni++) {
+                if (people[ni].alive && people[ni].occupation === 'noble' && people[ni].socialRank && people[ni].socialRank[kId]) {
+                    allNobles.push(people[ni]);
+                }
+            }
+            for (var ai = 0; ai < allNobles.length; ai++) {
+                if (allNobles[ai].id === target.id) continue;
+                if (!allNobles[ai]._nobleRelationships) allNobles[ai]._nobleRelationships = {};
+                var drop = rng ? rng.randInt(5, 15) : 10;
+                allNobles[ai]._nobleRelationships[target.id] = Math.max(-100, (allNobles[ai]._nobleRelationships[target.id] || 0) - drop);
+            }
+        }
+        var percDrop = rng ? rng.randInt(6, 16) : 10;
+        target.perceivedKingLoyalty = Math.max(0, (target.perceivedKingLoyalty !== undefined ? target.perceivedKingLoyalty : (target.kingLoyalty || 50)) - percDrop);
+        agent.reports.push({ day: day, msg: '💥 ' + agent.name + ' exposed ' + target.firstName + '\'s secrets! Relationships and perceived loyalty damaged.' });
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('noble_intrigue', { perceivedLoyaltyReduced: percDrop, relationshipDamage: 15, targetKingdomId: kId, nobleId: target.id });
         }
     }
 

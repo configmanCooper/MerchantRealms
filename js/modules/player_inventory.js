@@ -1265,6 +1265,10 @@
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('💰 Donated ' + cost + 'g to ' + kingdom.name + '! Rep +' + repGain.toFixed(1), 'success');
         }
+        // Notify story mode
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('donate_gold', { kingdomId: kingdomId, amount: cost });
+        }
         return { success: true, message: 'Donated ' + cost + 'g. Reputation +' + repGain.toFixed(1) + '.' };
     }
 

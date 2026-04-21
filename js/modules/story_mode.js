@@ -318,12 +318,26 @@ var StoryMode = (function () {
             branches: {
                 diplomatic: [
                     { id: 'ch17a_kingmaker', type: 'buy_skill', skill: 'kingmaker_skill', desc: 'Learn the Kingmaker skill', done: false },
+                    { id: 'ch17a_hire_agent', type: 'custom', fn: '_checkHasAgent', desc: 'Hire an agent', done: false },
+                    { id: 'ch17a_agent_diplo', type: 'custom', fn: '_checkAgentDiplomaticTask', desc: 'Assign an agent to a diplomatic task', done: false, after: 'ch17a_hire_agent' },
+                    { id: 'ch17a_found_outpost', type: 'custom', fn: '_checkDiploOutpost', desc: 'Found a diplomatic outpost connected to Ashford', done: false },
+                    { id: 'ch17a_outpost_pop', type: 'custom', fn: '_checkDiploOutpostPop', desc: 'Grow your outpost population to at least 10', done: false, after: 'ch17a_found_outpost' },
+                    { id: 'ch17a_outpost_happy', type: 'custom', fn: '_checkDiploOutpostHappy', desc: 'Keep outpost happiness above 60', done: false, after: 'ch17a_found_outpost' },
+                    { id: 'ch17a_trade_value', type: 'custom', fn: '_checkCrossKingdomTrade', desc: 'Trade 10,000g worth of goods via caravans between kingdoms (0/10000)', done: false },
                     { id: 'ch17a_undermine_loyalty',    type: 'custom', fn: '_checkUndermineLoyalty',    desc: 'Turn nobles against their king \u2014 reduce loyalty by 100 total (0/100)', done: false, after: 'ch17a_kingmaker' },
                     { id: 'ch17a_undermine_perceived',  type: 'custom', fn: '_checkUnderminePerceived',  desc: 'Discredit nobles \u2014 reduce perceived loyalty by 50 total (0/50)', done: false, after: 'ch17a_kingmaker' },
                     { id: 'ch17a_undermine_reputation', type: 'custom', fn: '_checkUndermineReputation', desc: 'Sow discord \u2014 damage noble reputation by 50 total (0/50)', done: false, after: 'ch17a_kingmaker' },
                     { id: 'ch17a_victory',   type: 'custom', fn: '_checkDiplomaticVictory', desc: 'The nobles depose the Korvathi king', done: false }
                 ],
                 military: [
+                    { id: 'ch17b_hire_agent', type: 'custom', fn: '_checkHasAgent', desc: 'Hire an agent', done: false },
+                    { id: 'ch17b_agent_hostile', type: 'custom', fn: '_checkAgentHostileTask', desc: 'Set an agent hostile to an enemy noble', done: false, after: 'ch17b_hire_agent' },
+                    { id: 'ch17b_found_outpost', type: 'custom', fn: '_checkMilitaryOutpost', desc: 'Found a military outpost with security upgrades', done: false },
+                    { id: 'ch17b_outpost_pop', type: 'custom', fn: '_checkMilitaryOutpostPop', desc: 'Grow your outpost population to at least 10', done: false, after: 'ch17b_found_outpost' },
+                    { id: 'ch17b_outpost_road_ferro', type: 'custom', fn: '_checkOutpostRoadFerro', desc: 'Build a road from your outpost to Ferrowdale', done: false, after: 'ch17b_found_outpost' },
+                    { id: 'ch17b_outpost_road_ash', type: 'custom', fn: '_checkOutpostRoadAshford', desc: 'Build a road from your outpost to Ashford', done: false, after: 'ch17b_found_outpost' },
+                    { id: 'ch17b_sabotage', type: 'custom', fn: '_checkSabotage3', desc: 'Sabotage or burn 3 buildings in enemy territory (0/3)', done: false },
+                    { id: 'ch17b_donate_treasury', type: 'custom', fn: '_checkDonatedTreasury', desc: 'Donate 10,000g to the kingdom treasury (0/10000)', done: false },
                     { id: 'ch17b_produce_weapons', type: 'produce_item', item: 'base:swords|base:bows', qty: 500, desc: 'Produce 500 weapons in your buildings (0/500)', done: false },
                     { id: 'ch17b_produce_armor',   type: 'produce_item', item: 'base:armor',            qty: 500, desc: 'Produce 500 armor in your buildings (0/500)',   done: false },
                     { id: 'ch17b_produce_horses',  type: 'produce_item', item: 'horses',                qty: 100, desc: 'Produce 100 horses in your buildings (0/100)',  done: false },
@@ -819,6 +833,73 @@ var StoryMode = (function () {
                     }
                 }
             }
+            _reEvalCustomObjectives();
+            return;
+        }
+
+        // Track agent sabotage/arson for military path
+        if (actionType === 'agent_sabotage' || actionType === 'player_sabotage') {
+            if (_storyState.path === 'military') {
+                _storyState.flags._sabotageCount = (_storyState.flags._sabotageCount || 0) + 1;
+                var sc = _storyState.flags._sabotageCount;
+                for (var si = 0; si < ch.objectives.length; si++) {
+                    if (ch.objectives[si].id === 'ch17b_sabotage') {
+                        ch.objectives[si].desc = 'Sabotage or burn ' + 3 + ' buildings in enemy territory (' + Math.min(sc, 3) + '/3)';
+                        break;
+                    }
+                }
+            }
+            _reEvalCustomObjectives();
+            return;
+        }
+
+        // Track treasury donations for military path
+        if (actionType === 'donate_gold') {
+            if (_storyState.path === 'military' && data.amount) {
+                _storyState.flags._treasuryDonated = (_storyState.flags._treasuryDonated || 0) + data.amount;
+                var td = _storyState.flags._treasuryDonated;
+                for (var di = 0; di < ch.objectives.length; di++) {
+                    if (ch.objectives[di].id === 'ch17b_donate_treasury') {
+                        ch.objectives[di].desc = 'Donate 10,000g to the kingdom treasury (' + Math.min(td, 10000) + '/10000)';
+                        break;
+                    }
+                }
+            }
+            _reEvalCustomObjectives();
+            return;
+        }
+
+        // Track cross-kingdom caravan trade for diplomatic path
+        if (actionType === 'caravan_trade_complete') {
+            if (_storyState.path === 'diplomatic' && data.goldValue) {
+                _storyState.flags._crossKingdomTrade = (_storyState.flags._crossKingdomTrade || 0) + data.goldValue;
+                var ct = _storyState.flags._crossKingdomTrade;
+                for (var ci2 = 0; ci2 < ch.objectives.length; ci2++) {
+                    if (ch.objectives[ci2].id === 'ch17a_trade_value') {
+                        ch.objectives[ci2].desc = 'Trade 10,000g worth of goods via caravans between kingdoms (' + Math.min(ct, 10000) + '/10000)';
+                        break;
+                    }
+                }
+            }
+            _reEvalCustomObjectives();
+            return;
+        }
+
+        // Track agent task assignments
+        if (actionType === 'assign_agent_task') {
+            if (data.category === 'hostile') {
+                _storyState.flags._agentHostileAssigned = true;
+            }
+            if (data.category === 'diplomatic') {
+                _storyState.flags._agentDiplomaticAssigned = true;
+            }
+            _reEvalCustomObjectives();
+            return;
+        }
+
+        // Track agent hiring
+        if (actionType === 'hire_agent') {
+            _storyState.flags._hasAgent = true;
             _reEvalCustomObjectives();
             return;
         }
@@ -1333,9 +1414,17 @@ var StoryMode = (function () {
 
     function _tryTriggerConspiracy() {
         if (_storyState.flags._conspiracyTriggered) return;
+        // All intrigue objectives must be done
         if ((_storyState.flags._loyaltyTotal || 0) >= 100 &&
             (_storyState.flags._perceivedTotal || 0) >= 50 &&
-            (_storyState.flags._reputationTotal || 0) >= 50) {
+            (_storyState.flags._reputationTotal || 0) >= 50 &&
+            // Also require other diplomatic path objectives
+            _storyState.objectives.ch17a_hire_agent &&
+            _storyState.objectives.ch17a_agent_diplo &&
+            _storyState.objectives.ch17a_found_outpost &&
+            _storyState.objectives.ch17a_outpost_pop &&
+            _storyState.objectives.ch17a_outpost_happy &&
+            _storyState.objectives.ch17a_trade_value) {
             _storyState.flags._conspiracyTriggered = true;
             _showDialog('ch17a_conspiracy_success', function () {
                 // Dialog completion sets diplomaticVictory via _dialogFlagMap
@@ -1349,21 +1438,187 @@ var StoryMode = (function () {
 
     _hooks._checkBattleWon = function () {
         if (_storyState.flags.battleWon) return true;
-        // Auto-trigger battle once all 6 objectives are done (3 produce + 3 supply)
+        // Auto-trigger battle once ALL military objectives are done
         if (_storyState.objectives.ch17b_produce_weapons &&
             _storyState.objectives.ch17b_produce_armor &&
             _storyState.objectives.ch17b_produce_horses &&
             _storyState.objectives.ch17b_supply_weapons &&
             _storyState.objectives.ch17b_supply_armor &&
             _storyState.objectives.ch17b_supply_horses &&
+            _storyState.objectives.ch17b_hire_agent &&
+            _storyState.objectives.ch17b_agent_hostile &&
+            _storyState.objectives.ch17b_found_outpost &&
+            _storyState.objectives.ch17b_outpost_pop &&
+            _storyState.objectives.ch17b_outpost_road_ferro &&
+            _storyState.objectives.ch17b_outpost_road_ash &&
+            _storyState.objectives.ch17b_sabotage &&
+            _storyState.objectives.ch17b_donate_treasury &&
             !_storyState.flags._battleTriggered) {
             _storyState.flags._battleTriggered = true;
-            // Scripted battle for Ashford — Valdren army recaptures it
             _showDialog('ch17b_battle_victory', function() {
                 // Battle victory dialog sets battleWon flag via _onDialogCompleted
             });
         }
         return false;
+    };
+
+    // ── New Ch17 objective hooks ──
+
+    // Agent hiring check (both paths)
+    _hooks._checkHasAgent = function () {
+        if (_storyState.flags._hasAgent) return true;
+        if (typeof Player !== 'undefined' && Player.state) {
+            var agents = Player.state.agents || [];
+            if (agents.length > 0) {
+                _storyState.flags._hasAgent = true;
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Agent assigned to hostile task (military path)
+    _hooks._checkAgentHostileTask = function () {
+        if (_storyState.flags._agentHostileAssigned) return true;
+        if (typeof Player !== 'undefined' && Player.state) {
+            var agents = Player.state.agents || [];
+            for (var i = 0; i < agents.length; i++) {
+                if (agents[i].task && agents[i].task.type) {
+                    var tDefs = Player.getAgentData ? Player.getAgentData().taskDefs : {};
+                    var tDef = tDefs[agents[i].task.type];
+                    if (tDef && tDef.category === 'hostile') {
+                        _storyState.flags._agentHostileAssigned = true;
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
+    // Agent assigned to diplomatic task (diplomatic path)
+    _hooks._checkAgentDiplomaticTask = function () {
+        if (_storyState.flags._agentDiplomaticAssigned) return true;
+        if (typeof Player !== 'undefined' && Player.state) {
+            var agents = Player.state.agents || [];
+            for (var i = 0; i < agents.length; i++) {
+                if (agents[i].task && agents[i].task.type) {
+                    var tDefs = Player.getAgentData ? Player.getAgentData().taskDefs : {};
+                    var tDef = tDefs[agents[i].task.type];
+                    if (tDef && tDef.category === 'diplomatic') {
+                        _storyState.flags._agentDiplomaticAssigned = true;
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
+    // Military outpost checks
+    _hooks._checkMilitaryOutpost = function () {
+        if (typeof Player !== 'undefined' && Player.state) {
+            var outposts = Player.state.outposts || [];
+            for (var i = 0; i < outposts.length; i++) {
+                var op = outposts[i];
+                // Check for security upgrades (wall level >= 1)
+                if ((op.wallLevel || 0) >= 1) return true;
+            }
+        }
+        return false;
+    };
+
+    _hooks._checkMilitaryOutpostPop = function () {
+        if (typeof Player !== 'undefined' && Player.state) {
+            var outposts = Player.state.outposts || [];
+            for (var i = 0; i < outposts.length; i++) {
+                if ((outposts[i].population || 0) >= 10) return true;
+            }
+        }
+        return false;
+    };
+
+    // Check road from any player outpost to Ferrowdale
+    _hooks._checkOutpostRoadFerro = function () {
+        return _checkOutpostRoadTo('Ferrowdale');
+    };
+
+    // Check road from any player outpost to Ashford
+    _hooks._checkOutpostRoadAshford = function () {
+        return _checkOutpostRoadTo('Ashford');
+    };
+
+    function _checkOutpostRoadTo(townName) {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return false;
+        var outposts = (Player.state && Player.state.outposts) || [];
+        if (outposts.length === 0) return false;
+        var world = Engine.getWorldState ? Engine.getWorldState() : null;
+        if (!world || !world.roads) return false;
+
+        // Find the target town
+        var targetTownId = null;
+        var towns = world.towns || [];
+        for (var ti = 0; ti < towns.length; ti++) {
+            if (towns[ti].name === townName) { targetTownId = towns[ti].id; break; }
+        }
+        if (!targetTownId) return false;
+
+        // Check if any outpost has a road connecting to the target town
+        for (var oi = 0; oi < outposts.length; oi++) {
+            var opId = outposts[oi].id || outposts[oi].townId;
+            for (var ri = 0; ri < world.roads.length; ri++) {
+                var road = world.roads[ri];
+                if ((road.from === opId && road.to === targetTownId) ||
+                    (road.to === opId && road.from === targetTownId)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // Diplomatic outpost checks
+    _hooks._checkDiploOutpost = function () {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return false;
+        var outposts = (Player.state && Player.state.outposts) || [];
+        if (outposts.length === 0) return false;
+        // Check if any outpost is connected to Ashford via road
+        return _checkOutpostRoadTo('Ashford');
+    };
+
+    _hooks._checkDiploOutpostPop = function () {
+        if (typeof Player !== 'undefined' && Player.state) {
+            var outposts = Player.state.outposts || [];
+            for (var i = 0; i < outposts.length; i++) {
+                if ((outposts[i].population || 0) >= 10) return true;
+            }
+        }
+        return false;
+    };
+
+    _hooks._checkDiploOutpostHappy = function () {
+        if (typeof Player !== 'undefined' && Player.state) {
+            var outposts = Player.state.outposts || [];
+            for (var i = 0; i < outposts.length; i++) {
+                if ((outposts[i].happiness || 0) >= 60) return true;
+            }
+        }
+        return false;
+    };
+
+    // Sabotage 3 buildings in enemy territory
+    _hooks._checkSabotage3 = function () {
+        return (_storyState.flags._sabotageCount || 0) >= 3;
+    };
+
+    // Donated 10k to kingdom treasury
+    _hooks._checkDonatedTreasury = function () {
+        return (_storyState.flags._treasuryDonated || 0) >= 10000;
+    };
+
+    // Cross-kingdom caravan trade >= 10000
+    _hooks._checkCrossKingdomTrade = function () {
+        return (_storyState.flags._crossKingdomTrade || 0) >= 10000;
     };
 
     // ── Ch 18: Reunion ──
@@ -1852,6 +2107,34 @@ var StoryMode = (function () {
                         if (ch.objectives[uri].id === 'ch17a_undermine_reputation') {
                             var rt = Math.min(_storyState.flags._reputationTotal, 50);
                             ch.objectives[uri].desc = 'Sow discord \u2014 damage noble reputation by 50 total (' + rt + '/50)';
+                            break;
+                        }
+                    }
+                }
+                // Restore sabotage, treasury, and trade progress descriptions
+                if (_storyState.flags._sabotageCount) {
+                    for (var sbi = 0; sbi < ch.objectives.length; sbi++) {
+                        if (ch.objectives[sbi].id === 'ch17b_sabotage') {
+                            var sc = Math.min(_storyState.flags._sabotageCount, 3);
+                            ch.objectives[sbi].desc = 'Sabotage or burn 3 buildings in enemy territory (' + sc + '/3)';
+                            break;
+                        }
+                    }
+                }
+                if (_storyState.flags._treasuryDonated) {
+                    for (var tdi = 0; tdi < ch.objectives.length; tdi++) {
+                        if (ch.objectives[tdi].id === 'ch17b_donate_treasury') {
+                            var td = Math.min(_storyState.flags._treasuryDonated, 10000);
+                            ch.objectives[tdi].desc = 'Donate 10,000g to the kingdom treasury (' + td + '/10000)';
+                            break;
+                        }
+                    }
+                }
+                if (_storyState.flags._crossKingdomTrade) {
+                    for (var cti = 0; cti < ch.objectives.length; cti++) {
+                        if (ch.objectives[cti].id === 'ch17a_trade_value') {
+                            var ct = Math.min(_storyState.flags._crossKingdomTrade, 10000);
+                            ch.objectives[cti].desc = 'Trade 10,000g worth of goods via caravans between kingdoms (' + ct + '/10000)';
                             break;
                         }
                     }

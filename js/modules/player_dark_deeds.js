@@ -293,6 +293,10 @@
             }
         }
         Engine.logEvent(`A building in ${town.name} has been sabotaged! Production halted for ${disabledDays} days.`);
+        // Notify story mode of player sabotage
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('player_sabotage', { townId: townId, kingdomId: town.kingdomId });
+        }
         return { success: true, message: `✅ Building sabotaged! Disabled for ${disabledDays} days.` };
     }
 

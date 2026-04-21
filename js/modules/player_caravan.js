@@ -1657,6 +1657,14 @@
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
                 var _tariffMsg = _cTariff.tariff > 0 ? ' (tariff: ' + _cTariff.tariff + 'g)' : '';
                 logCaravan(caravan, '💰 Sold ' + sellQty + ' ' + resName + ' for ' + revenue + 'g at ' + townName + '.' + _tariffMsg);
+                // Track cross-kingdom caravan trade for story mode
+                if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
+                    var _originId = caravan.route[0];
+                    var _originTown = Engine.findTown(_originId);
+                    if (_originTown && _originTown.kingdomId && town.kingdomId && _originTown.kingdomId !== town.kingdomId) {
+                        StoryMode.onPlayerAction('caravan_trade_complete', { goldValue: grossRevenue, fromKingdom: _originTown.kingdomId, toKingdom: town.kingdomId });
+                    }
+                }
             }
         }
 
@@ -2168,6 +2176,13 @@
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
                                 var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
                                 Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, null, 'my_business');
+                                // Track cross-kingdom caravan trade for story mode
+                                if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
+                                    var _legOrigin = Engine.findTown(caravan.route[0]);
+                                    if (_legOrigin && _legOrigin.kingdomId && destTown.kingdomId && _legOrigin.kingdomId !== destTown.kingdomId) {
+                                        StoryMode.onPlayerAction('caravan_trade_complete', { goldValue: grossRev, fromKingdom: _legOrigin.kingdomId, toKingdom: destTown.kingdomId });
+                                    }
+                                }
                             }
                         }
                         caravan.totalProfit = (caravan.totalProfit || 0) + tripRevenue;
