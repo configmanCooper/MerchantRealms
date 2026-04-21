@@ -1518,14 +1518,20 @@ var StoryMode = (function () {
 
     /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
     function _ensureCh11Conditions() {
+        var day = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
         if (_storyState.flags.edmundInjured) {
             var edmund = _findFamilyNPC('father');
             if (edmund) {
                 edmund.injuries = edmund.injuries || [];
                 if (!edmund.injuries.some(function(inj) { return inj.type === 'burn'; })) {
-                    edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
+                    edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: day });
                     _log('Applied burn injury to Edmund');
                 }
+                edmund.injured = true;
+                edmund.injuryType = 'burn';
+                edmund.injuryName = 'Forge burn';
+                edmund.injurySeverity = 'moderate';
+                edmund.injuryDay = day; // reset so auto-heal timer restarts
                 if (edmund.health > 60) edmund.health = 60;
             }
         }
@@ -1534,9 +1540,13 @@ var StoryMode = (function () {
             if (margret) {
                 margret.illnesses = margret.illnesses || [];
                 if (!margret.illnesses.some(function(ill) { return ill.type === 'fever'; })) {
-                    margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
+                    margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: day });
                     _log('Applied fever illness to Margret');
                 }
+                margret.sick = true;
+                margret.illness = 'fever';
+                margret.illnessDay = day; // reset so auto-heal timer restarts
+                margret.illnessSeverity = 'moderate';
                 if (margret.health > 50) margret.health = 50;
             }
         }
