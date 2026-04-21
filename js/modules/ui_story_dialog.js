@@ -148,6 +148,7 @@
                 suffix = '_' + sex;
             }
             var audioFile = 'audio/story/' + dialogKey + '_' + _lineIndex + suffix + '.mp3';
+            console.log('[StoryAudio] Playing:', audioFile);
             var audio = new Audio(audioFile);
             audio.volume = 0.9;
             var playPromise = audio.play();
