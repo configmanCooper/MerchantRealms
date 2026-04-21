@@ -315,7 +315,7 @@ var StoryMode = (function () {
                 { id: 'ch10_own_mill',      type: 'own_building',   building: 'flour_mill|bakery', desc: 'Build a flour mill or bakery',           done: false },
                 { id: 'ch10_hire_worker',   type: 'hire_worker',                                   desc: 'Hire a worker',                          done: false },
                 { id: 'ch10_assign_worker', type: 'assign_worker',  building: 'flour_mill|bakery', desc: 'Assign the worker to your building',     done: false, after: 'ch10_hire_worker' },
-                { id: 'ch10_return_ashford', type: 'arrive_town',   town: 'Ashford',               desc: 'Travel back to Ashford',                 done: false }
+                { id: 'ch10_return_ashford', type: 'arrive_town',   town: 'Ashford',               desc: 'Travel back to Ashford',                 done: false, after: ['ch10_own_mill', 'ch10_hire_worker', 'ch10_assign_worker'] }
             ],
             endDialog: 'ch10_complete',
             unlockButtons: [],
@@ -557,6 +557,18 @@ var StoryMode = (function () {
             out.push(o);
         }
         return out;
+    }
+
+    /** Check if an objective's 'after' dependencies are all met. Supports string or array. */
+    function _afterMet(obj) {
+        if (!obj.after) return true;
+        if (Array.isArray(obj.after)) {
+            for (var ai = 0; ai < obj.after.length; ai++) {
+                if (!_storyState.objectives[obj.after[ai]]) return false;
+            }
+            return true;
+        }
+        return !!_storyState.objectives[obj.after];
     }
 
     /** Mark an objective done by id and persist to _storyState.objectives map. */
@@ -946,7 +958,7 @@ var StoryMode = (function () {
         for (var i = 0; i < ch.objectives.length; i++) {
             var obj = ch.objectives[i];
             if (obj.done || obj.type !== 'custom' || !obj.fn) continue;
-            if (obj.after && !_storyState.objectives[obj.after]) continue;
+            if (!_afterMet(obj)) continue;
             if (_hooks[obj.fn] && _hooks[obj.fn]()) {
                 _markDone(obj.id);
                 _toast('Objective complete: ' + obj.desc);
@@ -1098,7 +1110,7 @@ var StoryMode = (function () {
                                (obj.type === 'buy_horse' && actionType === 'buy_item' && data.item === 'horses');
             if (!objTypeMatch) { continue; }
             // Sequential gating: if objective has 'after' dependency, skip until that is done
-            if (obj.after && !_storyState.objectives[obj.after]) { continue; }
+            if (!_afterMet(obj)) { continue; }
 
             var matched = false;
             // Handle produce_item objectives (matches produce_item actions from player buildings)
@@ -2036,7 +2048,7 @@ var StoryMode = (function () {
             var obj = ch.objectives[i];
             if (obj.done) { continue; }
             // Sequential gating: if objective has 'after' dependency, skip until that is done
-            if (obj.after && !_storyState.objectives[obj.after]) { continue; }
+            if (!_afterMet(obj)) { continue; }
             if (_checkObjective(obj)) {
                 _markDone(obj.id);
                 _toast('Objective complete: ' + obj.desc);
