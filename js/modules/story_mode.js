@@ -133,7 +133,7 @@ var StoryMode = (function () {
             id: 'ch4b', title: 'The Road is Dangerous', act: 1,
             startDialog: 'ch4b_ambush',
             objectives: [
-                { id: 'ch4b_buy_weapon', type: 'buy_item', item: 'category:weapon', qty: 1,
+                { id: 'ch4b_buy_weapon', type: 'buy_item', item: 'bows|bows_good|bows_excellent|swords|swords_good|swords_excellent', qty: 1,
                   desc: 'Buy a weapon from the market',
                   hint: 'Open Trade and look for swords or bows to arm yourself',
                   done: false },

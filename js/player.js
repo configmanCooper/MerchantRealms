@@ -31908,7 +31908,10 @@
         if (player.guards.length >= maxGuards) return { success: false, message: 'Already at maximum ' + maxGuards + ' guards.' };
         var cost = CONFIG.PLAYER_GUARD_HIRE_COST || 30;
         if (hasSkill('cheap_security')) cost = Math.floor(cost * 0.80);
-        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to hire a guard.' };
+
+        // Story mode: first guard is free
+        var isFirstStoryGuard = player.storyMode && player.storyMode.active && player.guards.length === 0 && !player.storyMode._firstGuardHired;
+        if (!isFirstStoryGuard && player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to hire a guard.' };
 
         // Find a suitable NPC from the current town
         var townPeople = Engine.getPeople ? Engine.getPeople(player.townId) : [];
@@ -31916,9 +31919,6 @@
         for (var gi = 0; gi < player.guards.length; gi++) {
             if (player.guards[gi].personId) existingGuardIds[player.guards[gi].personId] = true;
         }
-        // Filter: alive, adult, not already a guard, not the player's spouse, not a child,
-        // not elite merchants, nobles, kings, anyone with burgher rank or above,
-        // not player employees, outpost workers/guards, or travelers
         var _playerEmployees = {};
         if (player.employees) { for (var _ei = 0; _ei < player.employees.length; _ei++) _playerEmployees[player.employees[_ei]] = true; }
         var _opTown = Engine.findTown(player.townId);
@@ -31933,13 +31933,10 @@
             if (p.id === player.spouseId) continue;
             if (p.isPlayerGuard) continue;
             if (p.traveling) continue;
-            // Exclude player employees and outpost staff
             if (_playerEmployees[p.id]) continue;
             if (_opWorkers[p.id]) continue;
             if (p.occupation === 'outpost_worker') continue;
-            // Exclude elite merchants, nobles, and kings
             if (p.isEliteMerchant || p.occupation === 'noble' || p.occupation === 'king') continue;
-            // Exclude anyone with burgher rank (index 2) or above in any kingdom
             var _highRank = false;
             if (p.socialRank) {
                 for (var _rk in p.socialRank) {
@@ -31959,8 +31956,13 @@
         var chosen = preferred.length > 0 ? (rng.pick ? rng.pick(preferred) : preferred[Math.floor(rng.random() * preferred.length)])
             : (rng.pick ? rng.pick(candidates) : candidates[Math.floor(rng.random() * candidates.length)]);
 
-        player.gold -= cost;
-        logFinance(-cost, 'guards', 'Hired personal guard');
+        if (isFirstStoryGuard) {
+            // First story guard is free — mark so it only happens once
+            player.storyMode._firstGuardHired = true;
+        } else {
+            player.gold -= cost;
+            logFinance(-cost, 'guards', 'Hired personal guard');
+        }
 
         // Mark NPC as player guard
         chosen.isPlayerGuard = true;
@@ -31978,13 +31980,31 @@
         };
         player.guards.push(guard);
         player.personalGuards = player.guards.length;
-        Engine.logEvent('\uD83D\uDEE1\uFE0F Hired ' + guardName + ' as a personal guard for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')');
+
+        if (isFirstStoryGuard) {
+            Engine.logEvent('🛡️ ' + guardName + ' has volunteered to guard you — a favor owed to your father. (FREE)');
+            // Show dialog from the guard NPC
+            if (typeof UI !== 'undefined' && UI.queueStoryDialog) {
+                UI.queueStoryDialog({
+                    speaker: guardName,
+                    portrait: 'townsperson',
+                    lines: [
+                        "You\'re Edmund\'s " + (player.sex === 'F' ? 'daughter' : 'son') + "? Your father saved my life years ago. I owe him a debt I can never repay. Let me guard you on the roads — free of charge."
+                    ]
+                });
+            }
+        } else {
+            Engine.logEvent('🛡️ Hired ' + guardName + ' as a personal guard for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')');
+        }
 
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('hire_guard', {});
         }
 
-        return { success: true, message: '\uD83D\uDEE1\uFE0F ' + guardName + ' hired for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')', guard: guard };
+        var msg = isFirstStoryGuard
+            ? '🛡️ ' + guardName + ' volunteers to guard you for free!'
+            : '🛡️ ' + guardName + ' hired for ' + cost + 'g. (' + player.guards.length + '/' + maxGuards + ')';
+        return { success: true, message: msg, guard: guard };
     }
 
     function dismissPersonalGuard(guardId) {
