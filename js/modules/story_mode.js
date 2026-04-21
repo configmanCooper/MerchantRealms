@@ -102,7 +102,7 @@ var StoryMode = (function () {
             id: 'ch3b', title: 'The Open Market', act: 1,
             startDialog: 'ch3b_street_trade',
             objectives: [
-                { id: 'ch3b_street_sell', type: 'custom', fn: '_checkOpenedStreetTrading',
+                { id: 'ch3b_street_sell', type: 'open_street_trading',
                   desc: 'Look at Street Trading',
                   hint: 'Click the Street Trading (🤝) button to see what locals are looking to buy — they often pay above market price!',
                   done: false }
@@ -1224,6 +1224,10 @@ var StoryMode = (function () {
                     matched = true;
                     break;
 
+                case 'open_street_trading':
+                    matched = true;
+                    break;
+
                 case 'equip_item':
                     if (obj.slot && data.slot !== obj.slot) break;
                     matched = true;
@@ -2133,6 +2137,7 @@ var StoryMode = (function () {
         'reach_rank':      null,
         'rest':            '#btnRest',
         'street_trade':    '#btnStreet',
+        'open_street_trading': '#btnStreet',
         'equip_item':      '#btnCharacter',
         'hire_guard':      '#btnCharacter',
         'install_addon':   '#btnHousing',
