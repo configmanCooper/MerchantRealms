@@ -753,6 +753,9 @@ var StoryMode = (function () {
                 }
                 return false;
 
+            case 'buy_horse':
+                return typeof Player !== 'undefined' && Player.state && Player.state.horses && Player.state.horses.length > 0;
+
             // The remaining types (buy_item, sell_item, arrive_town, etc.)
             // are event-driven — they get marked done via onPlayerAction().
             default:
@@ -1987,6 +1990,20 @@ var StoryMode = (function () {
      */
     function tick(player) {
         if (!_storyState.active || _storyState.complete) { return; }
+
+        // Story mode: strip horse permit laws from all kingdoms (for loaded saves)
+        if (!_storyState.flags._horseLawStripped && typeof Engine !== 'undefined' && Engine.getWorld) {
+            var _w = Engine.getWorld();
+            if (_w && _w.kingdoms) {
+                for (var _ki = 0; _ki < _w.kingdoms.length; _ki++) {
+                    var _k = _w.kingdoms[_ki];
+                    if (_k.laws && _k.laws.specialLaws) {
+                        _k.laws.specialLaws = _k.laws.specialLaws.filter(function(l) { return l.id !== 'draft_animal_law'; });
+                    }
+                }
+            }
+            _storyState.flags._horseLawStripped = true;
+        }
 
         var ch = _currentChapterDef();
         if (!ch) { return; }
