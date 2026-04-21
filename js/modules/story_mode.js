@@ -1132,9 +1132,13 @@ var StoryMode = (function () {
                         // Check town restriction if specified
                         if (obj.town) {
                             var sellTown = data.town || data.townName || '';
-                            if (typeof Player !== 'undefined' && !sellTown) {
-                                var pt = Engine.findTown ? Engine.findTown(Player.townId) : null;
+                            if (!sellTown && data.townId) {
+                                var pt = Engine.findTown ? Engine.findTown(data.townId) : null;
                                 if (pt) sellTown = pt.name;
+                            }
+                            if (!sellTown && typeof Player !== 'undefined' && Player.state) {
+                                var pt2 = Engine.findTown ? Engine.findTown(Player.state.townId) : null;
+                                if (pt2) sellTown = pt2.name;
                             }
                             if (sellTown !== obj.town) break;
                         }
