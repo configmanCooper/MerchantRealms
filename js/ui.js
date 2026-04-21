@@ -554,8 +554,8 @@ window.UI = (function () {
         registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
         registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
-        registerAction('unmountSaddle', function(_t, d) { var r=Player.unmountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel(); });
-        registerAction('mountSaddle', function(_t, d) { var r=Player.mountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');UI.openCharacterPanel(); });
+        registerAction('unmountSaddle', function(_t, d) { var r=Player.unmountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');openCharacterDialog(); });
+        registerAction('mountSaddle', function(_t, d) { var r=Player.mountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');openCharacterDialog(); });
         registerAction('toggleLeaderboardTrack', function(_t, d) { var r = Player[d.method || 'trackMerchant'](d.id); if(typeof UI!=='undefined' && UI.toast) UI.toast(r.message, r.success?'success':'warning'); UI.openLeaderboard(); });
         registerAction('setWeddingChoice', function(_t, d) { if (d.choice && d.id) UI.setWeddingChoice(d.choice, d.id); });
         registerAction('_setWaTabAndOpen', function() { window._waAutoRefresh=!window._waAutoRefresh;UI.openWorldAnalytics() });
@@ -756,7 +756,7 @@ window.UI = (function () {
         registerAction('buyContainer', function(_t, d) { if (d.id) UI.buyContainer(d.id); });
         registerAction('mountContainerUI', function(_t, d) { if (d.id) UI.mountContainerUI(d.id); });
         registerAction('dismountContainerUI', function() { UI.dismountContainerUI(); });
-        registerAction('buyHorsePermitAndOpenCharacterPanel', function(_t, d) { Player.buyHorsePermit(d.id, d.val); UI.openCharacterPanel(); });
+        registerAction('buyHorsePermitAndOpenCharacterPanel', function(_t, d) { Player.buyHorsePermit(d.id, d.val); openCharacterDialog(); });
         registerAction('mountHorseUI', function() { UI.mountHorseUI(); });
         registerAction('sellHorse', function(_t, d) { if (d.id) UI.sellHorse(d.id); });
         registerAction('dismountHorseUI', function(_t, d) { if (d.id) UI.dismountHorseUI(d.id); });
