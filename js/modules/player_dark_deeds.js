@@ -49,6 +49,14 @@
         player._schemeCooldowns[key] = (Engine.getDay ? Engine.getDay() : 0) + days;
     }
 
+    // Helper: check if two kingdoms are at war
+    function _areKingdomsAtWar(kingdomIdA, kingdomIdB) {
+        if (typeof Engine === 'undefined' || !Engine.findKingdom) return false;
+        var kA = Engine.findKingdom(kingdomIdA);
+        if (kA && kA.atWar && kA.atWar.has && kA.atWar.has(kingdomIdB)) return true;
+        return false;
+    }
+
     // M6: Escalating detection for repeat targeting
     function _getRepeatTargetPenalty(nobleId) {
         if (!player._schemeTargetHistory) player._schemeTargetHistory = {};
@@ -239,7 +247,7 @@
             player.reputation[kId] = 0;
             Engine.logEvent(`${player.fullName} has been exiled from ${kingdom ? kingdom.name : 'the kingdom'}!`);
         }
-        return actualFine;
+        return fine;
     }
 
     // ── (a) Sabotage Building ──
@@ -2842,6 +2850,13 @@
         if (!nobleA || !nobleA.alive || !nobleB || !nobleB.alive) return { success: false, message: 'Both nobles must be alive.' };
         if (nobleAId === nobleBId) return { success: false, message: 'Must select two different nobles.' };
 
+        // Foreign kingdom cost multiplier
+        var isForeign = kingdom && kingdom.id !== player.citizenshipKingdomId;
+        var isAtWar = isForeign && _areKingdomsAtWar(player.citizenshipKingdomId, kingdom.id);
+        var costMultiplier = isAtWar ? 4 : (isForeign ? 2 : 1);
+        var adjustedCost = 300 * costMultiplier;
+        if (player.gold < adjustedCost) return { success: false, message: 'Need ' + adjustedCost + 'g to orchestrate this scheme.' + (isForeign ? ' (foreign kingdom penalty)' : '') };
+
         // M1: Cooldown check
         var _cdA = _checkSchemeCooldown('pit_nobles', nobleAId);
         var _cdB = _checkSchemeCooldown('pit_nobles', nobleBId);
@@ -2852,6 +2867,10 @@
         var detection = calculateCorruptDetection(0.25, town);
         // M6: Escalating detection for repeat targeting
         detection += _getRepeatTargetPenalty(nobleAId) + _getRepeatTargetPenalty(nobleBId);
+        // Foreign kingdom detection increase
+        if (isForeign) detection += 0.15;
+        if (isAtWar) detection += 0.10;
+        detection = Math.min(0.95, detection);
 
         // Influence bonuses from having nobles in your pocket
         var bonusA = _getNobleInfluenceBonus(nobleAId);
@@ -2862,7 +2881,7 @@
         if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
         var successChance = Math.min(0.90, baseSuccess + totalBonus);
 
-        player.gold -= 300;
+        player.gold -= adjustedCost;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
 
         if (rng && rng.chance(detection)) {
@@ -2875,6 +2894,17 @@
             _recordSchemeTarget(nobleAId); _recordSchemeTarget(nobleBId);
             _setSchemeCooldown('pit_nobles', nobleAId, 14);
             _setSchemeCooldown('pit_nobles', nobleBId, 14);
+            // Foreign kingdom: harsher caught penalties
+            if (isForeign) {
+                var extraJail = isAtWar ? 14 : 5;
+                player.jailedUntilDay = Math.max(player.jailedUntilDay || 0, Engine.getDay() + extraJail);
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + (isAtWar ? 15 : 8));
+                if (isAtWar && rng && rng.chance(0.15)) {
+                    player.gold = Math.max(0, player.gold - 5000);
+                    player.jailedUntilDay = Engine.getDay() + 30;
+                    Engine.logEvent('⚔️ ' + player.fullName + ' was nearly executed as a spy! Massive fine and extended imprisonment.');
+                }
+            }
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             var _cMsg = '🚨 CAUGHT! ' + nobleA.firstName + ' and ' + nobleB.firstName + ' realized your manipulation. -500g fine, -20 relationship with both.' + _nnMsg;
             _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, false, true, _cMsg);
@@ -2887,6 +2917,10 @@
             var damage = rng.randInt(15, 30);
             nobleA._nobleRelationships[nobleBId] = Math.max(-100, (nobleA._nobleRelationships[nobleBId] || 0) - damage);
             nobleB._nobleRelationships[nobleAId] = Math.max(-100, (nobleB._nobleRelationships[nobleAId] || 0) - damage);
+            // Internal strife also weakens loyalty to king
+            var pitLoyDrop = rng.randInt(3, 8);
+            nobleA.kingLoyalty = Math.max(0, (nobleA.kingLoyalty || 50) - pitLoyDrop);
+            nobleB.kingLoyalty = Math.max(0, (nobleB.kingLoyalty || 50) - pitLoyDrop);
             recordCorruptAction('pit_nobles', false);
             grantXP(20, 'Pitted nobles against each other');
             player.notoriety += 5;
@@ -2897,6 +2931,10 @@
             var _msg = '🗡️ Successfully pitted ' + nobleA.firstName + ' against ' + nobleB.firstName + '! Their relationship dropped by ' + damage + '. (' + Math.round(successChance * 100) + '% chance)';
             _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, true, false, _msg);
             Engine.logEvent('🗡️ Tensions rise between ' + nobleA.firstName + ' and ' + nobleB.firstName + '.');
+            // Notify story mode of loyalty reduction (both nobles combined)
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: pitLoyDrop * 2, targetKingdomId: kingdom.id, nobleId: nobleAId });
+            }
             return { success: true, message: _msg };
         }
 
@@ -2923,6 +2961,13 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
+        // Foreign kingdom cost multiplier
+        var isForeign = kingdom && kingdom.id !== player.citizenshipKingdomId;
+        var isAtWar = isForeign && _areKingdomsAtWar(player.citizenshipKingdomId, kingdom.id);
+        var costMultiplier = isAtWar ? 4 : (isForeign ? 2 : 1);
+        var adjustedCost = 500 * costMultiplier;
+        if (player.gold < adjustedCost) return { success: false, message: 'Need ' + adjustedCost + 'g to fund this campaign.' + (isForeign ? ' (foreign kingdom penalty)' : '') };
+
         // M1: Cooldown check
         var _cd = _checkSchemeCooldown('turn_noble', nobleId);
         if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
@@ -2930,6 +2975,10 @@
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.30, town);
         detection += _getRepeatTargetPenalty(nobleId); // M6
+        // Foreign kingdom detection increase
+        if (isForeign) detection += 0.15;
+        if (isAtWar) detection += 0.10;
+        detection = Math.min(0.95, detection);
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.25;
         if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
@@ -2960,7 +3009,7 @@
             return { success: false, message: 'The kingdom has no king to undermine. Gold refunded.' };
         }
 
-        player.gold -= 500;
+        player.gold -= adjustedCost;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
 
         if (rng && rng.chance(detection)) {
@@ -2971,6 +3020,17 @@
             modifyRelationship(nobleId, -15);
             _recordSchemeTarget(nobleId);
             _setSchemeCooldown('turn_noble', nobleId, 14);
+            // Foreign kingdom: harsher caught penalties
+            if (isForeign) {
+                var extraJail = isAtWar ? 14 : 5;
+                player.jailedUntilDay = Math.max(player.jailedUntilDay || 0, Engine.getDay() + extraJail);
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + (isAtWar ? 15 : 8));
+                if (isAtWar && rng && rng.chance(0.15)) {
+                    player.gold = Math.max(0, player.gold - 5000);
+                    player.jailedUntilDay = Engine.getDay() + 30;
+                    Engine.logEvent('⚔️ ' + player.fullName + ' was nearly executed as a spy! Massive fine and extended imprisonment.');
+                }
+            }
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             var _cMsg = '🚨 CAUGHT trying to turn ' + noble.firstName + ' against the king! Fined 1000g, jailed 5 days, -25 rep, -15 relationship.' + _nnMsg;
             _logSchemeOutcome('turn_noble', noble.firstName, false, true, _cMsg);
@@ -2982,6 +3042,7 @@
                 if (!noble._nobleRelationships) noble._nobleRelationships = {};
                 var loyaltyDrop = rng.randInt(15, 30);
                 noble._nobleRelationships[king.id] = Math.max(-100, (noble._nobleRelationships[king.id] || 0) - loyaltyDrop);
+                noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) - loyaltyDrop);
                 modifyRelationship(nobleId, 5);
                 recordCorruptAction('turn_noble_against_king', false);
                 grantXP(25, 'Turned noble against king');
@@ -2992,6 +3053,10 @@
                 var _sMsg = '🏴 ' + noble.firstName + ' is now more disillusioned with the king! Loyalty dropped by ' + loyaltyDrop + '. (' + Math.round(successChance * 100) + '% chance)';
                 _logSchemeOutcome('turn_noble', noble.firstName, true, false, _sMsg);
                 Engine.logEvent('🏴 ' + noble.firstName + '\'s loyalty to the crown wavers.');
+                // Notify story mode of loyalty reduction
+                if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                    StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: loyaltyDrop, targetKingdomId: kingdom.id, nobleId: nobleId });
+                }
                 return { success: true, message: _sMsg };
             }
         }
@@ -3018,12 +3083,23 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
+        // Foreign kingdom cost multiplier
+        var isForeign = kingdom && kingdom.id !== player.citizenshipKingdomId;
+        var isAtWar = isForeign && _areKingdomsAtWar(player.citizenshipKingdomId, kingdom.id);
+        var costMultiplier = isAtWar ? 4 : (isForeign ? 2 : 1);
+        var adjustedCost = 400 * costMultiplier;
+        if (player.gold < adjustedCost) return { success: false, message: 'Need ' + adjustedCost + 'g to spread misinformation.' + (isForeign ? ' (foreign kingdom penalty)' : '') };
+
         var _cd = _checkSchemeCooldown('discredit', nobleId);
         if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
 
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.25, town);
         detection += _getRepeatTargetPenalty(nobleId);
+        // Foreign kingdom detection increase
+        if (isForeign) detection += 0.15;
+        if (isAtWar) detection += 0.10;
+        detection = Math.min(0.95, detection);
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.30;
         if (hasSkill('master_forger')) baseSuccess += 0.15; // forged evidence
@@ -3031,7 +3107,7 @@
         if (hasSkill('shadow_dealings')) baseSuccess += 0.05;
         var successChance = Math.min(0.85, baseSuccess + influenceBonus);
 
-        player.gold -= 400;
+        player.gold -= adjustedCost;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
 
         if (rng && rng.chance(detection)) {
@@ -3042,6 +3118,17 @@
             modifyRelationship(nobleId, -25);
             _recordSchemeTarget(nobleId);
             _setSchemeCooldown('discredit', nobleId, 14);
+            // Foreign kingdom: harsher caught penalties
+            if (isForeign) {
+                var extraJail = isAtWar ? 14 : 5;
+                player.jailedUntilDay = Math.max(player.jailedUntilDay || 0, Engine.getDay() + extraJail);
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + (isAtWar ? 15 : 8));
+                if (isAtWar && rng && rng.chance(0.15)) {
+                    player.gold = Math.max(0, player.gold - 5000);
+                    player.jailedUntilDay = Engine.getDay() + 30;
+                    Engine.logEvent('⚔️ ' + player.fullName + ' was nearly executed as a spy! Massive fine and extended imprisonment.');
+                }
+            }
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             var _cMsg = '🚨 CAUGHT trying to discredit ' + noble.firstName + '! -600g fine, -20 rep, ' + noble.firstName + ' despises you (-25 relationship).' + _nnMsg;
             _logSchemeOutcome('discredit', noble.firstName, false, true, _cMsg);
@@ -3059,6 +3146,8 @@
             }
             if (noble.reputation === undefined) noble.reputation = {};
             noble.reputation[kingdom.id] = Math.max(0, (noble.reputation[kingdom.id] || 50) - rng.randInt(10, 20));
+            var discreditLoyDrop = rng.randInt(5, 12);
+            noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) - discreditLoyDrop);
 
             recordCorruptAction('discredit_noble', false);
             grantXP(20, 'Discredited noble');
@@ -3069,6 +3158,10 @@
             var _sMsg = '📜 Successfully discredited ' + noble.firstName + '! Their standing with the court has dropped. (' + Math.round(successChance * 100) + '% chance)';
             _logSchemeOutcome('discredit', noble.firstName, true, false, _sMsg);
             Engine.logEvent('📜 Rumors about ' + noble.firstName + '\'s incompetence spread through the court.');
+            // Notify story mode of loyalty reduction
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: discreditLoyDrop, targetKingdomId: kingdom.id, nobleId: nobleId });
+            }
             return { success: true, message: _sMsg };
         }
 
@@ -3161,6 +3254,13 @@
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
 
+        // Foreign kingdom cost multiplier
+        var isForeign = kingdom && kingdom.id !== player.citizenshipKingdomId;
+        var isAtWar = isForeign && _areKingdomsAtWar(player.citizenshipKingdomId, kingdom.id);
+        var costMultiplier = isAtWar ? 4 : (isForeign ? 2 : 1);
+        var adjustedCost = 600 * costMultiplier;
+        if (player.gold < adjustedCost) return { success: false, message: 'Need ' + adjustedCost + 'g to dig up and publicize secrets.' + (isForeign ? ' (foreign kingdom penalty)' : '') };
+
         var _cd = _checkSchemeCooldown('expose_secrets', nobleId);
         if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };
 
@@ -3169,6 +3269,10 @@
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.20, town);
         detection += _getRepeatTargetPenalty(nobleId);
+        // Foreign kingdom detection increase
+        if (isForeign) detection += 0.15;
+        if (isAtWar) detection += 0.10;
+        detection = Math.min(0.95, detection);
         var influenceBonus = _getNobleInfluenceBonus(nobleId);
         var baseSuccess = 0.25;
         if (hasSkill('dark_connections')) baseSuccess += 0.10;
@@ -3177,7 +3281,7 @@
         if (hasLocalSpy) baseSuccess += 0.15;
         var successChance = Math.min(0.85, baseSuccess + influenceBonus);
 
-        player.gold -= 600;
+        player.gold -= adjustedCost;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
 
         if (rng && rng.chance(detection)) {
@@ -3188,6 +3292,17 @@
             modifyRelationship(nobleId, -30);
             _recordSchemeTarget(nobleId);
             _setSchemeCooldown('expose_secrets', nobleId, 14);
+            // Foreign kingdom: harsher caught penalties
+            if (isForeign) {
+                var extraJail = isAtWar ? 14 : 5;
+                player.jailedUntilDay = Math.max(player.jailedUntilDay || 0, Engine.getDay() + extraJail);
+                player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + (isAtWar ? 15 : 8));
+                if (isAtWar && rng && rng.chance(0.15)) {
+                    player.gold = Math.max(0, player.gold - 5000);
+                    player.jailedUntilDay = Engine.getDay() + 30;
+                    Engine.logEvent('⚔️ ' + player.fullName + ' was nearly executed as a spy! Massive fine and extended imprisonment.');
+                }
+            }
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             var _cMsg = '🚨 CAUGHT investigating ' + noble.firstName + '\'s secrets! -800g fine, 3 days jail, ' + noble.firstName + ' is your enemy (-30 rel).' + _nnMsg;
             _logSchemeOutcome('expose_secrets', noble.firstName, false, true, _cMsg);
@@ -3226,6 +3341,9 @@
                 };
             }
 
+            var exposeLoyDrop = rng.randInt(8, 18);
+            noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) - exposeLoyDrop);
+
             recordCorruptAction('expose_secrets', false);
             grantXP(30, 'Exposed noble secrets');
             player.notoriety += 10;
@@ -3235,6 +3353,10 @@
             var _sMsg = '💥 ' + noble.firstName + '\'s secrets exposed (' + secretType.replace(/_/g, ' ') + ')! Reputation devastated, all nobles distance themselves. You now have blackmail leverage. (' + Math.round(successChance * 100) + '% chance)';
             _logSchemeOutcome('expose_secrets', noble.firstName, true, false, _sMsg);
             Engine.logEvent('💥 Scandalous revelations about ' + noble.firstName + ' ' + (noble.lastName || '') + ' rock the court of ' + kingdom.name + '!');
+            // Notify story mode of loyalty reduction
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('noble_intrigue', { loyaltyReduced: exposeLoyDrop, targetKingdomId: kingdom.id, nobleId: nobleId });
+            }
             return { success: true, message: _sMsg };
         }
 

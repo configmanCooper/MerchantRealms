@@ -360,18 +360,73 @@
                 punishResult = Player.checkNobleNotorietyPunishment(def.label);
             }
 
-            // Add noble notoriety AFTER the check (the check uses current value before this add)
-            player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
-                (player.nobleNotoriety || 0) + (CONFIG.NOBLE_NOTORIETY_AGENT_CAUGHT_ADD || 15));
+            // Determine if agent is in own kingdom or foreign
+            var agentTown = Engine.findTown(agent.townId);
+            var agentKingdomId = agentTown ? agentTown.kingdomId : '';
+            var isOwnKingdom = agentKingdomId === player.citizenshipKingdomId;
+            var isForeignKingdom = agentKingdomId && !isOwnKingdom;
+            var isForeignAtWar = false;
+            if (isForeignKingdom) {
+                var _playerK = Engine.findKingdom ? Engine.findKingdom(player.citizenshipKingdomId) : null;
+                if (_playerK && _playerK.atWar && _playerK.atWar.has && _playerK.atWar.has(agentKingdomId)) isForeignAtWar = true;
+            }
 
-            // Disable agent for 30 days (not jailed, not fined — just disabled)
-            var disableDays = CONFIG.NOBLE_NOTORIETY_AGENT_DISABLE_DAYS || 30;
-            agent.status = 'caught';
-            agent._cooldownUntil = day + disableDays;
-            agent.task = null;
+            // Noble notoriety penalties based on kingdom context
+            if (isOwnKingdom) {
+                // Own kingdom: +25 notoriety, disable 10 days
+                player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
+                    (player.nobleNotoriety || 0) + 25);
+                var disableDays = 10;
+                agent.status = 'caught';
+                agent._cooldownUntil = day + disableDays;
+                agent.task = null;
+            } else if (isForeignAtWar) {
+                // Foreign kingdom at war: +30 notoriety, 50% chance agent permanently lost
+                player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
+                    (player.nobleNotoriety || 0) + 30);
+                var agentExecuted = rng ? rng.chance(0.50) : Math.random() < 0.50;
+                if (agentExecuted) {
+                    // Agent permanently lost
+                    agent.reports.push({ day: day, msg: '☠️ ' + agent.name + ' was executed as a spy by the enemy kingdom!' });
+                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed as a spy in a hostile kingdom!', null, 'my_business');
+                    agent.status = 'dead';
+                    agent.task = null;
+                    agent._dead = true;
+                    // Remove agent from roster
+                    if (player.agents) {
+                        for (var _ari = player.agents.length - 1; _ari >= 0; _ari--) {
+                            if (player.agents[_ari].id === agent.id) {
+                                player.agents.splice(_ari, 1);
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    agent.status = 'jailed';
+                    agent._jailUntil = day + 14;
+                    agent.task = null;
+                    agent.reports.push({ day: day, msg: '🔒 ' + agent.name + ' was jailed for 14 days in a hostile kingdom.' });
+                }
+            } else if (isForeignKingdom) {
+                // Foreign kingdom not at war: +15 notoriety, agent jailed 7 days
+                player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
+                    (player.nobleNotoriety || 0) + 15);
+                agent.status = 'jailed';
+                agent._jailUntil = day + 7;
+                agent.task = null;
+                agent.reports.push({ day: day, msg: '🔒 ' + agent.name + ' was jailed for 7 days in a foreign kingdom.' });
+            } else {
+                // Fallback: original behavior
+                player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
+                    (player.nobleNotoriety || 0) + (CONFIG.NOBLE_NOTORIETY_AGENT_CAUGHT_ADD || 15));
+                var disableDays = CONFIG.NOBLE_NOTORIETY_AGENT_DISABLE_DAYS || 30;
+                agent.status = 'caught';
+                agent._cooldownUntil = day + disableDays;
+                agent.task = null;
+            }
 
             // Minor reputation hit (the agent was caught, not necessarily the player)
-            var repKingdomId = (Engine.findTown(agent.townId) || {}).kingdomId || '';
+            var repKingdomId = agentKingdomId || '';
             if (repKingdomId && player.reputation) {
                 player.reputation[repKingdomId] = Math.max(0, (player.reputation[repKingdomId] || 50) - 3);
             }
@@ -379,8 +434,9 @@
             if (punishResult && punishResult.punished) {
                 agent.reports.push({ day: day, msg: '⚠️ The nobles traced ' + agent.name + '\'s actions back to you! ' + punishResult.message });
                 Engine.logEvent('🔍 ' + player.fullName + '\'s scheming was discovered by the nobility! ' + punishResult.message, null, 'my_business');
-            } else {
-                Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during ' + def.label + ' and is laying low for ' + disableDays + ' days.', null, 'my_business');
+            } else if (!agent._dead) {
+                var _disableLabel = agent.status === 'jailed' ? ('jailed for ' + (agent._jailUntil - day) + ' days') : ('laying low for ' + ((agent._cooldownUntil || day) - day) + ' days');
+                Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during ' + def.label + ' and is ' + _disableLabel + '.', null, 'my_business');
             }
             return;
         }

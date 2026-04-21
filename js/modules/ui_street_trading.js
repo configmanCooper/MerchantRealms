@@ -13,6 +13,16 @@
     var formatGold = UI.formatGold;
     var escapeHtml = UI.escapeHtml;
 
+    // Selected foreign kingdom for Noble Intrigue tab
+    var _selectedForeignKingdom = null;
+
+    // Global refresh function for intrigue tab kingdom dropdown
+    window._refreshIntrigueTab = function(kingdomId) {
+        var citizenKId = (typeof Player !== 'undefined' && Player.state) ? Player.state.citizenshipKingdomId : null;
+        _selectedForeignKingdom = (kingdomId && kingdomId !== citizenKId) ? kingdomId : null;
+        if (typeof openNobilityDialog === 'function') openNobilityDialog();
+    };
+
     // ═══════════════════════════════════════════════════════════
     //  STREET TRADING DIALOG
     // ═══════════════════════════════════════════════════════════
@@ -1115,7 +1125,7 @@ function openNobilityDialog() {
 
     // ── INTRIGUE TAB ──
     html += '<div id="nobilityTab_intrigue" style="display:' + (_nobilityTab === 'intrigue' ? '' : 'none') + ';">';
-    html += _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank);
+    html += _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, _selectedForeignKingdom || null);
     html += '</div>';
 
     // Open modal
@@ -1239,8 +1249,53 @@ function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
 }
 
 // ── Noble Intrigue Tab Builder ──
-function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
+function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKingdomId) {
     var html = '';
+
+    // Determine which kingdom to show nobles from
+    var targetKingdomId = foreignKingdomId || citizenKingdomId;
+    var isForeignTarget = targetKingdomId !== citizenKingdomId;
+    var isAtWarWithTarget = false;
+    if (isForeignTarget) {
+        try {
+            var _playerK = (typeof Engine !== 'undefined' && Engine.findKingdom) ? Engine.findKingdom(citizenKingdomId) : null;
+            if (_playerK && _playerK.atWar && _playerK.atWar.has && _playerK.atWar.has(targetKingdomId)) isAtWarWithTarget = true;
+        } catch(e) {}
+    }
+
+    // Target Kingdom dropdown
+    var _allKingdoms = [];
+    try {
+        var _wdK = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
+        if (_wdK && _wdK.kingdoms) _allKingdoms = _wdK.kingdoms;
+    } catch(e) {}
+    if (_allKingdoms.length > 1) {
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:8px 10px;margin-bottom:10px;display:flex;align-items:center;gap:8px;">';
+        html += '<span style="font-size:0.82rem;color:var(--gold);">🌍 Target Kingdom:</span>';
+        html += '<select id="intrigue_target_kingdom" style="font-size:0.75rem;padding:3px;flex:1;" onchange="if(typeof _refreshIntrigueTab===\'function\')_refreshIntrigueTab(this.value)">';
+        for (var _ki = 0; _ki < _allKingdoms.length; _ki++) {
+            var _kdom = _allKingdoms[_ki];
+            var _kSelected = (_kdom.id === targetKingdomId) ? ' selected' : '';
+            var _kLabel = _kdom.name || _kdom.id;
+            if (_kdom.id === citizenKingdomId) _kLabel += ' (yours)';
+            var _kPlayerK2 = (typeof Engine !== 'undefined' && Engine.findKingdom) ? Engine.findKingdom(citizenKingdomId) : null;
+            if (_kdom.id !== citizenKingdomId && _kPlayerK2 && _kPlayerK2.atWar && _kPlayerK2.atWar.has && _kPlayerK2.atWar.has(_kdom.id)) _kLabel += ' ⚔️ AT WAR';
+            html += '<option value="' + _kdom.id + '"' + _kSelected + '>' + _kLabel + '</option>';
+        }
+        html += '</select>';
+        html += '</div>';
+    }
+
+    // Foreign kingdom warning
+    if (isForeignTarget) {
+        var _targetK = (typeof Engine !== 'undefined' && Engine.findKingdom) ? Engine.findKingdom(targetKingdomId) : null;
+        var _targetName = _targetK ? _targetK.name : targetKingdomId;
+        var _warTag = isAtWarWithTarget ? ' <span style="color:#c44e52;font-weight:bold;">⚔️ AT WAR — 4x costs, +25% detection</span>' : ' <span style="color:#e67e22;">2x costs, +15% detection</span>';
+        html += '<div style="background:rgba(196,78,82,0.12);border:1px solid rgba(196,78,82,0.3);border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.82rem;color:#e67e22;">🌍 Foreign Intrigue: <b>' + escapeHtml(_targetName) + '</b>' + _warTag + '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">Schemes against foreign nobles carry harsher penalties if caught.</div>';
+        html += '</div>';
+    }
 
     // Get kingdom nobles for target selection (same approach as _getKingdomNobles in player_dark_deeds)
     var nobles = [];
@@ -1250,7 +1305,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
             var _towns = _wd && _wd.towns ? _wd.towns : [];
             var _playerPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
             for (var _ti = 0; _ti < _towns.length; _ti++) {
-                if (_towns[_ti].kingdomId !== citizenKingdomId) continue;
+                if (_towns[_ti].kingdomId !== targetKingdomId) continue;
                 var _townPeople = Engine.getPeople(_towns[_ti].id);
                 if (!_townPeople) continue;
                 for (var _pi = 0; _pi < _townPeople.length; _pi++) {
@@ -1394,12 +1449,16 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
     }
 
     // Define all 5 schemes with their requirements
+    var _costMultiplier = isAtWarWithTarget ? 4 : (isForeignTarget ? 2 : 1);
+    var _baseDetectionMap = { pit_nobles: 0.25, turn_noble_against_king: 0.30, discredit_noble: 0.25, expose_secrets: 0.20, manipulate_vote: 0.15 };
+    var _foreignDetBonus = isAtWarWithTarget ? 0.25 : (isForeignTarget ? 0.15 : 0);
+    var _baseCosts = { pit_nobles: 300, turn_noble_against_king: 500, discredit_noble: 400, manipulate_vote: 200, expose_secrets: 600 };
     var schemes = [
-        { id: 'pit_nobles', name: '⚔️ Pit Nobles Against Each Other', desc: 'Create rivalry between two nobles, damaging their relationship.', cost: '300g', skill: 'shadow_dealings', skillAlt: null, needTwo: true },
-        { id: 'turn_noble_against_king', name: '🏴 Turn Noble Against King', desc: 'Undermine a noble\'s loyalty to the crown.', cost: '500g', skill: 'kingmaker_skill', skillAlt: null, needTwo: false },
-        { id: 'discredit_noble', name: '📜 Discredit Noble', desc: 'Damage a noble\'s standing with the court through misinformation.', cost: '400g', skill: 'shadow_dealings', skillAlt: 'silver_tongue_dark', needTwo: false },
-        { id: 'manipulate_vote', name: '🤝 Manipulate Noble Vote', desc: 'Sway a noble\'s position on council proposals for 60 days.', cost: '200g', skill: 'silver_tongue_dark', skillAlt: 'kingmaker_skill', needTwo: false },
-        { id: 'expose_secrets', name: '💥 Expose Noble Secrets', desc: 'Dig up and publicize a noble\'s secrets. Devastates reputation, grants blackmail leverage.', cost: '600g', skill: 'dark_connections', skillAlt: 'shadow_dealings', needTwo: false }
+        { id: 'pit_nobles', name: '⚔️ Pit Nobles Against Each Other', desc: 'Create rivalry between two nobles, damaging their relationship.', cost: (_baseCosts.pit_nobles * _costMultiplier) + 'g', skill: 'shadow_dealings', skillAlt: null, needTwo: true },
+        { id: 'turn_noble_against_king', name: '🏴 Turn Noble Against King', desc: 'Undermine a noble\'s loyalty to the crown.', cost: (_baseCosts.turn_noble_against_king * _costMultiplier) + 'g', skill: 'kingmaker_skill', skillAlt: null, needTwo: false },
+        { id: 'discredit_noble', name: '📜 Discredit Noble', desc: 'Damage a noble\'s standing with the court through misinformation.', cost: (_baseCosts.discredit_noble * _costMultiplier) + 'g', skill: 'shadow_dealings', skillAlt: 'silver_tongue_dark', needTwo: false },
+        { id: 'manipulate_vote', name: '🤝 Manipulate Noble Vote', desc: 'Sway a noble\'s position on council proposals for 60 days.', cost: (_baseCosts.manipulate_vote * _costMultiplier) + 'g', skill: 'silver_tongue_dark', skillAlt: 'kingmaker_skill', needTwo: false },
+        { id: 'expose_secrets', name: '💥 Expose Noble Secrets', desc: 'Dig up and publicize a noble\'s secrets. Devastates reputation, grants blackmail leverage.', cost: (_baseCosts.expose_secrets * _costMultiplier) + 'g', skill: 'dark_connections', skillAlt: 'shadow_dealings', needTwo: false }
     ];
 
     // Check which schemes the player can use
@@ -1476,7 +1535,9 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
             html += '<div style="border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:10px;margin-bottom:8px;background:rgba(0,0,0,0.15);">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<strong style="font-size:0.9rem;">' + _as.name + '</strong>';
-            html += '<span style="font-size:0.75rem;color:var(--gold);">' + _as.cost + '</span>';
+            var _detBase = _baseDetectionMap[_as.id] || 0.20;
+            var _detDisplay = Math.min(95, Math.round((_detBase + _foreignDetBonus) * 100));
+            html += '<span style="font-size:0.75rem;color:var(--gold);">' + _as.cost + ' · <span style="color:' + (_detDisplay >= 40 ? '#c44e52' : _detDisplay >= 25 ? '#e67e22' : '#ccb974') + ';">🎯' + _detDisplay + '%</span></span>';
             html += '</div>';
             html += '<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">' + _as.desc + '</div>';
 
@@ -1487,7 +1548,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
                 for (var _nj = 0; _nj < nobles.length; _nj++) {
                     var _n = nobles[_nj];
                     var _nName = (_n.firstName || '?') + ' ' + (_n.lastName || '');
-                    var _nRank = (_n.socialRank && _n.socialRank[citizenKingdomId]) || 4;
+                    var _nRank = (_n.socialRank && _n.socialRank[targetKingdomId]) || 4;
                     var _nRL = _nRank >= 6 ? ' [RA]' : _nRank >= 5 ? ' [Lord]' : ' [Noble]';
                     var _nFact = _n._faction ? ' (' + _n._faction.charAt(0).toUpperCase() + _n._faction.slice(1) + ')' : '';
                     html += '<option value="' + _n.id + '">' + _nName.trim() + _nRL + _nFact + '</option>';
@@ -1519,11 +1580,11 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank) {
             if (kingdom && kingdom.king && typeof Engine !== 'undefined' && Engine.findPerson) _kingPerson = Engine.findPerson(kingdom.king);
             for (var _ci = 0; _ci < Math.min(12, nobles.length); _ci++) {
                 var _cn = nobles[_ci];
-                var _cnRank = (_cn.socialRank && _cn.socialRank[citizenKingdomId]) || 4;
+                var _cnRank = (_cn.socialRank && _cn.socialRank[targetKingdomId]) || 4;
                 var _cnRL = _cnRank >= 6 ? 'RA' : _cnRank >= 5 ? 'Lord' : 'Noble';
                 var _cnLoy = _cn._nobleRelationships && _kingPerson ? (_cn._nobleRelationships[_kingPerson.id] || 0) : 0;
                 var _cnLC = _cnLoy >= 30 ? '#55a868' : _cnLoy >= 0 ? '#ccb974' : '#c44e52';
-                var _cnRep = (_cn.reputation && _cn.reputation[citizenKingdomId]) ? Math.floor(_cn.reputation[citizenKingdomId]) : 50;
+                var _cnRep = (_cn.reputation && _cn.reputation[targetKingdomId]) ? Math.floor(_cn.reputation[targetKingdomId]) : 50;
                 var _cnScan = _cn._scandalized ? ' 💥' : '';
                 var _cnFact2 = _cn._faction ? (' [' + _cn._faction.charAt(0).toUpperCase() + _cn._faction.slice(1) + ']') : '';
                 // Player relationship
