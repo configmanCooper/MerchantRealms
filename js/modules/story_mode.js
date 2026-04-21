@@ -1499,48 +1499,53 @@ var StoryMode = (function () {
     };
 
     // ── Ch 11: Family Crisis ──
-    _hooks._onChapter11Start = function () {
-        _storyState.flags.edmundInjured = true;
-        _storyState.flags.margretIll    = true;
-        // Apply conditions directly to story NPCs
-        if (typeof Engine !== 'undefined' && typeof Player !== 'undefined') {
-            var edmund = null, margret = null;
-            // Try storyNPCs first
-            var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
-            if (sNPCs) {
-                edmund = sNPCs.fatherId ? Engine.findPerson(sNPCs.fatherId) : null;
-                margret = sNPCs.motherId ? Engine.findPerson(sNPCs.motherId) : null;
-            }
-            // Fallback: find via familyMembers
-            if (!edmund && Player.familyMembers) {
-                var fatherEntry = Player.familyMembers.find(function(f) { return f.role === 'father' && f.alive; });
-                if (fatherEntry) edmund = Engine.findPerson(fatherEntry.npcId || fatherEntry.id);
-            }
-            if (!margret && Player.familyMembers) {
-                var motherEntry = Player.familyMembers.find(function(f) { return f.role === 'mother' && f.alive; });
-                if (motherEntry) margret = Engine.findPerson(motherEntry.npcId || motherEntry.id);
-            }
+
+    /** Find a family NPC by role, using storyNPCs first then familyMembers fallback. */
+    function _findFamilyNPC(role) {
+        if (typeof Engine === 'undefined' || typeof Player === 'undefined') return null;
+        var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
+        var key = role === 'father' ? 'fatherId' : 'motherId';
+        if (sNPCs && sNPCs[key]) {
+            var npc = Engine.findPerson(sNPCs[key]);
+            if (npc) return npc;
+        }
+        if (Player.familyMembers) {
+            var entry = Player.familyMembers.find(function(f) { return f.role === role && f.alive; });
+            if (entry) return Engine.findPerson(entry.npcId || entry.id);
+        }
+        return null;
+    }
+
+    /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
+    function _ensureCh11Conditions() {
+        if (_storyState.flags.edmundInjured) {
+            var edmund = _findFamilyNPC('father');
             if (edmund) {
                 edmund.injuries = edmund.injuries || [];
                 if (!edmund.injuries.some(function(inj) { return inj.type === 'burn'; })) {
                     edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
+                    _log('Applied burn injury to Edmund');
                 }
-                edmund.health = Math.min(edmund.health || 100, 60);
-                _log('Applied burn injury to Edmund (health: ' + edmund.health + ')');
-            } else {
-                _log('WARNING: Could not find Edmund NPC for ch11 injury');
+                if (edmund.health > 60) edmund.health = 60;
             }
+        }
+        if (_storyState.flags.margretIll) {
+            var margret = _findFamilyNPC('mother');
             if (margret) {
                 margret.illnesses = margret.illnesses || [];
                 if (!margret.illnesses.some(function(ill) { return ill.type === 'fever'; })) {
                     margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: Engine.getDay ? Engine.getDay() : 0 });
+                    _log('Applied fever illness to Margret');
                 }
-                margret.health = Math.min(margret.health || 100, 50);
-                _log('Applied fever illness to Margret (health: ' + margret.health + ')');
-            } else {
-                _log('WARNING: Could not find Margret NPC for ch11 illness');
+                if (margret.health > 50) margret.health = 50;
             }
         }
+    }
+
+    _hooks._onChapter11Start = function () {
+        _storyState.flags.edmundInjured = true;
+        _storyState.flags.margretIll    = true;
+        _ensureCh11Conditions();
         _log('Father has been injured at the forge. Mother has fallen ill.');
     };
 
@@ -2048,10 +2053,15 @@ var StoryMode = (function () {
             _storyState.flags._horseLawStripped = true;
         }
 
+        // Ch11: re-apply injuries/illness if flags are set but NPCs aren't affected yet
+        if (_storyState.flags.edmundInjured || _storyState.flags.margretIll) {
+            _ensureCh11Conditions();
+        }
+
         var ch = _currentChapterDef();
         if (!ch) { return; }
 
-        // Prologue auto-advances after its dialog has been seen
+        // Prologue auto-advancesafter its dialog has been seen
         if (_storyState.chapter === 0 && _storyState.dialogsSeen.indexOf('ch0_intro') !== -1) {
             _completeChapter();
             return;
