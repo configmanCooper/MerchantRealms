@@ -16691,12 +16691,20 @@
             player.inventory[resourceId] = Math.max(0, (player.inventory[resourceId] || 0) - 1);
             if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
             player.weapon = { id: weaponDef.id, name: weaponDef.name, quality: weaponDef.quality, combatBonus: weaponDef.combatBonus };
+            // Story Mode: notify of equip
+            if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('equip_item', { slot: 'weapon' });
+            }
             return { success: true, message: 'Equipped ' + weaponDef.name + '! (+' + Math.round(weaponDef.combatBonus * 100) + '% combat survival)' };
         } else if (armorDef) {
             if (player.armor) unequipArmor();
             player.inventory[resourceId] = Math.max(0, (player.inventory[resourceId] || 0) - 1);
             if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
             player.armor = { id: armorDef.id, name: armorDef.name, quality: armorDef.quality, combatBonus: armorDef.combatBonus };
+            // Story Mode: notify of equip
+            if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('equip_item', { slot: 'armor' });
+            }
             return { success: true, message: 'Equipped ' + armorDef.name + '! (+' + Math.round(armorDef.combatBonus * 100) + '% combat survival)' };
         }
 
