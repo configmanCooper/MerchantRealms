@@ -303,7 +303,7 @@
             speaker: "harlan",
             portrait: "harlan",
             lines: [
-                "So you've got yourself an iron mine! Not bad for a {lad|lass} from Ashford.",
+                "There is iron here, mountains of it. Enough to keep every forge in Valdren burning a thousand years.",
                 "But owning a mine and running one are two different things. Let me show you the ropes.",
                 "First — you need to work a shift yourself. Get your hands dirty. Learn what the ore feels like, how the rock splits.",
                 "A merchant who knows the work gets more respect from the miners — and catches lazy workers quick.",
