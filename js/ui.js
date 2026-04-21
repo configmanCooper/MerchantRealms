@@ -13601,6 +13601,9 @@ window.UI = (function () {
         if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
             Player.state.storyMode._openedHelp = true;
         }
+        if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('open_help_guide', {});
+        }
         const html = `
         <div class="help-section" style="display:flex; gap:10px; margin-bottom:8px;">
             <button class="btn btn-primary" data-action="openIconsGlossary" style="flex:1; padding:10px; font-size:14px; cursor:pointer;">🗺️ Icons Guide</button>

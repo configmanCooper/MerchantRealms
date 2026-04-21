@@ -211,7 +211,7 @@ var StoryMode = (function () {
                   desc: 'Craft an item at a guild building',
                   hint: 'Click your town name \u2192 Buildings tab \u2192 find a guild-affiliated building \u2192 click the Craft button',
                   done: false },
-                { id: 'ch6b_open_help', type: 'custom', fn: '_checkOpenedHelp',
+                { id: 'ch6b_open_help', type: 'open_help_guide', qty: 1,
                   desc: 'Open the Help & Guide menu',
                   hint: 'Click the \u2753 Help button to explore the game guide \u2014 it covers goods, notables, kingdoms, and more',
                   done: false }
@@ -1250,6 +1250,10 @@ var StoryMode = (function () {
                     matched = true;
                     break;
 
+                case 'open_help_guide':
+                    matched = true;
+                    break;
+
                 case 'buy_horse':
                     matched = true;
                     break;
@@ -2143,6 +2147,7 @@ var StoryMode = (function () {
         'install_addon':   '#btnHousing',
         'home_craft':      '#btnHousing',
         'guild_craft':     '#btnGuilds',
+        'open_help_guide': '#btnHelp',
         'buy_horse':       '#btnTrade',
         'mount_horse':     '#btnCharacter',
         'upgrade_building': '#btnBuildings',

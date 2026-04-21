@@ -24040,6 +24040,8 @@
                 if (!bldg.inGuild) continue;
                 var bType = Engine.findBuildingType(bldg.type);
                 if (!bType) continue;
+                // Livestock buildings cannot be guild-crafted
+                if (CONFIG.FARM_LIVESTOCK_TYPES && CONFIG.FARM_LIVESTOCK_TYPES.indexOf(bldg.type) >= 0) continue;
                 var guild = Player.getGuildForCategory(bType.category);
                 if (!guild) continue;
                 if (!Player.isGuildMember(guild.id)) continue;
@@ -24084,6 +24086,11 @@
 
         var bType = Engine.findBuildingType(buildingType);
         if (!bType) return { success: false, message: 'Building type not found.' };
+
+        // Livestock cannot be guild-crafted
+        if (CONFIG.FARM_LIVESTOCK_TYPES && CONFIG.FARM_LIVESTOCK_TYPES.indexOf(buildingType) >= 0) {
+            return { success: false, message: 'Livestock cannot be crafted through guild membership.' };
+        }
 
         var guild = Player.getGuildForCategory(bType.category);
         if (!guild) return { success: false, message: 'No guild covers this building type.' };
