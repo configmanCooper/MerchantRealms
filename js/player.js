@@ -3302,6 +3302,11 @@
         if (bld.inventory[resourceId] <= 0) delete bld.inventory[resourceId];
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + canCarry;
 
+        // Story Mode: notify of output collection
+        if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+            StoryMode.onPlayerAction('collect_output', { item: resourceId, qty: canCarry, buildingId: buildingId });
+        }
+
         return { success: true, message: 'Collected ' + canCarry + ' ' + (res ? res.name : resourceId) + '.' };
     }
 

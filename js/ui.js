@@ -467,9 +467,9 @@ window.UI = (function () {
         registerAction('treatCompanionUI', function(_t, d) { if (d.type) treatCompanionUI(d.type, d.id, d.val); });
         registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val) setNotifFilter(d.key, d.val); });
         registerAction('setTradeQty', function(_t, d) { if (d.type && d.id) setTradeQty(d.type, d.id, parseInt(d.qty)||1, parseFloat(d.price)||0); });
-        registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id); });
-        registerAction('_bldDeposit', function(_t, d) { if (d.id) UI._bldDeposit(d.id); });
-        registerAction('_bldWithdraw', function(_t, d) { if (d.id) UI._bldWithdraw(d.id); });
+        registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id, d.val, parseInt(d.qty)); });
+        registerAction('_bldDeposit', function(_t, d) { if (d.id) UI._bldDeposit(d.id, d.val, parseInt(d.qty)); });
+        registerAction('_bldWithdraw', function(_t, d) { if (d.id) UI._bldWithdraw(d.id, d.val, parseInt(d.qty)); });
         registerAction('switchOrdersTab', function(_t, d) { if (d.tab) UI.switchOrdersTab(d.tab); });
         registerAction('_switchKQTab', function(_t, d) { if (d.tab && d.kingdom) UI._switchKQTab(d.tab, d.kingdom); });
         registerAction('executeAdvice', function(_t, d) { if (d.kingdom && d.type && d.val) UI.executeAdvice(d.kingdom, d.type, d.val); });

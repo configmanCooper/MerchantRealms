@@ -176,9 +176,11 @@ var StoryMode = (function () {
             id: 'ch8b', title: 'The Mine Master', act: 2,
             startDialog: 'ch8b_harlan_mine',
             objectives: [
-                { id: 'ch8b_work_mine',     type: 'work_shift',  building: 'iron_mine', desc: 'Work a shift in your iron mine',                     done: false },
-                { id: 'ch8b_hire_worker',   type: 'hire_worker',                        desc: 'Hire a worker for your mine',                        done: false },
-                { id: 'ch8b_sell_iron',     type: 'sell_item',   item: 'iron_ore', qty: 5, town: 'Ashford', desc: 'Sell 5 iron ore in Ashford',  done: false }
+                { id: 'ch8b_work_mine',     type: 'work_shift',     building: 'iron_mine', desc: 'Work a shift in your iron mine',                     done: false },
+                { id: 'ch8b_hire_worker',   type: 'hire_worker',                            desc: 'Hire a worker for your mine',                        done: false },
+                { id: 'ch8b_assign_worker', type: 'assign_worker',  building: 'iron_mine',  desc: 'Assign a worker to your iron mine', hint: 'Open Business → Buildings, click your Iron Mine, then use the + Assign button under Workers', done: false, after: 'ch8b_hire_worker' },
+                { id: 'ch8b_collect_ore',   type: 'collect_output', item: 'iron_ore', qty: 5, desc: 'Withdraw 5 iron ore from your mine (0/5)', hint: 'Open your Iron Mine details and use the Take buttons under Output Storage to collect ore into your inventory', done: false, after: 'ch8b_assign_worker' },
+                { id: 'ch8b_sell_iron',     type: 'sell_item',      item: 'iron_ore', qty: 5, town: 'Ashford', desc: 'Sell 5 iron ore in Ashford',  done: false }
             ],
             endDialog: 'ch8b_complete',
             unlockButtons: [],
@@ -1056,6 +1058,20 @@ var StoryMode = (function () {
                     }
                     break;
 
+                case 'collect_output':
+                    if (obj.item && data.item !== obj.item) break;
+                    if (obj.qty) {
+                        if (!obj._progress) obj._progress = 0;
+                        obj._progress += (data.qty || 1);
+                        var coNeeded = obj.qty || 1;
+                        obj.desc = obj.desc.replace(/\(\d+\/\d+\)/, '(' + Math.min(obj._progress, coNeeded) + '/' + coNeeded + ')');
+                        matched = obj._progress >= coNeeded;
+                        if (!matched) _refreshTracker();
+                    } else {
+                        matched = true;
+                    }
+                    break;
+
                 case 'treat_person':
                     if (!obj.person) { matched = true; }
                     else {
@@ -1862,6 +1878,7 @@ var StoryMode = (function () {
         'build_building':  '#btnBuild',
         'hire_worker':     '#btnHire',
         'assign_worker':   '#btnBuildings',
+        'collect_output':  '#btnBuildings',
         'produce_item':    '#btnBuildings',
         'buy_skill':       '#btnSkills',
         'join_guild':      '#btnGuilds',

@@ -439,6 +439,14 @@
             desc.textContent = obj.desc;
             li.appendChild(desc);
 
+            if (obj.hint && !obj.done) {
+                var hint = document.createElement('span');
+                hint.className = 'st-objective-hint';
+                hint.style.cssText = 'display:block;font-size:0.65rem;color:#b0a080;font-style:italic;margin-top:1px;margin-left:4px;';
+                hint.textContent = '\u{1F4A1} ' + obj.hint;
+                li.appendChild(hint);
+            }
+
             if (obj.optional) {
                 var tag = document.createElement('span');
                 tag.className = 'st-optional-tag';
