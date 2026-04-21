@@ -293,7 +293,7 @@ var StoryMode = (function () {
             objectives: [
                 { id: 'ch9b_buy_horse', type: 'buy_horse',
                   desc: 'Buy a horse',
-                  hint: 'Click the town name \u2192 Services tab \u2192 Stables \u2192 Buy Horse',
+                  hint: 'Open Trade \u2192 search for Horses \u2192 Buy',
                   done: false },
                 { id: 'ch9b_mount_horse', type: 'mount_horse',
                   desc: 'Mount your horse',
@@ -1085,7 +1085,8 @@ var StoryMode = (function () {
             // Map action types to objective types (supply_kingdom objectives match sell_to_kingdom and deliver_commission actions)
             var objTypeMatch = (obj.type === actionType) ||
                                (obj.type === 'supply_kingdom' && (actionType === 'sell_to_kingdom' || actionType === 'deliver_commission')) ||
-                               (obj.type === 'produce_item' && actionType === 'produce_item');
+                               (obj.type === 'produce_item' && actionType === 'produce_item') ||
+                               (obj.type === 'buy_horse' && actionType === 'buy_item' && data.item === 'horses');
             if (!objTypeMatch) { continue; }
             // Sequential gating: if objective has 'after' dependency, skip until that is done
             if (obj.after && !_storyState.objectives[obj.after]) { continue; }

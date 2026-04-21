@@ -617,6 +617,20 @@ window.Game = (function () {
         // Story mode: Valdren should NOT have guild restrictions (player needs to build freely)
         if (valdren.laws) valdren.laws.guildRestrictions = false;
 
+        // Story mode: remove horse permit requirement from all kingdoms
+        if (valdren.laws && valdren.laws.specialLaws) {
+            valdren.laws.specialLaws = valdren.laws.specialLaws.filter(function(l) { return l.id !== 'draft_animal_law'; });
+        }
+        if (korvath && korvath.laws && korvath.laws.specialLaws) {
+            korvath.laws.specialLaws = korvath.laws.specialLaws.filter(function(l) { return l.id !== 'draft_animal_law'; });
+        }
+        // Remove from all other kingdoms too
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            if (kingdoms[ki].laws && kingdoms[ki].laws.specialLaws) {
+                kingdoms[ki].laws.specialLaws = kingdoms[ki].laws.specialLaws.filter(function(l) { return l.id !== 'draft_animal_law'; });
+            }
+        }
+
         // Find towns in Valdren
         var valdrenTowns = towns.filter(function(t) { return t.kingdomId === valdren.id; });
         if (valdrenTowns.length < 3) {
@@ -2919,7 +2933,7 @@ window.Game = (function () {
 
             // 3. Game metadata
             debugData.meta = {
-                gameVersion: 'v0.79.0',
+                gameVersion: 'v0.80.0',
                 saveVersion: 3,
                 timestamp: new Date().toISOString(),
                 userAgent: navigator.userAgent,
