@@ -1894,28 +1894,31 @@ var StoryMode = (function () {
     // ── Ch 4b: The Road is Dangerous ──
     _hooks._onChapter4bStart = function () {
         // Scripted bandit encounter — take some gold, don't kill player
-        if (!_player) return;
-        var goldLost = Math.min(Math.max(5, Math.floor(_player.gold * 0.15)), 50);
-        _player.gold = Math.max(0, _player.gold - goldLost);
-        _player.storyMode._ch4b_robbed = true;
-        _player.storyMode._ch4b_goldLost = goldLost;
+        if (typeof Player === 'undefined' || !Player.state) return;
+        var goldLost = Math.min(Math.max(5, Math.floor((Player.state.gold || 0) * 0.15)), 50);
+        Player.state.gold = Math.max(0, (Player.state.gold || 0) - goldLost);
+        if (!Player.state.storyMode) Player.state.storyMode = {};
+        Player.state.storyMode._ch4b_robbed = true;
+        Player.state.storyMode._ch4b_goldLost = goldLost;
+        _toast('Bandits robbed you of ' + goldLost + 'g on the road!');
+        _log('Bandits robbed you of ' + goldLost + 'g.');
     };
 
     // ── Custom check functions for b-chapters ──
     _hooks._checkOpenedHelp = function () {
-        return _player && _player.storyMode && _player.storyMode._openedHelp;
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._openedHelp;
     };
 
     _hooks._checkViewedEventLog = function () {
-        return _player && _player.storyMode && _player.storyMode._viewedEventLog;
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedEventLog;
     };
 
     _hooks._checkToggledFilter = function () {
-        return _player && _player.storyMode && _player.storyMode._toggledFilter;
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._toggledFilter;
     };
 
     _hooks._checkViewedFeats = function () {
-        return _player && _player.storyMode && _player.storyMode._viewedFeats;
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedFeats;
     };
 
     // ───────────────────────────────────────────────
@@ -2125,17 +2128,17 @@ var StoryMode = (function () {
         'own_gold':        null,
         'reach_rank':      null,
         'rest':            '#btnRest',
-        'street_trade':    null,
+        'street_trade':    '#btnStreet',
         'equip_item':      '#btnCharacter',
         'hire_guard':      '#btnCharacter',
         'install_addon':   '#btnHousing',
         'home_craft':      '#btnHousing',
-        'guild_craft':     null,
-        'buy_horse':       null,
+        'guild_craft':     '#btnGuilds',
+        'buy_horse':       '#btnTrade',
         'mount_horse':     '#btnCharacter',
         'upgrade_building': '#btnBuildings',
         'toggle_autobuy':  '#btnBuildings',
-        'build_ship':      null,
+        'build_ship':      '#btnShips',
         'custom':          null
     };
 
