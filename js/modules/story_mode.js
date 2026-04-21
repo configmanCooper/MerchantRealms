@@ -102,9 +102,9 @@ var StoryMode = (function () {
             id: 'ch3b', title: 'The Open Market', act: 1,
             startDialog: 'ch3b_street_trade',
             objectives: [
-                { id: 'ch3b_street_sell', type: 'street_trade', qty: 1,
-                  desc: 'Complete a street trade',
-                  hint: 'Click the Street Trading (\uD83E\uDD1D) button to see what locals are looking to buy \u2014 they often pay above market price!',
+                { id: 'ch3b_street_sell', type: 'custom', fn: '_checkOpenedStreetTrading',
+                  desc: 'Look at Street Trading',
+                  hint: 'Click the Street Trading (🤝) button to see what locals are looking to buy — they often pay above market price!',
                   done: false }
             ],
             endDialog: 'ch3b_complete',
@@ -1905,6 +1905,10 @@ var StoryMode = (function () {
     };
 
     // ── Custom check functions for b-chapters ──
+    _hooks._checkOpenedStreetTrading = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._openedStreetTrading;
+    };
+
     _hooks._checkOpenedHelp = function () {
         return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._openedHelp;
     };
@@ -2175,6 +2179,7 @@ var StoryMode = (function () {
         '_checkMetCalderCapital': '#btnTalk',
         '_checkTalkedToEdmund':   '#btnTalk',
         '_checkCeremonyAttended': '#btnKingdoms',
+        '_checkOpenedStreetTrading': '#btnStreet',
         '_checkOpenedHelp':       null,
         '_checkViewedEventLog':   null,
         '_checkToggledFilter':    null,

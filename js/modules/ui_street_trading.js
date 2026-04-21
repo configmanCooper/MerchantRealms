@@ -29,6 +29,9 @@
 
 function openStreetTrading() {
     if (typeof Player === 'undefined') return;
+    if (Player.state && Player.state.storyMode) {
+        Player.state.storyMode._openedStreetTrading = true;
+    }
     if (Player.traveling) { toast('Cannot trade while traveling.', 'warning'); return; }
 
     // Outpost-specific messaging
