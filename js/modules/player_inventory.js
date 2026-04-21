@@ -689,6 +689,11 @@
         }
         player.gold -= addon.goldCost;
         house.addons.push(addonId);
+        // Initialize garden manure level when garden addon is installed
+        if (addonId === 'garden') {
+            house.gardenManure = 4;
+            house._lastManureDecayDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+        }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 3);
         Engine.logEvent(player.fullName + ' installed ' + addon.icon + ' ' + addon.name + ' in their ' + house.type + '.');
 

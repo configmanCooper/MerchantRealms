@@ -1448,8 +1448,8 @@ const CONFIG = {
         },
         garden: {
             id: 'garden', name: 'Garden', icon: '🌿',
-            description: 'Grow herbs and vegetables at home.',
-            goldCost: 80, materials: { wood: 4 },
+            description: 'Grow herbs and vegetables at home. Requires manure to stay fertile (depletes over time).',
+            goldCost: 80, materials: { wood: 4, manure: 4 },
             minHouseId: ['shack', 'townhouse', 'harbor_house'],
             grants: 'hasGarden'
         },

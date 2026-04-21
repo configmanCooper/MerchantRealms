@@ -31342,28 +31342,48 @@
 
             // ── canGrow: passive crop/herb growing (every 7 days) ──
             if (ht.canGrow && ht.canGrow.length > 0) {
-                if (!house._lastGrowDay) house._lastGrowDay = day;
-                if (day - house._lastGrowDay >= 7) {
-                    house._lastGrowDay = day;
-                    for (var gi = 0; gi < ht.canGrow.length; gi++) {
-                        var crop = ht.canGrow[gi];
-                        var growQty = 1;
-                        // Herbalist skill doubles herb yield
-                        if (crop === 'herbs' && hasSkill('herbalist')) growQty = 2;
-                        // hasGarden doubles all garden output
-                        if (ht.hasGarden) growQty *= 2;
+                // Check garden manure for addon gardens
+                var gardenAddon = house.addons && house.addons.indexOf('garden') >= 0;
+                var gardenActive = ht.hasGarden || (gardenAddon && (house.gardenManure || 0) > 0);
 
-                        // Store in house storage if available, else player inventory
-                        if (!house.homeStorage) house.homeStorage = {};
-                        var storageUsed = Object.values(house.homeStorage).reduce(function(s, v) { return s + v; }, 0);
-                        if (storageUsed + growQty <= (ht.storage || 40)) {
-                            house.homeStorage[crop] = (house.homeStorage[crop] || 0) + growQty;
+                // Manure decay: lose 1 every 30 days for addon gardens
+                if (gardenAddon && house.gardenManure > 0) {
+                    if (!house._lastManureDecayDay) house._lastManureDecayDay = day;
+                    if (day - house._lastManureDecayDay >= 30) {
+                        house._lastManureDecayDay = day;
+                        house.gardenManure = Math.max(0, house.gardenManure - 1);
+                        if (house.gardenManure <= 0) {
+                            Engine.logEvent('🌿 Your garden has run out of manure and stopped producing! Add more manure to resume.', null, 'my_business');
                         } else {
-                            player.inventory[crop] = (player.inventory[crop] || 0) + growQty;
+                            Engine.logEvent('🌿 Your garden manure is depleting (' + house.gardenManure + ' remaining).', null, 'my_business');
                         }
                     }
-                    if (day % 28 === 0) {
-                        Engine.logEvent('🌱 Your garden produced crops this month.', null, 'my_business');
+                }
+
+                if (gardenActive) {
+                    if (!house._lastGrowDay) house._lastGrowDay = day;
+                    if (day - house._lastGrowDay >= 7) {
+                        house._lastGrowDay = day;
+                        for (var gi = 0; gi < ht.canGrow.length; gi++) {
+                            var crop = ht.canGrow[gi];
+                            var growQty = 1;
+                            // Herbalist skill doubles herb yield
+                            if (crop === 'herbs' && hasSkill('herbalist')) growQty = 2;
+                            // hasGarden (built-in) doubles all garden output
+                            if (ht.hasGarden) growQty *= 2;
+
+                            // Store in house storage if available, else player inventory
+                            if (!house.homeStorage) house.homeStorage = {};
+                            var storageUsed = Object.values(house.homeStorage).reduce(function(s, v) { return s + v; }, 0);
+                            if (storageUsed + growQty <= (ht.storage || 40)) {
+                                house.homeStorage[crop] = (house.homeStorage[crop] || 0) + growQty;
+                            } else {
+                                player.inventory[crop] = (player.inventory[crop] || 0) + growQty;
+                            }
+                        }
+                        if (day % 28 === 0) {
+                            Engine.logEvent('🌱 Your garden produced crops this month.', null, 'my_business');
+                        }
                     }
                 }
             }

@@ -680,6 +680,7 @@ window.UI = (function () {
         registerAction('_homeWithdraw', function(_t, d) { if (d.id && d.key) UI._homeWithdraw(d.id, d.key, d.qty); });
         registerAction('doInstallAddon', function(_t, d) { if (d.id && d.val) UI.doInstallAddon(d.id, d.val); });
         registerAction('doHomeCraft', function(_t, d) { if (d.id && d.val) UI.doHomeCraft(d.id, d.val); });
+        registerAction('refillGardenManure', function(_t, d) { if (d.id) UI.refillGardenManure(d.id); });
         registerAction('buyHouseUI', function(_t, d) { if (d.id) UI.buyHouseUI(d.id); });
         registerAction('buyLandUI', function() { UI.buyLandUI(); });
         registerAction('sellHouseUI', function(_t, d) { if (d.id) UI.sellHouseUI(d.id); });
@@ -10111,6 +10112,17 @@ window.UI = (function () {
                         if (_aDef) _addonNames.push(_aDef.icon + ' ' + _aDef.name);
                     }
                     html += '<div style="font-size:0.78rem;color:#5ac85a;">Addons: ' + _addonNames.join(', ') + '</div>';
+                    // Garden manure status
+                    if (h.addons.indexOf('garden') >= 0) {
+                        var _manure = h.gardenManure || 0;
+                        var _manureColor = _manure <= 0 ? '#c44e52' : _manure <= 1 ? '#e67e22' : '#5ac85a';
+                        html += '<div style="font-size:0.78rem;">💩 Garden Manure: <span style="color:' + _manureColor + ';">' + _manure + '/4</span>';
+                        if (_manure <= 0) html += ' <span style="color:#c44e52;">⚠️ Garden inactive!</span>';
+                        if (h.townId === Player.townId) {
+                            html += ' <button class="btn-medieval" data-action="refillGardenManure" data-id="' + h.id + '" style="font-size:0.65rem;padding:1px 6px;margin-left:4px;">💩 Refill</button>';
+                        }
+                        html += '</div>';
+                    }
                 }
                 // Home storage contents + transfer UI
                 var _hsUsed = Player.getHomeStorageUsed ? Player.getHomeStorageUsed(h) : 0;
@@ -10433,6 +10445,24 @@ window.UI = (function () {
             toast(result.message, 'warning');
         }
         openHomeCraftUI(houseId);
+    }
+
+    function refillGardenManure(houseId) {
+        var houses = Player.state.houses || Player.houses || [];
+        var house = houses.find(function(h) { return h.id === houseId; });
+        if (!house) { toast('House not found.', 'error'); return; }
+        if (!house.addons || house.addons.indexOf('garden') < 0) { toast('No garden installed.', 'error'); return; }
+        var current = house.gardenManure || 0;
+        if (current >= 4) { toast('Garden manure is already full (4/4).', 'info'); return; }
+        var needed = 4 - current;
+        var have = Player.inventory.manure || 0;
+        if (have <= 0) { toast('You need manure in your inventory. Buy some from a farm town market!', 'warning'); return; }
+        var toAdd = Math.min(needed, have);
+        Player.inventory.manure -= toAdd;
+        if (Player.inventory.manure <= 0) delete Player.inventory.manure;
+        house.gardenManure = current + toAdd;
+        toast('💩 Added ' + toAdd + ' manure to garden (' + house.gardenManure + '/4).', 'success');
+        openHousingDialog();
     }
 
     // ── HOME STORAGE TRANSFER UI ──
@@ -16371,6 +16401,7 @@ window.UI = (function () {
         doInstallAddon,
         openHomeCraftUI,
         doHomeCraft,
+        refillGardenManure,
         _homeDeposit,
         _homeWithdraw,
         stableHorseUI,
