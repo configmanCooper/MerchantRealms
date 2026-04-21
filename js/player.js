@@ -26705,6 +26705,10 @@
                         jobName = 'Work at your ' + bt.name; ticks = 15; pay = 0; description = 'Work a shift — produces ' + bt.produces + ' for your storage'; xpReward = 3;
                         break;
                     }
+                    if (!isOwn && bt.produces) {
+                        jobName = 'Work at the ' + bt.name; ticks = 15; pay = Math.round(4 * payScale); description = 'Help produce ' + bt.produces + ' for the owner'; xpReward = 2;
+                        break;
+                    }
                     continue;
             }
             if (!isOwn) pay = Math.round(pay * payScale);
@@ -27628,6 +27632,59 @@
             logFinance(finalPay, 'jobs', job.name);
             player.stats.totalGoldEarned += finalPay;
             Engine.logEvent(`Work complete: ${job.name} — earned ${finalPay}g.`);
+        }
+
+        // Non-owned building work: produce goods, sell to market, pay the building owner
+        if (job.type === 'building' && !job.isOwnBuilding && job.buildingType && town) {
+            var _wbt = Engine.findBuildingType(job.buildingType);
+            if (_wbt && _wbt.produces) {
+                var _wBld = town.buildings.find(function(b) { return b.type === job.buildingType; });
+                if (_wBld) {
+                    var _produceQty = Math.max(1, Math.round((_wbt.rate || 1) * 0.3));
+                    var _produceRes = _wbt.produces;
+                    // Check if building needs consumed inputs
+                    var _canProduce = true;
+                    if (_wbt.consumes) {
+                        for (var _cResId in _wbt.consumes) {
+                            var _cNeed = _wbt.consumes[_cResId];
+                            var _cHave = (town.market && town.market.supply) ? (town.market.supply[_cResId] || 0) : 0;
+                            if (_cHave < _cNeed) { _canProduce = false; break; }
+                        }
+                        if (_canProduce) {
+                            for (var _cResId2 in _wbt.consumes) {
+                                if (town.market && town.market.supply) {
+                                    town.market.supply[_cResId2] = Math.max(0, (town.market.supply[_cResId2] || 0) - _wbt.consumes[_cResId2]);
+                                }
+                            }
+                        }
+                    }
+                    if (_canProduce) {
+                        // Add produced goods to market supply
+                        if (!town.market) town.market = { supply: {}, prices: {} };
+                        if (!town.market.supply) town.market.supply = {};
+                        town.market.supply[_produceRes] = (town.market.supply[_produceRes] || 0) + _produceQty;
+                        // Calculate sale value and pay the owner
+                        var _salePrice = (town.market.prices && town.market.prices[_produceRes]) || (_wbt.basePrice || 10);
+                        var _saleGold = Math.round(_produceQty * _salePrice * 0.8);
+                        if (_wBld.ownerId && _wBld.ownerId !== 'player') {
+                            // Find owner: NPC, elite merchant, or kingdom
+                            var _ownerNPC = Engine.findPerson ? Engine.findPerson(_wBld.ownerId) : null;
+                            if (_ownerNPC) {
+                                _ownerNPC.gold = (_ownerNPC.gold || 0) + _saleGold;
+                            } else {
+                                // Try kingdom treasury
+                                var _ownerKingdom = Engine.findKingdom ? Engine.findKingdom(_wBld.ownerId) : null;
+                                if (!_ownerKingdom) _ownerKingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+                                if (_ownerKingdom) {
+                                    _ownerKingdom.gold = (_ownerKingdom.gold || 0) + _saleGold;
+                                }
+                            }
+                        }
+                        var _prodResName = findResource(_produceRes);
+                        Engine.logEvent('⚒️ Your work produced ' + _produceQty + ' ' + (_prodResName ? _prodResName.name : _produceRes) + ' sold to market for ' + _saleGold + 'g (paid to owner).', null, 'my_actions');
+                    }
+                }
+            }
         }
 
         // Privateer loot drops
