@@ -23959,7 +23959,10 @@
 
         // Skip old court system if a pendingCourt (new interactive system) is scheduled
         // or an active court session already exists (from _pendingCourt activation)
-        if (k._pendingCourt || k._activeCourtSession) return;
+        if (k._pendingCourt || k._activeCourtSession) {
+            console.log('[Court] OLD system skipped for ' + k.name + ': _pendingCourt=' + !!k._pendingCourt + ', _activeCourtSession=' + !!k._activeCourtSession);
+            return;
+        }
 
         // Schedule first court session
         if (k._nextCourtDay == null) {
@@ -24040,9 +24043,9 @@
         try {
             var _pIsKingOfThis = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
             if (!_pIsKingOfThis && typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId) {
-                var _pPersonId = Player.personId || 'player';
-                var _pPerson = findPerson(_pPersonId);
-                if (_pPerson && _pPerson.socialRank && _pPerson.socialRank[kId] >= 4) {
+                var _pState1 = Player.state;
+                var _pRank1 = (_pState1 && _pState1.socialRank && _pState1.socialRank[kId]) || 0;
+                if (_pRank1 >= 4) {
                     // Noble player can attend court — store court session data for UI access
                     k._activeCourtSession = {
                         id: 'court_' + world.day,
@@ -24090,6 +24093,11 @@
         try {
             pPerson = findPerson(Player.personId || 'player');
         } catch(e) {}
+        // Player is NOT in world.people — use Player.state as the person object
+        if (!pPerson && typeof Player !== 'undefined' && Player.state) {
+            pPerson = Player.state;
+            if (!pPerson.id) pPerson.id = 'player';
+        }
         if (!pPerson) return { success: false, message: 'Player not found.' };
 
         var rng = world.rng;
@@ -24191,6 +24199,11 @@
         if (!k) return;
         var rng = world.rng;
 
+        // Debug: log court-related state every tick for Valdren
+        if (k.name === 'Valdren') {
+            console.log('[Court-tick] ' + k.name + ' day=' + world.day + ': _pendingCourt=' + (k._pendingCourt ? 'courtDay=' + k._pendingCourt.courtDay : 'null') + ', _courtSession=' + !!k._courtSession + ', _activeCourtSession=' + !!k._activeCourtSession + ', _nextCourtDay=' + k._nextCourtDay + ', _activeFeast=' + !!k._activeFeast);
+        }
+
         // Schedule first feast if not yet scheduled
         if (k._nextFeastDay == null) {
             k._nextFeastDay = world.day + rng.randInt(30, 70); // M1: was 60-120, start feasting sooner
@@ -24263,7 +24276,8 @@
                     var _pfPersonId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
                     var _pfPerson = findPerson(_pfPersonId);
                     var _pfIsKing = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
-                    if (!_pfIsKing && _pfPerson && _pfPerson.socialRank && _pfPerson.socialRank[k.id] >= 4) {
+                    var _pfPlayerRank = (Player.state && Player.state.socialRank && Player.state.socialRank[k.id]) || 0;
+                    if (!_pfIsKing && (_pfPlayerRank >= 4 || (_pfPerson && _pfPerson.socialRank && _pfPerson.socialRank[k.id] >= 4))) {
                         if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
                         Player.state._feastInvitations.push({
                             kingdomId: k.id,
@@ -24288,7 +24302,11 @@
         }
 
         // Activate pending court when court day arrives
+        if (k._pendingCourt) {
+            console.log('[Court] ' + k.name + ' has _pendingCourt: courtDay=' + k._pendingCourt.courtDay + ', today=' + world.day + ', _courtSession=' + !!k._courtSession);
+        }
         if (k._pendingCourt && world.day >= k._pendingCourt.courtDay && !k._courtSession) {
+            console.log('[Court] ACTIVATING _pendingCourt for ' + k.name + ' on day ' + world.day);
             var pc = k._pendingCourt;
             // Generate cases if empty (story mode scheduled court without cases)
             if (!pc.cases || pc.cases.length === 0) {
@@ -24374,8 +24392,11 @@
             try {
                 var _pIsKingOfThis2 = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
                 if (!_pIsKingOfThis2 && typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id) {
-                    var _pPerson2 = findPerson(Player.personId || 'player');
-                    if (_pPerson2 && _pPerson2.socialRank && _pPerson2.socialRank[k.id] >= 4) {
+                    // Player.state holds socialRank directly (player is NOT in world.people)
+                    var _pState = Player.state;
+                    var _pRank = (_pState && _pState.socialRank && _pState.socialRank[k.id]) || 0;
+                    console.log('[Court] Player rank for ' + k.id + ' = ' + _pRank);
+                    if (_pRank >= 4) {
                         var _kingPerson2 = findPerson(k.king);
                         k._activeCourtSession = {
                             id: pc.id,
@@ -24384,15 +24405,32 @@
                             kingName: _kingPerson2 ? (_kingPerson2.firstName || 'The King') : 'The King',
                             _playerActionsLeft: 3
                         };
+                        console.log('[Court] Created _activeCourtSession with 3 actions');
+                    } else {
+                        // Story mode: if player has attend_court objective, grant access anyway
+                        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+                            var _kingPerson2b = findPerson(k.king);
+                            k._activeCourtSession = {
+                                id: pc.id,
+                                day: world.day,
+                                events: [],
+                                kingName: _kingPerson2b ? (_kingPerson2b.firstName || 'The King') : 'The King',
+                                _playerActionsLeft: 3
+                            };
+                            console.log('[Court] Created _activeCourtSession for story mode (rank ' + _pRank + ')');
+                        } else {
+                            console.log('[Court] Player rank too low (' + _pRank + ') for kingdom ' + k.id);
+                        }
                     }
                 }
-            } catch(e) {}
+            } catch(e) { console.error('[Court] Error creating _activeCourtSession:', e); }
 
             var isPlayerK3 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
             logEvent('⚖️ Royal Court is now in session in ' + (pc.townName || k.name) + '! ' + courtNobles.length + ' nobles in attendance.', {
                 type: 'court_started', kingdomId: k.id, townId: pc.townId
             }, isPlayerK3 ? 'my_kingdom' : 'foreign_kingdoms');
             k._pendingCourt = null;
+            console.log('[Court] Cleared _pendingCourt, setting _nextCourtDay far out');
             // Update _nextCourtDay so old court system doesn't immediately re-trigger
             k._nextCourtDay = world.day + rng.randInt(25, 50);
         }
@@ -24454,13 +24492,15 @@
                 if (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId) {
                     var playerPersonId = Player.personId || 'player';
                     var playerPerson = findPerson(playerPersonId);
+                    // Player is NOT in world.people — use Player.state for rank check
+                    var _playerRankForFeast = (Player.state && Player.state.socialRank && Player.state.socialRank[kId]) || 0;
                     var _pIsKing = Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
                     if (_pIsKing) {
                         // King always attends their own feast
                         if (k._activeFeast.attendees.indexOf(playerPersonId) < 0) {
                             k._activeFeast.attendees.push(playerPersonId);
                         }
-                    } else if (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4) {
+                    } else if (_playerRankForFeast >= 4 || (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4)) {
                         // Noble player gets an invitation they can accept/decline
                         if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
                         Player.state._feastInvitations.push({
