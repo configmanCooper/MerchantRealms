@@ -1021,6 +1021,11 @@
 
         if (!canRevealTrait && !canRevealQuirk) return { type: 'nothing', message: 'You already know everything about this person.' };
 
+        // Story mode: track trait discovery
+        if (player.storyMode) {
+            player.storyMode._discoveredTrait = true;
+        }
+
         var revealQuirk = canRevealQuirk && (!canRevealTrait || (level !== 'vague' && rng && rng.chance(0.5)));
 
         if (revealQuirk) {

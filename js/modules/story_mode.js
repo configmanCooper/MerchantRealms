@@ -376,6 +376,54 @@ var StoryMode = (function () {
             onComplete: null
         },
 
+        // Ch 12b — Bonds of the Realm (NPC Relationships Tutorial)
+        {
+            id: 'ch12b', title: 'Bonds of the Realm', act: 2,
+            startDialog: 'ch12b_bonds',
+            objectives: [
+                { id: 'ch12b_talk_npc', type: 'custom', fn: '_checkTalkedToNPC',
+                  desc: 'Talk to a townsperson',
+                  hint: 'Click on any person in the Town View and choose Talk to start a conversation',
+                  done: false },
+                { id: 'ch12b_gift_npc', type: 'custom', fn: '_checkGiftedNPC',
+                  desc: 'Give a gift to someone',
+                  hint: 'Click on a person, then click Gift to offer them something from your inventory',
+                  done: false },
+                { id: 'ch12b_reach_friendly', type: 'custom', fn: '_checkFriendlyNPC',
+                  desc: 'Reach "Friendly" relationship (20+) with any NPC',
+                  hint: 'Keep talking and giving gifts to the same person. Each interaction builds your bond.',
+                  done: false },
+                { id: 'ch12b_go_on_date', type: 'custom', fn: '_checkWentOnDate',
+                  desc: 'Go on a date with someone',
+                  hint: 'Click on a person you have a Friendly or higher relationship with, then choose Date. You need a relationship of 20+ to date.',
+                  done: false, after: 'ch12b_reach_friendly' },
+                { id: 'ch12b_discover_trait', type: 'custom', fn: '_checkDiscoveredTrait',
+                  desc: 'Discover a personality trait of any NPC',
+                  hint: 'Go on dates or observe people. During dates, you may discover their personality traits like loyalty, ambition, or warmth.',
+                  done: false, after: 'ch12b_go_on_date' },
+                { id: 'ch12b_reach_close_friend', type: 'custom', fn: '_checkCloseFriendNPC',
+                  desc: 'Reach "Close Friend" (60+) with any NPC',
+                  hint: 'Continue building your relationship through gifts, dates, and conversations. Close Friends unlock powerful social options.',
+                  done: false, after: 'ch12b_reach_friendly' },
+                { id: 'ch12b_request_intro', type: 'custom', fn: '_checkRequestedIntro',
+                  desc: 'Ask a Close Friend to introduce you to a noble',
+                  hint: 'Click on a Close Friend (60+ relationship) and choose "Request Introduction" to meet a noble they know.',
+                  done: false, after: 'ch12b_reach_close_friend' },
+                { id: 'ch12b_accept_quest', type: 'custom', fn: '_checkAcceptedTownQuest',
+                  desc: 'Accept a town quest',
+                  hint: 'Open the Town View and look for the Quest Board. Accept any available quest to help the townsfolk.',
+                  done: false },
+                { id: 'ch12b_complete_quest', type: 'custom', fn: '_checkCompletedTownQuest',
+                  desc: 'Complete a town quest',
+                  hint: 'Fulfill the requirements of your accepted quest — deliver the requested goods or complete the task.',
+                  done: false, after: 'ch12b_accept_quest' }
+            ],
+            endDialog: 'ch12b_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: null
+        },
+
         // ── Act III ──
 
         // Ch 13
@@ -2295,6 +2343,61 @@ var StoryMode = (function () {
 
     _hooks._checkViewedRankings = function () {
         return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedRankings;
+    };
+
+    // ── Ch 12b: Bonds of the Realm checks ──
+    _hooks._checkTalkedToNPC = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._talkedToNPC;
+    };
+
+    _hooks._checkGiftedNPC = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._giftedNPC;
+    };
+
+    _hooks._checkFriendlyNPC = function () {
+        if (typeof Player === 'undefined' || !Player.state) return false;
+        var rels = Player.state.relationships || {};
+        for (var pid in rels) {
+            if ((rels[pid].level || 0) >= 20) return true;
+        }
+        return false;
+    };
+
+    _hooks._checkWentOnDate = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._wentOnDate;
+    };
+
+    _hooks._checkDiscoveredTrait = function () {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._discoveredTrait) return true;
+        // Also check if player has any revealed traits
+        if (typeof Player !== 'undefined' && Player.state && Player.state.revealedTraits) {
+            for (var pid in Player.state.revealedTraits) {
+                var rt = Player.state.revealedTraits[pid];
+                if (rt && rt.traits && Object.keys(rt.traits).length > 0) return true;
+            }
+        }
+        return false;
+    };
+
+    _hooks._checkCloseFriendNPC = function () {
+        if (typeof Player === 'undefined' || !Player.state) return false;
+        var rels = Player.state.relationships || {};
+        for (var pid in rels) {
+            if ((rels[pid].level || 0) >= 60) return true;
+        }
+        return false;
+    };
+
+    _hooks._checkRequestedIntro = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._requestedIntro;
+    };
+
+    _hooks._checkAcceptedTownQuest = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._acceptedTownQuest;
+    };
+
+    _hooks._checkCompletedTownQuest = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._completedTownQuest;
     };
 
     // ───────────────────────────────────────────────

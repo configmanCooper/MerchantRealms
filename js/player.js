@@ -23766,6 +23766,10 @@
                 rank: targetRank
             };
             Engine.logEvent('🤝 ' + introducer.firstName + ' introduced you to ' + target.firstName + ' ' + (target.lastName || '') + '!');
+            // Story mode: track introduction
+            if (player.storyMode) {
+                player.storyMode._requestedIntro = true;
+            }
             // Start with a small relationship
             if (!player.relationships[targetId]) {
                 player.relationships[targetId] = { level: 10, type: 'introduction' };

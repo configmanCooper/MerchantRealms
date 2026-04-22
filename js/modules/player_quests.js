@@ -468,6 +468,10 @@
         player.activeQuests.push(found);
 
         Engine.logEvent('📋 Accepted town quest: ' + found.title + ' in ' + (Engine.findTown(foundTownId) || {}).name);
+        // Story mode: track quest accept
+        if (player.storyMode) {
+            player.storyMode._acceptedTownQuest = true;
+        }
         return { success: true, message: 'Quest accepted! You have ' + found.timeLimit + ' days to complete it.', quest: found };
     }
 
@@ -604,6 +608,10 @@
 
         Engine.logEvent('✅ Completed quest: ' + quest.title + (donate ? ' (donated)' : ' (sold)'));
         if (typeof UI !== 'undefined' && UI.toast) UI.toast(resultMsg, 'success', 'critical');
+        // Story mode: track quest completion
+        if (player.storyMode) {
+            player.storyMode._completedTownQuest = true;
+        }
 
         return { success: true, message: resultMsg, goldReward: goldReward, repBoost: repBoost, boosted: boosted };
     }

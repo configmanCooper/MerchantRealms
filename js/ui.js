@@ -3929,6 +3929,11 @@ window.UI = (function () {
                     toast(result.message, 'success');
                     window._tutorialSocialInteracted = true;
                     if (iid === 'small_talk') window._tutorialSmallTalkDone = true;
+                    // Story mode: track NPC talk
+                    if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+                        Player.state.storyMode._talkedToNPC = true;
+                        if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
+                    }
                     closeModal();
                     try {
                         var p = Engine.getPerson(pid);
@@ -3963,6 +3968,11 @@ window.UI = (function () {
         const result = Player.goOnDate(personId, activityId);
         if (result && result.success) {
             toast(result.message, 'success');
+            // Story mode: track date
+            if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+                Player.state.storyMode._wentOnDate = true;
+                if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
+            }
             try {
                 const person = Engine.getPerson(personId);
                 if (person) UI.showPersonDetail(person);
@@ -8618,6 +8628,11 @@ window.UI = (function () {
             const result = Player.giveGift(personId, resourceId, qty);
             if (result && result.success) {
                 toast(result.message, 'success');
+                // Story mode: track NPC gift
+                if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+                    Player.state.storyMode._giftedNPC = true;
+                    if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
+                }
                 openGiftDialog(personId);
             } else {
                 toast((result && result.message) || 'Cannot give gift', 'warning');

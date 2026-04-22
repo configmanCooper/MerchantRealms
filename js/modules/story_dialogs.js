@@ -1068,6 +1068,30 @@
             ]
         },
 
+        // Ch 12b — Bonds of the Realm
+        ch12b_bonds: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "You've been so busy with trade and politics, {son|daughter}, that I worry you've forgotten something important, the people around you.",
+                "A merchant's greatest asset isn't gold or goods. It's the people who trust you. Friends open doors that gold cannot.",
+                "Let me teach you about building relationships. Talk to people in town. Give them gifts they like. Spend time with them. The more they trust you, the more they'll help you.",
+                "And don't forget, every person has things they love and things they hate. Pay attention to their reactions when you give gifts, you'll learn what makes them smile.",
+                "Once you've made a close friend, they can introduce you to nobles, people you'd never meet on your own. That's how the real game of influence begins.",
+                "Oh, and check the town quest board! Townsfolk post requests there, deliveries, supplies, all sorts of work. Completing quests earns gold, reputation, and gratitude."
+            ]
+        },
+
+        ch12b_complete: {
+            speaker: "father",
+            portrait: "father",
+            lines: [
+                "Look at you, making friends, earning trust, helping the people around you. This is what separates a merchant from a legend.",
+                "Remember, relationships aren't transactions. Nurture them. The bonds you forge today will carry you through the storms ahead.",
+                "And who knows? Maybe one of those friendships will become something more. Marriage is a fine thing, {son|daughter}. When you find the right person, you'll know."
+            ]
+        },
+
         ch20_mark_on_world: {
             speaker: "narrator",
             portrait: "narrator",
