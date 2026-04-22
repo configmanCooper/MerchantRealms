@@ -8995,6 +8995,7 @@ window.UI = (function () {
         ],
         world: [
             { icon: '🏘️', label: 'Town View', fn: '_showCurrentTown', conditional: 'intown' },
+            { icon: '👥', label: 'Townspeople', fn: '_showTownspeople', conditional: 'intown' },
             { icon: '🏗️', label: 'Buildings', action: 'openTownMarket', conditional: 'intown' },
             { icon: '👑', label: 'Kingdoms', action: 'openKingdomsDialog' },
             { icon: '🗺️', label: 'Map', action: 'openMapView' },
@@ -9095,6 +9096,12 @@ window.UI = (function () {
                         var town = Engine.findTown(Player.townId) || Engine.getTown(Player.townId);
                         if (town && typeof UI !== 'undefined' && UI.showTownDetail) UI.showTownDetail(town);
                     } catch (e) { /* ignore */ }
+                }
+                return;
+            }
+            if (item.fn === '_showTownspeople') {
+                if (typeof Player !== 'undefined' && Player.townId && !Player.traveling) {
+                    if (typeof UI !== 'undefined' && UI.showTownPeople) UI.showTownPeople(Player.townId);
                 }
                 return;
             }
