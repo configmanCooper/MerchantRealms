@@ -616,7 +616,18 @@ var StoryMode = (function () {
                 }
             } catch (e) { /* feast scheduling failed */ }
         } else if (objId === 'ch16_attend_feast') {
-            // Court was already scheduled at chapter start — no action needed here
+            // Schedule royal court 3 days after feast completion
+            try {
+                var _valdrenK2 = null;
+                var _allK2 = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                for (var _ki2 = 0; _ki2 < _allK2.length; _ki2++) {
+                    if (_allK2[_ki2].name === 'Valdren') { _valdrenK2 = _allK2[_ki2]; break; }
+                }
+                if (_valdrenK2) {
+                    var _w = Engine.getWorld ? Engine.getWorld() : null;
+                    _valdrenK2._nextCourtDay = (_w ? _w.day : 0) + 3;
+                }
+            } catch (e) { /* court scheduling failed */ }
         }
     }
 
@@ -1782,8 +1793,7 @@ var StoryMode = (function () {
                         }
                         _refreshTracker();
                     }
-                    // Schedule court 14 days from now
-                    valdren._nextCourtDay = (w.day || 0) + 14;
+                    // Court will be scheduled after feast objective completes
                 }
             }
         }
