@@ -1024,6 +1024,7 @@
         // Story mode: track trait discovery
         if (player.storyMode) {
             player.storyMode._discoveredTrait = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(player);
         }
 
         var revealQuirk = canRevealQuirk && (!canRevealTrait || (level !== 'vague' && rng && rng.chance(0.5)));

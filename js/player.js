@@ -424,8 +424,8 @@
         var sex = person.sex || 'M';
         var tone = (typeof person.skinTone === 'number') ? person.skinTone : -1;
 
-        // Baby (0-4): always use baby emoji
-        if (typeof age === 'number' && age < 5) {
+        // Baby (0-2): always use baby emoji
+        if (typeof age === 'number' && age <= 2) {
             // Determine skin tone from parents if not set
             if (tone < 0 && person.parentIds && person.parentIds.length >= 2) {
                 var p1 = null, p2 = null;
@@ -451,8 +451,8 @@
             return person.portrait;
         }
 
-        // Child (5-16): use boy/girl emoji
-        if (typeof age === 'number' && age >= 5 && age <= 16) {
+        // Child (3-12): use boy/girl emoji
+        if (typeof age === 'number' && age >= 3 && age <= 12) {
             if (tone < 0) {
                 // Try to derive from parents or hash
                 var hash2 = 0;

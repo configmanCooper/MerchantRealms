@@ -1298,8 +1298,12 @@ function showPersonDetail(person) {
     const isChild = isPlayer && Player.childrenIds && Player.childrenIds.includes(person.id);
 
     // ── Basic Info ──
-    let html = `<div class="detail-section">
-        <div class="detail-row"><span class="label">Name</span>
+    var _npcPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(person) : '';
+    let html = `<div class="detail-section">`;
+    if (_npcPortrait) {
+        html += `<div style="text-align:center;margin-bottom:6px;"><span style="font-size:2.5rem;">${_npcPortrait}</span></div>`;
+    }
+    html += `<div class="detail-row"><span class="label">Name</span>
             <span class="value">${person.firstName || ''} ${person.lastName || ''}</span></div>
         <div class="detail-row"><span class="label">Age</span>
             <span class="value">${person.age || '?'}</span></div>
@@ -1383,6 +1387,29 @@ function showPersonDetail(person) {
                 html += `<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;" data-action="trackMerchantPerson" data-id="${person.id}">☆ Track Merchant</button>`;
             }
             html += `</div>`;
+        }
+        // ── Elite Merchant Favors ──
+        if (isInSameTown && isPlayer && Player.getRelationship) {
+            var _emFavRel = Player.getRelationship(person.id);
+            if (_emFavRel.level >= 60) {
+                var _emFavCooldown = person._playerFavorCooldown || 0;
+                var _emFavDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
+                var _emFavReady = _emFavDay >= _emFavCooldown;
+                html += `<div style="margin-top:8px;padding:8px;background:rgba(255,165,0,0.08);border:1px solid rgba(255,165,0,0.25);border-radius:6px;">`;
+                html += `<div style="font-size:0.82rem;font-weight:bold;color:#ffa500;margin-bottom:4px;">🤝 Ask a Favor</div>`;
+                if (!_emFavReady) {
+                    var _emFavWait = _emFavCooldown - _emFavDay;
+                    html += `<div style="font-size:0.72rem;color:#888;">⏳ Cooldown: ${_emFavWait} day${_emFavWait !== 1 ? 's' : ''} remaining</div>`;
+                } else {
+                    html += `<div style="font-size:0.7rem;color:#aaa;margin-bottom:4px;">Requires 60+ relationship. 30-day cooldown after a favor.</div>`;
+                    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+                    html += `<button class="btn-medieval" data-action="emFavorStrategy" data-id="${person.id}" style="font-size:0.72rem;padding:4px 8px;background:rgba(255,165,0,0.15);border-color:rgba(255,165,0,0.3);">🎯 Change Strategy</button>`;
+                    html += `<button class="btn-medieval" data-action="emFavorKingdom" data-id="${person.id}" style="font-size:0.72rem;padding:4px 8px;background:rgba(255,165,0,0.15);border-color:rgba(255,165,0,0.3);">👑 Switch Kingdom</button>`;
+                    html += `<button class="btn-medieval" data-action="emFavorFocus" data-id="${person.id}" style="font-size:0.72rem;padding:4px 8px;background:rgba(255,165,0,0.15);border-color:rgba(255,165,0,0.3);">📦 Focus on Good</button>`;
+                    html += `</div>`;
+                }
+                html += `</div>`;
+            }
         }
         html += `</div>`;
     }
@@ -4508,6 +4535,213 @@ function clickTown(townId) {
     UI.registerAction('_revoltJoinSide', function(_t, d) { UI._revoltJoinSide(d.id, d.val, d.side, d.win); });
     UI.registerAction('_revoltTurnBack', function() { UI._revoltTurnBack(); });
     UI.registerAction('installShipAddon', function(_t, d) { UI.installShipAddon(d.id, d.val); });
+
+    // ── Elite Merchant Favor Action Handlers ──
+    function _emFavorCalcCost(em, favorType) {
+        var rel = Player.getRelationship ? Player.getRelationship(em.id) : { level: 0 };
+        var playerRank = 0;
+        if (Player.state.socialRank) { for (var _srk in Player.state.socialRank) { if ((Player.state.socialRank[_srk] || 0) > playerRank) playerRank = Player.state.socialRank[_srk]; } }
+        var baseCost = 500;
+        if (favorType === 'kingdom') baseCost = 2000;
+        else if (favorType === 'focus') baseCost = 1000;
+        // Personality modifiers
+        var p = em.personality || {};
+        var greedMod = 1 + ((p.greed || 50) - 50) / 100; // 0.5-1.5x
+        var relDiscount = 1 - ((rel.level - 60) / 200); // 60rel=1.0, 100rel=0.8
+        var rankDiscount = 1 - (playerRank * 0.08); // rank0=1.0, rank7=0.44
+        var cost = Math.floor(baseCost * greedMod * relDiscount * rankDiscount);
+        return Math.max(100, Math.min(10000, cost));
+    }
+
+    function _emFavorBaseChance(em) {
+        var rel = Player.getRelationship ? Player.getRelationship(em.id) : { level: 0 };
+        var p = em.personality || {};
+        var chance = 0.15 + (rel.level - 60) * 0.008 + ((p.warmth || 50) - 50) * 0.002;
+        return Math.max(0.1, Math.min(0.85, chance));
+    }
+
+    UI.registerAction('emFavorStrategy', function(_t, d) {
+        var em = Engine.findPerson(d.id);
+        if (!em || !em.isEliteMerchant) { UI.toast('NPC not found.', 'error'); return; }
+        var strategies = ['food_monopoly', 'military_supplier', 'luxury_trader', 'diversified', 'political_climber', 'war_profiteer', 'land_baron', 'trade_network', 'medical_supplier', 'culture_trader', 'retail_mogul'];
+        var current = em.strategy || 'diversified';
+        var opts = '';
+        for (var si = 0; si < strategies.length; si++) {
+            if (strategies[si] === current) continue;
+            var sLabel = strategies[si].replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+            opts += '<option value="' + strategies[si] + '">' + sLabel + '</option>';
+        }
+        var cost = _emFavorCalcCost(em, 'strategy');
+        var body = '<div style="padding:10px;">';
+        body += '<div style="margin-bottom:8px;font-size:0.85rem;">Ask <strong>' + (em.firstName || '') + ' ' + (em.lastName || '') + '</strong> to change their trading strategy.</div>';
+        body += '<div style="margin-bottom:6px;font-size:0.78rem;color:#aaa;">Current strategy: <span style="color:#ffa500;">' + current.replace(/_/g, ' ') + '</span></div>';
+        body += '<div style="margin-bottom:6px;"><label style="font-size:0.78rem;color:#ccc;">New Strategy:</label><br>';
+        body += '<select id="emFavorStrategySelect" style="background:#1a1a2e;color:#ccc;border:1px solid #555;border-radius:4px;padding:4px 8px;width:100%;margin-top:4px;">' + opts + '</select></div>';
+        body += '<div style="font-size:0.8rem;color:#d4a017;margin-top:8px;">💰 Cost: <strong>' + cost + 'g</strong></div>';
+        body += '<div style="font-size:0.7rem;color:#888;margin-top:4px;">Your gold: ' + Math.floor(Player.state.gold || 0) + 'g</div>';
+        body += '</div>';
+        var footer = '<button class="btn-medieval" data-action="_emFavorStrategyConfirm" data-id="' + em.id + '" data-val="' + cost + '" style="font-size:0.78rem;padding:5px 14px;">💰 Pay & Ask</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="font-size:0.78rem;padding:5px 14px;margin-left:8px;">Cancel</button>';
+        UI.openModal('🎯 Ask to Change Strategy', body, footer);
+    });
+
+    UI.registerAction('_emFavorStrategyConfirm', function(_t, d) {
+        var em = Engine.findPerson(d.id);
+        if (!em) { UI.toast('NPC not found.', 'error'); return; }
+        var cost = Number(d.val);
+        var sel = document.getElementById('emFavorStrategySelect');
+        if (!sel) { UI.toast('Select a strategy first.', 'warning'); return; }
+        var newStrat = sel.value;
+        if ((Player.state.gold || 0) < cost) { UI.toast('Not enough gold!', 'warning'); return; }
+        Player.state.gold -= cost;
+        em.gold = (em.gold || 0) + cost;
+        var chance = _emFavorBaseChance(em);
+        var rng = Engine.getRng();
+        if (rng.random() < chance) {
+            var old = em.strategy;
+            em.strategy = newStrat;
+            em._playerFavorCooldown = (Engine.getDay ? Engine.getDay() : 0) + 30;
+            UI.closeModal();
+            UI.toast('✅ ' + em.firstName + ' agrees! Switching from ' + (old || '?').replace(/_/g, ' ') + ' to ' + newStrat.replace(/_/g, ' ') + '.', 'success');
+            UI.showPersonDetail(em);
+        } else {
+            em._playerFavorCooldown = (Engine.getDay ? Engine.getDay() : 0) + 30;
+            UI.closeModal();
+            UI.toast('❌ ' + em.firstName + ' considers but declines your request. They keep the gold as a "consideration fee."', 'warning');
+            UI.showPersonDetail(em);
+        }
+    });
+
+    UI.registerAction('emFavorKingdom', function(_t, d) {
+        var em = Engine.findPerson(d.id);
+        if (!em || !em.isEliteMerchant) { UI.toast('NPC not found.', 'error'); return; }
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+        var currentKid = em.kingdomId || em.citizenshipKingdomId || '';
+        var opts = '';
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            if (kingdoms[ki].id === currentKid) continue;
+            opts += '<option value="' + kingdoms[ki].id + '">' + (kingdoms[ki].name || kingdoms[ki].id) + '</option>';
+        }
+        if (!opts) { UI.toast('No other kingdoms available.', 'warning'); return; }
+        var cost = _emFavorCalcCost(em, 'kingdom');
+        var currentKName = '?';
+        try { var ck = Engine.findKingdom(currentKid); if (ck) currentKName = ck.name; } catch(e) {}
+        var body = '<div style="padding:10px;">';
+        body += '<div style="margin-bottom:8px;font-size:0.85rem;">Ask <strong>' + (em.firstName || '') + ' ' + (em.lastName || '') + '</strong> to relocate to a different kingdom.</div>';
+        body += '<div style="margin-bottom:6px;font-size:0.78rem;color:#aaa;">Current kingdom: <span style="color:#4fc3f7;">' + currentKName + '</span></div>';
+        body += '<div style="margin-bottom:6px;"><label style="font-size:0.78rem;color:#ccc;">Target Kingdom:</label><br>';
+        body += '<select id="emFavorKingdomSelect" style="background:#1a1a2e;color:#ccc;border:1px solid #555;border-radius:4px;padding:4px 8px;width:100%;margin-top:4px;">' + opts + '</select></div>';
+        body += '<div style="font-size:0.8rem;color:#d4a017;margin-top:8px;">💰 Cost: <strong>' + cost + 'g</strong></div>';
+        body += '<div style="font-size:0.7rem;color:#888;margin-top:4px;">Your gold: ' + Math.floor(Player.state.gold || 0) + 'g</div>';
+        body += '</div>';
+        var footer = '<button class="btn-medieval" data-action="_emFavorKingdomConfirm" data-id="' + em.id + '" data-val="' + cost + '" style="font-size:0.78rem;padding:5px 14px;">💰 Pay & Ask</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="font-size:0.78rem;padding:5px 14px;margin-left:8px;">Cancel</button>';
+        UI.openModal('👑 Ask to Switch Kingdom', body, footer);
+    });
+
+    UI.registerAction('_emFavorKingdomConfirm', function(_t, d) {
+        var em = Engine.findPerson(d.id);
+        if (!em) { UI.toast('NPC not found.', 'error'); return; }
+        var cost = Number(d.val);
+        var sel = document.getElementById('emFavorKingdomSelect');
+        if (!sel) { UI.toast('Select a kingdom first.', 'warning'); return; }
+        var newKid = sel.value;
+        if ((Player.state.gold || 0) < cost) { UI.toast('Not enough gold!', 'warning'); return; }
+        Player.state.gold -= cost;
+        em.gold = (em.gold || 0) + cost;
+        var chance = _emFavorBaseChance(em);
+        var rng = Engine.getRng();
+        if (rng.random() < chance) {
+            var oldKid = em.kingdomId || em.citizenshipKingdomId || '';
+            // Move to a town in the new kingdom
+            var targetKingdom = Engine.findKingdom(newKid);
+            var towns = Engine.getTowns ? Engine.getTowns() : [];
+            var targetTowns = towns.filter(function(t) { return t.kingdomId === newKid; });
+            if (targetTowns.length > 0) {
+                var targetTown = targetTowns[Math.floor(rng.random() * targetTowns.length)];
+                em.townId = targetTown.id;
+            }
+            em.kingdomId = newKid;
+            em.citizenshipKingdomId = newKid;
+            if (em.socialRank && em.socialRank[oldKid]) {
+                em.socialRank[newKid] = Math.max(em.socialRank[newKid] || 0, 1);
+            }
+            em._playerFavorCooldown = (Engine.getDay ? Engine.getDay() : 0) + 30;
+            UI.closeModal();
+            UI.toast('✅ ' + em.firstName + ' agrees to move to ' + (targetKingdom ? targetKingdom.name : newKid) + '!', 'success');
+            UI.showPersonDetail(em);
+        } else {
+            em._playerFavorCooldown = (Engine.getDay ? Engine.getDay() : 0) + 30;
+            UI.closeModal();
+            UI.toast('❌ ' + em.firstName + ' declines to relocate. They keep the gold as a "consideration fee."', 'warning');
+            UI.showPersonDetail(em);
+        }
+    });
+
+    UI.registerAction('emFavorFocus', function(_t, d) {
+        var em = Engine.findPerson(d.id);
+        if (!em || !em.isEliteMerchant) { UI.toast('NPC not found.', 'error'); return; }
+        // Show a list of goods grouped by category
+        var goodsList = [
+            { id: 'wheat', name: 'Wheat' }, { id: 'bread', name: 'Bread' }, { id: 'meat', name: 'Meat' },
+            { id: 'fish', name: 'Fish' }, { id: 'eggs', name: 'Eggs' }, { id: 'flour', name: 'Flour' },
+            { id: 'preserved_food', name: 'Preserved Food' }, { id: 'salt', name: 'Salt' },
+            { id: 'iron', name: 'Iron' }, { id: 'iron_ore', name: 'Iron Ore' }, { id: 'steel', name: 'Steel' },
+            { id: 'tools', name: 'Tools' }, { id: 'swords', name: 'Swords' }, { id: 'armor', name: 'Armor' },
+            { id: 'bows', name: 'Bows' }, { id: 'arrows', name: 'Arrows' },
+            { id: 'wood', name: 'Wood' }, { id: 'stone', name: 'Stone' }, { id: 'charcoal', name: 'Charcoal' },
+            { id: 'cloth', name: 'Cloth' }, { id: 'wool', name: 'Wool' }, { id: 'silk', name: 'Silk' },
+            { id: 'leather', name: 'Leather' }, { id: 'dye', name: 'Dye' },
+            { id: 'wine', name: 'Wine' }, { id: 'ale', name: 'Ale' }, { id: 'mead', name: 'Mead' },
+            { id: 'jewelry', name: 'Jewelry' }, { id: 'spices', name: 'Spices' },
+            { id: 'furniture', name: 'Furniture' }, { id: 'clothes', name: 'Clothes' }, { id: 'fine_clothes', name: 'Fine Clothes' },
+            { id: 'herbs', name: 'Herbs' }, { id: 'medicine', name: 'Medicine' }, { id: 'bandages', name: 'Bandages' }
+        ];
+        var opts = '';
+        for (var gi = 0; gi < goodsList.length; gi++) {
+            opts += '<option value="' + goodsList[gi].id + '">' + goodsList[gi].name + '</option>';
+        }
+        var cost = _emFavorCalcCost(em, 'focus');
+        var body = '<div style="padding:10px;">';
+        body += '<div style="margin-bottom:8px;font-size:0.85rem;">Ask <strong>' + (em.firstName || '') + ' ' + (em.lastName || '') + '</strong> to focus on a specific good and its supply chain.</div>';
+        body += '<div style="margin-bottom:6px;font-size:0.72rem;color:#aaa;">They will prioritize trading and producing this good.</div>';
+        body += '<div style="margin-bottom:6px;"><label style="font-size:0.78rem;color:#ccc;">Focus Good:</label><br>';
+        body += '<select id="emFavorGoodSelect" style="background:#1a1a2e;color:#ccc;border:1px solid #555;border-radius:4px;padding:4px 8px;width:100%;margin-top:4px;">' + opts + '</select></div>';
+        body += '<div style="font-size:0.8rem;color:#d4a017;margin-top:8px;">💰 Cost: <strong>' + cost + 'g</strong></div>';
+        body += '<div style="font-size:0.7rem;color:#888;margin-top:4px;">Your gold: ' + Math.floor(Player.state.gold || 0) + 'g</div>';
+        body += '</div>';
+        var footer = '<button class="btn-medieval" data-action="_emFavorFocusConfirm" data-id="' + em.id + '" data-val="' + cost + '" style="font-size:0.78rem;padding:5px 14px;">💰 Pay & Ask</button>';
+        footer += '<button class="btn-medieval" onclick="UI.closeModal()" style="font-size:0.78rem;padding:5px 14px;margin-left:8px;">Cancel</button>';
+        UI.openModal('📦 Ask to Focus on a Good', body, footer);
+    });
+
+    UI.registerAction('_emFavorFocusConfirm', function(_t, d) {
+        var em = Engine.findPerson(d.id);
+        if (!em) { UI.toast('NPC not found.', 'error'); return; }
+        var cost = Number(d.val);
+        var sel = document.getElementById('emFavorGoodSelect');
+        if (!sel) { UI.toast('Select a good first.', 'warning'); return; }
+        var focusGood = sel.value;
+        if ((Player.state.gold || 0) < cost) { UI.toast('Not enough gold!', 'warning'); return; }
+        Player.state.gold -= cost;
+        em.gold = (em.gold || 0) + cost;
+        var chance = _emFavorBaseChance(em);
+        var rng = Engine.getRng();
+        if (rng.random() < chance) {
+            em._focusGood = focusGood;
+            em._focusGoodDay = Engine.getDay ? Engine.getDay() : 0;
+            em._playerFavorCooldown = (Engine.getDay ? Engine.getDay() : 0) + 30;
+            UI.closeModal();
+            var goodName = focusGood.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+            UI.toast('✅ ' + em.firstName + ' agrees to focus on ' + goodName + ' and its supply chain!', 'success');
+            UI.showPersonDetail(em);
+        } else {
+            em._playerFavorCooldown = (Engine.getDay ? Engine.getDay() : 0) + 30;
+            UI.closeModal();
+            UI.toast('❌ ' + em.firstName + ' declines your request. They keep the gold as a "consideration fee."', 'warning');
+            UI.showPersonDetail(em);
+        }
+    });
 
     // Numeric-arg handlers (data-idx)
     UI.registerAction('rebuildBridge', function(_t, d) { UI.rebuildBridge(Number(d.idx)); });

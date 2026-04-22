@@ -4260,7 +4260,7 @@ window.UI = (function () {
         _renderTownPeople('name-asc', 'all', '');
     }
 
-    function _renderTownPeople(sortBy, filterBy, searchQuery, page) {
+    function _renderTownPeople(sortBy, filterBy, searchQuery, page, rankFilter) {
         var data = window._townPeopleData;
         if (!data) return;
         var people = data.people;
@@ -4307,7 +4307,7 @@ window.UI = (function () {
                 return false;
             });
         } else if (filterBy === 'elite-merchants') {
-            filtered = filtered.filter(function (p) { return p.isEliteMerchant || p.eliteMerchant || (p.gold && p.gold > 500 && (p.occupation === 'merchant' || p.occupation === 'trader')); });
+            filtered = filtered.filter(function (p) { return p.isEliteMerchant || p.eliteMerchant; });
         } else if (filterBy === 'soldiers') {
             filtered = filtered.filter(function (p) { return p.occupation === 'soldier'; });
         } else if (filterBy === 'guards') {
@@ -4332,6 +4332,20 @@ window.UI = (function () {
             filtered = filtered.filter(function (p) { return p.sex === 'M'; });
         } else if (filterBy === 'female') {
             filtered = filtered.filter(function (p) { return p.sex === 'F'; });
+        }
+
+        // Apply social rank filter
+        rankFilter = rankFilter || 'all-ranks';
+        if (rankFilter !== 'all-ranks') {
+            var _targetRank = parseInt(rankFilter, 10);
+            if (!isNaN(_targetRank)) {
+                filtered = filtered.filter(function (p) {
+                    var pRank = 0;
+                    if (Player.getNPCSocialRank) pRank = Player.getNPCSocialRank(p);
+                    else if (p.socialRank) { for (var _sk in p.socialRank) { if ((p.socialRank[_sk] || 0) > pRank) pRank = p.socialRank[_sk]; } }
+                    return pRank === _targetRank;
+                });
+            }
         }
 
         // Apply search
@@ -4397,9 +4411,13 @@ window.UI = (function () {
             html += '<option value="' + filters[fi][0] + '"' + (filterBy === filters[fi][0] ? ' selected' : '') + '>' + filters[fi][1] + '</option>';
         }
         html += '</select>';
+        html += '<select id="people-rank-filter" onchange="UI._reTownPeople()" style="padding:5px;background:rgba(0,0,0,0.4);border:1px solid rgba(200,170,100,0.3);color:var(--text);border-radius:4px;font-size:0.75rem;">';
+        var rankFilters = [['all-ranks','All Ranks'],['0','Peasant'],['1','Citizen'],['2','Burgher'],['3','Guildmaster'],['4','Minor Noble'],['5','Lord'],['6','Royal Advisor'],['7','King']];
+        for (var rfi = 0; rfi < rankFilters.length; rfi++) {
+            html += '<option value="' + rankFilters[rfi][0] + '"' + (rankFilter === rankFilters[rfi][0] ? ' selected' : '') + '>' + rankFilters[rfi][1] + '</option>';
+        }
+        html += '</select>';
         html += '</div>';
-
-        // Results count + pagination
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
         html += '<span style="font-size:0.72rem;color:#888;">Showing ' + (startIdx + 1) + '-' + Math.min(startIdx + perPage, filtered.length) + ' of ' + filtered.length + ' (total: ' + totalAlive + ')</span>';
         if (totalPages > 1) {
@@ -4421,11 +4439,12 @@ window.UI = (function () {
             var rel = Player.getRelationship ? Player.getRelationship(p.id) : { level: 0, type: 'stranger' };
             var relLevel = rel.level || 0;
             var relColor = relLevel >= 70 ? '#55a868' : relLevel >= 40 ? '#ccb974' : relLevel > 0 ? '#aaa' : '#666';
-            var relText = relLevel > 0 ? relLevel : '';
+            var relText = relLevel > 0 ? Math.floor(relLevel) : '';
             var occLabel = p.occupation ? capitalize(p.occupation) : 'None';
+            var npcPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(p) : '';
 
             html += '<div class="person-list-row" data-action="showPersonDetailById" data-id="' + p.id + '" style="cursor:pointer;padding:5px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;">';
-            html += '<span style="font-size:0.8rem;">' + sex + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + employed + (isChildAge ? ' 👶' : '') + '</span>';
+            html += '<span style="font-size:0.8rem;">' + (npcPortrait || sex) + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + employed + '</span>';
             html += '<span style="font-size:0.7rem;display:flex;gap:8px;align-items:center;">';
             html += '<span class="text-dim">' + occLabel + '</span>';
             html += '<span class="text-dim">Age ' + age + '</span>';
@@ -4444,11 +4463,13 @@ window.UI = (function () {
         var sortEl = document.getElementById('people-sort');
         var filterEl = document.getElementById('people-filter');
         var searchEl = document.getElementById('people-search');
+        var rankEl = document.getElementById('people-rank-filter');
         var sortBy = sortEl ? sortEl.value : 'name-asc';
         var filterBy = filterEl ? filterEl.value : 'all';
         var searchQuery = searchEl ? searchEl.value : '';
+        var rankFilter = rankEl ? rankEl.value : 'all-ranks';
         var cursorPos = searchEl ? searchEl.selectionStart : 0;
-        _renderTownPeople(sortBy, filterBy, searchQuery, 0);
+        _renderTownPeople(sortBy, filterBy, searchQuery, 0, rankFilter);
         // Re-focus search input after re-render (innerHTML replaces the DOM element)
         setTimeout(function() {
             var newSearch = document.getElementById('people-search');
@@ -4460,10 +4481,12 @@ window.UI = (function () {
         var sortEl = document.getElementById('people-sort');
         var filterEl = document.getElementById('people-filter');
         var searchEl = document.getElementById('people-search');
+        var rankEl = document.getElementById('people-rank-filter');
         var sortBy = sortEl ? sortEl.value : 'name-asc';
         var filterBy = filterEl ? filterEl.value : 'all';
         var searchQuery = searchEl ? searchEl.value : '';
-        _renderTownPeople(sortBy, filterBy, searchQuery, page);
+        var rankFilter = rankEl ? rankEl.value : 'all-ranks';
+        _renderTownPeople(sortBy, filterBy, searchQuery, page, rankFilter);
     }
 
     function filterTownPeople() {
@@ -4505,8 +4528,10 @@ window.UI = (function () {
                 else if (relLevel >= 60) { tierName = 'Close Friend'; tierColor = '#55a868'; tierIcon = '💚'; }
                 else if (relLevel >= 40) { tierName = 'Friend'; tierColor = '#d4a843'; tierIcon = '💛'; }
 
+                var friendPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(p) : '';
+
                 html += '<div class="person-list-row" data-action="showPersonDetailById" data-id="' + p.id + '" style="cursor:pointer;padding:6px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;">';
-                html += '<span style="font-size:0.8rem;">' + sex + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + '</span>';
+                html += '<span style="font-size:0.8rem;">' + (friendPortrait || sex) + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + '</span>';
                 html += '<span style="font-size:0.7rem;display:flex;gap:8px;align-items:center;">';
                 if (townName) html += '<span class="text-dim">📍 ' + townName + '</span>';
                 html += '<span class="text-dim">' + occLabel + '</span>';

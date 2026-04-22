@@ -2030,7 +2030,15 @@
         if (!town.market) return;
         var inv = em.npcMerchantInventory || {};
         var preferredGoods = STRATEGY_GOODS[strategy] || STRATEGY_GOODS.diversified;
-        var storageCapacity = getEmStorageCapacity(em);
+        // Player-requested focus good: prioritize this good and its supply chain
+        if (em._focusGood) {
+            var fg = em._focusGood;
+            if (preferredGoods.indexOf(fg) < 0) {
+                preferredGoods = [fg].concat(preferredGoods);
+            } else {
+                preferredGoods = [fg].concat(preferredGoods.filter(function(g) { return g !== fg; }));
+            }
+        }
         var currentStock = getEmCurrentInventory(inv);
 
         // Check for active trade subsidies in this kingdom
@@ -2248,6 +2256,11 @@
         var bestTown = null;
         var bestScore = -1;
         var preferredGoods = STRATEGY_GOODS[strategy] || STRATEGY_GOODS.diversified;
+        if (em._focusGood) {
+            var fg2 = em._focusGood;
+            if (preferredGoods.indexOf(fg2) < 0) preferredGoods = [fg2].concat(preferredGoods);
+            else preferredGoods = [fg2].concat(preferredGoods.filter(function(g) { return g !== fg2; }));
+        }
 
         var connected = [];
         for (var ri = 0; ri < world.roads.length; ri++) {
