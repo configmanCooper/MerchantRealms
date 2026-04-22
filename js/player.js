@@ -23805,8 +23805,8 @@
 
         var today = Engine.getDay ? Engine.getDay() : 0;
         var lastAsk = player.introductionCooldowns[introducerId] || 0;
-        if (lastAsk > 0 && today - lastAsk < 30) {
-            return { success: false, message: introducer.firstName + ' says: "Give me some time before asking again. ' + Math.max(1, 30 - (today - lastAsk)) + ' days."' };
+        if (lastAsk > 0 && today - lastAsk < 14) {
+            return { success: false, message: introducer.firstName + ' says: "Give me some time before asking again. ' + Math.max(1, 14 - (today - lastAsk)) + ' days."' };
         }
 
         // Find a person one rank ABOVE the introducer that the player hasn't met
