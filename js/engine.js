@@ -6769,7 +6769,9 @@
                         injured: false,
                         injuryDay: 0,
                     };
+                    if (!p.childrenIds) p.childrenIds = [];
                     p.childrenIds.push(child.id);
+                    if (!father.childrenIds) father.childrenIds = [];
                     father.childrenIds.push(child.id);
                     p._lastBirthDay = day; // 270-day cooldown starts
                     // Noble child rank inheritance: king's child = Lord (5), other nobles = parent rank - 1
