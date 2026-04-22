@@ -624,8 +624,17 @@ var StoryMode = (function () {
                     if (_allK2[_ki2].name === 'Valdren') { _valdrenK2 = _allK2[_ki2]; break; }
                 }
                 if (_valdrenK2) {
-                    var _w = Engine.getWorld ? Engine.getWorld() : null;
-                    _valdrenK2._nextCourtDay = (_w ? _w.day : 0) + 3;
+                    // Clear any existing court scheduling and feast blocks
+                    _valdrenK2._pendingCourt = null;
+                    _valdrenK2._nextCourtDay = null;
+                    // Clear active feast so it doesn't block court scheduling
+                    _valdrenK2._activeFeast = null;
+                    _valdrenK2._pendingFeast = null;
+                    // Clear resolved court sessions
+                    if (_valdrenK2._courtSession && _valdrenK2._courtSession.cases && !_valdrenK2._courtSession.cases.some(function(c) { return !c.resolved; })) {
+                        _valdrenK2._courtSession = null;
+                    }
+                    Engine.startCourtSession(_valdrenK2.id, 3);
                 }
             } catch (e) { /* court scheduling failed */ }
         }
