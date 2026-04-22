@@ -5719,6 +5719,10 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
     function openJournal() {
         if (typeof Player === 'undefined') return;
+        if (Player.state && Player.state.storyMode) {
+            Player.state.storyMode._viewedJournal = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
+        }
         var entries = Player.state.journalEntries || [];
         var name = Player.fullName || 'the Merchant';
 
@@ -8292,41 +8296,32 @@ window.UI = (function () {
                 <span class="value">${rank.icon} ${rank.name}</span></div>
         </div>`;
 
-        // All kingdoms where player holds rank
+        // All kingdoms — show every kingdom, not just those with rank
         const citizenKingdoms = [];
-        if (Player.socialRank) {
-            for (const kId in Player.socialRank) {
-                if ((Player.socialRank[kId] || 0) >= 1) {
-                    const k = kingdoms.find(function(x) { return x.id === kId; });
-                    citizenKingdoms.push({ id: kId, name: k ? k.name : kId, color: k ? k.color : '#888', rankIdx: Player.socialRank[kId] });
-                }
-            }
+        for (const k of kingdoms) {
+            const rankInK = (Player.socialRank && Player.socialRank[k.id]) ? Player.socialRank[k.id] : 0;
+            citizenKingdoms.push({ id: k.id, name: k.name, color: k.color || '#888', rankIdx: rankInK });
         }
-        // Also include kingdoms where rank is 0 (peasant) if player has residency tracking there
-        if (Player.socialRank) {
-            for (const kId in Player.socialRank) {
-                if ((Player.socialRank[kId] || 0) === 0 && citizenKingdoms.findIndex(function(c) { return c.id === kId; }) === -1) {
-                    // Only show if they have some history (residency started)
-                    if (Player.kingdomResidencyStart && Player.kingdomResidencyStart[kId] !== undefined) {
-                        const k = kingdoms.find(function(x) { return x.id === kId; });
-                        citizenKingdoms.push({ id: kId, name: k ? k.name : kId, color: k ? k.color : '#888', rankIdx: 0 });
-                    }
-                }
-            }
-        }
+        // Sort: active kingdom first, then by rank descending
+        citizenKingdoms.sort(function(a, b) {
+            if (a.id === citizenKId) return -1;
+            if (b.id === citizenKId) return 1;
+            return b.rankIdx - a.rankIdx;
+        });
         if (citizenKingdoms.length > 0) {
             html += '<div class="detail-section"><h3>\uD83C\uDFE0 Citizenships</h3>';
             for (const ck of citizenKingdoms) {
                 const r = CONFIG.SOCIAL_RANKS[ck.rankIdx] || CONFIG.SOCIAL_RANKS[0];
                 const isActive = ck.id === citizenKId;
                 const activeLabel = isActive ? '<span style="color:#d4af37;font-weight:bold;font-size:0.75rem;margin-left:6px;">⭐ ACTIVE</span>' : '';
-                const activeBtn = !isActive && ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
+                const setActiveBtn = !isActive && ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
+                const renounceBtn = ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>` : '';
                 html += `<div class="detail-row" style="margin-bottom:4px;${isActive ? 'background:rgba(212,175,55,0.08);border-radius:4px;padding:2px 4px;' : ''}">
                     <span class="label" style="color:${ck.color};">${ck.name}${activeLabel}</span>
                     <span class="value">${r.icon} ${r.name}
                         <button class="btn-medieval" data-action="showRankProgressionPanel" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:6px;">Details</button>
-                        ${activeBtn}
-                        ${ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>` : ''}
+                        ${setActiveBtn}
+                        ${renounceBtn}
                     </span>
                 </div>`;
             }
@@ -11544,6 +11539,10 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function openLeaderboard() {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+            Player.state.storyMode._viewedRankings = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
+        }
         // Use new Engine leaderboard if available, fallback to old
         var entries;
         if (typeof Engine !== 'undefined' && Engine.getLeaderboard) {
@@ -16288,6 +16287,10 @@ window.UI = (function () {
     }
 
     function openPlayerImpact() {
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
+            Player.state.storyMode._viewedPlayerImpact = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
+        }
         var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
         var towns = Engine.getTowns ? Engine.getTowns() : [];
         var people = Engine.getPeople ? Engine.getPeople() : [];

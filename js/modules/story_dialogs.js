@@ -1066,6 +1066,34 @@
             lines: [
                 "You have mastered the tools of power. The realm is yours to shape. Your legacy begins now."
             ]
+        },
+
+        ch20_mark_on_world: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "You have come far, merchant. From a blacksmith's {son|daughter} to a force that shapes kingdoms. But do you truly know the mark you have left on this world?",
+                "Open your Journal, the personal record of every milestone, every deal, every turning point in your story. It is the ledger of your life.",
+                "Then check your Player Impact, a measure of how deeply your actions have shaped the economies, the politics, and the people of every kingdom.",
+                "Finally, visit the Rankings. See where you stand among the greatest merchants the realm has ever known. The leaderboard does not lie.",
+                "But these are only the beginning. The world holds feats of legend for those bold enough to chase them.",
+                "Could you become the Kingmaker, overthrowing a ruler and installing one loyal to you? Or the Plague Savior, whose clinics turned back a deadly outbreak when all seemed lost?",
+                "Perhaps you will starve a kingdom of weapons with an Arms Embargo, tipping the balance of a war. Or profit from both sides as a War Profiteer, selling steel to whoever pays the most.",
+                "Imagine crashing a kingdom's economy as an Economic Saboteur, or raising the poorest realm to the wealthiest as an Economic Miracle. The choice between creation and destruction is always yours.",
+                "Build a Trade Route Empire spanning every town. Become the Puppeteer, controlling king, council, and economy from the shadows. Or forge civilization itself as the Architect, turning outposts into thriving villages.",
+                "Set the entire world ablaze in war, or broker a lasting peace across all kingdoms. Monopolize resources. Crush kingdoms. Crown yourself ruler. The platinum feats await those who dare.",
+                "Now go. Open your Journal, check your Impact, and see your Rankings. The world is watching, merchant."
+            ]
+        },
+
+        ch20_complete: {
+            speaker: "narrator",
+            portrait: "narrator",
+            lines: [
+                "You have seen the full measure of your journey and the world you have shaped. Every trade, every alliance, every betrayal has left its mark.",
+                "The story never truly ends, merchant. There are always new feats to chase, new kingdoms to influence, new legends to write.",
+                "Go forth. The realm of Merchant Realms is yours."
+            ]
         }
     };
 })();

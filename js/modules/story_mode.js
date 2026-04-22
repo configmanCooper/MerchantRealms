@@ -543,6 +543,30 @@ var StoryMode = (function () {
             unlockButtons: [],
             onStart: null,
             onComplete: '_onChapter19bComplete'
+        },
+
+        // Ch 20 — Your Mark on the World
+        {
+            id: 'ch20', title: 'Your Mark on the World', act: 4,
+            startDialog: 'ch20_mark_on_world',
+            objectives: [
+                { id: 'ch20_view_journal', type: 'custom', fn: '_checkViewedJournal',
+                  desc: 'Open your Journal',
+                  hint: 'Click the 📖 Journal button in the Character tab to review your personal story',
+                  done: false },
+                { id: 'ch20_view_impact', type: 'custom', fn: '_checkViewedPlayerImpact',
+                  desc: 'Check your Player Impact',
+                  hint: 'Click the 🏆 Player Impact button in the Character tab to see how you have shaped the world',
+                  done: false },
+                { id: 'ch20_view_rankings', type: 'custom', fn: '_checkViewedRankings',
+                  desc: 'View the Merchant Rankings',
+                  hint: 'Open the World tab and click 🏆 Rankings to see where you stand among the realm\'s merchants',
+                  done: false }
+            ],
+            endDialog: 'ch20_complete',
+            unlockButtons: [],
+            onStart: null,
+            onComplete: '_onChapter20Complete'
         }
     ];
 
@@ -2196,10 +2220,15 @@ var StoryMode = (function () {
         _toast('Congratulations! Sandbox mode unlocked.');
     };
 
-    // ── Ch 19b: Legacy (final chapter completion) ──
+    // ── Ch 19b: Legacy ──
     _hooks._onChapter19bComplete = function () {
+        _log('The tools of power are yours. But there is more to discover.');
+    };
+
+    // ── Ch 20: Your Mark on the World (final chapter completion) ──
+    _hooks._onChapter20Complete = function () {
         _storyState.complete = true;
-        _log('The story of your legacy is complete. The world is yours.');
+        _log('You have seen the full measure of your impact. The world is yours to shape. Your legacy begins now.');
     };
 
     // ── Ch 4b: The Road is Dangerous ──
@@ -2234,6 +2263,18 @@ var StoryMode = (function () {
 
     _hooks._checkViewedFeats = function () {
         return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedFeats;
+    };
+
+    _hooks._checkViewedJournal = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedJournal;
+    };
+
+    _hooks._checkViewedPlayerImpact = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedPlayerImpact;
+    };
+
+    _hooks._checkViewedRankings = function () {
+        return typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode._viewedRankings;
     };
 
     // ───────────────────────────────────────────────
