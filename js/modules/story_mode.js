@@ -1516,6 +1516,57 @@ var StoryMode = (function () {
         return null;
     }
 
+    /**
+     * Rename kingdoms for story mode: player's kingdom → "Valdren", enemy → "Korvath".
+     * Idempotent — safe to call repeatedly from tick or deserialize.
+     */
+    function _ensureKingdomNames() {
+        if (typeof Engine === 'undefined' || !Engine.getWorld) return;
+        var w = Engine.getWorld();
+        if (!w || !w.kingdoms || !w.towns) return;
+
+        // Find the town "Ashford" — the player's home town
+        var ashford = w.towns.find(function(t) { return t.name === 'Ashford'; });
+        if (!ashford) return;
+
+        // The kingdom that owns Ashford is the player's kingdom (unless Ashford has been captured)
+        // Use flags to track original player kingdom ID if not already tracked
+        var playerKingdomId = _storyState.flags._playerKingdomId;
+        if (!playerKingdomId) {
+            // First time — the kingdom that currently owns Ashford is the player's kingdom
+            playerKingdomId = ashford.kingdomId;
+            _storyState.flags._playerKingdomId = playerKingdomId;
+        }
+
+        // Find the player's kingdom and rename to Valdren
+        var playerK = w.kingdoms.find(function(k) { return k.id === playerKingdomId; });
+        if (playerK && playerK.name !== 'Valdren') {
+            _log('[StoryMode] Renaming player kingdom "' + playerK.name + '" → "Valdren"');
+            playerK.name = 'Valdren';
+        }
+
+        // Find or assign the enemy kingdom (Korvath)
+        var enemyKingdomId = _storyState.flags._enemyKingdomId;
+        if (!enemyKingdomId) {
+            // Pick a different kingdom to be Korvath
+            for (var ki = 0; ki < w.kingdoms.length; ki++) {
+                if (w.kingdoms[ki].id !== playerKingdomId) {
+                    enemyKingdomId = w.kingdoms[ki].id;
+                    _storyState.flags._enemyKingdomId = enemyKingdomId;
+                    break;
+                }
+            }
+        }
+
+        if (enemyKingdomId) {
+            var enemyK = w.kingdoms.find(function(k) { return k.id === enemyKingdomId; });
+            if (enemyK && enemyK.name !== 'Korvath') {
+                _log('[StoryMode] Renaming enemy kingdom "' + enemyK.name + '" → "Korvath"');
+                enemyK.name = 'Korvath';
+            }
+        }
+    }
+
     /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
     function _ensureCh11Conditions() {
         var day = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
@@ -2091,6 +2142,9 @@ var StoryMode = (function () {
         flags.metSeraphine       = false;
         flags.warDeclared        = false;
 
+        // Rename kingdoms for story mode
+        _ensureKingdomNames();
+
         _beginChapter(0);
     }
 
@@ -2100,6 +2154,9 @@ var StoryMode = (function () {
      */
     function tick(player) {
         if (!_storyState.active || _storyState.complete) { return; }
+
+        // Ensure kingdom names stay correct (Valdren / Korvath)
+        _ensureKingdomNames();
 
         // Story mode: strip horse permit laws from all kingdoms (for loaded saves)
         if (!_storyState.flags._horseLawStripped && typeof Engine !== 'undefined' && Engine.getWorld) {
@@ -2590,6 +2647,9 @@ var StoryMode = (function () {
                 }
             }
         }
+
+        // Rename kingdoms after loading save
+        _ensureKingdomNames();
     }
 
     // ───────────────────────────────────────────────
