@@ -8314,7 +8314,7 @@ window.UI = (function () {
                 const r = CONFIG.SOCIAL_RANKS[ck.rankIdx] || CONFIG.SOCIAL_RANKS[0];
                 const isActive = ck.id === citizenKId;
                 const activeLabel = isActive ? '<span style="color:#d4af37;font-weight:bold;font-size:0.75rem;margin-left:6px;">⭐ ACTIVE</span>' : '';
-                const setActiveBtn = !isActive && ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
+                const setActiveBtn = !isActive ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
                 const renounceBtn = ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>` : '';
                 html += `<div class="detail-row" style="margin-bottom:4px;${isActive ? 'background:rgba(212,175,55,0.08);border-radius:4px;padding:2px 4px;' : ''}">
                     <span class="label" style="color:${ck.color};">${ck.name}${activeLabel}</span>
