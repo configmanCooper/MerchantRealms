@@ -12393,9 +12393,7 @@ window.UI = (function () {
             toast(result.message, 'warning');
         }
         // Refresh the appropriate UI based on context
-        // Check if a modal is open and which one to refresh
-        var modalEl = document.querySelector('.modal-content');
-        var modalTitle = modalEl ? modalEl.querySelector('h2, .modal-title') : null;
+        var modalTitle = document.getElementById('modalTitle');
         var titleText = modalTitle ? modalTitle.textContent : '';
         if (titleText.indexOf('Health') >= 0) {
             try { openHealthDialog(); } catch(e) {}
