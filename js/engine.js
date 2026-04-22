@@ -4584,6 +4584,119 @@
             assignedMinors++;
         }
 
+        // ── Generate Guildmasters (social rank 3) ──
+        // 20-40 per kingdom, weighted toward capitals and cities
+        var numGuildmasters = Math.max(20, Math.min(40, Math.round(15 + scale * 20)));
+        var gmCandidates = kPeople.filter(function(p) {
+            return p.alive && p.age >= 25 && p.age <= 60 &&
+                (p.occupation === 'merchant' || p.occupation === 'craftsman') &&
+                (!p.socialRank || !p.socialRank[kId] || p.socialRank[kId] < 3);
+        });
+        // Sort by gold descending — wealthiest become guildmasters first
+        gmCandidates.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+
+        // Weight toward capital and cities
+        var gmCapitalWeight = 0.40; // 40% chance to place in capital
+        var gmCityWeight = 0.35;    // 35% chance in a city
+        var gmTownWeight = 0.25;    // 25% in other towns
+        var gmMajorTowns = kTowns.filter(function(t) { return t.category === 'city' || t.category === 'capital_city' || t.isCapital; });
+        var gmOtherTowns = kTowns.filter(function(t) { return !t.isCapital && t.category !== 'city' && t.category !== 'capital_city'; });
+        if (gmMajorTowns.length === 0) gmMajorTowns = kTowns;
+
+        var gmAssigned = 0;
+        // First promote existing merchants/craftsmen
+        for (var gmi = 0; gmi < gmCandidates.length && gmAssigned < numGuildmasters; gmi++) {
+            var gm = gmCandidates[gmi];
+            if (!gm.socialRank) gm.socialRank = {};
+            gm.socialRank[kId] = 3;
+            gm.occupation = 'guild_master';
+            gm.wealthClass = 'middle';
+            // Give guildmasters more gold (150-400)
+            if ((gm.gold || 0) < 150) gm.gold = rng.randInt(150, 400);
+            gm.houseType = gm.houseType || rng.pick(['cottage', 'townhouse']);
+            // Relocate to capital/city if currently in a small town (weighted)
+            var gmRoll = rng.random();
+            if (gmRoll < gmCapitalWeight && capitalTown) {
+                gm.townId = capitalTown.id;
+            } else if (gmRoll < gmCapitalWeight + gmCityWeight && gmMajorTowns.length > 0) {
+                gm.townId = rng.pick(gmMajorTowns).id;
+            }
+            // else stay in current town
+            gmAssigned++;
+        }
+        // If not enough existing NPCs, generate fresh guildmasters
+        while (gmAssigned < numGuildmasters) {
+            var gmSex = rng.chance(0.5) ? 'M' : 'F';
+            var gmFirstName = gmSex === 'M' ? rng.pick(NAMES.male) : rng.pick(NAMES.female);
+            var gmLastName = rng.pick(NAMES.surnames);
+            var gmAge = rng.randInt(30, 55);
+            var gmGold = rng.randInt(200, 500);
+            var gmSR = {};
+            gmSR[kId] = 3;
+            // Weighted town placement
+            var gmTownRoll = rng.random();
+            var gmTownId;
+            if (gmTownRoll < gmCapitalWeight && capitalTown) {
+                gmTownId = capitalTown.id;
+            } else if (gmTownRoll < gmCapitalWeight + gmCityWeight && gmMajorTowns.length > 0) {
+                gmTownId = rng.pick(gmMajorTowns).id;
+            } else if (gmOtherTowns.length > 0) {
+                gmTownId = rng.pick(gmOtherTowns).id;
+            } else {
+                gmTownId = rng.pick(kTowns).id;
+            }
+            var gmPerson = {
+                id: uid('p'),
+                firstName: gmFirstName,
+                lastName: gmLastName,
+                age: gmAge,
+                sex: gmSex,
+                alive: true,
+                townId: gmTownId,
+                kingdomId: kId,
+                occupation: 'guild_master',
+                employerId: null,
+                needs: {
+                    food: rng.randInt(50, 80),
+                    shelter: rng.randInt(55, 85),
+                    safety: rng.randInt(50, 80),
+                    wealth: rng.randInt(50, 80),
+                    happiness: rng.randInt(50, 75),
+                },
+                gold: gmGold,
+                skills: { farming: 5, mining: 5, crafting: rng.randInt(30, 60), trading: rng.randInt(30, 60), combat: 5 },
+                workerSkill: rng.randInt(15, 40),
+                spouseId: null,
+                childrenIds: [],
+                parentIds: [],
+                wealthClass: 'middle',
+                houseType: rng.pick(['cottage', 'townhouse']),
+                socialRank: gmSR,
+                personality: {
+                    loyalty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    ambition:     Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    frugality:    Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    intelligence: Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                },
+                quirks: assignRandomQuirks(rng),
+                foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
+                recentFoods: [],
+                medicalKnowledge: rng.chance(0.2) ? 'moderate' : 'none',
+                health: 100,
+                sick: false,
+                illness: null,
+                illnessDay: 0,
+                injured: false,
+                injuryDay: 0,
+            };
+            people.push(gmPerson);
+            var gmTownObj = kTowns.find(function(t) { return t.id === gmTownId; });
+            if (gmTownObj) gmTownObj.population = (gmTownObj.population || 0) + 1;
+            gmAssigned++;
+        }
+
         // Build noble knowledge graph: Minor Nobles know 1-2 Lords, Lords know 1 RA
         var kLords = people.filter(function(p) { return p.alive && p.socialRank && p.socialRank[kId] === 5; });
         var kRAs = people.filter(function(p) { return p.alive && p.socialRank && p.socialRank[kId] === 6; });

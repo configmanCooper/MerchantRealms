@@ -64,6 +64,13 @@
         if (!npc.npcMerchantInventory) npc.npcMerchantInventory = {};
         if (!npc.buildings) npc.buildings = [];
         if (npc.npcMerchantCooldown == null) npc.npcMerchantCooldown = 0;
+        // Ensure at least Burgher rank (2) in their kingdom
+        if (!npc.socialRank) npc.socialRank = {};
+        var emKingdomId = npc.kingdomId || npc.citizenshipKingdomId;
+        if (emKingdomId) {
+            var curRank = npc.socialRank[emKingdomId] || 0;
+            if (curRank < 2) npc.socialRank[emKingdomId] = 2;
+        }
         // Promotion gold bonus — ensure EMs start with enough capital to operate
         var minGold = 2000;
         var age = npc.age || 30;
