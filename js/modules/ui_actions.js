@@ -1789,9 +1789,14 @@ function showPersonDetail(person) {
                 }
                 html += `</div>`;
             }
+            // God mode: instant relationship +10 / -10 buttons
+            if (typeof Game !== 'undefined' && Game.isGodMode && Game.isGodMode()) {
+                html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">`;
+                html += `<button class="btn-medieval" data-action="godRelPlus" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;background:rgba(50,200,50,0.2);border-color:rgba(50,200,50,0.4);color:#a5d6a7;">⬆️ +10 Relationship</button>`;
+                html += `<button class="btn-medieval" data-action="godRelMinus" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.4);color:#ef9a9a;">⬇️ -10 Relationship</button>`;
+                html += `</div>`;
+            }
             html += `</div>`;
-
-            // ── Employee Horse Management (if your employee, in same town, has horse) ──
             if (person.employerId === 'player' && person._playerHorse) {
                 html += `<div class="detail-section"><h3>🐴 Horse</h3>
                     <div style="font-size:0.8rem;color:#aaa;margin-bottom:4px;">This worker is riding a horse you gave them.</div>
@@ -4513,6 +4518,22 @@ function clickTown(townId) {
     UI.registerAction('hireAssassinFor', function(_t, d) { UI.hireAssassinFor(d.id); });
     UI.registerAction('poisonPerson', function(_t, d) { UI.poisonPerson(d.id); });
     UI.registerAction('framePerson', function(_t, d) { UI.framePerson(d.id); });
+    UI.registerAction('godRelPlus', function(_t, d) {
+        var p = Engine.findPerson(d.id);
+        if (!p) return;
+        Player.changeRelationship(d.id, 10);
+        var rel = Player.getRelationship ? Player.getRelationship(d.id) : { level: 0 };
+        UI.toast('⬆️ +10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + Math.floor(rel.level) + ')', 'success');
+        UI.showPersonDetail(d.id);
+    });
+    UI.registerAction('godRelMinus', function(_t, d) {
+        var p = Engine.findPerson(d.id);
+        if (!p) return;
+        Player.changeRelationship(d.id, -10);
+        var rel = Player.getRelationship ? Player.getRelationship(d.id) : { level: 0 };
+        UI.toast('⬇️ -10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + Math.floor(rel.level) + ')', 'info');
+        UI.showPersonDetail(d.id);
+    });
     UI.registerAction('_smuggleBorder', function(_t, d) { UI._smuggleBorder(d.id); });
     UI.registerAction('showRouteDangerDetail', function(_t, d) { UI.showRouteDangerDetail(d.id); });
 
