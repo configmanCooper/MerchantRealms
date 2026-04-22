@@ -4,6 +4,50 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.84.0] - NPC Social Rank Promotion, Relationships & Story Chapter 12b
+
+### Added — NPC Social Rank Promotion System
+- Dynamic promotion ladder: Peasant → Citizen → Burgher → Guildmaster → Elite Merchant
+- Peasant → Citizen: gold ≥ 50, has job, 90+ days at rank (80% chance)
+- Citizen → Burgher: gold ≥ 200, merchant/craftsman or owns 2+ buildings, age 20+, 60+ days (40%)
+- Burgher → Guildmaster: 3 of 4 criteria (gold ≥ 500, 3+ buildings, 120+ days, is EM), age 25+, trade occupation (25%)
+- Demotion for prolonged poverty at each tier
+- Promotion tick runs every 30 days, processes 10% of NPCs per cycle
+- Child social rank inheritance: children get max(parent ranks) - 1 (peasants stay peasant)
+- Initial social ranks assigned at worldgen for all eligible NPCs
+- 20-40 guildmasters per kingdom at worldgen, weighted toward capitals and cities
+- Elite merchants guaranteed at least Burgher rank (2) on promotion
+- Demoted elite merchants retain Guildmaster rank (3)
+- EM promotion system now prefers Guildmasters as candidates
+
+### Added — Chapter 12b "Bonds of the Realm"
+- New story chapter covering NPC relationships, dating, trait discovery, and social mechanics
+- 9 objectives: talk, gift, reach Friendly (20+), go on date, discover trait, reach Close Friend (60+), request noble introduction, accept/complete town quest
+- Full voice-acted dialog with gender-specific audio variants
+- Hints guide player to guildmasters for noble introductions
+
+### Added — Elite Merchant Favors
+- Three favor types: Change Strategy, Switch Kingdom, Focus on Good
+- Payment UI with gold cost scaled by personality, relationship, and player social rank
+- Base acceptance chance (10-85%) based on relationship and warmth
+- 30-day cooldown per elite merchant after any favor
+- Focus good support in EM trade and travel AI
+
+### Added — NPC Interaction Features
+- Guildmaster introductions to Minor Nobles (requires 60+ relationship)
+- Noble introduction cooldown reduced to 14 days
+- Social rank filter dropdown in townspeople view
+- Friends panel showing NPCs with 20+ relationship
+- NPC emoji portraits in person detail, townspeople list, and friends panel
+- God mode: +10/-10 relationship buttons with no cooldown
+- Townspeople button in World menu
+- Foreign citizenship objective in diplomatic story path
+
+### Fixed
+- Trait discovery now triggers story mode objective (StoryMode.tick called after flag set)
+- Elite merchant filter no longer shows non-elite wealthy merchants
+- Relationship display uses Math.floor() (no floating point decimals)
+
 ## [0.83.0] - Multi-Kingdom Citizenship, Medical Rest & Story Mode Hardening
 
 ### Added — Multi-Kingdom Citizenship Phase 3
