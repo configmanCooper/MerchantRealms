@@ -4520,18 +4520,22 @@ function clickTown(townId) {
     UI.registerAction('framePerson', function(_t, d) { UI.framePerson(d.id); });
     UI.registerAction('godRelPlus', function(_t, d) {
         var p = Engine.findPerson(d.id);
-        if (!p) return;
-        Player.changeRelationship(d.id, 10);
-        var rel = Player.getRelationship ? Player.getRelationship(d.id) : { level: 0 };
-        UI.toast('⬆️ +10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + Math.floor(rel.level) + ')', 'success');
+        if (!p || !Player.state) return;
+        if (!Player.state.relationships) Player.state.relationships = {};
+        if (!Player.state.relationships[d.id]) Player.state.relationships[d.id] = { level: 0, interactions: 0 };
+        Player.state.relationships[d.id].level = Math.min(100, (Player.state.relationships[d.id].level || 0) + 10);
+        var lvl = Math.floor(Player.state.relationships[d.id].level);
+        UI.toast('⬆️ +10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + lvl + ')', 'success');
         UI.showPersonDetail(d.id);
     });
     UI.registerAction('godRelMinus', function(_t, d) {
         var p = Engine.findPerson(d.id);
-        if (!p) return;
-        Player.changeRelationship(d.id, -10);
-        var rel = Player.getRelationship ? Player.getRelationship(d.id) : { level: 0 };
-        UI.toast('⬇️ -10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + Math.floor(rel.level) + ')', 'info');
+        if (!p || !Player.state) return;
+        if (!Player.state.relationships) Player.state.relationships = {};
+        if (!Player.state.relationships[d.id]) Player.state.relationships[d.id] = { level: 0, interactions: 0 };
+        Player.state.relationships[d.id].level = Math.max(0, (Player.state.relationships[d.id].level || 0) - 10);
+        var lvl = Math.floor(Player.state.relationships[d.id].level);
+        UI.toast('⬇️ -10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + lvl + ')', 'info');
         UI.showPersonDetail(d.id);
     });
     UI.registerAction('_smuggleBorder', function(_t, d) { UI._smuggleBorder(d.id); });
