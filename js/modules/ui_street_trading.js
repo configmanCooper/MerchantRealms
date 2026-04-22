@@ -3292,26 +3292,16 @@ function _switchProposeActionTab(tabId, kingdomId) {
     // Court petition modal: select a petition type and present it directly to the king
     function _openCourtPetitionModal(kingdomId) {
         var PTYPES = typeof PETITION_TYPES !== 'undefined' ? PETITION_TYPES : [];
-        // Filter to non-targeted petitions for the court (no target selection UI needed)
-        var available = [];
-        for (var i = 0; i < PTYPES.length; i++) {
-            if (!PTYPES[i].requiresTarget) available.push(PTYPES[i]);
-        }
-        // Also allow some targeted ones that are kingdom-wide (no specific town needed)
-        var autoTargeted = ['declare_war', 'seek_peace', 'establish_trade_agreement'];
-        for (var j = 0; j < PTYPES.length; j++) {
-            if (autoTargeted.indexOf(PTYPES[j].id) >= 0) available.push(PTYPES[j]);
-        }
 
-        var html = '<div style="padding:10px;">';
+        var html = '<div style="padding:10px;max-height:400px;overflow-y:auto;">';
         html += '<p style="color:#ccc;font-size:0.85rem;margin:0 0 12px 0;">Present a petition directly to the king during court. No signatures needed, but success depends on the petition cost, king\'s personality, your reputation, and your relationships.</p>';
-        if (available.length === 0) {
+        if (PTYPES.length === 0) {
             html += '<p style="color:#e74c3c;">No petition types available.</p>';
         } else {
-            for (var a = 0; a < available.length; a++) {
-                var pt = available[a];
-                var costLabel = pt.costFactor > 0 ? ' (costly)' : '';
-                html += '<button class="btn-medieval" data-action="submitCourtPetition" data-petition="' + pt.id + '" data-kingdom="' + kingdomId + '" ';
+            for (var a = 0; a < PTYPES.length; a++) {
+                var pt = PTYPES[a];
+                var costLabel = pt.costFactor > 0 ? ' <span style="color:#8b0000;font-size:0.72rem;">(costly − harder to pass)</span>' : '';
+                html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" ';
                 html += 'style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.88rem;">';
                 html += pt.icon + ' <b>' + pt.name + '</b>' + costLabel;
                 html += '<br><span style="color:#3a2a10;font-size:0.75rem;">' + pt.desc + '</span>';
@@ -3325,7 +3315,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('submitCourtPetition', function(_t, d) {
         var kId = d.kingdom || Player.citizenshipKingdomId;
         if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
-        var result = Engine.doCourtAction(kId, 'petition_king', { petitionTypeId: d.petition });
+        var petId = d.pettype;
+        if (!petId) { UI.toast('No petition type selected.', 'warning'); return; }
+        var result = Engine.doCourtAction(kId, 'petition_king', { petitionTypeId: petId });
         if (result && result.success) {
             UI.toast(result.message, result.message.indexOf('GRANTED') >= 0 ? 'success' : 'info');
             if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
