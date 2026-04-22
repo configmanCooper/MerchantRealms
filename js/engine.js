@@ -15254,6 +15254,15 @@
         const toK = findKingdom(toKingdomId);
         if (!town || !toK) return null;
 
+        // Story mode: block Ashford transfer while story says it's under Korvath
+        if (town.name === 'Ashford' && typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            var _smf2 = StoryMode.getStoryFlags ? StoryMode.getStoryFlags() : {};
+            if (_smf2.ashfordCaptured) {
+                var _korvath = world.kingdoms.find(function(k) { return k.name === 'Korvath'; });
+                if (_korvath && toKingdomId !== _korvath.id) return null;
+            }
+        }
+
         // 1. Update town ownership
         const oldKingdomId = town.kingdomId;
         town.kingdomId = toKingdomId;
@@ -19174,6 +19183,13 @@
      * @param {string} newKingdomName  e.g. 'Korvathi' or 'Valdren'
      */
     function captureTown(townName, newKingdomName) {
+        // Story mode: block Ashford from being recaptured while story says it's under Korvath
+        if (townName === 'Ashford' && typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            var _smf = StoryMode.getStoryFlags ? StoryMode.getStoryFlags() : {};
+            if (_smf.ashfordCaptured && newKingdomName !== 'Korvath') {
+                return; // Ashford stays under Korvath until the story says otherwise
+            }
+        }
         var town = null;
         for (var ti = 0; ti < world.towns.length; ti++) {
             if (world.towns[ti].name === townName) { town = world.towns[ti]; break; }

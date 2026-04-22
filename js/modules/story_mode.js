@@ -1629,6 +1629,18 @@ var StoryMode = (function () {
                 _vKing.lastName = 'Aldric';
             }
         }
+
+        // Ensure Ashford stays under Korvath while ashfordCaptured flag is set
+        if (_storyState.flags.ashfordCaptured && ashford && enemyKingdomId) {
+            if (ashford.kingdomId !== enemyKingdomId) {
+                if (Engine.captureTown) {
+                    // Temporarily clear flag to allow the capture
+                    _storyState.flags.ashfordCaptured = false;
+                    Engine.captureTown('Ashford', 'Korvath');
+                    _storyState.flags.ashfordCaptured = true;
+                }
+            }
+        }
     }
 
     /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
