@@ -3195,6 +3195,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var result = Player.nobleFlatterKing();
         if (result && result.success) {
             UI.toast(result.message, 'success');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_court', { kingdomId: Player.citizenshipKingdomId });
+            }
         } else {
             UI.toast(result ? result.message : 'Failed.', 'warning');
         }
@@ -3208,6 +3211,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var result = Player.nobleWhisperAgainst(targetId);
         if (result && result.success) {
             UI.toast(result.message, 'success');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_court', { kingdomId: Player.citizenshipKingdomId });
+            }
         } else {
             UI.toast(result ? result.message : 'Failed.', result && result.success === false && result.message && result.message.indexOf('caught') >= 0 ? 'danger' : 'warning');
         }
@@ -3221,6 +3227,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var result = Player.nobleBoostAlly(targetId);
         if (result && result.success) {
             UI.toast(result.message, 'success');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_court', { kingdomId: Player.citizenshipKingdomId });
+            }
         } else {
             UI.toast(result ? result.message : 'Failed.', 'warning');
         }

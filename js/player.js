@@ -8920,8 +8920,8 @@
     // ── Player-Noble Loyalty Manipulation (when player is noble, not king) ──
     function nobleFlatterKing() {
         // Player (as noble) flatters the king to boost own perceived loyalty
-        var pPerson = Engine.findPerson(player.personId || 'player');
-        if (!pPerson) return { success: false, message: 'Player person not found.' };
+        // Player is NOT in world.people — use player state directly
+        var pPerson = player;
         var kId = player.citizenshipKingdomId;
         if (!kId) return { success: false, message: 'You must be a citizen of a kingdom.' };
         var rank = (pPerson.socialRank && pPerson.socialRank[kId]) || 0;
@@ -8958,8 +8958,7 @@
 
     function nobleWhisperAgainst(targetNobleId) {
         // Player (as noble) whispers against another noble to reduce their perceived loyalty
-        var pPerson = Engine.findPerson(player.personId || 'player');
-        if (!pPerson) return { success: false, message: 'Player person not found.' };
+        var pPerson = player;
         var kId = player.citizenshipKingdomId;
         if (!kId) return { success: false, message: 'Not a kingdom citizen.' };
         var rank = (pPerson.socialRank && pPerson.socialRank[kId]) || 0;
@@ -9006,8 +9005,7 @@
 
     function nobleBoostAlly(targetNobleId) {
         // Player (as noble) speaks well of an ally to boost their perceived loyalty
-        var pPerson = Engine.findPerson(player.personId || 'player');
-        if (!pPerson) return { success: false, message: 'Player person not found.' };
+        var pPerson = player;
         var kId = player.citizenshipKingdomId;
         if (!kId || (((pPerson.socialRank || {})[kId]) || 0) < 4) {
             return { success: false, message: 'Must be at least Minor Noble.' };
@@ -9067,9 +9065,9 @@
         player._feastInvitations.splice(feastIndex, 1);
         Engine.logEvent('❌ You declined the feast invitation in ' + inv.townName + '.', null, 'my_kingdom');
         // Small relationship hit with king for declining
-        var pPerson = Engine.findPerson(player.personId || 'player');
-        if (pPerson && pPerson.kingLoyalty != null) {
-            pPerson.perceivedKingLoyalty = Math.max(0, (pPerson.perceivedKingLoyalty || pPerson.kingLoyalty) - 3);
+        // Player is NOT in world.people — use player state directly
+        if (player.kingLoyalty != null) {
+            player.perceivedKingLoyalty = Math.max(0, (player.perceivedKingLoyalty || player.kingLoyalty) - 3);
         }
         return { success: true, message: 'Declined the feast. The king may note your absence.' };
     }
