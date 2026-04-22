@@ -628,7 +628,7 @@ window.UI = (function () {
         registerAction('switchSchemesTab', function(_t, d) { if (d.id) UI.switchSchemesTab(d.id); });
         registerAction('offerNobleLoan', function(_t, d) { var amt=parseInt(document.getElementById('loanAmountInput').value);var r=Player.offerNobleLoan(d.id,amt);UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(d.id2); });
         registerAction('closeAndOpenNobilityDialog', function() { UI.closeModal(); UI.openNobilityDialog(); });
-        registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');if(r&&r.success&&typeof StoryMode!=='undefined'&&StoryMode.onStoryEvent)StoryMode.onStoryEvent('attend_feast',{kingdom:d.kingdom,action:d.id});UI.openFeastDialog(d.kingdom); });
+        registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');if(r&&r.success&&typeof StoryMode!=='undefined'&&StoryMode.onPlayerAction)StoryMode.onPlayerAction('attend_feast',{kingdom:d.kingdom,action:d.id});UI.openFeastDialog(d.kingdom); });
         registerAction('skipFeastDay', function(_t, d) {
             var kId = d.kingdom;
             if (!kId) return;
