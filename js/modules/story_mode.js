@@ -465,6 +465,7 @@ var StoryMode = (function () {
                     { id: 'ch17a_kingmaker', type: 'buy_skill', skill: 'kingmaker_skill', desc: 'Learn the Kingmaker skill', done: false },
                     { id: 'ch17a_hire_agent', type: 'custom', fn: '_checkHasAgent', desc: 'Hire an agent', done: false },
                     { id: 'ch17a_agent_diplo', type: 'custom', fn: '_checkAgentDiplomaticTask', desc: 'Assign an agent to a diplomatic task', done: false, after: 'ch17a_hire_agent' },
+                    { id: 'ch17a_foreign_citizen', type: 'custom', fn: '_checkForeignCitizenship', desc: 'Become a citizen of at least one other kingdom', hint: 'Travel to a foreign town, earn gold and reputation there, then petition for citizenship in the Character tab', done: false },
                     { id: 'ch17a_found_outpost', type: 'custom', fn: '_checkDiploOutpost', desc: 'Found a diplomatic outpost connected to Ashford', done: false },
                     { id: 'ch17a_outpost_pop', type: 'custom', fn: '_checkDiploOutpostPop', desc: 'Grow your outpost population to at least 10', done: false, after: 'ch17a_found_outpost' },
                     { id: 'ch17a_outpost_happy', type: 'custom', fn: '_checkDiploOutpostHappy', desc: 'Keep outpost happiness above 60', done: false, after: 'ch17a_found_outpost' },
@@ -2045,6 +2046,25 @@ var StoryMode = (function () {
                     }
                 }
             }
+        }
+        return false;
+    };
+
+    _hooks._checkForeignCitizenship = function () {
+        if (typeof Player === 'undefined' || !Player.state) return false;
+        var sr = Player.state.socialRank || {};
+        // Find Valdren's kingdom ID (player's home in story mode)
+        var homeKId = null;
+        if (typeof Engine !== 'undefined' && Engine.getWorldState) {
+            var w = Engine.getWorldState();
+            if (w && w.kingdoms) {
+                var vk = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+                if (vk) homeKId = vk.id;
+            }
+        }
+        if (!homeKId) homeKId = Player.state.citizenshipKingdomId;
+        for (var kId in sr) {
+            if (kId !== homeKId && (sr[kId] || 0) >= 1) return true;
         }
         return false;
     };
