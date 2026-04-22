@@ -1368,10 +1368,17 @@
             }
         }
 
-        // Check trade embargo — buying from embargoed kingdom is smuggling
-        const isEmbargoed = kingdom && player.citizenshipKingdomId &&
-            !isPlayerCitizenOf(town.kingdomId) &&
-            Engine.hasEmbargo && Engine.hasEmbargo(player.citizenshipKingdomId, town.kingdomId);
+        // Check trade embargo — any citizenship kingdom with embargo against this town's kingdom
+        var _embargoFromK = null;
+        if (kingdom && !isPlayerCitizenOf(town.kingdomId) && Engine.hasEmbargo) {
+            for (var _ekId in player.socialRank) {
+                if ((player.socialRank[_ekId] || 0) >= 1 && _ekId !== town.kingdomId && Engine.hasEmbargo(_ekId, town.kingdomId)) {
+                    _embargoFromK = _ekId;
+                    break;
+                }
+            }
+        }
+        const isEmbargoed = !!_embargoFromK;
         if (isEmbargoed) {
             const rng = Engine.getRng();
             var _embargoDetect2 = CONFIG.EMBARGO_DETECTION_CHANCE;
@@ -1639,10 +1646,17 @@
         price = price * (1 - (CONFIG.MARKET_SPREAD || 0));
         const kingdom = Engine.findKingdom(town.kingdomId);
 
-        // Trade embargo check — selling to embargoed kingdom is smuggling (high risk, high reward)
-        const sellEmbargoed = kingdom && player.citizenshipKingdomId &&
-            !isPlayerCitizenOf(town.kingdomId) &&
-            Engine.hasEmbargo && Engine.hasEmbargo(player.citizenshipKingdomId, town.kingdomId);
+        // Trade embargo check — any citizenship kingdom with embargo against this town's kingdom
+        var _sellEmbargoFromK = null;
+        if (kingdom && !isPlayerCitizenOf(town.kingdomId) && Engine.hasEmbargo) {
+            for (var _sekId in player.socialRank) {
+                if ((player.socialRank[_sekId] || 0) >= 1 && _sekId !== town.kingdomId && Engine.hasEmbargo(_sekId, town.kingdomId)) {
+                    _sellEmbargoFromK = _sekId;
+                    break;
+                }
+            }
+        }
+        const sellEmbargoed = !!_sellEmbargoFromK;
         if (sellEmbargoed) {
             const rng = Engine.getRng();
             var _embargoDetect = CONFIG.EMBARGO_DETECTION_CHANCE;
@@ -2104,10 +2118,11 @@
             return { success: false, message: `Your reputation with ${kingdom.name} is too low to build here.` };
         }
 
-        // Check rank-based building limit
+        // Check rank-based building limit (per-kingdom count)
         const rankInfo = getPlayerRankInfo(town.kingdomId);
-        if (rankInfo && player.buildings.length >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
-            return { success: false, message: `Your rank (${rankInfo.name}) allows only ${rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)} buildings. Petition for promotion!` };
+        var _bldCountInK = getBuildingsInKingdom(town.kingdomId);
+        if (rankInfo && _bldCountInK >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
+            return { success: false, message: `Your rank (${rankInfo.name}) allows only ${rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)} buildings in this kingdom. Petition for promotion!` };
         }
 
         // Check guild restrictions
@@ -2295,10 +2310,11 @@
         const town = Engine.findTown(tid);
         if (!town) return { success: false, message: 'Town not found.' };
 
-        // Check rank-based building limit
+        // Check rank-based building limit (per-kingdom count)
         const rankInfo = getPlayerRankInfo(town.kingdomId);
-        if (rankInfo && player.buildings.length >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
-            return { success: false, message: 'Your rank (' + rankInfo.name + ') limits your building count.' };
+        var _bldCountInK2 = getBuildingsInKingdom(town.kingdomId);
+        if (rankInfo && _bldCountInK2 >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
+            return { success: false, message: 'Your rank (' + rankInfo.name + ') limits your building count in this kingdom.' };
         }
 
         const result = Engine.buyNPCBuilding(buildingIndex, tid);
@@ -2368,11 +2384,12 @@
         var newBt = Engine.findBuildingType(newBuildingTypeId);
         if (!newBt) return { success: false, message: 'Invalid building type.' };
 
-        // Check rank-based building limit (only for non-owned buildings)
+        // Check rank-based building limit (per-kingdom, only for non-owned buildings)
         if (bld.ownerId !== 'player') {
             var rankInfo = getPlayerRankInfo(town.kingdomId);
-            if (rankInfo && player.buildings.length >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
-                return { success: false, message: 'Your rank (' + rankInfo.name + ') limits your building count.' };
+            var _bldCountInK3 = getBuildingsInKingdom(town.kingdomId);
+            if (rankInfo && _bldCountInK3 >= rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)) {
+                return { success: false, message: 'Your rank (' + rankInfo.name + ') limits your building count in this kingdom.' };
             }
         }
 
@@ -2703,12 +2720,13 @@
             return { success: false, message: 'You cannot hire a king as a worker!' };
         }
 
-        // Check rank-based worker limit
+        // Check rank-based worker limit (per-kingdom count)
         const town = Engine.findTown(player.townId);
         if (town) {
             const rankInfo = getPlayerRankInfo(town.kingdomId);
-            if (rankInfo && player.employees.length >= rankInfo.maxWorkers) {
-                return { success: false, message: `Your rank (${rankInfo.name}) allows only ${rankInfo.maxWorkers} workers. Petition for promotion!` };
+            var _empCountInK = getEmployeesInKingdom(town.kingdomId);
+            if (rankInfo && _empCountInK >= rankInfo.maxWorkers) {
+                return { success: false, message: `Your rank (${rankInfo.name}) allows only ${rankInfo.maxWorkers} workers in this kingdom. Petition for promotion!` };
             }
         }
 
@@ -11798,14 +11816,15 @@
             // Check for new commission notification
             var comm = null;
             try { comm = Engine.getDirectedPlayerCommission(k.id); } catch(e) {}
-            if (comm && comm.status === 'pending' && !player._lastCommNotified) {
-                player._lastCommNotified = comm.id;
+            player._lastCommNotified = player._lastCommNotified || {};
+            if (comm && comm.status === 'pending' && !player._lastCommNotified[k.id]) {
+                player._lastCommNotified[k.id] = comm.id;
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast('👑 The King of ' + k.name + ' has a personal commission for you!', 'info', 'commission');
                 }
-                autoJournalCapture('politics', 'The king has personally tasked me with: ' + comm.description, { mood: 'dutiful' });
+                autoJournalCapture('politics', 'The king of ' + k.name + ' has personally tasked me with: ' + comm.description, { mood: 'dutiful' });
             } else if (!comm || comm.status !== 'pending') {
-                if (player._lastCommNotified) player._lastCommNotified = null;
+                if (player._lastCommNotified && player._lastCommNotified[k.id]) delete player._lastCommNotified[k.id];
             }
         }
     }
@@ -19708,13 +19727,18 @@
                                 player.royalAdvisorBenefits = null;
                             }
                         }
-                        // Remove kingdom guards when losing noble status
+                        // Remove kingdom guards from THIS kingdom when losing noble status
                         if (_dRank >= 4 && _dDemoteTo < 4) {
-                            player.isNoble = false;
+                            // Check if still noble in any other kingdom
+                            var _stillNoble = false;
+                            for (var _snk in player.socialRank) {
+                                if (_snk !== _dkId && (player.socialRank[_snk] || 0) >= 4) { _stillNoble = true; break; }
+                            }
+                            if (!_stillNoble) player.isNoble = false;
                             var _removedKG = 0;
                             if (player.guards) {
                                 for (var _kgi = player.guards.length - 1; _kgi >= 0; _kgi--) {
-                                    if (player.guards[_kgi].kingdomPaid) {
+                                    if (player.guards[_kgi].kingdomPaid && (!player.guards[_kgi].paidByKingdomId || player.guards[_kgi].paidByKingdomId === _dkId)) {
                                         var _kgNpc = Engine.findPerson ? Engine.findPerson(player.guards[_kgi].personId) : null;
                                         if (_kgNpc) {
                                             _kgNpc.isPlayerGuard = false;
@@ -20568,6 +20592,46 @@
         return CONFIG.SOCIAL_RANKS[rankIdx] || CONFIG.SOCIAL_RANKS[0];
     }
 
+    // Count player buildings in a specific kingdom (by town kingdom)
+    function getBuildingsInKingdom(kingdomId) {
+        if (!kingdomId) return player.buildings.length;
+        var count = 0;
+        for (var i = 0; i < player.buildings.length; i++) {
+            try {
+                var t = Engine.findTown(player.buildings[i].townId);
+                if (t && t.kingdomId === kingdomId) count++;
+            } catch(e) { count++; }
+        }
+        return count;
+    }
+
+    // Count player employees in a specific kingdom (by employee's town kingdom)
+    function getEmployeesInKingdom(kingdomId) {
+        if (!kingdomId) return player.employees.length;
+        var count = 0;
+        for (var i = 0; i < player.employees.length; i++) {
+            try {
+                var p = Engine.findPerson(player.employees[i]);
+                if (p) {
+                    var t = Engine.findTown(p.townId);
+                    if (t && t.kingdomId === kingdomId) count++;
+                }
+            } catch(e) { count++; }
+        }
+        return count;
+    }
+
+    // Get highest rank held in any kingdom OTHER than the given one
+    function getHighestForeignRank(excludeKingdomId) {
+        var highest = 0;
+        for (var kId in player.socialRank) {
+            if (kId !== excludeKingdomId && (player.socialRank[kId] || 0) > highest) {
+                highest = player.socialRank[kId];
+            }
+        }
+        return highest;
+    }
+
     function getPlayerRankIndex(kingdomId) {
         const kId = kingdomId || player.citizenshipKingdomId;
         return (kId && player.socialRank[kId] != null) ? player.socialRank[kId] : 0;
@@ -21384,9 +21448,39 @@
         const kId = kingdomId || player.citizenshipKingdomId;
         const check = canPetitionForPromotion(kId);
         if (!check.can) return { success: false, message: check.reason };
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.petition_promotion || 10);
+
         const currentIdx = player.socialRank[kId] || 0;
         const newIdx = currentIdx + 1;
+
+        // Noble obligation restrictions for multi-kingdom citizenship
+        // Royal Advisor (6+) in any kingdom → cannot be Citizen+ elsewhere (handled in petitionCitizenship)
+        // Lord (5+) in any kingdom → cannot become Minor Noble (4+) in another kingdom
+        if (newIdx >= 4) {
+            for (var _noblK in player.socialRank) {
+                if (_noblK === kId) continue;
+                var _fRank = player.socialRank[_noblK] || 0;
+                if (_fRank >= 5) {
+                    var _fKingdom = null;
+                    try { _fKingdom = Engine.findKingdom(_noblK); } catch(e) {}
+                    return { success: false, message: 'As a ' + (CONFIG.SOCIAL_RANKS[_fRank] || {}).name + ' of ' + (_fKingdom ? _fKingdom.name : 'another kingdom') + ', you cannot become a noble in another kingdom. Renounce your lordship first.' };
+                }
+                // Minor Noble (4) in another kingdom → must renounce (UI popup needed)
+                if (_fRank === 4) {
+                    var _conflictK = null;
+                    try { _conflictK = Engine.findKingdom(_noblK); } catch(e) {}
+                    return {
+                        success: false,
+                        nobleConflict: true,
+                        conflictKingdomId: _noblK,
+                        conflictKingdomName: _conflictK ? _conflictK.name : 'another kingdom',
+                        targetKingdomId: kId,
+                        message: 'You are already a Minor Noble in ' + (_conflictK ? _conflictK.name : 'another kingdom') + '. You must renounce your nobility there first.'
+                    };
+                }
+            }
+        }
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.petition_promotion || 10);
         const nextRank = CONFIG.SOCIAL_RANKS[newIdx];
         // Deduct fee (apply marriage discount for commoner ranks)
         if (nextRank.fee) {
@@ -21442,7 +21536,8 @@
                     personId: chosen.id,
                     name: gName,
                     hiredDay: Engine.getDay(),
-                    kingdomPaid: true
+                    kingdomPaid: true,
+                    paidByKingdomId: kId
                 });
                 guardCandidates = guardCandidates.filter(function(c) { return c.id !== chosen.id; });
                 guardsGranted++;
@@ -21492,6 +21587,70 @@
         }
 
         return { success: true, message: `Promoted to ${rank.icon} ${rank.name}! Fee: ${(nextRank.fee || 0).toLocaleString()}g` };
+    }
+
+    // Renounce noble status in one kingdom to become noble in another
+    // Called from UI when player confirms they want to give up Minor Noble in conflictKingdomId
+    function renounceNobleForPromotion(conflictKingdomId, targetKingdomId) {
+        if (!conflictKingdomId || !targetKingdomId) return { success: false, message: 'Missing kingdom IDs.' };
+        var conflictRank = player.socialRank[conflictKingdomId] || 0;
+        if (conflictRank < 4) return { success: false, message: 'Not a noble in that kingdom.' };
+
+        // Demote to Guildmaster (rank 3)
+        player.socialRank[conflictKingdomId] = 3;
+        player.rankSince[conflictKingdomId] = Engine.getDay();
+
+        // -30 kingdom reputation
+        player.reputation[conflictKingdomId] = Math.max(0, (player.reputation[conflictKingdomId] || 50) - 30);
+
+        // -20 relationship with king and nobles of that kingdom
+        try {
+            var _rnKingdom = Engine.findKingdom(conflictKingdomId);
+            if (_rnKingdom && _rnKingdom.king) {
+                var _kingRel = getRelationship(_rnKingdom.king);
+                if (_kingRel) _kingRel.level = Math.max(0, (_kingRel.level || 50) - 20);
+            }
+            // Also penalize noble relationships
+            if (player.relationships) {
+                for (var _rnId in player.relationships) {
+                    try {
+                        var _rnPerson = Engine.findPerson(_rnId);
+                        if (_rnPerson && _rnPerson.kingdomId === conflictKingdomId &&
+                            (_rnPerson.occupation === 'noble' || _rnPerson.wealthClass === 'upper' ||
+                             (_rnPerson.socialRank && (_rnPerson.socialRank[conflictKingdomId] || 0) >= 4))) {
+                            player.relationships[_rnId].level = Math.max(0, (player.relationships[_rnId].level || 50) - 20);
+                        }
+                    } catch(e) {}
+                }
+            }
+        } catch(e) {}
+
+        // Remove kingdom guards from the renounced kingdom
+        if (player.guards) {
+            for (var _rgi = player.guards.length - 1; _rgi >= 0; _rgi--) {
+                if (player.guards[_rgi].kingdomPaid && (!player.guards[_rgi].paidByKingdomId || player.guards[_rgi].paidByKingdomId === conflictKingdomId)) {
+                    var _rgNpc = Engine.findPerson ? Engine.findPerson(player.guards[_rgi].personId) : null;
+                    if (_rgNpc) { _rgNpc.isPlayerGuard = false; _rgNpc.occupation = _rgNpc.previousOccupation || 'unemployed'; }
+                    player.guards.splice(_rgi, 1);
+                }
+            }
+            player.personalGuards = player.guards.length;
+        }
+
+        // Check if still noble anywhere
+        var _anyNoble = false;
+        for (var _ank in player.socialRank) { if ((player.socialRank[_ank] || 0) >= 4) { _anyNoble = true; break; } }
+        if (!_anyNoble) player.isNoble = false;
+
+        var _conflictKName = 'the kingdom';
+        try { var _ck = Engine.findKingdom(conflictKingdomId); if (_ck) _conflictKName = _ck.name; } catch(e) {}
+
+        Engine.logEvent('📉 ' + player.fullName + ' has renounced their noble status in ' + _conflictKName + ' to pursue nobility elsewhere.');
+        autoJournalCapture('rank', 'I have given up my noble title in ' + _conflictKName + '. The cost was steep — reputation lost, relationships damaged. But new ambitions call.', { mood: 'bittersweet' });
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('📉 Renounced nobility in ' + _conflictKName + '! -30 rep, -20 noble relations.', 'warning');
+
+        // Now proceed with the promotion in the target kingdom
+        return petitionForPromotion(targetKingdomId);
     }
 
     // Lord Town Choice — king offers 3 towns when player becomes Lord
@@ -21730,13 +21889,14 @@
         const town = Engine.findTown(player.townId);
         if (!town || town.kingdomId !== kingdomId) return { success: false, message: 'Must be in a town of that kingdom.' };
 
-        // Nobles cannot gain citizenship in another kingdom — they are bound to their noble kingdom
-        for (var _nkId in player.socialRank) {
-            if ((player.socialRank[_nkId] || 0) >= 4 && _nkId !== kingdomId) {
-                var _nkName = '';
-                try { var _nk = Engine.findKingdom(_nkId); _nkName = _nk ? _nk.name : _nkId; } catch(e) { _nkName = _nkId; }
-                var _nRankName = CONFIG.SOCIAL_RANKS[player.socialRank[_nkId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[_nkId]].name : 'noble';
-                return { success: false, message: 'As a ' + _nRankName + ' of ' + _nkName + ', you cannot take citizenship elsewhere. Your loyalty must remain with your kingdom.' };
+        // Note: Nobles CAN gain citizenship in other kingdoms — they start from peasant there
+        // Foreign noble status grants privileges but rank must be earned independently
+        // EXCEPT: Royal Advisors (6+) cannot hold citizenship elsewhere
+        for (var _raCheckK in player.socialRank) {
+            if (_raCheckK !== kingdomId && (player.socialRank[_raCheckK] || 0) >= 6) {
+                var _raKName = 'another kingdom';
+                try { var _raK = Engine.findKingdom(_raCheckK); if (_raK) _raKName = _raK.name; } catch(e) {}
+                return { success: false, message: 'As Royal Advisor of ' + _raKName + ', you cannot hold citizenship in another kingdom. Step down from your advisory role first.' };
             }
         }
 
@@ -21812,25 +21972,29 @@
     }
 
     function checkExile() {
-        if (!player.citizenshipKingdomId) return;
-        const rep = player.reputation[player.citizenshipKingdomId] || 50;
-        if (rep < Math.abs(CONFIG.EXILE_REPUTATION_THRESHOLD)) {
-            const kingdom = Engine.findKingdom(player.citizenshipKingdomId);
-            const exiledKId = player.citizenshipKingdomId;
-            // Strip rank in exiled kingdom
-            player.socialRank[exiledKId] = 0;
-            delete player.rankSince[exiledKId];
-            // Pick another kingdom as primary if available
-            player.citizenshipKingdomId = null;
-            for (const kId in player.socialRank) {
-                if ((player.socialRank[kId] || 0) >= 1) { player.citizenshipKingdomId = kId; break; }
-            }
-            Engine.logEvent(`${player.fullName} has been exiled from ${kingdom ? kingdom.name : 'their kingdom'}!`);
-            autoJournalCapture('rank', 'I have been exiled from ' + (kingdom ? kingdom.name : 'my kingdom') + '. Everything I built there is lost. I must start anew.', { mood: 'devastated' });
-            if (player.achievementStats) player.achievementStats.wasExiled = true;
-            unlockAchievement('exiled');
-            if (typeof UI !== 'undefined' && UI.toast) {
-                UI.toast(`You have been exiled from ${kingdom ? kingdom.name : 'your kingdom'}!`, 'danger', 'critical');
+        // Check ALL kingdoms where player has citizenship
+        for (var _exKId in player.socialRank) {
+            if ((player.socialRank[_exKId] || 0) < 1) continue;
+            var _exRep = player.reputation[_exKId] || 50;
+            if (_exRep < Math.abs(CONFIG.EXILE_REPUTATION_THRESHOLD)) {
+                var _exKingdom = Engine.findKingdom(_exKId);
+                // Strip rank in exiled kingdom
+                player.socialRank[_exKId] = 0;
+                delete player.rankSince[_exKId];
+                // If this was the active kingdom, pick another
+                if (player.citizenshipKingdomId === _exKId) {
+                    player.citizenshipKingdomId = null;
+                    for (var _nextK in player.socialRank) {
+                        if ((player.socialRank[_nextK] || 0) >= 1) { player.citizenshipKingdomId = _nextK; break; }
+                    }
+                }
+                Engine.logEvent(player.fullName + ' has been exiled from ' + (_exKingdom ? _exKingdom.name : 'their kingdom') + '!');
+                autoJournalCapture('rank', 'I have been exiled from ' + (_exKingdom ? _exKingdom.name : 'my kingdom') + '. Everything I built there is lost. I must start anew.', { mood: 'devastated' });
+                if (player.achievementStats) player.achievementStats.wasExiled = true;
+                unlockAchievement('exiled');
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('You have been exiled from ' + (_exKingdom ? _exKingdom.name : 'your kingdom') + '!', 'danger', 'critical');
+                }
             }
         }
     }
@@ -21842,6 +22006,17 @@
     function isPlayerCitizenOf(kingdomId) {
         if (!kingdomId) return false;
         return (player.socialRank[kingdomId] || 0) >= 1;
+    }
+
+    function setActiveCitizenship(kingdomId) {
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        if ((player.socialRank[kingdomId] || 0) < 1) return { success: false, message: 'You have no rank in this kingdom.' };
+        player.citizenshipKingdomId = kingdomId;
+        var kingdom = Engine.findKingdom(kingdomId);
+        var kName = kingdom ? kingdom.name : kingdomId;
+        var rankIdx = player.socialRank[kingdomId] || 0;
+        var rankName = CONFIG.SOCIAL_RANKS[rankIdx] ? CONFIG.SOCIAL_RANKS[rankIdx].name : 'Unknown';
+        return { success: true, message: 'Active citizenship set to ' + kName + ' (' + rankName + '). Promotion progress now tracks this kingdom.' };
     }
 
     function renounceKingdom(kingdomId) {
@@ -29207,14 +29382,46 @@
         if (player.townId !== road.fromTownId && player.townId !== road.toTownId) {
             return { success: false, message: 'You must be in a town connected to this bridge.' };
         }
-        // Check materials
+        // Check materials — auto-buy from local market if needed
         var mats = CONFIG.BRIDGE_REPAIR_MATERIALS || { wood: 20, stone: 10 };
+        var matBuyCost = 0;
+        var matsToBuy = {};
         for (var matId in mats) {
-            if ((player.inventory[matId] || 0) < mats[matId]) {
-                return { success: false, message: 'Need ' + mats[matId] + ' ' + matId + ' to rebuild.' };
+            var have = player.inventory[matId] || 0;
+            var need = mats[matId];
+            if (have < need) {
+                var shortfall = need - have;
+                // Try to buy from local market
+                var market = Engine.getMarketData ? Engine.getMarketData(player.townId) : null;
+                var marketItem = null;
+                if (market) {
+                    for (var mi = 0; mi < market.length; mi++) {
+                        if (market[mi].id === matId) { marketItem = market[mi]; break; }
+                    }
+                }
+                if (marketItem && marketItem.supply >= shortfall) {
+                    var buyPrice = (marketItem.price || 1) * shortfall;
+                    matBuyCost += buyPrice;
+                    matsToBuy[matId] = { qty: shortfall, price: marketItem.price || 1 };
+                } else {
+                    var avail = marketItem ? marketItem.supply : 0;
+                    return { success: false, message: 'Need ' + need + ' ' + matId + ' (have ' + have + ', market has ' + avail + '). Not enough available.' };
+                }
             }
         }
-        player.gold -= cost;
+        var totalCost = cost + matBuyCost;
+        if (player.gold < totalCost) return { success: false, message: 'Need ' + totalCost + 'g total (' + cost + 'g + ' + matBuyCost + 'g for materials).' };
+        // Deduct gold
+        player.gold -= totalCost;
+        // Buy materials from market
+        for (var buyMatId in matsToBuy) {
+            var buyInfo = matsToBuy[buyMatId];
+            if (Engine.buyFromMarket) {
+                Engine.buyFromMarket(player.townId, buyMatId, buyInfo.qty);
+            }
+            player.inventory[buyMatId] = (player.inventory[buyMatId] || 0) + buyInfo.qty;
+        }
+        // Consume materials
         for (var matId2 in mats) {
             player.inventory[matId2] = (player.inventory[matId2] || 0) - mats[matId2];
         }
@@ -31998,7 +32205,13 @@
     function getMaxGuards() {
         var rankByRank = CONFIG.PLAYER_GUARD_MAX_BY_RANK;
         if (rankByRank) {
-            var kId = player.citizenshipKingdomId || Object.keys(player.socialRank || {})[0];
+            // Use current location's kingdom rank, fallback to active citizenship
+            var kId = null;
+            try {
+                var _gmTown = Engine.findTown(player.townId);
+                if (_gmTown) kId = _gmTown.kingdomId;
+            } catch(e) {}
+            if (!kId) kId = player.citizenshipKingdomId || Object.keys(player.socialRank || {})[0];
             var rankIdx = kId ? (player.socialRank[kId] || 0) : 0;
             if (rankByRank[rankIdx] != null) return rankByRank[rankIdx];
         }
@@ -38611,9 +38824,11 @@
         canPetitionForPromotion,
         getRankProgressBars,
         petitionForPromotion,
+        renounceNobleForPromotion,
         petitionCitizenship,
         isPlayerCitizenOf,
         renounceKingdom,
+        setActiveCitizenship,
         forceRenounceCitizenship,
         executeRequisition,
         bribeRequisitionGuard,

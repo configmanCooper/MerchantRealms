@@ -909,8 +909,28 @@ function showTownDetail(town) {
                 const otherTown = Engine.findTown(otherTownId);
                 const otherName = otherTown ? otherTown.name : '?';
                 if (road.bridgeDestroyed) {
+                    // Calculate total cost including materials from market
+                    var _rbMats = CONFIG.BRIDGE_REPAIR_MATERIALS || { wood: 20, stone: 10 };
+                    var _rbGoldCost = CONFIG.BRIDGE_REBUILD_COST || 1000;
+                    var _rbMatCost = 0;
+                    var _rbMatDesc = '';
+                    try {
+                        var _rbMarket = Engine.getMarketData ? Engine.getMarketData(town.id) : null;
+                        for (var _rbm in _rbMats) {
+                            var _rbNeed = _rbMats[_rbm] - ((typeof Player !== 'undefined' && Player.state.inventory[_rbm]) || 0);
+                            if (_rbNeed > 0 && _rbMarket) {
+                                var _rbPrice = 0;
+                                for (var _rbi = 0; _rbi < (_rbMarket.length || 0); _rbi++) {
+                                    if (_rbMarket[_rbi].id === _rbm) { _rbPrice = _rbMarket[_rbi].price || 0; break; }
+                                }
+                                _rbMatCost += _rbNeed * _rbPrice;
+                            }
+                        }
+                    } catch(e) {}
+                    var _rbTotal = _rbGoldCost + _rbMatCost;
+                    var _rbCostLabel = _rbMatCost > 0 ? `🔧 Rebuild (~${_rbTotal}g incl. materials)` : `🔧 Rebuild (${_rbGoldCost}g)`;
                     html += `<div style="font-size:0.8rem;color:#c44e52;margin-bottom:4px;">❌ Bridge to ${otherName} — DESTROYED `;
-                    html += `<button class="btn-medieval" data-action="rebuildBridge" data-idx="${idx}" style="font-size:0.7rem;padding:3px 8px;">🔧 Rebuild (${CONFIG.BRIDGE_REBUILD_COST}g)</button></div>`;
+                    html += `<button class="btn-medieval" data-action="rebuildBridge" data-idx="${idx}" style="font-size:0.7rem;padding:3px 8px;">${_rbCostLabel}</button></div>`;
                 } else {
                     html += `<div style="font-size:0.8rem;color:#55a868;margin-bottom:4px;">🌉 Bridge to ${otherName} — intact `;
                     html += `<button class="btn-medieval" data-action="destroyBridge" data-idx="${idx}" style="font-size:0.7rem;padding:3px 8px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">💣 Destroy</button></div>`;
@@ -2887,6 +2907,45 @@ function openTravelOptions(townId) {
     var html = '<div style="max-height:450px;overflow-y:auto;">';
     html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px;">\u{1F4CD} ' + (currentTown.name || '?') + ' \u2192 ' + (destTown.name || '?') + '</p>';
 
+    // ── Siege / Quarantine warnings for origin and destination ──
+    var _warnOriginSiege = currentTown && currentTown.siege;
+    var _warnDestSiege = destTown && destTown.siege;
+    var _warnOriginQ = false, _warnDestQ = false;
+    try {
+        if (currentTown) {
+            var _oqK = currentTown.kingdomId && Engine.findKingdom ? Engine.findKingdom(currentTown.kingdomId) : null;
+            if (_oqK && _oqK.healthPolicies) {
+                var _oqDay = Engine.getDay ? Engine.getDay() : 0;
+                for (var _oqi = 0; _oqi < _oqK.healthPolicies.length; _oqi++) {
+                    var _oqP = _oqK.healthPolicies[_oqi];
+                    if (_oqP.active && _oqP.townId === currentTown.id && (!_oqP.expiresDay || _oqDay <= _oqP.expiresDay) &&
+                        (_oqP.type === 'quarantine_town' || _oqP.type === 'martial_quarantine')) { _warnOriginQ = true; break; }
+                }
+            }
+            if (!_warnOriginQ && currentTown.quarantined) _warnOriginQ = true;
+        }
+        if (destTown) {
+            var _dqK = destTown.kingdomId && Engine.findKingdom ? Engine.findKingdom(destTown.kingdomId) : null;
+            if (_dqK && _dqK.healthPolicies) {
+                var _dqDay = Engine.getDay ? Engine.getDay() : 0;
+                for (var _dqi = 0; _dqi < _dqK.healthPolicies.length; _dqi++) {
+                    var _dqP = _dqK.healthPolicies[_dqi];
+                    if (_dqP.active && _dqP.townId === destTown.id && (!_dqP.expiresDay || _dqDay <= _dqP.expiresDay) &&
+                        (_dqP.type === 'quarantine_town' || _dqP.type === 'martial_quarantine')) { _warnDestQ = true; break; }
+                }
+            }
+            if (!_warnDestQ && destTown.quarantined) _warnDestQ = true;
+        }
+    } catch(e) {}
+    if (_warnOriginSiege || _warnDestSiege || _warnOriginQ || _warnDestQ) {
+        html += '<div style="background:rgba(200,60,50,0.15);border:1px solid rgba(200,60,50,0.4);border-radius:8px;padding:8px 10px;margin-bottom:10px;">';
+        if (_warnOriginSiege) html += '<div style="font-size:0.82rem;color:#e74c3c;margin-bottom:3px;">⚔️ <strong>' + currentTown.name + '</strong> is under siege! Leaving may be dangerous.</div>';
+        if (_warnDestSiege) html += '<div style="font-size:0.82rem;color:#e74c3c;margin-bottom:3px;">⚔️ <strong>' + destTown.name + '</strong> is under siege! Entering may be dangerous.</div>';
+        if (_warnOriginQ) html += '<div style="font-size:0.82rem;color:#e67e22;margin-bottom:3px;">🦠 <strong>' + currentTown.name + '</strong> is under quarantine. You may face checks leaving.</div>';
+        if (_warnDestQ) html += '<div style="font-size:0.82rem;color:#e67e22;margin-bottom:3px;">🦠 <strong>' + destTown.name + '</strong> is under quarantine. You may face checks entering.</div>';
+        html += '</div>';
+    }
+
     // "Bring Family" checkbox if family members are in the same town
     var _familyInTown = [];
     if (typeof Player !== 'undefined' && Player.familyMembers && Player.familyMembers.length > 0) {
@@ -2988,6 +3047,26 @@ function openTravelOptions(townId) {
 }
 
 function confirmTravel(townId, optionId) {
+    var options = _travelOptions || [];
+    var opt = null;
+    for (var i = 0; i < options.length; i++) {
+        if (options[i].id === optionId) { opt = options[i]; break; }
+    }
+    if (!opt || !opt.available || !opt.action) return;
+
+    // Check origin town siege (leaving a besieged town) — skip for god mode
+    if (optionId !== 'god_warp') {
+        var _originTown = typeof Player !== 'undefined' && Player.townId && typeof Engine !== 'undefined' && Engine.findTown ? Engine.findTown(Player.townId) : null;
+        if (_originTown && _originTown.siege) {
+            _showSiegeExitPopup(townId, optionId, _originTown);
+            return;
+        }
+    }
+
+    _confirmTravelAfterOriginChecks(townId, optionId);
+}
+
+function _confirmTravelAfterOriginChecks(townId, optionId) {
     var options = _travelOptions || [];
     var opt = null;
     for (var i = 0; i < options.length; i++) {
@@ -3110,6 +3189,70 @@ function _showSiegeEntryPopup(townId, optionId, town) {
 
     html += '</div>';
     openModal('⚔️ Siege at ' + (town.name || 'Town'), html);
+}
+
+// ── SIEGE EXIT POPUP (leaving a besieged town) ──
+function _showSiegeExitPopup(destTownId, optionId, originTown) {
+    var siege = originTown.siege;
+    var attackK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(siege.attackerKingdomId) : null;
+    var defendK = typeof Engine !== 'undefined' && Engine.findKingdom ? Engine.findKingdom(siege.defenderKingdomId) : null;
+    var attackName = attackK ? attackK.name : 'Attackers';
+    var defendName = defendK ? defendK.name : 'Defenders';
+
+    // Sneak chance — base 35% (slightly easier to leave than enter), +skills
+    var sneakChance = 0.35;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('discrete')) sneakChance += 0.10;
+        if (Player.hasSkill('street_smart')) sneakChance += 0.05;
+        if (Player.hasSkill('cartographer')) sneakChance += 0.05;
+    }
+    var sneakPct = Math.round(sneakChance * 100);
+
+    var html = '<div style="max-width:480px;">';
+    html += '<div style="text-align:center;margin-bottom:12px;">';
+    html += '<div style="font-size:2rem;">⚔️🏃</div>';
+    html += '<div style="font-size:1.2rem;color:var(--gold-bright);font-weight:bold;margin-top:4px;">Leaving ' + (originTown.name || 'Town') + ' — Under Siege!</div>';
+    html += '</div>';
+
+    html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.85rem;color:var(--parchment);">⚔️ <strong style="color:#e67e22;">' + attackName + '</strong> is besieging <strong style="color:#55a868;">' + defendName + '</strong>\'s ' + (originTown.name || 'town') + '. Leaving through siege lines is risky.</div>';
+    html += '</div>';
+
+    html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:6px;">Choose your action:</div>';
+
+    // 1. Sneak out
+    html += '<div style="margin-bottom:8px;">';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(196,78,82,0.25);border:2px solid rgba(196,78,82,0.6);color:#f0e6d2;" data-action="_siegeExitSneak" data-id="' + destTownId + '" data-val="' + optionId + '">🤫 <strong style="color:#fff;">Sneak Out</strong> (<span style="color:#e67e22;font-weight:bold;">' + sneakPct + '%</span>)</button>';
+    html += '<div style="font-size:0.7rem;color:#999;margin-top:2px;">Slip past the siege lines. Failure means you stay in town.</div>';
+    html += '</div>';
+
+    // 2. Stay
+    html += '<div style="margin-bottom:4px;">';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.85rem;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);color:#aaa;" data-action="_siegeTurnBack">🔙 <strong>Stay in Town</strong></button>';
+    html += '</div>';
+
+    html += '</div>';
+    openModal('⚔️ Leaving Siege at ' + (originTown.name || 'Town'), html);
+}
+
+function _siegeExitSneak(destTownId, optionId) {
+    var rng = typeof Engine !== 'undefined' && Engine.getRng ? Engine.getRng() : null;
+    if (!rng) return;
+    var sneakChance = 0.35;
+    if (typeof Player !== 'undefined' && Player.hasSkill) {
+        if (Player.hasSkill('discrete')) sneakChance += 0.10;
+        if (Player.hasSkill('street_smart')) sneakChance += 0.05;
+        if (Player.hasSkill('cartographer')) sneakChance += 0.05;
+    }
+    if (rng.random() < sneakChance) {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🤫 You slipped out past the siege lines!', 'success');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+        // Continue with destination checks (quarantine, destination siege, etc.)
+        _confirmTravelAfterOriginChecks(destTownId, optionId);
+    } else {
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚫 Spotted by sentries! You had to retreat back into town.', 'danger');
+        if (typeof UI !== 'undefined' && UI.closeModal) UI.closeModal();
+    }
 }
 
 function _siegeSneakAttempt(townId, optionId) {
@@ -4234,6 +4377,7 @@ function clickTown(townId) {
     UI._siegeSneakAttempt      = _siegeSneakAttempt;
     UI._siegeJoinSide          = _siegeJoinSide;
     UI._siegeTurnBack          = _siegeTurnBack;
+    UI._siegeExitSneak         = _siegeExitSneak;
     UI._revoltSneak            = _revoltSneak;
     UI._revoltJoinSide         = _revoltJoinSide;
     UI._revoltTurnBack         = _revoltTurnBack;
@@ -4353,6 +4497,7 @@ function clickTown(townId) {
     UI.registerAction('_siegeSneakAttempt', function(_t, d) { UI._siegeSneakAttempt(d.id, d.val); });
     UI.registerAction('_siegeJoinSide', function(_t, d) { UI._siegeJoinSide(d.id, d.val, d.side, d.win); });
     UI.registerAction('_siegeTurnBack', function() { UI._siegeTurnBack(); });
+    UI.registerAction('_siegeExitSneak', function(_t, d) { UI._siegeExitSneak(d.id, d.val); });
     UI.registerAction('_revoltSneak', function(_t, d) { UI._revoltSneak(d.id, d.val); });
     UI.registerAction('_revoltJoinSide', function(_t, d) { UI._revoltJoinSide(d.id, d.val, d.side, d.win); });
     UI.registerAction('_revoltTurnBack', function() { UI._revoltTurnBack(); });

@@ -1981,6 +1981,17 @@
     }
 
     function makePeace(a, b, isSurrender, loser, isExhaustion) {
+        // Story mode: block peace between Valdren and Korvath while war is active in story
+        if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+            var _smFlags = StoryMode.getStoryFlags ? StoryMode.getStoryFlags() : {};
+            if (_smFlags.warDeclared && !_smFlags.warEnded) {
+                var _aName = (a.name || '').toLowerCase();
+                var _bName = (b.name || '').toLowerCase();
+                if ((_aName === 'valdren' && _bName === 'korvath') || (_aName === 'korvath' && _bName === 'valdren')) {
+                    return; // War cannot end during active story
+                }
+            }
+        }
         a.atWar.delete(b.id);
         b.atWar.delete(a.id);
         a.relations[b.id] = 0;

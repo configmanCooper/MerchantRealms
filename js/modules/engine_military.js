@@ -208,6 +208,21 @@
             var outpost = world.towns[ti];
             if (!outpost.isOutpost || outpost.abandoned || outpost.destroyed) continue;
 
+            // Daily kingdom reassignment — outpost belongs to kingdom of nearest non-outpost town
+            if (world.day % 7 === 0) {
+                var _nearestT = null, _nearDist = Infinity;
+                for (var _ni = 0; _ni < world.towns.length; _ni++) {
+                    var _nt = world.towns[_ni];
+                    if (_nt.isOutpost || _nt.abandoned || _nt.destroyed || _nt.isJunction) continue;
+                    var _dx = outpost.x - _nt.x, _dy = outpost.y - _nt.y;
+                    var _nd = Math.sqrt(_dx * _dx + _dy * _dy);
+                    if (_nd < _nearDist) { _nearDist = _nd; _nearestT = _nt; }
+                }
+                if (_nearestT && _nearestT.kingdomId !== outpost.kingdomId) {
+                    outpost.kingdomId = _nearestT.kingdomId;
+                }
+            }
+
             // Ensure new fields exist (migration)
             if (!outpost.outpostWorkers) outpost.outpostWorkers = [];
             if (!outpost.outpostGuards) outpost.outpostGuards = [];

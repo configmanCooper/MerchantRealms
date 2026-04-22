@@ -708,7 +708,9 @@ window.UI = (function () {
         registerAction('executeGift', function(_t, d) { if (d.id && d.val) UI.executeGift(d.id, d.val, d.qty); });
         registerAction('closeAnd_executePetition', function() { UI.closeModal(); UI._executePetition(); });
         registerAction('changeCitizenship', function(_t, d) { if (d.id) UI.changeCitizenship(d.id); });
+        registerAction('setActiveCitizenship', function(_t, d) { if (d.id) UI.setActiveCitizenship(d.id); });
         registerAction('petitionPromotion', function() { UI.petitionPromotion(); });
+        registerAction('confirmRenounceNoble', function(btn) { UI.confirmRenounceNoble(btn); });
         registerAction('renounceKingdomUI', function(_t, d) { if (d.id) UI.renounceKingdomUI(d.id); });
         registerAction('showRankProgressionPanel', function(_t, d) { if (d.id) UI.showRankProgressionPanel(d.id); });
         registerAction('openKingdomLicenses', function(_t, d) { if (d.id) UI.openKingdomLicenses(d.id); });
@@ -8280,9 +8282,9 @@ window.UI = (function () {
 
         let html = `<div class="detail-section">
             <h3>\uD83C\uDFDB\uFE0F Social Status</h3>
-            <div class="detail-row"><span class="label">Primary Kingdom</span>
+            <div class="detail-row"><span class="label">Active Kingdom</span>
                 <span class="value" style="color:${citizenColor};">${citizenName}</span></div>
-            <div class="detail-row"><span class="label">Primary Rank</span>
+            <div class="detail-row"><span class="label">Active Rank</span>
                 <span class="value">${rank.icon} ${rank.name}</span></div>
         </div>`;
 
@@ -8296,15 +8298,31 @@ window.UI = (function () {
                 }
             }
         }
+        // Also include kingdoms where rank is 0 (peasant) if player has residency tracking there
+        if (Player.socialRank) {
+            for (const kId in Player.socialRank) {
+                if ((Player.socialRank[kId] || 0) === 0 && citizenKingdoms.findIndex(function(c) { return c.id === kId; }) === -1) {
+                    // Only show if they have some history (residency started)
+                    if (Player.kingdomResidencyStart && Player.kingdomResidencyStart[kId] !== undefined) {
+                        const k = kingdoms.find(function(x) { return x.id === kId; });
+                        citizenKingdoms.push({ id: kId, name: k ? k.name : kId, color: k ? k.color : '#888', rankIdx: 0 });
+                    }
+                }
+            }
+        }
         if (citizenKingdoms.length > 0) {
             html += '<div class="detail-section"><h3>\uD83C\uDFE0 Citizenships</h3>';
             for (const ck of citizenKingdoms) {
                 const r = CONFIG.SOCIAL_RANKS[ck.rankIdx] || CONFIG.SOCIAL_RANKS[0];
-                html += `<div class="detail-row" style="margin-bottom:4px;">
-                    <span class="label" style="color:${ck.color};">${ck.name}</span>
+                const isActive = ck.id === citizenKId;
+                const activeLabel = isActive ? '<span style="color:#d4af37;font-weight:bold;font-size:0.75rem;margin-left:6px;">⭐ ACTIVE</span>' : '';
+                const activeBtn = !isActive && ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
+                html += `<div class="detail-row" style="margin-bottom:4px;${isActive ? 'background:rgba(212,175,55,0.08);border-radius:4px;padding:2px 4px;' : ''}">
+                    <span class="label" style="color:${ck.color};">${ck.name}${activeLabel}</span>
                     <span class="value">${r.icon} ${r.name}
                         <button class="btn-medieval" data-action="showRankProgressionPanel" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:6px;">Details</button>
-                        <button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>
+                        ${activeBtn}
+                        ${ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>` : ''}
                     </span>
                 </div>`;
             }
@@ -8455,14 +8473,60 @@ window.UI = (function () {
         try {
             const result = Player.petitionForPromotion();
             if (result && result.success) {
-                // Don't reopen character dialog — showRankCeremony() in player.js
-                // already opened the ceremony modal. Let it display.
                 toast(result.message, 'success');
+            } else if (result && result.nobleConflict) {
+                // Show UI popup to confirm renouncing noble status in other kingdom
+                _showNobleConflictPopup(result.conflictKingdomId, result.conflictKingdomName, result.targetKingdomId);
             } else {
                 toast((result && result.message) || 'Cannot promote', 'warning');
             }
         } catch (e) {
             toast(e.message || 'Promotion failed', 'danger');
+        }
+    }
+
+    function _showNobleConflictPopup(conflictKingdomId, conflictKingdomName, targetKingdomId) {
+        var targetName = 'the kingdom';
+        try { var tk = Engine.findKingdom(targetKingdomId); if (tk) targetName = tk.name; } catch(e) {}
+
+        var html = '<div style="padding:15px;">' +
+            '<div style="text-align:center;margin-bottom:15px;">' +
+            '<div style="font-size:2.5em;">⚔️👑</div>' +
+            '<h3 style="color:#ff8888;margin:5px 0;">Noble Conflict</h3>' +
+            '</div>' +
+            '<div style="padding:12px;background:rgba(200,100,100,0.1);border:1px solid rgba(200,100,100,0.3);border-radius:6px;margin-bottom:12px;">' +
+            '<p style="color:#ddd;">You are already a <b>Minor Noble</b> in <b>' + conflictKingdomName + '</b>. To become a noble in <b>' + targetName + '</b>, you must <b>renounce your nobility</b> in ' + conflictKingdomName + '.</p>' +
+            '</div>' +
+            '<div style="padding:12px;background:rgba(200,100,100,0.08);border:1px solid rgba(200,100,100,0.25);border-radius:6px;margin-bottom:12px;">' +
+            '<div style="color:#ff8888;font-weight:bold;margin-bottom:8px;">⚠️ Consequences of Renouncing</div>' +
+            '<div style="font-size:0.9em;">' +
+            '<div style="margin:5px 0;">📉 <b>Demoted to Guildmaster</b> in ' + conflictKingdomName + '</div>' +
+            '<div style="margin:5px 0;">🏰 <b>-30 Kingdom Reputation</b> in ' + conflictKingdomName + '</div>' +
+            '<div style="margin:5px 0;">👑 <b>-20 Relationship</b> with the King of ' + conflictKingdomName + '</div>' +
+            '<div style="margin:5px 0;">🤝 <b>-20 Relationship</b> with all nobles of ' + conflictKingdomName + '</div>' +
+            '<div style="margin:5px 0;">🛡️ <b>Lose kingdom guards</b> from ' + conflictKingdomName + '</div>' +
+            '</div></div>' +
+            '<p style="text-align:center;color:#ffaa66;font-style:italic;">This cannot be undone. Are you sure?</p>' +
+            '</div>';
+
+        openModal('⚔️ Renounce Nobility in ' + conflictKingdomName + '?', html,
+            '<button class="btn-medieval" data-action="confirmRenounceNoble" data-conflict="' + conflictKingdomId + '" data-target="' + targetKingdomId + '" style="background:linear-gradient(180deg,#c44,#922);border-color:#c44;margin-right:8px;">⚔️ Renounce & Proceed</button>' +
+            '<button class="btn-medieval" data-action="closeModal">Cancel</button>'
+        );
+    }
+
+    function confirmRenounceNoble(btn) {
+        var conflictK = btn.getAttribute('data-conflict');
+        var targetK = btn.getAttribute('data-target');
+        if (!conflictK || !targetK) { toast('Missing kingdom data.', 'danger'); return; }
+        closeModal();
+        var result = Player.renounceNobleForPromotion(conflictK, targetK);
+        if (result && result.success) {
+            toast(result.message, 'success');
+        } else if (result && result.nobleConflict) {
+            _showNobleConflictPopup(result.conflictKingdomId, result.conflictKingdomName, result.targetKingdomId);
+        } else {
+            toast((result && result.message) || 'Promotion failed.', 'warning');
         }
     }
 
@@ -8477,6 +8541,20 @@ window.UI = (function () {
             }
         } catch (e) {
             toast(e.message || 'Citizenship change failed', 'danger');
+        }
+    }
+
+    function setActiveCitizenship(kingdomId) {
+        try {
+            const result = Player.setActiveCitizenship(kingdomId);
+            if (result && result.success) {
+                toast(result.message, 'success');
+                openCharacterDialog();
+            } else {
+                toast((result && result.message) || 'Cannot set active citizenship', 'warning');
+            }
+        } catch (e) {
+            toast(e.message || 'Failed to set active citizenship', 'danger');
         }
     }
 
@@ -8600,8 +8678,12 @@ window.UI = (function () {
         var group = document.getElementById('rankProgressGroup');
         if (group) group.style.display = '';
 
+        var _activeKName = '';
+        if (typeof Player !== 'undefined' && Player.citizenshipKingdomId && typeof Engine !== 'undefined' && Engine.findKingdom) {
+            try { var _akK = Engine.findKingdom(Player.citizenshipKingdomId); if (_akK) _activeKName = ' (' + _akK.name + ')'; } catch(e) {}
+        }
         var html = '<div style="font-size:10px;color:#d4af37;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;cursor:help;" title="To see privileges of the next rank, or to proceed once you meet all requirements, go to the Character menu.">';
-        html += '<span>Progress to ' + (data.nextRank.icon || '📈') + ' ' + data.nextRank.name + ' Promotion</span>';
+        html += '<span>Progress to ' + (data.nextRank.icon || '📈') + ' ' + data.nextRank.name + ' Promotion' + _activeKName + '</span>';
         if (data.allMet) html += '<span style="color:#5a5;font-size:9px;">✅ Ready!</span>';
         html += '</div>';
         for (var i = 0; i < data.bars.length; i++) {
@@ -16295,8 +16377,10 @@ window.UI = (function () {
         openKingdomsDialog,
         showKingdomTowns,
         petitionPromotion,
+        confirmRenounceNoble,
         _executePetition: _executePetition,
         changeCitizenship,
+        setActiveCitizenship,
         openGiftDialog,
         executeGift,
         // XP, Skills, Achievements → openSkillsDialog, learnSkill → js/modules/ui_outpost.js

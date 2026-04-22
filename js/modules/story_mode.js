@@ -31,7 +31,8 @@ var StoryMode = (function () {
             ashfordLiberated: false,
             metLordCalder: false,
             metSeraphine: false,
-            warDeclared: false
+            warDeclared: false,
+            warEnded: false
         },
         buttonsUnlocked: ['character', 'system'],
         dialogsSeen: [],
@@ -2147,6 +2148,20 @@ var StoryMode = (function () {
     };
 
     _hooks._onChapter19Complete = function () {
+        // End the Valdren-Korvath war
+        _storyState.flags.warEnded = true;
+        if (typeof Engine !== 'undefined' && Engine.getWorld) {
+            var w = Engine.getWorld();
+            if (w && w.kingdoms) {
+                var kA = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+                var kB = w.kingdoms.find(function(k) { return k.name === 'Korvath'; });
+                if (kA && kB && Engine.makePeace) {
+                    Engine.makePeace(kA, kB, false, null, false);
+                    _log('The war between Valdren and Korvath has ended. Peace reigns.');
+                }
+            }
+        }
+
         // Remove all story protections
         _storyState.flags.suppressEncounters = false;
         _storyState.flags.suppressDisease    = false;
@@ -2234,6 +2249,7 @@ var StoryMode = (function () {
         flags.metLordCalder      = false;
         flags.metSeraphine       = false;
         flags.warDeclared        = false;
+        flags.warEnded           = false;
 
         // Rename kingdoms for story mode
         _ensureKingdomNames();
