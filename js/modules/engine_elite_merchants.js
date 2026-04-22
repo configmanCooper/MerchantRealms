@@ -259,7 +259,13 @@
                                 && connTowns.indexOf(p.townId) >= 0 && (p.gold || 0) > 200;
                         });
                     }
-                    candidates.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+                    candidates.sort(function(a, b) {
+                        // Prefer guildmasters (rank 3) over lower-rank merchants
+                        var aRank = (a.socialRank && a.socialRank[a.kingdomId]) || 0;
+                        var bRank = (b.socialRank && b.socialRank[b.kingdomId]) || 0;
+                        if (bRank !== aRank) return bRank - aRank;
+                        return (b.gold || 0) - (a.gold || 0);
+                    });
                     
                     if (candidates.length > 0 && world.rng.random() < promotionChance) {
                         if (canGrowBeyondCurrent || activeEmCount < CONFIG.ELITE_MERCHANT_MAX) {
@@ -357,6 +363,10 @@
                 em.isEliteMerchant = false;
                 em.wealthClass = 'middle';
                 em._eliteFieldsInit = false;
+                // Demoted EMs retain Guildmaster rank (3)
+                if (!em.socialRank) em.socialRank = {};
+                var _emDemKid = em.kingdomId || em.citizenshipKingdomId;
+                if (_emDemKid) em.socialRank[_emDemKid] = 3;
                 world.eliteMerchants.splice(bi, 1);
                 logEvent('📉 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' has lost their elite merchant status due to bankruptcy.', { townId: em.townId, category: 'npc_activity' });
             }

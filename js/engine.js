@@ -3602,6 +3602,27 @@
                         injuryDay: 0,
                         birthDay: -(childAge * 360 + rng.randInt(0, 359)), // Negative = born before game start
                     };
+                    // Child social rank inheritance: highest parent rank - 1 (min 0)
+                    var _wgParentMax = 0;
+                    var _wgParentKid = null;
+                    var _wgParents = [pair.father, pair.mother];
+                    for (var _wgi = 0; _wgi < _wgParents.length; _wgi++) {
+                        var _wgP = _wgParents[_wgi];
+                        if (_wgP.socialRank && typeof _wgP.socialRank === 'object') {
+                            for (var _wgk in _wgP.socialRank) {
+                                if ((_wgP.socialRank[_wgk] || 0) > _wgParentMax) {
+                                    _wgParentMax = _wgP.socialRank[_wgk];
+                                    _wgParentKid = _wgk;
+                                }
+                            }
+                        }
+                    }
+                    if (_wgParentMax >= 1 && _wgParentKid) {
+                        if (!child.socialRank) child.socialRank = {};
+                        var _childRank = _wgParentMax - 1;
+                        if (_wgParentMax >= 7) _childRank = 5; // King's child = Lord
+                        child.socialRank[_wgParentKid] = Math.max(0, _childRank);
+                    }
                     // Link parent-child
                     pair.father.childrenIds.push(child.id);
                     pair.mother.childrenIds.push(child.id);
@@ -3917,6 +3938,25 @@
                             injuryDay: 0,
                             birthDay: -(childAge * 360 + rng.randInt(0, 359)),
                         };
+                        // EM child social rank inheritance
+                        var _emParentMax = 0;
+                        var _emParentKid = null;
+                        var _emParents = [em, spouse];
+                        for (var _epi = 0; _epi < _emParents.length; _epi++) {
+                            var _epP = _emParents[_epi];
+                            if (_epP.socialRank && typeof _epP.socialRank === 'object') {
+                                for (var _epk in _epP.socialRank) {
+                                    if ((_epP.socialRank[_epk] || 0) > _emParentMax) {
+                                        _emParentMax = _epP.socialRank[_epk];
+                                        _emParentKid = _epk;
+                                    }
+                                }
+                            }
+                        }
+                        if (_emParentMax >= 1 && _emParentKid) {
+                            if (!child.socialRank) child.socialRank = {};
+                            child.socialRank[_emParentKid] = Math.max(0, _emParentMax - 1);
+                        }
                         em.childrenIds.push(child.id);
                         spouse.childrenIds.push(child.id);
                         people.push(child);
@@ -3936,6 +3976,29 @@
             eliteMerchants.forEach((m, idx) => {
                 m.heraldry = heraldryPool[idx % heraldryPool.length];
             });
+        }
+
+        // Assign initial social ranks to all non-noble NPCs at worldgen
+        for (var _sri = 0; _sri < people.length; _sri++) {
+            var _srp = people[_sri];
+            if (!_srp.alive || _srp.age < 16) continue;
+            var _srKid = _srp.kingdomId;
+            if (!_srKid) continue;
+            if (!_srp.socialRank) _srp.socialRank = {};
+            var _srCur = _srp.socialRank[_srKid] || 0;
+            if (_srCur >= 1) continue; // Already has a rank (noble, guildmaster, etc.)
+            // Peasant → Citizen: has job + gold >= 50
+            var _srHasJob = _srp.occupation && _srp.occupation !== 'none' && _srp.occupation !== 'unemployed';
+            if (_srHasJob && (_srp.gold || 0) >= 50) {
+                _srp.socialRank[_srKid] = 1; // Citizen
+                // Citizen → Burgher: merchant/craftsman with gold >= 200, age >= 20
+                var _srIsMerch = _srp.occupation === 'merchant' || _srp.occupation === 'craftsman' ||
+                    _srp.occupation === 'guild_master';
+                var _srOwns2 = _srp.buildings && _srp.buildings.length >= 2;
+                if ((_srp.gold || 0) >= 200 && (_srIsMerch || _srOwns2) && _srp.age >= 20) {
+                    _srp.socialRank[_srKid] = 2; // Burgher
+                }
+            }
         }
 
         // Assign NPC-owned retail stores — wealthy/middle-class NPCs in towns+
@@ -6902,14 +6965,14 @@
                             }
                         }
                     }
-                    if (_parentMaxRank >= 4 && _parentRankKid) {
+                    if (_parentMaxRank >= 1 && _parentRankKid) {
                         if (!child.socialRank) child.socialRank = {};
                         if (_parentMaxRank >= 7) {
                             // King's child = Lord (5) at birth
                             child.socialRank[_parentRankKid] = 5;
                         } else {
-                            // Other nobility children = one rank below parent (min 4)
-                            child.socialRank[_parentRankKid] = Math.max(4, _parentMaxRank - 1);
+                            // Children = one rank below highest parent (min 0 = peasant)
+                            child.socialRank[_parentRankKid] = Math.max(0, _parentMaxRank - 1);
                         }
                     }
                     newPeople.push(child);
@@ -22619,6 +22682,114 @@
     }
 
     // ========================================================
+    // §20D  NPC SOCIAL RANK PROMOTION / DEMOTION
+    // ========================================================
+    function tickNPCSocialPromotion() {
+        if (!world || !world.people) return;
+        var rng = world.rng || Engine.getRng();
+        var day = world.day || 0;
+        var RANK_NAMES = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster'];
+
+        // Process ~10% of NPCs per tick for performance (rotate via day offset)
+        var batchSize = Math.max(50, Math.ceil(world.people.length * 0.1));
+        var startIdx = (Math.floor(day / 30) * batchSize) % world.people.length;
+
+        for (var _pi = 0; _pi < batchSize && _pi < world.people.length; _pi++) {
+            var idx = (startIdx + _pi) % world.people.length;
+            var p = world.people[idx];
+            if (!p || !p.alive || p.age < 16) continue;
+            // Skip nobles (rank 4+) and player
+            if (p.id === 'player') continue;
+
+            var kId = p.kingdomId || p.citizenshipKingdomId;
+            if (!kId) continue;
+
+            if (!p.socialRank) p.socialRank = {};
+            var curRank = p.socialRank[kId] || 0;
+            if (curRank >= 4) continue; // Noble+ handled separately
+
+            var dayAtRank = day - (p._rankPromotionDay || 0);
+
+            // --- PROMOTIONS ---
+            // Peasant (0) → Citizen (1)
+            if (curRank === 0) {
+                var hasJob = p.occupation && p.occupation !== 'none' && p.occupation !== 'unemployed';
+                if (hasJob && (p.gold || 0) >= 50 && dayAtRank >= 90) {
+                    if (rng.random() < 0.80) {
+                        p.socialRank[kId] = 1;
+                        p._rankPromotionDay = day;
+                    }
+                }
+            }
+            // Citizen (1) → Burgher (2)
+            else if (curRank === 1) {
+                var isMerchantType = p.occupation === 'merchant' || p.occupation === 'craftsman' ||
+                    p.occupation === 'guild_master';
+                var ownsBuildings = p.buildings && p.buildings.length >= 2;
+                if ((p.gold || 0) >= 200 && (isMerchantType || ownsBuildings) &&
+                    p.age >= 20 && dayAtRank >= 60) {
+                    if (rng.random() < 0.40) {
+                        p.socialRank[kId] = 2;
+                        p._rankPromotionDay = day;
+                    }
+                }
+            }
+            // Burgher (2) → Guildmaster (3)
+            else if (curRank === 2) {
+                var gmCriteria = 0;
+                if ((p.gold || 0) >= 500) gmCriteria++;
+                if (p.buildings && p.buildings.length >= 3) gmCriteria++;
+                if (dayAtRank >= 120) gmCriteria++;
+                if (p.isEliteMerchant) gmCriteria++;
+                var isTradeCraft = p.occupation === 'merchant' || p.occupation === 'craftsman' ||
+                    p.occupation === 'guild_master';
+                if (gmCriteria >= 3 && p.age >= 25 && isTradeCraft) {
+                    if (rng.random() < 0.25) {
+                        p.socialRank[kId] = 3;
+                        p.occupation = 'guild_master';
+                        p._rankPromotionDay = day;
+                    }
+                }
+            }
+
+            // --- DEMOTIONS ---
+            // Citizen (1) → Peasant (0)
+            if (curRank === 1 && (p.gold || 0) < 5) {
+                p._demotionWarnDays = (p._demotionWarnDays || 0) + 30;
+                if (p._demotionWarnDays >= 60 && rng.random() < 0.10) {
+                    p.socialRank[kId] = 0;
+                    p._rankPromotionDay = day;
+                    p._demotionWarnDays = 0;
+                }
+            } else if (curRank === 1) {
+                p._demotionWarnDays = 0;
+            }
+            // Burgher (2) → Citizen (1)
+            if (curRank === 2 && (p.gold || 0) < 50) {
+                p._demotionWarnDays = (p._demotionWarnDays || 0) + 30;
+                if (p._demotionWarnDays >= 60 && rng.random() < 0.15) {
+                    p.socialRank[kId] = 1;
+                    p._rankPromotionDay = day;
+                    p._demotionWarnDays = 0;
+                }
+            } else if (curRank === 2) {
+                p._demotionWarnDays = 0;
+            }
+            // Guildmaster (3) → Burgher (2)
+            if (curRank === 3 && (p.gold || 0) < 100) {
+                p._demotionWarnDays = (p._demotionWarnDays || 0) + 30;
+                if (p._demotionWarnDays >= 90 && rng.random() < 0.10) {
+                    p.socialRank[kId] = 2;
+                    p._rankPromotionDay = day;
+                    p._demotionWarnDays = 0;
+                }
+            } else if (curRank === 3) {
+                p._demotionWarnDays = 0;
+            }
+        }
+    }
+
+    // ========================================================
     // §20E  FASHION & LUXURY TRENDS
     // ========================================================
     function tickFashionTrends() {
@@ -29202,6 +29373,11 @@
                 Engine.tickEliteMerchantDynamics();
                 Engine.ensureEliteMerchantCount();
                 Engine.tickEMGuildAI();
+            }
+
+            // NPC social rank promotion/demotion (every 30 days, offset from EM tick)
+            if (world.day % 30 === 15) {
+                tickNPCSocialPromotion();
             }
 
             // World Chronicle: Kingdom status summary every 90 days (1 year)
