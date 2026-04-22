@@ -23960,7 +23960,6 @@
         // Skip old court system if a pendingCourt (new interactive system) is scheduled
         // or an active court session already exists (from _pendingCourt activation)
         if (k._pendingCourt || k._activeCourtSession) {
-            console.log('[Court] OLD system skipped for ' + k.name + ': _pendingCourt=' + !!k._pendingCourt + ', _activeCourtSession=' + !!k._activeCourtSession);
             return;
         }
 
@@ -24199,11 +24198,6 @@
         if (!k) return;
         var rng = world.rng;
 
-        // Debug: log court-related state every tick for Valdren
-        if (k.name === 'Valdren') {
-            console.log('[Court-tick] ' + k.name + ' day=' + world.day + ': _pendingCourt=' + (k._pendingCourt ? 'courtDay=' + k._pendingCourt.courtDay : 'null') + ', _courtSession=' + !!k._courtSession + ', _activeCourtSession=' + !!k._activeCourtSession + ', _nextCourtDay=' + k._nextCourtDay + ', _activeFeast=' + !!k._activeFeast);
-        }
-
         // Schedule first feast if not yet scheduled
         if (k._nextFeastDay == null) {
             k._nextFeastDay = world.day + rng.randInt(30, 70); // M1: was 60-120, start feasting sooner
@@ -24302,11 +24296,7 @@
         }
 
         // Activate pending court when court day arrives
-        if (k._pendingCourt) {
-            console.log('[Court] ' + k.name + ' has _pendingCourt: courtDay=' + k._pendingCourt.courtDay + ', today=' + world.day + ', _courtSession=' + !!k._courtSession);
-        }
         if (k._pendingCourt && world.day >= k._pendingCourt.courtDay && !k._courtSession) {
-            console.log('[Court] ACTIVATING _pendingCourt for ' + k.name + ' on day ' + world.day);
             var pc = k._pendingCourt;
             // Generate cases if empty (story mode scheduled court without cases)
             if (!pc.cases || pc.cases.length === 0) {
@@ -24395,7 +24385,6 @@
                     // Player.state holds socialRank directly (player is NOT in world.people)
                     var _pState = Player.state;
                     var _pRank = (_pState && _pState.socialRank && _pState.socialRank[k.id]) || 0;
-                    console.log('[Court] Player rank for ' + k.id + ' = ' + _pRank);
                     if (_pRank >= 4) {
                         var _kingPerson2 = findPerson(k.king);
                         k._activeCourtSession = {
@@ -24405,7 +24394,6 @@
                             kingName: _kingPerson2 ? (_kingPerson2.firstName || 'The King') : 'The King',
                             _playerActionsLeft: 3
                         };
-                        console.log('[Court] Created _activeCourtSession with 3 actions');
                     } else {
                         // Story mode: if player has attend_court objective, grant access anyway
                         if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
@@ -24417,9 +24405,6 @@
                                 kingName: _kingPerson2b ? (_kingPerson2b.firstName || 'The King') : 'The King',
                                 _playerActionsLeft: 3
                             };
-                            console.log('[Court] Created _activeCourtSession for story mode (rank ' + _pRank + ')');
-                        } else {
-                            console.log('[Court] Player rank too low (' + _pRank + ') for kingdom ' + k.id);
                         }
                     }
                 }
@@ -24430,7 +24415,6 @@
                 type: 'court_started', kingdomId: k.id, townId: pc.townId
             }, isPlayerK3 ? 'my_kingdom' : 'foreign_kingdoms');
             k._pendingCourt = null;
-            console.log('[Court] Cleared _pendingCourt, setting _nextCourtDay far out');
             // Update _nextCourtDay so old court system doesn't immediately re-trigger
             k._nextCourtDay = world.day + rng.randInt(25, 50);
         }
