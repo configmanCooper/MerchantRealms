@@ -24296,7 +24296,7 @@
                 var _scNobles = world.people.filter(function(p) {
                     return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 7;
                 });
-                var _scForeignK = getKingdoms().filter(function(fk) { return fk.id !== k.id; });
+                var _scForeignK = world.kingdoms.filter(function(fk) { return fk.id !== k.id && !fk.destroyed; });
                 var _scNum = rng.randInt(5, 8);
                 var _scAvail = rng.shuffle(_COURT_CASE_TYPES.slice());
                 pc.cases = [];
