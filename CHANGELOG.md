@@ -4,6 +4,34 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.83.0] - Multi-Kingdom Citizenship, Medical Rest & Story Mode Hardening
+
+### Added — Multi-Kingdom Citizenship Phase 3
+- Foreign nobles can now access the Nobility panel (court & feast sections)
+- Feast and court events shown for active kingdom, current location kingdom, AND foreign noble kingdoms
+- Outpost kingdom reassignment: weekly check updates outpost kingdom based on nearest town
+- Story mode permanent war: Valdren/Korvath war cannot end via peace until chapter 19
+
+### Added — Medical Rest
+- New health recovery option when HP < 30 with no injuries/illnesses
+- Choose 1, 3, or 5 days of rest at 5× inn cost per day, paid upfront
+- Heals +5 HP/day, restores energy/hunger/thirst
+- Fullscreen overlay with progress bar at 60× speed, UI locked during rest
+
+### Fixed — Story Mode
+- Ch19b Legacy objectives now complete properly (story `complete` flag was set too early, blocking objective checks)
+- Valdren king always has surname "Aldric" (enforced on every tick and load)
+- Ashford locked under Korvath control until ch18 military path releases it (guards in `captureTown`, `transferTown`, and daily tick enforcement)
+- Festival event crash fixed: `_triggerFestivalEvent` was missing town lookup
+- Court petition: show all petition types, fix data attribute naming
+- Ch18 skill points (+10 SP) implemented
+- Button text readability improvements
+
+### Fixed — Other
+- War list display: handle `atWar` as both Set and Array after deserialization
+- Court petition overhaul with location checks
+- Ch17 audio regenerated with double-generate pipeline fix
+
 ## [0.82.0] - Court System, Feast Actions & Story Mode Fixes
 
 ### Fixed — Court System (Critical)
