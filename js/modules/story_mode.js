@@ -577,6 +577,7 @@ var StoryMode = (function () {
 
     /** Mark an objective done by id and persist to _storyState.objectives map. */
     function _markDone(objId) {
+        console.log('[StoryMode] _markDone called with objId=' + objId);
         _storyState.objectives[objId] = true;
         var ch = _currentChapterDef();
         if (!ch) { return; }
@@ -606,27 +607,33 @@ var StoryMode = (function () {
             // Also unlock the Nobility button
             _unlockButtons(['#btnNobility']);
             try {
-                var _valdrenK = null;
+                var _valdrenKId = null;
                 var _allKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
                 for (var _ki = 0; _ki < _allKingdoms.length; _ki++) {
-                    if (_allKingdoms[_ki].name === 'Valdren') { _valdrenK = _allKingdoms[_ki]; break; }
+                    if (_allKingdoms[_ki].name === 'Valdren') { _valdrenKId = _allKingdoms[_ki].id; break; }
                 }
+                var _valdrenK = _valdrenKId && Engine.findKingdom ? Engine.findKingdom(_valdrenKId) : null;
                 if (_valdrenK) {
                     Engine.startRoyalFeast(_valdrenK.id, 7);
                 }
             } catch (e) { /* feast scheduling failed */ }
         } else if (objId === 'ch16_attend_feast') {
             // Schedule royal court 3 days after feast completion
+            console.log('[StoryMode] === FEAST OBJECTIVE COMPLETED - SCHEDULING COURT ===');
             try {
-                var _valdrenK2 = null;
+                // Find Valdren kingdom ID from getKingdoms (copies), then get REAL object via findKingdom
+                var _valdrenId = null;
                 var _allK2 = Engine.getKingdoms ? Engine.getKingdoms() : [];
                 for (var _ki2 = 0; _ki2 < _allK2.length; _ki2++) {
-                    if (_allK2[_ki2].name === 'Valdren') { _valdrenK2 = _allK2[_ki2]; break; }
+                    if (_allK2[_ki2].name === 'Valdren') { _valdrenId = _allK2[_ki2].id; break; }
                 }
+                console.log('[StoryMode] Valdren id=' + _valdrenId);
+                var _valdrenK2 = _valdrenId && Engine.findKingdom ? Engine.findKingdom(_valdrenId) : null;
                 if (_valdrenK2) {
+                    console.log('[StoryMode] Got REAL kingdom object, id=' + _valdrenK2.id);
+                    console.log('[StoryMode] BEFORE: _pendingCourt=' + !!_valdrenK2._pendingCourt + ', _nextCourtDay=' + _valdrenK2._nextCourtDay);
                     var _courtDay = Engine.getDay() + 3;
-                    // Force court scheduling by directly setting _pendingCourt
-                    var _courtTownId = _valdrenK2.capital || (_valdrenK2.territories && _valdrenK2.territories.size > 0 ? Array.from(_valdrenK2.territories)[0] : null);
+                    var _courtTownId = _valdrenK2.capital || _valdrenK2.capitalTownId || (_valdrenK2.territories && _valdrenK2.territories.size > 0 ? Array.from(_valdrenK2.territories)[0] : null);
                     var _courtTownName = 'the capital';
                     try { var _ct = Engine.findTown(_courtTownId); if (_ct) _courtTownName = _ct.name; } catch(e2) {}
                     _valdrenK2._pendingCourt = {
@@ -639,13 +646,14 @@ var StoryMode = (function () {
                         cases: [],
                         invitedNobles: []
                     };
-                    // Also set _nextCourtDay as backup so king AI doesn't override
                     _valdrenK2._nextCourtDay = _courtDay;
-                    // Clear any active feast blocks (feast can still display but won't block court activation)
                     _valdrenK2._pendingFeast = null;
-                    console.log('[StoryMode] Scheduled court for day ' + _courtDay + ' (current day ' + Engine.getDay() + ')');
+                    console.log('[StoryMode] AFTER: _pendingCourt=' + !!_valdrenK2._pendingCourt + ', _nextCourtDay=' + _valdrenK2._nextCourtDay);
+                    console.log('[StoryMode] Court scheduled for day ' + _courtDay + ' (current day ' + Engine.getDay() + ')');
+                } else {
+                    console.log('[StoryMode] ERROR: Could not find Valdren kingdom via findKingdom!');
                 }
-            } catch (e) { console.error('[StoryMode] Court scheduling failed:', e); }
+            } catch (e) { console.error('[StoryMode] Court scheduling EXCEPTION:', e); }
         }
     }
 
@@ -1812,6 +1820,34 @@ var StoryMode = (function () {
                         _refreshTracker();
                     }
                     // Court will be scheduled after feast objective completes
+                    // Retroactive fix: if feast objective already done but no court scheduled, schedule now
+                    var _ch16 = _currentChapterDef();
+                    if (_ch16) {
+                        var _feastObj = null;
+                        var _courtObj = null;
+                        for (var _oi = 0; _oi < _ch16.objectives.length; _oi++) {
+                            if (_ch16.objectives[_oi].id === 'ch16_attend_feast') _feastObj = _ch16.objectives[_oi];
+                            if (_ch16.objectives[_oi].id === 'ch16_attend_court') _courtObj = _ch16.objectives[_oi];
+                        }
+                        if (_feastObj && _feastObj.done && _courtObj && !_courtObj.done && !valdren._pendingCourt) {
+                            var _courtDay16 = Engine.getDay() + 3;
+                            var _ct16Id = valdren.capital || valdren.capitalTownId || (valdren.territories && valdren.territories.size > 0 ? Array.from(valdren.territories)[0] : null);
+                            var _ct16Name = 'the capital';
+                            try { var _ct16 = Engine.findTown(_ct16Id); if (_ct16) _ct16Name = _ct16.name; } catch(e3) {}
+                            valdren._pendingCourt = {
+                                id: 'court_story_ch16',
+                                townId: _ct16Id,
+                                townName: _ct16Name,
+                                scheduledDay: Engine.getDay(),
+                                courtDay: _courtDay16,
+                                leadDays: 3,
+                                cases: [],
+                                invitedNobles: []
+                            };
+                            valdren._nextCourtDay = _courtDay16;
+                            console.log('[StoryMode] Retroactive court scheduled for day ' + _courtDay16);
+                        }
+                    }
                 }
             }
         }
