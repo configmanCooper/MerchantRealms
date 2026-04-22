@@ -4,6 +4,40 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.82.0] - Court System, Feast Actions & Story Mode Fixes
+
+### Fixed — Court System (Critical)
+- **Root cause:** Player is NOT in `world.people` — `findPerson(Player.personId)` always returned null, breaking court activation, court actions, and feast invitations
+- Fixed `_activeCourtSession` creation to use `Player.state.socialRank` directly
+- Fixed `doCourtAction` to fallback to `Player.state` when `findPerson` fails
+- Fixed old court system's noble check to use `Player.state.socialRank`
+- Added story mode fallback: court access granted even if rank < 4 during story
+- Fixed court UI: show "Court in Session" banner instead of "Upcoming in 46 days" when `_activeCourtSession` exists
+- Fixed `_pendingCourt` set on shallow copy instead of real kingdom (use `Engine.findKingdom()`)
+- Fixed tick order: `tickKingdomFeasts` activates court, then `tickKingdomCourt` guard prevents old system from overwriting
+- Fixed `_nextCourtDay` reset after court activation to prevent immediate reschedule
+- Court scheduled 4 days after feast objective completion (was 3, changed to avoid feast overlap)
+
+### Fixed — Loyalty Manipulation Actions
+- `nobleFlatterKing`, `nobleWhisperAgainst`, `nobleBoostAlly` all returned "Player person not found" — same root cause (player not in `world.people`)
+- `nobleDeclineFeastInvite` same fix
+- All loyalty actions now also fire `StoryMode.onPlayerAction('attend_court')` so they count toward the attend_court objective
+
+### Fixed — Feast System
+- Feast actions greyed out on new feast days: UI now checks `_playerActionDay` matches current day before showing used count
+- `getKingdoms` ReferenceError in `tickKingdomFeasts`: changed to `world.kingdoms.filter()`
+- Feast invitation check now uses `Player.state.socialRank` alongside `findPerson` fallback
+
+### Fixed — Other
+- `tickPeople` crash: guard missing `childrenIds` on parent NPCs during birth
+- Ch14b dialog speakers changed from father to narrator, audio regenerated
+- Feast button text changed to black for readability
+- Festival guidance: World tab → Town View → highlight festival button
+- Character tab red glow only for player health, not all characters
+
+### Added
+- AI Variable Names Reference document (session files) — comprehensive property list for Player, Kingdom, Person, Town, World objects and Engine API mutability notes
+
 ## [0.78.0] - Ch17 Story Expansion, Diplomatic Agents & Audio Overhaul
 
 ### Added — Ch17 Story Mode Expansion
