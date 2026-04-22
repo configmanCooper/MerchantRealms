@@ -8889,7 +8889,7 @@ window.UI = (function () {
         character: [
             { icon: '👤', label: 'Character', action: 'openCharacterDialog' },
             { icon: '📦', label: 'Inventory', fn: 'openPlayerInventory' },
-            { icon: '🩺', label: 'Treatment', fn: 'openHealthDetailPanel', conditional: 'treatment' },
+            { icon: '🩺', label: 'Treatment', fn: 'openHealthDialog', conditional: 'treatment' },
             { icon: '📚', label: 'Skills', fn: 'openSkillsDialog' },
             { icon: '👨‍👩‍👧‍👦', label: 'Family', fn: 'openFamilyPanel', conditional: 'family' },
             { icon: '🏡', label: 'Housing', fn: 'openHousingDialog' },
@@ -8950,6 +8950,11 @@ window.UI = (function () {
         var injuries = Player.injuries || [];
         var illnesses = Player.illnesses || [];
         if (injuries.length > 0 || illnesses.length > 0 || (Player.health !== undefined && Player.health < 50)) return true;
+        // Check treatable companions (family, spouse, guards in same town)
+        if (Player.getTreatableCompanions) {
+            var comps = Player.getTreatableCompanions();
+            if (comps.length > 0) return true;
+        }
         // Check family members
         try {
             if (Player.spouseId) {

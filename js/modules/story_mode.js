@@ -349,10 +349,10 @@ var StoryMode = (function () {
             startDialog: 'ch11_father_injury',
             objectives: [
                 { id: 'ch11_treat_father', type: 'treat_person', person: 'Edmund',  desc: 'Treat father\'s injury',
-                  hint: 'Open Character \u2192 click Health Status \u2192 treat Edmund under Sick Companions',
+                  hint: 'Open Character \u2192 Treatment \u2192 treat Edmund under Sick Companions',
                   done: false },
                 { id: 'ch11_treat_mother', type: 'treat_person', person: 'Margret', desc: 'Treat mother\'s illness',
-                  hint: 'Open Character \u2192 click Health Status \u2192 treat Margret under Sick Companions',
+                  hint: 'Open Character \u2192 Treatment \u2192 treat Margret under Sick Companions',
                   done: false }
             ],
             endDialog: 'ch11_complete',
