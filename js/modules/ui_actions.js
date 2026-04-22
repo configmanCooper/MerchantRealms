@@ -4170,8 +4170,8 @@ function clickTown(townId) {
             var a = actions[ai];
             var disabled = actionsLeft <= 0;
             html += '<button class="btn-medieval" data-action="doFestivalAction" data-kingdom="' + kingdomId + '" data-festival="' + festivalId + '" data-actionid="' + a.id + '" ';
-            html += 'style="font-size:0.72rem;padding:6px;text-align:left;' + (disabled ? 'opacity:0.4;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
-            html += a.icon + ' ' + a.name + '<br><span style="font-size:0.6rem;color:#aaa;">' + a.desc + '</span>';
+            html += 'style="font-size:0.72rem;padding:6px;text-align:left;color:#111;' + (disabled ? 'opacity:0.4;' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
+            html += a.icon + ' ' + a.name + '<br><span style="font-size:0.6rem;color:#444;">' + a.desc + '</span>';
             html += '</button>';
         }
         html += '</div>';

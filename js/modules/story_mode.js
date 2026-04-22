@@ -1565,6 +1565,22 @@ var StoryMode = (function () {
                 enemyK.name = 'Korvath';
             }
         }
+
+        // Ensure Valdren's capital is NOT Ashford — pick another Valdren town
+        if (playerK && playerK.capitalTownId === ashford.id) {
+            var territories = playerK.territories || [];
+            var tArr = Array.isArray(territories) ? territories : Array.from(territories);
+            for (var ci = 0; ci < tArr.length; ci++) {
+                if (tArr[ci] !== ashford.id) {
+                    playerK.capitalTownId = tArr[ci];
+                    var newCap = w.towns.find(function(t) { return t.id === tArr[ci]; });
+                    if (newCap) {
+                        _log('[StoryMode] Changed Valdren capital from Ashford to ' + newCap.name);
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
