@@ -1621,6 +1621,14 @@ var StoryMode = (function () {
                 }
             }
         }
+
+        // Ensure Valdren's king has surname "Aldric"
+        if (playerK && playerK.king) {
+            var _vKing = (typeof Engine !== 'undefined' && Engine.findPerson) ? Engine.findPerson(playerK.king) : null;
+            if (_vKing && _vKing.lastName !== 'Aldric') {
+                _vKing.lastName = 'Aldric';
+            }
+        }
     }
 
     /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
