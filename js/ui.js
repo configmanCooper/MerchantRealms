@@ -9104,7 +9104,14 @@ window.UI = (function () {
     function _updateTabGlows() {
         var charTab = document.querySelector('.tab-btn[data-category="character"]');
         if (charTab) {
-            if (_needsTreatment()) {
+            // Only glow red for the player's own health issues, not companions
+            var playerNeedsTreatment = false;
+            if (typeof Player !== 'undefined') {
+                var pInj = Player.injuries || [];
+                var pIll = Player.illnesses || [];
+                if (pInj.length > 0 || pIll.length > 0 || (Player.health !== undefined && Player.health < 50)) playerNeedsTreatment = true;
+            }
+            if (playerNeedsTreatment) {
                 charTab.classList.add('needs-attention');
             } else {
                 charTab.classList.remove('needs-attention');
