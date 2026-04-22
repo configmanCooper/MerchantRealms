@@ -542,7 +542,7 @@ var StoryMode = (function () {
             endDialog: 'ch19b_complete',
             unlockButtons: [],
             onStart: null,
-            onComplete: null
+            onComplete: '_onChapter19bComplete'
         }
     ];
 
@@ -2166,7 +2166,7 @@ var StoryMode = (function () {
         _storyState.flags.suppressEncounters = false;
         _storyState.flags.suppressDisease    = false;
         _storyState.flags.protectFamily      = false;
-        _storyState.complete = true;
+        // NOTE: Do NOT set _storyState.complete here — ch19b (Legacy) still needs to run
 
         // Unlock every tab
         var allTabs = ['actions', 'business', 'character', 'world', 'system'];
@@ -2174,6 +2174,12 @@ var StoryMode = (function () {
 
         _log('All story protections removed. Sandbox mode is now active.');
         _toast('Congratulations! Sandbox mode unlocked.');
+    };
+
+    // ── Ch 19b: Legacy (final chapter completion) ──
+    _hooks._onChapter19bComplete = function () {
+        _storyState.complete = true;
+        _log('The story of your legacy is complete. The world is yours.');
     };
 
     // ── Ch 4b: The Road is Dangerous ──

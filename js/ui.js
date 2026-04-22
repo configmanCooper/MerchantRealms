@@ -5984,6 +5984,7 @@ window.UI = (function () {
     function openEventLog() {
         if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
             Player.state.storyMode._viewedEventLog = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
         }
         let events;
         try { events = (Engine.getAllEvents ? Engine.getAllEvents() : Engine.getEvents()); } catch (e) { events = []; }
@@ -6492,6 +6493,7 @@ window.UI = (function () {
     function setNotifFilter(key, value) {
         if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
             Player.state.storyMode._toggledFilter = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
         }
         if (typeof Player !== 'undefined' && Player.setNotifFilter) {
             Player.setNotifFilter(key, value);
@@ -11292,6 +11294,7 @@ window.UI = (function () {
     function openAchievementsDialog(category, tierFilter) {
         if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
             Player.state.storyMode._viewedFeats = true;
+            if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
         }
         if (category && typeof category === 'string') _achCategory = category;
         if (tierFilter !== undefined) _achTierFilter = tierFilter;
