@@ -24367,11 +24367,31 @@
                 _resolvedCount: 0
             };
 
+            // Also create _activeCourtSession for the player UI (noble court actions)
+            try {
+                var _pIsKingOfThis2 = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
+                if (!_pIsKingOfThis2 && typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id) {
+                    var _pPerson2 = findPerson(Player.personId || 'player');
+                    if (_pPerson2 && _pPerson2.socialRank && _pPerson2.socialRank[k.id] >= 4) {
+                        var _kingPerson2 = findPerson(k.king);
+                        k._activeCourtSession = {
+                            id: pc.id,
+                            day: world.day,
+                            events: [],
+                            kingName: _kingPerson2 ? (_kingPerson2.firstName || 'The King') : 'The King',
+                            _playerActionsLeft: 3
+                        };
+                    }
+                }
+            } catch(e) {}
+
             var isPlayerK3 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
             logEvent('⚖️ Royal Court is now in session in ' + (pc.townName || k.name) + '! ' + courtNobles.length + ' nobles in attendance.', {
                 type: 'court_started', kingdomId: k.id, townId: pc.townId
             }, isPlayerK3 ? 'my_kingdom' : 'foreign_kingdoms');
             k._pendingCourt = null;
+            // Update _nextCourtDay so old court system doesn't immediately re-trigger
+            k._nextCourtDay = world.day + rng.randInt(25, 50);
         }
 
         // Start new feast (NPC kingdom auto-feast — skip if player is king, they schedule manually)
