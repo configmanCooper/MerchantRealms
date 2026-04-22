@@ -1035,16 +1035,16 @@
         },
 
         ch14b_shipbuilding_father: {
-            speaker: "father",
-            portrait: "father",
+            speaker: "narrator",
+            portrait: "narrator",
             lines: [
                 "A ship opens routes that no road can match. Distant ports, exotic goods, fortunes waiting across the waves. Find a port town and build your first vessel."
             ]
         },
 
         ch14b_complete: {
-            speaker: "father",
-            portrait: "father",
+            speaker: "narrator",
+            portrait: "narrator",
             lines: [
                 "A merchant with a fleet commands respect across every shore. Send caravans by sea, trade between distant ports, and let the ocean work for you."
             ]
