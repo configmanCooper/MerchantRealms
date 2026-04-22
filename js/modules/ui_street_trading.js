@@ -910,11 +910,21 @@ function openNobilityDialog() {
     }
 
     // ── PENDING / SCHEDULED COURT ──
+    // Skip if court is already in session (_activeCourtSession exists)
+    var _hasActiveCourtSession = false;
+    try {
+        var _ckActive = Engine.findKingdom(citizenKingdomId);
+        if (_ckActive && _ckActive._activeCourtSession && _ckActive._activeCourtSession._playerActionsLeft > 0) {
+            _hasActiveCourtSession = true;
+        }
+    } catch (e) {}
     var _pendingCourt = null;
-    try { _pendingCourt = Engine.getPendingCourt ? Engine.getPendingCourt(citizenKingdomId) : null; } catch (e) {}
+    if (!_hasActiveCourtSession) {
+        try { _pendingCourt = Engine.getPendingCourt ? Engine.getPendingCourt(citizenKingdomId) : null; } catch (e) {}
+    }
     // Also check _nextCourtDay on the kingdom for upcoming court without _pendingCourt
     var _nextCourtDay = null;
-    if (!_pendingCourt) {
+    if (!_pendingCourt && !_hasActiveCourtSession) {
         try {
             var _ckk = Engine.findKingdom(citizenKingdomId);
             if (_ckk && _ckk._nextCourtDay && _ckk._nextCourtDay > day) {
@@ -922,7 +932,15 @@ function openNobilityDialog() {
             }
         } catch (e) {}
     }
-    if (_pendingCourt) {
+    if (_hasActiveCourtSession) {
+        var _activeCourtK = Engine.findKingdom(citizenKingdomId);
+        var _acActions = _activeCourtK._activeCourtSession._playerActionsLeft;
+        html += '<div style="background:rgba(80,120,200,0.15);border:2px solid rgba(80,120,200,0.5);border-radius:8px;padding:12px;margin-bottom:10px;">';
+        html += '<h3 style="margin:0 0 6px 0;font-size:0.95rem;color:#5dade2;">⚖️ Royal Court is in Session!</h3>';
+        html += '<div style="font-size:0.85rem;color:#ddd;">The king is holding court today. You have <strong>' + _acActions + ' action' + (_acActions !== 1 ? 's' : '') + '</strong> remaining.</div>';
+        html += '<div style="font-size:0.78rem;color:#f0c040;margin-top:6px;">👉 Go to the <strong>Influence</strong> tab to take court actions!</div>';
+        html += '</div>';
+    } else if (_pendingCourt) {
         var _pcDaysUntil = Math.max(0, (_pendingCourt.courtDay || 0) - day);
         var _pcTownName = '';
         try { var _pcT = Engine.findTown(_pendingCourt.townId); _pcTownName = _pcT ? _pcT.name : 'the capital'; } catch (e) { _pcTownName = 'the capital'; }
