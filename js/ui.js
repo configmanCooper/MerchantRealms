@@ -12194,8 +12194,9 @@ window.UI = (function () {
             html += '<p class="text-dim">You are healthy!</p>';
         }
 
-        // Check medical facility availability
-        var medFacilities = Player.getMedicalFacilities ? Player.getMedicalFacilities() : { hasHospital: false, hasClinic: false };
+        // Check medical facility availability (none available while traveling)
+        var _isTraveling = Player.traveling || false;
+        var medFacilities = (!_isTraveling && Player.getMedicalFacilities) ? Player.getMedicalFacilities() : { hasHospital: false, hasClinic: false };
         var hasHospital = medFacilities.hasHospital;
         var hasClinic = medFacilities.hasClinic;
 
