@@ -441,7 +441,7 @@ var StoryMode = (function () {
             startDialog: 'ch16_calder_nobility',
             objectives: [
                 { id: 'ch16_reach_noble',   type: 'reach_rank',   rank: 4,  desc: 'Become a Minor Noble (Character → Character, scroll down to Petition)',   done: false },
-                { id: 'ch16_attend_feast',  type: 'attend_feast',           desc: 'Attend a noble feast',   done: false, after: 'ch16_reach_noble' },
+                { id: 'ch16_attend_feast',  type: 'attend_feast', qty: 5,   desc: 'Attend a noble feast (0/5 actions)',   done: false, after: 'ch16_reach_noble' },
                 { id: 'ch16_attend_court',  type: 'attend_court',           desc: 'Attend the royal court', done: false, after: 'ch16_attend_feast' }
             ],
             endDialog: 'ch16_complete',
@@ -1331,7 +1331,16 @@ var StoryMode = (function () {
                     break;
 
                 case 'attend_feast':
-                    matched = true;
+                    if (obj.qty) {
+                        if (!obj._progress) obj._progress = 0;
+                        obj._progress += 1;
+                        var afNeeded = obj.qty || 5;
+                        obj.desc = obj.desc.replace(/\(\d+\/\d+[^)]*\)/, '(' + Math.min(obj._progress, afNeeded) + '/' + afNeeded + ' actions)');
+                        matched = obj._progress >= afNeeded;
+                        if (!matched) _refreshTracker();
+                    } else {
+                        matched = true;
+                    }
                     break;
 
                 case 'attend_court':
@@ -1570,7 +1579,7 @@ var StoryMode = (function () {
                                 if (ch.objectives[oi].id === 'ch14_meet_calder') {
                                     ch.objectives[oi].desc = 'Meet Lord Calder in ' + newCap.name;
                                 } else if (ch.objectives[oi].id === 'ch16_attend_feast') {
-                                    ch.objectives[oi].desc = 'Attend a noble feast in ' + newCap.name;
+                                    ch.objectives[oi].desc = 'Attend a noble feast in ' + newCap.name + ' (0/5 actions)';
                                 } else if (ch.objectives[oi].id === 'ch16_attend_court') {
                                     ch.objectives[oi].desc = 'Attend the royal court in ' + newCap.name;
                                 }
@@ -1765,7 +1774,7 @@ var StoryMode = (function () {
                         if (ch) {
                             for (var i = 0; i < ch.objectives.length; i++) {
                                 if (ch.objectives[i].id === 'ch16_attend_feast') {
-                                    ch.objectives[i].desc = 'Attend a noble feast in ' + capTown.name;
+                                    ch.objectives[i].desc = 'Attend a noble feast in ' + capTown.name + ' (0/5 actions)';
                                 } else if (ch.objectives[i].id === 'ch16_attend_court') {
                                     ch.objectives[i].desc = 'Attend the royal court in ' + capTown.name;
                                 }
