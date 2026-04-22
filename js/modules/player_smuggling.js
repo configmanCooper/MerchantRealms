@@ -137,8 +137,8 @@
             player.achievementStats.smuggleStreak = 0;
             unlockAchievement('caught_ach');
             unlockAchievement('jailbird');
-            Engine.logEvent(`${player.fullName} was caught smuggling ${findResource(resourceId)?.name || resourceId} in ${town.name}! Fined ${actualFine}g and jailed for ${jailDays} days.`, null, 'my_actions');
-            return { success: false, message: `Caught smuggling! Fined ${actualFine}g, goods confiscated, jailed ${jailDays} days.`, caught: true };
+            Engine.logEvent(`${player.fullName} was caught smuggling ${findResource(resourceId)?.name || resourceId} in ${town.name}! Fined ${fineAmount}g and jailed for ${jailDays} days.`, null, 'my_actions');
+            return { success: false, message: `Caught smuggling! Fined ${fineAmount}g, goods confiscated, jailed ${jailDays} days.`, caught: true };
         } else {
             // Successful smuggle - black market premium
             let premiumMult = CONFIG.SMUGGLING_BLACK_MARKET_PREMIUM;
