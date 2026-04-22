@@ -23958,7 +23958,8 @@
         var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
 
         // Skip old court system if a pendingCourt (new interactive system) is scheduled
-        if (k._pendingCourt) return;
+        // or an active court session already exists (from _pendingCourt activation)
+        if (k._pendingCourt || k._activeCourtSession) return;
 
         // Schedule first court session
         if (k._nextCourtDay == null) {
