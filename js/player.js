@@ -22015,7 +22015,6 @@
 
     function setActiveCitizenship(kingdomId) {
         if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
-        if ((player.socialRank[kingdomId] || 0) < 1) return { success: false, message: 'You have no rank in this kingdom.' };
         player.citizenshipKingdomId = kingdomId;
         var kingdom = Engine.findKingdom(kingdomId);
         var kName = kingdom ? kingdom.name : kingdomId;
