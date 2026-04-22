@@ -7951,7 +7951,8 @@ window.UI = (function () {
                 if (k.laws.guildRestrictions) lawsHtml += `<div class="law-item">🔨 Guild Restrictions</div>`;
             }
 
-            const warList = k.atWar && k.atWar.size > 0 ? Array.from(k.atWar).map(wId => {
+            const _warEntries = k.atWar ? (k.atWar instanceof Set ? Array.from(k.atWar) : (Array.isArray(k.atWar) ? k.atWar : [])) : [];
+            const warList = _warEntries.length > 0 ? _warEntries.map(wId => {
                 const wk = kingdoms.find(kk => kk.id === wId);
                 return wk ? wk.name : wId;
             }).join(', ') : '';
