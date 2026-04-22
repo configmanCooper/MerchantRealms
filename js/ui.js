@@ -628,7 +628,7 @@ window.UI = (function () {
         registerAction('switchSchemesTab', function(_t, d) { if (d.id) UI.switchSchemesTab(d.id); });
         registerAction('offerNobleLoan', function(_t, d) { var amt=parseInt(document.getElementById('loanAmountInput').value);var r=Player.offerNobleLoan(d.id,amt);UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(d.id2); });
         registerAction('closeAndOpenNobilityDialog', function() { UI.closeModal(); UI.openNobilityDialog(); });
-        registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');UI.openFeastDialog(d.kingdom); });
+        registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');if(r&&r.success&&typeof StoryMode!=='undefined'&&StoryMode.onStoryEvent)StoryMode.onStoryEvent('attend_feast',{kingdom:d.kingdom,action:d.id});UI.openFeastDialog(d.kingdom); });
         registerAction('skipFeastDay', function(_t, d) {
             var kId = d.kingdom;
             if (!kId) return;
@@ -12773,9 +12773,9 @@ window.UI = (function () {
                 var fa = catActions[fai];
                 var disabled = actionsLeft <= 0;
                 var actionName = (isKing && fa.category === 'royal') ? 'doKingFeastAction' : 'doFeastAction';
-                html += '<button class="btn-medieval" data-action="' + actionName + '" data-kingdom="' + kingdomId + '" data-id="' + fa.id + '" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + (fa.category === 'royal' ? 'border-color:rgba(200,150,50,0.4);' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
+                html += '<button class="btn-medieval" data-action="' + actionName + '" data-kingdom="' + kingdomId + '" data-id="' + fa.id + '" style="display:block;width:100%;text-align:left;padding:6px 10px;margin-bottom:3px;font-size:0.75rem;color:#111;' + (disabled ? 'opacity:0.4;cursor:not-allowed;' : '') + (fa.category === 'royal' ? 'border-color:rgba(200,150,50,0.4);' : '') + '" ' + (disabled ? 'disabled' : '') + '>';
                 html += fa.icon + ' <strong>' + fa.name + '</strong><br>';
-                html += '<span style="font-size:0.68rem;color:#aaa;">' + fa.desc + '</span>';
+                html += '<span style="font-size:0.68rem;color:#444;">' + fa.desc + '</span>';
                 html += '</button>';
             }
             html += '</div>';
