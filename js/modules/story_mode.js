@@ -616,20 +616,7 @@ var StoryMode = (function () {
                 }
             } catch (e) { /* feast scheduling failed */ }
         } else if (objId === 'ch16_attend_feast') {
-            // Player just attended feast — schedule royal court in 14 days
-            // Set _nextCourtDay so tickKingdomCourt creates _activeCourtSession for player
-            try {
-                var _valdrenK2 = null;
-                var _allK2 = Engine.getKingdoms ? Engine.getKingdoms() : [];
-                for (var _ki2 = 0; _ki2 < _allK2.length; _ki2++) {
-                    if (_allK2[_ki2].name === 'Valdren') { _valdrenK2 = _allK2[_ki2]; break; }
-                }
-                if (_valdrenK2) {
-                    var _w = Engine.getWorld ? Engine.getWorld() : null;
-                    var _courtDay = (_w ? _w.day : 0) + 14;
-                    _valdrenK2._nextCourtDay = _courtDay;
-                }
-            } catch (e) { /* court scheduling failed */ }
+            // Court was already scheduled at chapter start — no action needed here
         }
     }
 
@@ -1766,6 +1753,7 @@ var StoryMode = (function () {
     // ── Ch 16 ──
     _hooks._onChapter16Start = function () {
         // Update feast/court objective descriptions with actual capital town name
+        // and schedule court 14 days from chapter start
         if (typeof Engine !== 'undefined' && Engine.getWorld) {
             var w = Engine.getWorld();
             if (w && w.kingdoms) {
@@ -1785,6 +1773,8 @@ var StoryMode = (function () {
                         }
                         _refreshTracker();
                     }
+                    // Schedule court 14 days from now
+                    valdren._nextCourtDay = (w.day || 0) + 14;
                 }
             }
         }
