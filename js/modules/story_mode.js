@@ -616,7 +616,7 @@ var StoryMode = (function () {
                 }
             } catch (e) { /* feast scheduling failed */ }
         } else if (objId === 'ch16_attend_feast') {
-            // Player just attended feast — schedule royal court in 3 days
+            // Player just attended feast — schedule royal court in 14 days
             // Set _nextCourtDay so tickKingdomCourt creates _activeCourtSession for player
             try {
                 var _valdrenK2 = null;
@@ -626,7 +626,7 @@ var StoryMode = (function () {
                 }
                 if (_valdrenK2) {
                     var _w = Engine.getWorld ? Engine.getWorld() : null;
-                    var _courtDay = (_w ? _w.day : 0) + 3;
+                    var _courtDay = (_w ? _w.day : 0) + 14;
                     _valdrenK2._nextCourtDay = _courtDay;
                 }
             } catch (e) { /* court scheduling failed */ }
