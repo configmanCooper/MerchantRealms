@@ -395,7 +395,7 @@ var StoryMode = (function () {
             id: 'ch14', title: 'A Petition to the Crown', act: 3,
             startDialog: 'ch14_calder_plan',
             objectives: [
-                { id: 'ch14_reach_burgher', type: 'reach_rank', rank: 2,         desc: 'Reach the rank of Burgher',    done: false },
+                { id: 'ch14_reach_burgher', type: 'reach_rank', rank: 2,         desc: 'Reach the rank of Burgher (Character → Character, scroll down to Petition)',    done: false },
                 { id: 'ch14_meet_calder',   type: 'custom',     fn: '_checkMetCalderCapital', desc: 'Meet Lord Calder at the capital', done: false }
             ],
             endDialog: 'ch14_complete',
@@ -426,7 +426,7 @@ var StoryMode = (function () {
             id: 'ch15', title: 'Master of the Guild', act: 3,
             startDialog: 'ch15_calder_wealth',
             objectives: [
-                { id: 'ch15_guildmaster', type: 'reach_rank', rank: 3,       desc: 'Attain Guildmaster standing',   done: false },
+                { id: 'ch15_guildmaster', type: 'reach_rank', rank: 3,       desc: 'Attain Guildmaster standing (Character → Character, scroll down to Petition)',   done: false },
                 { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false }
             ],
             endDialog: 'ch15_complete',
@@ -440,7 +440,7 @@ var StoryMode = (function () {
             id: 'ch16', title: 'Halls of Power', act: 3,
             startDialog: 'ch16_calder_nobility',
             objectives: [
-                { id: 'ch16_reach_noble',   type: 'reach_rank',   rank: 4,  desc: 'Become a Minor Noble',   done: false },
+                { id: 'ch16_reach_noble',   type: 'reach_rank',   rank: 4,  desc: 'Become a Minor Noble (Character → Character, scroll down to Petition)',   done: false },
                 { id: 'ch16_attend_feast',  type: 'attend_feast',           desc: 'Attend a noble feast',   done: false, after: 'ch16_reach_noble' },
                 { id: 'ch16_attend_court',  type: 'attend_court',           desc: 'Attend the royal court', done: false, after: 'ch16_attend_feast' }
             ],
@@ -1576,6 +1576,20 @@ var StoryMode = (function () {
                     var newCap = w.towns.find(function(t) { return t.id === tArr[ci]; });
                     if (newCap) {
                         _log('[StoryMode] Changed Valdren capital from Ashford to ' + newCap.name);
+                        // Update any objective descriptions that reference the capital
+                        var ch = _currentChapterDef();
+                        if (ch) {
+                            for (var oi = 0; oi < ch.objectives.length; oi++) {
+                                if (ch.objectives[oi].id === 'ch14_meet_calder') {
+                                    ch.objectives[oi].desc = 'Meet Lord Calder in ' + newCap.name;
+                                } else if (ch.objectives[oi].id === 'ch16_attend_feast') {
+                                    ch.objectives[oi].desc = 'Attend a noble feast in ' + newCap.name;
+                                } else if (ch.objectives[oi].id === 'ch16_attend_court') {
+                                    ch.objectives[oi].desc = 'Attend the royal court in ' + newCap.name;
+                                }
+                            }
+                            _refreshTracker();
+                        }
                     }
                     break;
                 }
@@ -2351,7 +2365,7 @@ var StoryMode = (function () {
         'attend_court':    '#btnNobility',
         'supply_kingdom':  '#btnKingdoms',
         'own_gold':        null,
-        'reach_rank':      null,
+        'reach_rank':      '#btnCharacter',
         'rest':            '#btnRest',
         'street_trade':    '#btnStreet',
         'open_street_trading': '#btnStreet',
