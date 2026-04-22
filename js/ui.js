@@ -12637,7 +12637,8 @@ window.UI = (function () {
         try { day = Engine.getDay(); } catch (e) {}
         var daysLeft = Math.max(0, (feast.endDay || 0) - day);
         var maxActions = feast._maxActionsPerDay || 3;
-        var actionsLeft = maxActions - (feast._playerActionsToday || 0);
+        var usedToday = (feast._playerActionDay === day) ? (feast._playerActionsToday || 0) : 0;
+        var actionsLeft = maxActions - usedToday;
         var feastTown = '';
         try { var ft = Engine.findTown(feast.townId); feastTown = ft ? ft.name : ''; } catch (e) {}
 
