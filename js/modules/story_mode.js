@@ -1597,6 +1597,42 @@ var StoryMode = (function () {
         }
     };
 
+    // Keep festival alive in Ashford while ch12 is active and not yet attended
+    function _ensureCh12Festival() {
+        if (_storyState.chapter !== 12 || _storyState.flags.festivalAttended) return;
+        if (typeof Engine === 'undefined' || !Engine.getWorld) return;
+        var w = Engine.getWorld();
+        if (!w) return;
+        // Find Ashford and its kingdom
+        var ashford = null;
+        for (var ti = 0; ti < w.towns.length; ti++) {
+            if (w.towns[ti].name === 'Ashford') { ashford = w.towns[ti]; break; }
+        }
+        if (!ashford) return;
+        var k = Engine.findKingdom ? Engine.findKingdom(ashford.kingdomId) : null;
+        if (!k || !k._activeFestivals) {
+            // No festivals array or no kingdom — trigger a new one
+            if (Engine.triggerFestival) Engine.triggerFestival('Ashford');
+            return;
+        }
+        // Check if there's already an active festival in Ashford
+        var hasFest = false;
+        for (var fi = 0; fi < k._activeFestivals.length; fi++) {
+            if (k._activeFestivals[fi].townId === ashford.id) {
+                // Extend endDay so it doesn't expire while ch12 is active
+                if (k._activeFestivals[fi].endDay - w.day < 3) {
+                    k._activeFestivals[fi].endDay = w.day + 5;
+                }
+                hasFest = true;
+                break;
+            }
+        }
+        if (!hasFest) {
+            // Festival expired — trigger a new one
+            if (Engine.triggerFestival) Engine.triggerFestival('Ashford');
+        }
+    }
+
     _hooks._checkFestivalAttended = function () {
         return !!_storyState.flags.festivalAttended;
     };
@@ -2084,6 +2120,9 @@ var StoryMode = (function () {
             _ensureCh11Conditions();
         }
 
+        // Ch12: keep festival alive in Ashford until player attends
+        _ensureCh12Festival();
+
         var ch = _currentChapterDef();
         if (!ch) { return; }
 
@@ -2259,6 +2298,7 @@ var StoryMode = (function () {
 
     // Map button IDs to { tab, label } for highlighting both the tab and sub-button
     var _btnToTabLabel = {
+        '#btnTownView': { tab: 'actions',   label: 'Town View' },
         '#btnTrade':     { tab: 'actions',   label: 'Trade' },
         '#btnBuild':     { tab: 'actions',   label: 'Build' },
         '#btnHire':      { tab: 'actions',   label: 'Hire' },
@@ -2286,7 +2326,7 @@ var StoryMode = (function () {
         '_checkOwnsLand':         '#btnHousing',
         '_checkRested':           '#btnHousing',
         '_checkWarDialogSeen':    '#btnTalk',
-        '_checkFestivalAttended': '#btnStreet',
+        '_checkFestivalAttended': '#btnTownView',
         '_checkMetCalder':        '#btnTalk',
         '_checkMetCalderCapital': '#btnTalk',
         '_checkTalkedToEdmund':   '#btnTalk',
