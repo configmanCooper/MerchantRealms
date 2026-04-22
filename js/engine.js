@@ -26219,6 +26219,7 @@
      */
     function _triggerFestivalEvent(festival, k) {
         var rng = world.rng;
+        var town = findTown(festival.townId);
         var townPeople = world.people.filter(function(p) {
             return p.alive && p.townId === festival.townId;
         });

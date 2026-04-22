@@ -19473,6 +19473,11 @@
             Player.tickHunger();
         }
 
+        // Medical rest tick
+        if (player._medicalRest && Player.tickMedicalRest) {
+            Player.tickMedicalRest();
+        }
+
         // Bridge destruction progress (multi-day task)
         tickBridgeDestruction();
 

@@ -705,6 +705,7 @@ window.UI = (function () {
         registerAction('openMerchantGuildReport', function() { UI.openMerchantGuildReport(); });
         registerAction('openHealthDialog', function() { UI.openHealthDialog(); });
         registerAction('openHealthDetailPanel', function() { UI.openHealthDetailPanel(); });
+        registerAction('startMedicalRest', function(_t, d) { if (d.days) UI.startMedicalRest(parseInt(d.days)); });
         registerAction('executeGift', function(_t, d) { if (d.id && d.val) UI.executeGift(d.id, d.val, d.qty); });
         registerAction('closeAnd_executePetition', function() { UI.closeModal(); UI._executePetition(); });
         registerAction('changeCitizenship', function(_t, d) { if (d.id) UI.changeCitizenship(d.id); });
@@ -9525,6 +9526,25 @@ window.UI = (function () {
             if (curHp < maxHp2) {
                 html += '<p style="color:#ccc;text-align:center;font-size:0.85rem;">❤️ Health: ' + Math.floor(curHp) + '/' + maxHp2 + ' — Recovers +1/day when energy, hunger, and thirst are all above 80%.</p>';
             }
+            // Medical rest option when health < 30
+            if (curHp < 30 && !Player.traveling) {
+                var _innCost = Player.getLodgingCost ? Player.getLodgingCost('inn_room') : 5;
+                var _medCostPerDay = _innCost * 5;
+                var _playerGold = Player.gold || 0;
+                html += '<div style="background:rgba(200,50,50,0.12);border:1px solid rgba(200,80,80,0.4);border-radius:8px;padding:12px;margin:10px 0;">';
+                html += '<h3 style="margin:0 0 6px 0;font-size:0.9rem;color:#e74c3c;">🛏️ Medical Rest</h3>';
+                html += '<div style="font-size:0.78rem;color:#ccc;margin-bottom:8px;">Your health is critically low. Extended bed rest at the inn can help you recover (+5 HP/day). Cost: <strong>' + _medCostPerDay + 'g/day</strong> (5× inn rate)</div>';
+                var _medDays = [1, 3, 5];
+                for (var _mdi = 0; _mdi < _medDays.length; _mdi++) {
+                    var _md = _medDays[_mdi];
+                    var _mdCost = _medCostPerDay * _md;
+                    var _canAfford = _playerGold >= _mdCost;
+                    html += '<button class="btn-medieval" data-action="startMedicalRest" data-days="' + _md + '" style="font-size:0.78rem;padding:6px 14px;margin:3px 4px;' + (_canAfford ? '' : 'opacity:0.4;cursor:not-allowed;') + '"' + (_canAfford ? '' : ' disabled') + '>';
+                    html += '🛏️ Rest ' + _md + ' day' + (_md > 1 ? 's' : '') + ' — ' + _mdCost + 'g';
+                    html += '</button>';
+                }
+                html += '</div>';
+            }
             html += '</div>';
             openModal('🏥 Health Status', html, '<button class="btn-medieval" data-action="closeModal">Close</button>');
             return;
@@ -12253,6 +12273,68 @@ window.UI = (function () {
         _conquestLocked = !!locked;
         var closeBtn = document.getElementById('btnCloseModal');
         if (closeBtn) closeBtn.style.display = locked ? 'none' : '';
+    }
+
+    // ── Medical Rest (extended bed rest for low health) ──
+    var _medRestInterval = null;
+    function startMedicalRest(days) {
+        if (typeof Player === 'undefined' || typeof Game === 'undefined') return;
+        var result = Player.startMedicalRest(days);
+        if (!result.success) {
+            toast(result.message, 'warning');
+            return;
+        }
+        toast(result.message, 'success');
+        closeModal();
+        // Set speed to 60x and show lock overlay
+        var _prevSpeed = Game.getSpeed();
+        Game.setSpeed(60);
+        _showMedicalRestOverlay(days);
+        // Poll every 200ms to check if rest is done
+        _medRestInterval = setInterval(function() {
+            if (!Player.state || !Player.state._medicalRest) {
+                clearInterval(_medRestInterval);
+                _medRestInterval = null;
+                Game.setSpeed(_prevSpeed || 1);
+                _hideMedicalRestOverlay();
+                toast('Medical rest complete! You feel much better.', 'success');
+                return;
+            }
+            var mr = Player.state._medicalRest;
+            var _curHp = Player.health != null ? Player.health : 100;
+            var _maxHp = Player.maxHealth || 100;
+            _updateMedicalRestOverlay(mr.daysRemaining, mr.daysTotal, _curHp, _maxHp);
+        }, 200);
+    }
+
+    function _showMedicalRestOverlay(days) {
+        var overlay = document.createElement('div');
+        overlay.id = 'medicalRestOverlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML = '<div style="text-align:center;color:#ddd;font-family:serif;">' +
+            '<div style="font-size:2.5rem;margin-bottom:12px;">🛏️</div>' +
+            '<div style="font-size:1.3rem;color:var(--gold,#c9a84c);margin-bottom:8px;">Medical Rest in Progress</div>' +
+            '<div id="medRestStatus" style="font-size:1rem;color:#ccc;">Resting... ' + days + ' day' + (days > 1 ? 's' : '') + ' remaining</div>' +
+            '<div id="medRestHealth" style="font-size:0.9rem;color:#8e8;margin-top:6px;"></div>' +
+            '<div style="margin-top:16px;"><div style="width:200px;height:10px;background:#333;border-radius:5px;margin:0 auto;">' +
+            '<div id="medRestBar" style="width:0%;height:100%;background:linear-gradient(90deg,#c44e52,#55a868);border-radius:5px;transition:width 0.3s;"></div>' +
+            '</div></div>' +
+            '</div>';
+        document.body.appendChild(overlay);
+    }
+
+    function _updateMedicalRestOverlay(daysLeft, daysTotal, curHp, maxHp) {
+        var statusEl = document.getElementById('medRestStatus');
+        var healthEl = document.getElementById('medRestHealth');
+        var barEl = document.getElementById('medRestBar');
+        if (statusEl) statusEl.textContent = 'Resting... ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + ' remaining';
+        if (healthEl) healthEl.textContent = '❤️ Health: ' + Math.floor(curHp) + '/' + maxHp;
+        if (barEl) barEl.style.width = Math.round(((daysTotal - daysLeft) / daysTotal) * 100) + '%';
+    }
+
+    function _hideMedicalRestOverlay() {
+        var overlay = document.getElementById('medicalRestOverlay');
+        if (overlay) overlay.remove();
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -16442,6 +16524,7 @@ window.UI = (function () {
         // Health / Medical
         openHealthDialog,
         openHealthDetailPanel,
+        startMedicalRest,
         treatAtHospital,
         treatAtClinic,
         selfTreatCondition,

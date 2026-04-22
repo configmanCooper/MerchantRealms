@@ -1287,6 +1287,56 @@
         return { success: true, message: '💧 Drew ' + drawAmount + ' water from the well. ' + costMsg + waterInfo };
     }
 
+    // ── Medical Rest ──
+    // Extended bed rest at an inn when health < 30 and no injuries/illnesses
+    function startMedicalRest(days) {
+        _sync();
+        if (!player.alive) return { success: false, message: 'You are not alive.' };
+        if (player.traveling) return { success: false, message: 'You cannot rest while traveling.' };
+        var curHp = player.health != null ? player.health : 100;
+        if (curHp >= 30) return { success: false, message: 'Your health is not low enough to need medical rest.' };
+        var injuries = player.injuries || [];
+        var illnesses = player.illnesses || [];
+        if (injuries.length > 0 || illnesses.length > 0) {
+            return { success: false, message: 'You must treat your injuries and illnesses first.' };
+        }
+        days = Math.max(1, Math.min(5, days || 1));
+        var innCost = getLodgingCost('inn_room');
+        var totalCost = innCost * 5 * days;
+        if (player.gold < totalCost) {
+            return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g for ' + days + ' day' + (days > 1 ? 's' : '') + ' of medical rest.' };
+        }
+        player.gold -= totalCost;
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
+        var startDay = 0;
+        try { startDay = Engine.getDay(); } catch(e) {}
+        player._medicalRest = {
+            daysTotal: days,
+            daysRemaining: days,
+            startDay: startDay,
+            endDay: startDay + days
+        };
+        return { success: true, message: 'Medical rest started. ' + days + ' day' + (days > 1 ? 's' : '') + ' for ' + totalCost + 'g.' };
+    }
+
+    function tickMedicalRest() {
+        _sync();
+        if (!player._medicalRest) return;
+        var mr = player._medicalRest;
+        var curDay = 0;
+        try { curDay = Engine.getDay(); } catch(e) {}
+        // Heal +5 HP per day
+        player.health = Math.min(player.maxHealth || 100, (player.health || 0) + 5);
+        // Restore vitals during rest
+        player.energy = Math.min(getMaxEnergy(), (player.energy || 0) + 30);
+        player.hunger = Math.min(100, (player.hunger || 0) + 15);
+        player.thirst = Math.min(100, (player.thirst || 0) + 20);
+        mr.daysRemaining = Math.max(0, mr.endDay - curDay);
+        if (curDay >= mr.endDay) {
+            player._medicalRest = null;
+        }
+    }
+
     // -- Exports --
     Player.tickHunger = tickHunger;
     Player.getMaxEnergy = getMaxEnergy;
@@ -1308,6 +1358,9 @@
     Player.restAtInn = restAtInn;
     Player.sleepOutside = sleepOutside;
     Player.restAtMasterQuarters = restAtMasterQuarters;
+    Player.getLodgingCost = getLodgingCost;
+    Player.startMedicalRest = startMedicalRest;
+    Player.tickMedicalRest = tickMedicalRest;
     Player.tickThirst = tickThirst;
     Player.getThirstDebuffs = getThirstDebuffs;
     Player.getFoodSupply = getFoodSupply;
