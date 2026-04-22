@@ -2355,7 +2355,7 @@ var StoryMode = (function () {
 
     // Map button IDs to { tab, label } for highlighting both the tab and sub-button
     var _btnToTabLabel = {
-        '#btnTownView': { tab: 'actions',   label: 'Town View' },
+        '#btnTownView': { tab: 'world',     label: 'Town View' },
         '#btnTrade':     { tab: 'actions',   label: 'Trade' },
         '#btnBuild':     { tab: 'actions',   label: 'Build' },
         '#btnHire':      { tab: 'actions',   label: 'Hire' },

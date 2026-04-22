@@ -381,8 +381,9 @@ function showTownDetail(town) {
                 var _festDaysLeft = _activeFest.endDay - Engine.getDay();
                 var _festActionsLeft = (_activeFest._maxActionsPerDay || 5) - ((_activeFest._playerActionDay === Engine.getDay()) ? (_activeFest._playerActionsToday || 0) : 0);
                 var _festTypeLabel = _activeFest.type === 'large' ? '🎊 Grand Festival' : '🎉 Festival';
+                var _festHighlight = (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && !StoryMode.getStoryFlags().festivalAttended) ? ' tutorial-highlight' : '';
                 html += '<div class="text-center mt-sm">';
-                html += '<button class="btn-medieval" data-action="openFestivalPanel" data-kingdom="' + _festKingdom.id + '" data-festival="' + _activeFest.id + '" style="font-size:0.8rem;padding:6px 16px;border-color:#f1c40f;animation:glow 2s infinite;">';
+                html += '<button class="btn-medieval' + _festHighlight + '" data-action="openFestivalPanel" data-kingdom="' + _festKingdom.id + '" data-festival="' + _activeFest.id + '" style="font-size:0.8rem;padding:6px 16px;border-color:#f1c40f;animation:glow 2s infinite;">';
                 html += _festTypeLabel + ' <span style="font-size:0.7rem;">(' + _festDaysLeft + 'd left, ' + _festActionsLeft + ' actions)</span>';
                 html += '</button>';
                 html += '</div>';
