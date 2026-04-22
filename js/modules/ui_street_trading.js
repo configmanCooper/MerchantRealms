@@ -1193,20 +1193,28 @@ function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
         }
     } catch(e) {}
     if (_courtSession) {
+        var _courtTownId = _ck ? (_ck.capital || _ck.capitalTownId) : null;
+        var _playerAtCourt = !_courtTownId || Player.townId === _courtTownId;
         html += '<div style="background:rgba(80,120,200,0.1);border:1px solid rgba(80,120,200,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<h3 style="margin:0 0 8px 0;font-size:0.95rem;color:#5dade2;">⚖️ Court in Session — ' + _courtSession._playerActionsLeft + ' actions left</h3>';
-        html += '<p style="color:#bbb;font-size:0.8rem;margin:0 0 8px 0;">The king is holding court. Take formal actions to influence your standing.</p>';
-        var _courtActions = [
-            { id: 'address_king', icon: '🎙️', label: 'Address the King', desc: 'Formally speak before the court (+3-7 perceived loyalty)' },
-            { id: 'petition_king', icon: '📜', label: 'Present a Petition', desc: '55% chance of royal favor' },
-            { id: 'observe_nobles', icon: '👁️', label: 'Observe Nobles', desc: 'Learn about a noble\'s true loyalty and personality' },
-            { id: 'network_nobles', icon: '🤝', label: 'Network with Nobles', desc: 'Improve relationship with a random noble' }
-        ];
-        for (var _ca = 0; _ca < _courtActions.length; _ca++) {
-            var _act = _courtActions[_ca];
-            html += '<button class="btn-medieval" data-action="doCourtAction" data-id="' + _act.id + '" style="width:100%;text-align:left;padding:6px 10px;margin-bottom:4px;">';
-            html += _act.icon + ' <b>' + _act.label + '</b> <span style="color:#888;font-size:0.8rem;">— ' + _act.desc + '</span>';
-            html += '</button>';
+        if (!_playerAtCourt) {
+            var _courtTown = Engine.findTown ? Engine.findTown(_courtTownId) : null;
+            var _courtTownName = _courtTown ? _courtTown.name : 'the capital';
+            html += '<p style="color:#e8a735;font-size:0.85rem;margin:0;">⚠️ You must travel to <b>' + _courtTownName + '</b> to attend court.</p>';
+        } else {
+            html += '<p style="color:#bbb;font-size:0.8rem;margin:0 0 8px 0;">The king is holding court. Take formal actions to influence your standing.</p>';
+            var _courtActions = [
+                { id: 'address_king', icon: '🎙️', label: 'Address the King', desc: 'Formally speak before the court (+3-7 perceived loyalty)' },
+                { id: 'petition_king', icon: '📜', label: 'Present a Petition', desc: 'Present a petition directly to the king' },
+                { id: 'observe_nobles', icon: '👁️', label: 'Observe Nobles', desc: 'Learn about a noble\'s true loyalty and personality' },
+                { id: 'network_nobles', icon: '🤝', label: 'Network with Nobles', desc: 'Improve relationship with a random noble' }
+            ];
+            for (var _ca = 0; _ca < _courtActions.length; _ca++) {
+                var _act = _courtActions[_ca];
+                html += '<button class="btn-medieval" data-action="doCourtAction" data-id="' + _act.id + '" style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.9rem;">';
+                html += _act.icon + ' <b>' + _act.label + '</b> <span style="color:#3a2a10;font-size:0.8rem;">— ' + _act.desc + '</span>';
+                html += '</button>';
+            }
         }
         html += '</div>';
     }
@@ -3261,6 +3269,11 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('doCourtAction', function(_t, d) {
         var kId = Player.citizenshipKingdomId;
         if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
+        // Intercept petition_king to show selection UI
+        if (d.id === 'petition_king') {
+            _openCourtPetitionModal(kId);
+            return;
+        }
         var result = Engine.doCourtAction(kId, d.id);
         if (result && result.success) {
             UI.toast(result.message, 'success');
@@ -3275,6 +3288,57 @@ function _switchProposeActionTab(tabId, kingdomId) {
     });
     UI.registerAction('_switchKQTab', function(_t, d) { UI._switchKQTab(d.tab, d.kingdom); });
     UI.registerAction('_attemptKQActionUI', function(_t, d) { if (d.id && d.kingdom) UI._attemptKQActionUI(d.id, d.kingdom); });
+
+    // Court petition modal: select a petition type and present it directly to the king
+    function _openCourtPetitionModal(kingdomId) {
+        var PTYPES = typeof PETITION_TYPES !== 'undefined' ? PETITION_TYPES : [];
+        // Filter to non-targeted petitions for the court (no target selection UI needed)
+        var available = [];
+        for (var i = 0; i < PTYPES.length; i++) {
+            if (!PTYPES[i].requiresTarget) available.push(PTYPES[i]);
+        }
+        // Also allow some targeted ones that are kingdom-wide (no specific town needed)
+        var autoTargeted = ['declare_war', 'seek_peace', 'establish_trade_agreement'];
+        for (var j = 0; j < PTYPES.length; j++) {
+            if (autoTargeted.indexOf(PTYPES[j].id) >= 0) available.push(PTYPES[j]);
+        }
+
+        var html = '<div style="padding:10px;">';
+        html += '<p style="color:#ccc;font-size:0.85rem;margin:0 0 12px 0;">Present a petition directly to the king during court. No signatures needed, but success depends on the petition cost, king\'s personality, your reputation, and your relationships.</p>';
+        if (available.length === 0) {
+            html += '<p style="color:#e74c3c;">No petition types available.</p>';
+        } else {
+            for (var a = 0; a < available.length; a++) {
+                var pt = available[a];
+                var costLabel = pt.costFactor > 0 ? ' (costly)' : '';
+                html += '<button class="btn-medieval" data-action="submitCourtPetition" data-petition="' + pt.id + '" data-kingdom="' + kingdomId + '" ';
+                html += 'style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.88rem;">';
+                html += pt.icon + ' <b>' + pt.name + '</b>' + costLabel;
+                html += '<br><span style="color:#3a2a10;font-size:0.75rem;">' + pt.desc + '</span>';
+                html += '</button>';
+            }
+        }
+        html += '</div>';
+        openModal('📜 Present a Petition at Court', html, '<button class="btn-medieval" onclick="closeModal()">Cancel</button>');
+    }
+
+    UI.registerAction('submitCourtPetition', function(_t, d) {
+        var kId = d.kingdom || Player.citizenshipKingdomId;
+        if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
+        var result = Engine.doCourtAction(kId, 'petition_king', { petitionTypeId: d.petition });
+        if (result && result.success) {
+            UI.toast(result.message, result.message.indexOf('GRANTED') >= 0 ? 'success' : 'info');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_court', { kingdomId: kId });
+            }
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        if (typeof closeModal === 'function') closeModal();
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+
     UI.registerAction('attemptCaptureCriminalUI', function(_t, d) {
         var r = Player.attemptCaptureCriminal ? Player.attemptCaptureCriminal(d.id) : { success: false, message: 'Capture not available.' };
         UI.toast(r.message, r.success ? 'success' : 'warning');

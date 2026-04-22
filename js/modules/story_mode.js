@@ -2127,6 +2127,14 @@ var StoryMode = (function () {
                 _log('The Korvathi nobles have freed your father. Ashford remains under their control, but Edmund walks free.');
             }
         }
+        // Grant 10 free skill points for reaching chapter 18
+        if (typeof Player !== 'undefined') {
+            Player.state.skillPoints = (Player.state.skillPoints || 0) + 10;
+            _log('Your experiences have sharpened your abilities. You have gained 10 skill points!');
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('🎓 +10 Skill Points from your journey!', 'success');
+            }
+        }
     };
 
     _hooks._checkTalkedToEdmund = function () {

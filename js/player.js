@@ -30062,6 +30062,12 @@
         }
     }
 
+    // Execute a petition effect directly (used by court petition action)
+    function executeCourtPetition(typeId, kingdomId) {
+        var fakePetition = { typeId: typeId, targetData: {}, kingdomId: kingdomId };
+        executePetitionAction(fakePetition);
+    }
+
     function executePetitionAction(petition) {
         var world = Engine.getWorld();
         var kingdom = Engine.findKingdom(petition.kingdomId);
@@ -38817,6 +38823,7 @@
         firePetitioner,
         submitPetition,
         cancelPetition,
+        executeCourtPetition,
         getPetitionChanceEstimate,
         getActivePetitions,
         getPetitionHistory,

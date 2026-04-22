@@ -12642,6 +12642,12 @@ window.UI = (function () {
         var feastTown = '';
         try { var ft = Engine.findTown(feast.townId); feastTown = ft ? ft.name : ''; } catch (e) {}
 
+        // Location check: player must be at the feast town
+        if (feast.townId && Player.townId !== feast.townId) {
+            toast('You must travel to ' + (feastTown || 'the feast location') + ' to attend the feast.', 'info');
+            return;
+        }
+
         // Detect if player is king of this kingdom
         var isKing = false;
         try {

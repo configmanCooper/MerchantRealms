@@ -24082,7 +24082,7 @@
     }
 
     // ── Player Court Actions (non-king noble attending court) ──
-    function doCourtAction(kingdomId, actionId) {
+    function doCourtAction(kingdomId, actionId, extraData) {
         var k = findKingdom(kingdomId);
         if (!k) return { success: false, message: 'Kingdom not found.' };
         var court = k._activeCourtSession;
@@ -24114,18 +24114,128 @@
                 break;
             }
             case 'petition_king': {
-                // Present a petition — chance of getting a benefit
-                var petTypes = ['tax reduction on your lands', 'royal endorsement for trade', 'military honors'];
-                var chosen = rng.pick(petTypes);
-                var success = rng.chance(0.55);
-                if (success) {
-                    pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 3);
-                    if (chosen.indexOf('tax') >= 0) k.happiness = Math.min(100, (k.happiness || 50) + 1);
-                    result = { success: true, message: 'Your petition for ' + chosen + ' was GRANTED by the king!' };
-                } else {
-                    result = { success: true, message: 'Your petition for ' + chosen + ' was DENIED. The king cited other priorities.' };
+                // Present a petition at court — uses real petition types
+                var petTypeId = extraData && extraData.petitionTypeId;
+                var PTYPES = typeof PETITION_TYPES !== 'undefined' ? PETITION_TYPES : [];
+                var pType = null;
+                if (petTypeId) {
+                    for (var pi = 0; pi < PTYPES.length; pi++) {
+                        if (PTYPES[pi].id === petTypeId) { pType = PTYPES[pi]; break; }
+                    }
                 }
-                logEvent('📜 You petitioned the king for ' + chosen + ' — ' + (success ? 'GRANTED' : 'DENIED'), null, 'my_kingdom');
+                if (!pType) {
+                    result = { success: false, message: 'No petition type selected.' };
+                    break;
+                }
+
+                // Base chance: as if minimum signatures (5%) were gathered
+                var baseChance = 0.05 + (5 * 0.035); // PETITION_BASE_CHANCE + 5% * PER_PCT_BONUS = 0.225
+                var chance = baseChance;
+
+                // Lower for costly petitions
+                var isCostly = pType.costFactor > 0;
+                if (isCostly) {
+                    chance -= pType.costFactor * 2; // e.g. 0.08 cost → -0.16
+                }
+
+                // King personality modifiers
+                if (k.kingPersonality) {
+                    var kp = k.kingPersonality;
+                    if (kp.intelligence === 'brilliant') chance += 0.08;
+                    if (kp.intelligence === 'dim') chance -= 0.05;
+                    if (kp.ambition === 'ambitious') {
+                        if (petTypeId === 'declare_war' || petTypeId === 'build_road' || petTypeId === 'build_market' || petTypeId === 'build_sea_route') chance += 0.05;
+                    }
+                    if (kp.ambition === 'content') chance -= 0.05;
+                    if (kp.greed === 'generous' && isCostly) chance += 0.10;
+                    if (kp.greed === 'greedy') chance -= 0.12;
+                    if (kp.temperament === 'kind') {
+                        if (petTypeId === 'seek_peace' || petTypeId === 'fund_festival' || petTypeId === 'lower_taxes') chance += 0.05;
+                    }
+                    if (kp.temperament === 'cruel') chance -= 0.05;
+                    if (petTypeId === 'demolish_tent_camps') {
+                        if (kp.temperament === 'cruel') chance += 0.15;
+                        if (kp.greed === 'corrupt') chance += 0.10;
+                        if (kp.temperament === 'kind') chance -= 0.15;
+                        if (kp.greed === 'generous') chance -= 0.10;
+                    }
+                }
+
+                // Boost from kingdom reputation above 60
+                var playerRep = 50;
+                try { playerRep = (Player.state.reputation && Player.state.reputation[kingdomId]) || 50; } catch(e2) {}
+                if (playerRep > 60) {
+                    chance += (playerRep - 60) * 0.005; // +0.5% per rep point above 60
+                }
+
+                // Boost from king relationship
+                var kingRel = pPerson.kingLoyalty || 50;
+                if (kingRel > 50) {
+                    chance += (kingRel - 50) * 0.003; // +0.3% per loyalty above 50
+                }
+
+                // Boost from noble relationships
+                var kNobles = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[kingdomId] >= 4 && p.id !== (pPerson.id || 'player');
+                });
+                var nobleRelBonus = 0;
+                for (var ni = 0; ni < kNobles.length; ni++) {
+                    var nRel = 50;
+                    if (kNobles[ni].relationships) {
+                        for (var ri = 0; ri < kNobles[ni].relationships.length; ri++) {
+                            if (kNobles[ni].relationships[ri].personId === (pPerson.id || 'player')) {
+                                nRel = kNobles[ni].relationships[ri].value || 50;
+                                break;
+                            }
+                        }
+                    }
+                    if (nRel > 50) nobleRelBonus += (nRel - 50) * 0.001;
+                }
+                chance += Math.min(0.15, nobleRelBonus); // cap noble bonus at 15%
+
+                // Social rank bonus
+                var rankIdx = 0;
+                try { rankIdx = Player.state.socialRank && Player.state.socialRank[kingdomId] || 0; } catch(e3) {}
+                chance += rankIdx * 0.02;
+
+                // King mood modifier
+                if (k.kingMood && CONFIG.KING_MOOD && CONFIG.KING_MOOD.moods) {
+                    var _moodData = CONFIG.KING_MOOD.moods[k.kingMood.current];
+                    if (_moodData && _moodData.petitionMod !== undefined) {
+                        chance *= _moodData.petitionMod;
+                    }
+                }
+
+                // Court etiquette skill bonus
+                var hasCourtSkill = false;
+                try { hasCourtSkill = Player.hasSkill && Player.hasSkill('court_etiquette'); } catch(e4) {}
+                if (hasCourtSkill) chance += 0.10;
+
+                // War modifiers
+                if (k.atWar && k.atWar.size > 0) {
+                    if (petTypeId === 'declare_war') chance += 0.15;
+                    else if (petTypeId !== 'seek_peace') chance -= 0.10;
+                }
+
+                // Treasury check
+                if (k.gold < 1000 && isCostly) chance -= 0.10;
+                else if (k.gold > 10000) chance += 0.03;
+
+                // Clamp to 5%-95%
+                chance = Math.max(0.05, Math.min(0.95, chance));
+
+                var petSuccess = rng.chance(chance);
+                if (petSuccess) {
+                    pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 3);
+                    // Execute the petition effect
+                    if (typeof Player !== 'undefined' && Player.executeCourtPetition) {
+                        Player.executeCourtPetition(petTypeId, kingdomId);
+                    }
+                    result = { success: true, message: 'Your petition for ' + pType.name + ' was GRANTED! (' + Math.round(chance * 100) + '% chance)' };
+                } else {
+                    result = { success: true, message: 'Your petition for ' + pType.name + ' was DENIED. (' + Math.round(chance * 100) + '% chance)' };
+                }
+                logEvent('📜 Court petition for ' + pType.name + ' — ' + (petSuccess ? 'GRANTED ✅' : 'DENIED ❌') + ' (' + Math.round(chance * 100) + '%)', null, 'my_kingdom');
                 break;
             }
             case 'observe_nobles': {

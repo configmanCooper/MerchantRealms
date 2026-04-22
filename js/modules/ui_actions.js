@@ -4106,6 +4106,13 @@ function clickTown(townId) {
         if (!fest) { UI.toast('Festival has ended.', 'warning'); return; }
         var town = Engine.findTown(fest.townId);
         var townName = town ? town.name : 'the town';
+
+        // Location check: player must be at the festival town
+        if (fest.townId && Player.townId !== fest.townId) {
+            UI.toast('You must travel to ' + townName + ' to attend the festival.', 'info');
+            return;
+        }
+
         var daysLeft = fest.endDay - Engine.getDay();
         // Reset daily actions if new day
         if (fest._playerActionDay !== Engine.getDay()) {
