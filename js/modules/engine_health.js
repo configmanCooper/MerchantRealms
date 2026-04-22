@@ -1449,6 +1449,7 @@
                         }
                         if (alreadyQueued) continue;
                         if (p._illnessTreatPaid) continue; // already treated elsewhere
+                        if (p._storyBlockTreatment) continue; // story mode blocks auto-treatment
                         sickInTown.push(p);
                     }
 
@@ -1564,6 +1565,7 @@
             if (!p.alive || !p.townId) continue;
             if (!p.sick && !p.injured) continue;
             if (p._illnessTreatPaid) continue; // already being treated
+            if (p._storyBlockTreatment) continue; // story mode blocks auto-treatment
 
             var isEM = p.isEliteMerchant;
             var isKing = p.isKing;

@@ -349,10 +349,10 @@ var StoryMode = (function () {
             startDialog: 'ch11_father_injury',
             objectives: [
                 { id: 'ch11_treat_father', type: 'treat_person', person: 'Edmund',  desc: 'Treat father\'s injury',
-                  hint: 'Open Character \u2192 click Caretake on the Family panel \u2192 treat Edmund\'s injury',
+                  hint: 'Open Character \u2192 click Health Status \u2192 treat Edmund under Sick Companions',
                   done: false },
                 { id: 'ch11_treat_mother', type: 'treat_person', person: 'Margret', desc: 'Treat mother\'s illness',
-                  hint: 'Open Character \u2192 click Caretake on the Family panel \u2192 treat Margret\'s illness',
+                  hint: 'Open Character \u2192 click Health Status \u2192 treat Margret under Sick Companions',
                   done: false }
             ],
             endDialog: 'ch11_complete',
@@ -1519,9 +1519,15 @@ var StoryMode = (function () {
     /** Ensure ch11 injury/illness conditions are applied to NPCs (idempotent). */
     function _ensureCh11Conditions() {
         var day = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+        // Get the player's town so we can force family to be there
+        var playerTownId = (typeof Player !== 'undefined') ? Player.townId : null;
         if (_storyState.flags.edmundInjured) {
             var edmund = _findFamilyNPC('father');
             if (edmund) {
+                // Force Edmund to be in same town as player so treatment dialog shows him
+                if (playerTownId && edmund.townId !== playerTownId) {
+                    edmund.townId = playerTownId;
+                }
                 edmund.injuries = edmund.injuries || [];
                 if (!edmund.injuries.some(function(inj) { return inj.type === 'burn'; })) {
                     edmund.injuries.push({ type: 'burn', severity: 'moderate', desc: 'Forge burn', dayOccurred: day });
@@ -1532,12 +1538,19 @@ var StoryMode = (function () {
                 edmund.injuryName = 'Forge burn';
                 edmund.injurySeverity = 'moderate';
                 edmund.injuryDay = day; // reset so auto-heal timer restarts
+                // Block NPC auto-treatment (hospital queue system)
+                edmund._illnessTreatPaid = false;
+                edmund._storyBlockTreatment = true;
                 if (edmund.health > 60) edmund.health = 60;
             }
         }
         if (_storyState.flags.margretIll) {
             var margret = _findFamilyNPC('mother');
             if (margret) {
+                // Force Margret to be in same town as player so treatment dialog shows her
+                if (playerTownId && margret.townId !== playerTownId) {
+                    margret.townId = playerTownId;
+                }
                 margret.illnesses = margret.illnesses || [];
                 if (!margret.illnesses.some(function(ill) { return ill.type === 'fever'; })) {
                     margret.illnesses.push({ type: 'fever', severity: 'moderate', desc: 'Persistent fever', dayOccurred: day });
@@ -1547,6 +1560,9 @@ var StoryMode = (function () {
                 margret.illness = 'fever';
                 margret.illnessDay = day; // reset so auto-heal timer restarts
                 margret.illnessSeverity = 'moderate';
+                // Block NPC auto-treatment (hospital queue system)
+                margret._illnessTreatPaid = false;
+                margret._storyBlockTreatment = true;
                 if (margret.health > 50) margret.health = 50;
             }
         }
@@ -1568,8 +1584,8 @@ var StoryMode = (function () {
             if (sNPCs) {
                 var edmund = sNPCs.fatherId ? Engine.findPerson(sNPCs.fatherId) : null;
                 var margret = sNPCs.motherId ? Engine.findPerson(sNPCs.motherId) : null;
-                if (edmund) { edmund.injuries = []; edmund.health = 100; }
-                if (margret) { margret.illnesses = []; margret.health = 100; }
+                if (edmund) { edmund.injuries = []; edmund.health = 100; edmund.injured = false; edmund._storyBlockTreatment = false; }
+                if (margret) { margret.illnesses = []; margret.health = 100; margret.sick = false; margret._storyBlockTreatment = false; }
             }
         }
     };

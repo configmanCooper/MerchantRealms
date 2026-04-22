@@ -4905,6 +4905,26 @@ window.UI = (function () {
             html += '<button class="btn-medieval" data-action="openHealthDialog" style="font-size:0.75rem;padding:4px 12px;">🏥 Treat Conditions</button>';
             html += '</div>';
             html += '</div>';
+        } else {
+            // Check if family/companions are sick — show health button even when player is healthy
+            var _charSickComps = (typeof Player !== 'undefined' && Player.getTreatableCompanions) ? Player.getTreatableCompanions() : [];
+            if (_charSickComps.length > 0) {
+                html += '<div class="detail-section" style="border:1px solid rgba(200,130,50,0.3);background:rgba(200,130,50,0.04);">';
+                html += '<h3>🏥 Health</h3>';
+                html += '<div class="detail-row"><span class="label">You</span><span class="value" style="color:#2ecc71;">Healthy</span></div>';
+                for (var _csci = 0; _csci < _charSickComps.length; _csci++) {
+                    var _csc = _charSickComps[_csci];
+                    var _cscIcon = _csc.condition === 'sick' ? '🤒' : '🩹';
+                    var _cscColor = _csc.severity === 'severe' ? 'var(--danger)' : _csc.severity === 'moderate' ? '#e67e22' : '#d4a017';
+                    var _cscRole = _csc.role ? _csc.role.charAt(0).toUpperCase() + _csc.role.slice(1) : _csc.type;
+                    html += '<div class="detail-row"><span class="label">' + _cscIcon + ' ' + _csc.name + ' <span style="font-size:0.7rem;color:#888;">(' + _cscRole + ')</span></span>';
+                    html += '<span class="value" style="color:' + _cscColor + ';">' + (_csc.conditionDetail || _csc.condition).replace(/_/g, ' ') + '</span></div>';
+                }
+                html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">';
+                html += '<button class="btn-medieval" data-action="openHealthDialog" style="font-size:0.75rem;padding:4px 12px;">🏥 Treat Companions</button>';
+                html += '</div>';
+                html += '</div>';
+            }
         }
 
         // ── Military Status ──
