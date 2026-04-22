@@ -1740,6 +1740,12 @@ function showPersonDetail(person) {
                     }
                     // Loan offer for financially stressed nobles
                     html += `<button class="btn-medieval" data-action="openNobleLoanDialog" data-id="${person.id}" title="Offer a loan to this noble — indebted nobles are easier to influence" style="font-size:0.75rem;padding:5px 10px;">💰 Offer Loan</button>`;
+                } else if (person.occupation === 'guild_master' || (person.guildMemberships && Object.keys(person.guildMemberships).some(function(g) { return person.guildMemberships[g].rank === 'guildmaster'; }))) {
+                    // Guildmasters can introduce you to Minor Nobles
+                    var _gmRel = Player.getRelationship ? Player.getRelationship(person.id) : { level: 0 };
+                    if (_gmRel.level >= 60) {
+                        html += `<button class="btn-medieval" data-action="requestSameRankIntro" data-id="${person.id}" title="Ask to be introduced to a Minor Noble" style="font-size:0.75rem;padding:5px 10px;">🤝 Ask for Introduction to Minor Noble</button>`;
+                    }
                 }
                 // Recruit to outpost button (if player has outposts, NPC not nobility/minor)
                 if (typeof Player !== 'undefined' && Player.getPlayerOutposts) {

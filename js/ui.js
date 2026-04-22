@@ -4296,6 +4296,16 @@ window.UI = (function () {
             filtered = filtered.filter(function (p) { return p.occupation === 'merchant' || p.occupation === 'trader'; });
         } else if (filterBy === 'nobles') {
             filtered = filtered.filter(function (p) { return p.occupation === 'noble' || p.occupation === 'lord' || p.occupation === 'royal'; });
+        } else if (filterBy === 'guildmasters') {
+            filtered = filtered.filter(function (p) {
+                if (p.occupation === 'guild_master') return true;
+                if (p.guildMemberships) {
+                    for (var gk in p.guildMemberships) {
+                        if (p.guildMemberships[gk].rank === 'guildmaster') return true;
+                    }
+                }
+                return false;
+            });
         } else if (filterBy === 'elite-merchants') {
             filtered = filtered.filter(function (p) { return p.isEliteMerchant || p.eliteMerchant || (p.gold && p.gold > 500 && (p.occupation === 'merchant' || p.occupation === 'trader')); });
         } else if (filterBy === 'soldiers') {
@@ -4377,6 +4387,7 @@ window.UI = (function () {
             ['all','All'],['known','Known'],['friends','Friends (20+)'],['close-friends','Close Friends (60+)'],
             ['employed-by-me','My Workers'],['unmarried','Unmarried Adults'],
             ['nobles','Nobles'],['merchants','Merchants'],['elite-merchants','Elite Merchants'],
+            ['guildmasters','Guildmasters'],
             ['soldiers','Soldiers'],['guards','Guards'],['farmers','Farmers'],['miners','Miners'],
             ['laborers','Laborers'],['craftsmen','Craftsmen'],['workers','All Workers'],['unemployed','Unemployed'],
             ['adults','Adults'],['children','Children'],
@@ -4457,6 +4468,55 @@ window.UI = (function () {
 
     function filterTownPeople() {
         _reTownPeople();
+    }
+
+    function openFriendsPanel() {
+        if (typeof Player === 'undefined' || !Player.state) return;
+        var rels = Player.state.relationships || {};
+        var friends = [];
+        for (var pid in rels) {
+            if (!rels.hasOwnProperty(pid)) continue;
+            if ((rels[pid].level || 0) < 20) continue;
+            var person = null;
+            try { person = Engine.findPerson(pid) || Engine.getPerson(pid); } catch(e) {}
+            if (!person || person.alive === false) continue;
+            friends.push({ person: person, level: rels[pid].level || 0 });
+        }
+        // Sort by relationship level descending
+        friends.sort(function(a, b) { return b.level - a.level; });
+
+        var html = '<div style="max-height:520px;overflow-y:auto;">';
+
+        if (friends.length === 0) {
+            html += '<div class="text-dim" style="padding:20px;text-align:center;">You have no friends yet (20+ relationship).<br>Talk to people, give gifts, and go on dates to build friendships!</div>';
+        } else {
+            html += '<div style="font-size:0.72rem;color:#888;margin-bottom:8px;">Showing ' + friends.length + ' friend' + (friends.length !== 1 ? 's' : '') + ' (20+ relationship)</div>';
+            for (var i = 0; i < friends.length; i++) {
+                var f = friends[i];
+                var p = f.person;
+                var sex = p.sex === 'M' ? '♂' : p.sex === 'F' ? '♀' : '?';
+                var age = p.age || '?';
+                var occLabel = p.occupation ? capitalize(p.occupation) : 'None';
+                var townName = '';
+                try { var t = Engine.findTown(p.townId); if (t) townName = t.name; } catch(e) {}
+                var relLevel = Math.round(f.level);
+                var tierName = 'Friendly', tierColor = '#5dade2', tierIcon = '🤝';
+                if (relLevel >= 80) { tierName = 'Trusted'; tierColor = '#9b59b6'; tierIcon = '💜'; }
+                else if (relLevel >= 60) { tierName = 'Close Friend'; tierColor = '#55a868'; tierIcon = '💚'; }
+                else if (relLevel >= 40) { tierName = 'Friend'; tierColor = '#d4a843'; tierIcon = '💛'; }
+
+                html += '<div class="person-list-row" data-action="showPersonDetailById" data-id="' + p.id + '" style="cursor:pointer;padding:6px 8px;border-bottom:1px solid rgba(200,170,100,0.1);display:flex;justify-content:space-between;align-items:center;">';
+                html += '<span style="font-size:0.8rem;">' + sex + ' ' + (p.firstName || '') + ' ' + (p.lastName || '') + '</span>';
+                html += '<span style="font-size:0.7rem;display:flex;gap:8px;align-items:center;">';
+                if (townName) html += '<span class="text-dim">📍 ' + townName + '</span>';
+                html += '<span class="text-dim">' + occLabel + '</span>';
+                html += '<span class="text-dim">Age ' + age + '</span>';
+                html += '<span style="color:' + tierColor + ';">' + tierIcon + ' ' + relLevel + '</span>';
+                html += '</span></div>';
+            }
+        }
+        html += '</div>';
+        openModal('💚 Friends', html, '');
     }
 
     function askTavernFoodTrends() {
@@ -8988,6 +9048,7 @@ window.UI = (function () {
             { icon: '🩺', label: 'Treatment', fn: 'openHealthDialog', conditional: 'treatment' },
             { icon: '📚', label: 'Skills', fn: 'openSkillsDialog' },
             { icon: '👨‍👩‍👧‍👦', label: 'Family', fn: 'openFamilyPanel', conditional: 'family' },
+            { icon: '💚', label: 'Friends', fn: 'openFriendsPanel' },
             { icon: '🏡', label: 'Housing', fn: 'openHousingDialog' },
             { icon: '🏛️', label: 'Guilds', fn: 'openGuildsPanel' },
             { icon: '🏅', label: 'Nobility', fn: 'openNobilityDialog', conditional: 'nobility' },
@@ -16633,6 +16694,7 @@ window.UI = (function () {
         poisonPerson,
         framePerson,
         showTownPeople,
+        openFriendsPanel,
         filterTownPeople,
         _reTownPeople,
         _reTownPeoplePage,

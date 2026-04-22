@@ -407,7 +407,7 @@ var StoryMode = (function () {
                   done: false, after: 'ch12b_reach_friendly' },
                 { id: 'ch12b_request_intro', type: 'custom', fn: '_checkRequestedIntro',
                   desc: 'Ask a Close Friend to introduce you to a noble',
-                  hint: 'Open Townspeople from the World menu, click on a Close Friend (60+ relationship), and choose "Request Introduction" to meet a noble they know.',
+                  hint: 'Open Townspeople from the World menu and filter by Guildmasters. Build a relationship to 60+ with one, then click "Ask for Introduction to Minor Noble".',
                   done: false, after: 'ch12b_reach_close_friend' },
                 { id: 'ch12b_accept_quest', type: 'custom', fn: '_checkAcceptedTownQuest',
                   desc: 'Accept a town quest',

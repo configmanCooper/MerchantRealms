@@ -23793,7 +23793,10 @@
         if (introducer.townId !== player.townId) return { success: false, message: 'Not in the same town.' };
 
         var introRank = getNPCSocialRank(introducer);
-        if (introRank < 4) return { success: false, message: 'This person has no noble connections.' };
+        // Guildmasters (rank < 4) can introduce to Minor Nobles (rank 4)
+        var isGuildmaster = introRank < 4 && (introducer.occupation === 'guild_master' ||
+            (introducer.guildMemberships && Object.keys(introducer.guildMemberships).some(function(g) { return introducer.guildMemberships[g].rank === 'guildmaster'; })));
+        if (introRank < 4 && !isGuildmaster) return { success: false, message: 'This person has no noble connections.' };
 
         var rel = getRelationship(introducerId);
         if (rel.level < 60) {
@@ -23807,7 +23810,8 @@
         }
 
         // Find a person one rank ABOVE the introducer that the player hasn't met
-        var targetRank = introRank + 1;
+        // Guildmasters always introduce to Minor Nobles (rank 4)
+        var targetRank = isGuildmaster ? 4 : introRank + 1;
         if (targetRank > 7) return { success: false, message: introducer.firstName + ' is already at the highest rank — there\'s no one above them to introduce you to.' };
         var people = Engine.getPeople ? Engine.getPeople(player.townId) : [];
         var candidates = [];
@@ -23842,6 +23846,10 @@
             }
             var _tRankName = (CONFIG.SOCIAL_RANKS[targetRank] ? CONFIG.SOCIAL_RANKS[targetRank].name : 'noble');
             Engine.logEvent('🤝 ' + introducer.firstName + ' introduced you to ' + _tRankName + ' ' + target.firstName + ' ' + (target.lastName || '') + '!');
+            // Story mode: track introduction
+            if (player.storyMode) {
+                player.storyMode._requestedIntro = true;
+            }
             return { success: true, message: '🤝 ' + introducer.firstName + ' introduces you to ' + target.firstName + ' ' + (target.lastName || '') + '!', targetId: target.id };
         } else {
             return { success: false, message: introducer.firstName + ' says: "Not a good time right now. Ask me again later."' };
