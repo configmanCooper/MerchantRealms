@@ -624,19 +624,28 @@ var StoryMode = (function () {
                     if (_allK2[_ki2].name === 'Valdren') { _valdrenK2 = _allK2[_ki2]; break; }
                 }
                 if (_valdrenK2) {
-                    // Clear any existing court scheduling and feast blocks
-                    _valdrenK2._pendingCourt = null;
-                    _valdrenK2._nextCourtDay = null;
-                    // Clear active feast so it doesn't block court scheduling
-                    _valdrenK2._activeFeast = null;
+                    var _courtDay = Engine.getDay() + 3;
+                    // Force court scheduling by directly setting _pendingCourt
+                    var _courtTownId = _valdrenK2.capital || (_valdrenK2.territories && _valdrenK2.territories.size > 0 ? Array.from(_valdrenK2.territories)[0] : null);
+                    var _courtTownName = 'the capital';
+                    try { var _ct = Engine.findTown(_courtTownId); if (_ct) _courtTownName = _ct.name; } catch(e2) {}
+                    _valdrenK2._pendingCourt = {
+                        id: 'court_story_ch16',
+                        townId: _courtTownId,
+                        townName: _courtTownName,
+                        scheduledDay: Engine.getDay(),
+                        courtDay: _courtDay,
+                        leadDays: 3,
+                        cases: [],
+                        invitedNobles: []
+                    };
+                    // Also set _nextCourtDay as backup so king AI doesn't override
+                    _valdrenK2._nextCourtDay = _courtDay;
+                    // Clear any active feast blocks (feast can still display but won't block court activation)
                     _valdrenK2._pendingFeast = null;
-                    // Clear resolved court sessions
-                    if (_valdrenK2._courtSession && _valdrenK2._courtSession.cases && !_valdrenK2._courtSession.cases.some(function(c) { return !c.resolved; })) {
-                        _valdrenK2._courtSession = null;
-                    }
-                    Engine.startCourtSession(_valdrenK2.id, 3);
+                    console.log('[StoryMode] Scheduled court for day ' + _courtDay + ' (current day ' + Engine.getDay() + ')');
                 }
-            } catch (e) { /* court scheduling failed */ }
+            } catch (e) { console.error('[StoryMode] Court scheduling failed:', e); }
         }
     }
 

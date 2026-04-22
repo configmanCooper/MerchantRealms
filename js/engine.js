@@ -23955,6 +23955,9 @@
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
         var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
 
+        // Skip old court system if a pendingCourt (new interactive system) is scheduled
+        if (k._pendingCourt) return;
+
         // Schedule first court session
         if (k._nextCourtDay == null) {
             k._nextCourtDay = world.day + rng.randInt(20, 40);
@@ -24284,6 +24287,64 @@
         // Activate pending court when court day arrives
         if (k._pendingCourt && world.day >= k._pendingCourt.courtDay && !k._courtSession) {
             var pc = k._pendingCourt;
+            // Generate cases if empty (story mode scheduled court without cases)
+            if (!pc.cases || pc.cases.length === 0) {
+                var _scTowns = [];
+                if (k.territories) {
+                    k.territories.forEach(function(tId) { var _t = findTown(tId); if (_t) _scTowns.push(_t); });
+                }
+                var _scNobles = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 7;
+                });
+                var _scForeignK = getKingdoms().filter(function(fk) { return fk.id !== k.id; });
+                var _scNum = rng.randInt(5, 8);
+                var _scAvail = rng.shuffle(_COURT_CASE_TYPES.slice());
+                pc.cases = [];
+                for (var _sci = 0; _sci < Math.min(_scNum, _scAvail.length); _sci++) {
+                    var _scTmpl = _scAvail[_sci];
+                    var _scCase = {
+                        id: _scTmpl.id + '_' + world.day + '_' + _sci,
+                        typeId: _scTmpl.id, category: _scTmpl.category, icon: _scTmpl.icon,
+                        title: _scTmpl.title, desc: _scTmpl.desc,
+                        grantEffect: JSON.parse(JSON.stringify(_scTmpl.grantEffect || {})),
+                        denyEffect: JSON.parse(JSON.stringify(_scTmpl.denyEffect || {})),
+                        compromiseEffect: JSON.parse(JSON.stringify(_scTmpl.compromiseEffect || {})),
+                        resolved: false, resolution: null, nobleA: null, nobleB: null, townId: null, good: null, foreignKingdomName: null
+                    };
+                    var _scTownName = 'the capital';
+                    if (_scTowns.length > 0) { var _sct = rng.pick(_scTowns); _scTownName = _sct.name; _scCase.townId = _sct.id; }
+                    _scCase.desc = _scCase.desc.replace(/\{town\}/g, _scTownName).replace(/\{amount\}/g, String(rng.randInt(50, 300)));
+                    if (_scNobles.length >= 2 && _scCase.desc.indexOf('{noble1}') >= 0) {
+                        var _sn1 = rng.pick(_scNobles); var _snRem = _scNobles.filter(function(n) { return n.id !== _sn1.id; });
+                        var _sn2 = _snRem.length > 0 ? rng.pick(_snRem) : _sn1;
+                        _scCase.nobleA = _sn1.id; _scCase.nobleB = _sn2.id;
+                        _scCase.desc = _scCase.desc.replace(/\{noble1\}/g, (_sn1.firstName || 'A noble') + ' ' + (_sn1.lastName || '')).replace(/\{noble2\}/g, (_sn2.firstName || 'Another noble') + ' ' + (_sn2.lastName || ''));
+                    } else { _scCase.desc = _scCase.desc.replace(/\{noble1\}/g, 'A noble').replace(/\{noble2\}/g, 'another noble'); }
+                    if (_scForeignK.length > 0 && _scCase.desc.indexOf('{foreignKingdom}') >= 0) {
+                        var _sfk = rng.pick(_scForeignK); _scCase.foreignKingdomName = _sfk.name;
+                        _scCase.desc = _scCase.desc.replace(/\{foreignKingdom\}/g, _sfk.name);
+                    } else { _scCase.desc = _scCase.desc.replace(/\{foreignKingdom\}/g, 'a neighboring kingdom'); }
+                    var _scGoods = ['grain', 'iron', 'cloth', 'wine', 'timber', 'salt', 'spices'];
+                    _scCase.good = rng.pick(_scGoods); _scCase.desc = _scCase.desc.replace(/\{good\}/g, _scCase.good);
+                    pc.cases.push(_scCase);
+                }
+            }
+            // Generate invited nobles if empty
+            if (!pc.invitedNobles || pc.invitedNobles.length === 0) {
+                var _inNobles = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 7;
+                });
+                pc.invitedNobles = [];
+                for (var _ini2 = 0; _ini2 < _inNobles.length; _ini2++) {
+                    var _inn = _inNobles[_ini2];
+                    pc.invitedNobles.push({
+                        id: _inn.id, name: ((_inn.firstName || '') + ' ' + (_inn.lastName || '')).trim(),
+                        travelDays: 0, arrivalDay: world.day, accepted: rng.chance(0.7),
+                        canArrive: true, loyalty: _inn.kingLoyalty || 50, fear: _inn.fearOfKing || 15,
+                        personality: _inn.personality || {}
+                    });
+                }
+            }
             var courtNobles = [];
             for (var _ci2 = 0; _ci2 < (pc.invitedNobles || []).length; _ci2++) {
                 var cinv = pc.invitedNobles[_ci2];
