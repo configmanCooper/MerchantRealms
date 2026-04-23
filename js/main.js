@@ -353,12 +353,17 @@ window.Game = (function () {
         var charScreen = document.getElementById('charCreateScreen');
         if (charScreen) { charScreen.classList.add('hidden'); charScreen.style.display = 'none'; }
 
-        // Nuclear: hide ALL game UI by direct ID
-        var hideIds = ['topBar', 'leftPanel', 'rightPanel', 'bottomBar', 'modalOverlay', 
-                       'kingdomSelectScreen', 'god-mode-panel', 'mobileHud', 'bottomTabs'];
-        for (var hi = 0; hi < hideIds.length; hi++) {
-            var hel = document.getElementById(hideIds[hi]);
-            if (hel) { hel.classList.add('hidden'); hel.style.display = 'none'; }
+        // Hide game UI panels (use class only — inline display:none would block showGameUI later)
+        var hideByClass = ['topBar', 'leftPanel', 'rightPanel', 'bottomBar', 'modalOverlay'];
+        for (var hi = 0; hi < hideByClass.length; hi++) {
+            var hel = document.getElementById(hideByClass[hi]);
+            if (hel) { hel.classList.add('hidden'); }
+        }
+        // These are safe to hide with inline style (not toggled by showGameUI)
+        var hideByStyle = ['kingdomSelectScreen', 'god-mode-panel', 'mobileHud', 'bottomTabs'];
+        for (var hj = 0; hj < hideByStyle.length; hj++) {
+            var hel2 = document.getElementById(hideByStyle[hj]);
+            if (hel2) { hel2.style.display = 'none'; }
         }
         document.body.classList.remove('game-active');
 

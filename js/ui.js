@@ -957,10 +957,13 @@ window.UI = (function () {
         el.titleScreen.style.display = 'none';
         // Hide game mode selection if lingering
         var gms = document.getElementById('gameModeScreen');
-        if (gms) gms.style.display = 'none';
+        if (gms) { gms.classList.add('hidden'); gms.style.display = 'none'; }
         el.topBar.classList.remove('hidden');
+        el.topBar.style.display = '';
         el.leftPanel.classList.remove('hidden');
+        el.leftPanel.style.display = '';
         el.bottomBar.classList.remove('hidden');
+        el.bottomBar.style.display = '';
         // Mark body as game-active so mobile CSS kicks in
         document.body.classList.add('game-active');
         // Show mobile elements
