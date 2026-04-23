@@ -111,16 +111,17 @@
         notificationFilters: {
             my_actions: true,
             my_business: true,
-            my_kingdom: false,
+            my_kingdom: true,
             local_town: true,
             foreign_kingdoms: false,
             world_economy: false,
             military: 'smart',   // 'smart' = auto-on during war
             npc_activity: false,
-            illness: true,       // plague, disease, quarantine, health policy
+            illness: false,
             travel_events: true,
-            combat: true,
-            tracked: true, // tracked elite merchant activities
+            combat: false,
+            tracked: false,
+            error_alerts: false,
         },
         achievements: {},       // achievementId → { unlocked: true, unlockedAt: dayNumber }
         trackedMerchants: [],   // array of EM person IDs being tracked
@@ -1098,6 +1099,13 @@
         for (const key in RESOURCE_TYPES) {
             player.inventory[RESOURCE_TYPES[key].id] = 0;
         }
+        // Reset notification filters to sandbox defaults (story mode overrides in applyGameStart)
+        player.notificationFilters = {
+            my_actions: true, my_business: true, my_kingdom: true,
+            local_town: true, foreign_kingdoms: false, world_economy: false,
+            military: 'smart', npc_activity: false, illness: false,
+            travel_events: true, combat: false, tracked: false, error_alerts: false,
+        };
         // Initialize citizenship to the kingdom of starting town
         if (player.townId) {
             const startTown = Engine.findTown(player.townId);
@@ -37332,6 +37340,26 @@
             initScholarStart();
         } else if (startConfig.special === 'story_mode') {
             initStoryModeStart();
+        }
+
+        // Apply game-mode-specific notification filter defaults
+        if (startConfig.special === 'story_mode') {
+            // Story mode: minimal notifications — only player actions, business, travel, and smart military
+            player.notificationFilters = {
+                my_actions: true,
+                my_business: true,
+                my_kingdom: false,
+                local_town: false,
+                foreign_kingdoms: false,
+                world_economy: false,
+                military: 'smart',
+                npc_activity: false,
+                illness: false,
+                travel_events: true,
+                combat: false,
+                tracked: false,
+                error_alerts: false,
+            };
         }
 
         Engine.logEvent(player.fullName + ' begins their journey as ' + (startConfig.name || 'an adventurer') + '.', null, 'my_actions');
