@@ -22015,6 +22015,13 @@
 
     function setActiveCitizenship(kingdomId) {
         if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        // Lords (rank 5+) are locked to their high-rank kingdom
+        for (var _lkId in player.socialRank) {
+            if ((player.socialRank[_lkId] || 0) >= 5 && _lkId !== kingdomId) {
+                var _lkK = Engine.findKingdom(_lkId);
+                return { success: false, message: 'As a ' + (CONFIG.SOCIAL_RANKS[player.socialRank[_lkId]] ? CONFIG.SOCIAL_RANKS[player.socialRank[_lkId]].name : 'Lord') + ' of ' + (_lkK ? _lkK.name : _lkId) + ', your loyalty is bound to that kingdom.' };
+            }
+        }
         player.citizenshipKingdomId = kingdomId;
         var kingdom = Engine.findKingdom(kingdomId);
         var kName = kingdom ? kingdom.name : kingdomId;

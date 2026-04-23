@@ -8404,12 +8404,23 @@ window.UI = (function () {
             return b.rankIdx - a.rankIdx;
         });
         if (citizenKingdoms.length > 0) {
+            // Auto-lock active kingdom to Lord+ kingdom if player has one
+            const _lordK = citizenKingdoms.find(function(c) { return c.rankIdx >= 5; });
+            if (_lordK && _lordK.id !== citizenKId && typeof Player !== 'undefined' && Player.setActiveCitizenship) {
+                Player.state.citizenshipKingdomId = _lordK.id;
+                citizenKId = _lordK.id;
+            }
             html += '<div class="detail-section"><h3>\uD83C\uDFE0 Citizenships</h3>';
             for (const ck of citizenKingdoms) {
                 const r = CONFIG.SOCIAL_RANKS[ck.rankIdx] || CONFIG.SOCIAL_RANKS[0];
                 const isActive = ck.id === citizenKId;
                 const activeLabel = isActive ? '<span style="color:#d4af37;font-weight:bold;font-size:0.75rem;margin-left:6px;">⭐ ACTIVE</span>' : '';
-                const setActiveBtn = !isActive ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
+                // Hide Set Active if player is Lord+ (rank 5+) in any kingdom — that one is locked
+                const hasLordKingdom = citizenKingdoms.some(function(c) { return c.rankIdx >= 5; });
+                const lordKingdomId = hasLordKingdom ? citizenKingdoms.find(function(c) { return c.rankIdx >= 5; }).id : null;
+                const isLocked = hasLordKingdom && lordKingdomId !== ck.id;
+                const isLockedActive = hasLordKingdom && lordKingdomId === ck.id && !isActive;
+                const setActiveBtn = (!isActive && !hasLordKingdom) ? `<button class="btn-medieval" data-action="setActiveCitizenship" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(212,175,55,0.25);border-color:rgba(212,175,55,0.5);color:#d4af37;">⭐ Set Active</button>` : '';
                 const renounceBtn = ck.rankIdx >= 1 ? `<button class="btn-medieval" data-action="renounceKingdomUI" data-id="${ck.id}" style="font-size:0.7rem;padding:2px 8px;margin-left:4px;background:rgba(200,60,50,0.35);border-color:rgba(200,60,50,0.6);color:#f0d0a0;">\u274C Renounce</button>` : '';
                 html += `<div class="detail-row" style="margin-bottom:4px;${isActive ? 'background:rgba(212,175,55,0.08);border-radius:4px;padding:2px 4px;' : ''}">
                     <span class="label" style="color:${ck.color};">${ck.name}${activeLabel}</span>
