@@ -336,6 +336,7 @@ window.Game = (function () {
     }
 
     function showGameModeSelection() {
+        console.log('[Menu] showGameModeSelection called');
         var titleScreen = document.getElementById('titleScreen');
         if (titleScreen) { titleScreen.classList.add('hidden'); titleScreen.style.display = 'none'; }
         var charScreen = document.getElementById('charCreateScreen');
@@ -3086,31 +3087,42 @@ window.Game = (function () {
             startAutosave();
         },
         showTitleScreen: function () {
+            console.log('[Menu] showTitleScreen v2 called, clearing game state');
+            // CRITICAL: Clear these first before anything can throw
             state = 'title';
-            stopAutosave();
+            delete window._selectedStartConfig;
+            if (typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
+                try { StoryMode.deserialize({ active: false, chapter: 0, complete: false }); } catch(e) {}
+            }
+            try { stopAutosave(); } catch(e) {}
             if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
             // Clean up tutorial if it was running
-            if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
-                Tutorial.cleanup();
-            }
+            try {
+                if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                    Tutorial.cleanup();
+                }
+            } catch(e) {}
             // Close story dialog if open
-            if (typeof UI !== 'undefined' && UI.closeStoryDialog) UI.closeStoryDialog();
+            try { if (typeof UI !== 'undefined' && UI.closeStoryDialog) UI.closeStoryDialog(); } catch(e) {}
             // Stop TTS
-            if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
-            if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI();
+            try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
+            try { if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI(); } catch(e) {}
             var ts = document.getElementById('titleScreen');
             if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }
             var cs = document.getElementById('charCreateScreen');
             if (cs) { cs.classList.add('hidden'); cs.style.display = 'none'; }
             var gms = document.getElementById('gameModeScreen');
             if (gms) { gms.style.display = 'none'; }
-            // Clear stale start config so next New Game goes through full selection
-            delete window._selectedStartConfig;
+            var kss = document.getElementById('kingdomSelectScreen');
+            if (kss) { kss.classList.add('hidden'); kss.style.display = 'none'; }
+            // Close any open modals
+            var mo = document.getElementById('modalOverlay');
+            if (mo) mo.classList.add('hidden');
             // Refresh load button visibility
             var btnLoad = document.getElementById('btnLoadGame');
             if (btnLoad) btnLoad.style.display = '';
             // Switch back to title music
-            if (typeof Music !== 'undefined') Music.playTitleMusic();
+            try { if (typeof Music !== 'undefined') Music.playTitleMusic(); } catch(e) {}
         },
     };
 })();
