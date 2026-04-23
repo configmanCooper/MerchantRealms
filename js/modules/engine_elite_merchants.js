@@ -58,7 +58,8 @@
     // ========================================================
     function createEliteMerchantFromNPC(npc) {
         npc.isEliteMerchant = true;
-        npc.occupation = 'merchant';
+        // Preserve noble occupation — nobles can be elite merchants too
+        if (npc.occupation !== 'noble') npc.occupation = 'merchant';
         npc.wealthClass = 'upper';
         npc.name = (npc.firstName || '') + ' ' + (npc.lastName || '');
         if (!npc.npcMerchantInventory) npc.npcMerchantInventory = {};
@@ -243,7 +244,7 @@
                 if (qk && (qk.gold || 0) > 500) {
                     // Find wealthy NPC merchants in that town or nearby
                     var candidates = world.people.filter(function(p) {
-                        return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
+                        return p.alive && (p.occupation === 'merchant' || p.occupation === 'noble') && !p.isEliteMerchant 
                             && p.townId === candidateTown.id && (p.gold || 0) > 200;
                     });
                     // Also check connected towns if none found locally
@@ -255,7 +256,7 @@
                             else if (cr.toTownId === candidateTown.id) connTowns.push(cr.fromTownId);
                         }
                         candidates = world.people.filter(function(p) {
-                            return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
+                            return p.alive && (p.occupation === 'merchant' || p.occupation === 'noble') && !p.isEliteMerchant 
                                 && connTowns.indexOf(p.townId) >= 0 && (p.gold || 0) > 200;
                         });
                     }
@@ -361,12 +362,15 @@
             if (em._bankruptDays >= (CONFIG.ELITE_MERCHANT_BANKRUPTCY_DAYS || 30) && 
                 world.eliteMerchants.length > CONFIG.ELITE_MERCHANT_MIN) {
                 em.isEliteMerchant = false;
-                em.wealthClass = 'middle';
+                em.wealthClass = em.occupation === 'noble' ? 'upper' : 'middle';
                 em._eliteFieldsInit = false;
-                // Demoted EMs retain Guildmaster rank (3)
+                // Demoted EMs retain Guildmaster rank (3), but nobles keep their noble rank
                 if (!em.socialRank) em.socialRank = {};
                 var _emDemKid = em.kingdomId || em.citizenshipKingdomId;
-                if (_emDemKid) em.socialRank[_emDemKid] = 3;
+                if (_emDemKid) {
+                    var _curDemRank = em.socialRank[_emDemKid] || 0;
+                    if (_curDemRank < 3) em.socialRank[_emDemKid] = 3;
+                }
                 world.eliteMerchants.splice(bi, 1);
                 logEvent('📉 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' has lost their elite merchant status due to bankruptcy.', { townId: em.townId, category: 'npc_activity' });
             }
@@ -1620,7 +1624,8 @@
                     ]
                 });
                 em.isEliteMerchant = false;
-                em.occupation = 'laborer';
+                // Nobles keep their noble occupation even when losing EM status
+                if (em.occupation !== 'noble') em.occupation = 'laborer';
                 em._lowGoldDays = 0;
                 em._criticalGoldDays = 0;
                 continue; // skip rest of EM AI for this now-demoted NPC
