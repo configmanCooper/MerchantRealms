@@ -1440,6 +1440,12 @@
 
             ensureEliteMerchantFields(em);
 
+            // Ensure EM always has at least Burgher rank (2) in current kingdom
+            if (em.kingdomId) {
+                if (!em.socialRank) em.socialRank = {};
+                if ((em.socialRank[em.kingdomId] || 0) < 2) em.socialRank[em.kingdomId] = 2;
+            }
+
             // Skip if jailed
             if (em.jailedUntilDay && em.jailedUntilDay > day) continue;
 

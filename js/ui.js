@@ -16230,7 +16230,8 @@ window.UI = (function () {
         var relCount = Object.keys(relationships).length;
         var highRelCount = 0;
         for (var rk in relationships) {
-            if (relationships[rk] >= 60) highRelCount++;
+            var _rlv = (typeof relationships[rk] === 'object') ? (relationships[rk].level || 0) : (relationships[rk] || 0);
+            if (_rlv >= 60) highRelCount++;
         }
 
         // Kingdoms where player has reputation
