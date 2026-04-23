@@ -23553,20 +23553,41 @@
             if ((player.socialRank[kId] || 0) > playerMaxRank) playerMaxRank = player.socialRank[kId];
         }
 
-        // TIERED ACCESS SYSTEM:
-        // 1 rank below noble = direct talk (Guildmaster→Minor Noble, Minor Noble→Lord, Lord→RA, RA→King)
-        // 2 ranks below = can use "introduce me" mechanic
-        // 3+ ranks below = cannot interact at all
-        var requiredRank = effectiveRank - 1; // one rank below to talk directly
-        var introMaxGap = 2; // max 2 ranks below for introductions
+        // TIERED ACCESS SYSTEM (two-layer introduction limit):
+        // Introductions only work for Minor Noble (4) and Lord (5) targets.
+        // Guild Master→Minor Noble (layer 1), Minor Noble→Lord (layer 2) — that's the max chain.
+        // Royal Advisor (6): no introductions — must be a Lord (rank 5+) to talk directly.
+        // King (7): must be a Lord (rank 5+) to seek introduction, Royal Advisor (rank 6+) to talk directly.
+        var rankNames = { 4: 'Minor Noble', 5: 'Lord', 6: 'Royal Advisor', 7: 'the King' };
 
+        // Royal Advisor: must be Lord+ to talk, no introduction possible
+        if (effectiveRank === 6) {
+            if (playerMaxRank >= 5) return { canTalk: true };
+            return {
+                canTalk: false,
+                reason: 'You must be a Lord to speak with a Royal Advisor. Rise in rank first — introductions cannot reach this high.',
+                needsIntroduction: false
+            };
+        }
+
+        // King: must be Royal Advisor (6+) to talk directly, no introductions
+        if (effectiveRank === 7) {
+            if (playerMaxRank >= 6) return { canTalk: true };
+            return {
+                canTalk: false,
+                reason: 'You must be a Royal Advisor to speak with the King. Introductions cannot reach this high.',
+                needsIntroduction: false
+            };
+        }
+
+        // Minor Noble (4) and Lord (5): standard two-layer introduction system
+        var requiredRank = effectiveRank - 1;
         if (playerMaxRank >= requiredRank) return { canTalk: true };
 
-        var rankNames = { 4: 'Minor Noble', 5: 'Lord', 6: 'Royal Advisor', 7: 'the King' };
         var rankGap = effectiveRank - playerMaxRank;
 
-        // 3+ ranks below: cannot talk at all, no introduction possible
-        if (rankGap > introMaxGap) {
+        // More than 2 ranks below: no introduction possible
+        if (rankGap > 2) {
             return {
                 canTalk: false,
                 reason: 'Your status is too far below a ' + (rankNames[effectiveRank] || 'noble') + ' to speak with or seek an introduction. You need to rise in rank first.',
@@ -23574,7 +23595,7 @@
             };
         }
 
-        // Exactly 2 ranks below: can seek introduction
+        // 2 ranks below: can seek introduction (GM→Minor Noble or Minor Noble→Lord)
         if (rankGap === 2) {
             var introFromRank = effectiveRank - 1;
             var introFromName = CONFIG.SOCIAL_RANKS[introFromRank] ? CONFIG.SOCIAL_RANKS[introFromRank].name : rankNames[introFromRank] || 'higher noble';
@@ -23586,7 +23607,7 @@
             };
         }
 
-        // Exactly 1 rank below but doesn't meet the rank check (shouldn't happen, but fallback)
+        // 1 rank below but doesn't meet rank check (fallback)
         var requiredRankName = CONFIG.SOCIAL_RANKS[requiredRank] ? CONFIG.SOCIAL_RANKS[requiredRank].name : 'higher rank';
         return {
             canTalk: false,
@@ -23813,6 +23834,11 @@
         // Guildmasters always introduce to Minor Nobles (rank 4)
         var targetRank = isGuildmaster ? 4 : introRank + 1;
         if (targetRank > 7) return { success: false, message: introducer.firstName + ' is already at the highest rank — there\'s no one above them to introduce you to.' };
+
+        // Two-layer introduction limit: introductions only work for Minor Noble (4) and Lord (5)
+        // Royal Advisor (6) and King (7) cannot be reached through introductions
+        if (targetRank === 6) return { success: false, message: 'Royal Advisors do not accept introductions. You must become a Lord to speak with them directly.' };
+        if (targetRank === 7) return { success: false, message: 'You cannot be introduced to the King. You must be a Royal Advisor to speak with the King directly.' };
         var people = Engine.getPeople ? Engine.getPeople(player.townId) : [];
         var candidates = [];
         for (var i = 0; i < people.length; i++) {
