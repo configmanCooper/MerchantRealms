@@ -16286,7 +16286,8 @@ window.UI = (function () {
                 // King relationship
                 var kingRel = '—';
                 if (kk.king && relationships[kk.king] != null) {
-                    var kr = relationships[kk.king];
+                    var krRaw = relationships[kk.king];
+                    var kr = typeof krRaw === 'object' ? (krRaw.level || 0) : krRaw;
                     var krCol = kr >= 60 ? '#2ecc71' : kr >= 30 ? '#f39c12' : '#e74c3c';
                     kingRel = '<span style="color:' + krCol + ';">' + kr + '</span>';
                 }
