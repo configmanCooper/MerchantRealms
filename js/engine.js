@@ -3955,7 +3955,9 @@
                         }
                         if (_emParentMax >= 1 && _emParentKid) {
                             if (!child.socialRank) child.socialRank = {};
-                            child.socialRank[_emParentKid] = Math.max(0, _emParentMax - 1);
+                            var _emChildRank = _emParentMax - 1;
+                            if (_emParentMax >= 7) _emChildRank = 5; // King's child = Lord
+                            child.socialRank[_emParentKid] = Math.max(0, _emChildRank);
                         }
                         em.childrenIds.push(child.id);
                         spouse.childrenIds.push(child.id);
@@ -31150,6 +31152,15 @@
                         }
                     }
                 }
+            }
+            // Elite merchant rank fixup: ensure all EMs have at least Burgher (rank 2)
+            for (var _emrfi = 0; _emrfi < world.people.length; _emrfi++) {
+                var _emrfP = world.people[_emrfi];
+                if (!_emrfP.alive || !_emrfP.isEliteMerchant) continue;
+                var _emrfKid = _emrfP.kingdomId || _emrfP.citizenshipKingdomId;
+                if (!_emrfKid) continue;
+                if (!_emrfP.socialRank) _emrfP.socialRank = {};
+                if ((_emrfP.socialRank[_emrfKid] || 0) < 2) _emrfP.socialRank[_emrfKid] = 2;
             }
             world.events = data.events || [];
             world.eventLog = data.eventLog || [];
