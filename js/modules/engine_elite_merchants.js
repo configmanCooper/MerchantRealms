@@ -2057,6 +2057,16 @@
             }
         }
         var currentStock = getEmCurrentInventory(inv);
+        // Storage capacity: base 200 + 100 per warehouse building
+        var storageCapacity = 200;
+        if (em.buildings) {
+            for (var _sci = 0; _sci < em.buildings.length; _sci++) {
+                var _bld = em.buildings[_sci];
+                var _bType = typeof _bld === 'string' ? _bld : (_bld.type || _bld.buildingType || '');
+                if (_bType === 'warehouse') storageCapacity += 200;
+                else if (_bType === 'warehouse_small') storageCapacity += 100;
+            }
+        }
 
         // Check for active trade subsidies in this kingdom
         var kingdom = findKingdom(town.kingdomId);
