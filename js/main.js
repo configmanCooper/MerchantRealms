@@ -363,6 +363,7 @@ window.Game = (function () {
         document.body.classList.remove('game-active');
 
         var el = _getGameModeScreenEl();
+        el.classList.remove('hidden');  // CRITICAL: remove hidden class (has !important)
         el.style.display = 'flex';
 
         var html = '<div class="title-content" style="max-width:700px;width:95%;">';
