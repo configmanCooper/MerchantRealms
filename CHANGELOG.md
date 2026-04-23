@@ -4,6 +4,21 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.84.1] - Bug Fixes & Introduction Limits
+
+### Changed
+- Introduction chain limited to 2 layers: Guildmaster→Minor Noble→Lord (max)
+- Royal Advisors cannot be reached via introductions — must be a Lord to speak directly
+- King cannot be reached via introductions — must be a Royal Advisor to speak directly
+- Noble introduction cooldown reduced from 30 to 14 days
+
+### Fixed
+- storageCapacity undefined error in eliteTradeAI (crashed every tick)
+- God mode relationship buttons using non-existent Player.changeRelationship
+- EM child inheritance missing King special case (rank 7 parent gave rank 6 instead of 5)
+- Elite merchants with socialRank < 2 auto-repaired on save load
+- Save file EM rank consistency (8 EMs fixed in existing save)
+
 ## [0.84.0] - NPC Social Rank Promotion, Relationships & Story Chapter 12b
 
 ### Added — NPC Social Rank Promotion System
