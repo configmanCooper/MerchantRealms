@@ -132,6 +132,7 @@ window.Game = (function () {
         const btnNew = document.getElementById('btnNewGame');
         if (btnNew) {
             btnNew.addEventListener('click', function () {
+                console.log('[DEBUG] btnNewGame clicked. state=' + state);
                 startTitleMusic();
                 showGameModeSelection();
             });
@@ -336,11 +337,30 @@ window.Game = (function () {
     }
 
     function showGameModeSelection() {
-        console.log('[Menu] showGameModeSelection called');
+        console.log('[Menu] showGameModeSelection called, state=' + state);
+        // Force state to title — in case something left it as 'playing'
+        state = 'title';
+        if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+        try { stopAutosave(); } catch(e) {}
+        delete window._selectedStartConfig;
+        if (typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
+            try { StoryMode.deserialize({ active: false, chapter: 0, complete: false }); } catch(e) {}
+        }
+        
+        // Hide EVERYTHING that isn't the game mode screen
         var titleScreen = document.getElementById('titleScreen');
         if (titleScreen) { titleScreen.classList.add('hidden'); titleScreen.style.display = 'none'; }
         var charScreen = document.getElementById('charCreateScreen');
         if (charScreen) { charScreen.classList.add('hidden'); charScreen.style.display = 'none'; }
+
+        // Nuclear: hide ALL game UI by direct ID
+        var hideIds = ['topBar', 'leftPanel', 'rightPanel', 'bottomBar', 'modalOverlay', 
+                       'kingdomSelectScreen', 'god-mode-panel', 'mobileHud', 'bottomTabs'];
+        for (var hi = 0; hi < hideIds.length; hi++) {
+            var hel = document.getElementById(hideIds[hi]);
+            if (hel) { hel.classList.add('hidden'); hel.style.display = 'none'; }
+        }
+        document.body.classList.remove('game-active');
 
         var el = _getGameModeScreenEl();
         el.style.display = 'flex';
