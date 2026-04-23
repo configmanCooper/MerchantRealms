@@ -3102,6 +3102,10 @@ window.Game = (function () {
             if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }
             var cs = document.getElementById('charCreateScreen');
             if (cs) { cs.classList.add('hidden'); cs.style.display = 'none'; }
+            var gms = document.getElementById('gameModeScreen');
+            if (gms) { gms.style.display = 'none'; }
+            // Clear stale start config so next New Game goes through full selection
+            delete window._selectedStartConfig;
             // Refresh load button visibility
             var btnLoad = document.getElementById('btnLoadGame');
             if (btnLoad) btnLoad.style.display = '';

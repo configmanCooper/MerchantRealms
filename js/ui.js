@@ -6503,19 +6503,11 @@ window.UI = (function () {
             var isSmart = val === 'smart';
             var hasSubs = f.subs && f.subs.length > 0;
 
-            // Determine ON/OFF state: OFF only if category explicitly false AND all subs are false
-            // ON if category is true/undefined, OR if at least one sub is not false
+            // Determine ON/OFF state: OFF if category explicitly false
+            // Only check subs if the top-level category is not explicitly false
             var isOff = val === false;
-            if (isOff && hasSubs) {
-                // Check if truly all subs are off
-                var allSubsOff = true;
-                for (var _chk = 0; _chk < f.subs.length; _chk++) {
-                    if (filters[f.key + '.' + f.subs[_chk].key] !== false) { allSubsOff = false; break; }
-                }
-                isOff = allSubsOff;
-            }
-            if (!isOff && hasSubs && val !== 'smart') {
-                // ON means at least one sub is on
+            if (!isOff && !isSmart && hasSubs) {
+                // ON means at least one sub is on (undefined = default on)
                 var anySub = false;
                 for (var _chk2 = 0; _chk2 < f.subs.length; _chk2++) {
                     if (filters[f.key + '.' + f.subs[_chk2].key] !== false) { anySub = true; break; }
