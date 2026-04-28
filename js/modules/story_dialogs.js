@@ -642,6 +642,21 @@
                 "And your timing is perfect. A royal feast has been announced at the capital. It begins in seven days.",
                 "This is your chance to be seen among your peers. Attend the feast, mingle with the lords and ladies, and prove you belong.",
                 "Open the Nobility panel under Character to see the feast details and accept your invitation when it arrives."
+            ],
+            next: 'ch16_calder_noble_schemes'
+        },
+
+        ch16_calder_noble_schemes: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "Now that you carry a title, there are things you should know. The nobility is not merely a rank — it is a battlefield.",
+                "At feasts and court, you can mingle to build relationships, have private conversations to learn secrets, or eavesdrop on the schemes of others.",
+                "But the real power lies in the darker arts. You can spread rumors to damage a rival's reputation, forge alliances with nobles who share your interests, or pit two nobles against each other to weaken them both.",
+                "With the right skills — Silver Tongue, Kingmaker, Shadow Dealings — you can turn nobles against their king, manipulate council votes, or even expose their deepest secrets for blackmail.",
+                "You can also influence the king directly — petition him, curry favor, and shape the laws of the realm to benefit your empire.",
+                "Tread carefully, though. Every scheme carries risk. If you are caught, your reputation and your neck may both be on the line.",
+                "For now, focus on the feast. Build your network. The schemes will come in time."
             ]
         },
 
