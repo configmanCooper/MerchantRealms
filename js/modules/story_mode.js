@@ -1478,6 +1478,13 @@ var StoryMode = (function () {
                         _showDialog('ch3_harlan_meet');
                     });
                 }
+
+                // Special: Ch3 rest done — guide player to travel with speed controls
+                if (obj.id === 'ch3_rest_first') {
+                    setTimeout(function() {
+                        _toast('💡 Open the World Map 🗺️ to travel to Ferrowdale. Use the ▶▶ 4× speed button at the top to fast-forward through the journey!');
+                    }, 1500);
+                }
             }
         }
     }

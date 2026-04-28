@@ -260,12 +260,31 @@ window.Game = (function () {
             });
         }
         var volSlider = document.getElementById('musicVolume');
+        var titleVolSlider = document.getElementById('titleMusicVolume');
+        function syncVolumeSliders(val) {
+            if (volSlider) volSlider.value = val;
+            if (titleVolSlider) titleVolSlider.value = val;
+        }
         if (volSlider) {
             volSlider.addEventListener('input', function (e) {
                 if (typeof Music === 'undefined') return;
                 Music.init();
                 Music.setVolume(e.target.value / 100);
+                if (titleVolSlider) titleVolSlider.value = e.target.value;
             });
+        }
+        if (titleVolSlider) {
+            titleVolSlider.addEventListener('input', function (e) {
+                if (typeof Music === 'undefined') return;
+                Music.init();
+                Music.setVolume(e.target.value / 100);
+                if (volSlider) volSlider.value = e.target.value;
+            });
+            // Initialize slider to saved volume
+            try {
+                var savedVol = localStorage.getItem('merchantRealms_musicVolume');
+                if (savedVol !== null) titleVolSlider.value = Math.round(parseFloat(savedVol) * 100);
+            } catch(e) {}
         }
     }
 

@@ -241,7 +241,7 @@
             '}' +
             '#sdContent{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;}' +
             '#sdSpeaker{font-weight:bold;font-size:1.05rem;text-shadow:0 1px 3px rgba(0,0,0,0.6);}' +
-            '#sdText{color:#e8dcc8;font-size:1rem;line-height:1.6;min-height:3.2em;white-space:pre-wrap;}' +
+            '#sdText{color:#e8dcc8;font-size:1rem;line-height:1.6;min-height:3.2em;white-space:pre-wrap;font-family:"Palatino Linotype","Book Antiqua","Palatino","Georgia",serif;}' +
             '#sdContinue{' +
                 'display:none;align-self:flex-end;margin-top:8px;cursor:pointer;' +
                 'font-size:0.85rem;padding:6px 18px;' +

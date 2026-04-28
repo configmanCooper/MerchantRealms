@@ -1977,6 +1977,9 @@ window.UI = (function () {
         const carryPct = Math.min(100, Math.round((carriedWeight / carryCapacity) * 100));
         const carryBarColor = carryPct > 90 ? 'var(--danger)' : carryPct > 70 ? 'var(--gold)' : '#55a868';
         let capacityHtml = `<div style="margin-bottom:8px;padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:4px;font-size:0.78rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+                <span style="font-size:0.85rem;font-weight:bold;color:var(--gold);">🪙 ${formatGold(Player.gold)} gold</span>
+            </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
                 <span>${containerLabel}: <strong>${Math.round(carriedWeight)}/${carryCapacity}</strong> weight</span>
                 <span style="font-size:0.7rem;color:var(--text-muted);">${carryPct}%</span>
