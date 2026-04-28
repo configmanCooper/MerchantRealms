@@ -43,6 +43,7 @@
     var _currentAudio = null;    // currently playing Audio element (pre-gen MP3)
 
     // ── TTS Voice System ──────────────────────────────────────
+    var _ttsVolume = parseFloat(localStorage.getItem('storyTtsVolume')) || 0.9;
     var _ttsEnabled = true;      // on by default
     var _ttsReady = false;
     var _ttsVoices = [];
@@ -150,7 +151,7 @@
             var audioFile = 'audio/story/' + dialogKey + '_' + _lineIndex + suffix + '.mp3';
             console.log('[StoryAudio] Playing:', audioFile);
             var audio = new Audio(audioFile);
-            audio.volume = 0.9;
+            audio.volume = _ttsVolume;
             var playPromise = audio.play();
             if (playPromise && playPromise.then) {
                 playPromise.then(function() {
@@ -178,7 +179,7 @@
         utterance.voice = profile.preferFemale ? _ttsFemaleVoice : _ttsMaleVoice;
         utterance.rate = profile.rate || 1.0;
         utterance.pitch = profile.pitch || 1.0;
-        utterance.volume = profile.volume || 1.0;
+        utterance.volume = _ttsVolume;
         speechSynthesis.speak(utterance);
     }
 
@@ -273,6 +274,10 @@
                         'transition:opacity 0.2s;" >' +
                         (_ttsEnabled ? '\u{1F50A}' : '\u{1F507}') +
                     '</button>' +
+                    '<input id="sdTtsVolume" type="range" min="0" max="100" value="' + Math.round(_ttsVolume * 100) + '" ' +
+                        'title="Voice volume" style="' +
+                        'width:60px;height:4px;cursor:pointer;opacity:0.7;accent-color:#c4a35a;' +
+                        'vertical-align:middle;" />' +
                 '</div>' +
                 '<div id="sdText"></div>' +
                 '<div id="sdChoices"></div>' +
@@ -286,6 +291,7 @@
             if (e.target.classList.contains('sd-choice-btn')) return;
             if (e.target.id === 'sdContinue') return;
             if (e.target.id === 'sdTtsToggle') return;
+            if (e.target.id === 'sdTtsVolume') return;
             if (_typing) {
                 _skipTypewriter();
             }
@@ -303,6 +309,14 @@
             this.textContent = _ttsEnabled ? '\u{1F50A}' : '\u{1F507}';
             this.title = _ttsEnabled ? 'Voice narration ON — click to mute' : 'Voice narration OFF — click to unmute';
             if (!_ttsEnabled) _stopSpeech();
+        });
+
+        // TTS volume slider
+        document.getElementById('sdTtsVolume').addEventListener('input', function(e) {
+            e.stopPropagation();
+            _ttsVolume = parseInt(this.value, 10) / 100;
+            localStorage.setItem('storyTtsVolume', _ttsVolume);
+            if (_currentAudio) _currentAudio.volume = _ttsVolume;
         });
     }
 
