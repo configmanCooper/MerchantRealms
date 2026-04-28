@@ -288,7 +288,37 @@ window.Game = (function () {
         }
     }
 
-    // ── Music mood detection (called from game tick) ──
+    // ── Generate candle glow layers on title screen ──
+    (function generateCandles() {
+        var ts = document.getElementById('titleScreen');
+        if (!ts) return;
+        var anims = ['candleA', 'candleB', 'candleC', 'candleD'];
+        var candles = [
+            { x: 8,  y: 92, r: 180, g: 140, b: 40, a: 0.12, spread: 40 },
+            { x: 22, y: 88, r: 210, g: 160, b: 50, a: 0.10, spread: 35 },
+            { x: 35, y: 95, r: 200, g: 150, b: 45, a: 0.14, spread: 42 },
+            { x: 45, y: 90, r: 230, g: 175, b: 55, a: 0.09, spread: 38 },
+            { x: 55, y: 97, r: 215, g: 155, b: 40, a: 0.13, spread: 44 },
+            { x: 65, y: 88, r: 190, g: 135, b: 35, a: 0.11, spread: 36 },
+            { x: 75, y: 93, r: 225, g: 170, b: 50, a: 0.10, spread: 40 },
+            { x: 82, y: 96, r: 205, g: 145, b: 42, a: 0.12, spread: 38 },
+            { x: 90, y: 89, r: 195, g: 140, b: 38, a: 0.09, spread: 34 },
+            { x: 15, y: 98, r: 220, g: 165, b: 48, a: 0.11, spread: 42 },
+            { x: 50, y: 100,r: 240, g: 180, b: 60, a: 0.15, spread: 50 },
+            { x: 70, y: 100,r: 200, g: 150, b: 45, a: 0.10, spread: 45 },
+        ];
+        var durations = [2.3, 2.7, 3.1, 3.7, 4.3, 4.7, 5.3, 5.9, 6.1, 6.7, 7.3, 7.9];
+        for (var i = 0; i < candles.length; i++) {
+            var c = candles[i];
+            var div = document.createElement('div');
+            div.className = 'candle-glow';
+            div.style.background = 'radial-gradient(ellipse at ' + c.x + '% ' + c.y + '%, ' +
+                'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + c.a + ') 0%, transparent ' + c.spread + '%)';
+            div.style.animationName = anims[i % anims.length];
+            div.style.animationDuration = durations[i] + 's';
+            ts.insertBefore(div, ts.firstChild);
+        }
+    })();
     let _lastMusicMoodCheck = 0;
     function updateMusicMood() {
         if (typeof Music === 'undefined' || state !== 'playing') return;
