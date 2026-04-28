@@ -590,6 +590,17 @@
             ]
         },
 
+        ch15_king_supply_chain: {
+            speaker: "king_aldric",
+            portrait: "king_aldric",
+            lines: [
+                "You aspire to Guildmaster, merchant? Good. Valdren needs builders, not just traders.",
+                "Any fool can buy and sell. A true Guildmaster controls the chain — from raw materials to finished goods. Prove you can do the same.",
+                "Build a complete supply chain of three buildings. Feed the people with bread from your own wheat. Clothe them with garments from your own wool. Or arm our soldiers with armor from your own cattle hides.",
+                "The choice is yours. Wheat Farm to Flour Mill to Bakery. Sheep Farm to Weaver to Tailor. Or Cattle Ranch to Tanner to Armorer. Choose wisely — each chain tells the crown what kind of merchant you are."
+            ]
+        },
+
         ch15_seraphine_hint: {
             speaker: "seraphine",
             portrait: "seraphine",
@@ -686,6 +697,17 @@
         // =====================================================================
         // CHAPTER 17: "The War Effort" (BRANCHING)
         // =====================================================================
+
+        ch17_king_war_council: {
+            speaker: "king_aldric",
+            portrait: "king_aldric",
+            lines: [
+                "The war with Korvath has ground on long enough. Our people suffer, our treasury bleeds, and still they hold Ashford.",
+                "I have summoned my finest advisors. Lady Elowen counsels patience and subtlety. General Theron demands fire and steel.",
+                "You have proven your worth, merchant. Your counsel carries weight in these halls now. Choose how we end this war."
+            ],
+            next: 'ch17_choice'
+        },
 
         ch17_choice: {
             speaker: "narrator",
@@ -1003,6 +1025,30 @@
             portrait: "harlan",
             lines: [
                 "Now you look like a proper merchant! Remember — Small Wagons need one horse, full Wagons need two. Upgrade your transport as your business grows."
+            ]
+        },
+
+        // =====================================================================
+        // CHAPTER 9c: "Pack and Haul"
+        // =====================================================================
+
+        ch9c_backpack_intro: {
+            speaker: "harlan",
+            portrait: "harlan",
+            lines: [
+                "Riding high on a horse is all well and good, but what about everything you're carrying? A proper merchant needs a proper pack.",
+                "A backpack doubles your carry capacity — and it's simple to make. Just two pieces of leather and one cloth, stitched together at home.",
+                "Buy the materials from the market and craft it in your home's crafting area. It'll change how you do business.",
+                "And once you've got the coin for it, look into carts and wagons. A cart needs no horse and adds good capacity. Small Wagons need one horse, full Wagons need two. Each step up carries more goods and attracts fewer thieves."
+            ]
+        },
+
+        ch9c_complete: {
+            speaker: "harlan",
+            portrait: "harlan",
+            lines: [
+                "There — now you can haul a real load! That backpack will serve you well on the road.",
+                "When you're ready, consider a cart for even more capacity. No horse needed for a basic cart — just wood, planks, and a bit of iron."
             ]
         },
 

@@ -37943,6 +37943,44 @@
         if (!world.familyHouses) world.familyHouses = [];
         world.familyHouses.push(familyHouse);
 
+        // Create Lord Calder as a Lord of Valdren — placed in Ashford initially
+        var calderId = 'story_calder_' + Date.now();
+        var calderSR = {};
+        if (player.citizenshipKingdomId) calderSR[player.citizenshipKingdomId] = 5; // Lord rank
+        var calder = {
+            id: calderId,
+            firstName: 'Calder',
+            lastName: 'Calder',
+            fullName: 'Lord Calder',
+            sex: 'M',
+            age: 52,
+            alive: true,
+            townId: player.townId, // starts in Ashford with the player
+            kingdomId: player.citizenshipKingdomId || null,
+            occupation: 'noble',
+            wealthClass: 'upper',
+            gold: 4000,
+            relationship: {},
+            skills: { trading: 40, combat: 25 },
+            socialRank: calderSR,
+            personality: {
+                loyalty: 75, ambition: 55, frugality: 40,
+                intelligence: 80, warmth: 60, honesty: 65
+            },
+            kingLoyalty: 82,
+            perceivedKingLoyalty: 78,
+            _faction: 'loyalist',
+            isStoryNPC: true,
+            familyRole: 'lord_calder',
+            health: 100,
+            injuries: [],
+            illnesses: [],
+            houseType: 'manor'
+        };
+        if (world.people) { world.people.push(calder); }
+        if (Engine.registerPerson) { Engine.registerPerson(calder); }
+        player.storyMode.storyNPCs.lordCalderId = calderId;
+
         // Story mode players start as citizens (rank 1) in their home kingdom
         if (player.citizenshipKingdomId) {
             if (!player.socialRank) player.socialRank = {};

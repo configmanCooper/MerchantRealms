@@ -308,6 +308,30 @@ var StoryMode = (function () {
             onComplete: null
         },
 
+        // Ch 9c — Pack and Haul
+        {
+            id: 'ch9c', title: 'Pack and Haul', act: 2,
+            startDialog: 'ch9c_backpack_intro',
+            objectives: [
+                { id: 'ch9c_buy_leather', type: 'buy_item', item: 'leather', qty: 2,
+                  desc: 'Buy 2 leather',
+                  hint: 'Open Trade and search for Leather. You need 2 to craft a backpack.',
+                  done: false },
+                { id: 'ch9c_buy_cloth', type: 'buy_item', item: 'cloth', qty: 1,
+                  desc: 'Buy 1 cloth',
+                  hint: 'Open Trade and search for Cloth.',
+                  done: false },
+                { id: 'ch9c_craft_backpack', type: 'home_craft',
+                  desc: 'Craft a backpack at home',
+                  hint: 'Open Character \u2192 Housing \u2192 your home \u2192 Home Crafting section. Select Backpack and click Craft.',
+                  done: false, after: ['ch9c_buy_leather', 'ch9c_buy_cloth'] }
+            ],
+            endDialog: 'ch9c_complete',
+            unlockButtons: [],
+            onStart: '_onChapter9cStart',
+            onComplete: null
+        },
+
         // Ch 10
         {
             id: 'ch10', title: 'Bread and Butter', act: 2,
@@ -420,7 +444,7 @@ var StoryMode = (function () {
             ],
             endDialog: 'ch12b_complete',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter12bStart',
             onComplete: null
         },
 
@@ -450,7 +474,7 @@ var StoryMode = (function () {
             endDialog: 'ch14_complete',
             unlockButtons: [],
             onStart: '_onChapter14Start',
-            onComplete: null
+            onComplete: '_onChapter14Complete'
         },
 
         // Ch 14b — The Merchant Fleet
@@ -476,12 +500,13 @@ var StoryMode = (function () {
             startDialog: 'ch15_calder_wealth',
             objectives: [
                 { id: 'ch15_guildmaster', type: 'reach_rank', rank: 3,       desc: 'Attain Guildmaster standing (Character → Character, scroll down to Petition)',   done: false },
-                { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false }
+                { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false },
+                { id: 'ch15_supply_chain', type: 'custom', fn: '_checkSupplyChain', desc: 'Build a complete supply chain (3 buildings)', done: false }
             ],
             endDialog: 'ch15_complete',
             unlockButtons: [],
-            onStart: null,
-            onComplete: null
+            onStart: '_onChapter15Start',
+            onComplete: '_onChapter15Complete'
         },
 
         // Ch 16
@@ -502,7 +527,7 @@ var StoryMode = (function () {
         // Ch 17 — BRANCHING
         {
             id: 'ch17', title: 'The War Effort', act: 3,
-            startDialog: 'ch17_choice',
+            startDialog: 'ch17_king_war_council',
             objectives: [],   // populated dynamically based on path
             endDialog: null,   // branch-specific: ch17a_complete or ch17b_complete
             unlockButtons: [], // path B adds 'world' (outposts)
@@ -666,6 +691,7 @@ var StoryMode = (function () {
         var _followUpDialogs = {
             'ch12_attend_festival': 'ch12_lord_calder_meet',
             'ch14_reach_burgher':   'ch14_calder_capital',
+            'ch15_guildmaster':     'ch15_king_supply_chain',
             'ch16_reach_noble':     'ch16_feast_announcement',
             'ch16_attend_feast':    'ch16_feast_success',
             'ch18_arrive_ashford':  'ch18_father_freed'
@@ -1184,7 +1210,7 @@ var StoryMode = (function () {
         }
 
         // Special action types that re-evaluate custom objectives
-        if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building' || actionType === 'attend_festival') {
+        if (actionType === 'buy_land' || actionType === 'rest' || actionType === 'own_building' || actionType === 'attend_festival' || actionType === 'build_building') {
             if (actionType === 'attend_festival') {
                 _storyState.flags.festivalAttended = true;
             }
@@ -1590,6 +1616,21 @@ var StoryMode = (function () {
         }
     };
 
+    // ── Ch 9c: Pack and Haul — seed leather & cloth in player's town market ──
+    _hooks._onChapter9cStart = function () {
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        if (!w || !w.towns) return;
+        var playerTownId = (typeof Player !== 'undefined') ? Player.townId : null;
+        if (playerTownId) {
+            var pTown = w.towns.find(function(t) { return t.id === playerTownId; });
+            if (pTown && pTown.market && pTown.market.supply) {
+                pTown.market.supply.leather = Math.max(pTown.market.supply.leather || 0, 5);
+                pTown.market.supply.cloth = Math.max(pTown.market.supply.cloth || 0, 5);
+            }
+        }
+        _log('Leather and cloth are available in the local market.');
+    };
+
     // ── Ch 10: Bread and Butter — seed bricks in Ashford & Ferrowdale ──
     _hooks._onChapter10Start = function () {
         var w = Engine.getWorld ? Engine.getWorld() : null;
@@ -1806,7 +1847,8 @@ var StoryMode = (function () {
 
     // Keep festival alive in Ashford while ch12 is active and not yet attended
     function _ensureCh12Festival() {
-        if (_storyState.chapter !== 12 || _storyState.flags.festivalAttended) return;
+        var _ch12Def = _currentChapterDef();
+        if (!_ch12Def || _ch12Def.id !== 'ch12' || _storyState.flags.festivalAttended) return;
         if (typeof Engine === 'undefined' || !Engine.getWorld) return;
         var w = Engine.getWorld();
         if (!w) return;
@@ -1840,6 +1882,40 @@ var StoryMode = (function () {
         }
     }
 
+    /** Keep Lord Calder in the correct town: Ashford before ch13, capital after. */
+    function _ensureCalderLocation() {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return;
+        var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
+        var calderId = sNPCs ? sNPCs.lordCalderId : null;
+        if (!calderId) return;
+        var calder = Engine.findPerson(calderId);
+        if (!calder || !calder.alive) return;
+        var w = Engine.getWorld();
+        if (!w || !w.kingdoms) return;
+
+        var ch = _currentChapterDef();
+        if (!ch) return;
+
+        // Before ch13: Calder stays in Ashford
+        var ashfordPassed = false;
+        for (var ci = 0; ci < CHAPTERS.length; ci++) {
+            if (CHAPTERS[ci].id === 'ch13') { ashfordPassed = (_storyState.chapter >= ci); break; }
+        }
+
+        if (!ashfordPassed) {
+            var ashford = w.towns.find(function(t) { return t.name === 'Ashford'; });
+            if (ashford && calder.townId !== ashford.id) {
+                calder.townId = ashford.id;
+            }
+        } else {
+            // After ch13: Calder stays at Valdren capital
+            var valdren = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+            if (valdren && valdren.capitalTownId && calder.townId !== valdren.capitalTownId) {
+                calder.townId = valdren.capitalTownId;
+            }
+        }
+    }
+
     _hooks._checkFestivalAttended = function () {
         return !!_storyState.flags.festivalAttended;
     };
@@ -1848,13 +1924,63 @@ var StoryMode = (function () {
         return _storyState.flags.metLordCalder;
     };
 
-    // ── Ch 13: Fall of Ashford ──
+    // ── Ch 12b: Bonds of the Realm — give player relationship 20 with Lord Calder ──
+    // (handled via onStart since ch12b has no onComplete originally)
+    function _ensureCalderRelationship(minLevel) {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return;
+        var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
+        var calderId = sNPCs ? sNPCs.lordCalderId : null;
+        if (!calderId) return;
+        // Player relationships
+        if (!Player.relationships) Player.relationships = {};
+        var current = Player.relationships[calderId];
+        var curLevel = (current && typeof current === 'object') ? (current.level || 0) : (typeof current === 'number' ? current : 0);
+        if (curLevel < minLevel) {
+            Player.relationships[calderId] = { level: minLevel, type: 'acquaintance' };
+        }
+        // NPC side
+        var calder = Engine.findPerson(calderId);
+        if (calder) {
+            if (!calder.relationship) calder.relationship = {};
+            var npcCur = calder.relationship['player'];
+            var npcLevel = (typeof npcCur === 'object') ? (npcCur.level || 0) : (typeof npcCur === 'number' ? npcCur : 0);
+            if (npcLevel < minLevel) {
+                calder.relationship['player'] = { level: minLevel, type: 'acquaintance' };
+            }
+            // Also set introduction flag so player can talk to him
+            if (!calder._introduced) calder._introduced = {};
+            calder._introduced['player'] = true;
+        }
+        // Player introduced flag
+        if (!Player._introduced) Player._introduced = {};
+        Player._introduced[calderId] = true;
+    }
+
+    // ── Ch 13: Fall of Ashford — move Lord Calder to capital ──
     _hooks._onChapter13Start = function () {
         _storyState.flags.ashfordCaptured   = true;
         _storyState.flags.edmundImprisoned  = true;
         if (typeof Engine !== 'undefined') {
             if (Engine.captureTown)     { Engine.captureTown('Ashford', 'Korvath'); }
             if (Engine.setNPCCondition) { Engine.setNPCCondition('Edmund', 'imprisoned', true); }
+        }
+        // Move Lord Calder from Ashford to Valdren capital
+        if (typeof Engine !== 'undefined' && typeof Player !== 'undefined') {
+            var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
+            var calderId = sNPCs ? sNPCs.lordCalderId : null;
+            if (calderId) {
+                var calder = Engine.findPerson(calderId);
+                if (calder) {
+                    var w = Engine.getWorld();
+                    if (w && w.kingdoms) {
+                        var valdren = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+                        if (valdren && valdren.capitalTownId) {
+                            calder.townId = valdren.capitalTownId;
+                            _log('Lord Calder has fled to the capital.');
+                        }
+                    }
+                }
+            }
         }
         _log('Korvath has invaded Ashford. Father has been imprisoned.');
     };
@@ -1887,6 +2013,56 @@ var StoryMode = (function () {
 
     _hooks._checkMetCalderCapital = function () {
         return !!_storyState.flags.metLordCalderCapital;
+    };
+
+    // ── Ch 12b: Bonds of the Realm ──
+    _hooks._onChapter12bStart = function () {
+        _ensureCalderRelationship(20);
+        _log('You have been introduced to Lord Calder. Relationship: 20.');
+    };
+
+    // ── Ch 14 complete — raise Lord Calder relationship to 40 ──
+    _hooks._onChapter14Complete = function () {
+        _ensureCalderRelationship(40);
+        _log('Lord Calder respects your growing influence. Relationship: 40.');
+    };
+
+    // ── Ch 15: Master of the Guild ──
+    _hooks._onChapter15Start = function () {
+        // Show King Aldric dialog after the main start dialog
+        // The supply chain dialog is triggered as a follow-up when guildmaster objective completes
+    };
+
+    _hooks._onChapter15Complete = function () {
+        _ensureCalderRelationship(80);
+        _log('Lord Calder considers you a trusted ally. Relationship: 80.');
+    };
+
+    // Supply chain checker: player must own 3 buildings forming a complete chain
+    var SUPPLY_CHAINS = {
+        bread:   ['wheat_farm', 'flour_mill', 'bakery'],
+        cloth:   ['sheep_farm', 'weaver', 'tailor'],
+        armor:   ['cattle_ranch', 'tanner', 'armorer']
+    };
+
+    _hooks._checkSupplyChain = function () {
+        if (typeof Player === 'undefined') return false;
+        var buildings = Player.buildings || [];
+        var types = {};
+        for (var bi = 0; bi < buildings.length; bi++) {
+            types[buildings[bi].type] = true;
+            if (buildings[bi].subtype) types[buildings[bi].subtype] = true;
+        }
+        // Check if player owns all 3 buildings of any chain
+        for (var chain in SUPPLY_CHAINS) {
+            var needed = SUPPLY_CHAINS[chain];
+            var hasAll = true;
+            for (var ni = 0; ni < needed.length; ni++) {
+                if (!types[needed[ni]]) { hasAll = false; break; }
+            }
+            if (hasAll) return true;
+        }
+        return false;
     };
 
     // ── Ch 16 ──
@@ -2485,6 +2661,9 @@ var StoryMode = (function () {
 
         // Ch12: keep festival alive in Ashford until player attends
         _ensureCh12Festival();
+
+        // Ensure Lord Calder is in the right location
+        _ensureCalderLocation();
 
         var ch = _currentChapterDef();
         if (!ch) { return; }

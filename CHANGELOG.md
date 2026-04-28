@@ -4,6 +4,24 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.86.0] - Story Mode Expansion: Supply Chains, Lord Calder & Ch9c
+
+### Added — Story Mode
+- **Chapter 9c "Pack and Haul"**: New chapter teaching backpack crafting and explaining carts/wagons
+  - Ensures leather and cloth are available in the player's local market
+- **Chapter 15 supply chain objective**: Player must build a complete 3-building supply chain
+  - Three options: Bread (Wheat Farm → Flour Mill → Bakery), Cloth (Sheep Farm → Weaver → Tailor), or Armor (Cattle Ranch → Tanner → Armorer)
+- **Lord Calder as actual NPC**: Created as a Lord (rank 5) of Valdren at worldgen
+  - Located in Ashford until Chapter 13, then moves to Valdren capital
+  - Protected from death (`isStoryNPC`) during active story mode
+  - Relationship milestones: 20 at Ch12b start, 40 at Ch14 completion, 80 at Ch15 completion
+- **King Aldric dialog**: New voiced dialog in Ch15 (supply chain challenge) and Ch17 (war council)
+  - Voice changed from `bm_fable` to `bm_daniel` for more regal tone
+  - Ch16 and Ch19 already had King Aldric dialog
+
+### Fixed
+- Chapter 12 festival check used hardcoded array index; now uses chapter ID lookup (won't break if chapters are reordered)
+
 ## [0.85.0] - Title Screen Visual Overhaul & Story Dialog Polish
 
 ### Added — Title Screen Art & Atmosphere
