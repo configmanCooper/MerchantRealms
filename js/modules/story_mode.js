@@ -2494,6 +2494,32 @@ var StoryMode = (function () {
             }
         }
 
+        // Promote the player to Lord (rank 5) if not already at that rank or higher
+        if (typeof Player !== 'undefined' && typeof Engine !== 'undefined') {
+            var _w19 = Engine.getWorld ? Engine.getWorld() : null;
+            var _valK = _w19 && _w19.kingdoms ? _w19.kingdoms.find(function(k) { return k.name === 'Valdren'; }) : null;
+            if (_valK) {
+                var _kId = _valK.id;
+                if (!Player.socialRank) Player.socialRank = {};
+                var _curRank = Player.socialRank[_kId] || 0;
+                if (_curRank < 5) {
+                    Player.socialRank[_kId] = 5;
+                    if (!Player.rankSince) Player.rankSince = {};
+                    Player.rankSince[_kId] = Engine.getDay ? Engine.getDay() : 0;
+                    if (!Player.isNoble) {
+                        Player.isNoble = true;
+                        Player.occupation = 'noble';
+                    }
+                    _log('King Aldric has bestowed the title of Lord upon you for your service to the realm.');
+                    _toast('👑 You have been promoted to Lord!');
+                    if (Engine.logEvent) Engine.logEvent('👑 ' + (Player.fullName || 'The player') + ' has been granted the title of Lord by King Aldric!');
+                    if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                        StoryMode.onPlayerAction('reach_rank', { rank: 5, kingdomId: _kId });
+                    }
+                }
+            }
+        }
+
         // Remove all story protections
         _storyState.flags.suppressEncounters = false;
         _storyState.flags.suppressDisease    = false;
