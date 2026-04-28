@@ -91,6 +91,26 @@ body {
         linear-gradient(180deg, #0d0a06 0%, #1a140c 50%, #0d0a06 100%);
 }
 
+/* Living parchment background for title screen */
+#titleScreen {
+    background:
+        radial-gradient(ellipse at center, rgba(42, 31, 20, 0.5) 0%, rgba(10, 8, 4, 0.92) 65%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'%3E%3Cdefs%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.04' numOctaves='5' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.35 0 0 0 0 0.28 0 0 0 0 0.15 0 0 0 0.15 0'/%3E%3C/filter%3E%3C/defs%3E%3Crect width='600' height='600' filter='url(%23p)'/%3E%3C!-- Faint compass rose --%3E%3Cg transform='translate(480,120)' opacity='0.06' stroke='%23c4a35a' fill='none' stroke-width='1'%3E%3Ccircle r='35'/%3E%3Ccircle r='28'/%3E%3Cline x1='0' y1='-40' x2='0' y2='40'/%3E%3Cline x1='-40' y1='0' x2='40' y2='0'/%3E%3Cpolygon points='0,-38 4,-8 -4,-8' fill='%23c4a35a'/%3E%3Ctext x='-3' y='-42' font-size='8' fill='%23c4a35a' font-family='Cinzel,serif'%3EN%3C/text%3E%3C/g%3E%3C!-- Faint trade routes --%3E%3Cg opacity='0.04' stroke='%23c4a35a' fill='none' stroke-width='0.8' stroke-dasharray='4,6'%3E%3Cpath d='M80,400 Q200,350 320,380 Q440,410 550,350'/%3E%3Cpath d='M120,200 Q250,250 350,180 Q450,130 520,200'/%3E%3Cpath d='M60,500 Q180,480 280,520 Q400,540 530,490'/%3E%3C/g%3E%3C!-- Faint river --%3E%3Cpath d='M300,0 Q280,80 310,150 Q340,220 290,300 Q260,380 300,450 Q330,520 280,600' opacity='0.035' stroke='%234a6a8a' fill='none' stroke-width='2'/%3E%3C!-- Faint town dots --%3E%3Cg opacity='0.05' fill='%23c4a35a'%3E%3Ccircle cx='200' cy='340' r='3'/%3E%3Ccircle cx='400' cy='280' r='3'/%3E%3Ccircle cx='320' cy='180' r='2.5'/%3E%3Ccircle cx='150' cy='480' r='2'/%3E%3Ccircle cx='460' cy='420' r='2.5'/%3E%3C/g%3E%3C/svg%3E"),
+        linear-gradient(180deg, #1a140c 0%, #1a140c 100%);
+    background-size: cover, 600px 600px, cover;
+}
+
+/* Candlelight glow from left side */
+#titleScreen::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at 15% 40%, rgba(210, 160, 60, 0.08) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+    animation: candleFlicker 4s ease-in-out infinite alternate;
+}
+
 .overlay.hidden {
     display: none !important;
     pointer-events: none;
@@ -121,6 +141,7 @@ body {
         inset 0 0 40px rgba(196, 163, 90, 0.04),
         inset 0 0 80px rgba(139, 109, 56, 0.03);
     position: relative;
+    z-index: 1;
 }
 
 /* Gold filigree corner flourishes */
@@ -177,6 +198,7 @@ body {
     text-shadow: 0 2px 8px rgba(196, 163, 90, 0.3), 0 0 40px rgba(196, 163, 90, 0.1);
     letter-spacing: 3px;
     margin-bottom: 12px;
+    animation: titleShimmer 5s ease-in-out infinite;
 }
 
 .game-subtitle {
@@ -279,6 +301,22 @@ body {
 @keyframes nobilityGlow {
     0%, 100% { box-shadow: 0 0 8px rgba(201, 168, 76, 0.4); border-color: rgba(201, 168, 76, 0.6); }
     50% { box-shadow: 0 0 18px rgba(201, 168, 76, 0.9), 0 0 36px rgba(201, 168, 76, 0.3); border-color: rgba(201, 168, 76, 1.0); }
+}
+
+/* Candlelight flicker animation */
+@keyframes candleFlicker {
+    0%   { opacity: 0.7; }
+    25%  { opacity: 1; }
+    50%  { opacity: 0.85; }
+    75%  { opacity: 1; }
+    100% { opacity: 0.9; }
+}
+
+/* Gold title shimmer */
+@keyframes titleShimmer {
+    0%   { text-shadow: 0 2px 8px rgba(196, 163, 90, 0.3), 0 0 40px rgba(196, 163, 90, 0.1); }
+    50%  { text-shadow: 0 2px 12px rgba(210, 175, 70, 0.5), 0 0 50px rgba(210, 175, 70, 0.2), 0 0 80px rgba(196, 163, 90, 0.08); }
+    100% { text-shadow: 0 2px 8px rgba(196, 163, 90, 0.3), 0 0 40px rgba(196, 163, 90, 0.1); }
 }
 
 .btn-nobility-glow {
