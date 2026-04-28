@@ -102,6 +102,11 @@ window.Renderer = (function () {
         tileHashCacheSize++;
         return h;
     }
+    // Secondary hash for independent variation
+    function tileHash2(x, y) {
+        var key2 = x * 48271 + y * 16807;
+        return (((key2 * 2246822519) >>> 0) / 4294967296);
+    }
 
     // ── Color helpers ──
     function hexToRgb(hex) {
@@ -784,33 +789,156 @@ window.Renderer = (function () {
                     var tileId = terrain[r * terrainWidth + c];
                     var baseColor = getTerrainColor(tileId);
                     var h = tileHash(c, r);
+                    var h2 = tileHash2(c, r);
                     var shift = Math.floor((h - 0.5) * 20);
                     var x = (c - cSC) * ts;
                     var y = (r - cSR) * ts;
 
-                    offscreenCtx.fillStyle = rgbShift(baseColor, shift);
+                    // #1: Multi-shade terrain color variation
+                    var colorShift2 = Math.floor((h2 - 0.5) * 14);
+                    offscreenCtx.fillStyle = rgbShift(baseColor, shift + colorShift2);
                     offscreenCtx.fillRect(x, y, ts, ts);
+
+                    // #2: Soft edge blending — check neighbors for different terrain
+                    if (!lowZoom) {
+                        var neighbors = [
+                            { dr: -1, dc: 0, gy: 0,       gx: 0, gw: ts, gh: ts * 0.35 }, // top
+                            { dr: 1,  dc: 0, gy: ts*0.65, gx: 0, gw: ts, gh: ts * 0.35 }, // bottom
+                            { dr: 0,  dc: -1, gy: 0, gx: 0,       gw: ts * 0.35, gh: ts }, // left
+                            { dr: 0,  dc: 1,  gy: 0, gx: ts*0.65, gw: ts * 0.35, gh: ts }, // right
+                        ];
+                        for (var ni = 0; ni < 4; ni++) {
+                            var nb = neighbors[ni];
+                            var nr = r + nb.dr, nc = c + nb.dc;
+                            if (nr >= 0 && nr < terrainHeight && nc >= 0 && nc < terrainWidth) {
+                                var nTile = terrain[nr * terrainWidth + nc];
+                                if (nTile !== tileId) {
+                                    var nColor = getTerrainColor(nTile);
+                                    var nRgb = hexToRgb(nColor);
+                                    var grad;
+                                    if (nb.dr !== 0) {
+                                        grad = offscreenCtx.createLinearGradient(x, y + (nb.dr < 0 ? 0 : ts), x, y + (nb.dr < 0 ? ts * 0.35 : ts * 0.65));
+                                    } else {
+                                        grad = offscreenCtx.createLinearGradient(x + (nb.dc < 0 ? 0 : ts), y, x + (nb.dc < 0 ? ts * 0.35 : ts * 0.65), y);
+                                    }
+                                    grad.addColorStop(0, 'rgba(' + nRgb.r + ',' + nRgb.g + ',' + nRgb.b + ',0.35)');
+                                    grad.addColorStop(1, 'rgba(' + nRgb.r + ',' + nRgb.g + ',' + nRgb.b + ',0)');
+                                    offscreenCtx.fillStyle = grad;
+                                    offscreenCtx.fillRect(x + nb.gx, y + nb.gy, nb.gw, nb.gh);
+                                }
+                            }
+                        }
+                    }
 
                     // Skip decorations at very low zoom — barely visible
                     if (lowZoom) continue;
 
-                    if (tileId === 1) { // Forest
-                        var treeCount = 1 + Math.floor(h * 2);
-                        offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
+                    if (tileId === 0) { // #8: Grass detail sprites
+                        if (camera.zoom > 1.0) {
+                            var grassCount = 2 + Math.floor(h * 3);
+                            for (var gi = 0; gi < grassCount; gi++) {
+                                var gx2 = x + (h * 41 + gi * 7.3) % ts;
+                                var gy2 = y + (h2 * 31 + gi * 5.1) % ts;
+                                var gh3 = 2 + h2 * 2;
+                                offscreenCtx.strokeStyle = rgbShift(_isWinterSeason ? '#6a8a68' : '#3a6a2f', shift + Math.floor(h2 * 10));
+                                offscreenCtx.lineWidth = 0.6;
+                                offscreenCtx.beginPath();
+                                offscreenCtx.moveTo(gx2, gy2);
+                                offscreenCtx.lineTo(gx2 + (h - 0.5) * 2, gy2 - gh3);
+                                offscreenCtx.stroke();
+                            }
+                            // Occasional flower dot
+                            if (h > 0.75 && !_isWinterSeason) {
+                                var flowerColors = ['#e8d44d', '#d46a6a', '#7a8de8', '#e8a44d'];
+                                offscreenCtx.fillStyle = flowerColors[Math.floor(h2 * 4)];
+                                offscreenCtx.beginPath();
+                                offscreenCtx.arc(x + h * ts * 0.8, y + h2 * ts * 0.8, 1.2, 0, Math.PI * 2);
+                                offscreenCtx.fill();
+                            }
+                        }
+                    } else if (tileId === 1) { // #5: Forest with tree variety
+                        var treeCount = 2 + Math.floor(h * 3);
+                        // Sparser at forest edges — check if any neighbor is non-forest
+                        var isEdge = false;
+                        if (r > 0 && terrain[(r-1)*terrainWidth+c] !== 1) isEdge = true;
+                        if (!isEdge && r < terrainHeight-1 && terrain[(r+1)*terrainWidth+c] !== 1) isEdge = true;
+                        if (!isEdge && c > 0 && terrain[r*terrainWidth+c-1] !== 1) isEdge = true;
+                        if (!isEdge && c < terrainWidth-1 && terrain[r*terrainWidth+c+1] !== 1) isEdge = true;
+                        if (isEdge) treeCount = Math.max(1, treeCount - 1);
+
                         for (var t = 0; t < treeCount; t++) {
+                            var tHash = tileHash(c * 13 + t, r * 7);
                             var tx = x + (h * 37 + t * 5.7) % ts;
                             var ty = y + (h * 23 + t * 7.3) % ts;
-                            var sz = 3 + h * 3;
-                            offscreenCtx.beginPath();
-                            offscreenCtx.moveTo(tx, ty - sz);
-                            offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
-                            offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
-                            offscreenCtx.closePath();
-                            offscreenCtx.fill();
+                            var sz = 3 + tHash * 4;
+                            var treeType = Math.floor(tHash * 3); // 0=pine, 1=round, 2=bushy
+
+                            if (treeType === 0) {
+                                // Pine tree (triangle)
+                                offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift + Math.floor(tHash * 12));
+                                offscreenCtx.beginPath();
+                                offscreenCtx.moveTo(tx, ty - sz);
+                                offscreenCtx.lineTo(tx - sz * 0.5, ty + sz * 0.5);
+                                offscreenCtx.lineTo(tx + sz * 0.5, ty + sz * 0.5);
+                                offscreenCtx.closePath();
+                                offscreenCtx.fill();
+                                // Trunk
+                                offscreenCtx.fillStyle = '#4a3520';
+                                offscreenCtx.fillRect(tx - 0.5, ty + sz * 0.3, 1, sz * 0.3);
+                            } else if (treeType === 1) {
+                                // Round canopy tree
+                                offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#4a6a50' : '#2a5530', shift + Math.floor(tHash * 10));
+                                offscreenCtx.beginPath();
+                                offscreenCtx.arc(tx, ty - sz * 0.3, sz * 0.55, 0, Math.PI * 2);
+                                offscreenCtx.fill();
+                                // Trunk
+                                offscreenCtx.fillStyle = '#5a4530';
+                                offscreenCtx.fillRect(tx - 0.5, ty - sz * 0.1, 1, sz * 0.5);
+                            } else {
+                                // Bushy/wide tree
+                                offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a6048' : '#1a4a25', shift + Math.floor(tHash * 8));
+                                offscreenCtx.beginPath();
+                                offscreenCtx.ellipse(tx, ty - sz * 0.2, sz * 0.6, sz * 0.4, 0, 0, Math.PI * 2);
+                                offscreenCtx.fill();
+                            }
                         }
-                    } else if (tileId === 2) { // Water — static overlay (no wave anim in cache)
-                        offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
-                        offscreenCtx.fillRect(x, y, ts, ts);
+                    } else if (tileId === 2) { // #3: Water with depth shading
+                        // Check how deep (how many water neighbors)
+                        var waterNeighbors = 0;
+                        for (var wd = -1; wd <= 1; wd++) {
+                            for (var we = -1; we <= 1; we++) {
+                                if (wd === 0 && we === 0) continue;
+                                var wnr = r + wd, wnc = c + we;
+                                if (wnr >= 0 && wnr < terrainHeight && wnc >= 0 && wnc < terrainWidth) {
+                                    if (terrain[wnr * terrainWidth + wnc] === 2) waterNeighbors++;
+                                }
+                            }
+                        }
+                        var isCoastal = waterNeighbors < 7;
+                        if (isCoastal) {
+                            // Lighter shallow water
+                            offscreenCtx.fillStyle = 'rgba(100,180,220,0.12)';
+                            offscreenCtx.fillRect(x, y, ts, ts);
+                        } else {
+                            // Darker deep water
+                            offscreenCtx.fillStyle = 'rgba(10,30,60,0.12)';
+                            offscreenCtx.fillRect(x, y, ts, ts);
+                        }
+                        // Subtle wave marks
+                        if (camera.zoom > 0.8) {
+                            offscreenCtx.strokeStyle = 'rgba(180,220,255,0.15)';
+                            offscreenCtx.lineWidth = 0.5;
+                            var waveY1 = y + ts * (0.3 + h * 0.2);
+                            var waveY2 = y + ts * (0.6 + h2 * 0.2);
+                            offscreenCtx.beginPath();
+                            offscreenCtx.moveTo(x + ts * 0.1, waveY1);
+                            offscreenCtx.quadraticCurveTo(x + ts * 0.5, waveY1 - 1.5, x + ts * 0.9, waveY1);
+                            offscreenCtx.stroke();
+                            offscreenCtx.beginPath();
+                            offscreenCtx.moveTo(x + ts * 0.15, waveY2);
+                            offscreenCtx.quadraticCurveTo(x + ts * 0.55, waveY2 - 1, x + ts * 0.85, waveY2);
+                            offscreenCtx.stroke();
+                        }
                     } else if (tileId === 3) { // Mountain
                         offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
                         var mx = x + ts * 0.5;
@@ -818,6 +946,14 @@ window.Renderer = (function () {
                         offscreenCtx.beginPath();
                         offscreenCtx.moveTo(mx, my);
                         offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
+                        offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
+                        offscreenCtx.closePath();
+                        offscreenCtx.fill();
+                        // Light-side highlight
+                        offscreenCtx.fillStyle = 'rgba(200,190,170,0.15)';
+                        offscreenCtx.beginPath();
+                        offscreenCtx.moveTo(mx, my);
+                        offscreenCtx.lineTo(mx, y + ts * 0.9);
                         offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
                         offscreenCtx.closePath();
                         offscreenCtx.fill();
@@ -830,7 +966,7 @@ window.Renderer = (function () {
                             offscreenCtx.closePath();
                             offscreenCtx.fill();
                         }
-                    } else if (tileId === 4) { // Hills
+                    } else if (tileId === 4) { // Hills with shading
                         offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
                         offscreenCtx.beginPath();
                         offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
@@ -838,6 +974,21 @@ window.Renderer = (function () {
                         offscreenCtx.beginPath();
                         offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
                         offscreenCtx.fill();
+                        // Light-side highlight on hills
+                        offscreenCtx.fillStyle = 'rgba(200,220,180,0.12)';
+                        offscreenCtx.beginPath();
+                        offscreenCtx.arc(x + ts * 0.72, y + ts * 0.54, ts * 0.15, Math.PI, 0);
+                        offscreenCtx.fill();
+                    } else if (tileId === 5) { // Sand/desert detail
+                        if (camera.zoom > 0.9) {
+                            offscreenCtx.strokeStyle = 'rgba(160,140,90,0.2)';
+                            offscreenCtx.lineWidth = 0.4;
+                            var duneY = y + ts * (0.4 + h * 0.3);
+                            offscreenCtx.beginPath();
+                            offscreenCtx.moveTo(x + ts * 0.05, duneY);
+                            offscreenCtx.quadraticCurveTo(x + ts * 0.5, duneY - 2, x + ts * 0.95, duneY + 1);
+                            offscreenCtx.stroke();
+                        }
                     }
                 }
             }
@@ -1180,16 +1331,61 @@ window.Renderer = (function () {
                 if (_curBridge.length >= 2) _bridgeSegs.push(_curBridge);
                 if (_curDestroyed.length >= 2) _destroyedSegs.push(_curDestroyed);
 
-                // Draw intact bridges (brown)
+                // Draw intact bridges (brown) with shadow and rails
+                // #9: Bridge shadow underneath
+                ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+                ctx.lineWidth = width + 5;
+                ctx.setLineDash([]);
+                for (var _ib = 0; _ib < _bridgeSegs.length; _ib++) {
+                    var _pts = _bridgeSegs[_ib];
+                    ctx.beginPath();
+                    ctx.moveTo(_pts[0].x + 1, _pts[0].y + 2);
+                    for (var _ip = 1; _ip < _pts.length; _ip++) ctx.lineTo(_pts[_ip].x + 1, _pts[_ip].y + 2);
+                    ctx.stroke();
+                }
+                // Main bridge body
                 ctx.strokeStyle = '#8B6914';
                 ctx.lineWidth = width + 3;
-                ctx.setLineDash([]);
                 for (var _ib = 0; _ib < _bridgeSegs.length; _ib++) {
                     var _pts = _bridgeSegs[_ib];
                     ctx.beginPath();
                     ctx.moveTo(_pts[0].x, _pts[0].y);
                     for (var _ip = 1; _ip < _pts.length; _ip++) ctx.lineTo(_pts[_ip].x, _pts[_ip].y);
                     ctx.stroke();
+                }
+                // #9: Rail posts on bridge sides
+                if (camera.zoom > 0.7) {
+                    ctx.fillStyle = '#5a4010';
+                    for (var _ib = 0; _ib < _bridgeSegs.length; _ib++) {
+                        var _pts = _bridgeSegs[_ib];
+                        var _bTotalLen = 0;
+                        for (var _bj = 1; _bj < _pts.length; _bj++) {
+                            _bTotalLen += Math.hypot(_pts[_bj].x - _pts[_bj-1].x, _pts[_bj].y - _pts[_bj-1].y);
+                        }
+                        if (_bTotalLen <= 0) continue;
+                        var _postSpacing = Math.max(8, 12 / camera.zoom);
+                        var _nPosts = Math.max(2, Math.floor(_bTotalLen / _postSpacing));
+                        for (var _pp = 0; _pp <= _nPosts; _pp++) {
+                            var _pTarget = (_pp / _nPosts) * _bTotalLen;
+                            var _pWalked = 0;
+                            for (var _pk = 1; _pk < _pts.length; _pk++) {
+                                var _pdx = _pts[_pk].x - _pts[_pk-1].x;
+                                var _pdy = _pts[_pk].y - _pts[_pk-1].y;
+                                var _pLen = Math.hypot(_pdx, _pdy);
+                                if (_pWalked + _pLen >= _pTarget || _pk === _pts.length - 1) {
+                                    var _pf = _pLen > 0 ? (_pTarget - _pWalked) / _pLen : 0;
+                                    var _ppx = _pts[_pk-1].x + _pdx * _pf;
+                                    var _ppy = _pts[_pk-1].y + _pdy * _pf;
+                                    var _perpX = _pLen > 0 ? -(_pdy / _pLen) * (width/2 + 2.5) : 0;
+                                    var _perpY = _pLen > 0 ? (_pdx / _pLen) * (width/2 + 2.5) : 0;
+                                    ctx.fillRect(_ppx + _perpX - 0.8, _ppy + _perpY - 0.8, 1.6, 1.6);
+                                    ctx.fillRect(_ppx - _perpX - 0.8, _ppy - _perpY - 0.8, 1.6, 1.6);
+                                    break;
+                                }
+                                _pWalked += _pLen;
+                            }
+                        }
+                    }
                 }
 
                 // Draw destroyed bridges (red dashed)
@@ -1256,7 +1452,7 @@ window.Renderer = (function () {
                     }
                 }
             } else {
-                // No bridge data — normal road rendering
+                // No bridge data — normal road rendering with texture
                 if (!safe) {
                     ctx.strokeStyle = '#8b4513';
                     ctx.setLineDash([6, 4]);
@@ -1266,9 +1462,25 @@ window.Renderer = (function () {
                     drawWaypointPath(road.waypoints);
                     ctx.setLineDash([]);
                 } else {
-                    ctx.strokeStyle = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
+                    // #4: Road texture - darker center, softer edges
+                    var roadColor = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
+                    // Wider soft edge (lighter)
+                    ctx.strokeStyle = quality >= 2 ? 'rgba(140,120,90,0.3)' : 'rgba(100,85,65,0.25)';
+                    ctx.lineWidth = width + 2;
                     ctx.setLineDash([]);
                     drawWaypointPath(road.waypoints);
+                    // Main road
+                    ctx.strokeStyle = roadColor;
+                    ctx.lineWidth = width;
+                    drawWaypointPath(road.waypoints);
+                    // Unpaved roads get dashed dirt marks
+                    if (quality < 2 && camera.zoom > 0.8) {
+                        ctx.strokeStyle = 'rgba(90,70,50,0.3)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([2, 6]);
+                        drawWaypointPath(road.waypoints);
+                        ctx.setLineDash([]);
+                    }
                 }
             }
 
@@ -1702,6 +1914,75 @@ window.Renderer = (function () {
                     ctx.arc(cx, cy, baseSize + 14, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.setLineDash([]);
+                }
+
+                // #7: Settlement detail rings — farmland, cleared ground, walls
+                if (cat === 'village') {
+                    // Farmland patches around village
+                    var farmRing = baseSize + 10;
+                    for (var fi = 0; fi < 4; fi++) {
+                        var fAngle = (fi / 4) * Math.PI * 2 + tileHash(town.x * 3 + fi, town.y * 5) * 1.2;
+                        var fDist = farmRing * (0.6 + tileHash(fi, town.x * 2) * 0.4);
+                        var ffx = cx + Math.cos(fAngle) * fDist;
+                        var ffy = cy + Math.sin(fAngle) * fDist;
+                        ctx.fillStyle = 'rgba(90,120,50,0.15)';
+                        ctx.fillRect(ffx - 5, ffy - 4, 10, 8);
+                        // Furrow lines
+                        ctx.strokeStyle = 'rgba(70,100,40,0.12)';
+                        ctx.lineWidth = 0.4;
+                        for (var fl = 0; fl < 3; fl++) {
+                            ctx.beginPath();
+                            ctx.moveTo(ffx - 4, ffy - 3 + fl * 3);
+                            ctx.lineTo(ffx + 4, ffy - 3 + fl * 3);
+                            ctx.stroke();
+                        }
+                    }
+                } else if (cat === 'town') {
+                    // Cleared ground / dirt ring
+                    ctx.fillStyle = 'rgba(140,120,80,0.12)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Low wooden fence
+                    ctx.strokeStyle = 'rgba(100,80,50,0.25)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([3, 3]);
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 4, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                } else if (cat === 'city') {
+                    // City wall outline
+                    ctx.strokeStyle = 'rgba(100,90,70,0.4)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 4, 0, Math.PI * 2);
+                    ctx.stroke();
+                    // Cleared zone outside wall
+                    ctx.fillStyle = 'rgba(140,130,100,0.08)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 8, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (cat === 'capital_city') {
+                    // Outer wall (double)
+                    ctx.strokeStyle = 'rgba(90,80,60,0.35)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 6, 0, Math.PI * 2);
+                    ctx.stroke();
+                    // Inner cleared zone
+                    ctx.fillStyle = 'rgba(150,140,110,0.08)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseSize + 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Wall towers (4 cardinal points)
+                    ctx.fillStyle = 'rgba(100,90,70,0.5)';
+                    for (var wt = 0; wt < 4; wt++) {
+                        var wtAngle = (wt / 4) * Math.PI * 2;
+                        var wtx = cx + Math.cos(wtAngle) * (baseSize + 6);
+                        var wty = cy + Math.sin(wtAngle) * (baseSize + 6);
+                        ctx.fillRect(wtx - 2, wty - 2, 4, 4);
+                    }
                 }
 
                 // ── VILLAGE: Scattered huts, thatched roofs, dirt feel ──
