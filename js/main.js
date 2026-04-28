@@ -291,24 +291,24 @@ window.Game = (function () {
     // Candle glow overlays positioned to match GIF candle locations
     var candlePositions = [
         // Bottom-right tall candle
-        { x: 88, y: 82, r: 255, g: 210, b: 120, a: 0.12, spread: 22 },
-        { x: 90, y: 88, r: 255, g: 200, b: 100, a: 0.09, spread: 18 },
+        { x: 88, y: 82, r: 255, g: 210, b: 120, a: 0.24, spread: 22 },
+        { x: 90, y: 88, r: 255, g: 200, b: 100, a: 0.18, spread: 18 },
         // Upper-right shelf candle
-        { x: 74, y: 28, r: 255, g: 220, b: 140, a: 0.10, spread: 16 },
-        { x: 72, y: 32, r: 255, g: 200, b: 110, a: 0.07, spread: 20 },
+        { x: 74, y: 28, r: 255, g: 220, b: 140, a: 0.20, spread: 16 },
+        { x: 72, y: 32, r: 255, g: 200, b: 110, a: 0.14, spread: 20 },
         // Left hanging lantern
-        { x: 18, y: 34, r: 255, g: 190, b: 90, a: 0.11, spread: 20 },
-        { x: 16, y: 38, r: 255, g: 210, b: 120, a: 0.08, spread: 16 },
+        { x: 18, y: 34, r: 255, g: 190, b: 90, a: 0.22, spread: 20 },
+        { x: 16, y: 38, r: 255, g: 210, b: 120, a: 0.16, spread: 16 },
         // Center-left balance/scale warm glow
-        { x: 36, y: 54, r: 255, g: 200, b: 100, a: 0.08, spread: 24 },
+        { x: 36, y: 54, r: 255, g: 200, b: 100, a: 0.16, spread: 24 },
         // Center desk candles
-        { x: 52, y: 62, r: 255, g: 215, b: 130, a: 0.09, spread: 18 },
-        { x: 58, y: 66, r: 255, g: 195, b: 95, a: 0.07, spread: 16 },
+        { x: 52, y: 62, r: 255, g: 215, b: 130, a: 0.18, spread: 18 },
+        { x: 58, y: 66, r: 255, g: 195, b: 95, a: 0.14, spread: 16 },
         // Left window cool moonlight
-        { x: 5, y: 38, r: 180, g: 200, b: 255, a: 0.06, spread: 28 },
+        { x: 5, y: 38, r: 180, g: 200, b: 255, a: 0.12, spread: 28 },
         // Extra ambient warmth bottom
-        { x: 50, y: 92, r: 255, g: 180, b: 80, a: 0.06, spread: 30 },
-        { x: 70, y: 90, r: 255, g: 200, b: 100, a: 0.05, spread: 26 }
+        { x: 50, y: 92, r: 255, g: 180, b: 80, a: 0.12, spread: 30 },
+        { x: 70, y: 90, r: 255, g: 200, b: 100, a: 0.10, spread: 26 }
     ];
     var candleAnims = ['candleA', 'candleB', 'candleC', 'candleD'];
     var candleDurations = [2.3, 3.1, 2.7, 3.7, 4.1, 2.9, 5.3, 3.3, 4.7, 6.1, 5.7, 7.1];
