@@ -4,6 +4,26 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.85.0] - Title Screen Visual Overhaul & Story Dialog Polish
+
+### Added — Title Screen Art & Atmosphere
+- Animated pixel art merchant desk GIF as title screen background (720px, 12 frames, 4.5MB)
+- JS candlelight glow overlay with 12 light sources positioned to match GIF candle locations
+- 4 unique flicker keyframe animations with prime-spaced durations for natural candlelight
+- Gold filigree border/frame with ornate CSS corner flourishes
+- Wax seal merchant guild emblem (SVG scales, coins crest) below title
+- Cinematic CSS vignette overlay (dark gradient edges)
+- Subtle parchment noise texture on title card
+- Living parchment background effects
+
+### Added — Story Dialog
+- Voice volume slider next to TTS toggle button in story mode dialog
+- Volume setting persists via localStorage
+
+### Changed — UI Styling
+- Restyled all menu buttons with medieval embossed bronze metal look
+- Tutorial button styled with dark forest green variant
+
 ## [0.84.1] - Bug Fixes & Introduction Limits
 
 ### Changed
