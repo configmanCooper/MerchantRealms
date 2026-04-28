@@ -591,7 +591,7 @@ var StoryMode = (function () {
             ],
             endDialog: 'ch19_sandbox_unlock',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter19Start',
             onComplete: '_onChapter19Complete'
         },
 
@@ -1926,6 +1926,36 @@ var StoryMode = (function () {
 
     // ── Ch 12b: Bonds of the Realm — give player relationship 20 with Lord Calder ──
     // (handled via onStart since ch12b has no onComplete originally)
+    function _ensureKingAldricRelationship(minLevel) {
+        if (typeof Player === 'undefined' || typeof Engine === 'undefined') return;
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        if (!w || !w.kingdoms) return;
+        var playerK = w.kingdoms.find(function(k) { return k.name === 'Valdren'; });
+        if (!playerK || !playerK.king) return;
+        var kingId = playerK.king;
+        var king = Engine.findPerson ? Engine.findPerson(kingId) : null;
+        if (!king) return;
+        // Player relationships
+        if (!Player.relationships) Player.relationships = {};
+        var current = Player.relationships[kingId];
+        var curLevel = (current && typeof current === 'object') ? (current.level || 0) : (typeof current === 'number' ? current : 0);
+        if (curLevel < minLevel) {
+            Player.relationships[kingId] = { level: minLevel, type: 'acquaintance' };
+        }
+        // NPC side
+        if (!king.relationship) king.relationship = {};
+        var npcCur = king.relationship['player'];
+        var npcLevel = (typeof npcCur === 'object') ? (npcCur.level || 0) : (typeof npcCur === 'number' ? npcCur : 0);
+        if (npcLevel < minLevel) {
+            king.relationship['player'] = { level: minLevel, type: 'acquaintance' };
+        }
+        // Introduction flags
+        if (!king._introduced) king._introduced = {};
+        king._introduced['player'] = true;
+        if (!Player._introduced) Player._introduced = {};
+        Player._introduced[kingId] = true;
+    }
+
     function _ensureCalderRelationship(minLevel) {
         if (typeof Player === 'undefined' || typeof Engine === 'undefined') return;
         var sNPCs = Player.storyMode ? Player.storyMode.storyNPCs : null;
@@ -2147,6 +2177,8 @@ var StoryMode = (function () {
 
     // ── Ch 17: Branching ──
     _hooks._onChapter17Start = function () {
+        // Allow the player to speak with King Aldric and set relationship to 20
+        _ensureKingAldricRelationship(20);
         // The start dialog presents a choice; once the player picks,
         // UI calls StoryMode.setWarPath('diplomatic'|'military').
         // Objectives are injected at that point.
@@ -2440,6 +2472,11 @@ var StoryMode = (function () {
     // ── Ch 19: Finale ──
     _hooks._checkCeremonyAttended = function () {
         return !!_storyState.flags.ceremonyAttended;
+    };
+
+    // ── Ch 19: A New Dawn — King Aldric relationship ──
+    _hooks._onChapter19Start = function () {
+        _ensureKingAldricRelationship(80);
     };
 
     _hooks._onChapter19Complete = function () {
