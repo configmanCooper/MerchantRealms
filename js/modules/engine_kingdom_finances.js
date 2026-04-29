@@ -1257,8 +1257,10 @@
 
             // First day of bankruptcy
             if (k._bankruptDays === 1) {
+                var _isPlayerKingdom = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
                 logEvent(`💸 The Kingdom of ${k.name} is bankrupt! Soldiers go unpaid.`, {
                     type: 'bankruptcy',
+                    kingdomId: k.id,
                     cause: k.name + '\'s treasury has been depleted. Expenses (soldier upkeep: ' + Math.round(soldierCost * 30) + 'g/month, buildings: ' + Math.round(buildingCost * 30) + 'g/month) exceed income.',
                     effects: [
                         'Soldiers go unpaid and may desert',
@@ -1266,7 +1268,7 @@
                         'Financial strategy AI will attempt recovery',
                         'Guards and military become unreliable'
                     ]
-                });
+                }, _isPlayerKingdom ? 'my_kingdom' : 'foreign_kingdoms');
             }
 
             // Soldiers desert due to non-payment

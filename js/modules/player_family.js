@@ -1663,6 +1663,7 @@
             if (rng.chance(cfg.SEVERE_ILLNESS_DEATH_DAILY)) {
                 // Death
                 spouse.alive = false;
+                spouse.causeOfDeath = 'severe illness';
                 player.spouseId = null;
                 Engine.logEvent(spouse.firstName + ' has died from a severe illness. You are devastated.');
                 return;
@@ -2919,6 +2920,7 @@
                     if (spouse.age > 50) deathChance += 0.0002 * (spouse.age - 50);
                     if (rng.chance(deathChance)) {
                         spouse.alive = false;
+                        spouse.causeOfDeath = 'illness during regency';
                         rd.spouseAlive = false;
                         rd.regencyScore = Math.max(0, rd.regencyScore - 20);
                         const threshold = getRegencyThreshold(rd.regencyScore);

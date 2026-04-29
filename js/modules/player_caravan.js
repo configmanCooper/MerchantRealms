@@ -2658,7 +2658,7 @@
                                 // Blockaded — caravan turns back
                                 caravan.status = 'blocked';
                                 caravan.active = false;
-                                Engine.logEvent('Your sea caravan was turned back by a naval blockade!', null, 'my_business');
+                                Engine.logEvent('Your sea caravan was turned back by a naval blockade!', null, 'combat');
                                 // Return goods to player
                                 for (const [resId, qty] of Object.entries(caravan.goods)) {
                                     if (qty > 0) {
@@ -2686,7 +2686,7 @@
                         totalLost += lost;
                     }
                     if (totalLost > 0) {
-                        Engine.logEvent(`A storm struck your sea caravan! Lost ${totalLost} goods to the waves.`, null, 'my_business');
+                        Engine.logEvent(`A storm struck your sea caravan! Lost ${totalLost} goods to the waves.`, null, 'travel_events');
                     }
                 }
             } else {

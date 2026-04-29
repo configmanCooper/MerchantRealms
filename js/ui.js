@@ -2110,15 +2110,15 @@ window.UI = (function () {
             let seasonTag = '';
             if (typeof Engine.getSeasonalDemandInfo === 'function') {
                 const sMod = Engine.getSeasonalDemandInfo(resId);
-                if (sMod > 1.1) seasonTag = '<span style="color:#c44e52;font-size:0.7rem;margin-left:4px;">📈 ' + Engine.getSeason() + ' demand</span>';
-                else if (sMod < 0.9) seasonTag = '<span style="color:#55a868;font-size:0.7rem;margin-left:4px;">📉 ' + Engine.getSeason() + ' surplus</span>';
+                if (sMod > 1.1) seasonTag = '<span style="color:#c44e52;font-size:0.7rem;margin-left:4px;cursor:help;" title="This good is in high demand this season, driving prices up. Selling now can be very profitable.">📈 ' + Engine.getSeason() + ' demand</span>';
+                else if (sMod < 0.9) seasonTag = '<span style="color:#55a868;font-size:0.7rem;margin-left:4px;cursor:help;" title="This good has low demand this season, making it cheaper to buy. Consider stocking up for a more profitable season.">📉 ' + Engine.getSeason() + ' surplus</span>';
             }
             // Fashion trend tag
             let trendTag = '';
             if (typeof Engine.getCurrentTrends === 'function') {
                 const trends = Engine.getCurrentTrends();
                 const match = trends.find(t => t.goodId === resId);
-                if (match) trendTag = '<span style="color:#e67e22;font-size:0.7rem;margin-left:4px;">🔥 Trending! +' + match.demandBonus + '%</span>';
+                if (match) trendTag = '<span style="color:#e67e22;font-size:0.7rem;margin-left:4px;cursor:help;" title="This good is currently fashionable, boosting demand and prices by +' + match.demandBonus + '%. Trends change over time.">🔥 Trending! +' + match.demandBonus + '%</span>';
             }
 
             var effectiveCap = carryCapacity;
@@ -9413,12 +9413,15 @@ window.UI = (function () {
             // Also highlight sub-menu buttons if the sub-menu is currently open
             _applyStorySubMenuHighlights(hints);
         } else {
-            // Not story mode: clear any story-applied highlights from tabs
-            var clearTabs = document.querySelectorAll('.tab-btn.tutorial-highlight');
-            for (var ci = 0; ci < clearTabs.length; ci++) {
-                // Only remove if not being managed by tutorial system
-                if (typeof Tutorial === 'undefined' || !Tutorial.isActive || !Tutorial.isActive()) {
-                    clearTabs[ci].classList.remove('tutorial-highlight');
+            // Not story mode: clear any story-applied opacity and highlights from tabs
+            var allClearTabs = document.querySelectorAll('.tab-btn');
+            for (var ci = 0; ci < allClearTabs.length; ci++) {
+                allClearTabs[ci].style.opacity = '';
+                // Only remove highlight if not being managed by tutorial system
+                if (allClearTabs[ci].classList.contains('tutorial-highlight')) {
+                    if (typeof Tutorial === 'undefined' || !Tutorial.isActive || !Tutorial.isActive()) {
+                        allClearTabs[ci].classList.remove('tutorial-highlight');
+                    }
                 }
             }
         }

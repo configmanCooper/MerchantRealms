@@ -694,7 +694,7 @@
         player.notoriety += 6;
         recordCorruptAction('rob_traveler', false);
         grantXP(10, 'Robbed traveler');
-        Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.', null, 'my_actions');
+        Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.', null, 'local_town');
         return { success: true, message: `✅ Robbed a traveler for ${goldStolen}g${goodsMsg}!` };
     }
 

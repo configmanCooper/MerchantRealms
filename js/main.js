@@ -383,13 +383,29 @@ window.Game = (function () {
         }
     ];
 
+    function _setGameModeContent(el, html) {
+        // Remove all children except the .title-bg background layer
+        var children = Array.prototype.slice.call(el.children);
+        for (var ci = 0; ci < children.length; ci++) {
+            if (!children[ci].classList.contains('title-bg')) el.removeChild(children[ci]);
+        }
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        while (wrapper.firstChild) el.appendChild(wrapper.firstChild);
+    }
+
     function _getGameModeScreenEl() {
         var el = document.getElementById('gameModeScreen');
         if (!el) {
             el = document.createElement('div');
             el.id = 'gameModeScreen';
             el.className = 'overlay';
-            el.style.cssText = 'display:flex;align-items:center;justify-content:center;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:radial-gradient(ellipse at center, #1a1408 0%, #0a0a04 100%);';
+            el.style.cssText = 'display:flex;align-items:center;justify-content:center;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;background:#0d0a06;overflow-y:auto;';
+            // GIF background layer
+            var bg = document.createElement('div');
+            bg.className = 'title-bg';
+            bg.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:url(images/merchant_desk_bg.gif) center center / cover no-repeat;opacity:0.40;pointer-events:none;z-index:0;';
+            el.appendChild(bg);
             document.body.appendChild(el);
         }
         return el;
@@ -454,7 +470,7 @@ window.Game = (function () {
         html += '</div>';
         html += '<button id="btnModeBackToMenu" class="btn-medieval" style="display:block;margin:20px auto 0;font-size:0.9rem;padding:6px 18px;opacity:0.85;">🏠 Back to Main Menu</button>';
         html += '</div>';
-        el.innerHTML = html;
+        _setGameModeContent(el, html);
 
         // Bind clicks
         el.querySelectorAll('[data-mode-cat]').forEach(function(btn) {
@@ -517,7 +533,7 @@ window.Game = (function () {
         html += '</div>';
         html += '<button id="btnStartBackToCats" class="btn-medieval" style="display:block;margin:20px auto 0;font-size:0.9rem;padding:6px 18px;opacity:0.85;">← Back</button>';
         html += '</div>';
-        el.innerHTML = html;
+        _setGameModeContent(el, html);
 
         // Bind clicks
         el.querySelectorAll('[data-start-pick]').forEach(function(btn) {

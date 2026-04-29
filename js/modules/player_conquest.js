@@ -79,7 +79,7 @@
                     var stolen = Math.min(player.pilgrim.followers, Math.floor(Math.random() * 2) + 1);
                     player.pilgrim.followers -= stolen;
                     rival.followers += stolen;
-                    Engine.logEvent('⚡ ' + rival.preacherName + ' of ' + rival.name + ' has converted ' + stolen + ' of your followers!', null, 'my_business');
+                    Engine.logEvent('⚡ ' + rival.preacherName + ' of ' + rival.name + ' has converted ' + stolen + ' of your followers!', null, 'my_actions');
                 }
                 
                 // Rival moves to a new town every 45 days

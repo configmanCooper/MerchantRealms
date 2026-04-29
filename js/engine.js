@@ -19590,7 +19590,7 @@
             m.includes('you have been jailed') || m.includes('conscripted') ||
             m.includes('ship sunk') || m.includes('caravan captured') ||
             m.includes('assassination') || m.includes('building seized') ||
-            m.includes('bankruptcy') || m.includes('heir born') ||
+            m.includes('heir born') ||
             m.includes('border closed') || m.includes('blockade') ||
             m.includes('did not survive') || m.includes('has sunk')) {
             return 'critical';
@@ -19625,9 +19625,9 @@
             dtype === 'peace' || dtype === 'surrender' || dtype === 'battle' ||
             dtype === 'siege' || dtype === 'army' || dtype === 'naval_raid' ||
             dtype === 'demilitarized_zone_violation' || dtype === 'non_aggression_pact' ||
-            m.includes('declares war') || m.includes('war ') || m.includes('war!') || m.includes('army') ||
+            m.includes('declares war') || m.includes('war ') || m.includes('war!') || m.includes('army march') ||
             m.includes('siege') || m.includes('troops') || m.includes('battle') ||
-            m.includes('bombardment') || m.includes('invaded') || m.includes('deserted') ||
+            m.includes('bombardment') || m.includes('invaded') || m.includes('soldiers deserted') ||
             m.includes('deserting') || m.includes('reparations') || m.includes('demilitarized') ||
             m.includes('dmz') || m.includes('garrison') || m.includes('military') ||
             m.includes('non-aggression') || m.includes('war chest')) {
@@ -19642,9 +19642,8 @@
             m.includes('earthquake') || m.includes('famine') || m.includes('blight')) {
             if (details && details.townId && typeof Player !== 'undefined') {
                 if (details.townId === Player.townId) return 'local_town';
-                return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
             }
-            return 'local_town';
+            return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
         }
 
         // Refugees
@@ -19745,7 +19744,7 @@
             m.includes('guarding your') || m.includes('commissioned a ') ||
             m.includes('retired from work') || m.includes('quit over wages') ||
             m.includes('returned from training') || m.includes('privateer') ||
-            m.includes('outpost') ||
+            m.includes('your outpost') ||
             m.includes('building') && (m.includes('completed') || m.includes('constructed'))) {
             return 'my_business';
         }

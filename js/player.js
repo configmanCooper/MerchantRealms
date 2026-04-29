@@ -8700,6 +8700,7 @@
                 noble.alive = false;
                 noble._deathDay = Engine.getDay();
                 noble._causeOfDeath = 'executed_by_king';
+                noble.causeOfDeath = 'executed by the king';
                 targetLoyHit = 0; // they're dead
                 otherLoyHit = -20;
                 relHit = 0;
@@ -9249,6 +9250,7 @@
                     // Small chance of noble death on dangerous missions
                     if ((cm.missionType === 'military_patrol' || cm.missionType === 'intelligence_spy') && rng.random() < 0.08) {
                         noble.alive = false;
+                        noble.causeOfDeath = 'killed during ' + cm.missionLabel;
                         Engine.logEvent('💀 ' + cm.nobleName + ' was killed during ' + cm.missionLabel + '!');
                         Engine.logEvent('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', null, 'kingdom');
                         continue;
@@ -9582,6 +9584,7 @@
                 leader.alive = false;
                 leader._deathDay = Engine.getDay();
                 leader._deathCause = 'executed_treason';
+                leader.causeOfDeath = 'executed for treason';
                 plotters.splice(0, 1);
                 if (plotters.length === 0) delete kingdom._conspiracy;
                 // Fear effect on other nobles
@@ -15007,6 +15010,7 @@
             if (rng.chance(cfg.SEVERE_ILLNESS_DEATH_DAILY)) {
                 // Death
                 spouse.alive = false;
+                spouse.causeOfDeath = 'severe illness';
                 player.spouseId = null;
                 Engine.logEvent(spouse.firstName + ' has died from a severe illness. You are devastated.');
                 return;
@@ -19998,6 +20002,7 @@
         if (player.notoriety > 0) {
             player.notoriety = Math.max(0, player.notoriety - CONFIG.NOTORIETY_DECAY_PER_DAY);
         }
+        if (player.notoriety > 100) player.notoriety = 100;
 
         // Noble Notoriety decay (-1 per day)
         if (player.nobleNotoriety > 0) {
@@ -24514,7 +24519,7 @@
         if (perItemFee > 0) feeDetail += ' + ' + perItemFee + 'g crafting';
         var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg + _qualityMsg;
 
-        try { Engine.logEvent(msg, 'my_actions'); } catch(e) {}
+        try { Engine.logEvent(msg, null, 'my_actions'); } catch(e) {}
         if (player.stats) player.stats.guildCrafts = (player.stats.guildCrafts || 0) + 1;
         grantXP(3 * qty, 'guild_crafting');
 
@@ -26796,7 +26801,7 @@
         player.marketIntel[tip.town.id].updatedDay = day;
 
         // Log to event/notification system
-        Engine.logEvent('📊 Trade tip: ' + msg, { type: 'trade_intel' }, 'my_actions');
+        Engine.logEvent('📊 Trade tip: ' + msg, { type: 'trade_intel' }, 'my_business');
 
         // Prune tips older than 30 days
         _pruneTradeTipLog();
@@ -33047,6 +33052,7 @@
                     _compNpc.alive = false;
                     _compNpc.deathDay = Engine.getDay();
                     _compNpc.deathCause = 'Killed by ' + enemyName;
+                    _compNpc.causeOfDeath = 'killed by ' + enemyName;
                     result.familyCasualties.push({ name: _comp.name, role: _comp.role, outcome: 'killed' });
                     Engine.logEvent('💀 Your ' + _comp.role + ' ' + _comp.name + ' was killed by ' + enemyName + '!');
                     // Remove from familyMembers
@@ -34143,7 +34149,7 @@
             } else {
                 var guild2 = CONFIG.GUILDS ? CONFIG.GUILDS[loan.guildId] : null;
                 var gName2 = guild2 ? guild2.name : 'the guild';
-                Engine.logEvent('💰 Loan payment: ' + loan.monthlyPayment + 'g to ' + gName2 + '. Remaining: ' + loan.remainingBalance + 'g', 'my_business');
+                Engine.logEvent('💰 Loan payment: ' + loan.monthlyPayment + 'g to ' + gName2 + '. Remaining: ' + loan.remainingBalance + 'g', null, 'my_business');
             }
         } else {
             // Can't pay — accrue interest on remaining balance
@@ -34151,7 +34157,7 @@
             loan.remainingBalance += missedInterest;
             var guild3 = CONFIG.GUILDS ? CONFIG.GUILDS[loan.guildId] : null;
             var gName3 = guild3 ? guild3.name : 'the guild';
-            Engine.logEvent('⚠️ Missed loan payment to ' + gName3 + '! Interest accrued: +' + missedInterest + 'g. Balance: ' + loan.remainingBalance + 'g', 'my_business');
+            Engine.logEvent('⚠️ Missed loan payment to ' + gName3 + '! Interest accrued: +' + missedInterest + 'g. Balance: ' + loan.remainingBalance + 'g', null, 'my_business');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('⚠️ Missed loan payment! +' + missedInterest + 'g interest', 'warning');
             }
@@ -38508,7 +38514,7 @@
         set autoRaiseWages(v) { player._autoRaiseWages = !!v; },
         get caravans() { return player.caravans; },
         get reputation() { return player.reputation; },
-        get notoriety() { return player.notoriety; },
+        get notoriety() { return Math.min(100, player.notoriety || 0); },
         get nobleNotoriety() { return player.nobleNotoriety || 0; },
         get stats() { return player.stats; },
         get supplyChains() { return player.supplyChains; },

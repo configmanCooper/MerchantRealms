@@ -410,7 +410,7 @@
                 if (agentExecuted) {
                     // Agent permanently lost
                     agent.reports.push({ day: day, msg: '☠️ ' + agent.name + ' was executed as a spy by the enemy kingdom!' });
-                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed as a spy in a hostile kingdom!', null, 'my_business');
+                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed as a spy in a hostile kingdom!', null, 'my_actions');
                     agent.status = 'dead';
                     agent.task = null;
                     agent._dead = true;
@@ -455,10 +455,10 @@
 
             if (punishResult && punishResult.punished) {
                 agent.reports.push({ day: day, msg: '⚠️ The nobles traced ' + agent.name + '\'s actions back to you! ' + punishResult.message });
-                Engine.logEvent('🔍 ' + player.fullName + '\'s scheming was discovered by the nobility! ' + punishResult.message, null, 'my_business');
+                Engine.logEvent('🔍 ' + player.fullName + '\'s scheming was discovered by the nobility! ' + punishResult.message, null, 'my_actions');
             } else if (!agent._dead) {
                 var _disableLabel = agent.status === 'jailed' ? ('jailed for ' + (agent._jailUntil - day) + ' days') : ('laying low for ' + ((agent._cooldownUntil || day) - day) + ' days');
-                Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during ' + def.label + ' and is ' + _disableLabel + '.', null, 'my_business');
+                Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during ' + def.label + ' and is ' + _disableLabel + '.', null, 'my_actions');
             }
             return;
         }
@@ -909,7 +909,7 @@
                 var agentExecuted = rng ? rng.chance(0.30) : Math.random() < 0.30;
                 if (agentExecuted) {
                     agent.reports.push({ day: day, msg: '☠️ ' + agent.name + ' was executed as a spy!' });
-                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed in a hostile kingdom!', null, 'my_business');
+                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed in a hostile kingdom!', null, 'my_actions');
                     agent.status = 'dead';
                     agent.task = null;
                     agent._dead = true;
@@ -941,7 +941,7 @@
             if (player.reputation && agentKingdomId) {
                 player.reputation[agentKingdomId] = Math.max(0, (player.reputation[agentKingdomId] || 50) - 2);
             }
-            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during diplomatic intrigue.', null, 'my_business');
+            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during diplomatic intrigue.', null, 'my_actions');
             return;
         }
 
