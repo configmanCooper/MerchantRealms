@@ -188,6 +188,118 @@ window.Renderer = (function () {
 
         terrainDirty = true;
         _sceneCacheDirty = true;
+
+        // Pre-warm terrain cache so first pan/zoom is smooth
+        _prewarmTerrainCache();
+    }
+
+    // Pre-build terrain cache for a large region around the player at startup.
+    // Covers enough tiles for the lowest zoom level so zooming/panning never
+    // hits an uncached region on the first interaction.
+    function _prewarmTerrainCache() {
+        if (!worldData || !worldData.terrain || !worldData.terrain.length) return;
+
+        var ts = CONFIG.TILE_SIZE;
+        var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
+        var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
+
+        // Compute visible tiles at the lowest practical zoom (0.3) centered on current camera
+        var halfW = (camera.width / 0.3) / 2;
+        var halfH = (camera.height / 0.3) / 2;
+        var vbLeft = camera.x - halfW;
+        var vbTop = camera.y - halfH;
+        var vbRight = camera.x + halfW;
+        var vbBottom = camera.y + halfH;
+
+        // Extra margin so initial panning is also free
+        var margin = CONFIG.TERRAIN_MARGIN_EXTREME || 30;
+        var cSC = Math.max(0, Math.floor(vbLeft / ts) - margin);
+        var cEC = Math.min(terrainWidth - 1, Math.ceil(vbRight / ts) + margin);
+        var cSR = Math.max(0, Math.floor(vbTop / ts) - margin);
+        var cER = Math.min(terrainHeight - 1, Math.ceil(vbBottom / ts) + margin);
+
+        var drawW = (cEC - cSC + 1) * ts;
+        var drawH = (cER - cSR + 1) * ts;
+
+        if (!offscreenTerrain) {
+            offscreenTerrain = document.createElement('canvas');
+            offscreenCtx = offscreenTerrain.getContext('2d');
+        }
+        offscreenTerrain.width = drawW;
+        offscreenTerrain.height = drawH;
+
+        var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+        var terrain = worldData.terrain;
+
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tileId = terrain[r * terrainWidth + c];
+                var baseColor = getTerrainColor(tileId);
+                var h = tileHash(c, r);
+                var shift = Math.floor((h - 0.5) * 20);
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                offscreenCtx.fillStyle = rgbShift(baseColor, shift);
+                offscreenCtx.fillRect(x, y, ts, ts);
+
+                // Include decorations in pre-warm for visual completeness
+                if (tileId === 1) {
+                    var treeCount = 1 + Math.floor(h * 2);
+                    offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
+                    for (var t = 0; t < treeCount; t++) {
+                        var tx = x + (h * 37 + t * 5.7) % ts;
+                        var ty = y + (h * 23 + t * 7.3) % ts;
+                        var sz = 3 + h * 3;
+                        offscreenCtx.beginPath();
+                        offscreenCtx.moveTo(tx, ty - sz);
+                        offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
+                        offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
+                        offscreenCtx.closePath();
+                        offscreenCtx.fill();
+                    }
+                } else if (tileId === 2) {
+                    offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
+                    offscreenCtx.fillRect(x, y, ts, ts);
+                } else if (tileId === 3) {
+                    offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
+                    var mx = x + ts * 0.5;
+                    var my = y + ts * 0.2;
+                    offscreenCtx.beginPath();
+                    offscreenCtx.moveTo(mx, my);
+                    offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
+                    offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
+                    offscreenCtx.closePath();
+                    offscreenCtx.fill();
+                    if (_isWinterSeason || h > 0.6) {
+                        offscreenCtx.fillStyle = 'rgba(240,240,255,0.6)';
+                        offscreenCtx.beginPath();
+                        offscreenCtx.moveTo(mx, my);
+                        offscreenCtx.lineTo(mx - ts * 0.12, my + ts * 0.2);
+                        offscreenCtx.lineTo(mx + ts * 0.12, my + ts * 0.2);
+                        offscreenCtx.closePath();
+                        offscreenCtx.fill();
+                    }
+                } else if (tileId === 4) {
+                    offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
+                    offscreenCtx.beginPath();
+                    offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
+                    offscreenCtx.fill();
+                    offscreenCtx.beginPath();
+                    offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
+                    offscreenCtx.fill();
+                }
+            }
+        }
+
+        _terrainCacheStartCol = cSC;
+        _terrainCacheEndCol = cEC;
+        _terrainCacheStartRow = cSR;
+        _terrainCacheEndRow = cER;
+        terrainDirty = false;
+        lastTerrainZoom = camera.zoom;
+        lastTerrainCamX = camera.x;
+        lastTerrainCamY = camera.y;
     }
 
     function resize() {
@@ -1035,20 +1147,24 @@ window.Renderer = (function () {
             const ty = to.y;
 
             // skip if road bounding box (endpoints + waypoints) is entirely off-screen
-            var _rdMinX = Math.min(fx, tx), _rdMaxX = Math.max(fx, tx);
-            var _rdMinY = Math.min(fy, ty), _rdMaxY = Math.max(fy, ty);
-            if (road.waypoints) {
-                for (var _rwi = 0; _rwi < road.waypoints.length; _rwi++) {
-                    var _rwp = road.waypoints[_rwi];
-                    if (_rwp.x < _rdMinX) _rdMinX = _rwp.x;
-                    if (_rwp.x > _rdMaxX) _rdMaxX = _rwp.x;
-                    if (_rwp.y < _rdMinY) _rdMinY = _rwp.y;
-                    if (_rwp.y > _rdMaxY) _rdMaxY = _rwp.y;
+            // Cache bbox on road object to avoid recalculating every frame
+            if (!road._bbox) {
+                var _rdMinX = Math.min(fx, tx), _rdMaxX = Math.max(fx, tx);
+                var _rdMinY = Math.min(fy, ty), _rdMaxY = Math.max(fy, ty);
+                if (road.waypoints) {
+                    for (var _rwi = 0; _rwi < road.waypoints.length; _rwi++) {
+                        var _rwp = road.waypoints[_rwi];
+                        if (_rwp.x < _rdMinX) _rdMinX = _rwp.x;
+                        if (_rwp.x > _rdMaxX) _rdMaxX = _rwp.x;
+                        if (_rwp.y < _rdMinY) _rdMinY = _rwp.y;
+                        if (_rwp.y > _rdMaxY) _rdMaxY = _rwp.y;
+                    }
                 }
+                road._bbox = { minX: _rdMinX, maxX: _rdMaxX, minY: _rdMinY, maxY: _rdMaxY };
             }
             var _rdVb = getVisibleBounds();
-            if (_rdMaxX < _rdVb.left - 200 || _rdMinX > _rdVb.right + 200 ||
-                _rdMaxY < _rdVb.top - 200 || _rdMinY > _rdVb.bottom + 200) continue;
+            if (road._bbox.maxX < _rdVb.left - 200 || road._bbox.minX > _rdVb.right + 200 ||
+                road._bbox.maxY < _rdVb.top - 200 || road._bbox.minY > _rdVb.bottom + 200) continue;
 
             const quality = road.quality || 1;
             const safe = road.safe !== false;
@@ -1079,6 +1195,26 @@ window.Renderer = (function () {
             var _wps = road.waypoints;
             // Check if road has any bridge data (even if some are destroyed)
             var _hasBridgeData = (road.hasBridge || false) && _wps.length >= 2;
+
+            // ── LOW-ZOOM FAST PATH: skip per-segment terrain checks ──
+            // At low zoom, bridges are too small to see detail; just draw a
+            // single coloured line for the whole road (huge perf win).
+            if (_hasBridgeData && camera.zoom < 0.8) {
+                var _roadColor = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
+                ctx.strokeStyle = safe ? _roadColor : '#8b4513';
+                ctx.lineWidth = width;
+                ctx.setLineDash(safe ? [] : [6, 4]);
+                drawWaypointPath(_wps);
+                ctx.setLineDash([]);
+                // Toll overlay
+                if (road.tollKingdom) {
+                    ctx.strokeStyle = 'rgba(255,215,0,0.25)';
+                    ctx.lineWidth = width + 2;
+                    drawWaypointPath(_wps);
+                }
+                continue; // skip detailed bridge rendering at low zoom
+            }
+
             // Build a lookup of which waypoint indices are in a destroyed bridge
             var _destroyedWpSet = null;
             if (_hasBridgeData && road.bridges && road.bridges.length > 0) {
@@ -2770,9 +2906,11 @@ window.Renderer = (function () {
                 var sDark  = caravan.disbanding ? '#802020' : '#1a3a5a';
                 var sAccent = caravan.disbanding ? '#c08080' : '#c2a050';
 
-                // Subtle water glow
-                ctx.shadowColor = '#2080c0';
-                ctx.shadowBlur = 8;
+                // Subtle water glow (skip at low zoom for perf)
+                if (camera.zoom > 0.8) {
+                    ctx.shadowColor = '#2080c0';
+                    ctx.shadowBlur = 8;
+                }
 
                 // Hull (elongated boat shape)
                 ctx.fillStyle = sColor;
@@ -2873,9 +3011,11 @@ window.Renderer = (function () {
                 var cLight = caravan.disbanding ? '#e0a0a0' : '#c2a050';
                 var cDark = caravan.disbanding ? '#802020' : '#5a3e0a';
 
-                // Subtle glow beneath
-                ctx.shadowColor = cColor;
-                ctx.shadowBlur = 6;
+                // Subtle glow beneath (skip at low zoom for perf)
+                if (camera.zoom > 0.8) {
+                    ctx.shadowColor = cColor;
+                    ctx.shadowBlur = 6;
+                }
 
                 // Wagon body (rounded rectangle)
                 ctx.fillStyle = cColor;
@@ -3440,9 +3580,11 @@ window.Renderer = (function () {
             var sz = 10;
             var flutter = Math.sin(frameCount * 0.04) * 1.5;
 
-            // Glow
-            ctx.shadowColor = '#c4a35a';
-            ctx.shadowBlur = 10;
+            // Glow (skip at low zoom for perf)
+            if (camera.zoom > 0.8) {
+                ctx.shadowColor = '#c4a35a';
+                ctx.shadowBlur = 10;
+            }
 
             // Hull (gold-tinted)
             ctx.fillStyle = '#c4a35a';
@@ -3506,9 +3648,11 @@ window.Renderer = (function () {
         ctx.save();
         ctx.translate(px, py);
 
-        // Glow
-        ctx.shadowColor = '#c4a35a';
-        ctx.shadowBlur = 12 + pulse;
+        // Glow (skip at low zoom for perf)
+        if (camera.zoom > 0.8) {
+            ctx.shadowColor = '#c4a35a';
+            ctx.shadowBlur = 12 + pulse;
+        }
 
         ctx.fillStyle = '#c4a35a';
         ctx.beginPath();
@@ -4359,14 +4503,12 @@ window.Renderer = (function () {
                 ctx.font = Math.max(16, 20 / camera.zoom) + 'px serif';
                 ctx.textAlign = 'center';
                 ctx.fillStyle = '#FFD700';
-                ctx.shadowColor = '#FFD700';
-                ctx.shadowBlur = 8;
+                if (camera.zoom > 0.8) { ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8; }
                 ctx.fillText('⭐', emTown.x, emTown.y - 30);
                 // Name label
                 ctx.font = Math.max(10, 12 / camera.zoom) + 'px sans-serif';
                 ctx.fillStyle = '#FFF';
-                ctx.shadowColor = '#000';
-                ctx.shadowBlur = 3;
+                if (camera.zoom > 0.8) { ctx.shadowColor = '#000'; ctx.shadowBlur = 3; }
                 ctx.fillText(trackedEm.firstName || 'Unknown', emTown.x, emTown.y - 42);
                 ctx.restore();
             }

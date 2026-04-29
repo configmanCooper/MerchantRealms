@@ -3579,8 +3579,13 @@
                     rebellionChance = Math.min(0.3, rebellionChance);
 
                     if (rng.chance(rebellionChance)) {
+                        var _seizKing = findPerson(k.king);
+                        var _seizKingName = _seizKing ? ((_seizKing.firstName || '?') + ' ' + (_seizKing.lastName || '')) : 'the king';
                         logEvent('🔥⚔️ REBELLION in ' + k.name + '! Citizens revolt against the crown\'s seizure of assets!', {
-                            type: 'seizure_rebellion', cause: 'Excessive asset seizures (resentment: ' + Math.floor(k._seizureResentment) + ')',
+                            type: 'seizure_rebellion',
+                            cause: 'Citizens of ' + k.name + ' rebel against ' + _seizKingName + '\'s tyrannical asset seizures',
+                            kingName: _seizKingName,
+                            kingId: k.king,
                             effects: ['Major happiness drop (-25)', 'Soldiers may defect', 'King faces overthrow risk',
                                       'Seizure law repealed by force'],
                             kingdomId: k.id
@@ -3595,7 +3600,9 @@
                         var kSoldiers = world.people.filter(function(s) {
                             return s.alive && s.kingdomId === k.id && s.occupation === 'soldier';
                         });
+                        var _defectorNames = [];
                         for (var di = 0; di < kSoldiers.length && defected < defectors; di++) {
+                            _defectorNames.push((kSoldiers[di].firstName || '?') + ' ' + (kSoldiers[di].lastName || ''));
                             kSoldiers[di].occupation = 'laborer';
                             var dTown = findTown(kSoldiers[di].townId);
                             if (dTown && dTown.garrison > 0) dTown.garrison--;
@@ -3604,7 +3611,11 @@
                         // King may be overthrown
                         if (rng.chance(0.25)) {
                             logEvent('👑💀 The ruler of ' + k.name + ' is overthrown by the rebellion!', {
-                                type: 'seizure_overthrow', kingdomId: k.id, cause: 'Popular uprising against tyrannical seizures',
+                                type: 'seizure_overthrow', kingdomId: k.id,
+                                cause: _seizKingName + ' overthrown by popular uprising against tyrannical seizures',
+                                overthrownKing: _seizKingName,
+                                overthrownKingId: k.king,
+                                defectors: _defectorNames.slice(0, 5),
                                 effects: ['New ruler takes power', 'Seizure law permanently repealed', 'Period of instability']
                             });
                             handleKingDeath(k, 'rebellion');

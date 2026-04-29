@@ -1494,12 +1494,19 @@
 
         // 2. Revolution — prominent NPC becomes new king
         if (prominentNPC && prominentNPC.gold > 500 && rng.chance(0.5)) {
+            const oldKing = findPerson(k.king);
+            var _oldKingName = oldKing ? ((oldKing.firstName || '?') + ' ' + (oldKing.lastName || '')) : 'the king';
+            var _revLeaderName = (prominentNPC.firstName || '?') + ' ' + (prominentNPC.lastName || '');
             logEvent(`🔥 Revolution in ${k.name}! ${prominentNPC.firstName} ${prominentNPC.lastName} seizes power!`, {
                 type: 'revolution',
-                cause: 'Citizens overthrow the bankrupt king',
+                kingdomId: k.id,
+                cause: 'Citizens overthrow ' + _oldKingName + ' after ' + k.name + ' falls into bankruptcy',
+                overthrownKing: _oldKingName,
+                overthrownKingId: k.king,
+                newKing: _revLeaderName,
+                newKingId: prominentNPC.id,
                 effects: ['New king installed', 'Debts wiped', 'Kingdom restarts with minimal treasury']
             });
-            const oldKing = findPerson(k.king);
             if (oldKing && oldKing.alive) {
                 oldKing.occupation = 'laborer';
                 if (oldKing.socialRank) oldKing.socialRank[k.id] = 0;

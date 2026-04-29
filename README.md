@@ -19,6 +19,10 @@ Trade goods between kingdoms, build a merchant empire, navigate politics, hire w
 - 🎭 6 unique origin stories with special objectives
 - 📜 19-chapter interactive tutorial
 - 💾 5 save slots with download/upload support
+- 🗡️ Dark deeds: assassination, sabotage, smuggling, and intrigue
+- 👑 Rise from commoner to king through politics, rebellion, or marriage
+- 🏴 Toll roads, trade wars, and kingdom-spanning conflicts
+- 📖 19-chapter interactive story mode with voiced dialog
 
 ### Unique Starts
 - ⛓️ **Indentured Servant** — Bound for 7 years. Find your way to freedom.

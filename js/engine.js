@@ -7417,7 +7417,9 @@
         var deathCategory = isPlayerKingdom ? 'my_kingdom' : 'foreign_kingdoms';
         var causeText = cause === 'old_age' ? 'of old age' : cause === 'assassination' ? 'by assassination' :
             cause === 'battle' ? 'in battle' : cause === 'illness' ? 'of illness' : cause === 'injury' ? 'of injuries' :
-            cause === 'god_mode' ? 'by divine intervention' : '';
+            cause === 'god_mode' ? 'by divine intervention' : cause === 'rebellion' ? 'during a rebellion' :
+            cause === 'coup' ? 'in a coup' : cause === 'revolt' ? 'during a revolt' :
+            cause === 'revolt_suppression' ? 'while suppressing a revolt' : '';
         logEvent('💀 ' + kingName + ' of ' + kingdom.name + ' has died' + (causeText ? ' ' + causeText : '') + '! Succession triggered.', {
             type: 'king_death',
             kingdomId: kingdom.id,
@@ -11950,8 +11952,13 @@
                 k.gold = Math.max(0, k.gold - revoltDamage);
                 k._taxRevoltUntil = world.day + 30;
                 Engine.boostKingdomHappiness(k, -5);
+                var _kingPerson = findPerson(k.king);
+                var _kingName = _kingPerson ? (_kingPerson.firstName + ' ' + (_kingPerson.lastName || '')) : 'the king';
                 logEvent('🔥 REVOLT in ' + k.name + '! Citizens refuse to comply with the crown. (-' + revoltDamage + 'g)', {
-                    type: 'revolt', cause: 'Kingdom discontent (happiness ' + Math.round(h) + '%)',
+                    type: 'revolt', kingdomId: k.id,
+                    cause: 'Kingdom discontent — citizens of ' + k.name + ' rebel against ' + _kingName,
+                    kingName: _kingName,
+                    happiness: Math.round(h),
                     effects: ['Tax collection halted 30 days', revoltDamage + 'g in damages', 'Happiness drops further']
                 }, 'sensitive_intel');
             }
@@ -11994,8 +12001,13 @@
             if (rng.chance(coupChance)) {
                 var king = findPerson(k.king);
                 if (king && king.alive) {
+                    var _coupKingName = (king.firstName || '?') + ' ' + (king.lastName || '');
                     logEvent('⚔️ COUP ATTEMPT in ' + k.name + '! Rebels storm the palace!', {
-                        type: 'coup_attempt', cause: 'Kingdom in open rebellion (happiness ' + Math.round(h) + '%)',
+                        type: 'coup_attempt', kingdomId: k.id,
+                        cause: 'Open rebellion against ' + _coupKingName + ' of ' + k.name,
+                        targetKing: _coupKingName,
+                        targetKingId: king.id,
+                        happiness: Math.round(h),
                         effects: ['King\'s life at risk', 'Kingdom stability threatened']
                     }, 'sensitive_intel');
                     // Check if king is the player
@@ -12013,13 +12025,25 @@
                     } else if (rng.chance(0.4 + rebellionIntensity * 0.2)) {
                         killPerson(king, 'coup');
                         handleKingDeath(k, 'coup');
+                        var _newKingPerson = findPerson(k.king);
+                        var _newKingName = _newKingPerson ? ((_newKingPerson.firstName || '?') + ' ' + (_newKingPerson.lastName || '')) : 'an unknown ruler';
                         logEvent('👑 The king of ' + k.name + ' has been overthrown! A new ruler rises.', {
-                            type: 'king_overthrown', cause: 'Successful coup', effects: ['New king installed', 'Policies may change']
+                            type: 'king_overthrown', kingdomId: k.id,
+                            cause: 'Successful coup against ' + _coupKingName,
+                            overthrownKing: _coupKingName,
+                            overthrownKingId: king.id,
+                            newKing: _newKingName,
+                            newKingId: k.king,
+                            effects: ['New king installed', 'Policies may change']
                         }, 'sensitive_intel');
                         Engine.boostKingdomHappiness(k, 15); // New king brings hope
                     } else {
                         logEvent('🛡️ The coup in ' + k.name + ' has failed. The king purges dissenters.', {
-                            type: 'coup_failed', cause: 'King survived', effects: ['Happiness drops further', 'Purges follow']
+                            type: 'coup_failed', kingdomId: k.id,
+                            cause: 'Failed coup against ' + _coupKingName + ' — king survived and purges dissenters',
+                            survivedKing: _coupKingName,
+                            survivedKingId: king.id,
+                            effects: ['Happiness drops further', 'Purges follow']
                         }, 'sensitive_intel');
                         Engine.boostKingdomHappiness(k, -8);
                     }
@@ -12593,13 +12617,26 @@
         // Block the town like a siege
         town._revoltBlocked = true;
 
+        // Build participant name lists for tracking
+        var _rebelLeaderNames = [];
+        for (var _rli = 0; _rli < Math.min(5, rebels.length); _rli++) {
+            var _rl = rebels[_rli];
+            if (_rl) _rebelLeaderNames.push((_rl.firstName || '?') + ' ' + (_rl.lastName || ''));
+        }
+        var _noblePartNames = _nobleParticipants.map(function(n) { return (n.firstName || '?') + ' ' + (n.lastName || ''); });
+
         logEvent('🔥 REVOLT! ' + groupName + ' rises up in ' + town.name + '! ' + rebels.length + ' rebels fight against ' + totalDefenders + ' defenders.', {
             type: 'town_revolt_start',
             town: town.name,
+            townId: town.id,
             kingdom: k.name,
+            kingdomId: k.id,
             rebels: rebels.length,
             defenders: totalDefenders,
             groupName: groupName,
+            rebelLeaders: _rebelLeaderNames,
+            nobleParticipants: _noblePartNames,
+            cause: 'Low town happiness (' + Math.round(town.happiness || 0) + '%) — citizens rise against ' + k.name,
             effects: ['Town blocked during revolt', 'Trade halted', 'Citizens take cover']
         }, 'sensitive_intel');
 
@@ -13027,13 +13064,29 @@
         delete town._revoltBlocked;
         delete town._revoltPressureDays;
 
+        // Build survivor/participant tracking for chronicles
+        var _survivorNames = survivingRebels.slice(0, 8).map(function(r) { return (r.firstName || '?') + ' ' + (r.lastName || ''); });
+        var _survivingNobleNames = _survivingNobles.map(function(n) { return (n.firstName || '?') + ' ' + (n.lastName || ''); });
+        var _deadRebelCount = (revolt.rebelIds ? revolt.rebelIds.length : 0) - survivingRebels.length;
+
         logEvent('🏴 ' + groupName + ' WINS! ' + town.name + ' is now an independent kingdom!' +
             (newKing ? ' ' + (newKing.firstName || newKing.name || 'A rebel leader') + ' crowned as king.' : ''), {
             type: 'town_revolt_win',
             town: town.name,
+            townId: town.id,
             newKingdom: groupName,
+            newKingdomId: newKingdomId,
             parentKingdom: parentK ? parentK.name : 'unknown',
-            newKing: newKing ? (newKing.firstName || newKing.name) : null,
+            parentKingdomId: parentK ? parentK.id : null,
+            newKing: newKing ? (newKing.firstName + ' ' + (newKing.lastName || '')) : null,
+            newKingId: newKing ? newKing.id : null,
+            survivingRebels: _survivorNames,
+            survivingNobles: _survivingNobleNames,
+            rebelDeaths: _deadRebelCount,
+            totalRebels: revolt.rebelCount || 0,
+            totalDefenders: revolt.defenderCount || 0,
+            durationDays: revolt.daysElapsed || 0,
+            cause: 'Revolt in ' + town.name + ' against ' + (parentK ? parentK.name : 'the crown'),
             effects: ['New kingdom created', 'At war with ' + (parentK ? parentK.name : 'parent'), 'Town independence',
                 _goldPlunder > 0 ? 'Plundered ' + _goldPlunder + 'g' : 'No gold plundered']
         }, 'sensitive_intel');
@@ -13206,11 +13259,30 @@
             town.happiness = Math.min(100, town.happiness + 5);
         }
 
+        // Track executed and surviving rebels for chronicles
+        var _executedNames = [];
+        var _survivingRebelNames = [];
+        for (var _eni = 0; _eni < revolt.rebelIds.length; _eni++) {
+            var _enRebel = findPerson(revolt.rebelIds[_eni]);
+            if (_enRebel) {
+                if (!_enRebel.alive) _executedNames.push((_enRebel.firstName || '?') + ' ' + (_enRebel.lastName || ''));
+                else _survivingRebelNames.push((_enRebel.firstName || '?') + ' ' + (_enRebel.lastName || ''));
+            }
+        }
+
         logEvent('🛡️ Revolt in ' + town.name + ' SUPPRESSED! ' + revolt.groupName + ' has been defeated.', {
             type: 'town_revolt_lose',
             town: town.name,
+            townId: town.id,
             kingdom: k ? k.name : 'unknown',
+            kingdomId: k ? k.id : null,
             groupName: revolt.groupName,
+            executedRebels: _executedNames.slice(0, 10),
+            survivingRebels: _survivingRebelNames.slice(0, 10),
+            totalRebels: revolt.rebelCount || 0,
+            totalDefenders: revolt.defenderCount || 0,
+            durationDays: revolt.daysElapsed || 0,
+            cause: revolt.groupName + ' failed to overcome ' + (k ? k.name + "'s" : 'the') + ' defenders in ' + town.name,
             effects: ['Revolt cooldown ' + cooldownDays + ' days', 'Rebels punished', 'Order restored']
         }, 'sensitive_intel');
 
@@ -19829,6 +19901,7 @@
                 'king_assassinated', 'coup_success', 'new_king_coup', 'conspiracy_formed',
                 'conspiracy_arrest', 'conspiracy_execution', 'coup_attempt', 'coup_failed',
                 'revolt_started', 'revolt_victory', 'revolt_suppressed',
+                'town_revolt_start', 'revolution', 'seizure_rebellion', 'seizure_overthrow', 'king_overthrown',
                 'noble_punishment', 'noble_execution', 'noble_exile', 'peace_treaty',
                 'alliance_dissolved'];
             if (majorTypes.indexOf(details.type) !== -1) {

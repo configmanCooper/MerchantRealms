@@ -4,6 +4,21 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.87.0] - Render Performance & Event Detail
+
+### Improved — Render Performance
+- **Bridge LOD fast path**: At zoom < 0.8, bridges skip all per-segment terrain checks and detail rendering, drawing a simple colored line instead — eliminates dozens of `getTerrainAtPixel()` calls per bridge per frame
+- **Shadow/glow gating**: All 6 `shadowBlur` effects (sea caravan, land caravan, player ship, player marker, tracked EM star + label) disabled at zoom < 0.8 — invisible at that zoom anyway
+- **Road bounding box caching**: Road bbox now cached on first calculation (`road._bbox`) instead of recalculating every frame by iterating all waypoints
+- **Terrain pre-warm cache**: At game startup, pre-builds the terrain cache for a large region around the player at the lowest zoom level, so the first pan/zoom doesn't trigger an expensive cache rebuild
+
+### Improved — Event Detail
+- Revolt events now track participant names (defectors, new king) in event text
+- King death `causeText` expanded with more descriptive causes
+- Seizure rebellion/overthrow events include king and defector names
+- Bankruptcy revolution events include overthrown and new king details
+- Major event types list expanded for richer history tracking
+
 ## [0.86.0] - Story Mode Expansion: Supply Chains, Lord Calder & Ch9c
 
 ### Added — Story Mode
