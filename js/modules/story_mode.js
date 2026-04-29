@@ -89,7 +89,7 @@ var StoryMode = (function () {
             startDialog: 'ch3_delivery_father',
             objectives: [
                 { id: 'ch3_rest_first',        type: 'rest',        desc: 'Rest before your journey', done: false },
-                { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale',                       done: false, after: 'ch3_rest_first' },
+                { id: 'ch3_arrive_ferrowdale', type: 'arrive_town', town: 'Ferrowdale', desc: 'Travel to Ferrowdale', hint: 'Right-click on Ferrowdale on the map and select Travel Here. Make sure your game is unpaused (▶) so travel can occur! Use ▶▶ 4× speed to fast-forward the journey.', done: false, after: 'ch3_rest_first' },
                 { id: 'ch3_sell_tools',        type: 'sell_item',   item: 'tools', desc: 'Deliver the tools (sell in Ferrowdale)', done: false, after: 'ch3_arrive_ferrowdale' }
             ],
             endDialog: 'ch3_complete',
@@ -157,7 +157,7 @@ var StoryMode = (function () {
         {
             id: 'ch5', title: 'A Place to Call Home', act: 1,
             startDialog: 'ch5_mother_housing',
-            note: 'Keep earning gold until you can afford land and a house.',
+            note: 'Keep earning gold until you can afford land and a house. Don\'t forget you can work if you run low on gold.',
             objectives: [
                 { id: 'ch5_buy_land',    type: 'custom',       fn: '_checkOwnsLand',   desc: 'Buy a plot of land',      done: false },
                 { id: 'ch5_buy_housing', type: 'own_building', building: 'housing', desc: 'Build or acquire housing', done: false },
@@ -1508,7 +1508,7 @@ var StoryMode = (function () {
                 // Special: Ch3 rest done — guide player to travel with speed controls
                 if (obj.id === 'ch3_rest_first') {
                     setTimeout(function() {
-                        _toast('💡 Open the World Map 🗺️ to travel to Ferrowdale. Use the ▶▶ 4× speed button at the top to fast-forward through the journey!');
+                        _toast('💡 Right-click on Ferrowdale on the map and select Travel Here. Make sure the game is unpaused (▶) and use ▶▶ 4× speed to fast-forward!');
                     }, 1500);
                 }
             }
@@ -2951,10 +2951,13 @@ var StoryMode = (function () {
         if (!_storyState.active || _storyState.complete) return [];
         var ch = _currentChapterDef();
         if (!ch) return [];
+        var isTraveling = typeof Player !== 'undefined' && Player.traveling;
         // Find the first incomplete objective that maps to a button
         for (var i = 0; i < ch.objectives.length; i++) {
             var obj = ch.objectives[i];
             if (obj.done) continue;
+            // Skip arrive_town hint when already traveling — player just needs to wait
+            if (obj.type === 'arrive_town' && isTraveling) continue;
             var btnId = _objectiveButtonMap[obj.type] || null;
             // Housing objectives should point to Character → Housing, not Build
             if (obj.type === 'own_building' && obj.building === 'housing') {
@@ -2966,6 +2969,8 @@ var StoryMode = (function () {
             if (!btnId) continue;
             var info = _btnToTabLabel[btnId];
             if (!info) continue;
+            // Don't highlight actions tab while traveling — player can't act
+            if (info.tab === 'actions' && isTraveling) continue;
             return [{ tab: info.tab, label: info.label }];
         }
         return [];

@@ -32,6 +32,7 @@ window.Renderer = (function () {
     let worldMapCtx = null;
     let worldMapCached = null; // offscreen canvas for cached world map render
     let worldMapDirty = true;
+    let worldMapTransform = null; // { offsetX, offsetY, scaleX, scaleY } for hit-testing
 
     // ── Cached state ──
     let terrainDirty = true;
@@ -4606,7 +4607,9 @@ window.Renderer = (function () {
         // ── Right Panel: Kingdom Details ──
         var rightPanel = document.createElement('div');
         rightPanel.id = 'worldMapRightPanel';
-        rightPanel.style.cssText = panelStyle + 'right:12px;';
+        // Position below the canvas legend (color keys) — compute based on kingdom count
+        var _rightPanelTop = 80 + (kingdoms ? kingdoms.length : 4) * 22;
+        rightPanel.style.cssText = panelStyle + 'right:12px;top:' + _rightPanelTop + 'px;max-height:calc(100vh - ' + (_rightPanelTop + 40) + 'px);';
 
         var rhtml = '<div style="text-align:center;margin-bottom:10px;">' +
             '<div style="font-size:16px;color:#c4a35a;font-weight:bold;">👑 Kingdoms</div></div>';
@@ -4692,6 +4695,70 @@ window.Renderer = (function () {
         worldMapCanvas._resizeHandler = resizeWM;
         window.addEventListener('resize', resizeWM);
         resizeWM();
+
+        // Right-click context menu on world map towns
+        worldMapCanvas.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            var hit = _worldMapHitTest(e.clientX, e.clientY);
+            if (hit && typeof UI !== 'undefined' && UI.showContextMenu) {
+                var town = hit;
+                var items = [];
+                var isHere = typeof Player !== 'undefined' && Player.townId === town.id;
+                items.push({ icon: '👁', label: 'View Details', action: "UI.showTownDetail(Engine.getTown('" + town.id + "'))" });
+                if (!isHere) {
+                    var _isOutpostNoRoad = town.isOutpost && !town.hasRoad;
+                    if (typeof Player !== 'undefined' && Player.townId && !Player.traveling && !_isOutpostNoRoad) {
+                        items.push({ icon: '🗺️', label: 'Travel Here...', action: "UI.openTravelOptions('" + town.id + "')" });
+                    }
+                    items.push({ icon: '🥾', label: 'Travel Off-road to ' + town.name, action: 'UI.confirmFreeTravel(' + town.x + ',' + town.y + ')' });
+                } else {
+                    if (!town.isOutpost) items.push({ icon: '📊', label: 'Trade', action: 'UI.openTradeDialog()' });
+                    items.push({ icon: '🏗️', label: 'Build', action: 'UI.openBuildDialog()' });
+                }
+                UI.showContextMenu(e.clientX, e.clientY, items);
+            }
+        });
+
+        // Left-click on world map towns for quick view
+        worldMapCanvas.addEventListener('click', function(e) {
+            var hit = _worldMapHitTest(e.clientX, e.clientY);
+            if (hit && typeof UI !== 'undefined') {
+                try { UI.showTownDetail(Engine.getTown(hit.id)); } catch(ex) {}
+            }
+        });
+    }
+
+    function _worldMapHitTest(clientX, clientY) {
+        if (!worldMapTransform || !worldMapCanvas) return null;
+        var rect = worldMapCanvas.getBoundingClientRect();
+        var mx = clientX - rect.left;
+        var my = clientY - rect.top;
+        // Scale for CSS vs canvas resolution
+        mx = mx * (worldMapCanvas.width / rect.width);
+        my = my * (worldMapCanvas.height / rect.height);
+
+        var t = worldMapTransform;
+        var towns;
+        try { towns = Engine.getTowns(); } catch(e) { return null; }
+        if (!towns) return null;
+
+        var bestTown = null;
+        var bestDist = Infinity;
+        var hitRadius = 15; // pixels on canvas
+
+        for (var i = 0; i < towns.length; i++) {
+            var town = towns[i];
+            var tpx = t.offsetX + town.x * t.scaleX;
+            var tpy = t.offsetY + town.y * t.scaleY;
+            var dx = mx - tpx;
+            var dy = my - tpy;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < hitRadius && dist < bestDist) {
+                bestDist = dist;
+                bestTown = town;
+            }
+        }
+        return bestTown;
     }
 
     function hideWorldMap() {
@@ -4706,6 +4773,7 @@ window.Renderer = (function () {
         worldMapCanvas = null;
         worldMapCtx = null;
         worldMapCached = null;
+        worldMapTransform = null;
     }
 
     function renderWorldMap() {
@@ -4744,6 +4812,9 @@ window.Renderer = (function () {
         var offsetY = pad + (drawH - fitH) / 2;
         var scaleX = fitW / worldPxW;
         var scaleY = fitH / worldPxH;
+
+        // Store transform for hit-testing (click/right-click)
+        worldMapTransform = { offsetX: offsetX, offsetY: offsetY, scaleX: scaleX, scaleY: scaleY };
 
         // Parchment background
         wctx.fillStyle = '#d4c5a0';

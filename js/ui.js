@@ -190,13 +190,13 @@ window.UI = (function () {
             btnShips.addEventListener('click', openShipsDialog);
             if (rowManage) rowManage.appendChild(btnShips);
 
-            // Toll Routes button → Manage row
+            // Travel Routes button → Manage row
             const btnRoutes = document.createElement('button');
             btnRoutes.className = 'btn-action';
             btnRoutes.id = 'btnRoutes';
-            btnRoutes.title = 'Toll Routes';
-            btnRoutes.textContent = '🛤️ Routes';
-            btnRoutes.addEventListener('click', function() { UI.showTollRoutesPanel(); });
+            btnRoutes.title = 'Travel Destinations';
+            btnRoutes.textContent = '🛤️ Travel';
+            btnRoutes.addEventListener('click', function() { UI.showTravelPanel(); });
             if (rowManage) rowManage.appendChild(btnRoutes);
 
             // Skills → Manage row
@@ -828,6 +828,33 @@ window.UI = (function () {
                 btns[j].style.color = isActive ? '#fff' : 'var(--text-muted)';
             }
         });
+        registerAction('tradeTab', function(_t, d) {
+            if (!d.tab) return;
+            _activeTradeTab = d.tab;
+            // Show/hide tab content
+            var tabIds = ['tradeTabTrade', 'tradeTabLicenses', 'tradeTabPrices', 'tradeTabIntel'];
+            var tabMap = { trade: 'tradeTabTrade', licenses: 'tradeTabLicenses', prices: 'tradeTabPrices', intel: 'tradeTabIntel' };
+            for (var ti = 0; ti < tabIds.length; ti++) {
+                var tabEl = document.getElementById(tabIds[ti]);
+                if (tabEl) tabEl.style.display = (tabIds[ti] === tabMap[d.tab]) ? '' : 'none';
+            }
+            // Update tab button styles
+            var tabBtns = document.querySelectorAll('#tradeTabBar button[data-action="tradeTab"]');
+            for (var tj = 0; tj < tabBtns.length; tj++) {
+                var isAct = tabBtns[tj].getAttribute('data-tab') === d.tab;
+                tabBtns[tj].style.background = isAct ? 'rgba(100,180,255,0.25)' : 'rgba(255,255,255,0.05)';
+                tabBtns[tj].style.borderColor = isAct ? 'rgba(100,180,255,0.5)' : 'rgba(255,255,255,0.12)';
+                tabBtns[tj].style.color = isAct ? '#fff' : 'var(--text-muted)';
+            }
+            // Show/hide column headers in sticky area
+            var colHeaders = document.querySelector('.trade-sticky-header .trade-columns');
+            if (colHeaders) colHeaders.style.display = (d.tab === 'trade') ? 'grid' : 'none';
+            // Show/hide search and filter bar on non-trade tabs
+            var searchBox = document.getElementById('tradeSearchInput');
+            var filterBar = document.getElementById('tradeFilterBar');
+            if (searchBox) searchBox.parentElement.style.display = (d.tab === 'trade') ? '' : 'none';
+            if (filterBar) filterBar.style.display = (d.tab === 'trade') ? 'flex' : 'none';
+        });
         registerAction('quitAutoTravelJobUI', function() { UI.quitAutoTravelJobUI(); });
         registerAction('turnBackUI', function() { UI.turnBackUI(); });
         registerAction('drinkUntilFull', function() { UI.drinkUntilFull(); });
@@ -1012,6 +1039,15 @@ window.UI = (function () {
         // Hide god mode panel if open
         var godPanel = document.getElementById('god-mode-panel');
         if (godPanel) godPanel.style.display = 'none';
+        // Clear health alert banner so it doesn't persist across games
+        var healthAlert = document.getElementById('healthAlert');
+        if (healthAlert) healthAlert.classList.remove('visible');
+        // Clear speed warning banner
+        var speedBanner = document.getElementById('speedWarningBanner');
+        if (speedBanner) speedBanner.style.display = 'none';
+        // Reset trade tab state
+        _activeTradeFilter = 'all';
+        _activeTradeTab = 'trade';
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1847,6 +1883,7 @@ window.UI = (function () {
         return res.category || 'other';
     }
     var _activeTradeFilter = 'all';
+    var _activeTradeTab = 'trade';
 
     function openTradeDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
@@ -2367,8 +2404,9 @@ window.UI = (function () {
             { id: 'livestock',  label: '🐄 Livestock' },
             { id: 'supplies',   label: '⛺ Supplies' },
         ];
-        var filterBarHtml = '<div style="margin-bottom:6px;"><input type="text" id="tradeSearchInput" placeholder="🔍 Search goods..." style="width:100%;padding:5px 10px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(0,0,0,0.3);color:#e8dcc8;outline:none;" /></div>';
-        filterBarHtml += '<div id="tradeFilterBar" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:4px 0;">';
+        var _filterDisplay = _activeTradeTab === 'trade' ? '' : 'display:none;';
+        var filterBarHtml = '<div style="margin-bottom:6px;' + _filterDisplay + '"><input type="text" id="tradeSearchInput" placeholder="🔍 Search goods..." style="width:100%;padding:5px 10px;font-size:0.8rem;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(0,0,0,0.3);color:#e8dcc8;outline:none;" /></div>';
+        filterBarHtml += '<div id="tradeFilterBar" style="display:' + (_activeTradeTab === 'trade' ? 'flex' : 'none') + ';flex-wrap:wrap;gap:4px;margin-bottom:8px;padding:4px 0;">';
         for (var _fb = 0; _fb < _filterBtns.length; _fb++) {
             var _f = _filterBtns[_fb];
             var _sel = (_activeTradeFilter === _f.id) ? 'background:rgba(100,180,255,0.3);border-color:rgba(100,180,255,0.6);color:#fff;' : 'background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.15);color:var(--text-muted);';
@@ -2425,18 +2463,53 @@ window.UI = (function () {
             rememberedHtml += '</div></details>';
         }
 
-        const html = `${marketDayBanner}${capacityHtml}${tradeInfoHtml}${filterBarHtml}<div class="trade-columns">
-            <div class="trade-column"><h3>Buy from Market</h3>${buyHtml}</div>
-            <div class="trade-column"><h3>Sell to Market</h3>${sellHtml}</div>
+        // Build trade tabs
+        var _tradeTabs = [{ id: 'trade', label: '🛒 Trade' }];
+        if (licenseHtml) _tradeTabs.push({ id: 'licenses', label: '📜 Licenses' });
+        if (rememberedHtml) _tradeTabs.push({ id: 'prices', label: '📔 Remembered Prices' });
+        if (marketIntelHtml) _tradeTabs.push({ id: 'intel', label: '📊 Intel' });
+        // Reset to trade tab if the active tab no longer exists
+        var _tabExists = _tradeTabs.some(function(t) { return t.id === _activeTradeTab; });
+        if (!_tabExists) _activeTradeTab = 'trade';
+        var tradeTabBarHtml = '';
+        if (_tradeTabs.length > 1) {
+            tradeTabBarHtml = '<div id="tradeTabBar" style="display:flex;gap:4px;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:6px;">';
+            for (var _tti = 0; _tti < _tradeTabs.length; _tti++) {
+                var _tt = _tradeTabs[_tti];
+                var _ttActive = (_activeTradeTab === _tt.id);
+                var _ttStyle = _ttActive
+                    ? 'background:rgba(100,180,255,0.25);border-color:rgba(100,180,255,0.5);color:#fff;'
+                    : 'background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.12);color:var(--text-muted);';
+                tradeTabBarHtml += '<button data-action="tradeTab" data-tab="' + _tt.id + '" style="font-size:0.75rem;padding:4px 10px;border-radius:8px 8px 0 0;border:1px solid;border-bottom:none;cursor:pointer;' + _ttStyle + '">' + _tt.label + '</button>';
+            }
+            tradeTabBarHtml += '</div>';
+        }
+
+        // Column headers for sticky area
+        var columnHeadersHtml = '<div class="trade-columns" style="margin-bottom:0;gap:0;"><div class="trade-column" style="padding-bottom:0;"><h3>Buy from Market</h3></div><div class="trade-column" style="padding-bottom:0;"><h3>Sell to Market</h3></div></div>';
+
+        // Wrap remembered prices content (strip the <details> wrapper for tab view)
+        var rememberedTabContent = rememberedHtml ? rememberedHtml.replace(/^<details[^>]*>/, '<div>').replace(/<\/details>$/, '</div>').replace(/<summary[^>]*>.*?<\/summary>/, '') : '';
+        // Wrap license content for tab view
+        var licenseTabContent = licenseHtml || '';
+        // Market intel tab content
+        var intelTabContent = marketIntelHtml || '';
+
+        var tradeTabDisplay = _activeTradeTab === 'trade' ? '' : 'display:none;';
+        var licensesTabDisplay = _activeTradeTab === 'licenses' ? '' : 'display:none;';
+        var pricesTabDisplay = _activeTradeTab === 'prices' ? '' : 'display:none;';
+        var intelTabDisplay = _activeTradeTab === 'intel' ? '' : 'display:none;';
+
+        var trendButtonsHtml = '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;"><button class="btn-trade" style="font-size:0.7rem;background:rgba(100,150,200,0.15);border-color:rgba(100,150,200,0.3);" data-action="askTavernFoodTrends">📊 Food Trends (5g)</button><button class="btn-trade" style="font-size:0.7rem;background:rgba(200,120,50,0.15);border-color:rgba(200,120,50,0.3);" data-action="askTavernFashionTrends">🎭 Fashion Trends (10g)</button></div>';
+
+        const html = `<div class="trade-sticky-header">${marketDayBanner}${capacityHtml}${tradeInfoHtml}${filterBarHtml}${tradeTabBarHtml}${_activeTradeTab === 'trade' ? columnHeadersHtml : ''}</div><div id="tradeTabTrade" style="${tradeTabDisplay}"><div class="trade-columns">
+            <div class="trade-column">${buyHtml}</div>
+            <div class="trade-column">${sellHtml}</div>
         </div>
-        ${storageManageHtml}
-        ${licenseHtml}
-        ${rememberedHtml}
-        ${marketIntelHtml}
-        <div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;">
-            <button class="btn-trade" style="font-size:0.7rem;background:rgba(100,150,200,0.15);border-color:rgba(100,150,200,0.3);" data-action="askTavernFoodTrends">📊 Food Trends (5g)</button>
-            <button class="btn-trade" style="font-size:0.7rem;background:rgba(200,120,50,0.15);border-color:rgba(200,120,50,0.3);" data-action="askTavernFashionTrends">🎭 Fashion Trends (10g)</button>
-        </div>
+        ${storageManageHtml}</div>
+        <div id="tradeTabLicenses" style="${licensesTabDisplay}">${licenseTabContent}</div>
+        <div id="tradeTabPrices" style="${pricesTabDisplay}">${rememberedTabContent}</div>
+        <div id="tradeTabIntel" style="${intelTabDisplay}">${intelTabContent}${trendButtonsHtml}</div>
         <div class="trade-summary">Your gold: <span class="gold-value">🪙 ${formatGold(Player.gold)}</span></div>`;
 
         openModal(`📊 Trade — ${town.name}`, html);
@@ -9067,14 +9140,15 @@ window.UI = (function () {
             { icon: '🤝', label: 'Street', fn: 'openStreetTrading' },
             { icon: '💤', label: 'Rest', fn: 'openRestDialog' },
             { icon: '💬', label: 'Talk', fn: 'talkToTownsfolk' },
-            { icon: '🛤️', label: 'Travel', fn: 'showTollRoutesPanel' },
+            { icon: '🛤️', label: 'Travel', fn: 'showTravelPanel' },
             { icon: '🗡️', label: 'Schemes', fn: 'openSchemesDialog', conditional: 'schemes' }
         ],
         business: [
             { icon: '🐴', label: 'Caravan', action: 'openCaravanDialog' },
             { icon: '🏠', label: 'Buildings', fn: 'openBuildingManagement' },
             { icon: '⛵', label: 'Ships', fn: 'openShipsDialog' },
-            { icon: '⛺', label: 'Outposts', fn: 'openOutpostDialog' }
+            { icon: '⛺', label: 'Outposts', fn: 'openOutpostDialog' },
+            { icon: '🛤️', label: 'Toll Routes', fn: 'showTollRoutesPanel' }
         ],
         character: [
             { icon: '👤', label: 'Character', action: 'openCharacterDialog' },

@@ -1095,6 +1095,39 @@
     function showTollRoutesPanel() {
         let html = '<div style="padding:15px;max-height:500px;overflow-y:auto;">';
 
+        // ===== TOLL ROUTES SECTION =====
+        html += '<h3 style="color:#ffd700;margin-bottom:10px;">🛤️ Your Toll Routes</h3>';
+
+        const owned = Player.getPlayerOwnedRoutes();
+        if (owned.length === 0) {
+            html += '<p style="color:#aaa;">You don\'t own any toll routes yet. Build roads or sea routes to start earning toll revenue!</p>';
+        } else {
+            html += '<table style="width:100%;border-collapse:collapse;">';
+            html += '<tr style="border-bottom:1px solid #555;"><th style="text-align:left;padding:5px;">Route</th><th>Type</th><th>Toll</th><th>Revenue</th><th>Action</th></tr>';
+            for (const r of owned) {
+                html += '<tr style="border-bottom:1px solid #333;">';
+                html += '<td style="padding:5px;">' + r.fromName + ' \u2194 ' + r.toName + '</td>';
+                html += '<td style="text-align:center;">' + (r.type === 'sea' ? '\u2693' : '\uD83D\uDEE4\uFE0F') + ' ' + r.type + '</td>';
+                html += '<td style="text-align:center;">' + r.tollRate + 'g</td>';
+                html += '<td style="text-align:center;color:#ffd700;">' + Math.floor(r.tollRevenue || 0) + 'g</td>';
+                html += '<td style="text-align:center;">';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" data-action="changeTollRate" data-id="' + r.type + '" data-val="' + r.fromTownId + '" data-type="' + r.toTownId + '">Set Rate</button>';
+                html += '</td></tr>';
+            }
+            html += '</table>';
+        }
+
+        html += '<div style="margin-top:15px;">';
+        html += '<button class="btn-medieval" data-action="collectTolls" style="padding:8px 20px;">💰 Collect All Revenue</button>';
+        html += '</div>';
+        html += '</div>'; // outer container
+
+        openModal('🛤️ Toll Routes', html);
+    }
+
+    function showTravelPanel() {
+        let html = '<div style="padding:15px;max-height:500px;overflow-y:auto;">';
+
         // ===== TRAVEL DESTINATIONS SECTION =====
         html += '<h3 style="color:#c9a96e;margin-bottom:10px;">🗺️ Travel Destinations</h3>';
 
@@ -1292,36 +1325,9 @@
             }
         }
 
-        // ===== TOLL ROUTES SECTION =====
-        html += '<div style="border-top:1px solid #444;margin-top:15px;padding-top:15px;">';
-        html += '<h3 style="color:#ffd700;margin-bottom:10px;">🛤️ Your Toll Routes</h3>';
-
-        const owned = Player.getPlayerOwnedRoutes();
-        if (owned.length === 0) {
-            html += '<p style="color:#aaa;">You don\'t own any toll routes yet. Build roads or sea routes to start earning toll revenue!</p>';
-        } else {
-            html += '<table style="width:100%;border-collapse:collapse;">';
-            html += '<tr style="border-bottom:1px solid #555;"><th style="text-align:left;padding:5px;">Route</th><th>Type</th><th>Toll</th><th>Revenue</th><th>Action</th></tr>';
-            for (const r of owned) {
-                html += '<tr style="border-bottom:1px solid #333;">';
-                html += '<td style="padding:5px;">' + r.fromName + ' \u2194 ' + r.toName + '</td>';
-                html += '<td style="text-align:center;">' + (r.type === 'sea' ? '\u2693' : '\uD83D\uDEE4\uFE0F') + ' ' + r.type + '</td>';
-                html += '<td style="text-align:center;">' + r.tollRate + 'g</td>';
-                html += '<td style="text-align:center;color:#ffd700;">' + Math.floor(r.tollRevenue || 0) + 'g</td>';
-                html += '<td style="text-align:center;">';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" data-action="changeTollRate" data-id="' + r.type + '" data-val="' + r.fromTownId + '" data-type="' + r.toTownId + '">Set Rate</button>';
-                html += '</td></tr>';
-            }
-            html += '</table>';
-        }
-
-        html += '<div style="margin-top:15px;">';
-        html += '<button class="btn-medieval" data-action="collectTolls" style="padding:8px 20px;">💰 Collect All Revenue</button>';
-        html += '</div>';
-        html += '</div>'; // toll routes section
         html += '</div>'; // outer container
 
-        openModal('🛤️ Routes & Travel', html);
+        openModal('🗺️ Travel Destinations', html);
     }
 
     function changeTollRate(routeType, fromTownId, toTownId) {
@@ -1474,6 +1480,7 @@
     UI.repairBuilding = repairBuildingUI;
     UI.repairShip = repairShipUI;
     UI.showTollRoutesPanel = showTollRoutesPanel;
+    UI.showTravelPanel = showTravelPanel;
     UI.changeTollRate = changeTollRate;
     UI.collectTolls = collectTollsUI;
     UI.showBuildRouteSelector = showBuildRouteSelector;

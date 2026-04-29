@@ -600,9 +600,6 @@ function showTownDetail(town) {
             html += `<button class="btn-medieval" data-action="showBuildRouteSelector" data-type="petition" style="${_actBtnStyle}background:rgba(255,215,0,0.15);border-color:rgba(255,215,0,0.4);">
                 \uD83D\uDC51 Petition King for Road
             </button>`;
-            html += `<button class="btn-medieval" data-action="showTollRoutesPanel" style="${_actBtnStyle}background:rgba(100,200,100,0.15);border-color:rgba(100,200,100,0.4);">
-                \uD83D\uDCCA My Toll Routes
-            </button>`;
             if (typeof Player !== 'undefined' && Player.isPlayerCitizenOf && Player.citizenshipKingdomId) {
                 html += `<button class="btn-medieval" data-action="showPetitionsPanel" style="${_actBtnStyle}background:rgba(212,160,23,0.15);border-color:rgba(212,160,23,0.4);">
                     📜 Petitions
@@ -4482,6 +4479,7 @@ function clickTown(townId) {
     UI.registerAction('openRealEstateReport', function() { UI.openRealEstateReport(); });
     UI.registerAction('buyLandUI', function() { UI.buyLandUI(); });
     UI.registerAction('showTollRoutesPanel', function() { UI.showTollRoutesPanel(); });
+    UI.registerAction('showTravelPanel', function() { UI.showTravelPanel(); });
     UI.registerAction('showPetitionsPanel', function() { UI.showPetitionsPanel(); });
     UI.registerAction('forageNearby', function() { UI.forageNearby(); });
 

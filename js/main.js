@@ -560,20 +560,28 @@ window.Game = (function () {
             charCreateScreen.style.display = 'flex';
         }
 
-        // Story mode: lock last name to "Ashford"
+        // Story mode: show last name as plain text "Ashford" (not editable)
         var lastNameEl = document.getElementById('charLastName');
-        if (lastNameEl) {
+        var lastNameGroup = lastNameEl ? lastNameEl.closest('.char-form-group') : null;
+        if (lastNameGroup) {
             var isStory = window._selectedStartConfig && window._selectedStartConfig.id === 'story_mode';
             if (isStory) {
-                lastNameEl.value = 'Ashford';
-                lastNameEl.readOnly = true;
-                lastNameEl.style.opacity = '0.6';
-                lastNameEl.style.cursor = 'not-allowed';
+                // Replace input with static text
+                lastNameGroup.innerHTML = '<label class="char-label">Last Name</label>' +
+                    '<div style="padding:8px 12px;font-size:1rem;color:#d4a843;letter-spacing:1px;">Ashford</div>';
             } else {
-                lastNameEl.value = '';
-                lastNameEl.readOnly = false;
-                lastNameEl.style.opacity = '';
-                lastNameEl.style.cursor = '';
+                // Ensure the input exists (restore if previously replaced)
+                if (!document.getElementById('charLastName')) {
+                    lastNameGroup.innerHTML = '<label class="char-label" for="charLastName">Last Name</label>' +
+                        '<input type="text" id="charLastName" class="char-input" maxlength="20" placeholder="Ashford" />';
+                }
+                var lnEl = document.getElementById('charLastName');
+                if (lnEl) {
+                    lnEl.value = '';
+                    lnEl.readOnly = false;
+                    lnEl.style.opacity = '';
+                    lnEl.style.cursor = '';
+                }
             }
         }
 
@@ -1019,8 +1027,10 @@ window.Game = (function () {
             // If name left blank, pick a random NPC-style name from NAMES pool
             const playerFirstName = (firstNameInput && firstNameInput.value.trim()) ||
                 (typeof NAMES !== 'undefined' ? NAMES[playerSex === 'F' ? 'female' : 'male'][Math.floor(Math.random() * NAMES[playerSex === 'F' ? 'female' : 'male'].length)] : 'Unknown');
-            const playerLastName = (lastNameInput && lastNameInput.value.trim()) ||
-                (typeof NAMES !== 'undefined' ? NAMES.surnames[Math.floor(Math.random() * NAMES.surnames.length)] : 'Merchant');
+            var isStoryStart = window._selectedStartConfig && window._selectedStartConfig.id === 'story_mode';
+            const playerLastName = isStoryStart ? 'Ashford' :
+                ((lastNameInput && lastNameInput.value.trim()) ||
+                (typeof NAMES !== 'undefined' ? NAMES.surnames[Math.floor(Math.random() * NAMES.surnames.length)] : 'Merchant'));
 
             // Hide character creation screen
             const charCreateScreen = document.getElementById('charCreateScreen');
