@@ -11029,8 +11029,12 @@ window.UI = (function () {
         openModal('💬 Rent Negotiations', html);
     }
 
+    var _buyLandOrigin = null; // 'build' or null (housing)
+
     function buyLandUI() {
         var townId = Player.townId;
+        // Remember where we came from before replacing the modal
+        _buyLandOrigin = _wasOpenedFromBuildDialog() ? 'build' : null;
         var sub = Player.getActiveSubsidy ? Player.getActiveSubsidy(townId) : null;
         if (sub) {
             // Show choice dialog: subsidized vs full price
@@ -11050,37 +11054,50 @@ window.UI = (function () {
             var result = Player.buyLand(Player.townId, false);
             toast(result.message, result.success ? 'success' : 'error');
             if (result.success) {
-                _refreshAfterLandChange();
+                _refreshAfterLandChange(_buyLandOrigin === 'build');
+                _buyLandOrigin = null;
                 update();
             }
         }
     }
 
     function _buyLandSubsidized() {
+        var _fromBuild = _buyLandOrigin === 'build';
         closeModal();
         var result = Player.buyLand(Player.townId, true);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            _refreshAfterLandChange();
+            _refreshAfterLandChange(_fromBuild);
             update();
         }
+        _buyLandOrigin = null;
     }
 
     function _buyLandFull() {
+        var _fromBuild = _buyLandOrigin === 'build';
         closeModal();
         var result = Player.buyLand(Player.townId, false);
         toast(result.message, result.success ? 'success' : 'error');
         if (result.success) {
-            _refreshAfterLandChange();
+            _refreshAfterLandChange(_fromBuild);
             update();
         }
+        _buyLandOrigin = null;
+    }
+
+    /** Check if the current modal was opened from the build dialog */
+    function _wasOpenedFromBuildDialog() {
+        var titleEl = document.getElementById('modalTitle');
+        var titleText = titleEl ? titleEl.textContent : '';
+        return titleText.indexOf('Build') !== -1 || titleText.indexOf('Buy Land') !== -1;
     }
 
     /** After buying/selling land, refresh whichever dialog is currently open */
-    function _refreshAfterLandChange() {
-        var titleEl = document.getElementById('modalTitle');
-        var titleText = titleEl ? titleEl.textContent : '';
-        if (titleText.indexOf('Build') !== -1 && typeof UI !== 'undefined' && UI.openBuildDialog) {
+    function _refreshAfterLandChange(fromBuild) {
+        if (fromBuild === undefined) {
+            fromBuild = _wasOpenedFromBuildDialog();
+        }
+        if (fromBuild && typeof UI !== 'undefined' && UI.openBuildDialog) {
             UI.openBuildDialog();
         } else {
             openHousingDialog();
