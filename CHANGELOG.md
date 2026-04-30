@@ -4,6 +4,61 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.89.1] - Funeral Overhaul, Favor System & Secret Beneficiary
+
+### Added — Death & Funeral System
+- **Death notification UI**: Shows inheritance (gold, buildings), kingdom taxes, and secret beneficiary warnings
+- **Funeral planning**: Player selects location, ceremony type (simple/standard/grand/royal), and date (3/7/30 days)
+- **Funeral lock**: Death notifications block UI close when player must plan funeral — must press "Plan Funeral"
+- **Funeral event UI**: Attend funeral with 5 actions (no energy cost), collapsible attendee list with family tags
+- **Targeted funeral actions**: Comfort, share memories, offer condolences can target specific attendees
+- **Funeral attendance**: Family prioritized, friends (60+ relationship) always come, acquaintances (20-59) 50% chance
+- **Secret beneficiary quirk**: Spouse may secretly divert 90% of inheritance to another NPC on death
+- **Noble spouse inheritance**: Player can inherit from noble spouses, not just EM spouses
+
+### Added — Elite Merchant Deals
+- **EM deal system**: EMs propose deals for goods they need; player delivers goods in exchange for EM delivering goods
+- **Deal intervals**: 14, 30, or 60 day delivery cycles with automatic tracking
+- **Deal management UI**: View/manage all deals, see delivery locations, break deals
+- **Building requirement**: Must own a building to make deals; building must accept the offered good type
+- **Deal cancellation**: Deals auto-cancel if either party's building is destroyed or changes owners
+- **EM deal AI**: EMs intelligently assess what they need, propose fair deals, and manage deliveries
+
+### Added — Selfishness Trait & King Gifts
+- **Selfishness personality trait**: All NPCs generated with selfishness (0-100, bell curve)
+- **King gift AI**: Kings occasionally bestow gifts, titles, and honors
+- **Selfish kings**: Highly selfish kings strongly prefer giving honors to those with high perceived loyalty and relationships
+
+### Added — EM Building Purchase Markup
+- **Stacking markup**: Each building purchased from same EM adds +10% to future building prices (cap +100%)
+
+### Improved — Favor System
+- **2-per-NPC limit**: Maximum 2 favors from the same NPC every 30 days
+- **Favor usage counter**: UI shows "Favors used: X/2" with distinct cooldown messaging
+- **Loyal Alibi fix**: Duration reduced from 30 to 3 days, added 30-day cooldown (was missing)
+- **Cooldown audit**: All timed favors now have cooldowns ≥ 2× their effect duration
+  - Frugal Advice: 30d effect → 60d cooldown
+  - Territory Protection: 60d effect → 120d cooldown
+  - Custom Order: 7d effect → 14d cooldown (new)
+  - Prospecting Tip: 7d effect → 14d cooldown (new)
+  - Security Intel: 14d cooldown (new)
+  - Crop Report: 14d cooldown (new)
+
+### Fixed
+- God mode kill now properly triggers funeral UI for any NPC
+- Player inherits from non-EM NPC spouse deaths (previously only EM spouses)
+- Funeral UI shows correct town reputation (not kingdom reputation)
+
+## [0.88.0] - Performance Optimizations & God Mode Fix
+
+### Improved — Performance
+- Optimized tick cache with pre-built people-by-town and people-by-kingdom lookups
+- Selfishness trait backfill during tick for saves predating the trait
+
+### Fixed
+- God mode kill now works on married elite merchants
+- Spouse inheritance correctly triggers for player when spouse dies
+
 ## [0.87.0] - Render Performance & Event Detail
 
 ### Improved — Render Performance
