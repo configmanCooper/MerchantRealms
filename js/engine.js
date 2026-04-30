@@ -1761,6 +1761,49 @@
             }
         }
 
+        // Guarantee at least one advanced_apothecary produces antidotes globally
+        var _hasAntidoteProd = false;
+        var _advApothCandidates = [];
+        for (var _aa1 = 0; _aa1 < towns.length; _aa1++) {
+            for (var _aa2 = 0; _aa2 < (towns[_aa1].buildings || []).length; _aa2++) {
+                var _aaBld = towns[_aa1].buildings[_aa2];
+                if (_aaBld.type === 'advanced_apothecary' && _aaBld.currentProduct === 'antidote') _hasAntidoteProd = true;
+                if (_aaBld.type === 'advanced_apothecary' && !_aaBld.currentProduct) {
+                    _advApothCandidates.push({ bld: _aaBld, town: towns[_aa1] });
+                }
+            }
+        }
+        if (!_hasAntidoteProd) {
+            if (_advApothCandidates.length > 0) {
+                // Set an existing advanced apothecary to produce antidotes
+                var _aaPick = _advApothCandidates[rng.randInt(0, _advApothCandidates.length - 1)];
+                _aaPick.bld.currentProduct = 'antidote';
+                // Seed some antidotes in the town market
+                if (_aaPick.town.market && _aaPick.town.market.supply) {
+                    _aaPick.town.market.supply.antidote = rng.randInt(2, 6);
+                }
+            } else {
+                // No advanced apothecary exists — place one in a town (kingdom or EM owned)
+                var _aaTown = _pickGapTown(false);
+                if (_aaTown) {
+                    var _aaKk = kingdoms.find(function(k) { return k.territories.has(_aaTown.id); });
+                    // Try to assign to an EM in this kingdom, otherwise kingdom-owned
+                    var _aaOwner = _aaKk ? _aaKk.id : null;
+                    var _aaEms = world.people.filter(function(p) { return p.isEliteMerchant && p.alive !== false && p.kingdomId === (_aaKk ? _aaKk.id : null); });
+                    if (_aaEms.length > 0) {
+                        _aaOwner = _aaEms[rng.randInt(0, _aaEms.length - 1)].id;
+                    }
+                    var _aaBldNew = { type: 'advanced_apothecary', level: 1, ownerId: _aaOwner, condition: 'new', workers: [], storage: {}, currentProduct: 'antidote' };
+                    _aaTown.buildings.push(_aaBldNew);
+                    _btCounts['advanced_apothecary'] = (_btCounts['advanced_apothecary'] || 0) + 1;
+                    // Seed antidotes in the market
+                    if (_aaTown.market && _aaTown.market.supply) {
+                        _aaTown.market.supply.antidote = rng.randInt(2, 6);
+                    }
+                }
+            }
+        }
+
         // --- Post-processing: initial kingdom stockpile and employees based on king personality ---
         for (var _ksi = 0; _ksi < kingdoms.length; _ksi++) {
             var _ks = kingdoms[_ksi];
