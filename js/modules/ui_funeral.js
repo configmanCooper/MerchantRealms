@@ -143,14 +143,14 @@
 
     // ── A. DEATH NOTIFICATION UI ──
 
-    function showDeathNotification(personId, cause, relationship) {
+    function showDeathNotification(personId, cause, relationship, snapshot) {
         var p = Engine.findPerson ? Engine.findPerson(personId) : (Engine.getPerson ? Engine.getPerson(personId) : null);
-        if (!p) {
+        if (!p && !snapshot) {
             toast('A family member has passed away.', 'warning');
             return;
         }
 
-        var name = _getPersonName(p);
+        var name = snapshot ? snapshot.personName : _getPersonName(p);
         var relLabel = _getRelationshipLabel(relationship);
         var causeText = cause || 'natural causes';
 
@@ -160,8 +160,8 @@
         html += '<div style="text-align:center;color:#bbb;font-size:0.78rem;margin-bottom:12px;">';
         html += 'Your ' + escapeHtml(relLabel) + ' has died of ' + escapeHtml(causeText) + '.</div>';
 
-        // Determine inheritance
-        var inheritInfo = _determineInheritance(p, relationship);
+        // Determine inheritance — use snapshot data if available (captures pre-transfer state)
+        var inheritInfo = _determineInheritance(p, relationship, snapshot);
 
         if (inheritInfo.playerInherits) {
             var kingdom = _getKingdomForTown(p.townId);
@@ -218,7 +218,7 @@
         openModal('⚰️ A Passing in the Family', html, footer);
     }
 
-    function _determineInheritance(p, relationship) {
+    function _determineInheritance(p, relationship, snapshot) {
         var result = {
             playerInherits: false,
             playerPlansFuneral: false,
@@ -228,20 +228,23 @@
         };
 
         var ps = Player.state;
+        // Use snapshot gold/buildings if available (pre-transfer state)
+        var deceasedGold = snapshot ? snapshot.gold : (p ? (p.gold || 0) : 0);
+        var deceasedBuildings = snapshot ? snapshot.buildings : (p ? _findInheritedBuildings(p.id) : []);
 
         if (relationship === 'spouse') {
             // Spouse: player always inherits and plans funeral
             result.playerInherits = true;
             result.playerPlansFuneral = true;
-            result.goldAmount = Math.floor((p.gold || 0) * 0.85);
-            result.buildings = _findInheritedBuildings(p.id);
+            result.goldAmount = Math.floor(deceasedGold * 0.85);
+            result.buildings = deceasedBuildings;
         } else if (relationship === 'mother' || relationship === 'father' || relationship === 'parent') {
             // Parent dies
             var otherParentAlive = false;
             var otherParentName = null;
             if (ps.parentIds && ps.parentIds.length > 0) {
                 for (var i = 0; i < ps.parentIds.length; i++) {
-                    if (ps.parentIds[i] !== p.id) {
+                    if (ps.parentIds[i] !== (p ? p.id : null)) {
                         var otherParent = Engine.findPerson ? Engine.findPerson(ps.parentIds[i]) : null;
                         if (otherParent && otherParent.alive) {
                             otherParentAlive = true;
@@ -281,16 +284,15 @@
                     // Player is oldest — gets inheritance and plans funeral
                     result.playerInherits = true;
                     result.playerPlansFuneral = true;
-                    // Oldest gets 50% gold
-                    result.goldAmount = Math.floor((p.gold || 0) * 0.50);
-                    result.buildings = _findInheritedBuildings(p.id);
+                    result.goldAmount = Math.floor(deceasedGold * 0.50);
+                    result.buildings = deceasedBuildings;
                 } else if (allEligible.length > 0) {
                     // Check if player gets a share
                     for (var pi = 0; pi < allEligible.length; pi++) {
                         if (allEligible[pi].id === 'player') {
                             var share = pi === 0 ? 0.50 : (pi === 1 ? 0.30 : 0.20);
                             result.playerInherits = true;
-                            result.goldAmount = Math.floor((p.gold || 0) * share);
+                            result.goldAmount = Math.floor(deceasedGold * share);
                             break;
                         }
                     }
@@ -299,10 +301,10 @@
             }
         } else if (relationship === 'sibling') {
             // Sibling: no inheritance unless no spouse/children
-            if (!p.spouseId && (!p.childrenIds || p.childrenIds.length === 0)) {
+            if (p && !p.spouseId && (!p.childrenIds || p.childrenIds.length === 0)) {
                 result.playerInherits = true;
-                result.goldAmount = Math.floor((p.gold || 0) * 0.50);
-                result.buildings = _findInheritedBuildings(p.id);
+                result.goldAmount = Math.floor(deceasedGold * 0.50);
+                result.buildings = deceasedBuildings;
                 result.playerPlansFuneral = true;
             }
         } else if (relationship === 'child') {

@@ -7241,6 +7241,99 @@
         // Remove from building workers
         removeWorkerFromBuilding(p);
 
+        // ── Trigger death/funeral UI for player's family ──
+        // Must run BEFORE widower/inheritance sections which clear spouseId
+        if (typeof Player !== 'undefined' && Player.state) {
+            var _isPlayerFamily = false;
+            var _familyRelation = null;
+            if (p.spouseId === 'player' || Player.state.spouseId === p.id) {
+                _isPlayerFamily = true;
+                _familyRelation = 'spouse';
+            }
+            if (!_isPlayerFamily && Player.state.parentIds) {
+                for (var _pi = 0; _pi < Player.state.parentIds.length; _pi++) {
+                    if (Player.state.parentIds[_pi] === p.id) {
+                        _isPlayerFamily = true;
+                        _familyRelation = p.sex === 'F' ? 'mother' : 'father';
+                        break;
+                    }
+                }
+            }
+            if (!_isPlayerFamily && Player.state.childrenIds) {
+                if (Player.state.childrenIds.indexOf(p.id) >= 0) {
+                    _isPlayerFamily = true;
+                    _familyRelation = 'child';
+                }
+            }
+            if (!_isPlayerFamily && Player.state.siblingIds) {
+                if (Player.state.siblingIds.indexOf(p.id) >= 0) {
+                    _isPlayerFamily = true;
+                    _familyRelation = 'sibling';
+                }
+            }
+            if (_isPlayerFamily) {
+                // Snapshot inheritance data BEFORE inheritance code clears it
+                var _deathSnap = {
+                    personId: p.id,
+                    personName: (p.firstName || '') + ' ' + (p.lastName || ''),
+                    cause: cause,
+                    relationship: _familyRelation,
+                    gold: p.gold || 0,
+                    isEM: !!p.isEliteMerchant,
+                    buildings: []
+                };
+                // Snapshot buildings owned by deceased
+                for (var _sti = 0; _sti < world.towns.length; _sti++) {
+                    var _st = world.towns[_sti];
+                    if (!_st.buildings) continue;
+                    for (var _sbi = 0; _sbi < _st.buildings.length; _sbi++) {
+                        if (_st.buildings[_sbi].ownerId === p.id) {
+                            _deathSnap.buildings.push({ name: _st.buildings[_sbi].name || _st.buildings[_sbi].type, townName: _st.name, type: _st.buildings[_sbi].type });
+                        }
+                    }
+                }
+
+                // Show death notification — try immediately if UI is ready, otherwise queue for end-of-tick
+                if (typeof UI !== 'undefined' && UI.showDeathNotification) {
+                    // Use setTimeout(0) so the notification shows after killPerson finishes
+                    (function(_snap) {
+                        setTimeout(function() { UI.showDeathNotification(_snap.personId, _snap.cause, _snap.relationship, _snap); }, 0);
+                    })(_deathSnap);
+                } else {
+                    if (!world._pendingDeathNotifications) world._pendingDeathNotifications = [];
+                    world._pendingDeathNotifications.push(_deathSnap);
+                }
+
+                // If parent died and other parent is alive, or sibling inherits, set up AI funeral
+                if ((_familyRelation === 'mother' || _familyRelation === 'father') && typeof UI !== 'undefined' && UI._setupAIFuneral) {
+                    var _otherParentAlive = false;
+                    var _otherParent = null;
+                    if (Player.state.parentIds) {
+                        for (var _opi = 0; _opi < Player.state.parentIds.length; _opi++) {
+                            if (Player.state.parentIds[_opi] !== p.id) {
+                                var _op = findPerson(Player.state.parentIds[_opi]);
+                                if (_op && _op.alive) { _otherParentAlive = true; _otherParent = _op; }
+                            }
+                        }
+                    }
+                    if (_otherParentAlive && _otherParent) {
+                        UI._setupAIFuneral(p, _familyRelation, (_otherParent.firstName || '') + ' ' + (_otherParent.lastName || ''), _otherParent.townId);
+                    } else if (!_otherParentAlive && Player.state.siblingIds && Player.state.siblingIds.length > 0) {
+                        var _eligSibs = [];
+                        for (var _esi = 0; _esi < Player.state.siblingIds.length; _esi++) {
+                            var _esib = findPerson(Player.state.siblingIds[_esi]);
+                            if (_esib && _esib.alive && _esib.age >= 18) _eligSibs.push(_esib);
+                        }
+                        _eligSibs.sort(function(a, b) { return b.age - a.age; });
+                        var _playerAge = Player.state.age || 18;
+                        if (_eligSibs.length > 0 && _eligSibs[0].age > _playerAge) {
+                            UI._setupAIFuneral(p, _familyRelation, (_eligSibs[0].firstName || '') + ' ' + (_eligSibs[0].lastName || ''), _eligSibs[0].townId);
+                        }
+                    }
+                }
+            }
+        }
+
         // Elite merchant dynasty inheritance
         if (p.isEliteMerchant) {
             p._deathDay = world.day;
@@ -7520,71 +7613,6 @@
                 for (var _dbi = 0; _dbi < _dt.buildings.length; _dbi++) {
                     if (_dt.buildings[_dbi].ownerId === p.id) {
                         _dt.buildings[_dbi].ownerId = _newOwnerId;
-                    }
-                }
-            }
-        }
-
-        // ── Trigger death/funeral UI for player's family ──
-        if (typeof Player !== 'undefined' && Player.state) {
-            var _isPlayerFamily = false;
-            var _familyRelation = null;
-            if (p.spouseId === 'player' || Player.state.spouseId === p.id) {
-                _isPlayerFamily = true;
-                _familyRelation = 'spouse';
-            }
-            if (!_isPlayerFamily && Player.state.parentIds) {
-                for (var _pi = 0; _pi < Player.state.parentIds.length; _pi++) {
-                    if (Player.state.parentIds[_pi] === p.id) {
-                        _isPlayerFamily = true;
-                        _familyRelation = p.sex === 'F' ? 'mother' : 'father';
-                        break;
-                    }
-                }
-            }
-            if (!_isPlayerFamily && Player.state.childrenIds) {
-                if (Player.state.childrenIds.indexOf(p.id) >= 0) {
-                    _isPlayerFamily = true;
-                    _familyRelation = 'child';
-                }
-            }
-            if (!_isPlayerFamily && Player.state.siblingIds) {
-                if (Player.state.siblingIds.indexOf(p.id) >= 0) {
-                    _isPlayerFamily = true;
-                    _familyRelation = 'sibling';
-                }
-            }
-            if (_isPlayerFamily) {
-                // Queue death notification (will be shown after tick completes)
-                if (!world._pendingDeathNotifications) world._pendingDeathNotifications = [];
-                world._pendingDeathNotifications.push({ personId: p.id, cause: cause, relationship: _familyRelation });
-
-                // If parent died and other parent is alive, or sibling inherits, set up AI funeral
-                if ((_familyRelation === 'mother' || _familyRelation === 'father') && typeof UI !== 'undefined' && UI._setupAIFuneral) {
-                    var _otherParentAlive = false;
-                    var _otherParent = null;
-                    if (Player.state.parentIds) {
-                        for (var _opi = 0; _opi < Player.state.parentIds.length; _opi++) {
-                            if (Player.state.parentIds[_opi] !== p.id) {
-                                var _op = findPerson(Player.state.parentIds[_opi]);
-                                if (_op && _op.alive) { _otherParentAlive = true; _otherParent = _op; }
-                            }
-                        }
-                    }
-                    if (_otherParentAlive && _otherParent) {
-                        UI._setupAIFuneral(p, _familyRelation, (_otherParent.firstName || '') + ' ' + (_otherParent.lastName || ''), _otherParent.townId);
-                    } else if (!_otherParentAlive && Player.state.siblingIds && Player.state.siblingIds.length > 0) {
-                        // Check if an older sibling inherits
-                        var _eligSibs = [];
-                        for (var _esi = 0; _esi < Player.state.siblingIds.length; _esi++) {
-                            var _esib = findPerson(Player.state.siblingIds[_esi]);
-                            if (_esib && _esib.alive && _esib.age >= 18) _eligSibs.push(_esib);
-                        }
-                        _eligSibs.sort(function(a, b) { return b.age - a.age; });
-                        var _playerAge = Player.state.age || 18;
-                        if (_eligSibs.length > 0 && _eligSibs[0].age > _playerAge) {
-                            UI._setupAIFuneral(p, _familyRelation, (_eligSibs[0].firstName || '') + ' ' + (_eligSibs[0].lastName || ''), _eligSibs[0].townId);
-                        }
                     }
                 }
             }
@@ -29674,7 +29702,7 @@
             if (world._pendingDeathNotifications && world._pendingDeathNotifications.length > 0) {
                 var _dn = world._pendingDeathNotifications.shift();
                 if (typeof UI !== 'undefined' && UI.showDeathNotification) {
-                    UI.showDeathNotification(_dn.personId, _dn.cause, _dn.relationship);
+                    UI.showDeathNotification(_dn.personId, _dn.cause, _dn.relationship, _dn);
                 }
             }
 
