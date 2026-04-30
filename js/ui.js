@@ -1705,6 +1705,13 @@ window.UI = (function () {
 
     function openModal(title, bodyHtml, footerHtml) {
         // Block opening non-encounter modals while encounter decision pending
+        if (UI._funeralLocked) {
+            var ftl = (title || '').toLowerCase();
+            if (ftl.indexOf('funeral') === -1 && ftl.indexOf('plan funeral') === -1) {
+                toast('⚰️ You must plan the funeral first!', 'warning');
+                return;
+            }
+        }
         if (_encounterLocked) {
             var etl = (title || '').toLowerCase();
             if (etl.indexOf('encounter') === -1) {
@@ -1761,6 +1768,7 @@ window.UI = (function () {
         if (_isBankruptcyBlocked()) return;
         if (_encounterLocked) return;
         if (_conquestLocked) return;
+        if (UI._funeralLocked) return;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
         // Clear modal history state

@@ -168,6 +168,14 @@
             // Apply discount
             var finalPrice = Math.max(baseCost, Math.round(valuation * (1 - discount / 100)));
 
+            // Stacking markup from previous purchases
+            var purchaseCount = (Player.state._emBuildingPurchases && Player.state._emBuildingPurchases[em.id]) || 0;
+            var stackingMarkup = Math.min(purchaseCount * 0.10, 1.0);
+            if (stackingMarkup > 0) {
+                finalPrice = Math.round(finalPrice * (1 + stackingMarkup));
+            }
+            var markupPct = Math.round(stackingMarkup * 100);
+
             // Willingness to sell
             var willing = true;
             var reason = '';
@@ -190,6 +198,7 @@
             html += '<div style="font-size:0.65rem;color:#888;">📍 ' + t.name;
             if (bType && bType.produces) html += ' | Produces: ' + bType.produces;
             if (isStrategic) html += ' | ⚠️ Strategic';
+            if (markupPct > 0) html += ' | <span style="color:#e67e22;">(+' + markupPct + '% markup from previous purchases)</span>';
             html += '</div>';
             html += '</div>';
             html += '<div style="text-align:right;">';
@@ -306,6 +315,10 @@
 
         // Relationship boost
         if (Player.modifyRelationship) Player.modifyRelationship(emId, 3);
+
+        // Track purchase count for stacking markup
+        if (!Player.state._emBuildingPurchases) Player.state._emBuildingPurchases = {};
+        Player.state._emBuildingPurchases[emId] = ((Player.state._emBuildingPurchases[emId]) || 0) + 1;
 
         var bType = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null;
         var bName = bType ? bType.name : b.type;

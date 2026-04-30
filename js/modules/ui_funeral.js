@@ -225,8 +225,11 @@
         var footer = '';
         if (inheritInfo.playerPlansFuneral) {
             footer += '<button class="btn-medieval" data-action="funeralPlanStart" data-personid="' + personId + '" data-rel="' + relationship + '" style="margin-right:6px;">🪦 Plan Funeral</button>';
+            // Lock the modal — player must plan the funeral
+            UI._funeralLocked = true;
+        } else {
+            footer += '<button class="btn-medieval" data-action="closeModal">Close</button>';
         }
-        footer += '<button class="btn-medieval" data-action="closeModal">Close</button>';
 
         openModal('⚰️ A Passing in the Family', html, footer);
     }
@@ -342,6 +345,43 @@
         html += '<h3 style="color:#9b59b6;margin:0 0 10px;">🪦 Funeral Planning for ' + escapeHtml(name) + '</h3>';
         html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:14px;">Your ' + escapeHtml(relLabel) + '</div>';
 
+        // Section 0: Location
+        var locationOptions = [];
+        var addedTownIds = {};
+        // Current town (default)
+        if (playerTownId) {
+            locationOptions.push({ townId: playerTownId, label: _getTownName(playerTownId) + ' (your current town)', isDefault: true });
+            addedTownIds[playerTownId] = true;
+        }
+        // Deceased's town
+        var deceasedTownId = p ? p.townId : null;
+        if (deceasedTownId && !addedTownIds[deceasedTownId]) {
+            locationOptions.push({ townId: deceasedTownId, label: _getTownName(deceasedTownId) + ' (deceased\'s home)' });
+            addedTownIds[deceasedTownId] = true;
+        }
+        // Towns where player owns buildings
+        var playerBuildings = (Player.state && Player.state.buildings) ? Player.state.buildings : [];
+        for (var pbi = 0; pbi < playerBuildings.length; pbi++) {
+            var pbTownId = playerBuildings[pbi].townId;
+            if (pbTownId && !addedTownIds[pbTownId]) {
+                locationOptions.push({ townId: pbTownId, label: _getTownName(pbTownId) + ' (you own property)' });
+                addedTownIds[pbTownId] = true;
+            }
+        }
+
+        html += '<div style="margin-bottom:14px;">';
+        html += '<div style="color:#e0c068;font-weight:bold;margin-bottom:6px;font-size:0.82rem;">📍 Location</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+        for (var li = 0; li < locationOptions.length; li++) {
+            var loc = locationOptions[li];
+            html += '<button class="btn-medieval" data-action="funeralSetLocation" data-locationid="' + loc.townId + '" ';
+            html += 'style="font-size:0.7rem;padding:6px;text-align:center;color:#111;">';
+            html += '<div style="font-weight:bold;">' + escapeHtml(loc.label) + '</div>';
+            if (loc.isDefault) html += '<div style="font-size:0.58rem;color:#2a7;">Default</div>';
+            html += '</button>';
+        }
+        html += '</div></div>';
+
         // Section 1: Timing
         html += '<div style="margin-bottom:14px;">';
         html += '<div style="color:#e0c068;font-weight:bold;margin-bottom:6px;font-size:0.82rem;">⏳ Timing</div>';
@@ -405,17 +445,18 @@
 
         // Initialize temporary plan state
         if (!Player.state._funeralPlanDraft) {
-            Player.state._funeralPlanDraft = { timing: null, burial: null, ceremony: null };
+            Player.state._funeralPlanDraft = { timing: null, burial: null, ceremony: null, locationTownId: playerTownId };
         }
     }
 
     function _renderPlanSummary() {
         var draft = (Player.state && Player.state._funeralPlanDraft) || {};
         var parts = [];
+        if (draft.locationTownId) parts.push('Location: ' + _getTownName(draft.locationTownId));
         if (draft.timing) parts.push('Timing: ' + draft.timing);
         if (draft.burial) parts.push('Burial: ' + draft.burial);
         if (draft.ceremony) parts.push('Ceremony: ' + draft.ceremony);
-        if (parts.length === 0) return 'Select timing, burial type, and ceremony style above.';
+        if (parts.length === 0) return 'Select location, timing, burial type, and ceremony style above.';
         return parts.join(' &bull; ');
     }
 
@@ -441,62 +482,108 @@
         if (!plan._actionsPerformed) plan._actionsPerformed = {};
 
         var universalActions = [
-            { id: 'pay_respects',      icon: '🙏', name: 'Pay Respects',       desc: 'Stand silently at the grave (+5 rep)', energy: 10 },
-            { id: 'speak_words',       icon: '🗣️', name: 'Speak Words',        desc: 'Say words about the deceased (+8 rep, +5 rel)', energy: 10 },
-            { id: 'comfort_mourners',  icon: '🤗', name: 'Comfort Mourners',   desc: 'Comfort other mourners (+3 rel each)', energy: 10 },
-            { id: 'share_memories',    icon: '💭', name: 'Share Memories',      desc: 'Share a memory (+5 rel with family)', energy: 8 },
-            { id: 'offer_condolences', icon: '🤝', name: 'Offer Condolences',  desc: 'Formally offer condolences (+2 rep)', energy: 5 },
-            { id: 'pray',             icon: '✝️', name: 'Pray',               desc: 'Pray for the departed (+3 rep)', energy: 8 },
-            { id: 'tend_grave',        icon: '🌸', name: 'Tend Grave',         desc: 'Place flowers at the burial site (+2 rep)', energy: 5 },
-            { id: 'host_wake',         icon: '🍷', name: 'Host Wake',          desc: 'Host a wake gathering (-50g, +10 rel all)', energy: 15 }
+            { id: 'pay_respects',      icon: '🙏', name: 'Pay Respects',       desc: 'Stand silently at the grave (+5 rep)', targeted: false },
+            { id: 'speak_words',       icon: '🗣️', name: 'Speak Words',        desc: 'Say words about the deceased (+8 rep, +5 rel)', targeted: false },
+            { id: 'comfort_mourners',  icon: '🤗', name: 'Comfort Someone',    desc: 'Comfort a mourner (+5 rel with them)', targeted: true },
+            { id: 'share_memories',    icon: '💭', name: 'Share Memories',      desc: 'Share a memory with someone (+5 rel)', targeted: true },
+            { id: 'offer_condolences', icon: '🤝', name: 'Offer Condolences',  desc: 'Offer condolences to someone (+3 rel, +2 rep)', targeted: true },
+            { id: 'pray',             icon: '✝️', name: 'Pray',               desc: 'Pray for the departed (+3 rep)', targeted: false },
+            { id: 'tend_grave',        icon: '🌸', name: 'Tend Grave',         desc: 'Place flowers at the burial site (+2 rep)', targeted: false },
+            { id: 'host_wake',         icon: '🍷', name: 'Host Wake',          desc: 'Host a wake gathering (-50g, +10 rel all)', targeted: false }
         ];
 
         var relActions = [];
         if (rel === 'spouse') {
-            relActions.push({ id: 'farewell_spouse', icon: '💔', name: 'Bid Farewell', desc: 'Bid farewell to your beloved (+15 rep)', energy: 15 });
+            relActions.push({ id: 'farewell_spouse', icon: '💔', name: 'Bid Farewell', desc: 'Bid farewell to your beloved (+15 rep)' });
         }
         if (rel === 'mother' || rel === 'father' || rel === 'parent') {
-            relActions.push({ id: 'honor_parent', icon: '👑', name: 'Honor Legacy', desc: "Honor your parent's legacy (+10 rep)", energy: 12 });
+            relActions.push({ id: 'honor_parent', icon: '👑', name: 'Honor Legacy', desc: "Honor your parent's legacy (+10 rep)" });
         }
         if (rel === 'sibling') {
-            relActions.push({ id: 'remember_sibling', icon: '👫', name: 'Remember Childhood', desc: 'Remember your shared childhood (+8 rep)', energy: 10 });
+            relActions.push({ id: 'remember_sibling', icon: '👫', name: 'Remember Childhood', desc: 'Remember your shared childhood (+8 rep)' });
         }
         if (rel === 'child') {
-            relActions.push({ id: 'mourn_child', icon: '😢', name: 'Mourn the Loss', desc: 'Mourn the life that could have been (+10 rep)', energy: 15 });
+            relActions.push({ id: 'mourn_child', icon: '😢', name: 'Mourn the Loss', desc: 'Mourn the life that could have been (+10 rep)' });
         }
 
         var allActions = universalActions.concat(relActions);
-        var playerEnergy = (Player.state && Player.state.energy != null) ? Player.state.energy : 100;
+
+        // Action-count system: 5 base + bonus from ceremony options
+        if (plan._actionsRemaining == null) {
+            var baseActions = 5;
+            if (plan.timing === 'grand') baseActions += 2;
+            if (plan.ceremony === 'state') baseActions += 3;
+            if (plan.burial === 'memorial_monument') baseActions += 1;
+            plan._actionsRemaining = baseActions;
+        }
+        var actionsRemaining = plan._actionsRemaining;
 
         var html = '<div style="padding:12px;">';
         html += '<div style="text-align:center;font-size:1.3rem;margin-bottom:6px;">⚰️🕯️</div>';
         html += '<h3 style="color:#9b59b6;margin:0 0 6px;text-align:center;">Funeral of ' + escapeHtml(name) + '</h3>';
         html += '<div style="text-align:center;font-size:0.72rem;color:#aaa;margin-bottom:6px;">Your ' + escapeHtml(_getRelationshipLabel(rel)) + '</div>';
 
-        // Attendees
-        html += '<div style="font-size:0.7rem;color:#999;margin-bottom:10px;text-align:center;">';
-        html += attendees.length + ' mourner' + (attendees.length !== 1 ? 's' : '') + ' in attendance';
+        // Attendees header + collapsible list
+        html += '<div style="margin-bottom:10px;">';
+        html += '<div data-action="toggleAttendeeList" style="font-size:0.72rem;color:#999;text-align:center;cursor:pointer;user-select:none;">';
+        html += '👥 ' + attendees.length + ' mourner' + (attendees.length !== 1 ? 's' : '') + ' in attendance <span style="font-size:0.6rem;color:#666;">(click to expand)</span>';
         html += '</div>';
+        html += '<div id="funeral-attendee-list" style="display:none;max-height:140px;overflow-y:auto;background:rgba(0,0,0,0.15);border-radius:4px;padding:6px;margin-top:4px;">';
+        if (attendees.length === 0) {
+            html += '<div style="font-size:0.65rem;color:#777;text-align:center;">No one else attended.</div>';
+        } else {
+            // Tag family members
+            var _famSet = {};
+            var _ps = Player.state || {};
+            if (_ps.childrenIds) for (var _fi0 = 0; _fi0 < _ps.childrenIds.length; _fi0++) _famSet[_ps.childrenIds[_fi0]] = 'child';
+            if (_ps.parentIds) for (var _fi1 = 0; _fi1 < _ps.parentIds.length; _fi1++) _famSet[_ps.parentIds[_fi1]] = 'parent';
+            if (_ps.siblingIds) for (var _fi2 = 0; _fi2 < _ps.siblingIds.length; _fi2++) _famSet[_ps.siblingIds[_fi2]] = 'sibling';
+            if (_ps.spouseId) _famSet[_ps.spouseId] = 'spouse';
+            for (var ati = 0; ati < attendees.length; ati++) {
+                var att = attendees[ati];
+                var attName = typeof att === 'object' ? (att.name || 'Unknown') : att;
+                var attId = typeof att === 'object' ? att.id : att;
+                var famTag = _famSet[attId] ? ' <span style="color:#9b59b6;font-size:0.58rem;">(' + _famSet[attId] + ')</span>' : '';
+                html += '<div style="font-size:0.65rem;color:#ccc;padding:1px 0;">• ' + escapeHtml(attName) + famTag + '</div>';
+            }
+        }
+        html += '</div></div>';
 
-        // Energy bar
-        html += '<div style="font-size:0.7rem;color:#ccc;margin-bottom:10px;">Energy: <span style="color:#3498db;">' + playerEnergy + '</span></div>';
+        // Actions remaining
+        html += '<div style="font-size:0.7rem;color:#ccc;margin-bottom:10px;">Actions remaining: <span style="color:#3498db;">' + actionsRemaining + '</span></div>';
 
         // Action buttons
         html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
         for (var ai = 0; ai < allActions.length; ai++) {
             var a = allActions[ai];
             var done = plan._actionsPerformed[a.id];
-            var noEnergy = playerEnergy < a.energy;
-            var isDisabled = done || noEnergy;
-            html += '<button class="btn-medieval" data-action="doFuneralAction" data-actionid="' + a.id + '" ';
-            html += 'style="font-size:0.7rem;padding:6px;text-align:left;color:#111;' + (isDisabled ? 'opacity:0.35;' : '') + '" ' + (isDisabled ? 'disabled' : '') + '>';
-            html += a.icon + ' ' + escapeHtml(a.name);
-            if (done) {
-                html += ' <span style="color:#2a7;font-size:0.6rem;">✓</span>';
+            var noActions = actionsRemaining <= 0;
+            var isDisabled = done || noActions;
+            if (a.targeted && attendees.length > 0 && !done && !noActions) {
+                // Targeted action: render as container with dropdown + button
+                html += '<div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:6px;">';
+                html += '<div style="font-size:0.7rem;color:#ddd;margin-bottom:4px;">' + a.icon + ' ' + escapeHtml(a.name) + '</div>';
+                html += '<div style="font-size:0.6rem;color:#888;margin-bottom:4px;">' + escapeHtml(a.desc) + '</div>';
+                html += '<select id="funeral-target-' + a.id + '" style="width:100%;font-size:0.65rem;padding:2px;margin-bottom:4px;background:#2a2a2a;color:#ccc;border:1px solid #555;border-radius:3px;">';
+                for (var sti = 0; sti < attendees.length; sti++) {
+                    var satt = attendees[sti];
+                    var sattName = typeof satt === 'object' ? (satt.name || 'Unknown') : satt;
+                    var sattId = typeof satt === 'object' ? satt.id : satt;
+                    html += '<option value="' + sattId + '">' + escapeHtml(sattName) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="doFuneralActionTargeted" data-actionid="' + a.id + '" style="font-size:0.65rem;padding:3px 8px;width:100%;color:#111;">' + a.icon + ' Do it</button>';
+                html += '</div>';
+            } else {
+                html += '<button class="btn-medieval" data-action="doFuneralAction" data-actionid="' + a.id + '" ';
+                html += 'style="font-size:0.7rem;padding:6px;text-align:left;color:#111;' + (isDisabled ? 'opacity:0.35;' : '') + '" ' + (isDisabled ? 'disabled' : '') + '>';
+                html += a.icon + ' ' + escapeHtml(a.name);
+                if (done) {
+                    html += ' <span style="color:#2a7;font-size:0.6rem;">✓</span>';
+                }
+                html += '<br><span style="font-size:0.6rem;color:#555;">' + escapeHtml(a.desc) + '</span>';
+                html += '</button>';
             }
-            html += '<br><span style="font-size:0.6rem;color:#555;">' + escapeHtml(a.desc) + '</span>';
-            html += '<br><span style="font-size:0.58rem;color:#888;">-' + a.energy + ' energy</span>';
-            html += '</button>';
         }
         html += '</div>';
         html += '</div>';
@@ -508,51 +595,52 @@
 
     // ── FUNERAL ACTION HANDLER ──
 
-    function _handleFuneralAction(actionId) {
+    function _handleFuneralAction(actionId, targetPersonId) {
         var plan = Player.state ? Player.state.funeralPlan : null;
         if (!plan) { toast('No funeral active.', 'warning'); return; }
         if (!plan._actionsPerformed) plan._actionsPerformed = {};
         if (plan._actionsPerformed[actionId]) { toast('Already performed this action.', 'info'); return; }
 
         var actionDefs = {
-            'pay_respects':      { rep: 5,  energy: 10, relBonus: 0,  relTarget: 'none',     msg: 'You stand silently at the grave, paying your respects.' },
-            'speak_words':       { rep: 8,  energy: 10, relBonus: 5,  relTarget: 'attendees', msg: 'You speak heartfelt words about the departed.' },
-            'comfort_mourners':  { rep: 0,  energy: 10, relBonus: 3,  relTarget: 'attendees', msg: 'You comfort the mourners with kind words.' },
-            'share_memories':    { rep: 0,  energy: 8,  relBonus: 5,  relTarget: 'family',    msg: 'You share a cherished memory of the departed.' },
-            'offer_condolences': { rep: 2,  energy: 5,  relBonus: 0,  relTarget: 'none',      msg: 'You formally offer your condolences.' },
-            'pray':             { rep: 3,  energy: 8,  relBonus: 0,  relTarget: 'none',      msg: 'You pray for the departed soul.', wellbeing: 5 },
-            'tend_grave':        { rep: 2,  energy: 5,  relBonus: 0,  relTarget: 'none',      msg: 'You place flowers and tend the burial site.' },
-            'host_wake':         { rep: 0,  energy: 15, relBonus: 10, relTarget: 'attendees', msg: 'You host a wake, bringing mourners together.', goldCost: 50 },
-            'farewell_spouse':   { rep: 15, energy: 15, relBonus: 0,  relTarget: 'none',      msg: 'You bid a tearful farewell to your beloved.', journal: true, journalType: 'funeral', journalText: 'I said goodbye to my beloved {name}. The world feels emptier now.' },
-            'honor_parent':      { rep: 10, energy: 12, relBonus: 5,  relTarget: 'surviving_parent', msg: "You honor your parent's legacy with dignity." },
-            'remember_sibling':  { rep: 8,  energy: 10, relBonus: 0,  relTarget: 'none',      msg: 'You recall the days of your shared childhood.', journal: true, journalType: 'funeral', journalText: 'I remembered the days I shared with {name}. Those memories will never fade.' },
-            'mourn_child':       { rep: 10, energy: 15, relBonus: 0,  relTarget: 'none',      msg: 'You mourn the life that could have been.', journal: true, journalType: 'funeral', journalText: 'I wept for {name}, for the life they will never live. A parent should not bury their child.' }
+            'pay_respects':      { rep: 5,  relBonus: 0,  relTarget: 'none',     msg: 'You stand silently at the grave, paying your respects.' },
+            'speak_words':       { rep: 8,  relBonus: 5,  relTarget: 'attendees', msg: 'You speak heartfelt words about the departed.' },
+            'comfort_mourners':  { rep: 0,  relBonus: 5,  relTarget: 'targeted', msg: 'You comfort {target} with kind words.' },
+            'share_memories':    { rep: 0,  relBonus: 5,  relTarget: 'targeted', msg: 'You share a cherished memory with {target}.' },
+            'offer_condolences': { rep: 2,  relBonus: 3,  relTarget: 'targeted', msg: 'You formally offer your condolences to {target}.' },
+            'pray':             { rep: 3,  relBonus: 0,  relTarget: 'none',      msg: 'You pray for the departed soul.', wellbeing: 5 },
+            'tend_grave':        { rep: 2,  relBonus: 0,  relTarget: 'none',      msg: 'You place flowers and tend the burial site.' },
+            'host_wake':         { rep: 0,  relBonus: 10, relTarget: 'attendees', msg: 'You host a wake, bringing mourners together.', goldCost: 50 },
+            'farewell_spouse':   { rep: 15, relBonus: 0,  relTarget: 'none',      msg: 'You bid a tearful farewell to your beloved.', journal: true, journalType: 'funeral', journalText: 'I said goodbye to my beloved {name}. The world feels emptier now.' },
+            'honor_parent':      { rep: 10, relBonus: 5,  relTarget: 'surviving_parent', msg: "You honor your parent's legacy with dignity." },
+            'remember_sibling':  { rep: 8,  relBonus: 0,  relTarget: 'none',      msg: 'You recall the days of your shared childhood.', journal: true, journalType: 'funeral', journalText: 'I remembered the days I shared with {name}. Those memories will never fade.' },
+            'mourn_child':       { rep: 10, relBonus: 0,  relTarget: 'none',      msg: 'You mourn the life that could have been.', journal: true, journalType: 'funeral', journalText: 'I wept for {name}, for the life they will never live. A parent should not bury their child.' }
         };
 
         var def = actionDefs[actionId];
         if (!def) { toast('Unknown action.', 'warning'); return; }
 
-        // Check energy
-        var ps = Player.state;
-        var currentEnergy = (ps.energy != null) ? ps.energy : 100;
-        if (currentEnergy < def.energy) {
-            toast('Not enough energy.', 'warning');
+        // Check actions remaining
+        if (plan._actionsRemaining != null && plan._actionsRemaining <= 0) {
+            toast('No actions remaining.', 'warning');
             return;
         }
 
         // Check gold cost
+        var ps = Player.state;
         if (def.goldCost && (ps.gold || 0) < def.goldCost) {
             toast('Not enough gold (-' + def.goldCost + 'g required).', 'warning');
             return;
         }
 
-        // Apply costs
-        ps.energy = currentEnergy - def.energy;
+        // Apply costs — decrement action count
+        if (plan._actionsRemaining != null) plan._actionsRemaining -= 1;
         if (def.goldCost) ps.gold = (ps.gold || 0) - def.goldCost;
 
-        // Apply reputation
-        if (def.rep > 0 && ps.reputation != null) {
-            ps.reputation = (ps.reputation || 0) + def.rep;
+        // Apply reputation to funeral town
+        if (def.rep > 0 && plan.funeralTownId) {
+            if (Player.modifyTownReputation) {
+                Player.modifyTownReputation(plan.funeralTownId, def.rep);
+            }
         }
 
         // Apply wellbeing
@@ -563,7 +651,9 @@
         // Apply relationship bonuses
         if (def.relBonus > 0 && def.relTarget !== 'none') {
             var targets = [];
-            if (def.relTarget === 'attendees') {
+            if (def.relTarget === 'targeted' && targetPersonId) {
+                targets.push(targetPersonId);
+            } else if (def.relTarget === 'attendees') {
                 targets = plan.attendees || [];
             } else if (def.relTarget === 'family') {
                 // Family members among attendees
@@ -589,8 +679,8 @@
 
             for (var ri = 0; ri < targets.length; ri++) {
                 var targetId = typeof targets[ri] === 'object' ? targets[ri].id : targets[ri];
-                if (targetId && targetId !== 'player' && Player.adjustRelationship) {
-                    Player.adjustRelationship(targetId, def.relBonus);
+                if (targetId && targetId !== 'player' && Player.modifyRelationship) {
+                    Player.modifyRelationship(targetId, def.relBonus);
                 }
             }
         }
@@ -606,12 +696,22 @@
         // Mark as done
         plan._actionsPerformed[actionId] = true;
 
-        // Log
-        if (Engine.logEvent) {
-            Engine.logEvent('⚰️ ' + def.msg, { type: 'funeral_action', action: actionId }, 'player_activity');
+        // Resolve target name for message
+        var actionMsg = def.msg;
+        if (targetPersonId) {
+            var _tgtPerson = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
+            var _tgtName = _tgtPerson ? _getPersonName(_tgtPerson) : 'them';
+            actionMsg = actionMsg.replace(/\{target\}/g, _tgtName);
+        } else {
+            actionMsg = actionMsg.replace(/\{target\}/g, 'the mourners');
         }
 
-        toast(def.msg, 'info');
+        // Log
+        if (Engine.logEvent) {
+            Engine.logEvent('⚰️ ' + actionMsg, { type: 'funeral_action', action: actionId, target: targetPersonId || null }, 'player_activity');
+        }
+
+        toast(actionMsg, 'info');
 
         // Refresh the funeral panel
         showFuneralEvent();
@@ -693,12 +793,114 @@
             }
         }
 
+        var addedIds = {};
+        var funeralTownId = plan.funeralTownId;
+
+        function _canAttend(npc) {
+            if (!npc || !npc.alive) return false;
+            if (npc.townId === funeralTownId) return true;
+            // Estimate distance: check if towns are connected
+            var npcTown = Engine.findTown ? Engine.findTown(npc.townId) : null;
+            var fTown = Engine.findTown ? Engine.findTown(funeralTownId) : null;
+            if (!npcTown || !fTown) return Math.random() < 0.5;
+            // Check if directly connected (1 town away)
+            var isNeighbor = false;
+            if (npcTown.connectedTowns) {
+                for (var ci2 = 0; ci2 < npcTown.connectedTowns.length; ci2++) {
+                    if (npcTown.connectedTowns[ci2] === funeralTownId || (npcTown.connectedTowns[ci2] && npcTown.connectedTowns[ci2].id === funeralTownId)) {
+                        isNeighbor = true;
+                        break;
+                    }
+                }
+            }
+            if (!isNeighbor && npcTown.roads) {
+                for (var ri = 0; ri < npcTown.roads.length; ri++) {
+                    var rd = npcTown.roads[ri];
+                    if (rd.to === funeralTownId || rd.from === funeralTownId) { isNeighbor = true; break; }
+                }
+            }
+            if (isNeighbor) return Math.random() < 0.8;
+            return Math.random() < 0.5;
+        }
+
+        function _addAttendee(npc) {
+            if (!npc || addedIds[npc.id] || plan.attendees.length >= maxAttendees) return;
+            if (npc.id === plan.deceasedId) return;
+            if (!npc.alive) return;
+            if (!_canAttend(npc)) return;
+            addedIds[npc.id] = true;
+            plan.attendees.push({ id: npc.id, name: _getPersonName(npc) });
+        }
+
+        var ps = Player.state;
+        var deceased = Engine.findPerson ? Engine.findPerson(plan.deceasedId) : null;
+
+        // 1. Family first: player's children
+        if (ps.childrenIds) {
+            for (var ki = 0; ki < ps.childrenIds.length; ki++) {
+                var child = Engine.findPerson ? Engine.findPerson(ps.childrenIds[ki]) : null;
+                _addAttendee(child);
+            }
+        }
+
+        // 2. Deceased's children
+        if (deceased && deceased.childrenIds) {
+            for (var dci = 0; dci < deceased.childrenIds.length; dci++) {
+                var dChild = Engine.findPerson ? Engine.findPerson(deceased.childrenIds[dci]) : null;
+                _addAttendee(dChild);
+            }
+        }
+
+        // 3. Spouse's children (if spouse exists)
+        if (ps.spouseId) {
+            var spouse = Engine.findPerson ? Engine.findPerson(ps.spouseId) : null;
+            if (spouse && spouse.childrenIds) {
+                for (var sci = 0; sci < spouse.childrenIds.length; sci++) {
+                    var sChild = Engine.findPerson ? Engine.findPerson(spouse.childrenIds[sci]) : null;
+                    _addAttendee(sChild);
+                }
+            }
+        }
+
+        // 4. Player's siblings
+        if (ps.siblingIds) {
+            for (var si = 0; si < ps.siblingIds.length; si++) {
+                var sib = Engine.findPerson ? Engine.findPerson(ps.siblingIds[si]) : null;
+                _addAttendee(sib);
+            }
+        }
+
+        // 5. Player's parents
+        if (ps.parentIds) {
+            for (var pi = 0; pi < ps.parentIds.length; pi++) {
+                var par = Engine.findPerson ? Engine.findPerson(ps.parentIds[pi]) : null;
+                _addAttendee(par);
+            }
+        }
+
+        // 6. Elite merchants who had a relationship with the deceased
+        if (world.eliteMerchants) {
+            for (var emi = 0; emi < world.eliteMerchants.length; emi++) {
+                var em = world.eliteMerchants[emi];
+                if (!em.alive || em.id === plan.deceasedId) continue;
+                var emRel = 0;
+                if (em.relationships && em.relationships[plan.deceasedId]) {
+                    emRel = em.relationships[plan.deceasedId].level || em.relationships[plan.deceasedId] || 0;
+                }
+                if (emRel >= 30) {
+                    _addAttendee(em);
+                } else if (emRel >= 10 && Math.random() < 0.5) {
+                    _addAttendee(em);
+                }
+            }
+        }
+
+        // 7. Other people with relationships to the deceased
         for (var i = 0; i < world.people.length; i++) {
             if (plan.attendees.length >= maxAttendees) break;
             var npc = world.people[i];
-            if (!npc.alive || npc.id === plan.deceasedId) continue;
+            if (!npc.alive || npc.id === plan.deceasedId || addedIds[npc.id]) continue;
 
-            // Check relationship to deceased
             var relToDeceased = 0;
             if (npc.relationships && npc.relationships[plan.deceasedId]) {
                 relToDeceased = npc.relationships[plan.deceasedId].level || npc.relationships[plan.deceasedId] || 0;
@@ -712,17 +914,45 @@
             }
 
             if (willAttend) {
-                plan.attendees.push({ id: npc.id, name: _getPersonName(npc) });
+                _addAttendee(npc);
+            }
+        }
+
+        // 8. Public/State ceremony: add random townspeople from funeral town
+        if (plan.ceremony === 'public' || plan.ceremony === 'state') {
+            var randomMin = plan.ceremony === 'state' ? 20 : 5;
+            var randomMax = plan.ceremony === 'state' ? 50 : 15;
+            var randomCount = randomMin + Math.floor(Math.random() * (randomMax - randomMin + 1));
+            var townLocals = [];
+            for (var tli = 0; tli < world.people.length; tli++) {
+                var local = world.people[tli];
+                if (!local.alive || local.id === plan.deceasedId || addedIds[local.id]) continue;
+                if (local.townId === funeralTownId) {
+                    townLocals.push(local);
+                }
+            }
+            // Shuffle and pick
+            for (var shi = townLocals.length - 1; shi > 0; shi--) {
+                var shj = Math.floor(Math.random() * (shi + 1));
+                var tmp = townLocals[shi];
+                townLocals[shi] = townLocals[shj];
+                townLocals[shj] = tmp;
+            }
+            for (var rli = 0; rli < Math.min(randomCount, townLocals.length); rli++) {
+                if (plan.attendees.length >= maxAttendees) break;
+                _addAttendee(townLocals[rli]);
             }
         }
     }
 
     function _resolveFuneral(plan) {
+        var funeralTownId = plan.funeralTownId;
+
         // Apply timing reputation
         for (var ti = 0; ti < FUNERAL_TIMING.length; ti++) {
             if (FUNERAL_TIMING[ti].id === plan.timing && FUNERAL_TIMING[ti].rep !== 0) {
-                if (Player.state && Player.state.reputation != null) {
-                    Player.state.reputation = (Player.state.reputation || 0) + FUNERAL_TIMING[ti].rep;
+                if (funeralTownId && Player.modifyTownReputation) {
+                    Player.modifyTownReputation(funeralTownId, FUNERAL_TIMING[ti].rep);
                 }
             }
         }
@@ -730,8 +960,8 @@
         // Apply burial reputation
         for (var bi = 0; bi < BURIAL_TYPES.length; bi++) {
             if (BURIAL_TYPES[bi].id === plan.burial && BURIAL_TYPES[bi].rep > 0) {
-                if (Player.state && Player.state.reputation != null) {
-                    Player.state.reputation = (Player.state.reputation || 0) + BURIAL_TYPES[bi].rep;
+                if (funeralTownId && Player.modifyTownReputation) {
+                    Player.modifyTownReputation(funeralTownId, BURIAL_TYPES[bi].rep);
                 }
             }
         }
@@ -739,8 +969,8 @@
         // Apply ceremony reputation
         for (var ci = 0; ci < CEREMONY_STYLES.length; ci++) {
             if (CEREMONY_STYLES[ci].id === plan.ceremony && CEREMONY_STYLES[ci].rep > 0) {
-                if (Player.state && Player.state.reputation != null) {
-                    Player.state.reputation = (Player.state.reputation || 0) + CEREMONY_STYLES[ci].rep;
+                if (funeralTownId && Player.modifyTownReputation) {
+                    Player.modifyTownReputation(funeralTownId, CEREMONY_STYLES[ci].rep);
                 }
             }
         }
@@ -749,8 +979,8 @@
         if (plan.timing === 'grand' && plan.attendees) {
             for (var ai = 0; ai < plan.attendees.length; ai++) {
                 var attId = typeof plan.attendees[ai] === 'object' ? plan.attendees[ai].id : plan.attendees[ai];
-                if (attId && attId !== 'player' && Player.adjustRelationship) {
-                    Player.adjustRelationship(attId, 5);
+                if (attId && attId !== 'player' && Player.modifyRelationship) {
+                    Player.modifyRelationship(attId, 5);
                 }
             }
         }
@@ -764,9 +994,9 @@
             if (ps.childrenIds) famIds = famIds.concat(ps.childrenIds);
             if (ps.spouseId) famIds.push(ps.spouseId);
             for (var fi = 0; fi < famIds.length; fi++) {
-                if (famIds[fi] && Player.adjustRelationship) {
+                if (famIds[fi] && Player.modifyRelationship) {
                     var fp = Engine.findPerson ? Engine.findPerson(famIds[fi]) : null;
-                    if (fp && fp.alive) Player.adjustRelationship(famIds[fi], 10);
+                    if (fp && fp.alive) Player.modifyRelationship(famIds[fi], 10);
                 }
             }
         }
@@ -802,8 +1032,16 @@
     UI.registerAction('funeralPlanStart', function(_t, d) {
         var personId = d.personid;
         var rel = d.rel;
+        UI._funeralLocked = false;
         closeModal();
         showFuneralPlanning(personId, rel);
+    });
+
+    UI.registerAction('funeralSetLocation', function(_t, d) {
+        if (!Player.state._funeralPlanDraft) Player.state._funeralPlanDraft = {};
+        Player.state._funeralPlanDraft.locationTownId = d.locationid;
+        toast('Location set: ' + _getTownName(d.locationid), 'success');
+        _updatePlanSummaryDOM();
     });
 
     UI.registerAction('funeralSetTiming', function(_t, d) {
@@ -865,6 +1103,7 @@
 
         var currentDay = Engine.getDay ? Engine.getDay() : 0;
         var playerTownId = Player.state.townId || (Player.townId || null);
+        var funeralTownId = draft.locationTownId || playerTownId;
 
         // Create the funeral plan
         Player.state.funeralPlan = {
@@ -876,7 +1115,7 @@
             burial: draft.burial,
             ceremony: draft.ceremony,
             funeralDay: currentDay + timingDays,
-            funeralTownId: playerTownId,
+            funeralTownId: funeralTownId,
             attendees: [],
             _actionsPerformed: {},
             _attendeesBuilt: false
@@ -886,7 +1125,7 @@
         delete Player.state._funeralPlanDraft;
 
         if (Engine.logEvent) {
-            Engine.logEvent('🪦 You have planned a funeral for ' + (Player.state.funeralPlan.deceasedName) + '. The ceremony will be held in ' + _getTownName(playerTownId) + ' on day ' + Player.state.funeralPlan.funeralDay + '.', {
+            Engine.logEvent('🪦 You have planned a funeral for ' + (Player.state.funeralPlan.deceasedName) + '. The ceremony will be held in ' + _getTownName(funeralTownId) + ' on day ' + Player.state.funeralPlan.funeralDay + '.', {
                 type: 'funeral_planned',
                 cost: totalCost,
                 timing: draft.timing,
@@ -901,6 +1140,20 @@
 
     UI.registerAction('doFuneralAction', function(_t, d) {
         _handleFuneralAction(d.actionid);
+    });
+
+    UI.registerAction('doFuneralActionTargeted', function(_t, d) {
+        var selectEl = document.getElementById('funeral-target-' + d.actionid);
+        var targetId = selectEl ? selectEl.value : null;
+        if (!targetId) { toast('Select a person first.', 'warning'); return; }
+        _handleFuneralAction(d.actionid, targetId);
+    });
+
+    UI.registerAction('toggleAttendeeList', function() {
+        var el = document.getElementById('funeral-attendee-list');
+        if (el) {
+            el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
     });
 
     UI.registerAction('funeralEnd', function() {

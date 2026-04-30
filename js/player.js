@@ -39033,6 +39033,7 @@
         getRelationship,
         modifyRelationship,
         modifyReputation: modifyKingdomReputation,
+        modifyTownReputation,
         getRelationshipLabel,
         giveGift,
         getNPCGiftPreferences,
