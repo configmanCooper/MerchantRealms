@@ -1774,15 +1774,17 @@
             }
 
             // ---- H2: Noble personality influence on governance (monthly) ----
-            if (typeof Engine.tickNobleInfluence === 'function') Engine.tickNobleInfluence(k);
+            if (world.day % 30 === 0 && typeof Engine.tickNobleInfluence === 'function') Engine.tickNobleInfluence(k);
             // ---- Noble policy advocacy (weekly) ----
-            if (typeof Engine.tickNoblePolicyAdvocacy === 'function') Engine.tickNoblePolicyAdvocacy(k);
+            if (world.day % 7 === 0 && typeof Engine.tickNoblePolicyAdvocacy === 'function') Engine.tickNoblePolicyAdvocacy(k);
             // ---- NPC local conversations (every 3 days) ----
-            if (typeof Engine.tickLocalConversations === 'function') Engine.tickLocalConversations(k);
+            if (world.day % 3 === 0 && typeof Engine.tickLocalConversations === 'function') Engine.tickLocalConversations(k);
             // ---- Noble conspiracies & king unrest response (monthly) ----
-            tickNobleConspiracies(k);
-            if (!_playerIsKingHere) {
-                tickKingUnrestResponse(k);
+            if (world.day % 30 === 0) {
+                tickNobleConspiracies(k);
+                if (!_playerIsKingHere) {
+                    tickKingUnrestResponse(k);
+                }
             }
 
             // ---- Process recruitment postings (NPCs decide to enlist) ----
@@ -3463,8 +3465,8 @@
                 // Personality-driven seizure target priority
                 // Cruel: target poorest first (commoners), Corrupt: target wealthiest (more gold), Desperate: target anyone
                 var seizureTargets = [];
-                var kCitizens = world.people.filter(function(c) {
-                    return c.alive && c.kingdomId === k.id && c.gold > 5 && c.occupation !== 'soldier' && c.occupation !== 'guard';
+                var kCitizens = Engine.getPeopleInKingdom(k.id).filter(function(c) {
+                    return c.gold > 5 && c.occupation !== 'soldier' && c.occupation !== 'guard';
                 });
 
                 if (p.temperament === 'cruel') {
@@ -3597,8 +3599,8 @@
                         // Some soldiers defect
                         var defectors = Math.floor(_wfFs.soldierCount * rng.randFloat(0.05, 0.20));
                         var defected = 0;
-                        var kSoldiers = world.people.filter(function(s) {
-                            return s.alive && s.kingdomId === k.id && s.occupation === 'soldier';
+                        var kSoldiers = (Engine.getTickCache && Engine.getTickCache().soldiersByKingdom && Engine.getTickCache().soldiersByKingdom[k.id]) || Engine.getPeopleInKingdom(k.id).filter(function(s) {
+                            return s.occupation === 'soldier';
                         });
                         var _defectorNames = [];
                         for (var di = 0; di < kSoldiers.length && defected < defectors; di++) {
@@ -4174,9 +4176,7 @@
             if (!k._activeVotes) k._activeVotes = [];
             boostKingdomHappiness(k, 10);
             // Noble council immediate loyalty boost on enactment
-            var _ncEnactNobles = world.people.filter(function(np) {
-                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
-            });
+            var _ncEnactNobles = Engine.getNoblesInKingdom(k.id);
             for (var _ncei = 0; _ncei < _ncEnactNobles.length; _ncei++) {
                 var _nceN = _ncEnactNobles[_ncei];
                 _nceN.kingLoyalty = Math.min(100, (_nceN.kingLoyalty || 50) + 5);
@@ -4196,9 +4196,7 @@
             happiness > 60 && rng.chance(0.05)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'noble_council'; });
             // Double-negative: -10 loyalty, -6 king relationship, +6 fear
-            var _ncRepealNobles = world.people.filter(function(np) {
-                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
-            });
+            var _ncRepealNobles = Engine.getNoblesInKingdom(k.id);
             for (var _ncri = 0; _ncri < _ncRepealNobles.length; _ncri++) {
                 var _ncrN = _ncRepealNobles[_ncri];
                 _ncrN.kingLoyalty = Math.max(0, (_ncrN.kingLoyalty || 50) - 10);
@@ -4353,9 +4351,8 @@
 
             // Ambitious kings seize noble estates (enriches crown but enrages nobles)
             if (p.ambition === 'ambitious' && treasury < 2000 && rng.chance(0.04)) {
-                var _seizeNobles = world.people.filter(function(np) {
-                    return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 5 &&
-                           (np.gold || 0) > 200;
+                var _seizeNobles = Engine.getNoblesInKingdom(k.id).filter(function(np) {
+                    return np.socialRank[k.id] <= 5 && (np.gold || 0) > 200;
                 });
                 if (_seizeNobles.length > 0) {
                     var _seizeTarget = rng.pick(_seizeNobles);
@@ -4370,8 +4367,8 @@
                         effects: ['Treasury +' + _seizeAmt + 'g', 'Noble loyalty -25', 'Other nobles grow wary']
                     });
                     // Other nobles become wary
-                    var _snNobles = world.people.filter(function(np) {
-                        return np.alive && np.id !== _seizeTarget.id && np.socialRank && np.socialRank[k.id] >= 4;
+                    var _snNobles = Engine.getNoblesInKingdom(k.id).filter(function(np) {
+                        return np.id !== _seizeTarget.id;
                     });
                     for (var _sni = 0; _sni < _snNobles.length; _sni++) {
                         _snNobles[_sni].kingLoyalty = Math.max(0, (_snNobles[_sni].kingLoyalty || 50) - 5);
@@ -4381,9 +4378,8 @@
 
             // Paranoid kings purge court members (removes threats but creates enemies)
             if (moodCurrent === 'paranoid' && rng.chance(0.06)) {
-                var _purgeTargets = world.people.filter(function(np) {
-                    return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 5 &&
-                           (np.perceivedKingLoyalty || 50) < 40;
+                var _purgeTargets = Engine.getNoblesInKingdom(k.id).filter(function(np) {
+                    return np.socialRank[k.id] <= 5 && (np.perceivedKingLoyalty || 50) < 40;
                 });
                 if (_purgeTargets.length > 0) {
                     var _purgeTarget = rng.pick(_purgeTargets);
@@ -4397,8 +4393,8 @@
                         effects: ['Noble stripped of rank', 'Assassination risk reduced', 'Other nobles fear the king more']
                     });
                     // Other nobles fear increases
-                    var _pnNobles = world.people.filter(function(np) {
-                        return np.alive && np.id !== _purgeTarget.id && np.socialRank && np.socialRank[k.id] >= 4;
+                    var _pnNobles = Engine.getNoblesInKingdom(k.id).filter(function(np) {
+                        return np.id !== _purgeTarget.id;
                     });
                     for (var _pni = 0; _pni < _pnNobles.length; _pni++) {
                         _pnNobles[_pni].fearOfKing = Math.min(100, (_pnNobles[_pni].fearOfKing || 15) + 10);
@@ -4443,9 +4439,7 @@
         // =============================================
         if (world.day % 30 === 0 && hasSpecialLaw(k, 'noble_council')) {
             // +5 loyalty, +3 king relationship, -3 fear per 30 days for all nobles
-            var _ncNobles = world.people.filter(function(np) {
-                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
-            });
+            var _ncNobles = Engine.getNoblesInKingdom(k.id);
             for (var _nci = 0; _nci < _ncNobles.length; _nci++) {
                 var _ncN = _ncNobles[_nci];
                 _ncN.kingLoyalty = Math.min(100, (_ncN.kingLoyalty || 50) + 5);
@@ -4459,9 +4453,7 @@
         // 13d. H1: NOBLE FEAR ACTIVATION — King periodically punishes nobles, fear effects
         // =============================================
         if (world.day % 15 === 0 && !_isPlayerKingOf(k)) {
-            var _h1Nobles = world.people.filter(function(np) {
-                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
-            });
+            var _h1Nobles = Engine.getNoblesInKingdom(k.id);
             if (_h1Nobles.length > 0) {
                 var _h1Pers = k.kingPersonality || {};
                 var _h1Mood = (k.kingMood && k.kingMood.current) || 'content';
@@ -6152,9 +6144,7 @@
         // 6. NOBLE REACTIONS TO SPENDING
         // ═══════════════════════════════════════════
         if (spent > 500 && rng.chance(0.2)) {
-            var nobles = world.people.filter(function(np) {
-                return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
-            });
+            var nobles = Engine.getNoblesInKingdom(k.id);
             for (var ni = 0; ni < nobles.length; ni++) {
                 var noble = nobles[ni];
                 var nPers = noble.personality || {};
@@ -6254,9 +6244,7 @@
         var kingPerson = k.king ? findPerson(k.king) : null;
         if (!kingPerson) return;
 
-        var nobles = world.people.filter(function(np) {
-            return np.alive && np.socialRank && np.socialRank[k.id] >= 4 && np.socialRank[k.id] <= 6;
-        });
+        var nobles = Engine.getNoblesInKingdom(k.id);
 
         for (var ni = 0; ni < nobles.length; ni++) {
             var noble = nobles[ni];

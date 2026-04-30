@@ -204,8 +204,9 @@
         var townHealthy = {}; // townId → [person, ...]
 
         // Main pass: tick existing illness + roll new random illness
-        for (var i = 0; i < world.people.length; i++) {
-            var p = world.people[i];
+        var _healthAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
+        for (var i = 0; i < _healthAlive.length; i++) {
+            var p = _healthAlive[i];
             if (!p.alive) continue;
             // Story Mode: protect story NPCs from random health events
             if (p.isStoryNPC && typeof Player !== 'undefined' && Player.state && Player.state.storyMode &&
@@ -268,8 +269,9 @@
             quarry_worker: 1.8, fisherman: 1.3
         };
 
-        for (var ii = 0; ii < world.people.length; ii++) {
-            var ip = world.people[ii];
+        var _injAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
+        for (var ii = 0; ii < _injAlive.length; ii++) {
+            var ip = _injAlive[ii];
             if (!ip.alive || ip.injured || !ip.townId) continue;
 
             var injMult = _dangerousJobs[ip.occupation] || 1.0;
@@ -814,11 +816,11 @@
         var townStats = [];
         for (var ti = 0; ti < kingdomTowns.length; ti++) {
             var t = kingdomTowns[ti];
-            var pop = 0, sick = 0, plagueCount = 0;
-            for (var pi = 0; pi < world.people.length; pi++) {
-                var pr = world.people[pi];
-                if (!pr.alive || pr.townId !== t.id) continue;
-                pop++;
+            var _tPeople = (typeof Engine !== 'undefined' && Engine.getPeopleInTown) ? Engine.getPeopleInTown(t.id) : [];
+            var pop = _tPeople.length, sick = 0, plagueCount = 0;
+            for (var pi = 0; pi < _tPeople.length; pi++) {
+                var pr = _tPeople[pi];
+                if (!pr.alive) continue;
                 if (pr.sick) {
                     sick++;
                     var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
@@ -1437,9 +1439,10 @@
                 var maxQueue = maxHealers * 2;
                 if (bld._treatmentQueue.length < maxQueue) {
                     var sickInTown = [];
-                    for (var pi = 0; pi < world.people.length; pi++) {
-                        var p = world.people[pi];
-                        if (!p.alive || p.townId !== town.id) continue;
+                    var _townPeopleForAdmit = (typeof Engine !== 'undefined' && Engine.getPeopleInTown) ? Engine.getPeopleInTown(town.id) : [];
+                    for (var pi = 0; pi < _townPeopleForAdmit.length; pi++) {
+                        var p = _townPeopleForAdmit[pi];
+                        if (!p.alive) continue;
                         if (!p.sick && !p.injured) continue;
                         if (p.sick && p.asymptomatic) continue;
                         // Already in queue?
@@ -1560,8 +1563,9 @@
             townMedFacilities[t.id] = hasMed;
         }
 
-        for (var i = 0; i < world.people.length; i++) {
-            var p = world.people[i];
+        var _treatAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
+        for (var i = 0; i < _treatAlive.length; i++) {
+            var p = _treatAlive[i];
             if (!p.alive || !p.townId) continue;
             if (!p.sick && !p.injured) continue;
             if (p._illnessTreatPaid) continue; // already being treated
@@ -1698,8 +1702,8 @@
         }
 
         // ---- Parent rescue: nobles/EMs seek treatment for their sick children ----
-        for (var _pci = 0; _pci < world.people.length; _pci++) {
-            var _child = world.people[_pci];
+        for (var _pci = 0; _pci < _treatAlive.length; _pci++) {
+            var _child = _treatAlive[_pci];
             if (!_child.alive || !_child.sick || _child._illnessTreatPaid) continue;
             if (_child.age == null || _child.age >= (typeof CONFIG !== 'undefined' ? CONFIG.COMING_OF_AGE : 18)) continue;
             if (!_child.parentIds || _child.parentIds.length === 0) continue;
@@ -1834,8 +1838,8 @@
             }
         }
         // Return healed travelers to their origin towns
-        for (var ri = 0; ri < world.people.length; ri++) {
-            var rp = world.people[ri];
+        for (var ri = 0; ri < _treatAlive.length; ri++) {
+            var rp = _treatAlive[ri];
             if (!rp.alive || !rp._travelingForTreatment) continue;
             if (!rp.sick && !rp.injured && !rp._illnessTreatPaid) {
                 // Healed — return home

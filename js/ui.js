@@ -9146,6 +9146,7 @@ window.UI = (function () {
         business: [
             { icon: '🐴', label: 'Caravan', action: 'openCaravanDialog' },
             { icon: '🏠', label: 'Buildings', fn: 'openBuildingManagement' },
+            { icon: '🏪', label: 'Town Market', fn: 'openTownMarket', conditional: 'intown' },
             { icon: '⛵', label: 'Ships', fn: 'openShipsDialog' },
             { icon: '⛺', label: 'Outposts', fn: 'openOutpostDialog' },
             { icon: '🛤️', label: 'Toll Routes', fn: 'showTollRoutesPanel' }

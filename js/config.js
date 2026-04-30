@@ -45,9 +45,9 @@ const CONFIG = {
     // Terrain margin tiles by zoom level (buffer around viewport)
     TERRAIN_MARGIN_EXTREME: 40,   // zoom < 0.5
     TERRAIN_MARGIN_LOW: 28,       // 0.5 <= zoom < 0.7
-    TERRAIN_MARGIN_MEDIUM: 16,    // 0.7 <= zoom < 1.0
-    TERRAIN_MARGIN_NORMAL: 6,     // 1.0 <= zoom < 1.5
-    TERRAIN_MARGIN_HIGH: 3,       // zoom >= 1.5
+    TERRAIN_MARGIN_MEDIUM: 20,    // 0.7 <= zoom < 1.0
+    TERRAIN_MARGIN_NORMAL: 10,    // 1.0 <= zoom < 1.5
+    TERRAIN_MARGIN_HIGH: 6,       // zoom >= 1.5
 
     // Pan thresholds in px (how far camera moves before terrain redraws)
     PAN_THRESHOLD_EXTREME: 200,   // zoom < 0.5

@@ -1242,8 +1242,14 @@
         var cfg = CONFIG.OUTPOST_CONFIG;
         var rng = world.rng;
 
-        for (var pi = 0; pi < world.people.length; pi++) {
-            var em = world.people[pi];
+        var _emList = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().eliteMerchants || []) : [];
+        if (_emList.length === 0) {
+            for (var pi = 0; pi < world.people.length; pi++) {
+                if (world.people[pi].alive && world.people[pi].isEliteMerchant) _emList.push(world.people[pi]);
+            }
+        }
+        for (var pi = 0; pi < _emList.length; pi++) {
+            var em = _emList[pi];
             if (!em.alive || !em.isEliteMerchant) continue;
             if ((em.gold || 0) < cfg.foundingCost * 2) continue; // Need 2x cost (buffer for maintenance)
 

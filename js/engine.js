@@ -54,6 +54,26 @@
         return world.people.filter(function(p) { return p.alive && p.kingdomId === kingdomId; });
     }
 
+    /**
+     * Get nobles (rank 4-6) in a kingdom. Uses _tickCache when available.
+     */
+    function getNoblesInKingdom(kId) {
+        if (_tickCache.noblesByKingdom && _tickCache.noblesByKingdom[kId]) return _tickCache.noblesByKingdom[kId];
+        if (!world.people) return [];
+        return world.people.filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
+        });
+    }
+
+    /**
+     * Get all alive people. Uses _tickCache when available.
+     */
+    function getAlivePeople() {
+        if (_tickCache.alivePeople && _tickCache.alivePeople.length > 0) return _tickCache.alivePeople;
+        if (!world.people) return [];
+        return world.people.filter(function(p) { return p.alive; });
+    }
+
     // ── Performance: cached off-road edges (computed once at world gen, terrain is static) ──
     var _offroadEdgeCache = null;
 
@@ -6461,9 +6481,10 @@
     function tickPeople() {
         const day = world.day;
         const newPeople = [];
+        var _alive = _tickCache.alivePeople || world.people;
 
-        for (let i = 0; i < world.people.length; i++) {
-            const p = world.people[i];
+        for (let i = 0; i < _alive.length; i++) {
+            const p = _alive[i];
             if (!p.alive) continue;
 
             // ---- Needs decay ----
@@ -7155,17 +7176,18 @@
     }
 
     function killPerson(p, cause) {
-        // Story mode protection — story NPCs cannot die during story mode
-        if (p.isStoryNPC && world._storyMode && !world._storyMode.complete) {
+        // Story mode protection — story NPCs cannot die during story mode (god_mode bypasses)
+        if (cause !== 'god_mode' && p.isStoryNPC && world._storyMode && !world._storyMode.complete) {
             return; // fully immune during active story
         }
         // Also check player's storyMode flag
-        if (p.isStoryNPC && typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.active && !Player.storyMode.complete) {
+        if (cause !== 'god_mode' && p.isStoryNPC && typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.active && !Player.storyMode.complete) {
             return;
         }
 
         // Child protection system — children are much harder to kill
-        if (cause !== 'old age' && cause !== 'natural causes') {
+        // God mode bypasses all protections
+        if (cause !== 'old age' && cause !== 'natural causes' && cause !== 'god_mode') {
             const isPlayerChild = p.id && p.id.startsWith('p_child_');
             const isPlayerSpouse = p.spouseId === 'player';
             const isUnderAge = p.age != null && p.age < CONFIG.COMING_OF_AGE;
@@ -7234,10 +7256,60 @@
                     .sort(function(a, b) { return b.age - a.age; });
                 if (eligibleChildren.length > 0) heir = eligibleChildren[0];
             }
-            // Priority 3: spouse
+            // Priority 3: spouse (including player)
             if (!heir && p.spouseId) {
-                var sp = findPerson(p.spouseId);
-                if (sp && sp.alive) heir = sp;
+                if (p.spouseId === 'player' && typeof Player !== 'undefined' && Player.state) {
+                    // Player is the spouse — handle inheritance directly
+                    var _playerInheritGold = Math.floor((p.gold || 0) * 0.85);
+                    Player.state.gold = (Player.state.gold || 0) + _playerInheritGold;
+                    // Transfer building ownership to player
+                    if (p.buildings && p.buildings.length > 0) {
+                        if (!Player.state.buildings) Player.state.buildings = [];
+                        for (var _pbi = 0; _pbi < p.buildings.length; _pbi++) {
+                            Player.state.buildings.push(p.buildings[_pbi]);
+                        }
+                        for (var _dti2 = 0; _dti2 < world.towns.length; _dti2++) {
+                            var _dt2 = world.towns[_dti2];
+                            if (!_dt2.buildings) continue;
+                            for (var _dbi2 = 0; _dbi2 < _dt2.buildings.length; _dbi2++) {
+                                if (_dt2.buildings[_dbi2].ownerId === p.id) {
+                                    _dt2.buildings[_dbi2].ownerId = 'player';
+                                }
+                            }
+                        }
+                    }
+                    // Transfer inventory to player
+                    if (p.npcMerchantInventory) {
+                        if (!Player.state.inventory) Player.state.inventory = {};
+                        for (var _iKey in p.npcMerchantInventory) {
+                            Player.state.inventory[_iKey] = (Player.state.inventory[_iKey] || 0) + (p.npcMerchantInventory[_iKey] || 0);
+                        }
+                    }
+                    // Clear deceased EM's assets
+                    p.buildings = [];
+                    p.npcMerchantInventory = {};
+                    p.isEliteMerchant = false;
+                    // Remove from world.eliteMerchants
+                    if (eliteIdx >= 0 && world.eliteMerchants) {
+                        world.eliteMerchants.splice(eliteIdx, 1);
+                    }
+                    // Clear player's spouse reference
+                    Player.state.spouseId = null;
+                    logEvent('💰 You inherit the ' + (p.lastName || p.firstName) + ' merchant empire! ' + _playerInheritGold + 'g received (after 15% death tax).', {
+                        type: 'player_inheritance',
+                        cause: 'Your spouse ' + p.firstName + ' ' + (p.lastName || '') + ' has died.',
+                        effects: [
+                            'You inherit ' + _playerInheritGold + 'g',
+                            p.buildings ? (p.buildings.length + ' buildings transferred to you') : 'No buildings',
+                            'Merchant inventory transferred to your stock'
+                        ]
+                    });
+                    // Skip the normal heir logic below
+                    heir = { _playerHandled: true };
+                } else {
+                    var sp = findPerson(p.spouseId);
+                    if (sp && sp.alive) heir = sp;
+                }
             }
             // Priority 4: eldest living sibling
             if (!heir && p.parentIds && p.parentIds.length > 0) {
@@ -7261,7 +7333,7 @@
                 }
             }
 
-            if (heir) {
+            if (heir && !heir._playerHandled) {
                 // 15% death tax
                 var inheritedGold = Math.floor((p.gold || 0) * 0.85);
                 heir.gold = (heir.gold || 0) + inheritedGold;
@@ -7392,8 +7464,53 @@
 
         // Widower
         if (p.spouseId) {
-            const spouse = findPerson(p.spouseId);
-            if (spouse) spouse.spouseId = null;
+            if (p.spouseId === 'player' && typeof Player !== 'undefined' && Player.state) {
+                Player.state.spouseId = null;
+            } else {
+                const spouse = findPerson(p.spouseId);
+                if (spouse) spouse.spouseId = null;
+            }
+        }
+
+        // Transfer buildings owned by non-EM NPCs: spouse > children > kingdom
+        if (!p.isEliteMerchant && town) {
+            var _deadKingdom = findKingdom(town.kingdomId);
+            var _deadKingdomId = _deadKingdom ? _deadKingdom.id : null;
+            // Determine heir: spouse first
+            var _bldHeir = null;
+            if (p.spouseId) {
+                if (p.spouseId === 'player' && typeof Player !== 'undefined' && Player.state) {
+                    _bldHeir = { id: 'player' };
+                } else {
+                    var _sp = findPerson(p.spouseId);
+                    if (_sp && _sp.alive) _bldHeir = _sp;
+                }
+            }
+            // No spouse — try children (oldest gets higher chance)
+            if (!_bldHeir && p.childrenIds && p.childrenIds.length > 0) {
+                var _eligKids = p.childrenIds
+                    .map(function(cid) { return findPerson(cid); })
+                    .filter(function(c) { return c && c.alive && c.age >= (CONFIG.COMING_OF_AGE || 18); })
+                    .sort(function(a, b) { return b.age - a.age; });
+                if (_eligKids.length > 0) {
+                    // Oldest gets 50%, next 30%, rest 20% each
+                    var _chances = [0.50, 0.30];
+                    for (var _ci = 0; _ci < _eligKids.length; _ci++) {
+                        var _chance = _ci < _chances.length ? _chances[_ci] : 0.20;
+                        if (world.rng.chance(_chance)) { _bldHeir = _eligKids[_ci]; break; }
+                    }
+                }
+            }
+            var _newOwnerId = _bldHeir ? _bldHeir.id : _deadKingdomId;
+            for (var _dti = 0; _dti < world.towns.length; _dti++) {
+                var _dt = world.towns[_dti];
+                if (!_dt.buildings) continue;
+                for (var _dbi = 0; _dbi < _dt.buildings.length; _dbi++) {
+                    if (_dt.buildings[_dbi].ownerId === p.id) {
+                        _dt.buildings[_dbi].ownerId = _newOwnerId;
+                    }
+                }
+            }
         }
 
         // Check if this person was a king
@@ -13395,10 +13512,7 @@
                 k._recentBattleLosses = Math.max(0, k._recentBattleLosses - 1);
             }
 
-            var nobles = world.people.filter(function(p) {
-                return p.alive && p.socialRank &&
-                    (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 || p.socialRank[kId] === 6);
-            });
+            var nobles = getNoblesInKingdom(kId);
 
             // Build a lookup of buildings owned by nobles for competing interests check
             var kTowns = world.towns.filter(function(t) { return t.kingdomId === kId; });
@@ -13675,10 +13789,7 @@
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
             var k = world.kingdoms[ki];
             var kId = k.id;
-            var nobles = world.people.filter(function(p) {
-                return p.alive && p.socialRank &&
-                    (p.socialRank[kId] === 4 || p.socialRank[kId] === 5 || p.socialRank[kId] === 6);
-            });
+            var nobles = getNoblesInKingdom(kId);
 
             for (var ni = 0; ni < nobles.length; ni++) {
                 var noble = nobles[ni];
@@ -16200,8 +16311,8 @@
         const rng = world.rng;
 
         for (const town of world.towns) {
-            const townPeople = world.people.filter(p =>
-                p.alive && p.townId === town.id && p.age >= CONFIG.COMING_OF_AGE
+            const townPeople = getPeopleInTown(town.id).filter(p =>
+                p.age >= CONFIG.COMING_OF_AGE
             );
             if (townPeople.length === 0) continue;
 
@@ -19249,7 +19360,7 @@
         switch (ev.type) {
             case 'plague': {
                 // Infect people with plague illness instead of instant-killing
-                const townPeople = world.people.filter(p => p.alive && p.townId === ev.townId);
+                const townPeople = getPeopleInTown(ev.townId);
                 for (const p of townPeople) {
                     if (!p.sick && rng.chance(ev.killRate * 2)) {
                         Engine.infectNPC(p, 'plague', rng, world.day, 'plague_event');
@@ -19293,7 +19404,7 @@
             }
             case 'plague_disaster': {
                 // Infect people with plague illness; deaths come from illness progression
-                var townPeople = world.people.filter(function(p) { return p.alive && p.townId === ev.townId; });
+                var townPeople = getPeopleInTown(ev.townId);
                 var sickCount = 0;
                 var totalHere = townPeople.length;
                 // Aggressive daily infection — killRate scales with remaining uninfected
@@ -20545,8 +20656,7 @@
             const pop = (t._popOverride || CONFIG.PEOPLE_PER_TOWN);
             return s + pop;
         }, 0);
-        const armySize = world.people.filter(p => p.alive && p.kingdomId === kingdom.id &&
-            (p.occupation === 'soldier' || p.occupation === 'guard')).length;
+        const armySize = (_tickCache.soldiersByKingdom[kingdom.id] || []).length;
         const isAtWar = kingdom.atWar && kingdom.atWar.size > 0;
         const warIntensity = isAtWar ? Math.min(100, 40 + kingdom.atWar.size * 20) : 0;
 
@@ -21921,7 +22031,7 @@
     function tickNPCPurchasing() {
         if (!world._npcPurchaseIndex) world._npcPurchaseIndex = 0;
 
-        const alive = world.people.filter(p => p.alive);
+        const alive = getAlivePeople();
         if (alive.length === 0) return;
         const batchSize = Math.ceil(alive.length / CONFIG.TICKS_PER_DAY);
         const start = world._npcPurchaseIndex;
@@ -22108,7 +22218,7 @@
 
         // Infect initial population
         var infectionPct = rng.randFloat(infRate.min, infRate.max) * (1 - plagueMitigation);
-        var townPeople = world.people.filter(function(p) { return p.alive && p.townId === town.id && !p.sick; });
+        var townPeople = getPeopleInTown(town.id).filter(function(p) { return !p.sick; });
         var toInfect = Math.floor(townPeople.length * infectionPct);
         // Shuffle and infect
         for (var si = townPeople.length - 1; si > 0; si--) {
@@ -22193,7 +22303,7 @@
         }
 
         // Kill 5-10 miners
-        const miners = world.people.filter(p => p.alive && p.townId === town.id && p.occupation === 'miner');
+        const miners = getPeopleInTown(town.id).filter(p => p.occupation === 'miner');
         const toKill = Math.min(rng.randInt(5, 10), miners.length);
         for (let i = 0; i < toKill; i++) {
             killPerson(miners[i], 'mine collapse');
@@ -22704,7 +22814,7 @@
     function tickFoodPreferences() {
         if (!world._foodPrefIndex) world._foodPrefIndex = 0;
         
-        const alive = world.people.filter(p => p.alive);
+        const alive = getAlivePeople();
         if (alive.length === 0) return;
         const batchSize = Math.min(50, alive.length);
         const start = world._foodPrefIndex;
@@ -23103,7 +23213,7 @@
         const town = findTown(townId);
         if (!town) return [];
         
-        const alive = world.people.filter(p => p.alive && p.townId === townId);
+        const alive = getPeopleInTown(townId);
         if (alive.length === 0) return [];
         
         const foods = ['bread', 'meat', 'poultry', 'fish', 'eggs', 'preserved_food'];
@@ -23167,7 +23277,7 @@
                 // Calculate distance
                 var dist = Math.hypot(town.x - destTown.x, town.y - destTown.y);
                 // Pick random person from town as the traveler
-                var townPeople = world.people.filter(function(p) { return p.alive && p.townId === town.id && p.age >= 16; });
+                var townPeople = getPeopleInTown(town.id).filter(function(p) { return p.age >= 16; });
                 if (townPeople.length === 0) continue;
                 var person = townPeople[Math.floor(rng.random() * townPeople.length)];
                 // Don't duplicate — skip if already wanting to travel
@@ -23934,7 +24044,10 @@
 
             const owner = findPerson(bld.ownerId);
             if (!owner || !owner.alive) {
-                offers.push({ building: bld, price: getBuildingValue(bld), reason: 'Unowned' });
+                // Auto-fix: reassign dead/missing owner's building to the kingdom
+                if (kingdom) bld.ownerId = kingdom.id;
+                else bld.ownerId = null;
+                offers.push({ building: bld, price: getBuildingValue(bld), reason: 'Crown property — for sale' });
                 continue;
             }
 
@@ -24357,9 +24470,7 @@
 
         // Generate 2-5 random petitions from nobles and citizens
         var numPetitions = rng.randInt(2, 5);
-        var kNobles = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
-        });
+        var kNobles = getNoblesInKingdom(kId);
 
         for (var pi = 0; pi < numPetitions; pi++) {
             var petitionTypes = ['tax_relief', 'military_funding', 'building_request', 'trade_dispute', 'noble_grievance', 'festival_request'];
@@ -26594,9 +26705,7 @@
     function _triggerFestivalEvent(festival, k) {
         var rng = world.rng;
         var town = findTown(festival.townId);
-        var townPeople = world.people.filter(function(p) {
-            return p.alive && p.townId === festival.townId;
-        });
+        var townPeople = getPeopleInTown(festival.townId);
         if (townPeople.length < 2) return;
 
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
@@ -26651,11 +26760,11 @@
                 break;
             }
             case 3: { // Rumor Mill
-                var nobles = world.people.filter(function(p) {
-                    return p.alive && p.townId === festival.townId && p.occupation === 'noble';
+                var nobles = getPeopleInTown(festival.townId).filter(function(p) {
+                    return p.occupation === 'noble';
                 });
-                var ems = world.people.filter(function(p) {
-                    return p.alive && p.townId === festival.townId && p.isEliteMerchant;
+                var ems = getPeopleInTown(festival.townId).filter(function(p) {
+                    return p.isEliteMerchant;
                 });
                 if (nobles.length > 0 && rng.chance(0.5)) {
                     var noble = rng.pick(nobles);
@@ -26758,8 +26867,8 @@
 
         var rng = world.rng;
         var playerPersonId = Player.personId || 'player';
-        var townPeople = world.people.filter(function(p) {
-            return p.alive && p.townId === festival.townId && p.id !== playerPersonId;
+        var townPeople = getPeopleInTown(festival.townId).filter(function(p) {
+            return p.id !== playerPersonId;
         });
         var result = { success: false, message: '' };
 
@@ -27198,9 +27307,7 @@
         if (k.king === 'player_king') return; // Player-king makes own decisions
 
         // Gather living nobles (rank 4-6)
-        var nobles = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
-        });
+        var nobles = getNoblesInKingdom(kId);
         if (nobles.length === 0) return;
 
         // Initialize opinions for any nobles that don't have them yet
@@ -27347,8 +27454,8 @@
         var kingPerson = findPerson(k.king);
         if (!kingPerson) return;
 
-        var nobles = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 && p._policyOpinions;
+        var nobles = getNoblesInKingdom(kId).filter(function(p) {
+            return p._policyOpinions;
         });
 
         for (var ni = 0; ni < nobles.length; ni++) {
@@ -27497,9 +27604,7 @@
         var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
 
         // C3: Single-noble assassination attempts (loyalty < 25)
-        var allNobles = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
-        });
+        var allNobles = getNoblesInKingdom(kId);
         for (var sni = 0; sni < allNobles.length; sni++) {
             var sNoble = allNobles[sni];
             if (sNoble.kingLoyalty != null && sNoble.kingLoyalty < 25 && !sNoble._arrested) {
@@ -27617,9 +27722,8 @@
         }
 
         // No active conspiracy — check if one should form (C3: threshold lowered from <30 to <45)
-        var dissidents = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 &&
-                   p.kingLoyalty != null && p.kingLoyalty < 45;
+        var dissidents = getNoblesInKingdom(kId).filter(function(p) {
+            return p.kingLoyalty != null && p.kingLoyalty < 45;
         });
 
         if (dissidents.length >= 2 && rng.chance(0.20)) {
@@ -27871,9 +27975,7 @@
         var plotterCount = plotterPersons.length + (playerIsPlotter ? 1 : 0);
 
         // Gather all nobles for suspicion spreading
-        var allNobles = world.people.filter(function(p) {
-            return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6;
-        });
+        var allNobles = getNoblesInKingdom(kId);
 
         // C3: Unified catch chance based on plotter count
         var caughtChance = _computeAssassinationCatchChance(plotterCount, plotterPersons, k);
@@ -28006,9 +28108,7 @@
                 if (_pp && _pp.alive) plotterPersons.push(_pp);
             }
             plotterCount = plotterPersons.length;
-            allNobles = world.people.filter(function(p) {
-                return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 6;
-            });
+            allNobles = getNoblesInKingdom(k.id);
         }
 
         if (wasCaught) {
@@ -28111,8 +28211,8 @@
                 }, category);
                 k.happiness = Math.min(100, happiness + 3);
                 // Un-arrest any arrested nobles
-                var nobles = world.people.filter(function(p) {
-                    return p.alive && p._arrested && p.socialRank && p.socialRank[kId] >= 4;
+                var nobles = getNoblesInKingdom(kId).filter(function(p) {
+                    return p._arrested;
                 });
                 for (var ri = 0; ri < nobles.length; ri++) {
                     nobles[ri]._arrested = false;
@@ -28172,8 +28272,8 @@
                 }, category);
                 k.taxRate = newHighTax;
                 // Seize some noble gold
-                var seizableNobles = world.people.filter(function(p) {
-                    return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 6 && (p.gold || 0) > 50;
+                var seizableNobles = getNoblesInKingdom(kId).filter(function(p) {
+                    return (p.gold || 0) > 50;
                 });
                 for (var si = 0; si < seizableNobles.length; si++) {
                     var seized = Math.floor((seizableNobles[si].gold || 0) * 0.1);
@@ -28413,7 +28513,7 @@
         }
 
         // Convert some low-rank NPCs with high social to musicians (target ~1% of population)
-        var targetMusicians = Math.max(5, Math.floor(world.people.filter(function(p) { return p.alive; }).length * 0.01));
+        var targetMusicians = Math.max(5, Math.floor(_tickCache.aliveCount * 0.01));
         if (musicianCount < targetMusicians) {
             var candidates = world.people.filter(function(p) {
                 return p.alive && !p._isMusician && !p.isEliteMerchant && !p.isKing && !p.isNoble &&
@@ -28611,9 +28711,9 @@
 
         var YOUNG_AGE = 12;
 
-        for (var i = 0; i < world.people.length; i++) {
-            var child = world.people[i];
-            if (!child.alive) continue;
+        var _alive = _tickCache.alivePeople;
+        for (var i = 0; i < _alive.length; i++) {
+            var child = _alive[i];
             if (child.age == null || child.age >= YOUNG_AGE) continue;
             if (!child.parentIds || child.parentIds.length === 0) continue;
 
@@ -29221,12 +29321,15 @@
                 soldiersByKingdom: {},
                 eliteMerchants: [],
                 merchantsByKingdom: {},
+                noblesByKingdom: {},
+                alivePeople: [],
                 aliveCount: 0
             };
             for (var _ci = 0; _ci < world.people.length; _ci++) {
                 var _cp = world.people[_ci];
                 if (!_cp.alive) continue;
                 _tickCache.aliveCount++;
+                _tickCache.alivePeople.push(_cp);
                 if (!_tickCache.peopleByTown[_cp.townId]) _tickCache.peopleByTown[_cp.townId] = [];
                 _tickCache.peopleByTown[_cp.townId].push(_cp);
                 if (!_tickCache.peopleByKingdom[_cp.kingdomId]) _tickCache.peopleByKingdom[_cp.kingdomId] = [];
@@ -29241,6 +29344,15 @@
                 if (_cp.occupation === 'merchant') {
                     if (!_tickCache.merchantsByKingdom[_cp.kingdomId]) _tickCache.merchantsByKingdom[_cp.kingdomId] = [];
                     _tickCache.merchantsByKingdom[_cp.kingdomId].push(_cp);
+                }
+                // Index nobles (socialRank 4-6 in any kingdom)
+                if (_cp.socialRank) {
+                    for (var _ck in _cp.socialRank) {
+                        if (_cp.socialRank[_ck] >= 4 && _cp.socialRank[_ck] <= 6) {
+                            if (!_tickCache.noblesByKingdom[_ck]) _tickCache.noblesByKingdom[_ck] = [];
+                            _tickCache.noblesByKingdom[_ck].push(_cp);
+                        }
+                    }
                 }
             }
 
@@ -29507,8 +29619,8 @@
 
         getPeople(townId) {
             if (!world) return [];
-            if (townId) return world.people.filter(p => p.alive && p.townId === townId);
-            return world.people.filter(p => p.alive);
+            if (townId) return getPeopleInTown(townId);
+            return getAlivePeople();
         },
 
         getPeopleCached: function(townId) {
@@ -29524,7 +29636,7 @@
                 }
             }
             if (townId) return _renderPeopleCache[townId] || [];
-            return world.people.filter(function(p) { return p.alive; });
+            return getAlivePeople();
         },
 
         getPerson(id) { return world ? findPerson(id) : null; },
@@ -29761,6 +29873,9 @@
         findBuildingType(id) { return findBuildingType(id); },
         getPeopleInTown(id) { return getPeopleInTown(id); },
         getPeopleInKingdom(id) { return getPeopleInKingdom(id); },
+        getNoblesInKingdom(id) { return getNoblesInKingdom(id); },
+        getAlivePeople() { return getAlivePeople(); },
+        getTickCache() { return _tickCache; },
         transferTown(townId, fromKingdomId, toKingdomId, method) { return transferTown(townId, fromKingdomId, toKingdomId, method); },
         logEvent(msg, details, category) { logEvent(msg, details, category); },
         getRng() {
@@ -30123,7 +30238,7 @@
             var rng = world.rng || { random: Math.random, chance: function(c) { return Math.random() < c; }, randInt: function(a,b) { return a + Math.floor(Math.random()*(b-a+1)); } };
             var ill = illnessId || 'plague';
             var toInfect = count || Math.max(3, Math.floor((town.population || 50) * 0.15));
-            var townPeople = world.people.filter(function(p) { return p.alive && !p.sick && p.townId === townId; });
+            var townPeople = getPeopleInTown(townId).filter(function(p) { return !p.sick; });
             var infected = 0;
             for (var i = 0; i < Math.min(toInfect, townPeople.length); i++) {
                 if (Engine.infectNPC(townPeople[i], ill, rng, world.day, 'god_plague_outbreak')) infected++;

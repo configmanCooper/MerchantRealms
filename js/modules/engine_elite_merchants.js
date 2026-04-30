@@ -5318,7 +5318,9 @@
         // Only run every 3rd day for performance
         if (world.day % 3 !== 0) return;
 
-        for (const p of world.people) {
+        var _npcMerchAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
+        for (var _nmi = 0; _nmi < _npcMerchAlive.length; _nmi++) {
+            var p = _npcMerchAlive[_nmi];
             if (!p.alive || p.occupation !== 'merchant') continue;
             if (!p.npcMerchantInventory) continue;
             if (p.employerId) continue; // employed by player, skip
@@ -5726,8 +5728,9 @@
         var rng = world.rng;
         if (!rng) return;
         
-        for (var mi = 0; mi < world.people.length; mi++) {
-            var m = world.people[mi];
+        var _merchAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
+        for (var mi = 0; mi < _merchAlive.length; mi++) {
+            var m = _merchAlive[mi];
             if (!m.alive || m.occupation !== 'merchant' || m.isEliteMerchant) continue;
             if (m.employerId) continue; // employed by player
             if (m.traveling) continue; // already traveling

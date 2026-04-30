@@ -1865,6 +1865,9 @@
         const result = Player.purchaseNPCBuilding(buildingIndex, townId);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) {
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('purchase_existing_building', { building: result.building });
+            }
             openBuildDialog();
         }
     }

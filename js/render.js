@@ -526,6 +526,12 @@ window.Renderer = (function () {
         if (!worldData || !ctx) return;
 
         frameCount++;
+
+        // Detect active panning/zooming for render throttling
+        var _isPanning = Math.abs(camera.x - camera.targetX) > 1.0 || Math.abs(camera.y - camera.targetY) > 1.0;
+        var _isZooming = Math.abs(camera.zoom - camera.targetZoom) > 0.005;
+        var _cameraMoving = _isPanning || _isZooming;
+
         // Check for season change — redraw terrain if needed
         var _curSeason = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : null;
         if (_curSeason !== _lastSeason) {
@@ -601,11 +607,15 @@ window.Renderer = (function () {
         // 2. Kingdom territories
         renderKingdomTerritories();
 
-        // 3. Roads
-        renderRoads();
+        // 3. Roads (skip during active pan for performance)
+        if (!_cameraMoving) {
+            renderRoads();
+        }
 
-        // 3b. Sea routes
-        renderSeaRoutes();
+        // 3b. Sea routes (skip during active pan for performance)
+        if (!_cameraMoving) {
+            renderSeaRoutes();
+        }
 
         // 4. Towns
         renderTowns();
@@ -627,8 +637,8 @@ window.Renderer = (function () {
             renderEliteMerchantIcons();
         }
 
-        // 5. People (only when zoomed in)
-        if (camera.zoom > 1.5) {
+        // 5. People (only when zoomed in and not panning)
+        if (camera.zoom > 1.5 && !_cameraMoving) {
             renderPeople();
         }
 

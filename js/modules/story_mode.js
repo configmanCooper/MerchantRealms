@@ -501,6 +501,8 @@ var StoryMode = (function () {
             objectives: [
                 { id: 'ch15_guildmaster', type: 'reach_rank', rank: 3,       desc: 'Attain Guildmaster standing (Character → Character, scroll down to Petition)',   done: false },
                 { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false },
+                { id: 'ch15_buy_existing', type: 'purchase_existing_building', desc: 'Purchase an existing building from the town market',
+                  hint: 'Open Business → Town Market to see buildings for sale in your current town. Buy one that is listed!', done: false },
                 { id: 'ch15_supply_chain', type: 'custom', fn: '_checkSupplyChain', desc: 'Build a complete supply chain (3 buildings)', done: false }
             ],
             endDialog: 'ch15_complete',
@@ -893,6 +895,10 @@ var StoryMode = (function () {
 
             case 'mount_horse':
                 return typeof Player !== 'undefined' && Player.horses && Player.horses.length > 0;
+
+            case 'purchase_existing_building':
+                // Event-driven — marked done via onPlayerAction when player buys an NPC building
+                return !!_storyState.objectives[obj.id];
 
             // The remaining types (buy_item, sell_item, arrive_town, etc.)
             // are event-driven — they get marked done via onPlayerAction().
@@ -1322,6 +1328,10 @@ var StoryMode = (function () {
                 case 'build_building':
                     var allowed = (obj.building || '').split('|');
                     matched = allowed.indexOf(data.building) !== -1;
+                    break;
+
+                case 'purchase_existing_building':
+                    matched = true;
                     break;
 
                 case 'work_shift':
@@ -2897,6 +2907,7 @@ var StoryMode = (function () {
         'mount_horse':     '#btnCharacter',
         'upgrade_building': '#btnBuildings',
         'toggle_autobuy':  '#btnBuildings',
+        'purchase_existing_building': '#btnTownMarket',
         'build_ship':      '#btnShips',
         'custom':          null
     };
@@ -2914,6 +2925,7 @@ var StoryMode = (function () {
         '#btnTalk':      { tab: 'actions',   label: 'Talk' },
         '#btnCaravan':   { tab: 'business',  label: 'Caravan' },
         '#btnBuildings': { tab: 'business',  label: 'Buildings' },
+        '#btnTownMarket': { tab: 'business', label: 'Town Market' },
         '#btnShips':     { tab: 'business',  label: 'Ships' },
         '#btnCharacter': { tab: 'character', label: 'Character' },
         '#btnTreatment': { tab: 'character', label: 'Treatment' },
