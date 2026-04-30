@@ -12831,9 +12831,10 @@
             perks.push({
                 id: 'loyal_alibi',
                 name: '\u{1F910} Loyal Alibi',
-                desc: 'Will vouch for you if accused of a crime. -20% detection chance.',
+                desc: 'Will vouch for you if accused of a crime. -20% detection chance for 3 days.',
                 cost: 0,
                 type: 'passive',
+                cooldownDays: 30,
             });
         }
         if (pers.frugality >= 70 && level >= 40) {
@@ -12881,6 +12882,32 @@
             }
         }
 
+        // Check 2-favor-per-NPC-per-30-days limit
+        var _favorTracker = player.favorUsageTracker || {};
+        var _npcFavors = _favorTracker[personId];
+        var _currentDay = Engine.getDay();
+        var _favorsUsed = 0;
+        var _favorWindowReset = 0;
+        if (_npcFavors && (_currentDay - _npcFavors.windowStart) < 30) {
+            _favorsUsed = _npcFavors.count || 0;
+            _favorWindowReset = 30 - (_currentDay - _npcFavors.windowStart);
+        }
+        var _favorLimitReached = _favorsUsed >= 2;
+        if (_favorLimitReached) {
+            for (var _fli = 0; _fli < perks.length; _fli++) {
+                if (!perks[_fli].onCooldown) {
+                    perks[_fli].onCooldown = true;
+                    perks[_fli].cooldownRemaining = _favorWindowReset;
+                    perks[_fli]._favorLimited = true;
+                }
+            }
+        }
+        // Attach favor usage info for UI
+        for (var _fui = 0; _fui < perks.length; _fui++) {
+            perks[_fui]._favorsUsed = _favorsUsed;
+            perks[_fui]._favorLimit = 2;
+        }
+
         return perks;
     }
 
@@ -12892,7 +12919,10 @@
         const perks = getRelationshipPerks(personId);
         const perk = perks.find(function(p) { return p.id === perkId; });
         if (!perk) return { success: false, message: 'Perk not available.' };
-        if (perk.onCooldown) return { success: false, message: 'On cooldown (' + perk.cooldownRemaining + ' days remaining).' };
+        if (perk.onCooldown) {
+            if (perk._favorLimited) return { success: false, message: 'Already used 2 favors with this person in the last 30 days (' + perk.cooldownRemaining + ' days until reset).' };
+            return { success: false, message: 'On cooldown (' + perk.cooldownRemaining + ' days remaining).' };
+        }
         if (perk.cost > 0 && player.gold < perk.cost) return { success: false, message: 'Need ' + perk.cost + 'g.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.use_perk || 1);
@@ -12907,6 +12937,16 @@
         if (!player.perkCooldowns) player.perkCooldowns = {};
         if (perk.cooldownDays) {
             player.perkCooldowns[personId + '_' + perkId] = Engine.getDay();
+        }
+
+        // Track favor usage (2 per NPC per 30 days)
+        if (!player.favorUsageTracker) player.favorUsageTracker = {};
+        var _ft = player.favorUsageTracker[personId];
+        var _day = Engine.getDay();
+        if (!_ft || (_day - _ft.windowStart) >= 30) {
+            player.favorUsageTracker[personId] = { count: 1, windowStart: _day };
+        } else {
+            _ft.count = (_ft.count || 0) + 1;
         }
 
         // Relationship boost for using perks (they like being helpful)
@@ -13160,8 +13200,8 @@
             }
 
             case 'loyal_alibi':
-                player.alibi = { personId: personId, personName: person.firstName, kingdomId: person.kingdomId, expiresDay: Engine.getDay() + 30 };
-                message = person.firstName + ' will vouch for you if needed. -20% detection for 30 days.';
+                player.alibi = { personId: personId, personName: person.firstName, kingdomId: person.kingdomId, expiresDay: Engine.getDay() + 3 };
+                message = person.firstName + ' will vouch for you if needed. -20% detection for 3 days.';
                 Engine.logEvent('\u{1F910} ' + message);
                 break;
 

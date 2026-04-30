@@ -1877,11 +1877,14 @@ function showPersonDetail(person) {
             if (Player.getRelationshipPerks) {
                 const perks = Player.getRelationshipPerks(person.id);
                 if (perks.length > 0) {
+                    var _favUsedInfo = perks[0]._favorsUsed != null ? perks[0]._favorsUsed : 0;
+                    var _favLimitInfo = perks[0]._favorLimit || 2;
                     html += `<div class="detail-section"><h3>\u2B50 Favors</h3>
+                        <div style="font-size:0.65rem;color:#aaa;margin-bottom:4px;">Favors used: ${_favUsedInfo}/${_favLimitInfo} (resets every 30 days)</div>
                         <div style="display:flex;flex-direction:column;gap:3px;">`;
                     for (const perk of perks) {
                         const disabled = perk.onCooldown;
-                        const cdText = disabled ? ` (${perk.cooldownRemaining}d cooldown)` : '';
+                        const cdText = disabled ? (perk._favorLimited ? ` (favor limit — ${perk.cooldownRemaining}d reset)` : ` (${perk.cooldownRemaining}d cooldown)`) : '';
                         const costText = perk.cost > 0 ? ` (${perk.cost}g)` : '';
                         html += `<button class="btn-medieval" data-action="usePerk" data-id="${person.id}" data-val="${perk.id}"
                             ${disabled ? 'disabled' : ''}
