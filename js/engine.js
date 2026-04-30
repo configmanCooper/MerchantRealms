@@ -7280,7 +7280,8 @@
                     relationship: _familyRelation,
                     gold: p.gold || 0,
                     isEM: !!p.isEliteMerchant,
-                    buildings: []
+                    buildings: [],
+                    hasSecretBeneficiary: !!(p.quirks && p.quirks.indexOf('secret_beneficiary') >= 0)
                 };
                 // Snapshot buildings owned by deceased
                 for (var _sti = 0; _sti < world.towns.length; _sti++) {
@@ -7338,6 +7339,28 @@
         if (p.isEliteMerchant) {
             p._deathDay = world.day;
             var heir = null;
+
+            // ── Secret Beneficiary quirk: 90% of estate goes to another NPC ──
+            var _hasBeneficiary = p.quirks && p.quirks.indexOf('secret_beneficiary') >= 0;
+            var _beneficiary = null;
+            if (_hasBeneficiary) {
+                // Find or assign beneficiary: use stored ID, or pick an NPC in same town with high relationship
+                if (p.secretBeneficiaryId) {
+                    _beneficiary = findPerson(p.secretBeneficiaryId);
+                    if (_beneficiary && !_beneficiary.alive) _beneficiary = null;
+                }
+                if (!_beneficiary) {
+                    // Pick a random alive NPC in the same town (not the player, not their spouse)
+                    var _benCandidates = world.people.filter(function(np) {
+                        return np.alive && np.id !== p.id && np.id !== 'player' && np.townId === p.townId && np.age >= 18;
+                    });
+                    if (_benCandidates.length > 0) {
+                        _beneficiary = _benCandidates[world.rng.randInt(0, _benCandidates.length - 1)];
+                        p.secretBeneficiaryId = _beneficiary.id;
+                    }
+                }
+            }
+
             // Priority 1: chosen heir
             if (p.heirId) {
                 var chosenHeir = findPerson(p.heirId);
@@ -7355,20 +7378,65 @@
             if (!heir && p.spouseId) {
                 if (p.spouseId === 'player' && typeof Player !== 'undefined' && Player.state) {
                     // Player is the spouse — handle inheritance directly
-                    var _playerInheritGold = Math.floor((p.gold || 0) * 0.85);
+                    var _totalGold = Math.floor((p.gold || 0) * 0.85);
+                    var _playerInheritGold = _totalGold;
+                    var _benGot = 0;
+                    // Secret beneficiary diverts 90% to another NPC
+                    if (_hasBeneficiary && _beneficiary) {
+                        _benGot = Math.floor(_totalGold * 0.90);
+                        _playerInheritGold = _totalGold - _benGot;
+                        _beneficiary.gold = (_beneficiary.gold || 0) + _benGot;
+                    }
                     Player.state.gold = (Player.state.gold || 0) + _playerInheritGold;
-                    // Transfer building ownership to player
+                    // Transfer building ownership
                     if (p.buildings && p.buildings.length > 0) {
-                        if (!Player.state.buildings) Player.state.buildings = [];
-                        for (var _pbi = 0; _pbi < p.buildings.length; _pbi++) {
-                            Player.state.buildings.push(p.buildings[_pbi]);
-                        }
-                        for (var _dti2 = 0; _dti2 < world.towns.length; _dti2++) {
-                            var _dt2 = world.towns[_dti2];
-                            if (!_dt2.buildings) continue;
-                            for (var _dbi2 = 0; _dbi2 < _dt2.buildings.length; _dbi2++) {
-                                if (_dt2.buildings[_dbi2].ownerId === p.id) {
-                                    _dt2.buildings[_dbi2].ownerId = 'player';
+                        if (_hasBeneficiary && _beneficiary) {
+                            // 90% of buildings go to beneficiary (rounded up)
+                            var _benBldCount = Math.ceil(p.buildings.length * 0.90);
+                            var _playerBlds = p.buildings.slice(_benBldCount);
+                            var _benBlds = p.buildings.slice(0, _benBldCount);
+                            // Transfer player's share
+                            if (_playerBlds.length > 0) {
+                                if (!Player.state.buildings) Player.state.buildings = [];
+                                for (var _pbi = 0; _pbi < _playerBlds.length; _pbi++) {
+                                    Player.state.buildings.push(_playerBlds[_pbi]);
+                                }
+                            }
+                            // Transfer beneficiary's share
+                            if (!_beneficiary.buildings) _beneficiary.buildings = [];
+                            for (var _bbi = 0; _bbi < _benBlds.length; _bbi++) {
+                                _beneficiary.buildings.push(_benBlds[_bbi]);
+                            }
+                            // Update town building ownerIds
+                            for (var _dti2 = 0; _dti2 < world.towns.length; _dti2++) {
+                                var _dt2 = world.towns[_dti2];
+                                if (!_dt2.buildings) continue;
+                                for (var _dbi2 = 0; _dbi2 < _dt2.buildings.length; _dbi2++) {
+                                    if (_dt2.buildings[_dbi2].ownerId === p.id) {
+                                        // Check if this building went to player or beneficiary
+                                        var _toPlayer = false;
+                                        for (var _pci = 0; _pci < _playerBlds.length; _pci++) {
+                                            if (_playerBlds[_pci].townId === _dt2.id && _playerBlds[_pci].type === _dt2.buildings[_dbi2].type) {
+                                                _toPlayer = true; break;
+                                            }
+                                        }
+                                        _dt2.buildings[_dbi2].ownerId = _toPlayer ? 'player' : _beneficiary.id;
+                                    }
+                                }
+                            }
+                        } else {
+                            // Normal: all to player
+                            if (!Player.state.buildings) Player.state.buildings = [];
+                            for (var _pbi = 0; _pbi < p.buildings.length; _pbi++) {
+                                Player.state.buildings.push(p.buildings[_pbi]);
+                            }
+                            for (var _dti2 = 0; _dti2 < world.towns.length; _dti2++) {
+                                var _dt2 = world.towns[_dti2];
+                                if (!_dt2.buildings) continue;
+                                for (var _dbi2 = 0; _dbi2 < _dt2.buildings.length; _dbi2++) {
+                                    if (_dt2.buildings[_dbi2].ownerId === p.id) {
+                                        _dt2.buildings[_dbi2].ownerId = 'player';
+                                    }
                                 }
                             }
                         }
@@ -7390,14 +7458,19 @@
                     }
                     // Clear player's spouse reference
                     Player.state.spouseId = null;
-                    logEvent('💰 You inherit the ' + (p.lastName || p.firstName) + ' merchant empire! ' + _playerInheritGold + 'g received (after 15% death tax).', {
+                    var _inheritEffects = ['You inherit ' + _playerInheritGold + 'g'];
+                    if (_hasBeneficiary && _beneficiary && _benGot > 0) {
+                        _inheritEffects.push('🤐 ' + _benGot + 'g went to ' + (_beneficiary.firstName || 'unknown') + ' ' + (_beneficiary.lastName || '') + ' (secret beneficiary)');
+                    }
+                    _inheritEffects.push('Merchant inventory transferred to your stock');
+                    var _inheritMsg = _hasBeneficiary && _beneficiary ?
+                        '💰 Your spouse left most of the ' + (p.lastName || p.firstName) + ' empire to ' + _beneficiary.firstName + '! You received only ' + _playerInheritGold + 'g.' :
+                        '💰 You inherit the ' + (p.lastName || p.firstName) + ' merchant empire! ' + _playerInheritGold + 'g received (after 15% death tax).';
+                    logEvent(_inheritMsg, {
                         type: 'player_inheritance',
                         cause: 'Your spouse ' + p.firstName + ' ' + (p.lastName || '') + ' has died.',
-                        effects: [
-                            'You inherit ' + _playerInheritGold + 'g',
-                            p.buildings ? (p.buildings.length + ' buildings transferred to you') : 'No buildings',
-                            'Merchant inventory transferred to your stock'
-                        ]
+                        secretBeneficiary: _hasBeneficiary && _beneficiary ? (_beneficiary.firstName + ' ' + (_beneficiary.lastName || '')) : null,
+                        effects: _inheritEffects
                     });
                     // Skip the normal heir logic below
                     heir = { _playerHandled: true };
@@ -7570,13 +7643,46 @@
         // Transfer buildings owned by non-EM NPCs: spouse > children > kingdom
         // Also transfer gold to player if spouse was player
         if (!p.isEliteMerchant && (p.gold || 0) > 0 && p.spouseId === 'player' && typeof Player !== 'undefined' && Player.state) {
-            var _npcInheritGold = Math.floor((p.gold || 0) * 0.85);
+            // Check for secret beneficiary quirk on non-EM NPCs too
+            var _npcHasBen = p.quirks && p.quirks.indexOf('secret_beneficiary') >= 0;
+            var _npcBen = null;
+            if (_npcHasBen) {
+                if (p.secretBeneficiaryId) {
+                    _npcBen = findPerson(p.secretBeneficiaryId);
+                    if (_npcBen && !_npcBen.alive) _npcBen = null;
+                }
+                if (!_npcBen) {
+                    var _npcBenCandidates = world.people.filter(function(np) {
+                        return np.alive && np.id !== p.id && np.id !== 'player' && np.townId === p.townId && np.age >= 18;
+                    });
+                    if (_npcBenCandidates.length > 0) {
+                        _npcBen = _npcBenCandidates[world.rng.randInt(0, _npcBenCandidates.length - 1)];
+                        p.secretBeneficiaryId = _npcBen.id;
+                    }
+                }
+            }
+            var _npcTotalGold = Math.floor((p.gold || 0) * 0.85);
+            var _npcInheritGold = _npcTotalGold;
+            if (_npcHasBen && _npcBen) {
+                var _npcBenGold = Math.floor(_npcTotalGold * 0.90);
+                _npcInheritGold = _npcTotalGold - _npcBenGold;
+                _npcBen.gold = (_npcBen.gold || 0) + _npcBenGold;
+            }
             Player.state.gold = (Player.state.gold || 0) + _npcInheritGold;
-            logEvent('💰 You inherit ' + _npcInheritGold + 'g from your late spouse ' + p.firstName + ' ' + (p.lastName || '') + ' (after 15% death tax).', {
-                type: 'player_inheritance',
-                cause: 'Your spouse has died.',
-                effects: ['You inherit ' + _npcInheritGold + 'g']
-            });
+            if (_npcHasBen && _npcBen) {
+                logEvent('💰 You inherit only ' + _npcInheritGold + 'g from your late spouse ' + p.firstName + ' ' + (p.lastName || '') + '. Most of the estate went to ' + _npcBen.firstName + ' ' + (_npcBen.lastName || '') + ' (a secret beneficiary).', {
+                    type: 'player_inheritance',
+                    cause: 'Your spouse had a secret beneficiary.',
+                    secretBeneficiary: _npcBen.firstName + ' ' + (_npcBen.lastName || ''),
+                    effects: ['You inherit ' + _npcInheritGold + 'g', '🤐 ' + Math.floor(_npcTotalGold * 0.90) + 'g went to ' + _npcBen.firstName]
+                });
+            } else {
+                logEvent('💰 You inherit ' + _npcInheritGold + 'g from your late spouse ' + p.firstName + ' ' + (p.lastName || '') + ' (after 15% death tax).', {
+                    type: 'player_inheritance',
+                    cause: 'Your spouse has died.',
+                    effects: ['You inherit ' + _npcInheritGold + 'g']
+                });
+            }
         }
         if (!p.isEliteMerchant && town) {
             var _deadKingdom = findKingdom(town.kingdomId);

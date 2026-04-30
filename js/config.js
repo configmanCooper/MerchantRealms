@@ -4549,6 +4549,7 @@ const SPOUSE_QUIRKS = [
     { id: 'infertile', name: 'Infertile', icon: '🚫', positive: false, effect: 'Cannot have children', heirEffect: 'No children possible', rare: true, workerMod: 0, workerDesc: 'No worker effect' },
     { id: 'names_children', name: 'Names the Children', icon: '✍️', positive: false, effect: 'Insists on naming children — you get no say', heirEffect: 'No effect', workerMod: 0, workerDesc: 'No worker effect' },
     { id: 'keeps_maiden_name', name: 'Keeps Maiden Name', icon: '💁', positive: false, effect: 'Refuses to take your last name on marriage', heirEffect: 'No effect', workerMod: 0, workerDesc: 'No worker effect' },
+    { id: 'secret_beneficiary', name: 'Secret Beneficiary', icon: '🤐', positive: false, effect: 'On death, 90% of gold and buildings go to a secret NPC instead of you', heirEffect: 'Reduced inheritance', rare: true, workerMod: 0, workerDesc: 'No worker effect' },
 ];
 
 // ============================================================

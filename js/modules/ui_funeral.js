@@ -191,6 +191,19 @@
                 }
             }
             html += '</div>';
+
+            // Secret beneficiary warning
+            if (p && p.quirks && p.quirks.indexOf('secret_beneficiary') >= 0) {
+                var _benName = 'someone';
+                if (p.secretBeneficiaryId) {
+                    var _benPerson = Engine.findPerson ? Engine.findPerson(p.secretBeneficiaryId) : null;
+                    if (_benPerson) _benName = (_benPerson.firstName || '') + ' ' + (_benPerson.lastName || '');
+                }
+                html += '<div style="background:rgba(231,76,60,0.15);border:1px solid #e74c3c;border-radius:6px;padding:10px;margin-bottom:10px;">';
+                html += '<div style="color:#e74c3c;font-weight:bold;margin-bottom:4px;">🤐 Secret Beneficiary</div>';
+                html += '<div style="font-size:0.78rem;color:#ddd;">Your spouse had secretly arranged for 90% of their estate to go to <strong style="color:#e67e22;">' + escapeHtml(_benName) + '</strong>. You only received a small fraction of the inheritance.</div>';
+                html += '</div>';
+            }
         }
 
         // Funeral planning section
