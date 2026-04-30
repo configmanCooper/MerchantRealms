@@ -4300,14 +4300,14 @@ CONFIG.SPECIAL_LAWS = SPECIAL_LAWS;
 CONFIG.KING_MOOD = {
     // Mood states and their modifiers to decision probabilities
     moods: {
-        jubilant:   { taxMod: -0.04, festivalMod: 2.0, petitionMod: 1.5, warMod: 0.3, conscriptMod: 0.5, icon: '😄', desc: 'The king is jubilant' },
-        content:    { taxMod: 0,     festivalMod: 1.0, petitionMod: 1.0, warMod: 1.0, conscriptMod: 1.0, icon: '😊', desc: 'The king is content' },
-        worried:    { taxMod: 0.02,  festivalMod: 0.5, petitionMod: 0.7, warMod: 1.2, conscriptMod: 1.3, icon: '😟', desc: 'The king is worried' },
-        paranoid:   { taxMod: 0.04,  festivalMod: 0.1, petitionMod: 0.3, warMod: 1.5, conscriptMod: 1.8, icon: '😰', desc: 'The king is paranoid' },
-        fearful:    { taxMod: 0.03,  festivalMod: 0.2, petitionMod: 0.4, warMod: 0.5, conscriptMod: 2.0, icon: '😨', desc: 'The king is fearful' },
-        wrathful:   { taxMod: 0.05,  festivalMod: 0.0, petitionMod: 0.1, warMod: 2.0, conscriptMod: 1.5, icon: '😡', desc: 'The king is wrathful' },
-        grieving:   { taxMod: 0,     festivalMod: 0.0, petitionMod: 0.5, warMod: 0.7, conscriptMod: 0.8, icon: '😢', desc: 'The king is grieving' },
-        ambitious:  { taxMod: 0.01,  festivalMod: 0.8, petitionMod: 0.6, warMod: 1.8, conscriptMod: 1.4, icon: '🔥', desc: 'The king is ambitious' },
+        jubilant:   { taxMod: -0.04, festivalMod: 2.0, petitionMod: 1.5, warMod: 0.3, conscriptMod: 0.5, praiseMod: 2.0, promotionMod: 1.5, punishMod: 0.5, remarriageMod: 1.0, raFavorMod: 0.8, courtFreqMod: 1.0, icon: '😄', desc: 'The king is jubilant' },
+        content:    { taxMod: 0,     festivalMod: 1.0, petitionMod: 1.0, warMod: 1.0, conscriptMod: 1.0, praiseMod: 1.0, promotionMod: 1.0, punishMod: 1.0, remarriageMod: 1.0, raFavorMod: 1.0, courtFreqMod: 1.0, icon: '😊', desc: 'The king is content' },
+        worried:    { taxMod: 0.02,  festivalMod: 0.5, petitionMod: 0.7, warMod: 1.2, conscriptMod: 1.3, praiseMod: 0.7, promotionMod: 0.8, punishMod: 1.2, remarriageMod: 0.8, raFavorMod: 1.3, courtFreqMod: 1.1, icon: '😟', desc: 'The king is worried' },
+        paranoid:   { taxMod: 0.04,  festivalMod: 0.1, petitionMod: 0.3, warMod: 1.5, conscriptMod: 1.8, praiseMod: 0.4, promotionMod: 0.3, punishMod: 1.5, remarriageMod: 0.5, raFavorMod: 1.8, courtFreqMod: 1.3, icon: '😰', desc: 'The king is paranoid' },
+        fearful:    { taxMod: 0.03,  festivalMod: 0.2, petitionMod: 0.4, warMod: 0.5, conscriptMod: 2.0, praiseMod: 0.5, promotionMod: 0.5, punishMod: 1.0, remarriageMod: 0.3, raFavorMod: 1.5, courtFreqMod: 0.8, icon: '😨', desc: 'The king is fearful' },
+        wrathful:   { taxMod: 0.05,  festivalMod: 0.0, petitionMod: 0.1, warMod: 2.0, conscriptMod: 1.5, praiseMod: 0.1, promotionMod: 0.2, punishMod: 2.0, remarriageMod: 0.2, raFavorMod: 1.5, courtFreqMod: 1.4, icon: '😡', desc: 'The king is wrathful' },
+        grieving:   { taxMod: 0,     festivalMod: 0.0, petitionMod: 0.5, warMod: 0.7, conscriptMod: 0.8, praiseMod: 0.3, promotionMod: 0.4, punishMod: 0.3, remarriageMod: 0.0, raFavorMod: 0.5, courtFreqMod: 0.6, icon: '😢', desc: 'The king is grieving' },
+        ambitious:  { taxMod: 0.01,  festivalMod: 0.8, petitionMod: 0.6, warMod: 1.8, conscriptMod: 1.4, praiseMod: 1.3, promotionMod: 1.3, punishMod: 1.2, remarriageMod: 1.5, raFavorMod: 1.2, courtFreqMod: 1.1, icon: '🔥', desc: 'The king is ambitious' },
     },
     // How long moods last (in days) before decaying toward 'content'
     moodDuration: {

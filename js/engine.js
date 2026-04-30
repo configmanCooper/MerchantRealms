@@ -9564,7 +9564,7 @@
     }
 
     function getKingMoodModifiers(k) {
-        if (!k.kingMood || !CONFIG.KING_MOOD) return { taxMod: 0, festivalMod: 1, petitionMod: 1, warMod: 1, conscriptMod: 1 };
+        if (!k.kingMood || !CONFIG.KING_MOOD) return { taxMod: 0, festivalMod: 1, petitionMod: 1, warMod: 1, conscriptMod: 1, praiseMod: 1, promotionMod: 1, punishMod: 1, remarriageMod: 1, raFavorMod: 1, courtFreqMod: 1 };
         var moodData = CONFIG.KING_MOOD.moods[k.kingMood.current];
         return moodData || CONFIG.KING_MOOD.moods.content;
     }
@@ -9851,7 +9851,7 @@
                     bestCandidate = mn;
                 }
             }
-            if (bestCandidate && rng.chance(0.15)) {
+            if (bestCandidate && rng.chance(0.15 * (getKingMoodModifiers(k).promotionMod || 1))) {
                 if (isPlayerRoyalAdvisorOf(k)) {
                     var _naCand = bestCandidate;
                     var _naKId = kId;
@@ -9890,7 +9890,7 @@
                 // Some won't want to tie down to a specific kingdom
                 if ((emPers.ambition || 50) > 75 && (emPers.loyalty || 50) < 30) wantsNobility = false;
 
-                if (wantsNobility && rng.chance(0.10)) {
+                if (wantsNobility && rng.chance(0.10 * (getKingMoodModifiers(k).promotionMod || 1))) {
                     if (isPlayerRoyalAdvisorOf(k)) {
                         var _emCand = em;
                         var _emKId = kId;
@@ -10063,7 +10063,7 @@
             // Grieving period: 90 days minimum
             if (k._kingSpouseDeathDay && (world.day - k._kingSpouseDeathDay) < 90) wantsRemarriage = false;
 
-            if (wantsRemarriage && rng.chance(0.05)) {
+            if (wantsRemarriage && rng.chance(0.05 * (getKingMoodModifiers(k).remarriageMod || 1))) {
                 var candidates = world.people.filter(function(p) {
                     return p.alive && !p.spouseId && p.sex !== king.sex &&
                         p.age >= 18 && p.age <= 50 && p.kingdomId === k.id &&
@@ -10091,7 +10091,7 @@
             if (pRank >= 6 && pState.royalAdvisorKingdomId === k.id) {
                 // King asks RA for a special favor every ~120 days
                 if (!k._lastRAFavorDay || (world.day - k._lastRAFavorDay) >= 120) {
-                    if (rng.chance(0.30)) {
+                    if (rng.chance(0.30 * (getKingMoodModifiers(k).raFavorMod || 1))) {
                         k._lastRAFavorDay = world.day;
                         var favorTypes = [
                             { id: 'gold_donation', desc: 'donate gold to the treasury', amount: Math.floor(200 + (k.gold || 0) * 0.01), repGain: 3, relGain: 5 },
@@ -10530,7 +10530,8 @@
 
         var res = chosen.resourceId ? findResourceById(chosen.resourceId) : null;
         var baseValue = res ? (res.basePrice || 5) * (chosen.quantity || 1) : 500;
-        var reward = Math.floor(baseValue * cfg.baseReward);
+        var _commRewardMoodMod = (CONFIG.KING_MOOD && CONFIG.KING_MOOD.rewardMod && k.kingMood) ? (CONFIG.KING_MOOD.rewardMod[k.kingMood.current] || 1) : 1;
+        var reward = Math.floor(baseValue * cfg.baseReward * _commRewardMoodMod);
 
         var commission = {
             id: 'rc_' + k.id + '_' + world.day,
@@ -13945,10 +13946,13 @@
             // AI King punishment decisions (NPC kings only, skip player)
             if (k.king && k.king !== 'player_king' && rng.chance(0.03)) {
                 var _kPers = k.kingPersonality || {};
+                var _punishMoodMod = getKingMoodModifiers(k).punishMod || 1;
+                // Mood-adjusted loyalty threshold: wrathful punishes more (higher threshold), grieving less
+                var _punishLoyaltyThreshold = Math.round(40 * _punishMoodMod);
                 for (var _pni = 0; _pni < nobles.length; _pni++) {
                     var _pn = nobles[_pni];
                     var _pnPerc = _pn.perceivedKingLoyalty != null ? _pn.perceivedKingLoyalty : (_pn.kingLoyalty || 50);
-                    if (_pnPerc >= 40) continue; // only punish nobles perceived as disloyal
+                    if (_pnPerc >= _punishLoyaltyThreshold) continue;
 
                     // Personality-based severity threshold
                     var _punishChance = 0.15;
@@ -24725,6 +24729,7 @@
         // Generate 2-5 random petitions from nobles and citizens
         var numPetitions = rng.randInt(2, 5);
         var kNobles = getNoblesInKingdom(kId);
+        var _courtMoodPetMod = getKingMoodModifiers(k).petitionMod || 1;
 
         for (var pi = 0; pi < numPetitions; pi++) {
             var petitionTypes = ['tax_relief', 'military_funding', 'building_request', 'trade_dispute', 'noble_grievance', 'festival_request'];
@@ -24732,41 +24737,40 @@
             var petitioner = kNobles.length > 0 && rng.chance(0.4) ? rng.pick(kNobles) : null;
             var petName = petitioner ? (petitioner.firstName || 'A noble') : 'A citizen';
 
-            // King AI decides based on personality
+            // King AI decides based on personality (mood modifies approval chance)
             var approved = false;
             switch (pType) {
                 case 'tax_relief':
-                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.70) :
-                               (kPers.greed === 'generous') ? rng.chance(0.60) : rng.chance(0.30);
+                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.70 * _courtMoodPetMod) :
+                               (kPers.greed === 'generous') ? rng.chance(0.60 * _courtMoodPetMod) : rng.chance(0.30 * _courtMoodPetMod);
                     if (approved) { k.happiness = Math.min(100, (k.happiness || 50) + 1); happinessBonus += 1; }
                     break;
                 case 'military_funding':
-                    approved = (kPers.courage === 'brave') ? rng.chance(0.70) :
-                               (kPers.intelligence === 'brilliant') ? rng.chance(0.50) : rng.chance(0.40);
+                    approved = (kPers.courage === 'brave') ? rng.chance(0.70 * _courtMoodPetMod) :
+                               (kPers.intelligence === 'brilliant') ? rng.chance(0.50 * _courtMoodPetMod) : rng.chance(0.40 * _courtMoodPetMod);
                     break;
                 case 'building_request':
-                    approved = (kPers.intelligence === 'brilliant' || kPers.intelligence === 'clever') ? rng.chance(0.65) : rng.chance(0.40);
+                    approved = (kPers.intelligence === 'brilliant' || kPers.intelligence === 'clever') ? rng.chance(0.65 * _courtMoodPetMod) : rng.chance(0.40 * _courtMoodPetMod);
                     break;
                 case 'trade_dispute':
-                    approved = rng.chance(0.50); // balanced by default
+                    approved = rng.chance(0.50 * _courtMoodPetMod);
                     break;
                 case 'noble_grievance':
                     if (petitioner) {
-                        // King considers noble's loyalty and reputation
                         var _petLoyalty = petitioner.kingLoyalty != null ? petitioner.kingLoyalty : 50;
                         var _petRep = (petitioner.reputation && petitioner.reputation[kId]) != null ? petitioner.reputation[kId] : 50;
-                        approved = rng.chance(Math.min(0.80, (_petLoyalty + _petRep) / 200));
+                        approved = rng.chance(Math.min(0.80, (_petLoyalty + _petRep) / 200) * _courtMoodPetMod);
                         if (approved) {
                             petitioner.kingLoyalty = Math.min(100, (petitioner.kingLoyalty || 50) + 5);
                         } else {
                             petitioner.kingLoyalty = Math.max(0, (petitioner.kingLoyalty || 50) - 3);
                         }
                     } else {
-                        approved = rng.chance(0.40);
+                        approved = rng.chance(0.40 * _courtMoodPetMod);
                     }
                     break;
                 case 'festival_request':
-                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.80) : rng.chance(0.35);
+                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.80 * _courtMoodPetMod) : rng.chance(0.35 * _courtMoodPetMod);
                     if (approved) happinessBonus += 2;
                     break;
             }
@@ -24815,6 +24819,12 @@
         if (k.atWar && k.atWar.size > 0) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
         // Low happiness → king should hold court to help
         if ((k.happiness || 50) < 35) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
+        // Mood modifier: wrathful/paranoid hold court more, grieving less
+        var _courtMoodFreq = getKingMoodModifiers(k).courtFreqMod || 1;
+        if (_courtMoodFreq !== 1) {
+            _courtBaseMin = Math.round(_courtBaseMin / _courtMoodFreq);
+            _courtBaseMax = Math.round(_courtBaseMax / _courtMoodFreq);
+        }
         _courtBaseMin = Math.max(14, _courtBaseMin); // 14-day cooldown per user request
         _courtBaseMax = Math.max(_courtBaseMin + 5, _courtBaseMax);
         k._nextCourtDay = world.day + rng.randInt(_courtBaseMin, _courtBaseMax);
@@ -25460,6 +25470,14 @@
             if ((k.gold || 0) > 15000) { _feastBaseMin -= 5; _feastBaseMax -= 10; }
             // Poor kingdoms delay feasts
             if ((k.gold || 0) < 3000) { _feastBaseMin += 15; _feastBaseMax += 20; }
+            // Mood modifier: jubilant feasts sooner, grieving/wrathful delays
+            var _feastMoodMod = getKingMoodModifiers(k).festivalMod || 1;
+            if (_feastMoodMod > 0 && _feastMoodMod !== 1) {
+                _feastBaseMin = Math.round(_feastBaseMin / _feastMoodMod);
+                _feastBaseMax = Math.round(_feastBaseMax / _feastMoodMod);
+            } else if (_feastMoodMod <= 0) {
+                _feastBaseMin += 60; _feastBaseMax += 90; // grieving/wrathful: long delay
+            }
             _feastBaseMin = Math.max(30, _feastBaseMin); // 30-day cooldown per user request
             _feastBaseMax = Math.max(_feastBaseMin + 10, _feastBaseMax);
             k._nextFeastDay = world.day + rng.randInt(_feastBaseMin, _feastBaseMax);
@@ -25485,13 +25503,15 @@
         var eventType = rng.randInt(0, 4);
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
         var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var _praiseMod = getKingMoodModifiers(k).praiseMod || 1;
 
         if (eventType === 0) {
-            // King's Toast — king toasts someone, +5 their kingLoyalty
+            // King's Toast — king toasts someone, loyalty boost scaled by mood
             var toasteeId = rng.pick(feast.attendees);
             var toastee = findPerson(toasteeId);
             if (toastee && toastee.kingLoyalty != null) {
-                toastee.kingLoyalty = Math.min(100, toastee.kingLoyalty + 5);
+                var _toastBoost = Math.round(5 * _praiseMod);
+                toastee.kingLoyalty = Math.min(100, toastee.kingLoyalty + _toastBoost);
                 var toasteeName = toastee.firstName || 'a noble';
                 feast.events.push('The king raised a toast to ' + toasteeName + '!');
                 logEvent('🍷 At the feast in ' + k.name + ', the king raised a toast to ' + toasteeName + '.', {
@@ -25520,11 +25540,12 @@
                 }
             }
         } else if (eventType === 2) {
-            // Private Audience — king picks an attendee, +10 kingLoyalty
+            // Private Audience — king picks an attendee, loyalty boost scaled by mood
             var audienceId = rng.pick(feast.attendees);
             var audiencee = findPerson(audienceId);
             if (audiencee && audiencee.kingLoyalty != null) {
-                audiencee.kingLoyalty = Math.min(100, audiencee.kingLoyalty + 10);
+                var _audBoost = Math.round(10 * _praiseMod);
+                audiencee.kingLoyalty = Math.min(100, audiencee.kingLoyalty + _audBoost);
                 var audName = audiencee.firstName || 'a noble';
                 feast.events.push('The king granted ' + audName + ' a private audience.');
                 logEvent('👑 At the feast in ' + k.name + ', the king granted ' + audName + ' a private audience.', {
@@ -26891,6 +26912,11 @@
             // Base chance 5%
             var chance = 0.05;
             var townHappy = town.happiness || 50;
+
+            // Mood modifier on festival scheduling
+            var _festMoodMod = getKingMoodModifiers(k).festivalMod || 1;
+            if (_festMoodMod <= 0) return; // grieving/wrathful kings don't schedule festivals
+            chance *= _festMoodMod;
 
             // Happiness modifiers
             if (townHappy < 25) {
