@@ -165,6 +165,7 @@
                 intelligence: Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                 warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                 honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                selfishness:  Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
             },
             quirks: assignRandomQuirks(rng),
             foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },

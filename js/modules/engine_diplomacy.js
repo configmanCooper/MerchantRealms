@@ -1786,6 +1786,10 @@
                     tickKingUnrestResponse(k);
                 }
             }
+            // ---- AI King proactive loyalty management (every 14 days) ----
+            if (world.day % 14 === 0 && !_playerIsKingHere) {
+                tickAIKingLoyaltyManagement(k);
+            }
 
             // ---- Process recruitment postings (NPCs decide to enlist) ----
             _tickRecruitmentPostings(k, rng);
@@ -6726,6 +6730,161 @@
         }
     }
 
+    // ── AI King Proactive Loyalty Management ──
+    // Kings occasionally bestow gifts, grant titles, or hold private audiences
+    // Frequency and target selection based on intelligence, warmth, and selfishness
+    function tickAIKingLoyaltyManagement(k) {
+        _syncState();
+        if (!world || !k || !k.king) return;
+        var rng = world.rng;
+        if (!rng) return;
+
+        var king = findPerson(k.king);
+        if (!king || !king.alive) return;
+        var kp = king.personality || {};
+        var intelligence = kp.intelligence || 50;
+        var warmth = kp.warmth || 50;
+        var selfishness = kp.selfishness || 50;
+        var frugality = kp.frugality || 50;
+
+        // Base chance to act: smarter and warmer kings act more often
+        // Range: ~5% (foolish+cruel) to ~30% (brilliant+kind) per check
+        var actChance = 0.05 + (intelligence / 100) * 0.15 + (warmth / 100) * 0.10;
+        // Selfish kings act less frequently on others' behalf
+        actChance *= (1 - selfishness / 200); // 50-100% modifier
+        if (!rng.chance(actChance)) return;
+
+        // Get nobles in this kingdom
+        var nobles = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(k.id) : [];
+        if (nobles.length === 0) return;
+
+        // Target selection depends on selfishness and intelligence
+        var target = null;
+        if (selfishness > 65) {
+            // Highly selfish: strongly prefer already-loyal nobles (reward sycophants)
+            var loyalNobles = nobles.filter(function(n) {
+                return n.alive && (n.perceivedKingLoyalty || n.kingLoyalty || 50) >= 60;
+            });
+            if (loyalNobles.length > 0) {
+                // Among loyal nobles, prefer those with highest perceived loyalty
+                loyalNobles.sort(function(a, b) {
+                    return (b.perceivedKingLoyalty || b.kingLoyalty || 50) - (a.perceivedKingLoyalty || a.kingLoyalty || 50);
+                });
+                // Pick from top half
+                var topHalf = Math.max(1, Math.floor(loyalNobles.length / 2));
+                target = loyalNobles[rng.randInt(0, topHalf - 1)];
+            } else {
+                // No loyal nobles — selfish kings don't bother
+                return;
+            }
+        } else if (intelligence >= 60) {
+            // Smart kings target the most disloyal noble to bring them back
+            var sortedByLoyalty = nobles.filter(function(n) { return n.alive; }).slice();
+            sortedByLoyalty.sort(function(a, b) {
+                return (a.kingLoyalty || 50) - (b.kingLoyalty || 50);
+            });
+            // Pick from bottom third (most disloyal)
+            var bottomThird = Math.max(1, Math.floor(sortedByLoyalty.length / 3));
+            target = sortedByLoyalty[rng.randInt(0, bottomThird - 1)];
+        } else {
+            // Average/dim kings pick randomly
+            var aliveNobles = nobles.filter(function(n) { return n.alive; });
+            if (aliveNobles.length === 0) return;
+            target = rng.pick(aliveNobles);
+        }
+        if (!target) return;
+
+        // Choose action based on personality
+        // Actions: gift (gold), honorary_title, private_audience, land_grant
+        var actions = [];
+        // Generous kings (low frugality) more likely to give gold/land
+        if (frugality < 50 && k.gold >= 200) actions.push('gold_gift');
+        if (frugality < 40 && k.gold >= 400) actions.push('land_grant');
+        // Warm kings prefer personal touch
+        if (warmth >= 40) actions.push('private_audience');
+        if (warmth >= 50) actions.push('private_audience'); // double weight
+        // All kings can bestow honorary titles (free)
+        actions.push('honorary_title');
+        actions.push('honorary_title'); // double weight since it's free
+        // Ambitious kings use military commissions
+        if ((kp.ambition || 50) > 55 && k.gold >= 100) actions.push('military_command');
+
+        if (actions.length === 0) return;
+        var action = rng.pick(actions);
+
+        var nobleName = (target.firstName || '') + ' ' + (target.lastName || '');
+
+        if (action === 'private_audience') {
+            // Private audience: loyalty +5-10 based on king warmth
+            var loyaltyGain = 5 + Math.floor(warmth / 20);
+            target.kingLoyalty = Math.min(100, (target.kingLoyalty || 50) + loyaltyGain);
+            target.perceivedKingLoyalty = Math.min(100, (target.perceivedKingLoyalty || target.kingLoyalty || 50) + Math.floor(loyaltyGain * 0.7));
+            target.fearOfKing = Math.max(0, (target.fearOfKing || 15) - 2);
+            logEvent('👑 The king of ' + k.name + ' holds a private audience with ' + nobleName + '. (+' + loyaltyGain + ' loyalty)', {
+                type: 'king_audience', category: 'npc_activity',
+                effects: [nobleName + ' feels valued by the crown']
+            }, 'npc_activity');
+        } else if (action === 'gold_gift' && k.gold >= 200) {
+            k.gold -= 200;
+            target.gold = (target.gold || 0) + 200;
+            var loyaltyGain2 = 8;
+            target.kingLoyalty = Math.min(100, (target.kingLoyalty || 50) + loyaltyGain2);
+            target.perceivedKingLoyalty = Math.min(100, (target.perceivedKingLoyalty || target.kingLoyalty || 50) + 5);
+            // Jealousy from other nobles
+            _applyNobleJealousy(k, target.id, nobles, 2, rng);
+            logEvent('👑💰 The king of ' + k.name + ' bestows a royal gold gift upon ' + nobleName + '! (200g, +' + loyaltyGain2 + ' loyalty)', {
+                type: 'king_gift', category: 'npc_activity',
+                effects: [nobleName + ' receives 200g from the treasury']
+            }, 'npc_activity');
+        } else if (action === 'land_grant' && k.gold >= 400) {
+            k.gold -= 400;
+            var loyaltyGain3 = 15;
+            target.kingLoyalty = Math.min(100, (target.kingLoyalty || 50) + loyaltyGain3);
+            target.perceivedKingLoyalty = Math.min(100, (target.perceivedKingLoyalty || target.kingLoyalty || 50) + 10);
+            _applyNobleJealousy(k, target.id, nobles, 3, rng);
+            logEvent('👑🏰 The king of ' + k.name + ' grants land to ' + nobleName + '! (400g, +' + loyaltyGain3 + ' loyalty)', {
+                type: 'king_gift', category: 'npc_activity',
+                effects: [nobleName + ' receives a land grant from the crown']
+            }, 'npc_activity');
+        } else if (action === 'military_command' && k.gold >= 100) {
+            k.gold -= 100;
+            var loyaltyGain4 = 12;
+            target.kingLoyalty = Math.min(100, (target.kingLoyalty || 50) + loyaltyGain4);
+            target.perceivedKingLoyalty = Math.min(100, (target.perceivedKingLoyalty || target.kingLoyalty || 50) + 6);
+            logEvent('👑⚔️ The king of ' + k.name + ' appoints ' + nobleName + ' to a military command! (+' + loyaltyGain4 + ' loyalty)', {
+                type: 'king_gift', category: 'npc_activity',
+                effects: [nobleName + ' receives a military commission']
+            }, 'npc_activity');
+        } else {
+            // Honorary title (free)
+            var loyaltyGain5 = 8;
+            target.kingLoyalty = Math.min(100, (target.kingLoyalty || 50) + loyaltyGain5);
+            target.perceivedKingLoyalty = Math.min(100, (target.perceivedKingLoyalty || target.kingLoyalty || 50) + 5);
+            logEvent('👑🎖️ The king of ' + k.name + ' bestows an honorary title upon ' + nobleName + '! (+' + loyaltyGain5 + ' loyalty)', {
+                type: 'king_gift', category: 'npc_activity',
+                effects: [nobleName + ' is honored by the crown']
+            }, 'npc_activity');
+        }
+    }
+
+    // Apply mild jealousy to other nobles when one gets a gift
+    function _applyNobleJealousy(k, recipientId, nobles, severity, rng) {
+        for (var i = 0; i < nobles.length; i++) {
+            var n = nobles[i];
+            if (!n.alive || n.id === recipientId) continue;
+            var np = n.personality || {};
+            var jealousy = 0;
+            if ((np.ambition || 50) > 60) jealousy -= 1;
+            if ((np.selfishness || 50) > 65) jealousy -= 1;
+            jealousy -= Math.floor(severity / 2);
+            // Nobles with high loyalty to king don't mind
+            if ((n.kingLoyalty || 50) > 70) jealousy = Math.max(jealousy, -1);
+            if (jealousy !== 0) {
+                n.kingLoyalty = Math.max(0, Math.min(100, (n.kingLoyalty || 50) + jealousy));
+            }
+        }
+    }
+
     // ── Exports ──
     Engine.tickDiplomacy = tickDiplomacy;
     Engine.declareWar = declareWar;
@@ -6743,6 +6902,7 @@
     Engine.tickNobleRelationshipLoyaltyLink = tickNobleRelationshipLoyaltyLink;
     Engine.tickInterKingdomTrade = tickInterKingdomTrade;
     Engine.applyKingEconomicEffectsToNPCs = applyKingEconomicEffectsToNPCs;
+    Engine.tickAIKingLoyaltyManagement = tickAIKingLoyaltyManagement;
 
     // Execute a player-approved economic proposal
     Engine.executeEconomicProposal = function(kingdom, proposal) {

@@ -227,6 +227,15 @@ window.UI = (function () {
             btnOutposts.addEventListener('click', function() { UI.openOutpostDialog(); });
             if (rowManage) rowManage.appendChild(btnOutposts);
 
+            // EM Deals button → Manage row
+            const btnEMDeals = document.createElement('button');
+            btnEMDeals.className = 'btn-action';
+            btnEMDeals.id = 'btnEMDeals';
+            btnEMDeals.title = 'Manage Elite Merchant Deals';
+            btnEMDeals.textContent = '🤝 EM Deals';
+            btnEMDeals.addEventListener('click', function() { if (UI.openAllDealsUI) UI.openAllDealsUI(); });
+            if (rowManage) rowManage.appendChild(btnEMDeals);
+
             // Nobility button → Manage row (hidden until Minor Noble rank 4+)
             const btnNobility = document.createElement('button');
             btnNobility.className = 'btn-action';

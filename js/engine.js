@@ -3505,6 +3505,7 @@
                     intelligence: Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                     warmth:       Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                     honesty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
+                    selfishness:  Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                 };
 
                 person.quirks = assignRandomQuirks(rng);
@@ -4186,6 +4187,7 @@
                 frugality:    Math.max(0, Math.min(100, (_greedMap[_kpRef.greed] || 50) + _fuzz())),
                 loyalty:      Math.max(0, Math.min(100, (_courMap[_kpRef.courage] || 50) + _fuzz())),
                 honesty:      Math.max(0, Math.min(100, (_greedMap[_kpRef.greed] || 50) + _fuzz())),
+                selfishness:  Math.max(0, Math.min(100, (100 - (_tempMap[_kpRef.temperament] || 50)) + _fuzz())),
             };
 
             // Generate a proper royal family for this king
@@ -7473,6 +7475,16 @@
         }
 
         // Transfer buildings owned by non-EM NPCs: spouse > children > kingdom
+        // Also transfer gold to player if spouse was player
+        if (!p.isEliteMerchant && (p.gold || 0) > 0 && p.spouseId === 'player' && typeof Player !== 'undefined' && Player.state) {
+            var _npcInheritGold = Math.floor((p.gold || 0) * 0.85);
+            Player.state.gold = (Player.state.gold || 0) + _npcInheritGold;
+            logEvent('💰 You inherit ' + _npcInheritGold + 'g from your late spouse ' + p.firstName + ' ' + (p.lastName || '') + ' (after 15% death tax).', {
+                type: 'player_inheritance',
+                cause: 'Your spouse has died.',
+                effects: ['You inherit ' + _npcInheritGold + 'g']
+            });
+        }
         if (!p.isEliteMerchant && town) {
             var _deadKingdom = findKingdom(town.kingdomId);
             var _deadKingdomId = _deadKingdom ? _deadKingdom.id : null;
@@ -7508,6 +7520,71 @@
                 for (var _dbi = 0; _dbi < _dt.buildings.length; _dbi++) {
                     if (_dt.buildings[_dbi].ownerId === p.id) {
                         _dt.buildings[_dbi].ownerId = _newOwnerId;
+                    }
+                }
+            }
+        }
+
+        // ── Trigger death/funeral UI for player's family ──
+        if (typeof Player !== 'undefined' && Player.state) {
+            var _isPlayerFamily = false;
+            var _familyRelation = null;
+            if (p.spouseId === 'player' || Player.state.spouseId === p.id) {
+                _isPlayerFamily = true;
+                _familyRelation = 'spouse';
+            }
+            if (!_isPlayerFamily && Player.state.parentIds) {
+                for (var _pi = 0; _pi < Player.state.parentIds.length; _pi++) {
+                    if (Player.state.parentIds[_pi] === p.id) {
+                        _isPlayerFamily = true;
+                        _familyRelation = p.sex === 'F' ? 'mother' : 'father';
+                        break;
+                    }
+                }
+            }
+            if (!_isPlayerFamily && Player.state.childrenIds) {
+                if (Player.state.childrenIds.indexOf(p.id) >= 0) {
+                    _isPlayerFamily = true;
+                    _familyRelation = 'child';
+                }
+            }
+            if (!_isPlayerFamily && Player.state.siblingIds) {
+                if (Player.state.siblingIds.indexOf(p.id) >= 0) {
+                    _isPlayerFamily = true;
+                    _familyRelation = 'sibling';
+                }
+            }
+            if (_isPlayerFamily) {
+                // Queue death notification (will be shown after tick completes)
+                if (!world._pendingDeathNotifications) world._pendingDeathNotifications = [];
+                world._pendingDeathNotifications.push({ personId: p.id, cause: cause, relationship: _familyRelation });
+
+                // If parent died and other parent is alive, or sibling inherits, set up AI funeral
+                if ((_familyRelation === 'mother' || _familyRelation === 'father') && typeof UI !== 'undefined' && UI._setupAIFuneral) {
+                    var _otherParentAlive = false;
+                    var _otherParent = null;
+                    if (Player.state.parentIds) {
+                        for (var _opi = 0; _opi < Player.state.parentIds.length; _opi++) {
+                            if (Player.state.parentIds[_opi] !== p.id) {
+                                var _op = findPerson(Player.state.parentIds[_opi]);
+                                if (_op && _op.alive) { _otherParentAlive = true; _otherParent = _op; }
+                            }
+                        }
+                    }
+                    if (_otherParentAlive && _otherParent) {
+                        UI._setupAIFuneral(p, _familyRelation, (_otherParent.firstName || '') + ' ' + (_otherParent.lastName || ''), _otherParent.townId);
+                    } else if (!_otherParentAlive && Player.state.siblingIds && Player.state.siblingIds.length > 0) {
+                        // Check if an older sibling inherits
+                        var _eligSibs = [];
+                        for (var _esi = 0; _esi < Player.state.siblingIds.length; _esi++) {
+                            var _esib = findPerson(Player.state.siblingIds[_esi]);
+                            if (_esib && _esib.alive && _esib.age >= 18) _eligSibs.push(_esib);
+                        }
+                        _eligSibs.sort(function(a, b) { return b.age - a.age; });
+                        var _playerAge = Player.state.age || 18;
+                        if (_eligSibs.length > 0 && _eligSibs[0].age > _playerAge) {
+                            UI._setupAIFuneral(p, _familyRelation, (_eligSibs[0].firstName || '') + ' ' + (_eligSibs[0].lastName || ''), _eligSibs[0].townId);
+                        }
                     }
                 }
             }
@@ -29330,6 +29407,10 @@
                 if (!_cp.alive) continue;
                 _tickCache.aliveCount++;
                 _tickCache.alivePeople.push(_cp);
+                // Backfill selfishness for saves that predate this trait
+                if (_cp.personality && _cp.personality.selfishness == null) {
+                    _cp.personality.selfishness = Math.floor((world.rng.random() + world.rng.random() + world.rng.random()) / 3 * 100);
+                }
                 if (!_tickCache.peopleByTown[_cp.townId]) _tickCache.peopleByTown[_cp.townId] = [];
                 _tickCache.peopleByTown[_cp.townId].push(_cp);
                 if (!_tickCache.peopleByKingdom[_cp.kingdomId]) _tickCache.peopleByKingdom[_cp.kingdomId] = [];
@@ -29363,6 +29444,7 @@
             Engine.tickFamilyMembers();
             Engine.tickEliteMerchantAI();
             Engine.tickEMRelationshipFavors();
+            if (typeof Engine.tickEMDeals === 'function') Engine.tickEMDeals();
             Engine.tickNPCCaravans();     // Process caravan movement
             Engine.tickEMCaravans();      // EM caravan hiring decisions
             Engine.tickKingdomCaravans(); // Kingdom supply caravans
@@ -29586,6 +29668,19 @@
             }
             for (const p of world.people) {
                 if (p.gold && !Number.isInteger(p.gold)) p.gold = Math.floor(p.gold);
+            }
+
+            // Process pending death notifications (queued by killPerson)
+            if (world._pendingDeathNotifications && world._pendingDeathNotifications.length > 0) {
+                var _dn = world._pendingDeathNotifications.shift();
+                if (typeof UI !== 'undefined' && UI.showDeathNotification) {
+                    UI.showDeathNotification(_dn.personId, _dn.cause, _dn.relationship);
+                }
+            }
+
+            // Funeral plan daily tick
+            if (typeof UI !== 'undefined' && UI.tickFuneralPlan) {
+                UI.tickFuneralPlan();
             }
         },
 

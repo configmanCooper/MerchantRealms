@@ -21,6 +21,35 @@
     var _caravanEditFromTownId = null; // source town of caravan being edited/created
     var _caravanEditToTownId = null;   // destination town of caravan being edited/created
 
+    // Populate building dropdown for store/pickup orders
+    function _populateBuildingDropdown(sel, action) {
+        if (!sel) return;
+        sel.innerHTML = '<option value="">📦 Any (general storage)</option>';
+        // Get the town where the action will happen
+        var locSel = document.getElementById('orderLocation');
+        var townId = null;
+        if (locSel) {
+            if (locSel.value === 'destination') {
+                townId = _caravanEditToTownId;
+                if (!townId) { try { var d = document.getElementById('caravanDest'); if (d) townId = d.value; } catch(e) {} }
+            } else if (locSel.value === 'source') {
+                townId = _caravanEditFromTownId || (typeof Player !== 'undefined' ? Player.townId : null);
+            } else if (locSel.value && locSel.value.indexOf('waypoint:') === 0) {
+                townId = locSel.value.replace('waypoint:', '');
+            }
+        }
+        if (!townId) return;
+        var town = Engine.findTown(townId);
+        if (!town || !town.buildings) return;
+        for (var bi = 0; bi < town.buildings.length; bi++) {
+            var b = town.buildings[bi];
+            if (b.ownerId !== 'player') continue;
+            var bType = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null;
+            var bName = bType ? bType.name : b.type;
+            sel.innerHTML += '<option value="' + (b.type + '_' + bi) + '">🏗️ ' + bName + (b.level > 1 ? ' (Lv' + b.level + ')' : '') + '</option>';
+        }
+    }
+
     function _getAllResourceList() {
         var list = [];
         for (var key in RESOURCE_TYPES) {
@@ -57,6 +86,13 @@
             locLabel = '🏁 ' + (dstTown ? dstTown.name : 'Destination');
         }
         var qtyLabel = order.qty === 'max' ? 'Max' : order.qty;
+        var bldLabel = '';
+        if (order.buildingId) {
+            var bParts = order.buildingId.split('_');
+            var bTypeId = bParts.slice(0, -1).join('_');
+            var bTypeDef = Engine.findBuildingType ? Engine.findBuildingType(bTypeId) : null;
+            bldLabel = ' → ' + (bTypeDef ? bTypeDef.name : bTypeId);
+        }
         var priceLabel = '';
         if (order.action === 'buy' && order.priceLimit) priceLabel = ' (max ' + order.priceLimit + 'g)';
         if (order.action === 'sell' && order.priceLimit) priceLabel = ' (min ' + order.priceLimit + 'g)';
@@ -91,7 +127,7 @@
             '<span style="flex:1;">' + resName + _warnBadge + '</span>' +
             '<span style="color:var(--gold);min-width:60px;">' + actionLabel + '</span>' +
             '<span style="min-width:50px;">' + qtyLabel + priceLabel + '</span>' +
-            '<span style="color:#888;min-width:55px;">' + locLabel + '</span>' +
+            '<span style="color:#888;min-width:55px;">' + locLabel + bldLabel + '</span>' +
             '<button data-action="_removeCaravanOrder" data-val="' + index + '" style="background:rgba(200,50,50,0.3);border:1px solid rgba(200,50,50,0.5);color:#fff;border-radius:3px;cursor:pointer;padding:1px 6px;font-size:0.7rem;">✕</button>' +
         '</div>';
     }
@@ -173,12 +209,20 @@
             }
         }
 
+        // Get building target for store/pickup
+        var buildingTarget = null;
+        if (action === 'store' || action === 'pickup') {
+            var bSel = document.getElementById('orderBuilding');
+            if (bSel && bSel.value) buildingTarget = bSel.value;
+        }
+
         _caravanOrders.push({
             good: goodId,
             action: action,
             location: location,
             qty: qty,
-            priceLimit: priceLimit
+            priceLimit: priceLimit,
+            buildingId: buildingTarget
         });
 
         toast('✅ Order added: ' + actionLabel + ' ' + (qty === 'max' ? 'Max' : qty) + ' ' + resLabel, 'success');
@@ -421,7 +465,7 @@
         // Row 1b: Building target (shown only for Store action)
         orderBuilderHtml += '<div id="orderBuildingRow" style="display:none;margin-bottom:6px;">';
         orderBuilderHtml += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
-        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;">Store in:</label>';
+        orderBuilderHtml += '<label style="font-size:0.7rem;color:#aaa;">At building:</label>';
         orderBuilderHtml += '<select id="orderBuilding" style="flex:1;padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
         orderBuilderHtml += '<option value="">📦 Any (general storage)</option>';
         orderBuilderHtml += '</select>';
@@ -660,12 +704,26 @@
                 });
             }
 
-            // Update price label based on action
+            // Update price label and building row based on action
             var actionSel = document.getElementById('orderAction');
             var priceInput = document.getElementById('orderPriceLimit');
             if (actionSel && priceInput) {
                 actionSel.addEventListener('change', function() {
                     priceInput.placeholder = (actionSel.value === 'buy') ? 'max price' : (actionSel.value === 'sell') ? 'min price' : 'limit';
+                    // Show building row for store/pickup
+                    var bRow = document.getElementById('orderBuildingRow');
+                    var bSel = document.getElementById('orderBuilding');
+                    if (bRow) {
+                        var show = (actionSel.value === 'store' || actionSel.value === 'pickup');
+                        bRow.style.display = show ? '' : 'none';
+                        // Update label
+                        var bLabel = bRow.querySelector('label');
+                        if (bLabel) bLabel.textContent = actionSel.value === 'store' ? 'Store in:' : 'Pickup from:';
+                        // Populate building dropdown with player buildings at relevant town
+                        if (show && bSel) {
+                            _populateBuildingDropdown(bSel, actionSel.value);
+                        }
+                    }
                 });
             }
         }, 50);

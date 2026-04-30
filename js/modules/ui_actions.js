@@ -1385,6 +1385,19 @@ function showPersonDetail(person) {
             }
             html += `</div>`;
         }
+        // ── EM Trade & Deals buttons ──
+        if (isInSameTown && isAlive && isPlayer) {
+            var _emTradeRel = Player.getRelationship ? Player.getRelationship(person.id) : { level: 0 };
+            var _emRelLvl = _emTradeRel.level || 0;
+            var _emDiscount = Math.min(10, Math.floor(_emRelLvl / 10));
+            html += `<div style="margin-top:8px;padding:8px;background:rgba(100,180,255,0.08);border:1px solid rgba(100,180,255,0.25);border-radius:6px;">`;
+            html += `<div style="font-size:0.82rem;font-weight:bold;color:#6ab4ff;margin-bottom:4px;">💼 Trade with ${person.firstName}</div>`;
+            html += `<div style="font-size:0.68rem;color:#888;margin-bottom:6px;">Relationship: ${_emRelLvl}/100 | Discount: ${_emDiscount}%</div>`;
+            html += `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+            html += `<button class="btn-medieval" data-action="openEMTrade" data-id="${person.id}" style="font-size:0.72rem;padding:4px 10px;background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.3);">🛒 Trade Goods</button>`;
+            html += `<button class="btn-medieval" data-action="openEMDeals" data-id="${person.id}" style="font-size:0.72rem;padding:4px 10px;background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.3);">🤝 Deals</button>`;
+            html += `</div></div>`;
+        }
         // ── Elite Merchant Favors ──
         if (isInSameTown && isPlayer && Player.getRelationship) {
             var _emFavRel = Player.getRelationship(person.id);

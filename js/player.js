@@ -3542,6 +3542,7 @@
         var effectiveWorkerMax = bt.workers + ((bld.level || 1) - 1);
         // Workers scale production proportionally against base worker count
         var baseWorkers = Math.max(bt.workers, 1);
+        if (!bld.workers) bld.workers = [];
         const workerFraction = Math.min(bld.workers.length, effectiveWorkerMax) / baseWorkers;
         var missingInputs = [];
         var autoBuyCanCover = true;
@@ -5720,6 +5721,7 @@
         const season = Engine.getSeason();
 
         for (const bld of player.buildings) {
+            if (!bld.workers) bld.workers = [];
             if (!bld.active) continue;
             // Skip buildings under fire repair
             if (bld._fireRepairUntil && day < bld._fireRepairUntil) continue;
@@ -19604,6 +19606,7 @@
                 player.employees = player.employees.filter(id => !quitSet.has(id));
                 // Clean quitters from building worker lists
                 for (const bld of player.buildings) {
+                    if (!bld.workers) bld.workers = [];
                     bld.workers = bld.workers.filter(wId => !quitSet.has(wId));
                 }
             }
@@ -19664,6 +19667,7 @@
         // Clean stale workers from buildings (dead, missing, or no longer employed)
         var employeeSet = new Set(player.employees);
         for (const bld of player.buildings) {
+            if (!bld.workers) bld.workers = [];
             bld.workers = bld.workers.filter(wId => {
                 const p = Engine.findPerson(wId);
                 return p && p.alive && employeeSet.has(wId);
