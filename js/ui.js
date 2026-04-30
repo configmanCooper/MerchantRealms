@@ -3544,6 +3544,253 @@ window.UI = (function () {
     }
 
     // NPC greeting based on rank comparison, personality, AND relationship level
+
+    // Spouse-specific greeting — personality and relationship driven
+    function _getSpouseGreeting(person, personName, playerName, pers) {
+        var warmth = pers.warmth || 50;
+        var honesty = pers.honesty || 50;
+        var ambition = pers.ambition || 50;
+        var humor = pers.humor || 50;
+        var selfishness = pers.selfishness || 50;
+        var relLevel = 0;
+        if (typeof Player !== 'undefined' && Player.getRelationship) {
+            var _r = Player.getRelationship(person.id);
+            if (_r) relLevel = _r.level || 0;
+        }
+        var fn = personName || 'love';
+        var greetings = [];
+
+        if (relLevel >= 80) {
+            // Deeply in love
+            if (warmth > 60) greetings = [
+                '"' + playerName + '! *wraps arms around you* I\'ve been counting the hours until you came home."',
+                '"My love! *kisses your cheek* Every day with you is a gift. Come sit with me."',
+                '"' + playerName + '! There you are. *beams* The house feels so empty when you\'re away."',
+                '"My darling ' + playerName + '! I made your favorite meal — I just had a feeling you\'d be home soon."',
+                '"' + playerName + '! *takes your hand* I was just telling the neighbors how lucky I am."'
+            ];
+            else if (warmth < 40) greetings = [
+                '"' + playerName + '. *slight smile* I won\'t say I missed you... but I did save you the good seat by the fire."',
+                '"You\'re back. Good. *pauses* ...I may have been watching the road for you. Don\'t read into it."',
+                '"' + playerName + '. I won\'t embarrass us both with sentiment, but... it\'s good you\'re here."',
+                '"Ah, ' + playerName + '. The quiet was starting to bother me. *quietly* I missed your voice."',
+                '"You took your time. *softens* ...I\'m glad you\'re safe."'
+            ];
+            else greetings = [
+                '"' + playerName + '! Welcome home, my love. Come tell me about your day."',
+                '"There\'s my better half! *smiles warmly* I saved you some supper."',
+                '"' + playerName + '! I was just thinking about you. How was the road?"',
+                '"My love! You look tired. Come rest — I\'ll take care of everything tonight."',
+                '"' + playerName + '! *happy sigh* Home at last. I\'ve missed you."'
+            ];
+        } else if (relLevel >= 60) {
+            // Happy marriage
+            if (warmth > 60) greetings = [
+                '"' + playerName + '! *smiles brightly* I was hoping you\'d come by. I\'ve missed your company."',
+                '"Hello, love! Come in, come in. I made tea — sit with me a while?"',
+                '"' + playerName + '! It\'s so good to see you. The days feel long when you\'re traveling."',
+                '"My dear ' + playerName + '! *touches your arm* You look well. Have you eaten?"'
+            ];
+            else if (warmth < 40) greetings = [
+                '"' + playerName + '. You\'re home. ...Good. I\'ll set an extra place."',
+                '"Ah, you\'re back. *nods* The house needed something. I suppose it was you."',
+                '"' + playerName + '. I hope the roads were kind. *pauses* ...Supper\'s ready."',
+                '"You\'re later than I expected. Not that I was worried. *looks away* Much."'
+            ];
+            else greetings = [
+                '"' + playerName + '! Good to see you, dear. How are things?"',
+                '"Hello, love. Busy day? Come sit and tell me everything."',
+                '"' + playerName + '! I was just thinking about us. We\'re doing well, aren\'t we?"',
+                '"Welcome home! I have news — but you first. How was your day?"'
+            ];
+        } else if (relLevel >= 40) {
+            // Stable but could be better
+            if (ambition > 60) greetings = [
+                '"' + playerName + '. I hope your ventures are going well? We could use the income."',
+                '"Ah, you\'re back. Have you thought more about expanding the business? We should talk."',
+                '"' + playerName + '. I\'ve been thinking about our future. We need to be more ambitious."',
+                '"Hello. I heard the Pembortons bought a new estate. When will we...? Never mind."'
+            ];
+            else if (humor > 60) greetings = [
+                '"' + playerName + '! Back already? I was just getting used to the peace and quiet. *winks*"',
+                '"Oh, it\'s you. *grins* I was hoping it was someone more exciting. Kidding!"',
+                '"' + playerName + '! I thought you were a burglar. You\'re much less interesting."',
+                '"The wanderer returns! *dramatically bows* Welcome to your humble abode."'
+            ];
+            else greetings = [
+                '"' + playerName + '. You\'re home. ...We should probably talk about things."',
+                '"Hello. The roof is leaking again, by the way. Just so you know."',
+                '"Ah, ' + playerName + '. It\'s been a while. I suppose you\'ve been busy."',
+                '"' + playerName + '. Good. We need to discuss a few things when you have a moment."'
+            ];
+        } else if (relLevel >= 20) {
+            // Strained
+            if (honesty > 60) greetings = [
+                '"' + playerName + '. I\'ll be honest — things haven\'t felt right between us lately."',
+                '"You\'re here. *sighs* We need to talk. Really talk. No avoiding it."',
+                '"' + playerName + '. I care about you, but we need to work on this. Both of us."',
+                '"I\'m not going to pretend everything is fine, ' + playerName + '. It isn\'t. But I want it to be."'
+            ];
+            else if (selfishness > 60) greetings = [
+                '"Oh, ' + playerName + '. How generous of you to visit your own spouse."',
+                '"' + playerName + '. I hope you\'re not here to ask for something. Again."',
+                '"You show up when it suits you. As always. What do you need?"',
+                '"' + playerName + '. Charming of you to remember you have a home. And a spouse."'
+            ];
+            else greetings = [
+                '"' + playerName + '. *looks away* I suppose you should come in."',
+                '"Oh. It\'s you. ...I wasn\'t expecting you."',
+                '"' + playerName + '. I\'m not sure what to say right now. Things have been... difficult."',
+                '"You\'re home. *quietly* I don\'t know if that makes things better or worse."'
+            ];
+        } else {
+            // Very strained / near breaking
+            if (warmth > 60) greetings = [
+                '"' + playerName + '... *voice catches* What happened to us? I remember when we were happy."',
+                '"You\'re here. *wipes eyes* I don\'t even know what to say anymore."',
+                '"' + playerName + '. I still care about you. Even if... even if this isn\'t working."',
+                '"...Hi. *sad smile* I wish things were different between us."'
+            ];
+            else if (warmth < 40) greetings = [
+                '"' + playerName + '. Don\'t expect a warm welcome. You haven\'t earned one."',
+                '"Oh. You decided to come home. How generous."',
+                '"What do you want, ' + playerName + '? I\'m done pretending."',
+                '"' + playerName + '. *cold stare* I\'d say I missed you, but we both know that would be a lie."'
+            ];
+            else greetings = [
+                '"' + playerName + '. ...I don\'t have much to say to you right now."',
+                '"You\'re back. I suppose we\'re still doing this."',
+                '"' + playerName + '. I\'m tired, ' + playerName + '. Tired of this distance between us."',
+                '"...Hello. *silence* Is there something you want?"'
+            ];
+        }
+
+        if (greetings.length === 0) return '';
+        var pick = greetings[Math.floor(Math.random() * greetings.length)];
+        var heartColor = relLevel >= 80 ? '#e74c3c' : relLevel >= 60 ? '#ff69b4' : relLevel >= 40 ? '#ffa07a' : '#888';
+        var heartIcon = relLevel >= 80 ? '❤️' : relLevel >= 60 ? '💕' : relLevel >= 40 ? '💛' : '💔';
+        var bgColor = relLevel >= 60 ? 'rgba(231,76,60,0.08)' : relLevel >= 40 ? 'rgba(255,215,0,0.06)' : 'rgba(128,128,128,0.06)';
+        var borderColor = relLevel >= 60 ? 'rgba(231,76,60,0.4)' : relLevel >= 40 ? 'rgba(255,215,0,0.3)' : 'rgba(128,128,128,0.3)';
+        return '<div style="padding:8px 12px;margin-bottom:10px;background:' + bgColor + ';border-left:3px solid ' + borderColor + ';border-radius:0 6px 6px 0;font-style:italic;color:var(--text-secondary,#ccc);font-size:0.9em;">' +
+            '<span style="color:' + heartColor + ';font-weight:bold;">' + fn + ' ' + heartIcon + ':</span> ' + pick + '</div>';
+    }
+
+    // Parent-specific greeting — personality and relationship driven
+    function _getParentGreeting(person, personName, playerName, pers) {
+        var warmth = pers.warmth || 50;
+        var honesty = pers.honesty || 50;
+        var ambition = pers.ambition || 50;
+        var humor = pers.humor || 50;
+        var selfishness = pers.selfishness || 50;
+        var relLevel = 0;
+        if (typeof Player !== 'undefined' && Player.getRelationship) {
+            var _r = Player.getRelationship(person.id);
+            if (_r) relLevel = _r.level || 0;
+        }
+        var fn = personName || 'parent';
+        var isMother = person.sex === 'F';
+        var parentTitle = isMother ? 'Mother' : 'Father';
+        var greetings = [];
+
+        if (relLevel >= 80) {
+            // Very close with parent
+            if (warmth > 60) greetings = [
+                '"' + playerName + '! My child! *embraces you tightly* Oh, let me look at you. You get more handsome every day."',
+                '"There\'s my ' + playerName + '! *beaming with pride* Come here, let me hold you. A ' + parentTitle.toLowerCase() + '\'s arms never tire."',
+                '"' + playerName + '! Oh, I\'m so happy to see you! Sit down — I\'ll fix you something to eat. You look thin."',
+                '"My darling ' + playerName + '! *cups your face* You know you\'ll always be my little one, no matter how big you get."',
+                '"' + playerName + '! I was just telling everyone how proud I am of you. Come, tell me everything!"'
+            ];
+            else if (warmth < 40) greetings = [
+                '"' + playerName + '. *firm nod* You\'re looking strong. Good. I raised you well."',
+                '"Ah, my child returns. *slight smile* I won\'t fuss over you — you\'d hate that. But I\'m glad you\'re here."',
+                '"' + playerName + '. I don\'t say it often, but... you\'ve made me proud. Don\'t let it go to your head."',
+                '"You came to visit. *gruff voice* ...That means more than you know."',
+                '"' + playerName + '. *clears throat* I\'m not one for sentiment. But it\'s good to see you, child."'
+            ];
+            else greetings = [
+                '"' + playerName + '! Come in, come in! Your ' + parentTitle.toLowerCase() + ' has been thinking about you."',
+                '"My child! How wonderful. Sit — we have so much to catch up on."',
+                '"' + playerName + '! You\'re a sight for sore eyes. How are you, truly?"',
+                '"There you are! I was beginning to worry. A ' + parentTitle.toLowerCase() + ' always worries, you know."',
+                '"' + playerName + '! I made your favorite — I had a feeling you\'d visit today."'
+            ];
+        } else if (relLevel >= 60) {
+            // Good relationship
+            if (ambition > 60) greetings = [
+                '"' + playerName + '! Good, you\'re here. I\'ve been hearing about your ventures. Not bad — but you can do better."',
+                '"My child! I see you\'re making a name for yourself. Remember — our family name carries weight. Use it wisely."',
+                '"' + playerName + '! I hope you\'re saving your coin and not squandering it. A ' + parentTitle.toLowerCase() + ' worries."',
+                '"Ah, ' + playerName + '. Still climbing? Good. The ' + (Player.state ? Player.state.lastName : '') + ' family deserves nothing less."'
+            ];
+            else if (humor > 60) greetings = [
+                '"' + playerName + '! There\'s my favorite child! *whispers* Don\'t tell your siblings I said that."',
+                '"Ah, look who finally remembered their old ' + parentTitle.toLowerCase() + '! I was starting to think you\'d been kidnapped."',
+                '"' + playerName + '! *sighs dramatically* You visit so rarely. I\'m practically a stranger to my own child."',
+                '"The prodigal child returns! Shall I prepare the fatted calf? *laughs*"'
+            ];
+            else greetings = [
+                '"' + playerName + '! It\'s good to see you. Come sit — your ' + parentTitle.toLowerCase() + ' wants to hear about your life."',
+                '"My child. How are things? I hope the world is treating you well."',
+                '"' + playerName + '! I\'m glad you came. I have some advice I\'ve been meaning to share."',
+                '"Hello, ' + playerName + '. You look well. That makes your ' + parentTitle.toLowerCase() + ' happy."'
+            ];
+        } else if (relLevel >= 40) {
+            // Okay but distant
+            if (honesty > 60) greetings = [
+                '"' + playerName + '. It\'s been a while. I won\'t pretend it doesn\'t bother me that you don\'t visit more."',
+                '"Ah, my child. Let me be frank — I wish we were closer. But I\'m glad you\'re here now."',
+                '"' + playerName + '. I have things to say that you might not want to hear. But a ' + parentTitle.toLowerCase() + ' must be honest."',
+                '"You came. *nods* I appreciate honesty, so here\'s mine: I\'ve missed you."'
+            ];
+            else greetings = [
+                '"' + playerName + '. *nods* It\'s been a while, hasn\'t it?"',
+                '"Ah, you\'re here. I was starting to wonder if you\'d forgotten where I live."',
+                '"' + playerName + '. Come in, I suppose. We should... probably catch up."',
+                '"My child. You\'ve been busy, I take it. Too busy for your ' + parentTitle.toLowerCase() + '."'
+            ];
+        } else if (relLevel >= 20) {
+            // Strained
+            if (selfishness > 60) greetings = [
+                '"' + playerName + '. What do you want? You only visit when you need something."',
+                '"Oh, it\'s you. I suppose you\'re here for gold. Or favors. As usual."',
+                '"My child visits! What a miracle. *suspicious look* What\'s this going to cost me?"',
+                '"' + playerName + '. I gave you everything growing up. I hope you remember that."'
+            ];
+            else greetings = [
+                '"' + playerName + '. *sighs* We really need to talk about where things went wrong."',
+                '"You came. I... wasn\'t sure you would. Things have been difficult between us."',
+                '"' + playerName + '. *long pause* I don\'t know what to say. It\'s been too long."',
+                '"My child... what happened to us? We used to be so close."'
+            ];
+        } else {
+            // Very strained
+            if (warmth > 60) greetings = [
+                '"' + playerName + '... *voice breaks* No matter what\'s happened, you\'re still my child. I love you."',
+                '"You\'re here. *trembles* I\'ve been hoping you\'d come. Can we... start over?"',
+                '"' + playerName + '. I know things are broken between us. But a ' + parentTitle.toLowerCase() + '\'s love never dies."',
+                '"My child... I\'ve made mistakes. I know that now. Can you forgive an old ' + parentTitle.toLowerCase() + '?"'
+            ];
+            else greetings = [
+                '"' + playerName + '. I didn\'t expect to see you. *cold silence*"',
+                '"So you finally show your face. *turns away* I have nothing to say."',
+                '"' + playerName + '. After everything... you come here now?"',
+                '"...What do you want? We have nothing to discuss."'
+            ];
+        }
+
+        if (greetings.length === 0) return '';
+        var pick = greetings[Math.floor(Math.random() * greetings.length)];
+        var familyColor = relLevel >= 60 ? '#9b59b6' : relLevel >= 40 ? '#c0a050' : '#888';
+        var familyIcon = relLevel >= 80 ? '💜' : relLevel >= 60 ? '👨‍👩‍👧' : relLevel >= 40 ? '👤' : '😔';
+        if (isMother) familyIcon = relLevel >= 80 ? '💜' : relLevel >= 60 ? '👩' : relLevel >= 40 ? '👤' : '😔';
+        var bgColor = relLevel >= 60 ? 'rgba(155,89,182,0.08)' : relLevel >= 40 ? 'rgba(192,160,80,0.06)' : 'rgba(128,128,128,0.06)';
+        var borderColor = relLevel >= 60 ? 'rgba(155,89,182,0.4)' : relLevel >= 40 ? 'rgba(192,160,80,0.3)' : 'rgba(128,128,128,0.3)';
+        return '<div style="padding:8px 12px;margin-bottom:10px;background:' + bgColor + ';border-left:3px solid ' + borderColor + ';border-radius:0 6px 6px 0;font-style:italic;color:var(--text-secondary,#ccc);font-size:0.9em;">' +
+            '<span style="color:' + familyColor + ';font-weight:bold;">' + fn + ' ' + familyIcon + ':</span> ' + pick + '</div>';
+    }
+
+    // NPC greeting based on rank comparison, personality, AND relationship level
     function _getNpcGreeting(person, personName) {
         if (!person) return '';
         var pers = person.personality || {};
@@ -3554,6 +3801,24 @@ window.UI = (function () {
         var isCold = warmth < 40;
         var isHonest = honesty > 60;
         var isAmbitious = ambition > 60;
+
+        // --- Special family greetings: spouse and parents ---
+        var playerState = (typeof Player !== 'undefined') ? Player.state : null;
+        var playerName = playerState ? playerState.firstName : 'dear';
+        var fn = personName || 'friend';
+
+        if (playerState && person.id) {
+            // Check if spouse
+            if (playerState.spouseId && playerState.spouseId === person.id) {
+                var spouseGreeting = _getSpouseGreeting(person, fn, playerName, pers);
+                if (spouseGreeting) return spouseGreeting;
+            }
+            // Check if parent
+            if (playerState.parentIds && playerState.parentIds.indexOf(person.id) !== -1) {
+                var parentGreeting = _getParentGreeting(person, fn, playerName, pers);
+                if (parentGreeting) return parentGreeting;
+            }
+        }
 
         var npcRank = 0;
         if (person.socialRank) {
