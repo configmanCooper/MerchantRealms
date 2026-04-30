@@ -12553,6 +12553,7 @@
                     desc: 'Learn which roads are most dangerous.',
                     cost: 0,
                     type: 'info',
+                    cooldownDays: 14,
                 });
             }
             if (level >= 80) {
@@ -12613,6 +12614,7 @@
                     desc: 'Learn about upcoming harvests and food supply outlook.',
                     cost: 0,
                     type: 'info',
+                    cooldownDays: 14,
                 });
             }
             if (level >= 60) {
@@ -12650,9 +12652,10 @@
                 perks.push({
                     id: 'custom_order',
                     name: '\u{1F6D2} Custom Order',
-                    desc: 'Commission crafted goods at 10% below market price.',
+                    desc: 'Commission crafted goods at 10% below market price for 7 days.',
                     cost: 0,
                     type: 'service',
+                    cooldownDays: 14,
                 });
             }
         }
@@ -12662,9 +12665,10 @@
             perks.push({
                 id: 'material_tip',
                 name: '\u26CF\uFE0F Prospecting Tip',
-                desc: 'Points you toward rich mineral deposits when foraging.',
+                desc: 'Points you toward rich mineral deposits. 2x foraging yield for 7 days.',
                 cost: 0,
                 type: 'info',
+                cooldownDays: 14,
             });
             if (level >= 60) {
                 perks.push({
@@ -12757,7 +12761,7 @@
                 desc: 'Your buildings in their territory are protected from seizure for 60 days.',
                 cost: 0,
                 type: 'passive',
-                cooldownDays: 90,
+                cooldownDays: 120,
             });
             if (level >= 70) {
                 perks.push({
@@ -12844,7 +12848,7 @@
                 desc: 'Tips on saving gold. -5% building maintenance for 30 days.',
                 cost: 0,
                 type: 'passive',
-                cooldownDays: 30,
+                cooldownDays: 60,
             });
         }
         if (pers.ambition >= 70 && level >= 50) {
