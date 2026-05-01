@@ -4300,14 +4300,14 @@ CONFIG.SPECIAL_LAWS = SPECIAL_LAWS;
 CONFIG.KING_MOOD = {
     // Mood states and their modifiers to decision probabilities
     moods: {
-        jubilant:   { taxMod: -0.04, festivalMod: 2.0, petitionMod: 1.5, warMod: 0.3, conscriptMod: 0.5, praiseMod: 2.0, promotionMod: 1.5, punishMod: 0.5, remarriageMod: 1.0, raFavorMod: 0.8, courtFreqMod: 1.0, icon: '😄', desc: 'The king is jubilant' },
+        jubilant:   { taxMod: -0.02, festivalMod: 1.3, petitionMod: 1.2, warMod: 0.8, conscriptMod: 0.85, praiseMod: 1.25, promotionMod: 1.15, punishMod: 0.8, remarriageMod: 1.1, raFavorMod: 0.9, courtFreqMod: 1.0, icon: '😄', desc: 'The king is jubilant' },
         content:    { taxMod: 0,     festivalMod: 1.0, petitionMod: 1.0, warMod: 1.0, conscriptMod: 1.0, praiseMod: 1.0, promotionMod: 1.0, punishMod: 1.0, remarriageMod: 1.0, raFavorMod: 1.0, courtFreqMod: 1.0, icon: '😊', desc: 'The king is content' },
-        worried:    { taxMod: 0.02,  festivalMod: 0.5, petitionMod: 0.7, warMod: 1.2, conscriptMod: 1.3, praiseMod: 0.7, promotionMod: 0.8, punishMod: 1.2, remarriageMod: 0.8, raFavorMod: 1.3, courtFreqMod: 1.1, icon: '😟', desc: 'The king is worried' },
-        paranoid:   { taxMod: 0.04,  festivalMod: 0.1, petitionMod: 0.3, warMod: 1.5, conscriptMod: 1.8, praiseMod: 0.4, promotionMod: 0.3, punishMod: 1.5, remarriageMod: 0.5, raFavorMod: 1.8, courtFreqMod: 1.3, icon: '😰', desc: 'The king is paranoid' },
-        fearful:    { taxMod: 0.03,  festivalMod: 0.2, petitionMod: 0.4, warMod: 0.5, conscriptMod: 2.0, praiseMod: 0.5, promotionMod: 0.5, punishMod: 1.0, remarriageMod: 0.3, raFavorMod: 1.5, courtFreqMod: 0.8, icon: '😨', desc: 'The king is fearful' },
-        wrathful:   { taxMod: 0.05,  festivalMod: 0.0, petitionMod: 0.1, warMod: 2.0, conscriptMod: 1.5, praiseMod: 0.1, promotionMod: 0.2, punishMod: 2.0, remarriageMod: 0.2, raFavorMod: 1.5, courtFreqMod: 1.4, icon: '😡', desc: 'The king is wrathful' },
-        grieving:   { taxMod: 0,     festivalMod: 0.0, petitionMod: 0.5, warMod: 0.7, conscriptMod: 0.8, praiseMod: 0.3, promotionMod: 0.4, punishMod: 0.3, remarriageMod: 0.0, raFavorMod: 0.5, courtFreqMod: 0.6, icon: '😢', desc: 'The king is grieving' },
-        ambitious:  { taxMod: 0.01,  festivalMod: 0.8, petitionMod: 0.6, warMod: 1.8, conscriptMod: 1.4, praiseMod: 1.3, promotionMod: 1.3, punishMod: 1.2, remarriageMod: 1.5, raFavorMod: 1.2, courtFreqMod: 1.1, icon: '🔥', desc: 'The king is ambitious' },
+        worried:    { taxMod: 0.01,  festivalMod: 0.8, petitionMod: 0.9, warMod: 1.1, conscriptMod: 1.15, praiseMod: 0.9, promotionMod: 0.9, punishMod: 1.1, remarriageMod: 0.9, raFavorMod: 1.15, courtFreqMod: 1.05, icon: '😟', desc: 'The king is worried' },
+        paranoid:   { taxMod: 0.02,  festivalMod: 0.6, petitionMod: 0.75, warMod: 1.2, conscriptMod: 1.3, praiseMod: 0.75, promotionMod: 0.8, punishMod: 1.25, remarriageMod: 0.8, raFavorMod: 1.25, courtFreqMod: 1.15, icon: '😰', desc: 'The king is paranoid' },
+        fearful:    { taxMod: 0.015, festivalMod: 0.7, petitionMod: 0.8, warMod: 0.8, conscriptMod: 1.3, praiseMod: 0.85, promotionMod: 0.85, punishMod: 1.0, remarriageMod: 0.85, raFavorMod: 1.2, courtFreqMod: 0.9, icon: '😨', desc: 'The king is fearful' },
+        wrathful:   { taxMod: 0.025, festivalMod: 0.5, petitionMod: 0.7, warMod: 1.3, conscriptMod: 1.2, praiseMod: 0.7, promotionMod: 0.8, punishMod: 1.3, remarriageMod: 0.8, raFavorMod: 1.2, courtFreqMod: 1.15, icon: '😡', desc: 'The king is wrathful' },
+        grieving:   { taxMod: 0,     festivalMod: 0.5, petitionMod: 0.85, warMod: 0.85, conscriptMod: 0.9, praiseMod: 0.75, promotionMod: 0.85, punishMod: 0.8, remarriageMod: 0.5, raFavorMod: 0.8, courtFreqMod: 0.85, icon: '😢', desc: 'The king is grieving' },
+        ambitious:  { taxMod: 0.005, festivalMod: 0.9, petitionMod: 0.9, warMod: 1.2, conscriptMod: 1.15, praiseMod: 1.15, promotionMod: 1.15, punishMod: 1.1, remarriageMod: 1.2, raFavorMod: 1.1, courtFreqMod: 1.05, icon: '🔥', desc: 'The king is ambitious' },
     },
     // How long moods last (in days) before decaying toward 'content'
     moodDuration: {
@@ -4322,27 +4322,27 @@ CONFIG.KING_MOOD = {
         heir_born: 'jubilant', heir_died: 'grieving', spouse_died: 'grieving',
         conquest: 'ambitious', festival_success: 'content', tournament_success: 'jubilant',
     },
-    // Quest category weights by mood — multiplied into quest selection weight
+    // Quest category weights by mood — multiplied into quest selection weight (minor nudge)
     questCatWeights: {
         //                   military  espionage  economic  diplomatic  justice  social  corrupt
-        jubilant:   { military: 0.4, espionage: 0.3, economic: 1.8, diplomatic: 1.5, justice: 0.8, social: 1.8, corrupt: 0.3 },
+        jubilant:   { military: 0.85, espionage: 0.9, economic: 1.2, diplomatic: 1.15, justice: 0.95, social: 1.2, corrupt: 0.9 },
         content:    { military: 1.0, espionage: 1.0, economic: 1.0, diplomatic: 1.0, justice: 1.0, social: 1.0, corrupt: 1.0 },
-        worried:    { military: 1.4, espionage: 1.5, economic: 1.2, diplomatic: 1.0, justice: 1.3, social: 0.6, corrupt: 1.2 },
-        paranoid:   { military: 1.6, espionage: 2.0, economic: 0.8, diplomatic: 0.5, justice: 1.8, social: 0.3, corrupt: 1.8 },
-        fearful:    { military: 1.8, espionage: 1.2, economic: 0.5, diplomatic: 1.5, justice: 0.8, social: 0.4, corrupt: 0.5 },
-        wrathful:   { military: 2.0, espionage: 1.5, economic: 0.4, diplomatic: 0.3, justice: 2.0, social: 0.2, corrupt: 1.5 },
-        grieving:   { military: 0.5, espionage: 0.6, economic: 0.8, diplomatic: 0.8, justice: 1.0, social: 1.5, corrupt: 0.4 },
-        ambitious:  { military: 1.5, espionage: 1.3, economic: 1.5, diplomatic: 1.2, justice: 1.0, social: 0.8, corrupt: 1.3 },
+        worried:    { military: 1.1, espionage: 1.15, economic: 1.05, diplomatic: 1.0, justice: 1.1, social: 0.9, corrupt: 1.05 },
+        paranoid:   { military: 1.15, espionage: 1.25, economic: 0.9, diplomatic: 0.85, justice: 1.2, social: 0.85, corrupt: 1.15 },
+        fearful:    { military: 1.2, espionage: 1.1, economic: 0.9, diplomatic: 1.1, justice: 0.95, social: 0.85, corrupt: 0.9 },
+        wrathful:   { military: 1.25, espionage: 1.15, economic: 0.85, diplomatic: 0.85, justice: 1.25, social: 0.8, corrupt: 1.1 },
+        grieving:   { military: 0.9, espionage: 0.9, economic: 0.95, diplomatic: 0.95, justice: 1.0, social: 1.1, corrupt: 0.9 },
+        ambitious:  { military: 1.15, espionage: 1.1, economic: 1.15, diplomatic: 1.1, justice: 1.0, social: 0.95, corrupt: 1.1 },
     },
-    // Reward generosity by mood — multiplied into quest gold reward
+    // Reward generosity by mood — multiplied into quest gold reward (minor)
     rewardMod: {
-        jubilant: 1.3, content: 1.0, worried: 0.9, paranoid: 0.8,
-        fearful: 1.1, wrathful: 0.7, grieving: 1.0, ambitious: 1.1,
+        jubilant: 1.15, content: 1.0, worried: 0.95, paranoid: 0.9,
+        fearful: 1.05, wrathful: 0.9, grieving: 1.0, ambitious: 1.05,
     },
-    // Urgency bias by mood — chance to upgrade urgency one level
+    // Urgency bias by mood — chance to upgrade urgency one level (minor)
     urgencyBias: {
-        jubilant: 0.0, content: 0.0, worried: 0.15, paranoid: 0.30,
-        fearful: 0.25, wrathful: 0.35, grieving: 0.0, ambitious: 0.20,
+        jubilant: 0.0, content: 0.0, worried: 0.08, paranoid: 0.15,
+        fearful: 0.12, wrathful: 0.18, grieving: 0.0, ambitious: 0.10,
     },
 };
 
@@ -4405,16 +4405,16 @@ CONFIG.KING_TRAVEL = {
         kind:       { progressMod: 1.4, diplomaticMod: 1.0 },
         cruel:      { progressMod: 0.6, diplomaticMod: 0.8 },
     },
-    // Mood modifiers — stressed/fearful kings stay home
+    // Mood modifiers — stressed/fearful kings stay home (minor nudge)
     moodMods: {
-        jubilant:  { progressMod: 1.5, diplomaticMod: 1.3 },
+        jubilant:  { progressMod: 1.15, diplomaticMod: 1.1 },
         content:   { progressMod: 1.0, diplomaticMod: 1.0 },
-        worried:   { progressMod: 0.3, diplomaticMod: 0.5 },
-        paranoid:  { progressMod: 0.0, diplomaticMod: 0.0 },
-        fearful:   { progressMod: 0.0, diplomaticMod: 0.0 },
-        wrathful:  { progressMod: 0.3, diplomaticMod: 0.2 },
-        grieving:  { progressMod: 0.1, diplomaticMod: 0.1 },
-        ambitious: { progressMod: 1.2, diplomaticMod: 1.6 },
+        worried:   { progressMod: 0.85, diplomaticMod: 0.85 },
+        paranoid:  { progressMod: 0.6, diplomaticMod: 0.5 },
+        fearful:   { progressMod: 0.5, diplomaticMod: 0.5 },
+        wrathful:  { progressMod: 0.8, diplomaticMod: 0.75 },
+        grieving:  { progressMod: 0.6, diplomaticMod: 0.6 },
+        ambitious: { progressMod: 1.1, diplomaticMod: 1.2 },
     },
 };
 
