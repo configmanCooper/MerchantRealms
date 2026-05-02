@@ -7064,8 +7064,23 @@
         player.age = spouse.age;
         player.alive = true;
         player.spouseId = null; // Widowed
-        // Children stay — they're still this character's children
-        // (childrenIds remain the same since spouse is the other parent)
+
+        // Merge children from both the old player and the spouse NPC
+        // (covers cases where spouse had children from a prior relationship)
+        var mergedChildIds = (player.childrenIds || []).slice();
+        var spouseKids = spouse.childrenIds || [];
+        for (var mci = 0; mci < spouseKids.length; mci++) {
+            if (mergedChildIds.indexOf(spouseKids[mci]) === -1) {
+                mergedChildIds.push(spouseKids[mci]);
+            }
+        }
+        player.childrenIds = mergedChildIds;
+
+        // Remove spouse NPC from the world to prevent duplicate processing
+        spouse.alive = false;
+        spouse.causeOfDeath = 'identity_transferred';
+        spouse.spouseId = null;
+
         player.weapon = null;
         player.armor = null;
         player.gold = totalGold;
@@ -7131,9 +7146,14 @@
         // Social rank maintained — spouse was already part of the household
         // No rank drop for spouse inheritance
 
-        // Set relationships with children
-        for (var ci = 0; ci < allChildren.length; ci++) {
-            modifyRelationship(allChildren[ci].id, CONFIG.HEIR_FAMILY_RELATIONSHIP_START + 10, 'child');
+        // Set relationships with all children (including any adopted from spouse's prior relationships)
+        var allMergedChildren = [];
+        for (var mki = 0; mki < player.childrenIds.length; mki++) {
+            var mkChild = Engine.findPerson(player.childrenIds[mki]);
+            if (mkChild && mkChild.alive) allMergedChildren.push(mkChild);
+        }
+        for (var ci = 0; ci < allMergedChildren.length; ci++) {
+            modifyRelationship(allMergedChildren[ci].id, CONFIG.HEIR_FAMILY_RELATIONSHIP_START + 10, 'child');
         }
 
         // Rebuild familyMembers — spouse's perspective
@@ -7146,8 +7166,8 @@
             deceased: true
         });
         // All children become children in family
-        for (var ki = 0; ki < allChildren.length; ki++) {
-            var ch = allChildren[ki];
+        for (var ki = 0; ki < allMergedChildren.length; ki++) {
+            var ch = allMergedChildren[ki];
             player.familyMembers.push({
                 npcId: ch.id,
                 role: ch.sex === 'M' ? 'son' : 'daughter',
@@ -13555,6 +13575,39 @@
         }
         if (!alreadyInFamily) {
             player.familyMembers.push({ npcId: plan.fianceId, role: 'spouse', name: person.firstName + ' ' + person.lastName });
+        }
+
+        // Adopt spouse's existing children from prior relationships
+        if (person.childrenIds && person.childrenIds.length > 0) {
+            if (!player.childrenIds) player.childrenIds = [];
+            for (var aci = 0; aci < person.childrenIds.length; aci++) {
+                var adoptChildId = person.childrenIds[aci];
+                if (player.childrenIds.indexOf(adoptChildId) === -1) {
+                    player.childrenIds.push(adoptChildId);
+                    var adoptChild = Engine.findPerson(adoptChildId);
+                    if (adoptChild && adoptChild.alive) {
+                        // Add to family members
+                        var _childAlreadyFamily = false;
+                        for (var _cfi = 0; _cfi < player.familyMembers.length; _cfi++) {
+                            if (player.familyMembers[_cfi].npcId === adoptChildId) { _childAlreadyFamily = true; break; }
+                        }
+                        if (!_childAlreadyFamily) {
+                            player.familyMembers.push({
+                                npcId: adoptChildId,
+                                role: adoptChild.sex === 'M' ? 'son' : 'daughter',
+                                name: adoptChild.firstName + ' ' + adoptChild.lastName
+                            });
+                        }
+                        // Add player as parent if not already
+                        if (!adoptChild.parentIds) adoptChild.parentIds = [];
+                        if (adoptChild.parentIds.indexOf('player') === -1) {
+                            adoptChild.parentIds.push('player');
+                        }
+                        modifyRelationship(adoptChildId, CONFIG.HEIR_FAMILY_RELATIONSHIP_START || 30, 'child');
+                        Engine.logEvent('👨‍👧 ' + player.fullName + ' has taken ' + adoptChild.firstName + ' as their own child.');
+                    }
+                }
+            }
         }
 
         // Save wedding memory for spouse conversations
