@@ -6942,6 +6942,9 @@
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
+        player.health = 100;
+        player.illnesses = [];
+        player.injuries = [];
         player.marketIntel = {};
         player.goldEarnedInKingdom = {};
         player.tradingStartDay = 0;
@@ -7088,6 +7091,9 @@
         player.skills = { keen_eye: true };
         player.achievements = {};
         player.hunger = HUNGER_CONFIG.START;
+        player.health = 100;
+        player.illnesses = [];
+        player.injuries = [];
         player.marketIntel = player.marketIntel || {}; // Spouse has some market knowledge
         player.goldEarnedInKingdom = {};
         player.tradingStartDay = 0;
