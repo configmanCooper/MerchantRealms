@@ -743,6 +743,7 @@ window.UI = (function () {
         registerAction('setNotifFilterAndShowEventDetail', function(_t, d) { Player.setNotifFilter(d.key, d.val); UI.showEventDetail(d.id); });
         registerAction('closeModalAndOpenKingConsultationDialog', function(_t, d) { UI.closeModal(); UI.openKingConsultationDialog(d.id, d.val); });
         registerAction('_toggleGuidance', function() { UI._toggleGuidance(); });
+        registerAction('_toggleMusicMute', function() { UI._toggleMusicMute(); });
         registerAction('_handler_15', function() { event.stopPropagation() });
         registerAction('_toggleToastMute', function() { UI._toggleToastMute(); });
         registerAction('showEventDetail', function(_t, d) { if (d.id) UI.showEventDetail(d.id); });
@@ -6849,7 +6850,17 @@ window.UI = (function () {
             { key: 'error_alerts', label: '🐛 Error Alerts', desc: 'Get notified when the game detects console errors (for bug reporting)' },
         ];
 
-        var html = '<h3 style="margin-top:0;color:var(--gold);">📢 Notification Filters</h3>';
+        // ── Game Volume ──
+        var currentVol = (typeof Music !== 'undefined' && Music.getVolume) ? Math.round(Music.getVolume() * 100) : 30;
+        var isMuted = (typeof Music !== 'undefined' && Music.isMuted) ? Music.isMuted() : false;
+        var html = '<h3 style="margin-top:0;color:var(--gold);">🔊 Game Volume</h3>';
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;">';
+        html += '<button class="btn-medieval" style="font-size:1rem;padding:4px 10px;min-width:36px;" data-action="_toggleMusicMute">' + (isMuted ? '🔇' : '🔊') + '</button>';
+        html += '<input type="range" min="0" max="100" value="' + currentVol + '" style="flex:1;cursor:pointer;accent-color:var(--gold);" data-action="_volumeSlider" id="settingsVolumeSlider">';
+        html += '<span style="min-width:32px;text-align:right;font-size:0.85rem;color:var(--text-muted);" id="settingsVolLabel">' + currentVol + '%</span>';
+        html += '</div>';
+
+        html += '<h3 style="margin-top:0;color:var(--gold);">📢 Notification Filters</h3>';
         html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">Control which notifications you see. Critical alerts (jail, death, ship sunk) always show. Click a category to expand sub-filters.</p>';
 
         // Master toast mute toggle
@@ -6941,6 +6952,17 @@ window.UI = (function () {
         html += '</div>';
 
         openModal('⚙️ Settings', html);
+
+        // Bind volume slider after modal renders
+        var vSlider = document.getElementById('settingsVolumeSlider');
+        var vLabel = document.getElementById('settingsVolLabel');
+        if (vSlider) {
+            vSlider.addEventListener('input', function (e) {
+                var val = parseInt(e.target.value, 10);
+                if (vLabel) vLabel.textContent = val + '%';
+                if (typeof Music !== 'undefined') { Music.init(); Music.setVolume(val / 100); }
+            });
+        }
     }
 
     function setNotifFilter(key, value) {
@@ -6957,6 +6979,13 @@ window.UI = (function () {
     function _toggleToastMute() {
         _toastsMuted = !_toastsMuted;
         try { localStorage.setItem('mr_toasts_muted', _toastsMuted ? 'true' : 'false'); } catch(e) {}
+        openSettings(); // refresh the panel
+    }
+
+    function _toggleMusicMute() {
+        if (typeof Music === 'undefined') return;
+        Music.init();
+        Music.toggleMute();
         openSettings(); // refresh the panel
     }
 
@@ -9458,6 +9487,7 @@ window.UI = (function () {
             { icon: '⛏', label: 'Deposits', fn: '_toggleDeposits', conditional: 'deposits' }
         ],
         system: [
+            { icon: '⚙️', label: 'Settings', fn: 'openSettings' },
             { icon: '💾', label: 'Save', fn: '_saveGame' },
             { icon: '📂', label: 'Load', fn: '_loadGame' },
             { icon: '🏠', label: 'Main Menu', fn: '_mainMenu' },
@@ -16913,6 +16943,7 @@ window.UI = (function () {
         setNotifFilter,
         _toggleToastMute,
         _toggleGuidance,
+        _toggleMusicMute,
         get _expandedNotifCategory() { return _expandedNotifCategory; },
         set _expandedNotifCategory(v) { _expandedNotifCategory = v; },
         openMapView,
