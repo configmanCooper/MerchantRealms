@@ -1289,9 +1289,12 @@
         }
     }
 
+    var _lastHeirSelectionArgs = null; // cache for go-back from confirmation
+
     // ── HEIR SELECTION UI ──
     // Shown when player dies and has multiple heir options (children + spouse)
     function showHeirSelectionUI(heirOptions, deceasedName, totalGold) {
+        _lastHeirSelectionArgs = [heirOptions, deceasedName, totalGold];
         var html = '';
         html += '<div style="text-align:center;padding:10px 0;color:#ff9;">';
         html += '<p style="font-size:16px;margin-bottom:10px;">☠️ <strong>' + deceasedName + '</strong> has passed away.</p>';
@@ -1378,11 +1381,40 @@
         // Find the heir name for confirmation
         var npc = Engine.findPerson(heirId);
         var heirName = npc ? (npc.firstName + ' ' + npc.lastName) : 'this heir';
+        var heirAge = npc ? npc.age : '?';
+        var heirOcc = npc ? (npc.occupation || 'commoner').replace(/_/g, ' ') : '';
+        var heirSex = npc ? (npc.sex === 'F' ? '♀' : '♂') : '';
 
-        if (confirm('Play as ' + heirName + ' (' + typeName + ')?\n\nThis cannot be undone.')) {
+        var html = '';
+        html += '<div style="text-align:center;padding:15px 10px;">';
+        html += '<div style="font-size:48px;margin-bottom:10px;">⚔️</div>';
+        html += '<p style="font-size:17px;color:#ff9;margin-bottom:6px;font-weight:bold;">Continue as ' + heirName + '?</p>';
+        html += '<p style="color:#bbb;font-size:13px;margin-bottom:14px;">' + heirSex + ' Age ' + heirAge + ' • ' + heirOcc + ' • ' + typeName + '</p>';
+        html += '<div style="background:#3a1a1a;border:1px solid #a55;border-radius:6px;padding:12px 16px;margin:0 10px 18px;text-align:center;">';
+        html += '<span style="color:#f88;font-size:13px;">⚠️ This cannot be undone. Your current character\'s story ends here.</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:12px;justify-content:center;">';
+        html += '<button data-action="confirmHeirFinal" data-id="' + heirId + '" style="padding:10px 28px;background:#4a7a4a;border:1px solid #6a6;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;font-weight:bold;transition:all 0.2s;" onmouseover="this.style.background=\'#5a9a5a\'" onmouseout="this.style.background=\'#4a7a4a\'">✔ Accept Legacy</button>';
+        html += '<button data-action="cancelHeirSelection" style="padding:10px 28px;background:#4a3a3a;border:1px solid #855;border-radius:6px;color:#ccc;cursor:pointer;font-size:14px;transition:all 0.2s;" onmouseover="this.style.background=\'#5a4a4a\'" onmouseout="this.style.background=\'#4a3a3a\'">← Go Back</button>';
+        html += '</div>';
+        html += '</div>';
+
+        openModal('⚔️ Confirm Succession', html, '');
+
+        // Register actions
+        UI.registerAction('confirmHeirFinal', function(el) {
+            var id = el.getAttribute('data-id');
             closeModal();
-            Player.selectHeir(heirId);
-        }
+            Player.selectHeir(id);
+        });
+        UI.registerAction('cancelHeirSelection', function() {
+            // Re-open the succession heir selection panel
+            if (_lastHeirSelectionArgs) {
+                showHeirSelectionUI(_lastHeirSelectionArgs[0], _lastHeirSelectionArgs[1], _lastHeirSelectionArgs[2]);
+            } else {
+                closeModal();
+            }
+        });
     }
 
     // ========================================================
