@@ -620,6 +620,40 @@
             ]
         },
 
+        ch15_calder_schemes: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "There is something else you should know, now that you have the wealth to protect.",
+                "In this world, not every battle is fought with swords or gold. Some are fought with whispers, planted evidence, and well-placed sabotage.",
+                "Open the Dark Deeds panel under Actions. There you'll find tools that... respectable merchants pretend don't exist.",
+                "You can sabotage a competitor's building, spread rumors to ruin their reputation, or frame them for crimes they never committed.",
+                "But hear me well — these are not games. If you are caught, the guards will not care about your guild standing. You will be fined. You will be jailed. Your reputation will suffer.",
+                "I suggest you try it once. Pick a target — someone who won't be missed. Learn how the shadows work. The knowledge may save your father's life someday.",
+                "Succeed or fail, come back to me. I'll make it worth your while."
+            ]
+        },
+
+        ch15_scheme_success: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "So you've tasted the darker side of commerce. Good. Not every problem can be solved with a handshake and a fair price.",
+                "Here — 500 gold for your initiative. Consider it an investment in your education.",
+                "Remember: the shadows are a tool, not a home. Use them wisely, and only when the stakes demand it."
+            ]
+        },
+
+        ch15_scheme_caught: {
+            speaker: "lord_calder",
+            portrait: "lord_calder",
+            lines: [
+                "I heard you got caught. Don't worry — every schemer gets burned at least once.",
+                "The lesson here is caution. Timing matters. Night is better than day. Corrupt towns are safer than honest ones.",
+                "Dust yourself off and try again — or don't. Either way, you now know what jail feels like. That knowledge has value too."
+            ]
+        },
+
         // =====================================================================
         // CHAPTER 16: "Halls of Power"
         // =====================================================================

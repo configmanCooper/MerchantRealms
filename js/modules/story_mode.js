@@ -503,7 +503,8 @@ var StoryMode = (function () {
                 { id: 'ch15_own_gold',    type: 'own_gold',   amount: 5000,  desc: 'Accumulate 5 000 gold',         done: false },
                 { id: 'ch15_buy_existing', type: 'purchase_existing_building', desc: 'Purchase an existing building from the town market',
                   hint: 'Open Business → Town Market to see buildings for sale in your current town. Buy one that is listed!', done: false },
-                { id: 'ch15_supply_chain', type: 'custom', fn: '_checkSupplyChain', desc: 'Build a complete supply chain (3 buildings)', done: false }
+                { id: 'ch15_supply_chain', type: 'custom', fn: '_checkSupplyChain', desc: 'Build a complete supply chain (3 buildings)', done: false },
+                { id: 'ch15_dark_deed', type: 'custom', fn: '_checkDarkDeedDone', desc: '⭐ OPTIONAL: Perform a dark deed (Actions → Dark Deeds)', done: false, optional: true, reward: 500 }
             ],
             endDialog: 'ch15_complete',
             unlockButtons: [],
@@ -694,12 +695,22 @@ var StoryMode = (function () {
             'ch12_attend_festival': 'ch12_lord_calder_meet',
             'ch14_reach_burgher':   'ch14_calder_capital',
             'ch15_guildmaster':     'ch15_king_supply_chain',
+            'ch15_dark_deed':       'ch15_scheme_success',
             'ch16_reach_noble':     'ch16_feast_announcement',
             'ch16_attend_feast':    'ch16_feast_success',
             'ch18_arrive_ashford':  'ch18_father_freed'
         };
         if (_followUpDialogs[objId]) {
             _showDialog(_followUpDialogs[objId]);
+        }
+
+        // Reward for optional objectives
+        if (objId === 'ch15_dark_deed') {
+            if (typeof Player !== 'undefined' && Player.state) {
+                Player.state.gold = (Player.state.gold || 0) + 500;
+                _toast('💰 Lord Calder rewards you with 500 gold for your initiative!');
+                _log('Received 500g reward from Lord Calder for completing the dark deed.');
+            }
         }
 
         // Schedule engine events when specific objectives complete
@@ -2027,6 +2038,15 @@ var StoryMode = (function () {
 
     // ── Ch 14 ──
     _hooks._onChapter14Start = function () {
+        // Remove jail protection — the world is getting dangerous
+        _storyState.flags.jailProtectionRemoved = true;
+        // Also sync to player.storyMode so player.js can check it immediately
+        if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode.flags) {
+            Player.state.storyMode.flags.jailProtectionRemoved = true;
+        }
+        _toast('⚠️ You are no longer protected from jail. Be careful with your actions!');
+        _log('Jail protection removed. Dark deeds now carry real consequences.');
+
         // Update objective description with actual capital name
         if (typeof Engine !== 'undefined' && Engine.getWorld) {
             var w = Engine.getWorld();
@@ -2071,11 +2091,27 @@ var StoryMode = (function () {
     _hooks._onChapter15Start = function () {
         // Show King Aldric dialog after the main start dialog
         // The supply chain dialog is triggered as a follow-up when guildmaster objective completes
+        // Record current corruptActions count to detect new dark deeds
+        if (typeof Player !== 'undefined' && Player.state) {
+            _storyState.flags._ch15DarkDeedBaseline = Player.state.corruptActions || 0;
+        }
+        // Show Calder's scheme tutorial dialog after a short delay
+        setTimeout(function () {
+            _showDialog('ch15_calder_schemes');
+        }, 2000);
     };
 
     _hooks._onChapter15Complete = function () {
         _ensureCalderRelationship(80);
         _log('Lord Calder considers you a trusted ally. Relationship: 80.');
+    };
+
+    // Custom check: player performed any dark deed during Ch15
+    _hooks._checkDarkDeedDone = function () {
+        if (typeof Player === 'undefined' || !Player.state) return false;
+        var baseline = _storyState.flags._ch15DarkDeedBaseline || 0;
+        var current = Player.state.corruptActions || 0;
+        return current > baseline;
     };
 
     // Supply chain checker: player must own 3 buildings forming a complete chain

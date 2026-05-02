@@ -817,8 +817,8 @@
         if (player.dead) return { blocked: true, message: 'You are dead.' };
         if (!opts.allowTravel && player.traveling) return { blocked: true, message: 'Cannot do this while traveling.' };
         var day = Engine.getDay ? Engine.getDay() : 0;
-        // Story mode: never jailed
-        if (player.storyMode && player.storyMode.active && !player.storyMode.complete && player.jailedUntilDay > 0) {
+        // Story mode: never jailed (until Ch14 removes this protection)
+        if (player.storyMode && player.storyMode.active && !player.storyMode.complete && !(player.storyMode.flags && player.storyMode.flags.jailProtectionRemoved) && player.jailedUntilDay > 0) {
             player.jailedUntilDay = 0;
         }
         if (!opts.allowJail && player.jailedUntilDay && player.jailedUntilDay > day) return { blocked: true, message: 'You are in jail.' };
