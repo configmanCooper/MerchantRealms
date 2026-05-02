@@ -6975,18 +6975,15 @@
         player.ordersFailed = 0;
         player.supplyDeals = [];
 
-        // Social rank drops by 1 (unless married to nobility)
-        var hasNobleSpouse = oldSpouseId ? (function() {
-            var s = Engine.findPerson(oldSpouseId);
-            return s && s.occupation === 'noble';
-        })() : false;
-        if (!hasNobleSpouse) {
+        // Player's rank becomes the heir's rank
+        var heirRank = getNPCSocialRank(heir);
+        if (heirRank > 0) {
             for (var kId in player.socialRank) {
-                if (player.socialRank[kId] > 0) {
-                    player.socialRank[kId] = player.socialRank[kId] - 1;
-                }
+                player.socialRank[kId] = heirRank;
+                player.rankSince[kId] = Engine.getDay();
             }
         }
+        // If heir has no explicit rank, keep current rank (they inherit the family's standing)
 
         // Family relationships start high
         for (var sci = 0; sci < adultChildren.length; sci++) {
@@ -7143,8 +7140,15 @@
         player.ordersFailed = 0;
         player.supplyDeals = [];
 
-        // Social rank maintained — spouse was already part of the household
-        // No rank drop for spouse inheritance
+        // Player's rank becomes the spouse's rank
+        var spouseRank = getNPCSocialRank(spouse);
+        if (spouseRank > 0) {
+            for (var kId in player.socialRank) {
+                player.socialRank[kId] = spouseRank;
+                player.rankSince[kId] = Engine.getDay();
+            }
+        }
+        // If spouse has no explicit rank, keep current rank (they shared the household)
 
         // Set relationships with all children (including any adopted from spouse's prior relationships)
         var allMergedChildren = [];
