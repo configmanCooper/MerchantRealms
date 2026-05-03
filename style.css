@@ -533,7 +533,7 @@ body {
     padding: 6px 20px;
     border-radius: 0 0 8px 8px;
     border-top: none;
-    min-width: 520px;
+    min-width: min(520px, 100vw);
     z-index: 2000;
 }
 
@@ -1011,9 +1011,9 @@ body {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border-bright);
     border-radius: 8px;
-    min-width: 480px;
-    max-width: 720px;
-    max-height: 80vh;
+    min-width: min(480px, 95vw);
+    max-width: min(720px, 95vw);
+    max-height: min(80vh, calc(100vh - 60px));
     display: flex;
     flex-direction: column;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
@@ -2099,7 +2099,7 @@ body {
 @media (max-width: 900px) {
     .left-panel { width: 200px; }
     .right-panel { width: 260px; }
-    .modal-dialog { min-width: 360px; max-width: 95vw; }
+    .modal-dialog { min-width: min(360px, 95vw); max-width: 95vw; }
     .build-grid { grid-template-columns: 1fr; }
     .trade-columns { grid-template-columns: 1fr; }
 }
@@ -4220,5 +4220,94 @@ body {
 @media (max-width: 600px) {
     #speedWarningBanner {
         top: 80px !important;
+    }
+}
+
+/* ============================================================
+   Resolution Scaling — fit game to any viewport size
+   ============================================================ */
+
+/* Medium screens (laptops, small monitors) */
+@media (max-height: 768px) and (min-width: 601px) {
+    .right-panel {
+        max-height: calc(100vh - 90px);
+    }
+    .right-panel .panel-body {
+        max-height: calc(100vh - 140px);
+    }
+    .modal-dialog {
+        max-height: min(85vh, calc(100vh - 50px));
+    }
+    #minimapCanvas {
+        width: 160px;
+        height: 128px;
+    }
+}
+
+/* Very short screens (e.g. 600-700px height) */
+@media (max-height: 650px) and (min-width: 601px) {
+    .top-bar {
+        padding: 3px 12px;
+    }
+    .bottom-tabs {
+        height: 36px !important;
+    }
+    .bottom-tabs .tab-btn {
+        font-size: 0.7rem;
+        padding: 2px 10px;
+        min-height: 30px;
+    }
+    .sub-menu {
+        bottom: 37px !important;
+    }
+    .right-panel {
+        top: 40px;
+        max-height: calc(100vh - 76px);
+    }
+    .left-panel {
+        top: 40px;
+    }
+    #minimapCanvas {
+        bottom: 42px !important;
+        width: 140px;
+        height: 112px;
+    }
+    .modal-dialog {
+        max-height: calc(100vh - 40px);
+    }
+}
+
+/* Narrow desktop screens (800-1100px wide) */
+@media (max-width: 1100px) and (min-width: 601px) {
+    .left-panel {
+        width: 220px;
+    }
+    .right-panel {
+        width: 280px;
+    }
+}
+
+/* Very narrow but still desktop (601-800px) */
+@media (max-width: 800px) and (min-width: 601px) {
+    .left-panel {
+        width: 180px;
+    }
+    .right-panel {
+        width: 240px;
+    }
+    .top-bar {
+        gap: 12px;
+        padding: 4px 10px;
+    }
+    .day-display {
+        font-size: 0.8rem;
+    }
+    .btn-speed {
+        padding: 3px 7px;
+        font-size: 0.75rem;
+    }
+    #minimapCanvas {
+        width: 150px;
+        height: 120px;
     }
 }
