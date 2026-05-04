@@ -551,19 +551,46 @@
             return { success: false, message: 'No one in town needs medical attention right now.' };
         }
 
-        // Check we have medical supplies
-        var supplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
-        var hasSupply = false;
-        var usedSupply = '';
-        for (var s = 0; s < supplies.length; s++) {
-            if (player.inventory[supplies[s]] && player.inventory[supplies[s]] > 0) {
-                hasSupply = true;
-                usedSupply = supplies[s];
-                break;
+        // Check we have the RIGHT medical supplies for the patient's condition
+        var requiredProduct = null;
+        var condName = '';
+        if (patient.injuries && patient.injuries.length > 0) {
+            var pInjType = patient.injuries[0].type || patient.injuries[0].id;
+            condName = patient.injuries[0].name || pInjType;
+            if (typeof Player !== 'undefined' && Player.getInjuryTypes) {
+                var pInjTypes = Player.getInjuryTypes();
+                for (var _pi = 0; _pi < pInjTypes.length; _pi++) {
+                    if (pInjTypes[_pi].id === pInjType) { requiredProduct = pInjTypes[_pi].product; break; }
+                }
+            }
+        } else if (patient.illnesses && patient.illnesses.length > 0) {
+            var pIllType = patient.illnesses[0].type || patient.illnesses[0].id;
+            condName = patient.illnesses[0].name || pIllType;
+            if (typeof Player !== 'undefined' && Player.getIllnessTypes) {
+                var pIllTypes = Player.getIllnessTypes();
+                for (var _pil = 0; _pil < pIllTypes.length; _pil++) {
+                    if (pIllTypes[_pil].id === pIllType) { requiredProduct = pIllTypes[_pil].product; break; }
+                }
             }
         }
-        if (!hasSupply) {
-            return { success: false, message: 'You need medical supplies (bandages, remedies, tonics) to treat others.' };
+
+        var usedSupply = '';
+        if (requiredProduct && player.inventory[requiredProduct] && player.inventory[requiredProduct] > 0) {
+            usedSupply = requiredProduct;
+        } else if (requiredProduct) {
+            var prdName = requiredProduct.replace(/_/g, ' ');
+            return { success: false, message: 'You need ' + prdName + ' to treat ' + (condName || 'this condition') + '.' };
+        } else {
+            // Unknown condition — fallback to any supply
+            var fallback = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
+            for (var s = 0; s < fallback.length; s++) {
+                if (player.inventory[fallback[s]] && player.inventory[fallback[s]] > 0) {
+                    usedSupply = fallback[s]; break;
+                }
+            }
+        }
+        if (!usedSupply) {
+            return { success: false, message: 'You need medical supplies to treat others.' };
         }
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
@@ -639,10 +666,34 @@
                 if (ai.condition === 'gravely_ill' && !hasSkill('doctor')) {
                     return { success: false, message: 'Only the Doctor skill can treat gravely ill patients.' };
                 }
-                // Need medical supplies
-                var spouseSupplies = ai.condition === 'gravely_ill' ? ['antidote', 'healing_tonic', 'fever_tonic'] :
+                // Need medical supplies — check actual condition on the NPC first
+                var spouseSupplies = null;
+                var spouseCondName = '';
+                if (spouse.illnesses && spouse.illnesses.length > 0) {
+                    var spIllType = spouse.illnesses[0].type || spouse.illnesses[0].id;
+                    spouseCondName = spouse.illnesses[0].name || spIllType;
+                    if (typeof Player !== 'undefined' && Player.getIllnessTypes) {
+                        var spIllTypes = Player.getIllnessTypes();
+                        for (var _sil = 0; _sil < spIllTypes.length; _sil++) {
+                            if (spIllTypes[_sil].id === spIllType) { spouseSupplies = [spIllTypes[_sil].product]; break; }
+                        }
+                    }
+                } else if (spouse.injuries && spouse.injuries.length > 0) {
+                    var spInjType = spouse.injuries[0].type || spouse.injuries[0].id;
+                    spouseCondName = spouse.injuries[0].name || spInjType;
+                    if (typeof Player !== 'undefined' && Player.getInjuryTypes) {
+                        var spInjTypes = Player.getInjuryTypes();
+                        for (var _sij = 0; _sij < spInjTypes.length; _sij++) {
+                            if (spInjTypes[_sij].id === spInjType) { spouseSupplies = [spInjTypes[_sij].product]; break; }
+                        }
+                    }
+                }
+                // Fallback to category-based list if no specific product found
+                if (!spouseSupplies) {
+                    spouseSupplies = ai.condition === 'gravely_ill' ? ['antidote', 'healing_tonic', 'fever_tonic'] :
                                      ai.condition === 'sick' ? ['herbal_remedy', 'fever_tonic', 'antidote'] :
                                      ['bandages', 'herbal_poultice', 'splint'];
+                }
                 var usedSupply = null;
                 for (var si = 0; si < spouseSupplies.length; si++) {
                     if (player.inventory[spouseSupplies[si]] && player.inventory[spouseSupplies[si]] > 0) {
@@ -650,7 +701,8 @@
                     }
                 }
                 if (!usedSupply) {
-                    return { success: false, message: 'Need medical supplies (' + spouseSupplies.join(', ') + ') to treat ' + spouse.firstName + '.' };
+                    var supNames = spouseSupplies.map(function(s) { return s.replace(/_/g, ' '); }).join(', ');
+                    return { success: false, message: 'Need ' + supNames + ' to treat ' + (spouseCondName || spouse.firstName) + '.' };
                 }
 
                 if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
@@ -770,12 +822,49 @@
                     return { success: false, message: 'Need Field Medic or Doctor skill for moderate conditions.' };
                 }
 
-                // Need medical supplies
-                var supplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
+                // Need medical supplies — match to condition type
+                var requiredProduct = null;
+                var conditionName = '';
+                if (npc.injuries && npc.injuries.length > 0) {
+                    var injType = npc.injuries[0].type || npc.injuries[0].id;
+                    conditionName = npc.injuries[0].name || injType;
+                    // Look up the required product from INJURY_TYPES
+                    var injDef = null;
+                    if (typeof Player !== 'undefined' && Player.getInjuryTypes) {
+                        var injTypes = Player.getInjuryTypes();
+                        for (var _it = 0; _it < injTypes.length; _it++) {
+                            if (injTypes[_it].id === injType) { injDef = injTypes[_it]; break; }
+                        }
+                    }
+                    requiredProduct = injDef ? injDef.product : null;
+                } else if (npc.illnesses && npc.illnesses.length > 0) {
+                    var illType = npc.illnesses[0].type || npc.illnesses[0].id;
+                    conditionName = npc.illnesses[0].name || illType;
+                    // Look up the required product from ILLNESS_TYPES
+                    var illDef = null;
+                    if (typeof Player !== 'undefined' && Player.getIllnessTypes) {
+                        var illTypes = Player.getIllnessTypes();
+                        for (var _il = 0; _il < illTypes.length; _il++) {
+                            if (illTypes[_il].id === illType) { illDef = illTypes[_il]; break; }
+                        }
+                    }
+                    requiredProduct = illDef ? illDef.product : null;
+                }
+
                 var usedSup = null;
-                for (var _s = 0; _s < supplies.length; _s++) {
-                    if (player.inventory[supplies[_s]] && player.inventory[supplies[_s]] > 0) {
-                        usedSup = supplies[_s]; break;
+                if (requiredProduct && player.inventory[requiredProduct] && player.inventory[requiredProduct] > 0) {
+                    usedSup = requiredProduct;
+                } else if (requiredProduct) {
+                    // Player doesn't have the right item
+                    var productName = requiredProduct.replace(/_/g, ' ');
+                    return { success: false, message: 'Need ' + productName + ' to treat ' + (conditionName || 'this condition') + '. Check your inventory.' };
+                } else {
+                    // Unknown condition type — fallback to any supply
+                    var fallbackSupplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
+                    for (var _s = 0; _s < fallbackSupplies.length; _s++) {
+                        if (player.inventory[fallbackSupplies[_s]] && player.inventory[fallbackSupplies[_s]] > 0) {
+                            usedSup = fallbackSupplies[_s]; break;
+                        }
                     }
                 }
                 if (!usedSup) return { success: false, message: 'Need medical supplies to treat ' + (npc.firstName || 'them') + '.' };
