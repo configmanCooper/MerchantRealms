@@ -19852,6 +19852,14 @@
         // Check hospitalized companions (treatment duration completion)
         if (Player._tickHospitalizedCompanions) Player._tickHospitalizedCompanions();
 
+        // Auto-expire old feast invitations
+        if (player._feastInvitations && player._feastInvitations.length > 0) {
+            var _worldDay = (typeof Engine !== 'undefined' && Engine.world) ? Engine.world.day : 0;
+            player._feastInvitations = player._feastInvitations.filter(function(inv) {
+                return inv.endDay >= _worldDay;
+            });
+        }
+
         // Wedding planning countdown
         tickWeddingPlan();
 
