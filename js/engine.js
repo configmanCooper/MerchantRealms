@@ -28738,7 +28738,7 @@
                 if (destroyed > 0) {
                     ps.inventory[foodId] = Math.max(0, (ps.inventory[foodId] || 0) - destroyed);
                     if (ps.inventory[foodId] <= 0) delete ps.inventory[foodId];
-                    var _rn = findResource(foodId);
+                    var _rn = findResourceById(foodId);
                     logEvent('🦠 ' + destroyed + ' ' + (_rn ? _rn.name : foodId) + ' spoiled in your inventory.', null, 'my_business');
                 }
             }
