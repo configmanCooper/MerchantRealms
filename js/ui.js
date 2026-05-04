@@ -1799,6 +1799,11 @@ window.UI = (function () {
             tradeBatch = [];
         }
         tradeDialogOpen = false;
+
+        // Resume regency fast-forward if it was paused for this modal
+        if (_regencyFFPaused && Player && Player.regencyMode) {
+            _resumeRegencyFF();
+        }
     }
 
     // ── TRADE DIALOG ──
@@ -7947,6 +7952,41 @@ window.UI = (function () {
     }
 
     var _regencyFFStartTime = 0;
+    var _regencyFFPaused = false;
+
+    function _pauseRegencyFF() {
+        _regencyFFPaused = true;
+        // Temporarily clear suppression so setSpeed works
+        var wasSuppressed = UI._regencyToastsSuppressed;
+        UI._regencyToastsSuppressed = false;
+        // Pause the game so the main thread is free for UI interaction
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
+        UI._regencyToastsSuppressed = wasSuppressed;
+        // Hide the overlay so modals are visible
+        var el = document.getElementById('regencyFastForward');
+        if (el) el.style.display = 'none';
+    }
+
+    function _resumeRegencyFF() {
+        if (!_regencyFFPaused) return;
+        _regencyFFPaused = false;
+        // Restore overlay
+        var el = document.getElementById('regencyFastForward');
+        if (el) el.style.display = 'flex';
+        // Temporarily clear suppression so setSpeed works, then restore
+        var wasSuppressed = UI._regencyToastsSuppressed;
+        UI._regencyToastsSuppressed = false;
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(300);
+        UI._regencyToastsSuppressed = wasSuppressed;
+    }
+
+    // Expose so modal close can resume
+    UI._resumeRegencyFF = _resumeRegencyFF;
+    UI._regencyFFPaused = false;
+    Object.defineProperty(UI, '_regencyFFPaused', {
+        get: function() { return _regencyFFPaused; },
+        set: function(v) { _regencyFFPaused = v; }
+    });
 
     function showRegencyFastForward() {
         _regencyFFStartTime = performance.now();
@@ -8067,24 +8107,34 @@ window.UI = (function () {
         '</div>';
 
         // Bind buttons (re-bound each update since innerHTML is replaced)
+        // Each button pauses regency FF so modals are visible above the overlay
         var btnSave = document.getElementById('regFF_save');
         var btnLoad = document.getElementById('regFF_load');
         var btnSettings = document.getElementById('regFF_settings');
         var btnMenu = document.getElementById('regFF_menu');
-        if (btnSave) btnSave.addEventListener('click', function() {
+        if (btnSave) btnSave.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _pauseRegencyFF();
             if (typeof Game !== 'undefined' && Game.showSaveSlotPicker) Game.showSaveSlotPicker();
         });
-        if (btnLoad) btnLoad.addEventListener('click', function() {
+        if (btnLoad) btnLoad.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _pauseRegencyFF();
             if (typeof Game !== 'undefined' && Game.showLoadSlotPicker) Game.showLoadSlotPicker();
         });
-        if (btnSettings) btnSettings.addEventListener('click', function() {
+        if (btnSettings) btnSettings.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _pauseRegencyFF();
             openSettings();
         });
-        if (btnMenu) btnMenu.addEventListener('click', function() {
+        if (btnMenu) btnMenu.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _pauseRegencyFF();
             if (confirm('Return to main menu? Unsaved progress will be lost.')) {
-                // Clear regency fast-forward state
                 UI._regencyToastsSuppressed = false;
                 if (typeof Game !== 'undefined' && Game.showTitleScreen) Game.showTitleScreen();
+            } else {
+                _resumeRegencyFF();
             }
         });
     }
