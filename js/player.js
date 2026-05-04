@@ -7049,6 +7049,7 @@
         }
 
         // Rebuild familyMembers for the heir
+        var _prevFam = structuredClone(player.familyMembers || []);
         player.familyMembers = [];
         player.familyMembers.push({
             npcId: 'deceased_parent_' + player.generation,
@@ -7072,6 +7073,25 @@
                 npcId: sib.id,
                 role: sib.sex === 'M' ? 'brother' : 'sister',
                 name: sib.firstName + ' ' + sib.lastName
+            });
+        }
+        // Previous generation becomes grandparents / great-grandparents
+        for (var pfi = 0; pfi < _prevFam.length; pfi++) {
+            var pfm = _prevFam[pfi];
+            var pfRole = pfm.role;
+            if (pfm.role === 'father') pfRole = 'grandfather';
+            else if (pfm.role === 'mother') pfRole = 'grandmother';
+            else if (pfm.role === 'brother') pfRole = 'uncle';
+            else if (pfm.role === 'sister') pfRole = 'aunt';
+            else if (pfm.role === 'grandfather') pfRole = 'great-grandfather';
+            else if (pfm.role === 'grandmother') pfRole = 'great-grandmother';
+            else if (pfm.role === 'great-grandfather' || pfm.role === 'great-grandmother') continue;
+            else if (pfm.role === 'uncle' || pfm.role === 'aunt') continue;
+            else continue;
+            player.familyMembers.push({
+                npcId: pfm.npcId,
+                role: pfRole,
+                name: pfm.name
             });
         }
 
@@ -16675,7 +16695,7 @@
                 });
             }
         }
-        // Previous generation becomes grandparents
+        // Previous generation becomes grandparents / great-grandparents
         var prevFamily = rd.previousFamilyMembers || [];
         for (var pf = 0; pf < prevFamily.length; pf++) {
             var fm = prevFamily[pf];
@@ -16684,7 +16704,9 @@
             else if (fm.role === 'mother') newRole = 'grandmother';
             else if (fm.role === 'brother') newRole = 'uncle';
             else if (fm.role === 'sister') newRole = 'aunt';
-            else if (fm.role === 'grandfather' || fm.role === 'grandmother') continue; // skip great-grandparents
+            else if (fm.role === 'grandfather') newRole = 'great-grandfather';
+            else if (fm.role === 'grandmother') newRole = 'great-grandmother';
+            else if (fm.role === 'great-grandfather' || fm.role === 'great-grandmother') continue; // cap at great-grandparents
             else if (fm.role === 'uncle' || fm.role === 'aunt') continue; // skip great-uncles/aunts
             else continue;
             player.familyMembers.push({

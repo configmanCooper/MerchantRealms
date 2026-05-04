@@ -398,6 +398,27 @@
     }
 
     // ── Family Panel ──
+    function _getFamilyRoleIcon(role) {
+        switch (role) {
+            case 'father': return '👨';
+            case 'mother': return '👩';
+            case 'brother': return '👦';
+            case 'sister': return '👧';
+            case 'spouse': return '💍';
+            case 'son': return '👦';
+            case 'daughter': return '👧';
+            case 'grandfather': case 'great-grandfather': return '👴';
+            case 'grandmother': case 'great-grandmother': return '👵';
+            case 'uncle': return '👨';
+            case 'aunt': return '👩';
+            default: return '👤';
+        }
+    }
+
+    function _formatRoleLabel(role) {
+        return role.split('-').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join('-');
+    }
+
     function openFamilyPanel() {
         // Synthesize spouse + children into familyMembers if missing
         var fm = Player.familyMembers || [];
@@ -459,8 +480,8 @@
                 if (!person) continue;
                 var rel = (Player.relationships[m.npcId] && Player.relationships[m.npcId].level) || 0;
                 var personPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(person) : '';
-                var roleIcon = personPortrait || (m.role === 'father' ? '👨' : (m.role === 'mother' ? '👩' : (m.role === 'brother' ? '👦' : (m.role === 'sister' ? '👧' : (m.role === 'spouse' ? '💍' : (m.role === 'son' ? '👦' : (m.role === 'daughter' ? '👧' : '👤')))))));
-                var roleLabel = m.role.charAt(0).toUpperCase() + m.role.slice(1);
+                var roleIcon = personPortrait || _getFamilyRoleIcon(m.role);
+                var roleLabel = _formatRoleLabel(m.role);
                 var townObj = Engine.findTown(person.townId);
                 var locationName = townObj ? townObj.name : 'Unknown';
                 var sameLocation = person.townId === Player.townId;
@@ -539,8 +560,8 @@
                 var dm = deceasedMembers[di];
                 var dperson = Engine.findPerson(dm.npcId);
                 var isSynthetic = dm.npcId && dm.npcId.startsWith('deceased_parent_');
-                var roleIcon = dm.role === 'father' ? '👨' : (dm.role === 'mother' ? '👩' : (dm.role === 'brother' ? '👦' : (dm.role === 'sister' ? '👧' : (dm.role === 'spouse' ? '💍' : (dm.role === 'son' ? '👦' : (dm.role === 'daughter' ? '👧' : '👤'))))));
-                var dRoleLabel = dm.role.charAt(0).toUpperCase() + dm.role.slice(1);
+                var roleIcon = _getFamilyRoleIcon(dm.role);
+                var dRoleLabel = _formatRoleLabel(dm.role);
 
                 html += '<div class="family-member-card" style="opacity:0.6;border-left:3px solid #555;">';
                 html += '<div class="family-member-header">';

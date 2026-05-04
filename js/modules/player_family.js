@@ -3283,6 +3283,26 @@
                 });
             }
         }
+        // Previous generation becomes grandparents / great-grandparents
+        var _prevFamily = rd.previousFamilyMembers || [];
+        for (var _pf = 0; _pf < _prevFamily.length; _pf++) {
+            var _fm = _prevFamily[_pf];
+            var _newRole = _fm.role;
+            if (_fm.role === 'father') _newRole = 'grandfather';
+            else if (_fm.role === 'mother') _newRole = 'grandmother';
+            else if (_fm.role === 'brother') _newRole = 'uncle';
+            else if (_fm.role === 'sister') _newRole = 'aunt';
+            else if (_fm.role === 'grandfather') _newRole = 'great-grandfather';
+            else if (_fm.role === 'grandmother') _newRole = 'great-grandmother';
+            else if (_fm.role === 'great-grandfather' || _fm.role === 'great-grandmother') continue;
+            else if (_fm.role === 'uncle' || _fm.role === 'aunt') continue;
+            else continue;
+            player.familyMembers.push({
+                npcId: _fm.npcId,
+                role: _newRole,
+                name: _fm.name
+            });
+        }
 
         // Remove self-relationship (heir had relationship with previous player)
         if (rd.heirId && player.relationships && player.relationships[rd.heirId]) {
