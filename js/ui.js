@@ -1708,7 +1708,9 @@ window.UI = (function () {
         // Block opening non-encounter modals while encounter decision pending
         if (UI._funeralLocked) {
             var ftl = (title || '').toLowerCase();
-            if (ftl.indexOf('funeral') === -1 && ftl.indexOf('plan funeral') === -1) {
+            if (ftl.indexOf('funeral') === -1 && ftl.indexOf('plan funeral') === -1
+                && ftl.indexOf('save') === -1 && ftl.indexOf('load') === -1
+                && ftl.indexOf('settings') === -1 && ftl.indexOf('main menu') === -1) {
                 toast('⚰️ You must plan the funeral first!', 'warning');
                 return;
             }
