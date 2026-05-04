@@ -492,7 +492,10 @@
                 html += '<span class="family-role-badge">' + roleLabel + '</span>';
                 html += '</div>';
                 html += '<div class="family-member-body">';
-                html += '<div>Age: ' + (person.age || '?') + ' | ' + (person.occupation || 'unemployed') + '</div>';
+                var displayAge = (person.age != null && person.age >= 0) ? person.age : '?';
+                var displayOcc = person.occupation || 'unemployed';
+                if (person.age < (CONFIG.COMING_OF_AGE || 18)) displayOcc = 'child';
+                html += '<div>Age: ' + displayAge + ' | ' + displayOcc + '</div>';
                 html += '<div>💰 ' + formatGold(person.gold || 0) + 'g | 📍 ' + locationName + (sameLocation ? ' <span style="color:#5f5;font-size:0.7rem;">(Here)</span>' : '') + '</div>';
                 html += '<div>❤️ Relationship: ' + Math.round(rel) + '/100</div>';
 
