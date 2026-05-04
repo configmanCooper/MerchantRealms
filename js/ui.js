@@ -8013,13 +8013,6 @@ window.UI = (function () {
 
         var rd = Player.regencyData;
         var yearsToGo = Math.max(0, CONFIG.COMING_OF_AGE - rd.heirAge);
-        var daysToGo = yearsToGo * CONFIG.DAYS_PER_SEASON;
-        var ticksToGo = daysToGo * CONFIG.TICKS_PER_DAY;
-        // At 300x speed, each real second = 300 ticks
-        var realSecondsLeft = Math.ceil(ticksToGo / 300);
-        var realMin = Math.floor(realSecondsLeft / 60);
-        var realSec = realSecondsLeft % 60;
-        var realTimeStr = realMin > 0 ? (realMin + 'm ' + realSec + 's') : (realSec + 's');
 
         // Elapsed real time
         var elapsedMs = performance.now() - _regencyFFStartTime;
@@ -8027,6 +8020,21 @@ window.UI = (function () {
         var elapsedMin = Math.floor(elapsedSec / 60);
         var elapsedSecR = elapsedSec % 60;
         var elapsedStr = elapsedMin > 0 ? (elapsedMin + 'm ' + elapsedSecR + 's') : (elapsedSecR + 's');
+
+        // Estimate remaining time based on actual elapsed pace
+        var startAge = rd._ffStartAge != null ? rd._ffStartAge : rd.heirAge;
+        if (rd._ffStartAge == null) rd._ffStartAge = rd.heirAge;
+        var yearsCompleted = rd.heirAge - startAge;
+        var realTimeStr;
+        if (yearsCompleted > 0 && elapsedSec > 0) {
+            var secPerYear = elapsedSec / yearsCompleted;
+            var estSecondsLeft = Math.ceil(secPerYear * yearsToGo);
+            var estMin = Math.floor(estSecondsLeft / 60);
+            var estSec = estSecondsLeft % 60;
+            realTimeStr = estMin > 0 ? (estMin + 'm ' + estSec + 's') : (estSec + 's');
+        } else {
+            realTimeStr = 'calculating...';
+        }
 
         var heirSexIcon = rd.heirSex === 'F' ? '♀' : '♂';
         var spouseStatus = rd.spouseAlive ? '💚 Alive' : '⚰️ Deceased';
