@@ -539,16 +539,11 @@ window.Tutorial = (function () {
                     onEnter: function () {
                         snapshotState.saveTimestamps = {};
                         for (var i = 1; i <= 5; i++) {
-                            var raw = localStorage.getItem('merchantRealms_slot_' + i);
-                            if (raw) {
+                            var metaRaw = localStorage.getItem('merchantRealms_slot_' + i + '_meta');
+                            if (metaRaw) {
                                 try {
-                                    var decompressed = raw;
-                                    if (typeof LZString !== 'undefined') {
-                                        var attempt = LZString.decompressFromUTF16(raw);
-                                        if (attempt) decompressed = attempt;
-                                    }
-                                    var parsed = JSON.parse(decompressed);
-                                    snapshotState.saveTimestamps[i] = parsed.savedAt || 0;
+                                    var meta = JSON.parse(metaRaw);
+                                    snapshotState.saveTimestamps[i] = meta.savedAt || 0;
                                 } catch (e) {
                                     snapshotState.saveTimestamps[i] = -1;
                                 }
@@ -557,20 +552,15 @@ window.Tutorial = (function () {
                     },
                     waitFor: function () {
                         for (var i = 1; i <= 5; i++) {
-                            var raw = localStorage.getItem('merchantRealms_slot_' + i);
-                            if (!raw) {
-                                if (!snapshotState.saveTimestamps[i]) return true;
-                                continue;
+                            var metaRaw = localStorage.getItem('merchantRealms_slot_' + i + '_meta');
+                            if (!metaRaw) {
+                                if (!snapshotState.saveTimestamps[i]) continue;
+                                return true; // slot was deleted
                             }
                             try {
-                                var decompressed = raw;
-                                if (typeof LZString !== 'undefined') {
-                                    var attempt = LZString.decompressFromUTF16(raw);
-                                    if (attempt) decompressed = attempt;
-                                }
-                                var parsed = JSON.parse(decompressed);
+                                var meta = JSON.parse(metaRaw);
                                 var oldTs = snapshotState.saveTimestamps[i] || 0;
-                                if ((parsed.savedAt || 0) > oldTs) return true;
+                                if ((meta.savedAt || 0) > oldTs) return true;
                             } catch (e) {}
                         }
                         return false;

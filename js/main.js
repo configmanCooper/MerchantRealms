@@ -125,8 +125,8 @@ window.Game = (function () {
         if (!CONFIG.WORLD_WIDTH || CONFIG.WORLD_WIDTH <= 0) CONFIG.WORLD_WIDTH = 3200;
         if (!CONFIG.WORLD_HEIGHT || CONFIG.WORLD_HEIGHT <= 0) CONFIG.WORLD_HEIGHT = 3200;
 
-        // Migrate old single-save to slot 1
-        migrateOldSave();
+        // Initialize IndexedDB save system + migrate old saves
+        _initSaveSystem();
 
         // Bind title screen button
         const btnNew = document.getElementById('btnNewGame');
@@ -2260,13 +2260,262 @@ window.Game = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
-    //  SAVE / LOAD SYSTEM (5 Slots)
+    //  SAVE / LOAD SYSTEM (5 Slots) — IndexedDB + LZString
     // ═══════════════════════════════════════════════════════════
 
     const SAVE_SLOT_PREFIX = 'merchantRealms_slot_';
     const OLD_SAVE_KEY = 'merchantRealms_save';
     const NUM_SAVE_SLOTS = 5;
     let lastUsedSlot = parseInt(localStorage.getItem('merchantRealms_lastSlot')) || 0;
+
+    // ── IndexedDB Storage Layer ──
+    // Replaces localStorage for save data to avoid ~5MB quota.
+    // Metadata stays in localStorage for fast sync reads (slot picker).
+    const IDB_NAME = 'MerchantRealmsDB';
+    const IDB_VERSION = 1;
+    const IDB_STORE = 'saves';
+    var _idb = null;       // IDBDatabase reference (null until opened)
+    var _idbReady = false; // true once DB is open and usable
+    var _idbFailed = false; // true if IndexedDB not available — use localStorage fallback
+
+    function _openIDB() {
+        return new Promise(function(resolve, reject) {
+            if (_idb) { resolve(_idb); return; }
+            if (typeof indexedDB === 'undefined') { reject(new Error('IndexedDB unavailable')); return; }
+            try {
+                var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+                req.onupgradeneeded = function(e) {
+                    var db = e.target.result;
+                    if (!db.objectStoreNames.contains(IDB_STORE)) {
+                        db.createObjectStore(IDB_STORE);
+                    }
+                };
+                req.onsuccess = function(e) {
+                    _idb = e.target.result;
+                    _idbReady = true;
+                    resolve(_idb);
+                };
+                req.onerror = function(e) {
+                    console.error('[IDB] Open failed:', e.target.error);
+                    reject(e.target.error);
+                };
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    function _idbPut(key, value) {
+        return new Promise(function(resolve, reject) {
+            if (!_idb) { reject(new Error('IDB not open')); return; }
+            try {
+                var tx = _idb.transaction(IDB_STORE, 'readwrite');
+                var store = tx.objectStore(IDB_STORE);
+                var req = store.put(value, key);
+                req.onsuccess = function() { resolve(); };
+                req.onerror = function(e) { reject(e.target.error); };
+            } catch (err) { reject(err); }
+        });
+    }
+
+    function _idbGet(key) {
+        return new Promise(function(resolve, reject) {
+            if (!_idb) { reject(new Error('IDB not open')); return; }
+            try {
+                var tx = _idb.transaction(IDB_STORE, 'readonly');
+                var store = tx.objectStore(IDB_STORE);
+                var req = store.get(key);
+                req.onsuccess = function() { resolve(req.result); };
+                req.onerror = function(e) { reject(e.target.error); };
+            } catch (err) { reject(err); }
+        });
+    }
+
+    function _idbDelete(key) {
+        return new Promise(function(resolve, reject) {
+            if (!_idb) { reject(new Error('IDB not open')); return; }
+            try {
+                var tx = _idb.transaction(IDB_STORE, 'readwrite');
+                var store = tx.objectStore(IDB_STORE);
+                var req = store.delete(key);
+                req.onsuccess = function() { resolve(); };
+                req.onerror = function(e) { reject(e.target.error); };
+            } catch (err) { reject(err); }
+        });
+    }
+
+    function _idbGetAllKeys() {
+        return new Promise(function(resolve, reject) {
+            if (!_idb) { reject(new Error('IDB not open')); return; }
+            try {
+                var tx = _idb.transaction(IDB_STORE, 'readonly');
+                var store = tx.objectStore(IDB_STORE);
+                var req = store.getAllKeys();
+                req.onsuccess = function() { resolve(req.result || []); };
+                req.onerror = function(e) { reject(e.target.error); };
+            } catch (err) { reject(err); }
+        });
+    }
+
+    // Compress data to a string for storage
+    function _compressSaveData(data) {
+        var jsonStr = JSON.stringify(data);
+        if (typeof LZString !== 'undefined') {
+            return LZString.compressToUTF16(jsonStr);
+        }
+        return jsonStr;
+    }
+
+    // Decompress a stored string back to an object
+    function _decompressSaveData(raw) {
+        if (!raw) return null;
+        if (typeof LZString !== 'undefined') {
+            var decompressed = LZString.decompressFromUTF16(raw);
+            if (decompressed) {
+                try { return JSON.parse(decompressed); } catch (e) { /* fall through */ }
+            }
+        }
+        try { return JSON.parse(raw); } catch (e) { return null; }
+    }
+
+    // Store save data — IndexedDB primary, localStorage fallback
+    function _storeSave(key, data) {
+        var compressed = _compressSaveData(data);
+        // Always store metadata in localStorage (tiny, sync for slot picker)
+        _storeMetaSync(key, data);
+        if (_idbReady && !_idbFailed) {
+            return _idbPut(key, compressed).catch(function(err) {
+                console.warn('[Save] IDB write failed, falling back to localStorage:', err);
+                try { localStorage.setItem(key, compressed); } catch (e2) {
+                    throw new Error('Save failed: storage full. Try deleting old saves.');
+                }
+            });
+        } else {
+            // Fallback to localStorage
+            try {
+                localStorage.setItem(key, compressed);
+                return Promise.resolve();
+            } catch (e) {
+                return Promise.reject(new Error('Save failed: storage full (' + e.message + '). Try deleting old saves.'));
+            }
+        }
+    }
+
+    // Read save data — try IndexedDB first, then localStorage
+    function _readSave(key) {
+        if (_idbReady && !_idbFailed) {
+            return _idbGet(key).then(function(raw) {
+                if (raw) return _decompressSaveData(raw);
+                // Fallback: maybe it's still in localStorage (pre-migration)
+                var lsRaw = null;
+                try { lsRaw = localStorage.getItem(key); } catch(e) {}
+                return lsRaw ? _decompressSaveData(lsRaw) : null;
+            }).catch(function(err) {
+                console.warn('[Load] IDB read failed, trying localStorage:', err);
+                var lsRaw = null;
+                try { lsRaw = localStorage.getItem(key); } catch(e) {}
+                return lsRaw ? _decompressSaveData(lsRaw) : null;
+            });
+        } else {
+            var lsRaw = null;
+            try { lsRaw = localStorage.getItem(key); } catch(e) {}
+            return Promise.resolve(lsRaw ? _decompressSaveData(lsRaw) : null);
+        }
+    }
+
+    // Delete save data from both stores
+    function _deleteSave(key) {
+        try { localStorage.removeItem(key); } catch(e) {}
+        try { localStorage.removeItem(key + '_meta'); } catch(e) {}
+        if (_idbReady && !_idbFailed) {
+            return _idbDelete(key).catch(function(err) {
+                console.warn('[Save] IDB delete failed:', err);
+            });
+        }
+        return Promise.resolve();
+    }
+
+    // Store metadata in localStorage (sync, tiny)
+    function _storeMetaSync(key, data) {
+        try {
+            localStorage.setItem(key + '_meta', JSON.stringify({
+                playerName: data.playerName || 'Unknown',
+                day: data.day || 0,
+                season: data.season || 'Spring',
+                year: data.year || 1,
+                kingdom: data.kingdom || '',
+                rank: data.rank || '',
+                gold: data.gold || 0,
+                savedAt: data.savedAt || 0,
+            }));
+        } catch (_e) { /* metadata is optional */ }
+    }
+
+    // Migrate all existing localStorage saves to IndexedDB
+    function _migrateLocalStorageToIDB() {
+        if (!_idbReady) return Promise.resolve();
+        var keys = [];
+        for (var i = 1; i <= NUM_SAVE_SLOTS; i++) keys.push(SAVE_SLOT_PREFIX + i);
+        keys.push(AUTOSAVE_SLOT_A, AUTOSAVE_SLOT_B);
+
+        var promises = [];
+        for (var k = 0; k < keys.length; k++) {
+            (function(storageKey) {
+                var raw = null;
+                try { raw = localStorage.getItem(storageKey); } catch(e) {}
+                if (raw) {
+                    promises.push(
+                        _idbPut(storageKey, raw).then(function() {
+                            try { localStorage.removeItem(storageKey); } catch(e) {}
+                            console.log('[Migration] Moved ' + storageKey + ' to IndexedDB');
+                        }).catch(function(err) {
+                            console.warn('[Migration] Failed to migrate ' + storageKey + ':', err);
+                        })
+                    );
+                }
+            })(keys[k]);
+        }
+        // Also migrate old save key
+        var oldRaw = null;
+        try { oldRaw = localStorage.getItem(OLD_SAVE_KEY); } catch(e) {}
+        if (oldRaw && !localStorage.getItem(SAVE_SLOT_PREFIX + '1_meta')) {
+            // Old save exists and hasn't been migrated to slot 1 yet
+            promises.push(
+                _idbPut(SAVE_SLOT_PREFIX + '1', oldRaw).then(function() {
+                    // Parse it to create metadata
+                    var data = _decompressSaveData(oldRaw);
+                    if (data) {
+                        data.playerName = (data.player && data.player.fullName) || 'Unknown Merchant';
+                        data.day = (data.engine && data.engine.day) || 0;
+                        var dayNum = data.day || 0;
+                        var seasonIdx = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) % 4;
+                        data.season = CONFIG.SEASONS[seasonIdx] || 'Spring';
+                        data.year = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) + 1;
+                        data.gold = (data.player && data.player.gold) || 0;
+                        _storeMetaSync(SAVE_SLOT_PREFIX + '1', data);
+                    }
+                    try { localStorage.removeItem(OLD_SAVE_KEY); } catch(e) {}
+                    lastUsedSlot = 1;
+                    localStorage.setItem('merchantRealms_lastSlot', '1');
+                    console.log('[Migration] Moved old save to IndexedDB slot 1');
+                }).catch(function(err) {
+                    console.warn('[Migration] Failed to migrate old save:', err);
+                })
+            );
+        }
+        return Promise.all(promises);
+    }
+
+    // Initialize IndexedDB — call on game start
+    function _initSaveSystem() {
+        return _openIDB().then(function() {
+            console.log('[Save] IndexedDB ready — unlimited save storage enabled');
+            return _migrateLocalStorageToIDB();
+        }).catch(function(err) {
+            console.warn('[Save] IndexedDB unavailable, using localStorage fallback:', err);
+            _idbFailed = true;
+        });
+    }
 
     // ── Autosave System ──
     const AUTOSAVE_SLOT_A = 'merchantRealms_autosave_A';
@@ -2362,25 +2611,8 @@ window.Game = (function () {
     }
 
     function _compressAndStore(key, data) {
-        const jsonStr = JSON.stringify(data);
-        let saveStr = jsonStr;
-        if (typeof LZString !== 'undefined') {
-            saveStr = LZString.compressToUTF16(jsonStr);
-        }
-        localStorage.setItem(key, saveStr);
-        // Store lightweight metadata separately for fast slot picker display
-        try {
-            localStorage.setItem(key + '_meta', JSON.stringify({
-                playerName: data.playerName || 'Unknown',
-                day: data.day || 0,
-                season: data.season || 'Spring',
-                year: data.year || 1,
-                kingdom: data.kingdom || '',
-                rank: data.rank || '',
-                gold: data.gold || 0,
-                savedAt: data.savedAt || 0,
-            }));
-        } catch (_e) { /* metadata is optional — slot picker will fall back to full parse */ }
+        // Async: stores to IndexedDB (or localStorage fallback) + metadata
+        return _storeSave(key, data);
     }
 
     function _performAutosave() {
@@ -2389,10 +2621,12 @@ window.Game = (function () {
             var data = _buildSavePayload();
             data.isAutosave = true;
             var key = _autosaveNextSlot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
-            _compressAndStore(key, data);
-            console.log('[Autosave] Saved to slot ' + _autosaveNextSlot + ' on Day ' + data.day);
-            // Alternate to the other slot next time
-            _autosaveNextSlot = _autosaveNextSlot === 'A' ? 'B' : 'A';
+            _compressAndStore(key, data).then(function() {
+                console.log('[Autosave] Saved to slot ' + _autosaveNextSlot + ' on Day ' + data.day);
+                _autosaveNextSlot = _autosaveNextSlot === 'A' ? 'B' : 'A';
+            }).catch(function(err) {
+                console.error('[Autosave] Failed:', err);
+            });
         } catch (e) {
             console.error('[Autosave] Failed:', e);
         }
@@ -2424,175 +2658,95 @@ window.Game = (function () {
     }
 
     function getAutosaveData(slot) {
-        try {
-            var key = slot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
-            var raw = localStorage.getItem(key);
-            if (!raw) return null;
-            if (typeof LZString !== 'undefined') {
-                var decompressed = LZString.decompressFromUTF16(raw);
-                if (decompressed) {
-                    try { return JSON.parse(decompressed); } catch (e2) { /* fall through */ }
-                }
-            }
-            return JSON.parse(raw);
-        } catch (e) { return null; }
+        var key = slot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
+        return _readSave(key);
     }
 
     function getAutosaveMeta(slot) {
-        // Fast path: read lightweight metadata
+        // Sync: reads only from localStorage metadata (always available)
         try {
             var key = slot === 'A' ? AUTOSAVE_SLOT_A : AUTOSAVE_SLOT_B;
             var metaRaw = localStorage.getItem(key + '_meta');
             if (metaRaw) return JSON.parse(metaRaw);
         } catch (_e) { /* fall through */ }
-        // Slow fallback for old autosaves without separate meta
-        var data = getAutosaveData(slot);
-        if (!data) return null;
-        return {
-            playerName: data.playerName || 'Unknown',
-            day: data.day || 0,
-            season: data.season || 'Spring',
-            year: data.year || 1,
-            kingdom: data.kingdom || '',
-            rank: data.rank || '',
-            gold: data.gold || 0,
-            savedAt: data.savedAt || 0,
-        };
+        return null;
     }
 
     function loadAutosave(slot) {
-        var data = getAutosaveData(slot);
-        if (!data) {
-            if (typeof UI !== 'undefined') UI.toast('No autosave in slot ' + slot + '.', 'warning');
-            return;
-        }
-        // Reuse the same load logic as normal slots
-        try {
-            _migrateSaveData(data);
-            if (data.engine && Engine.deserialize) Engine.deserialize(data.engine);
-            if (data.player && Player.deserialize) Player.deserialize(data.player);
-            if (data.aiMerchants && Player.deserializeAI) Player.deserializeAI(data.aiMerchants);
+        getAutosaveData(slot).then(function(data) {
+            if (!data) {
+                if (typeof UI !== 'undefined') UI.toast('No autosave in slot ' + slot + '.', 'warning');
+                return;
+            }
+            try {
+                _migrateSaveData(data);
+                if (data.engine && Engine.deserialize) Engine.deserialize(data.engine);
+                if (data.player && Player.deserialize) Player.deserialize(data.player);
+                if (data.aiMerchants && Player.deserializeAI) Player.deserializeAI(data.aiMerchants);
 
-            try { UI.update(); } catch (e) { console.error('UI update after autosave load:', e); }
-            setupInput();
-            state = 'playing';
-            speed = 1;
-            lastTickTime = performance.now();
-            tickAccumulator = 0;
-            tickCounter = 0;
-            lastFrameTime = performance.now();
-            const events = Engine.getEvents ? Engine.getEvents() : [];
-            lastProcessedEventCount = events ? events.length : 0;
-            if (!animFrameId) loop(performance.now());
-            if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
-            startAutosave();
-            UI.toast('Loaded Autosave ' + slot + '!', 'success');
-        } catch (e) {
-            console.error('Autosave load failed:', e);
-            if (typeof UI !== 'undefined') UI.toast('Autosave load failed: ' + (e.message || 'Unknown error'), 'danger');
-        }
+                try { UI.update(); } catch (e) { console.error('UI update after autosave load:', e); }
+                setupInput();
+                state = 'playing';
+                speed = 1;
+                lastTickTime = performance.now();
+                tickAccumulator = 0;
+                tickCounter = 0;
+                lastFrameTime = performance.now();
+                const events = Engine.getEvents ? Engine.getEvents() : [];
+                lastProcessedEventCount = events ? events.length : 0;
+                if (!animFrameId) loop(performance.now());
+                if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
+                startAutosave();
+                UI.toast('Loaded Autosave ' + slot + '!', 'success');
+            } catch (e) {
+                console.error('Autosave load failed:', e);
+                if (typeof UI !== 'undefined') UI.toast('Autosave load failed: ' + (e.message || 'Unknown error'), 'danger');
+            }
+        }).catch(function(err) {
+            console.error('Autosave load failed:', err);
+            if (typeof UI !== 'undefined') UI.toast('Autosave load failed: ' + (err.message || 'Unknown error'), 'danger');
+        });
     }
 
     function migrateOldSave() {
-        const old = localStorage.getItem(OLD_SAVE_KEY);
-        if (old && !localStorage.getItem(SAVE_SLOT_PREFIX + '1')) {
-            try {
-                const data = JSON.parse(old);
-                // Add metadata for slot display
-                data.playerName = (data.player && data.player.fullName) || 'Unknown Merchant';
-                data.day = (data.engine && data.engine.day) || 0;
-                const dayNum = data.day || 0;
-                const seasonIdx = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) % 4;
-                data.season = CONFIG.SEASONS[seasonIdx] || 'Spring';
-                data.year = Math.floor(dayNum / CONFIG.DAYS_PER_SEASON) + 1;
-                data.kingdom = '';
-                data.rank = '';
-                data.gold = (data.player && data.player.gold) || 0;
-                const jsonStr = JSON.stringify(data);
-                let saveStr = jsonStr;
-                if (typeof LZString !== 'undefined') {
-                    saveStr = LZString.compressToUTF16(jsonStr);
-                }
-                localStorage.setItem(SAVE_SLOT_PREFIX + '1', saveStr);
-                // Store metadata for fast slot picker
-                try {
-                    localStorage.setItem(SAVE_SLOT_PREFIX + '1_meta', JSON.stringify({
-                        playerName: data.playerName, day: data.day, season: data.season,
-                        year: data.year, kingdom: data.kingdom, rank: data.rank,
-                        gold: data.gold, savedAt: data.savedAt || 0,
-                    }));
-                } catch (_e) { /* optional */ }
-                localStorage.removeItem(OLD_SAVE_KEY);
-                lastUsedSlot = 1;
-                localStorage.setItem('merchantRealms_lastSlot', '1');
-            } catch (e) {
-                console.error('Migration failed:', e);
-            }
-        }
+        // Old save migration is now handled by _migrateLocalStorageToIDB()
+        // This function remains for backwards compatibility but is a no-op
     }
 
     function getSlotData(slotNum) {
-        try {
-            const raw = localStorage.getItem(SAVE_SLOT_PREFIX + slotNum);
-            if (!raw) return null;
-            // Try decompressing first (new compressed format)
-            if (typeof LZString !== 'undefined') {
-                const decompressed = LZString.decompressFromUTF16(raw);
-                if (decompressed) {
-                    try { return JSON.parse(decompressed); } catch (e2) { /* fall through to raw parse */ }
-                }
-            }
-            // Fallback: parse raw JSON (old uncompressed saves)
-            return JSON.parse(raw);
-        } catch (e) { return null; }
+        return _readSave(SAVE_SLOT_PREFIX + slotNum);
     }
 
     function getSlotMeta(slotNum) {
-        // Fast path: read lightweight metadata stored alongside the save
+        // Sync: reads only from localStorage metadata
         try {
             var metaRaw = localStorage.getItem(SAVE_SLOT_PREFIX + slotNum + '_meta');
             if (metaRaw) return JSON.parse(metaRaw);
-        } catch (_e) { /* fall through to full parse */ }
-        // Slow fallback: decompress + parse the full save (old saves without separate meta)
-        const data = getSlotData(slotNum);
-        if (!data) return null;
-        return {
-            playerName: data.playerName || 'Unknown',
-            day: data.day || 0,
-            season: data.season || 'Spring',
-            year: data.year || 1,
-            kingdom: data.kingdom || '',
-            rank: data.rank || '',
-            gold: data.gold || 0,
-            savedAt: data.savedAt || 0,
-        };
+        } catch (_e) { /* fall through */ }
+        return null;
     }
 
     function downloadSave(slotNum) {
-        const raw = localStorage.getItem(SAVE_SLOT_PREFIX + slotNum);
-        if (!raw) { UI.toast('No save in slot ' + slotNum, 'warning'); return; }
-        // Decompress to JSON for portability
-        let jsonStr = raw;
-        if (typeof LZString !== 'undefined') {
-            const decompressed = LZString.decompressFromUTF16(raw);
-            if (decompressed) jsonStr = decompressed;
-        }
-        // Validate it's parseable
-        try { JSON.parse(jsonStr); } catch(e) { jsonStr = raw; }
-        const meta = getSlotMeta(slotNum);
-        const safeName = (meta && meta.playerName ? meta.playerName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Unknown');
-        const day = meta ? meta.day : 0;
-        const filename = 'MerchantRealms_' + safeName + '_Day' + day + '_Slot' + slotNum + '.json';
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        UI.toast('Downloaded ' + filename, 'success');
+        getSlotData(slotNum).then(function(data) {
+            if (!data) { UI.toast('No save in slot ' + slotNum, 'warning'); return; }
+            var jsonStr = JSON.stringify(data);
+            var meta = getSlotMeta(slotNum);
+            var safeName = (meta && meta.playerName ? meta.playerName.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Unknown');
+            var day = meta ? meta.day : 0;
+            var filename = 'MerchantRealms_' + safeName + '_Day' + day + '_Slot' + slotNum + '.json';
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            UI.toast('Downloaded ' + filename, 'success');
+        }).catch(function(err) {
+            UI.toast('Download failed: ' + (err.message || 'Unknown error'), 'danger');
+        });
     }
 
     function importSaveToSlot(slotNum) {
@@ -2607,35 +2761,19 @@ window.Game = (function () {
                 try {
                     const jsonStr = ev.target.result;
                     const data = JSON.parse(jsonStr);
-                    // Basic validation — must have engine or player data
                     if (!data.engine && !data.player) {
                         UI.toast('Invalid save file — missing game data', 'danger');
                         return;
                     }
-                    // Compress and store
-                    let saveStr = jsonStr;
-                    if (typeof LZString !== 'undefined') {
-                        saveStr = LZString.compressToUTF16(jsonStr);
-                    }
-                    localStorage.setItem(SAVE_SLOT_PREFIX + slotNum, saveStr);
-                    // Store metadata for fast slot picker
-                    try {
-                        localStorage.setItem(SAVE_SLOT_PREFIX + slotNum + '_meta', JSON.stringify({
-                            playerName: data.playerName || 'Unknown',
-                            day: data.day || 0,
-                            season: data.season || 'Spring',
-                            year: data.year || 1,
-                            kingdom: data.kingdom || '',
-                            rank: data.rank || '',
-                            gold: data.gold || 0,
-                            savedAt: data.savedAt || 0,
-                        }));
-                    } catch (_e) { /* metadata is optional */ }
-                    lastUsedSlot = slotNum;
-                    localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
-                    UI.toast('Imported save to Slot ' + slotNum + '!', 'success');
-                    UI.closeModal();
-                    showLoadSlotPicker();
+                    _storeSave(SAVE_SLOT_PREFIX + slotNum, data).then(function() {
+                        lastUsedSlot = slotNum;
+                        localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
+                        UI.toast('Imported save to Slot ' + slotNum + '!', 'success');
+                        UI.closeModal();
+                        showLoadSlotPicker();
+                    }).catch(function(err) {
+                        UI.toast('Import failed: ' + (err.message || 'Storage error'), 'danger');
+                    });
                 } catch (err) {
                     UI.toast('Failed to import: ' + (err.message || 'Invalid file'), 'danger');
                 }
@@ -2773,7 +2911,7 @@ window.Game = (function () {
                     if (e.target.dataset.deleteSlot || e.target.dataset.downloadSlot || e.target.dataset.importSlot) return;
                     if (this.dataset.autosaveSlot) return; // handled separately
                     const slot = parseInt(this.dataset.slot);
-                    if (getSlotData(slot)) {
+                    if (getSlotMeta(slot)) {
                         UI.closeModal();
                         loadFromSlot(slot);
                     }
@@ -2783,7 +2921,6 @@ window.Game = (function () {
             document.querySelectorAll('.save-slot-row.save-slot-disabled').forEach(function (row) {
                 row.addEventListener('click', function (e) {
                     if (e.target.dataset.importSlot) return;
-                    // Clicking empty slot itself does nothing (only import button works)
                 });
             });
             document.querySelectorAll('[data-delete-slot]').forEach(function (btn) {
@@ -2792,14 +2929,14 @@ window.Game = (function () {
                     const slot = parseInt(this.dataset.deleteSlot);
                     const meta = getSlotMeta(slot);
                     if (meta && confirm('Delete save in Slot ' + slot + '?\n"' + meta.playerName + ' — Day ' + meta.day + '"')) {
-                        localStorage.removeItem(SAVE_SLOT_PREFIX + slot);
-                        localStorage.removeItem(SAVE_SLOT_PREFIX + slot + '_meta');
-                        if (lastUsedSlot === slot) {
-                            lastUsedSlot = 0;
-                            localStorage.setItem('merchantRealms_lastSlot', '0');
-                        }
-                        UI.closeModal();
-                        showLoadSlotPicker();
+                        _deleteSave(SAVE_SLOT_PREFIX + slot).then(function() {
+                            if (lastUsedSlot === slot) {
+                                lastUsedSlot = 0;
+                                localStorage.setItem('merchantRealms_lastSlot', '0');
+                            }
+                            UI.closeModal();
+                            showLoadSlotPicker();
+                        });
                     }
                 });
             });
@@ -2836,10 +2973,14 @@ window.Game = (function () {
     function saveToSlot(slotNum) {
         try {
             var data = _buildSavePayload();
-            _compressAndStore(SAVE_SLOT_PREFIX + slotNum, data);
-            lastUsedSlot = slotNum;
-            localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
-            if (typeof UI !== 'undefined') UI.toast('Saved to Slot ' + slotNum + '!', 'success');
+            _compressAndStore(SAVE_SLOT_PREFIX + slotNum, data).then(function() {
+                lastUsedSlot = slotNum;
+                localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
+                if (typeof UI !== 'undefined') UI.toast('Saved to Slot ' + slotNum + '!', 'success');
+            }).catch(function(err) {
+                console.error('Save failed:', err);
+                if (typeof UI !== 'undefined') UI.toast('Save failed: ' + (err.message || 'Unknown error'), 'danger');
+            });
         } catch (e) {
             console.error('Save failed:', e);
             if (typeof UI !== 'undefined') UI.toast('Save failed: ' + (e.message || 'Unknown error'), 'danger');
@@ -2855,144 +2996,146 @@ window.Game = (function () {
     }
 
     function loadFromSlot(slotNum) {
-        try {
-            const data = getSlotData(slotNum);
+        getSlotData(slotNum).then(function(data) {
             if (!data) {
                 if (typeof UI !== 'undefined') UI.toast('No save in Slot ' + slotNum + '.', 'warning');
                 return;
             }
-
-            // Clean up tutorial if it was running (prevents panel leaking into loaded game)
-            if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
-                try { Tutorial.cleanup(); } catch(e) {}
-            }
-            // Also destroy leftover tutorial panel even if Tutorial.isActive is false
-            var tutPanel = document.getElementById('tutorialPanel');
-            if (tutPanel) tutPanel.remove();
-
-            // Clear all tutorial window flags from a prior session
-            delete window._tutorialMinimapClicked;
-            delete window._tutorialLocateUsed;
-            delete window._tutorialAteFood;
-            delete window._tutorialDrankWater;
-            delete window._tutorialSocialInteracted;
-            delete window._tutorialSmallTalkDone;
-            delete window._tutorialRested;
-
-            // Clear any stale tutorial/story highlight classes from tab buttons
-            document.querySelectorAll('.tab-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
-            document.querySelectorAll('.tab-btn.active').forEach(function(t) { t.classList.remove('active'); });
-            document.querySelectorAll('.sub-menu-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
-
-            // Close any open modal from previous game
-            if (typeof UI !== 'undefined' && UI.closeModal) {
-                try { UI.closeModal(); } catch(e) {}
-            }
-            // Close story dialog overlay if open
-            if (typeof UI !== 'undefined' && UI.closeStoryDialog) {
-                try { UI.closeStoryDialog(); } catch(e) {}
-            }
-            // Stop TTS
-            if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
-
-            // Run save migrations before deserializing
-            _migrateSaveData(data);
-
-            // Restore engine state
-            if (data.engine && Engine.deserialize) {
-                Engine.deserialize(data.engine);
-            }
-
-            // Restore player state
-            if (data.player && Player.deserialize) {
-                Player.deserialize(data.player);
-            }
-
-            // Restore AI merchants
-            if (data.aiMerchants && Player.deserializeAI) {
-                Player.deserializeAI(data.aiMerchants);
-            }
-
-            // Hide title screen and char creation
-            const titleScreen = document.getElementById('titleScreen');
-            const charCreateScreen = document.getElementById('charCreateScreen');
-            const gameModeScreen = document.getElementById('gameModeScreen');
-            if (titleScreen) {
-                titleScreen.classList.add('hidden');
-                titleScreen.style.display = 'none';
-            }
-            if (charCreateScreen) {
-                charCreateScreen.classList.add('hidden');
-                charCreateScreen.style.display = 'none';
-            }
-            if (gameModeScreen) {
-                gameModeScreen.style.display = 'none';
-            }
-            // Hide kingdom select screen if open
-            var kingdomScreen = document.getElementById('kingdomSelectScreen');
-            if (kingdomScreen) { kingdomScreen.classList.add('hidden'); kingdomScreen.style.display = 'none'; }
-
-            // Reset story mode if loaded save isn't a story save
-            if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
-                var _loadedP = Player.state;
-                if (!_loadedP || !_loadedP.storyMode || !_loadedP.storyMode.active) {
-                    // Loaded a non-story save but StoryMode was active from a previous session
-                    StoryMode.deserialize({ active: false, chapter: 0, complete: false });
+            try {
+                // Clean up tutorial if it was running (prevents panel leaking into loaded game)
+                if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                    try { Tutorial.cleanup(); } catch(e) {}
                 }
-            }
-            // Hide story tracker if not in story mode
-            if (typeof UI !== 'undefined' && UI.hideStoryTracker) {
-                var _lp = Player.state;
-                if (!_lp || !_lp.storyMode || !_lp.storyMode.active) {
-                    UI.hideStoryTracker();
+                // Also destroy leftover tutorial panel even if Tutorial.isActive is false
+                var tutPanel = document.getElementById('tutorialPanel');
+                if (tutPanel) tutPanel.remove();
+
+                // Clear all tutorial window flags from a prior session
+                delete window._tutorialMinimapClicked;
+                delete window._tutorialLocateUsed;
+                delete window._tutorialAteFood;
+                delete window._tutorialDrankWater;
+                delete window._tutorialSocialInteracted;
+                delete window._tutorialSmallTalkDone;
+                delete window._tutorialRested;
+
+                // Clear any stale tutorial/story highlight classes from tab buttons
+                document.querySelectorAll('.tab-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
+                document.querySelectorAll('.tab-btn.active').forEach(function(t) { t.classList.remove('active'); });
+                document.querySelectorAll('.sub-menu-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
+
+                // Close any open modal from previous game
+                if (typeof UI !== 'undefined' && UI.closeModal) {
+                    try { UI.closeModal(); } catch(e) {}
                 }
+                // Close story dialog overlay if open
+                if (typeof UI !== 'undefined' && UI.closeStoryDialog) {
+                    try { UI.closeStoryDialog(); } catch(e) {}
+                }
+                // Stop TTS
+                if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+
+                // Run save migrations before deserializing
+                _migrateSaveData(data);
+
+                // Restore engine state
+                if (data.engine && Engine.deserialize) {
+                    Engine.deserialize(data.engine);
+                }
+
+                // Restore player state
+                if (data.player && Player.deserialize) {
+                    Player.deserialize(data.player);
+                }
+
+                // Restore AI merchants
+                if (data.aiMerchants && Player.deserializeAI) {
+                    Player.deserializeAI(data.aiMerchants);
+                }
+
+                // Hide title screen and char creation
+                const titleScreen = document.getElementById('titleScreen');
+                const charCreateScreen = document.getElementById('charCreateScreen');
+                const gameModeScreen = document.getElementById('gameModeScreen');
+                if (titleScreen) {
+                    titleScreen.classList.add('hidden');
+                    titleScreen.style.display = 'none';
+                }
+                if (charCreateScreen) {
+                    charCreateScreen.classList.add('hidden');
+                    charCreateScreen.style.display = 'none';
+                }
+                if (gameModeScreen) {
+                    gameModeScreen.style.display = 'none';
+                }
+                // Hide kingdom select screen if open
+                var kingdomScreen = document.getElementById('kingdomSelectScreen');
+                if (kingdomScreen) { kingdomScreen.classList.add('hidden'); kingdomScreen.style.display = 'none'; }
+
+                // Reset story mode if loaded save isn't a story save
+                if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
+                    var _loadedP = Player.state;
+                    if (!_loadedP || !_loadedP.storyMode || !_loadedP.storyMode.active) {
+                        StoryMode.deserialize({ active: false, chapter: 0, complete: false });
+                    }
+                }
+                // Hide story tracker if not in story mode
+                if (typeof UI !== 'undefined' && UI.hideStoryTracker) {
+                    var _lp = Player.state;
+                    if (!_lp || !_lp.storyMode || !_lp.storyMode.active) {
+                        UI.hideStoryTracker();
+                    }
+                }
+
+                // Re-init renderer with loaded world
+                const canvas = document.getElementById('gameCanvas');
+                const world = Engine.getWorld ? Engine.getWorld() : {};
+                Renderer.init(canvas, world);
+
+                // Initialize UI
+                UI.init();
+                UI.showGameUI();
+
+                // Immediately refresh UI with loaded data (before game loop starts)
+                try { UI.update(); } catch (e) { console.error('UI update after load:', e); }
+
+                // Setup input handlers
+                setupInput();
+
+                // Start game loop
+                state = 'playing';
+                speed = 1;
+                lastTickTime = performance.now();
+                tickAccumulator = 0;
+                tickCounter = 0;
+                lastFrameTime = performance.now();
+
+                // Reset event counter to avoid re-toasting old events
+                const events = Engine.getEvents ? Engine.getEvents() : [];
+                lastProcessedEventCount = events ? events.length : 0;
+
+                if (!animFrameId) {
+                    loop(performance.now());
+                }
+
+                // Start game music on load
+                if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
+
+                // Start autosave timer
+                startAutosave();
+
+                lastUsedSlot = slotNum;
+                localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
+
+                UI.toast('Loaded Slot ' + slotNum + '!', 'success');
+            } catch (e) {
+                console.error('Load failed:', e);
+                if (typeof UI !== 'undefined') UI.toast('Load failed: ' + (e.message || 'Unknown error'), 'danger');
             }
-
-            // Re-init renderer with loaded world
-            const canvas = document.getElementById('gameCanvas');
-            const world = Engine.getWorld ? Engine.getWorld() : {};
-            Renderer.init(canvas, world);
-
-            // Initialize UI
-            UI.init();
-            UI.showGameUI();
-
-            // Immediately refresh UI with loaded data (before game loop starts)
-            try { UI.update(); } catch (e) { console.error('UI update after load:', e); }
-
-            // Setup input handlers
-            setupInput();
-
-            // Start game loop
-            state = 'playing';
-            speed = 1;
-            lastTickTime = performance.now();
-            tickAccumulator = 0;
-            tickCounter = 0;
-            lastFrameTime = performance.now();
-
-            // Reset event counter to avoid re-toasting old events
-            const events = Engine.getEvents ? Engine.getEvents() : [];
-            lastProcessedEventCount = events ? events.length : 0;
-
-            if (!animFrameId) {
-                loop(performance.now());
-            }
-
-            // Start game music on load
-            if (typeof Music !== 'undefined') Music.playGameMusic('peaceful');
-
-            // Start autosave timer
-            startAutosave();
-
-            lastUsedSlot = slotNum;
-            localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
-
-            UI.toast('Loaded Slot ' + slotNum + '!', 'success');
-        } catch (e) {
-            console.error('Load failed:', e);
-            if (typeof UI !== 'undefined') UI.toast('Load failed: ' + (e.message || 'Unknown error'), 'danger');
-        }
+        }).catch(function(err) {
+            console.error('Load failed:', err);
+            if (typeof UI !== 'undefined') UI.toast('Load failed: ' + (err.message || 'Unknown error'), 'danger');
+        });
     }
 
     function loadGame() {
@@ -3002,7 +3145,7 @@ window.Game = (function () {
 
     function hasSave() {
         for (let i = 1; i <= NUM_SAVE_SLOTS; i++) {
-            if (localStorage.getItem(SAVE_SLOT_PREFIX + i)) return true;
+            if (localStorage.getItem(SAVE_SLOT_PREFIX + i + '_meta')) return true;
         }
         return false;
     }
@@ -3056,19 +3199,9 @@ window.Game = (function () {
             // 1. Console logs
             debugData.consoleLogs = _consoleLogs.slice();
 
-            // 2. Current save data (from last used slot or generate fresh)
+            // 2. Current save data — serialize live state (avoids async IDB read)
             var saveData = null;
-            if (lastUsedSlot > 0) {
-                var raw = localStorage.getItem(SAVE_SLOT_PREFIX + lastUsedSlot);
-                if (raw) {
-                    try {
-                        var decompressed = (typeof LZString !== 'undefined') ? LZString.decompressFromUTF16(raw) : raw;
-                        saveData = JSON.parse(decompressed || raw);
-                    } catch(e) { saveData = { raw: raw.substring(0, 1000) + '...(truncated)' }; }
-                }
-            }
-            // If no slot save, serialize current state
-            if (!saveData && state === 'playing') {
+            if (state === 'playing') {
                 try {
                     saveData = {
                         engine: Engine.serialize ? Engine.serialize() : null,
