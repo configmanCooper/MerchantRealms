@@ -29682,7 +29682,8 @@
             tickEvents();
             if (!_rFF || _d % 3 === 0) Engine.tickNPCHealth();
             if (!_rFF || _d % 3 === 0) Engine.tickNPCTreatmentSeeking();
-            if (!_rFF || _d % 3 === 0) tickSecurity();
+            // NEVER throttled — security impacts happiness which drives revolts
+            tickSecurity();
             if (!_rFF || _d % 7 === 0) tickTownCategories();
             if (!_rFF || _d % 3 === 0) Engine.tickOutposts();
             if (!_rFF || _d % 7 === 0) Engine.tickOutpostAnnexation();
@@ -29698,7 +29699,8 @@
 
             // Daily town revolt system (pressure, formation, battle, resolution)
             // Runs BEFORE happiness fluctuation so it checks yesterday's ending happiness
-            if (!_rFF || _d % 3 === 0) tickTownRevolts();
+            // NEVER throttled — revolts must build pressure at full speed during regency
+            tickTownRevolts();
 
             // Young children (under 12) follow parents
             if (!_rFF || _d % 3 === 0) tickChildCustody();
@@ -29707,11 +29709,14 @@
             if (!_rFF || _d % 5 === 0) tickTravelingMusicians();
 
             // Daily happiness fluctuation (drains + boosts)
-            if (!_rFF || _d % 3 === 0) tickHappinessFluctuation();
+            // NEVER throttled — happiness drives revolts and must update daily
+            tickHappinessFluctuation();
             // Daily town happiness consequences (scaled percentage-based)
-            if (!_rFF || _d % 3 === 0) tickTownHappinessConsequences();
+            // NEVER throttled — immigration/emigration/unrest must flow normally
+            tickTownHappinessConsequences();
             // Daily tax consequences
-            if (!_rFF || _d % 3 === 0) tickTaxConsequences();
+            // NEVER throttled — tax effects on happiness must accumulate daily
+            tickTaxConsequences();
             // Daily mercenary expiry & war zone supply drain
             tickMercenaryExpiry();
 
@@ -29720,12 +29725,11 @@
 
             // Toll Collection
             if (world.day % (CONFIG.TOLL_COLLECTION_INTERVAL || 1) === 0) {
-                if (!_rFF || _d % 3 === 0) collectTolls();
+                collectTolls();
             }
-            if (!_rFF || _d % 3 === 0) {
-                for (const k of world.kingdoms) {
-                    Engine.tickKingdomFinances(k);
-                }
+            // Kingdom finances — NEVER throttled, treasury drives spending → happiness
+            for (const k of world.kingdoms) {
+                Engine.tickKingdomFinances(k);
             }
 
             // Random inspections daily tick
