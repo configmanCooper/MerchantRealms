@@ -607,15 +607,11 @@ window.Renderer = (function () {
         // 2. Kingdom territories
         renderKingdomTerritories();
 
-        // 3. Roads (skip during active pan for performance)
-        if (!_cameraMoving) {
-            renderRoads();
-        }
+        // 3. Roads
+        renderRoads();
 
-        // 3b. Sea routes (skip during active pan for performance)
-        if (!_cameraMoving) {
-            renderSeaRoutes();
-        }
+        // 3b. Sea routes
+        renderSeaRoutes();
 
         // 4. Towns
         renderTowns();
