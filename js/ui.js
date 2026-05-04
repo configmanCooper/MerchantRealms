@@ -17202,6 +17202,7 @@ window.UI = (function () {
         showRegencyFastForward,
         hideRegencyFastForward,
         _resumeRegencyFF: _resumeRegencyFF,
+        _updateRegencyFastForward: _updateRegencyFastForward,
         buyWeapon,
         buyArmor,
         unequipWeapon: unequipWeaponUI,

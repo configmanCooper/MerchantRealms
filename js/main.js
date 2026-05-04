@@ -1288,8 +1288,13 @@ window.Game = (function () {
         var _isRegencyFF2 = typeof Player !== 'undefined' && Player.regencyMode && typeof UI !== 'undefined' && UI._regencyToastsSuppressed;
         if (_isRegencyFF2) {
             // During regency fast-forward: only update the regency overlay, skip all rendering
+            // During regency fast-forward: only update the regency overlay, skip all rendering
             if (_loopFrameCount % 30 === 0) {
                 try { UI.update(); } catch (e) { /* no-op */ }
+            }
+            // Update regency progress display every ~90 days (1 year) — every 9 frames at 10 days/frame
+            if (_loopFrameCount % 9 === 0) {
+                try { if (UI._updateRegencyFastForward) UI._updateRegencyFastForward(); } catch (e) { /* no-op */ }
             }
         } else {
             var _skipRender = speed > 2 && (_loopFrameCount % Math.floor(speed) !== 0);
