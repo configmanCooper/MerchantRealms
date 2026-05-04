@@ -1372,6 +1372,11 @@
         }
 
         openModal('⚰️ Succession', html, '');
+
+        // Hide close button — player must select an heir
+        var closeBtn = document.querySelector('#modal .modal-close, #modal [data-action="closeModal"]');
+        if (!closeBtn) closeBtn = document.getElementById('btnCloseModal');
+        if (closeBtn) closeBtn.style.display = 'none';
     }
 
     function confirmHeirSelection(heirId, heirType) {

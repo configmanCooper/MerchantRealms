@@ -3033,6 +3033,18 @@ window.Game = (function () {
                 if (typeof UI !== 'undefined' && UI.closeModal) {
                     try { UI.closeModal(); } catch(e) {}
                 }
+                // Clear UI locks and overlays from previous game state
+                if (typeof UI !== 'undefined') {
+                    UI._funeralLocked = false;
+                    UI._regencyToastsSuppressed = false;
+                    if (UI.hideRegencyFastForward) try { UI.hideRegencyFastForward(); } catch(e) {}
+                }
+                // Hide defeat/end screen
+                var endScreen = document.getElementById('endScreen');
+                if (endScreen) { endScreen.classList.add('hidden'); endScreen.style.display = 'none'; }
+                // Hide health alert banner
+                var healthAlert = document.getElementById('healthAlert');
+                if (healthAlert) healthAlert.classList.remove('visible');
                 // Close story dialog overlay if open
                 if (typeof UI !== 'undefined' && UI.closeStoryDialog) {
                     try { UI.closeStoryDialog(); } catch(e) {}
