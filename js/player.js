@@ -6798,6 +6798,11 @@
                 // No spouse alive — orphan regency
                 player.regencyMode = true;
                 player.regencyData = {
+                    // Dead player (parent) info for family rebuilding
+                    deadPlayerName: player.fullName,
+                    deadPlayerSex: player.sex,
+                    deadPlayerChildrenIds: structuredClone(player.childrenIds || []),
+                    previousFamilyMembers: structuredClone(player.familyMembers || []),
                     spouseId: null,
                     spouseName: 'None',
                     spouseAlive: false,
@@ -16323,6 +16328,11 @@
 
         player.regencyMode = true;
         player.regencyData = {
+            // Dead player (parent) info for family rebuilding
+            deadPlayerName: player.fullName,
+            deadPlayerSex: player.sex,
+            deadPlayerChildrenIds: structuredClone(player.childrenIds || []),
+            previousFamilyMembers: structuredClone(player.familyMembers || []),
             spouseId: spouse.id,
             spouseName: spouse.firstName + ' ' + spouse.lastName,
             spouseAlive: true,
@@ -16619,6 +16629,57 @@
         player.portrait = generatePortrait(player.sex, player.skinTone, player.faceType);
         // Also clear pregnancy state (heir is a fresh character)
         player.pregnantDay = 0;
+
+        // Rebuild familyMembers for the heir
+        player.familyMembers = [];
+        // Dead player parent (father or mother)
+        if (rd.deadPlayerName) {
+            player.familyMembers.push({
+                npcId: 'deceased_parent_' + (player.generation || 1),
+                role: rd.deadPlayerSex === 'F' ? 'mother' : 'father',
+                name: rd.deadPlayerName
+            });
+        }
+        // Regent spouse parent (mother or father)
+        if (rd.spouseId) {
+            var regentNpc = Engine.findPerson(rd.spouseId);
+            player.familyMembers.push({
+                npcId: rd.spouseId,
+                role: (regentNpc && regentNpc.sex === 'M') ? 'father' : 'mother',
+                name: rd.spouseName
+            });
+        }
+        // Siblings: other children of the dead player
+        var siblingIds = rd.deadPlayerChildrenIds || [];
+        for (var si = 0; si < siblingIds.length; si++) {
+            if (siblingIds[si] === rd.heirId) continue;
+            var sib = Engine.findPerson(siblingIds[si]);
+            if (sib) {
+                player.familyMembers.push({
+                    npcId: sib.id,
+                    role: sib.sex === 'M' ? 'brother' : 'sister',
+                    name: sib.firstName + ' ' + sib.lastName
+                });
+            }
+        }
+        // Previous generation becomes grandparents
+        var prevFamily = rd.previousFamilyMembers || [];
+        for (var pf = 0; pf < prevFamily.length; pf++) {
+            var fm = prevFamily[pf];
+            var newRole = fm.role;
+            if (fm.role === 'father') newRole = 'grandfather';
+            else if (fm.role === 'mother') newRole = 'grandmother';
+            else if (fm.role === 'brother') newRole = 'uncle';
+            else if (fm.role === 'sister') newRole = 'aunt';
+            else if (fm.role === 'grandfather' || fm.role === 'grandmother') continue; // skip great-grandparents
+            else if (fm.role === 'uncle' || fm.role === 'aunt') continue; // skip great-uncles/aunts
+            else continue;
+            player.familyMembers.push({
+                npcId: fm.npcId,
+                role: newRole,
+                name: fm.name
+            });
+        }
 
         // Gold based on regency outcome
         player.gold = Math.floor(rd.estateGold * threshold.goldPct);

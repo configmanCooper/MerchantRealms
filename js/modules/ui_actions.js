@@ -1297,13 +1297,16 @@ function showPersonDetail(person) {
     // ── Basic Info ──
     var _npcPortrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(person) : '';
     let html = `<div class="detail-section">`;
+    if (!isAlive) {
+        html += `<div style="text-align:center;padding:8px;margin-bottom:8px;background:rgba(200,60,60,0.15);border:1px solid rgba(200,60,60,0.3);border-radius:6px;color:#c85050;font-weight:bold;">💀 Deceased</div>`;
+    }
     if (_npcPortrait) {
-        html += `<div style="text-align:center;margin-bottom:6px;"><span style="font-size:2.5rem;">${_npcPortrait}</span></div>`;
+        html += `<div style="text-align:center;margin-bottom:6px;"><span style="font-size:2.5rem;${!isAlive ? 'opacity:0.5;' : ''}">${_npcPortrait}</span></div>`;
     }
     html += `<div class="detail-row"><span class="label">Name</span>
-            <span class="value">${person.firstName || ''} ${person.lastName || ''}</span></div>
+            <span class="value">${person.firstName || ''} ${person.lastName || ''}${!isAlive ? ' <span style="color:#c85050;">(deceased)</span>' : ''}</span></div>
         <div class="detail-row"><span class="label">Age</span>
-            <span class="value">${person.age || '?'}</span></div>
+            <span class="value">${person.age || '?'}${!isAlive ? ' (at death)' : ''}</span></div>
         <div class="detail-row"><span class="label">Sex</span>
             <span class="value">${person.sex === 'M' ? '♂ Male' : person.sex === 'F' ? '♀ Female' : '?'}</span></div>`;
     var _npcSR = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
