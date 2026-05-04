@@ -6812,7 +6812,7 @@
                     thresholdLabel: 'Abandoned',
                     goldAtDeath: player.gold,
                     buildingsAtDeath: player.buildings.length,
-                    buildingsCopy: structuredClone(player.buildings),
+                    buildingsCopy: _slimBuildingsCopy(player.buildings),
                     reputationAtDeath: { ...player.reputation },
                     monthlyUpdates: [{ day: Engine.getDay(), message: '🚪 With no guardian, the child is sent to an orphanage.' }],
                     estateGold: 0,
@@ -6820,7 +6820,7 @@
                     dayStarted: Engine.getDay(),
                     revealedAtDeath: { traits: {}, quirks: [] },
                     _abandoned: true,
-                    caravansCopy: structuredClone(player.caravans || []),
+                    caravansCopy: _slimCaravansCopy(player.caravans || []),
                     caravansAtDeath: (player.caravans || []).length,
                     employeesCopy: structuredClone(player.employees || []),
                 };
@@ -6849,6 +6849,7 @@
                 player.thirst = typeof THIRST_CONFIG !== 'undefined' ? (THIRST_CONFIG.START || 80) : 80;
                 player.energy = 100;
                 player.jailedUntilDay = 0;
+                player.pregnantDay = 0;
 
                 // Start regency fast-forward
                 if (typeof Game !== 'undefined' && Game.setSpeed) {
@@ -14191,6 +14192,8 @@
 
     function tickPlayerChildren() {
         if (!player.alive) return;
+        // During regency, the player is a child — no pregnancy/birth
+        if (player.regencyMode) return;
 
         const currentDay = Engine.getDay();
         const rng = Engine.getRng();
@@ -16289,6 +16292,30 @@
         return REGENCY_THRESHOLDS[REGENCY_THRESHOLDS.length - 1];
     }
 
+    // Strip large data from building/caravan copies for save size
+    function _slimBuildingsCopy(buildings) {
+        if (!buildings || !buildings.length) return [];
+        return buildings.map(function(b) {
+            var slim = Object.assign({}, b);
+            // Clear inventories — they'll be stale after years of regency
+            slim.inventory = {};
+            slim.inputInventory = {};
+            slim.outputInventory = {};
+            return slim;
+        });
+    }
+
+    function _slimCaravansCopy(caravans) {
+        if (!caravans || !caravans.length) return [];
+        return caravans.map(function(c) {
+            var slim = Object.assign({}, c);
+            // Clear cargo — stale after regency
+            slim.cargo = [];
+            slim.returnCargo = [];
+            return slim;
+        });
+    }
+
     function enterRegency(spouse, heir) {
         const rel = getRelationship(player.spouseId);
         const regencyScore = calculateRegencyScore(spouse, rel.level);
@@ -16310,7 +16337,7 @@
             thresholdLabel: threshold ? threshold.label : 'Unknown',
             goldAtDeath: player.gold,
             buildingsAtDeath: player.buildings.length,
-            buildingsCopy: structuredClone(player.buildings),
+            buildingsCopy: _slimBuildingsCopy(player.buildings),
             reputationAtDeath: { ...player.reputation },
             monthlyUpdates: [],
             estateGold: player.gold,
@@ -16318,7 +16345,7 @@
             dayStarted: Engine.getDay(),
             revealedAtDeath: player.revealedTraits[spouse.id] ? structuredClone(player.revealedTraits[spouse.id]) : { traits: {}, quirks: [] },
             parentSkills: player.skills ? { ...player.skills } : {},
-            caravansCopy: structuredClone(player.caravans || []),
+            caravansCopy: _slimCaravansCopy(player.caravans || []),
             caravansAtDeath: (player.caravans || []).length,
             employeesCopy: structuredClone(player.employees || []),
         };
@@ -16348,6 +16375,7 @@
         player.thirst = typeof THIRST_CONFIG !== 'undefined' ? (THIRST_CONFIG.START || 80) : 80;
         player.energy = 100;
         player.jailedUntilDay = 0;
+        player.pregnantDay = 0;
 
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`⚰️ You have passed. ${spouse.firstName} will raise ${heir.firstName} until they come of age.`, 'warning', 'my_actions');
@@ -16532,6 +16560,11 @@
                     rd.monthlyUpdates.push({ day, message: rng.pick(heirMsgs) });
                 }
             }
+
+            // Cap monthly updates to prevent save bloat (keep last 30)
+            if (rd.monthlyUpdates.length > 30) {
+                rd.monthlyUpdates = rd.monthlyUpdates.slice(-30);
+            }
         }
 
         // Check if heir reaches COMING_OF_AGE
@@ -16579,6 +16612,13 @@
         player.jailedUntilDay = 0;
         player.horses = []; // Horses don't transfer through regency
         player.storageContainer = null; // Reset container since no horses to pull wagon
+
+        // Regenerate portrait for the now-adult heir
+        player.skinTone = heir.skinTone || player.skinTone || 0;
+        player.faceType = heir.faceType != null ? heir.faceType : (player.faceType || 0);
+        player.portrait = generatePortrait(player.sex, player.skinTone, player.faceType);
+        // Also clear pregnancy state (heir is a fresh character)
+        player.pregnantDay = 0;
 
         // Gold based on regency outcome
         player.gold = Math.floor(rd.estateGold * threshold.goldPct);

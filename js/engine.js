@@ -29592,7 +29592,11 @@
             world.day++;
 
             // ── Performance: clear path cache daily (roads may change) ──
-            _pathCache = {};
+            // During regency fast-forward, keep cache (player can't build roads)
+            var _regencyFF = typeof Player !== 'undefined' && Player.regencyMode && typeof UI !== 'undefined' && UI._regencyToastsSuppressed;
+            if (!_regencyFF) {
+                _pathCache = {};
+            }
 
             // ── Performance: build people cache for this tick ──
             _tickCache = {

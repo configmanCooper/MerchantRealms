@@ -1243,46 +1243,80 @@ window.Game = (function () {
 
         // Game tick (simulate time passing)
         if (state === 'playing' && speed > 0) {
-            const tickInterval = CONFIG.SIM_TICK_INTERVAL / speed;
-            tickAccumulator += dt;
+            // Regency turbo mode: skip subticks, batch multiple days per frame
+            var _isRegencyFF = typeof Player !== 'undefined' && Player.regencyMode && typeof UI !== 'undefined' && UI._regencyToastsSuppressed;
+            if (_isRegencyFF) {
+                // Batch multiple full days per frame (skip subtick overhead)
+                var _regencyDaysPerFrame = 5;
+                for (var _rd = 0; _rd < _regencyDaysPerFrame; _rd++) {
+                    if (typeof Engine !== 'undefined' && Engine.tick) {
+                        try { Engine.tick(); } catch (eTick) {
+                            console.error('Engine.tick() error on day', Engine.getDay ? Engine.getDay() : '?', eTick);
+                        }
+                    }
+                    if (typeof Player !== 'undefined' && Player.tick) {
+                        try { Player.tick(); } catch (pTick) {
+                            console.error('Player.tick() error on day', Engine.getDay ? Engine.getDay() : '?', pTick);
+                        }
+                    }
+                    // Check if regency ended
+                    if (!Player.regencyMode) {
+                        checkEndConditions();
+                        break;
+                    }
+                }
+                tickAccumulator = 0;
+                tickCounter = 0;
+            } else {
+                const tickInterval = CONFIG.SIM_TICK_INTERVAL / speed;
+                tickAccumulator += dt;
 
-            // Cap accumulator to prevent spiral of death
-            if (tickAccumulator > tickInterval * 10) {
-                tickAccumulator = tickInterval * 10;
-            }
+                // Cap accumulator to prevent spiral of death
+                if (tickAccumulator > tickInterval * 10) {
+                    tickAccumulator = tickInterval * 10;
+                }
 
-            while (tickAccumulator >= tickInterval) {
-                tickAccumulator -= tickInterval;
-                gameTick();
+                while (tickAccumulator >= tickInterval) {
+                    tickAccumulator -= tickInterval;
+                    gameTick();
+                }
             }
         }
 
         // Render (skip frames during fast-forward for performance)
         _loopFrameCount++;
-        var _skipRender = speed > 2 && (_loopFrameCount % Math.floor(speed) !== 0);
-        // At 60x speed, freeze map rendering entirely — only update UI
-        var _freezeMap = speed >= 60;
-        if (!_skipRender) {
-            if (!_freezeMap) {
-                try {
-                    const world = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
-                    const player = (typeof Player !== 'undefined') ? Player : null;
-                    Renderer.render(world, player);
-                } catch (e) {
-                    console.error('Render error:', e);
+        var _isRegencyFF2 = typeof Player !== 'undefined' && Player.regencyMode && typeof UI !== 'undefined' && UI._regencyToastsSuppressed;
+        if (_isRegencyFF2) {
+            // During regency fast-forward: only update the regency overlay, skip all rendering
+            if (_loopFrameCount % 30 === 0) {
+                try { UI.update(); } catch (e) { /* no-op */ }
+            }
+        } else {
+            var _skipRender = speed > 2 && (_loopFrameCount % Math.floor(speed) !== 0);
+            // At 60x speed, freeze map rendering entirely — only update UI
+            var _freezeMap = speed >= 60;
+            if (!_skipRender) {
+                if (!_freezeMap) {
+                    try {
+                        const world = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
+                        const player = (typeof Player !== 'undefined') ? Player : null;
+                        Renderer.render(world, player);
+                    } catch (e) {
+                        console.error('Render error:', e);
+                    }
+                }
+
+                // UI update (throttled — every ~6 loop frames)
+                if (_loopFrameCount % 6 === 0) {
+                    try { UI.update(); } catch (e) { console.error('UI update error:', e); }
+                    try { if (UI.updateTravelPanel) UI.updateTravelPanel(); } catch (e) { /* no-op */ }
+                    try { if (UI.updateJailPanel) UI.updateJailPanel(); } catch (e) { /* no-op */ }
                 }
             }
-
-            // UI update (throttled — every ~6 loop frames)
-            if (_loopFrameCount % 6 === 0) {
-                try { UI.update(); } catch (e) { console.error('UI update error:', e); }
-                try { if (UI.updateTravelPanel) UI.updateTravelPanel(); } catch (e) { /* no-op */ }
-                try { if (UI.updateJailPanel) UI.updateJailPanel(); } catch (e) { /* no-op */ }
+            // At high speed, still update the day/year display every frame so it stays current
+            if (_skipRender || _freezeMap) {
+                try { if (UI.updateDateDisplay) UI.updateDateDisplay(); } catch (_e) { /* no-op */ }
             }
-        }
-        // At high speed, still update the day/year display every frame so it stays current
-        if (_skipRender || _freezeMap) {
-            try { if (UI.updateDateDisplay) UI.updateDateDisplay(); } catch (_e) { /* no-op */ }
         }
     }
 
