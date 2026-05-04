@@ -1247,7 +1247,7 @@ window.Game = (function () {
             var _isRegencyFF = typeof Player !== 'undefined' && Player.regencyMode && typeof UI !== 'undefined' && UI._regencyToastsSuppressed;
             if (_isRegencyFF) {
                 // Batch multiple full days per frame (skip subtick overhead)
-                var _regencyDaysPerFrame = 5;
+                var _regencyDaysPerFrame = 10;
                 for (var _rd = 0; _rd < _regencyDaysPerFrame; _rd++) {
                     if (typeof Engine !== 'undefined' && Engine.tick) {
                         try { Engine.tick(); } catch (eTick) {

@@ -29599,46 +29599,49 @@
             }
 
             // ── Performance: build people cache for this tick ──
-            _tickCache = {
-                peopleByTown: {},
-                peopleByKingdom: {},
-                soldiersByKingdom: {},
-                eliteMerchants: [],
-                merchantsByKingdom: {},
-                noblesByKingdom: {},
-                alivePeople: [],
-                aliveCount: 0
-            };
-            for (var _ci = 0; _ci < world.people.length; _ci++) {
-                var _cp = world.people[_ci];
-                if (!_cp.alive) continue;
-                _tickCache.aliveCount++;
-                _tickCache.alivePeople.push(_cp);
-                // Backfill selfishness for saves that predate this trait
-                if (_cp.personality && _cp.personality.selfishness == null) {
-                    _cp.personality.selfishness = Math.floor((world.rng.random() + world.rng.random() + world.rng.random()) / 3 * 100);
-                }
-                if (!_tickCache.peopleByTown[_cp.townId]) _tickCache.peopleByTown[_cp.townId] = [];
-                _tickCache.peopleByTown[_cp.townId].push(_cp);
-                if (!_tickCache.peopleByKingdom[_cp.kingdomId]) _tickCache.peopleByKingdom[_cp.kingdomId] = [];
-                _tickCache.peopleByKingdom[_cp.kingdomId].push(_cp);
-                if (_cp.occupation === 'soldier' || _cp.occupation === 'guard') {
-                    if (!_tickCache.soldiersByKingdom[_cp.kingdomId]) _tickCache.soldiersByKingdom[_cp.kingdomId] = [];
-                    _tickCache.soldiersByKingdom[_cp.kingdomId].push(_cp);
-                }
-                if (_cp.isEliteMerchant) {
-                    _tickCache.eliteMerchants.push(_cp);
-                }
-                if (_cp.occupation === 'merchant') {
-                    if (!_tickCache.merchantsByKingdom[_cp.kingdomId]) _tickCache.merchantsByKingdom[_cp.kingdomId] = [];
-                    _tickCache.merchantsByKingdom[_cp.kingdomId].push(_cp);
-                }
-                // Index nobles (socialRank 4-6 in any kingdom)
-                if (_cp.socialRank) {
-                    for (var _ck in _cp.socialRank) {
-                        if (_cp.socialRank[_ck] >= 4 && _cp.socialRank[_ck] <= 6) {
-                            if (!_tickCache.noblesByKingdom[_ck]) _tickCache.noblesByKingdom[_ck] = [];
-                            _tickCache.noblesByKingdom[_ck].push(_cp);
+            // During regency FF, rebuild cache every 3 days (reuse otherwise)
+            if (!_regencyFF || world.day % 3 === 0 || !_tickCache || !_tickCache.aliveCount) {
+                _tickCache = {
+                    peopleByTown: {},
+                    peopleByKingdom: {},
+                    soldiersByKingdom: {},
+                    eliteMerchants: [],
+                    merchantsByKingdom: {},
+                    noblesByKingdom: {},
+                    alivePeople: [],
+                    aliveCount: 0
+                };
+                for (var _ci = 0; _ci < world.people.length; _ci++) {
+                    var _cp = world.people[_ci];
+                    if (!_cp.alive) continue;
+                    _tickCache.aliveCount++;
+                    _tickCache.alivePeople.push(_cp);
+                    // Backfill selfishness for saves that predate this trait
+                    if (_cp.personality && _cp.personality.selfishness == null) {
+                        _cp.personality.selfishness = Math.floor((world.rng.random() + world.rng.random() + world.rng.random()) / 3 * 100);
+                    }
+                    if (!_tickCache.peopleByTown[_cp.townId]) _tickCache.peopleByTown[_cp.townId] = [];
+                    _tickCache.peopleByTown[_cp.townId].push(_cp);
+                    if (!_tickCache.peopleByKingdom[_cp.kingdomId]) _tickCache.peopleByKingdom[_cp.kingdomId] = [];
+                    _tickCache.peopleByKingdom[_cp.kingdomId].push(_cp);
+                    if (_cp.occupation === 'soldier' || _cp.occupation === 'guard') {
+                        if (!_tickCache.soldiersByKingdom[_cp.kingdomId]) _tickCache.soldiersByKingdom[_cp.kingdomId] = [];
+                        _tickCache.soldiersByKingdom[_cp.kingdomId].push(_cp);
+                    }
+                    if (_cp.isEliteMerchant) {
+                        _tickCache.eliteMerchants.push(_cp);
+                    }
+                    if (_cp.occupation === 'merchant') {
+                        if (!_tickCache.merchantsByKingdom[_cp.kingdomId]) _tickCache.merchantsByKingdom[_cp.kingdomId] = [];
+                        _tickCache.merchantsByKingdom[_cp.kingdomId].push(_cp);
+                    }
+                    // Index nobles (socialRank 4-6 in any kingdom)
+                    if (_cp.socialRank) {
+                        for (var _ck in _cp.socialRank) {
+                            if (_cp.socialRank[_ck] >= 4 && _cp.socialRank[_ck] <= 6) {
+                                if (!_tickCache.noblesByKingdom[_ck]) _tickCache.noblesByKingdom[_ck] = [];
+                                _tickCache.noblesByKingdom[_ck].push(_cp);
+                            }
                         }
                     }
                 }
@@ -29646,77 +29649,88 @@
 
             tickEconomy();
             tickPeople();
+
+            // ── Regency fast-forward throttling ──
+            // During regency FF, run expensive subsystems less frequently.
+            // World still changes dynamically, just sampled at coarser intervals.
+            var _rFF = typeof Player !== 'undefined' && Player.regencyMode && typeof UI !== 'undefined' && UI._regencyToastsSuppressed;
+            var _d = world.day;
+
             Engine.tickNPCMerchants();
-            Engine.tickNPCMerchantTravel();
+            if (!_rFF || _d % 3 === 0) Engine.tickNPCMerchantTravel();
             Engine.tickFamilyMembers();
-            Engine.tickEliteMerchantAI();
-            Engine.tickEMRelationshipFavors();
-            if (typeof Engine.tickEMDeals === 'function') Engine.tickEMDeals();
+            if (!_rFF || _d % 3 === 0) Engine.tickEliteMerchantAI();
+            if (!_rFF || _d % 5 === 0) Engine.tickEMRelationshipFavors();
+            if (!_rFF || _d % 5 === 0) { if (typeof Engine.tickEMDeals === 'function') Engine.tickEMDeals(); }
             Engine.tickNPCCaravans();     // Process caravan movement
-            Engine.tickEMCaravans();      // EM caravan hiring decisions
-            Engine.tickKingdomCaravans(); // Kingdom supply caravans
-            Engine.tickKingdomMedicalLogistics(); // Emergency medical supply transport
-            Engine.tickNPCRetailBuildings();
-            Engine.npcOptimizeProduction();
-            tickNPCPurchasing();
-            tickNPCHousingAI();
-            tickHousingRentalAI();
-            tickEMRentalBusiness();
-            tickTentCampRents();
-            tickApartmentFees();
-            tickPlayerPropertySales();
+            if (!_rFF || _d % 3 === 0) Engine.tickEMCaravans();      // EM caravan hiring decisions
+            if (!_rFF || _d % 3 === 0) Engine.tickKingdomCaravans(); // Kingdom supply caravans
+            if (!_rFF || _d % 7 === 0) Engine.tickKingdomMedicalLogistics(); // Emergency medical supply transport
+            if (!_rFF || _d % 3 === 0) Engine.tickNPCRetailBuildings();
+            if (!_rFF || _d % 5 === 0) Engine.npcOptimizeProduction();
+            if (!_rFF || _d % 3 === 0) tickNPCPurchasing();
+            if (!_rFF || _d % 7 === 0) tickNPCHousingAI();
+            if (!_rFF || _d % 7 === 0) tickHousingRentalAI();
+            if (!_rFF || _d % 7 === 0) tickEMRentalBusiness();
+            if (!_rFF || _d % 7 === 0) tickTentCampRents();
+            if (!_rFF || _d % 7 === 0) tickApartmentFees();
+            if (!_rFF || _d % 7 === 0) tickPlayerPropertySales();
             Engine.tickDiplomacy();
             tickMilitary();
             tickEvents();
-            Engine.tickNPCHealth();
-            Engine.tickNPCTreatmentSeeking();
-            tickSecurity();
-            tickTownCategories();
-            Engine.tickOutposts();
-            Engine.tickOutpostAnnexation();
-            Engine.tickOutpostImmigration();
-            Engine.tickOutpostBanditRaids();
-            Engine.tickOutpostFires();
-            Engine.tickOutpostDesertion();
-            Engine.tickOutpostDisease();
-            Engine.tickEliteMerchantOutposts();
-            tickWorkerEconomy();
-            tickTravelDemand();
-            tickNPCTransport();
+            if (!_rFF || _d % 3 === 0) Engine.tickNPCHealth();
+            if (!_rFF || _d % 3 === 0) Engine.tickNPCTreatmentSeeking();
+            if (!_rFF || _d % 3 === 0) tickSecurity();
+            if (!_rFF || _d % 7 === 0) tickTownCategories();
+            if (!_rFF || _d % 3 === 0) Engine.tickOutposts();
+            if (!_rFF || _d % 7 === 0) Engine.tickOutpostAnnexation();
+            if (!_rFF || _d % 7 === 0) Engine.tickOutpostImmigration();
+            if (!_rFF || _d % 7 === 0) Engine.tickOutpostBanditRaids();
+            if (!_rFF || _d % 7 === 0) Engine.tickOutpostFires();
+            if (!_rFF || _d % 7 === 0) Engine.tickOutpostDesertion();
+            if (!_rFF || _d % 7 === 0) Engine.tickOutpostDisease();
+            if (!_rFF || _d % 7 === 0) Engine.tickEliteMerchantOutposts();
+            if (!_rFF || _d % 3 === 0) tickWorkerEconomy();
+            if (!_rFF || _d % 5 === 0) tickTravelDemand();
+            if (!_rFF || _d % 5 === 0) tickNPCTransport();
 
             // Daily town revolt system (pressure, formation, battle, resolution)
             // Runs BEFORE happiness fluctuation so it checks yesterday's ending happiness
-            tickTownRevolts();
+            if (!_rFF || _d % 3 === 0) tickTownRevolts();
 
             // Young children (under 12) follow parents
-            tickChildCustody();
+            if (!_rFF || _d % 3 === 0) tickChildCustody();
 
             // Traveling musicians perform, travel, and get hired
-            tickTravelingMusicians();
+            if (!_rFF || _d % 5 === 0) tickTravelingMusicians();
 
             // Daily happiness fluctuation (drains + boosts)
-            tickHappinessFluctuation();
+            if (!_rFF || _d % 3 === 0) tickHappinessFluctuation();
             // Daily town happiness consequences (scaled percentage-based)
-            tickTownHappinessConsequences();
+            if (!_rFF || _d % 3 === 0) tickTownHappinessConsequences();
             // Daily tax consequences
-            tickTaxConsequences();
+            if (!_rFF || _d % 3 === 0) tickTaxConsequences();
             // Daily mercenary expiry & war zone supply drain
             tickMercenaryExpiry();
 
             // Food spoilage / decay (every 3 days for perf, still accurate)
-            if (world.day % 3 === 0) tickFoodDecay();
+            if (world.day % (_rFF ? 9 : 3) === 0) tickFoodDecay();
 
             // Toll Collection
             if (world.day % (CONFIG.TOLL_COLLECTION_INTERVAL || 1) === 0) {
-                collectTolls();
+                if (!_rFF || _d % 3 === 0) collectTolls();
             }
-            for (const k of world.kingdoms) {
-                Engine.tickKingdomFinances(k);
+            if (!_rFF || _d % 3 === 0) {
+                for (const k of world.kingdoms) {
+                    Engine.tickKingdomFinances(k);
+                }
             }
 
             // Random inspections daily tick
-            for (const k of world.kingdoms) {
-                Engine.tickRandomInspections(k);
+            if (!_rFF || _d % 7 === 0) {
+                for (const k of world.kingdoms) {
+                    Engine.tickRandomInspections(k);
+                }
             }
 
             // Kingdom procurement AI (every 7 days)
@@ -29737,9 +29751,11 @@
                 }
             }
 
-            // Directed player commissions (runs daily internally, interval checked inside)
-            for (const k of world.kingdoms) {
-                tickDirectedPlayerCommission(k);
+            // Directed player commissions — skip during regency (no player interaction)
+            if (!_rFF) {
+                for (const k of world.kingdoms) {
+                    tickDirectedPlayerCommission(k);
+                }
             }
 
             // Kingdom ban policy review (every 30 days)
@@ -29750,43 +29766,49 @@
             }
 
             // King proactive economic strategy (per-kingdom interval based on intelligence)
-            if (world.day % 7 === 0) {
+            if (world.day % (_rFF ? 14 : 7) === 0) {
                 for (const k of world.kingdoms) {
                     Engine.tickKingEconomicStrategy(k);
                 }
             }
 
-            // Treasury spending AI — gold sink for wealthy kingdoms (daily)
-            for (const k of world.kingdoms) {
-                Engine.tickTreasurySpending(k);
+            // Treasury spending AI — gold sink for wealthy kingdoms
+            if (!_rFF || _d % 3 === 0) {
+                for (const k of world.kingdoms) {
+                    Engine.tickTreasurySpending(k);
+                }
             }
 
             // Relationship-loyalty monthly link
-            for (const k of world.kingdoms) {
-                Engine.tickNobleRelationshipLoyaltyLink(k);
+            if (!_rFF || _d % 7 === 0) {
+                for (const k of world.kingdoms) {
+                    Engine.tickNobleRelationshipLoyaltyLink(k);
+                }
             }
 
             // Inter-kingdom trade deals (per-kingdom interval)
-            if (world.day % 5 === 0) {
+            if (world.day % (_rFF ? 10 : 5) === 0) {
                 for (const k of world.kingdoms) {
                     Engine.tickInterKingdomTrade(k);
                 }
             }
 
             // King health policy AI (every 7 days)
-            if (world.day % 7 === 0) {
+            if (world.day % (_rFF ? 14 : 7) === 0) {
                 for (const k of world.kingdoms) {
                     Engine.tickKingHealthPolicy(k);
                 }
             }
 
             // Bug 5 fix: crisis trigger — if treasury dropped 50%, immediately strategize
-            for (const k of world.kingdoms) {
-                if (k._startingGold && k.gold < k._startingGold * 0.5) {
-                    if (!k._lastCrisisCheck || world.day - k._lastCrisisCheck >= 10) {
-                        k._lastCrisisCheck = world.day;
-                        k._lastStrategyDay = 0; // bypass internal throttle
-                        Engine.tickKingEconomicStrategy(k);
+            if (!_rFF || _d % 10 === 0) {
+                for (const k of world.kingdoms) {
+                    if (k._startingGold && k.gold < k._startingGold * 0.5) {
+                        if (!k._lastCrisisCheck || world.day - k._lastCrisisCheck >= 10) {
+                            k._lastCrisisCheck = world.day;
+                            k._lastStrategyDay = 0; // bypass internal throttle
+                            Engine.tickKingEconomicStrategy(k);
+                        }
                     }
                 }
             }
@@ -29817,8 +29839,8 @@
                 tickWarehouseSecurity();
             }
 
-            // Livestock breeding (daily)
-            tickLivestockBreeding();
+            // Livestock breeding
+            if (!_rFF || _d % 3 === 0) tickLivestockBreeding();
 
             // Food preferences (every 30 days)
             if (world.day % 30 === 0) {
@@ -29837,11 +29859,11 @@
 
             // Frontline town updates (daily during wars)
             if (world.activeWars && Object.keys(world.activeWars).length > 0) {
-                updateFrontlineTowns();
+                if (!_rFF || _d % 3 === 0) updateFrontlineTowns();
             }
 
-            // Fashion trends (daily, lightweight)
-            tickFashionTrends();
+            // Fashion trends
+            if (!_rFF || _d % 5 === 0) tickFashionTrends();
 
             // Elite merchant dynamics and count maintenance (every 90 days / once per season)
             if (world.day % 90 === 0) {
@@ -29865,16 +29887,18 @@
                 if (!personIndex[p.id]) registerPerson(p);
             }
 
-            // Sanitize gold to prevent float accumulation
-            for (const k of world.kingdoms) {
-                k.gold = Math.floor(k.gold || 0);
-                if ('treasury' in k) { k.gold += Math.floor(k.treasury || 0); delete k.treasury; }
-            }
-            for (const em of world.eliteMerchants) {
-                em.gold = Math.floor(em.gold || 0);
-            }
-            for (const p of world.people) {
-                if (p.gold && !Number.isInteger(p.gold)) p.gold = Math.floor(p.gold);
+            // Sanitize gold to prevent float accumulation (every 7 days during regency FF)
+            if (!_rFF || _d % 7 === 0) {
+                for (const k of world.kingdoms) {
+                    k.gold = Math.floor(k.gold || 0);
+                    if ('treasury' in k) { k.gold += Math.floor(k.treasury || 0); delete k.treasury; }
+                }
+                for (const em of world.eliteMerchants) {
+                    em.gold = Math.floor(em.gold || 0);
+                }
+                for (const p of world.people) {
+                    if (p.gold && !Number.isInteger(p.gold)) p.gold = Math.floor(p.gold);
+                }
             }
 
             // Process pending death notifications (queued by killPerson)
