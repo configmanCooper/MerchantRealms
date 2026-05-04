@@ -30719,8 +30719,10 @@
     }
 
     // Execute a petition effect directly (used by court petition action)
-    function executeCourtPetition(typeId, kingdomId) {
-        var fakePetition = { typeId: typeId, targetData: {}, kingdomId: kingdomId };
+    function executeCourtPetition(typeId, kingdomId, extraData) {
+        var td = {};
+        if (extraData && extraData.targetKingdomId) td.targetKingdomId = extraData.targetKingdomId;
+        var fakePetition = { typeId: typeId, targetData: td, kingdomId: kingdomId };
         executePetitionAction(fakePetition);
     }
 

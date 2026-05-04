@@ -3357,6 +3357,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     // Court petition modal: select a petition type and present it directly to the king
     function _openCourtPetitionModal(kingdomId) {
         var PTYPES = typeof PETITION_TYPES !== 'undefined' ? PETITION_TYPES : [];
+        var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
 
         var html = '<div style="padding:10px;max-height:400px;overflow-y:auto;">';
         html += '<p style="color:#ccc;font-size:0.85rem;margin:0 0 12px 0;">Present a petition directly to the king during court. No signatures needed, but success depends on the petition cost, king\'s personality, your reputation, and your relationships.</p>';
@@ -3365,12 +3366,39 @@ function _switchProposeActionTab(tabId, kingdomId) {
         } else {
             for (var a = 0; a < PTYPES.length; a++) {
                 var pt = PTYPES[a];
+                // Skip petitions needing complex targets (town, road, etc.) — those need the full petition system
+                if (pt.requiresTarget && pt.targetType !== 'kingdom') continue;
                 var costLabel = pt.costFactor > 0 ? ' <span style="color:#8b0000;font-size:0.72rem;">(costly − harder to pass)</span>' : '';
-                html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" ';
-                html += 'style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.88rem;">';
-                html += pt.icon + ' <b>' + pt.name + '</b>' + costLabel;
-                html += '<br><span style="color:#3a2a10;font-size:0.75rem;">' + pt.desc + '</span>';
-                html += '</button>';
+                if (!pt.requiresTarget) {
+                    // Simple petition — direct submit
+                    html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" ';
+                    html += 'style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.88rem;">';
+                    html += pt.icon + ' <b>' + pt.name + '</b>' + costLabel;
+                    html += '<br><span style="color:#3a2a10;font-size:0.75rem;">' + pt.desc + '</span>';
+                    html += '</button>';
+                } else if (pt.targetType === 'kingdom') {
+                    // Kingdom-target petition — show dropdown for target selection
+                    var targetKingdoms = kingdoms.filter(function(k) { return k.id !== kingdomId && !k.defeated; });
+                    if (pt.id === 'seek_peace') {
+                        var playerK = Engine.findKingdom(kingdomId);
+                        targetKingdoms = targetKingdoms.filter(function(k) { return playerK && playerK.atWar && playerK.atWar.has(k.id); });
+                    } else if (pt.id === 'declare_war') {
+                        var playerK2 = Engine.findKingdom(kingdomId);
+                        targetKingdoms = targetKingdoms.filter(function(k) { return !playerK2 || !playerK2.atWar || !playerK2.atWar.has(k.id); });
+                    }
+                    if (targetKingdoms.length > 0) {
+                        html += '<div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:8px;margin-bottom:5px;">';
+                        html += '<div style="font-size:0.88rem;color:#e8c76a;margin-bottom:6px;">' + pt.icon + ' <b>' + pt.name + '</b>' + costLabel + '</div>';
+                        html += '<div style="color:#3a2a10;font-size:0.75rem;margin-bottom:6px;">' + pt.desc + '</div>';
+                        for (var tk = 0; tk < targetKingdoms.length; tk++) {
+                            html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-target="' + targetKingdoms[tk].id + '" ';
+                            html += 'style="width:100%;text-align:left;padding:6px 12px;margin-bottom:3px;color:#1a1a2e;background:linear-gradient(135deg,#b8944c,#d4b05a);border:1px solid #906020;font-size:0.82rem;">';
+                            html += '🏰 ' + targetKingdoms[tk].name;
+                            html += '</button>';
+                        }
+                        html += '</div>';
+                    }
+                }
             }
         }
         html += '</div>';
@@ -3382,7 +3410,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
         if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
         var petId = d.pettype;
         if (!petId) { UI.toast('No petition type selected.', 'warning'); return; }
-        var result = Engine.doCourtAction(kId, 'petition_king', { petitionTypeId: petId });
+        var extraData = { petitionTypeId: petId };
+        if (d.target) extraData.targetKingdomId = d.target;
+        var result = Engine.doCourtAction(kId, 'petition_king', extraData);
         if (result && result.success) {
             UI.toast(result.message, result.message.indexOf('GRANTED') >= 0 ? 'success' : 'info');
             if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {

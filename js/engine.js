@@ -24978,7 +24978,7 @@
                     pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 3);
                     // Execute the petition effect
                     if (typeof Player !== 'undefined' && Player.executeCourtPetition) {
-                        Player.executeCourtPetition(petTypeId, kingdomId);
+                        Player.executeCourtPetition(petTypeId, kingdomId, extraData);
                     }
                     result = { success: true, message: 'Your petition for ' + pType.name + ' was GRANTED! (' + Math.round(chance * 100) + '% chance)' };
                 } else {
@@ -30169,6 +30169,7 @@
         findTown(id) { return findTown(id); },
         findNearestTown(x, y) { return findNearestTown(x, y); },
         findKingdom(id) { return findKingdom(id); },
+        getKingdom(id) { return findKingdom(id); },
         findPerson(id) { return findPerson(id); },
         moveYoungChildrenWithParent(parent, newTownId, newKingdomId) { return moveYoungChildrenWithParent(parent, newTownId, newKingdomId); },
         findPath(a, b, opts) { return findPath(a, b, opts); },
