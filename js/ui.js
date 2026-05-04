@@ -7982,14 +7982,6 @@ window.UI = (function () {
         UI._regencyToastsSuppressed = wasSuppressed;
     }
 
-    // Expose so modal close can resume
-    UI._resumeRegencyFF = _resumeRegencyFF;
-    UI._regencyFFPaused = false;
-    Object.defineProperty(UI, '_regencyFFPaused', {
-        get: function() { return _regencyFFPaused; },
-        set: function(v) { _regencyFFPaused = v; }
-    });
-
     function showRegencyFastForward() {
         _regencyFFStartTime = performance.now();
         // Close any open modals
@@ -17203,6 +17195,7 @@ window.UI = (function () {
         showRegencyScreen,
         showRegencyFastForward,
         hideRegencyFastForward,
+        _resumeRegencyFF: _resumeRegencyFF,
         buyWeapon,
         buyArmor,
         unequipWeapon: unequipWeaponUI,
