@@ -2840,6 +2840,10 @@
 
         player.regencyMode = true;
         player.regencyData = {
+            deadPlayerName: player.fullName,
+            deadPlayerSex: player.sex,
+            deadPlayerChildrenIds: structuredClone(player.childrenIds || []),
+            previousFamilyMembers: structuredClone(player.familyMembers || []),
             spouseId: spouse.id,
             spouseName: spouse.firstName + ' ' + spouse.lastName,
             spouseAlive: true,
@@ -3244,6 +3248,46 @@
 
         player.regencyMode = false;
         player.regencyData = null;
+
+        // Rebuild familyMembers for the heir
+        player.familyMembers = [];
+        // Deceased parent (the previous player character)
+        var _deadParentRole = (rd.deadPlayerSex === 'M') ? 'father' : 'mother';
+        player.familyMembers.push({
+            npcId: 'deceased_parent_' + (player.generation || 1),
+            role: _deadParentRole,
+            name: rd.deadPlayerName || 'Unknown'
+        });
+        // Regent (surviving parent/spouse)
+        if (rd.spouseId) {
+            var _regentNpc = Engine.findPerson(rd.spouseId);
+            if (_regentNpc) {
+                var _regentRole = (_regentNpc.sex === 'M') ? 'father' : 'mother';
+                player.familyMembers.push({
+                    npcId: _regentNpc.id,
+                    role: _regentRole,
+                    name: _regentNpc.firstName + ' ' + _regentNpc.lastName
+                });
+            }
+        }
+        // Siblings (other children of the deceased parent)
+        var _siblingIds = rd.deadPlayerChildrenIds || [];
+        for (var _si = 0; _si < _siblingIds.length; _si++) {
+            if (_siblingIds[_si] === rd.heirId) continue; // skip self
+            var _sib = Engine.findPerson(_siblingIds[_si]);
+            if (_sib && _sib.alive) {
+                player.familyMembers.push({
+                    npcId: _sib.id,
+                    role: _sib.sex === 'M' ? 'brother' : 'sister',
+                    name: _sib.firstName + ' ' + _sib.lastName
+                });
+            }
+        }
+
+        // Remove self-relationship (heir had relationship with previous player)
+        if (rd.heirId && player.relationships && player.relationships[rd.heirId]) {
+            delete player.relationships[rd.heirId];
+        }
 
         Engine.logEvent(`${player.fullName} has come of age and inherits the family legacy! (${threshold.label})`);
         if (typeof UI !== 'undefined' && UI.toast) {

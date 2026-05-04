@@ -4870,6 +4870,8 @@ window.UI = (function () {
             var person = null;
             try { person = Engine.findPerson(pid) || Engine.getPerson(pid); } catch(e) {}
             if (!person || person.alive === false) continue;
+            // Skip self (heir NPC may still be in relationships)
+            if (person.firstName === Player.state.firstName && person.lastName === Player.state.lastName) continue;
             friends.push({ person: person, level: rels[pid].level || 0 });
         }
         // Sort by relationship level descending
