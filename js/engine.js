@@ -7337,8 +7337,10 @@
                     }
                 }
 
-                // Show death notification — try immediately if UI is ready, otherwise queue for end-of-tick
-                if (typeof UI !== 'undefined' && UI.showDeathNotification) {
+                // Show death notification — skip during regency fast-forward
+                if (typeof UI !== 'undefined' && UI._regencyToastsSuppressed) {
+                    // During regency FF, suppress funeral/death UI entirely
+                } else if (typeof UI !== 'undefined' && UI.showDeathNotification) {
                     // Use setTimeout(0) so the notification shows after killPerson finishes
                     (function(_snap) {
                         setTimeout(function() { UI.showDeathNotification(_snap.personId, _snap.cause, _snap.relationship, _snap); }, 0);

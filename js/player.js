@@ -16662,8 +16662,12 @@
         player.skinTone = heir.skinTone || player.skinTone || 0;
         player.faceType = heir.faceType != null ? heir.faceType : (player.faceType || 0);
         player.portrait = generatePortrait(player.sex, player.skinTone, player.faceType);
-        // Also clear pregnancy state (heir is a fresh character)
+        // Clear previous character's conditions — heir is healthy
         player.pregnantDay = 0;
+        player.health = 100;
+        player.illnesses = [];
+        player.injuries = [];
+        player.deathCause = null;
 
         // Rebuild familyMembers for the heir
         player.familyMembers = [];
@@ -16938,7 +16942,11 @@
         // Clear toast suppression BEFORE setSpeed (setSpeed blocks during suppression)
         if (typeof UI !== 'undefined') {
             UI._regencyToastsSuppressed = false;
+            UI._funeralLocked = false;
             if (UI.hideRegencyFastForward) UI.hideRegencyFastForward();
+            // Clear sick banner — heir is healthy
+            var _ha = document.getElementById('healthAlert');
+            if (_ha) _ha.classList.remove('visible');
         }
         if (typeof Game !== 'undefined' && Game.setSpeed) {
             Game.setSpeed(player._regencyPreSpeed || 1);
