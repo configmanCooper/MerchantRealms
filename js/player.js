@@ -16476,15 +16476,42 @@
                 }
             }
 
-            // Heir learning messages
+            // Heir learning messages — age-appropriate
             if (heir && heir.alive) {
-                const heirMsgs = [
-                    `📖 ${rd.heirName} is learning to read.`,
-                    `⚔️ ${rd.heirName} practices swordplay.`,
-                    `🧮 ${rd.heirName} studies arithmetic.`,
-                    `🐴 ${rd.heirName} learns to ride.`,
-                    `📜 ${rd.heirName} studies the family ledgers.`,
-                ];
+                var heirMsgs;
+                if (rd.heirAge <= 3) {
+                    heirMsgs = [
+                        `👶 ${rd.heirName} takes their first steps.`,
+                        `🍼 ${rd.heirName} is learning to talk.`,
+                        `🧸 ${rd.heirName} plays with wooden toys.`,
+                        `😴 ${rd.heirName} sleeps soundly in the nursery.`,
+                    ];
+                } else if (rd.heirAge <= 7) {
+                    heirMsgs = [
+                        `🏃 ${rd.heirName} runs around the house causing mischief.`,
+                        `📖 ${rd.heirName} is learning to read.`,
+                        `🎨 ${rd.heirName} draws pictures of the family.`,
+                        `🐕 ${rd.heirName} chases the neighbor's dog.`,
+                        `🧮 ${rd.heirName} is learning to count coins.`,
+                    ];
+                } else if (rd.heirAge <= 12) {
+                    heirMsgs = [
+                        `📖 ${rd.heirName} reads books from the family library.`,
+                        `🧮 ${rd.heirName} studies arithmetic.`,
+                        `✍️ ${rd.heirName} practices handwriting.`,
+                        `🐴 ${rd.heirName} learns to ride a pony.`,
+                        `🤝 ${rd.heirName} makes friends with other children in town.`,
+                    ];
+                } else {
+                    heirMsgs = [
+                        `⚔️ ${rd.heirName} practices swordplay.`,
+                        `📜 ${rd.heirName} studies the family ledgers.`,
+                        `🐴 ${rd.heirName} learns to ride.`,
+                        `💰 ${rd.heirName} shadows a merchant to learn the trade.`,
+                        `📚 ${rd.heirName} studies history and diplomacy.`,
+                        `🏋️ ${rd.heirName} trains their body for the challenges ahead.`,
+                    ];
+                }
                 if (rng && rng.chance(0.3)) {
                     rd.monthlyUpdates.push({ day, message: rng.pick(heirMsgs) });
                 }
