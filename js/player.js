@@ -4274,6 +4274,19 @@
     // Move all personal guards to the player's current town
     function _moveGuardsToPlayer() {
         if (!player.guards || player.guards.length === 0 || !player.townId) return;
+        // Remove deceased guards
+        var _guardsBefore = player.guards.length;
+        player.guards = player.guards.filter(function(g) {
+            var _gp = g.personId ? Engine.findPerson(g.personId) : null;
+            if (_gp && !_gp.alive) {
+                Engine.logEvent('⚔️ Guard ' + (g.name || 'Unknown') + ' has died and been dismissed.');
+                return false;
+            }
+            return true;
+        });
+        if (player.guards.length !== _guardsBefore) {
+            player.personalGuards = player.guards.length;
+        }
         for (var _mgi = 0; _mgi < player.guards.length; _mgi++) {
             var _gNpc = player.guards[_mgi].personId ? Engine.findPerson(player.guards[_mgi].personId) : null;
             if (!_gNpc || !_gNpc.alive) continue;
