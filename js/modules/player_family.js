@@ -2620,6 +2620,7 @@
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('🍼 Welcome ' + child.fullName + '!', 'success', 'my_actions');
         }
+        if (typeof UI !== 'undefined' && UI.update) UI.update();
     }
 
     /**
