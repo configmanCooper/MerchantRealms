@@ -8028,10 +8028,11 @@ window.UI = (function () {
         var realTimeStr;
         if (yearsCompleted > 0 && elapsedSec > 0) {
             var secPerYear = elapsedSec / yearsCompleted;
-            // Later years are more expensive — add 50% extra time for years past age 12
-            var normalYears = Math.max(0, Math.min(yearsToGo, 12 - rd.heirAge));
-            var lateYears = Math.max(0, yearsToGo - normalYears);
-            var estSecondsLeft = Math.ceil(secPerYear * (normalYears + lateYears * 1.5));
+            // Later years are more expensive — add 50% extra for each year of regency past 12
+            var totalRegencyYears = yearsCompleted + yearsToGo;
+            var normalYearsLeft = Math.max(0, Math.min(yearsToGo, 12 - yearsCompleted));
+            var lateYearsLeft = Math.max(0, yearsToGo - normalYearsLeft);
+            var estSecondsLeft = Math.ceil(secPerYear * (normalYearsLeft + lateYearsLeft * 1.5));
             var estMin = Math.floor(estSecondsLeft / 60);
             var estSec = estSecondsLeft % 60;
             realTimeStr = estMin > 0 ? (estMin + 'm ' + estSec + 's') : (estSec + 's');
