@@ -16428,37 +16428,53 @@
             const threshold = getRegencyThreshold(rd.regencyScore);
             if (!threshold) return;
 
-            // Estate management based on threshold
-            if (rd.regencyScore >= 80) {
-                // Good management
-                const income = Math.floor(rd.buildingsMaintained * 5 + 20);
-                rd.estateGold += income;
-                rd.monthlyUpdates.push({ day, message: `💰 ${rd.spouseName} maintained all businesses. Estate +${income}g.` });
-            } else if (rd.regencyScore >= 60) {
-                const income = Math.floor(rd.buildingsMaintained * 3 + 10);
-                rd.estateGold += income;
-                rd.monthlyUpdates.push({ day, message: `📊 ${rd.spouseName} managed the estate adequately. Estate +${income}g.` });
-            } else if (rd.regencyScore >= 40) {
-                // May sell buildings
-                if (rng && rng.chance(0.15) && rd.buildingsMaintained > 0) {
-                    rd.buildingsMaintained = Math.max(0, rd.buildingsMaintained - 1);
-                    rd.estateGold += 50;
-                    rd.monthlyUpdates.push({ day, message: `🏚️ ${rd.spouseName} sold one of the businesses.` });
+            // Estate management — different logic if regent is alive vs dead
+            if (rd.spouseAlive) {
+                // Regent alive: managed based on regency score
+                if (rd.regencyScore >= 80) {
+                    const income = Math.floor(rd.buildingsMaintained * 5 + 20);
+                    rd.estateGold += income;
+                    rd.monthlyUpdates.push({ day, message: `💰 ${rd.spouseName} maintained all businesses. Estate +${income}g.` });
+                } else if (rd.regencyScore >= 60) {
+                    const income = Math.floor(rd.buildingsMaintained * 3 + 10);
+                    rd.estateGold += income;
+                    rd.monthlyUpdates.push({ day, message: `📊 ${rd.spouseName} managed the estate adequately. Estate +${income}g.` });
+                } else if (rd.regencyScore >= 40) {
+                    if (rng && rng.chance(0.15) && rd.buildingsMaintained > 0) {
+                        rd.buildingsMaintained = Math.max(0, rd.buildingsMaintained - 1);
+                        rd.estateGold += 50;
+                        rd.monthlyUpdates.push({ day, message: `🏚️ ${rd.spouseName} sold one of the businesses.` });
+                    } else {
+                        rd.monthlyUpdates.push({ day, message: `📊 ${rd.spouseName} reluctantly managed the household.` });
+                    }
+                } else if (rd.regencyScore >= 20) {
+                    const taken = Math.floor(rd.estateGold * 0.05);
+                    rd.estateGold = Math.max(0, rd.estateGold - taken);
+                    rd.monthlyUpdates.push({ day, message: `💸 ${rd.spouseName} took ${taken}g for personal expenses.` });
                 } else {
-                    rd.monthlyUpdates.push({ day, message: `📊 ${rd.spouseName} reluctantly managed the household.` });
+                    if (!rd._abandoned) {
+                        rd._abandoned = true;
+                        rd.estateGold = 0;
+                        rd.buildingsMaintained = 0;
+                        rd.monthlyUpdates.push({ day, message: `🚪 ${rd.spouseName} abandoned the child and left.` });
+                    }
                 }
-            } else if (rd.regencyScore >= 20) {
-                // Takes wealth
-                const taken = Math.floor(rd.estateGold * 0.05);
-                rd.estateGold = Math.max(0, rd.estateGold - taken);
-                rd.monthlyUpdates.push({ day, message: `💸 ${rd.spouseName} took ${taken}g for personal expenses.` });
             } else {
-                // Abandoned
-                if (!rd._abandoned) {
-                    rd._abandoned = true;
-                    rd.estateGold = 0;
-                    rd.buildingsMaintained = 0;
-                    rd.monthlyUpdates.push({ day, message: `🚪 ${rd.spouseName} abandoned the child and left.` });
+                // Regent dead — estate slowly degrades with no one to manage it
+                const maintenanceCost = Math.floor(rd.buildingsMaintained * 3);
+                rd.estateGold = Math.max(0, rd.estateGold - maintenanceCost);
+                if (maintenanceCost > 0) {
+                    rd.monthlyUpdates.push({ day, message: `🏚️ Without a guardian, ${maintenanceCost}g was spent on maintenance.` });
+                }
+                // Chance to lose a building each month (no one managing them)
+                if (rng && rng.chance(0.1) && rd.buildingsMaintained > 0) {
+                    rd.buildingsMaintained = Math.max(0, rd.buildingsMaintained - 1);
+                    rd.monthlyUpdates.push({ day, message: `🏚️ A neglected business has fallen into disrepair.` });
+                }
+                // If gold runs out, buildings decay faster
+                if (rd.estateGold <= 0 && rng && rng.chance(0.25) && rd.buildingsMaintained > 0) {
+                    rd.buildingsMaintained = Math.max(0, rd.buildingsMaintained - 1);
+                    rd.monthlyUpdates.push({ day, message: `💔 With no funds, another business has been lost.` });
                 }
             }
 
