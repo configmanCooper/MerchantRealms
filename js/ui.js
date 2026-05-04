@@ -482,7 +482,7 @@ window.UI = (function () {
         registerAction('switchOrdersTab', function(_t, d) { if (d.tab) UI.switchOrdersTab(d.tab); });
         registerAction('_switchKQTab', function(_t, d) { if (d.tab && d.kingdom) UI._switchKQTab(d.tab, d.kingdom); });
         registerAction('executeAdvice', function(_t, d) { if (d.kingdom && d.type && d.val) UI.executeAdvice(d.kingdom, d.type, d.val); });
-        registerAction('openCaravanManagement', function(_t, d) { if (d.id) UI.openCaravanManagement(d.id); });
+        registerAction('openCaravanManagement', function(_t, d) { UI.openCaravanManagement(d.id); });
         registerAction('confirmKingFlee', function() { if (UI._confirmKingFlee) UI._confirmKingFlee(); });
         registerAction('resolveRevolt', function(_t, d) { if (d.kingdom && d.choice && UI._resolveRevolt) UI._resolveRevolt(d.kingdom, d.choice); });
         registerAction('buyFreedomUI', function() { UI.buyFreedomUI(); });
