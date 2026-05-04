@@ -3450,7 +3450,9 @@
             });
             for (var ti = 0; ti < Math.min(targets.length, 2); ti++) {
                 var target = targets[ti];
-                if (!em.relationships[target.id]) em.relationships[target.id] = { level: 10, type: 'acquaintance' };
+                if (!em.relationships[target.id] || typeof em.relationships[target.id] === 'number') {
+                    em.relationships[target.id] = { level: em.relationships[target.id] || 10, type: 'acquaintance' };
+                }
                 var rel = em.relationships[target.id];
                 var gain = Math.floor(personality.social * 0.1 + rng.random() * 5);
                 rel.level = Math.min(100, rel.level + gain);
