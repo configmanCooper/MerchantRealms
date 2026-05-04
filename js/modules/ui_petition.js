@@ -1352,7 +1352,7 @@
             html += '<div style="font-size:14px;font-weight:bold;color:#fff;">' + npc.firstName + ' ' + npc.lastName + '</div>';
             html += '<div style="font-size:12px;color:#aaa;margin-top:2px;">';
             html += label + ' • ' + (npc.sex === 'M' ? '♂' : '♀') + ' Age ' + npc.age;
-            if (npc.occupation && npc.occupation !== 'None') html += ' • ' + npc.occupation;
+            if (npc.occupation && npc.occupation !== 'None' && type !== 'child_young') html += ' • ' + npc.occupation;
             html += '</div>';
             html += '<div style="font-size:11px;color:#888;margin-top:4px;">' + desc + '</div>';
             html += '</div>';
