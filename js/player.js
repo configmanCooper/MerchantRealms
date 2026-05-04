@@ -6820,7 +6820,16 @@
                     dayStarted: Engine.getDay(),
                     revealedAtDeath: { traits: {}, quirks: [] },
                     _abandoned: true,
+                    caravansCopy: structuredClone(player.caravans || []),
+                    caravansAtDeath: (player.caravans || []).length,
+                    employeesCopy: structuredClone(player.employees || []),
                 };
+
+                // Transfer assets to regent (orphan gets nothing)
+                player.gold = 0;
+                player.caravans = [];
+                player.buildings = [];
+                player.employees = [];
                 Engine.logEvent(player.fullName + ' has died. Young ' + selectedNpc.firstName + ' is orphaned.');
 
                 // Transfer identity to heir immediately so the UI reflects the new character
@@ -16309,7 +16318,16 @@
             dayStarted: Engine.getDay(),
             revealedAtDeath: player.revealedTraits[spouse.id] ? structuredClone(player.revealedTraits[spouse.id]) : { traits: {}, quirks: [] },
             parentSkills: player.skills ? { ...player.skills } : {},
+            caravansCopy: structuredClone(player.caravans || []),
+            caravansAtDeath: (player.caravans || []).length,
+            employeesCopy: structuredClone(player.employees || []),
         };
+
+        // Transfer assets to regent — clear from player during regency
+        player.gold = 0;
+        player.caravans = [];
+        player.buildings = [];
+        player.employees = [];
 
         Engine.logEvent(`${player.fullName} has passed. ${spouse.firstName} serves as regent for young ${heir.firstName}.`);
 
@@ -16526,18 +16544,40 @@
             player.gold = Math.floor(player.gold * 1.10);
         }
 
-        // Buildings based on regency outcome
+        // Buildings: restore from regent's copy, apply threshold percentage
+        var regentBuildings = rd.buildingsCopy || [];
+        var regentEmployees = rd.employeesCopy || [];
         if (threshold.buildingPct >= 1) {
-            // Keep all buildings
+            player.buildings = structuredClone(regentBuildings);
+            player.employees = structuredClone(regentEmployees);
         } else if (threshold.buildingPct > 0) {
-            // Keep random fraction
-            const rng = Engine.getRng();
-            const keep = Math.ceil(player.buildings.length * threshold.buildingPct);
-            if (rng) rng.shuffle(player.buildings);
-            player.buildings = player.buildings.slice(0, keep);
+            var rng = Engine.getRng();
+            var keep = Math.ceil(regentBuildings.length * threshold.buildingPct);
+            var bCopy = structuredClone(regentBuildings);
+            if (rng) rng.shuffle(bCopy);
+            player.buildings = bCopy.slice(0, keep);
+            // Keep employees that work in remaining buildings
+            var keptBuildingIds = {};
+            for (var bi = 0; bi < player.buildings.length; bi++) {
+                if (player.buildings[bi].id) keptBuildingIds[player.buildings[bi].id] = true;
+            }
+            player.employees = structuredClone(regentEmployees);
         } else {
             player.buildings = [];
             player.employees = [];
+        }
+
+        // Caravans: restore from regent based on threshold
+        var regentCaravans = rd.caravansCopy || [];
+        if (threshold.buildingPct >= 1) {
+            player.caravans = structuredClone(regentCaravans);
+        } else if (threshold.buildingPct > 0) {
+            var cKeep = Math.ceil(regentCaravans.length * threshold.buildingPct);
+            var cCopy = structuredClone(regentCaravans);
+            if (Engine.getRng()) Engine.getRng().shuffle(cCopy);
+            player.caravans = cCopy.slice(0, cKeep);
+        } else {
+            player.caravans = [];
         }
 
         // XP transfer

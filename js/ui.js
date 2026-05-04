@@ -7908,6 +7908,7 @@ window.UI = (function () {
                     <div style="font-size:0.8rem;">Age: ${rd.heirAge} → ${CONFIG.COMING_OF_AGE} in ~${yearsToGo} years</div>
                     <div style="font-size:0.8rem;margin-top:8px;">💰 Estate: ${formatGold(rd.estateGold || 0)}</div>
                     <div style="font-size:0.8rem;">🏠 Buildings: ${rd.buildingsMaintained} maintained</div>
+                    <div style="font-size:0.8rem;">🐫 Caravans: ${rd.caravansCopy ? rd.caravansCopy.length : 0}</div>
                 </div>
             </div>
 
@@ -8046,6 +8047,7 @@ window.UI = (function () {
                     '<div style="font-weight:bold;margin-bottom:4px;font-size:0.85rem;">💰 Estate</div>' +
                     '<div style="font-size:0.8rem;">Gold: ' + formatGold(rd.estateGold || 0) + '</div>' +
                     '<div style="font-size:0.8rem;">🏠 Buildings: ' + rd.buildingsMaintained + ' maintained</div>' +
+                    '<div style="font-size:0.8rem;">🐫 Caravans: ' + (rd.caravansCopy ? rd.caravansCopy.length : 0) + '</div>' +
                 '</div>' +
             '</div>' +
 
