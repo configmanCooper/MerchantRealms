@@ -1467,6 +1467,8 @@ window.Game = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function setSpeed(s) {
+        // Block manual speed changes during regency fast-forward
+        if (typeof UI !== 'undefined' && UI._regencyToastsSuppressed) return;
         speed = s;
         if (s === 0) {
             state = 'paused';

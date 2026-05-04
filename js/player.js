@@ -6840,6 +6840,16 @@
                 player.thirst = typeof THIRST_CONFIG !== 'undefined' ? (THIRST_CONFIG.START || 80) : 80;
                 player.energy = 100;
                 player.jailedUntilDay = 0;
+
+                // Start regency fast-forward
+                if (typeof Game !== 'undefined' && Game.setSpeed) {
+                    player._regencyPreSpeed = Game.getSpeed ? Game.getSpeed() : 1;
+                    Game.setSpeed(300);
+                }
+                if (typeof UI !== 'undefined') {
+                    UI._regencyToastsSuppressed = true;
+                    if (UI.showRegencyFastForward) UI.showRegencyFastForward();
+                }
             }
         } else {
             // Adult child heir
@@ -16324,6 +16334,16 @@
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`⚰️ You have passed. ${spouse.firstName} will raise ${heir.firstName} until they come of age.`, 'warning', 'my_actions');
         }
+
+        // Start regency fast-forward: 300x speed, toasts suppressed, map frozen
+        if (typeof Game !== 'undefined' && Game.setSpeed) {
+            player._regencyPreSpeed = Game.getSpeed ? Game.getSpeed() : 1;
+            Game.setSpeed(300);
+        }
+        if (typeof UI !== 'undefined') {
+            UI._regencyToastsSuppressed = true;
+            if (UI.showRegencyFastForward) UI.showRegencyFastForward();
+        }
     }
 
     function tickRegency() {
@@ -16692,6 +16712,17 @@
 
         player.regencyMode = false;
         player.regencyData = null;
+
+        // Restore speed and re-enable toasts after regency fast-forward
+        // Clear toast suppression BEFORE setSpeed (setSpeed blocks during suppression)
+        if (typeof UI !== 'undefined') {
+            UI._regencyToastsSuppressed = false;
+            if (UI.hideRegencyFastForward) UI.hideRegencyFastForward();
+        }
+        if (typeof Game !== 'undefined' && Game.setSpeed) {
+            Game.setSpeed(player._regencyPreSpeed || 1);
+            delete player._regencyPreSpeed;
+        }
 
         Engine.logEvent(`${player.fullName} has come of age and inherits the family legacy! (${threshold.label})`);
         if (typeof UI !== 'undefined' && UI.toast) {
@@ -18063,6 +18094,7 @@
             discoveredGiftPrefs: structuredClone(player.discoveredGiftPrefs || {}),
             regencyMode: player.regencyMode || false,
             regencyData: player.regencyData ? structuredClone(player.regencyData) : null,
+            _regencyPreSpeed: player._regencyPreSpeed || null,
             spouseRelHighDays: player.spouseRelHighDays || 0,
             heirTraits: structuredClone(player.heirTraits || []),
             dateProgress: structuredClone(player.dateProgress || {}),
@@ -18504,6 +18536,21 @@
         player.discoveredGiftPrefs = data.discoveredGiftPrefs || {};
         player.regencyMode = data.regencyMode || false;
         player.regencyData = data.regencyData || null;
+        player._regencyPreSpeed = data._regencyPreSpeed || null;
+
+        // Restart regency fast-forward if loading a regency save
+        if (player.regencyMode && player.regencyData) {
+            setTimeout(function() {
+                if (typeof Game !== 'undefined' && Game.setSpeed) {
+                    if (!player._regencyPreSpeed) player._regencyPreSpeed = 1;
+                    Game.setSpeed(300);
+                }
+                if (typeof UI !== 'undefined') {
+                    UI._regencyToastsSuppressed = true;
+                    if (UI.showRegencyFastForward) UI.showRegencyFastForward();
+                }
+            }, 100);
+        }
         player.spouseRelHighDays = data.spouseRelHighDays || 0;
         player.heirTraits = data.heirTraits || [];
         player.dateProgress = data.dateProgress || {};

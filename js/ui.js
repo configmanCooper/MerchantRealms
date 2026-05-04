@@ -7242,6 +7242,9 @@ window.UI = (function () {
         // Master toast mute — suppress all popups except critical (death, jail, bankruptcy)
         if (_toastsMuted && category !== 'critical') return;
 
+        // Regency fast-forward — suppress all toasts during time skip
+        if (UI._regencyToastsSuppressed) return;
+
         const icons = { info: 'ℹ️', warning: '⚠️', danger: '🔴', success: '✅', achievement: '🏆' };
         const id = 'toast_' + (toastId++);
 
@@ -7923,6 +7926,11 @@ window.UI = (function () {
 
     function updateRegencyOverlay() {
         if (!Player.regencyMode || !Player.regencyData) return;
+        // During fast-forward, the full-screen overlay handles display — skip the small banner
+        if (UI._regencyToastsSuppressed) {
+            _updateRegencyFastForward();
+            return;
+        }
         // Show a persistent regency bar in the HUD
         let overlay = document.getElementById('regencyOverlay');
         if (!overlay) {
@@ -7935,6 +7943,125 @@ window.UI = (function () {
         const rd = Player.regencyData;
         overlay.innerHTML = `⚰️ <b>Regency</b> | ${escapeHtml(rd.spouseName)} raises ${escapeHtml(rd.heirName)} (Age ${rd.heirAge}/${CONFIG.COMING_OF_AGE}) | 💰 ${formatGold(rd.estateGold || 0)} | <span style="color:var(--gold);">${escapeHtml(rd.thresholdLabel)}</span>`;
         overlay.style.display = '';
+    }
+
+    var _regencyFFStartTime = 0;
+
+    function showRegencyFastForward() {
+        _regencyFFStartTime = performance.now();
+        // Close any open modals
+        closeModal();
+        // Create or show the full-screen regency overlay
+        var el = document.getElementById('regencyFastForward');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'regencyFastForward';
+            el.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;background:rgba(10,8,4,0.95);display:flex;align-items:center;justify-content:center;';
+            document.body.appendChild(el);
+        }
+        el.style.display = 'flex';
+        // Hide the small regency overlay bar
+        hideRegencyOverlay();
+        _updateRegencyFastForward();
+    }
+
+    function _updateRegencyFastForward() {
+        var el = document.getElementById('regencyFastForward');
+        if (!el) return;
+        if (!Player.regencyMode || !Player.regencyData) return;
+
+        var rd = Player.regencyData;
+        var yearsToGo = Math.max(0, CONFIG.COMING_OF_AGE - rd.heirAge);
+        var daysToGo = yearsToGo * CONFIG.DAYS_PER_SEASON;
+        var ticksToGo = daysToGo * CONFIG.TICKS_PER_DAY;
+        // At 300x speed, each real second = 300 ticks
+        var realSecondsLeft = Math.ceil(ticksToGo / 300);
+        var realMin = Math.floor(realSecondsLeft / 60);
+        var realSec = realSecondsLeft % 60;
+        var realTimeStr = realMin > 0 ? (realMin + 'm ' + realSec + 's') : (realSec + 's');
+
+        // Elapsed real time
+        var elapsedMs = performance.now() - _regencyFFStartTime;
+        var elapsedSec = Math.floor(elapsedMs / 1000);
+        var elapsedMin = Math.floor(elapsedSec / 60);
+        var elapsedSecR = elapsedSec % 60;
+        var elapsedStr = elapsedMin > 0 ? (elapsedMin + 'm ' + elapsedSecR + 's') : (elapsedSecR + 's');
+
+        var heirSexIcon = rd.heirSex === 'F' ? '♀' : '♂';
+        var spouseStatus = rd.spouseAlive ? '💚 Alive' : '⚰️ Deceased';
+
+        // Recent updates (last 6)
+        var updatesHtml = '';
+        var recentUpdates = (rd.monthlyUpdates || []).slice(-6);
+        for (var u = 0; u < recentUpdates.length; u++) {
+            updatesHtml += '<div style="font-size:0.75rem;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">' + escapeHtml(recentUpdates[u].message) + '</div>';
+        }
+        if (!updatesHtml) updatesHtml = '<div style="color:#666;">Waiting for updates...</div>';
+
+        // Progress bar
+        var totalYears = CONFIG.COMING_OF_AGE - 1; // max years to wait (heir starts at age 1 min)
+        var yearsElapsed = Math.max(0, rd.heirAge - 1);
+        var pct = totalYears > 0 ? Math.min(100, Math.round((yearsElapsed / (CONFIG.COMING_OF_AGE - 1)) * 100)) : 100;
+
+        // Quirks display
+        var revealedTraitsHtml = '';
+        if (rd.revealedAtDeath) {
+            var rQuirks = rd.revealedAtDeath.quirks || [];
+            if (rQuirks.length > 0 && typeof SPOUSE_QUIRKS !== 'undefined') {
+                for (var qi = 0; qi < rQuirks.length; qi++) {
+                    var qDef = null;
+                    for (var qj = 0; qj < SPOUSE_QUIRKS.length; qj++) {
+                        if (SPOUSE_QUIRKS[qj].id === rQuirks[qi]) { qDef = SPOUSE_QUIRKS[qj]; break; }
+                    }
+                    if (qDef) revealedTraitsHtml += '<span style="margin-right:8px;font-size:0.75rem;">' + qDef.icon + ' ' + escapeHtml(qDef.name) + '</span>';
+                }
+            }
+        }
+
+        el.innerHTML = '<div style="text-align:center;max-width:550px;width:90%;">' +
+            '<div style="font-size:2rem;font-weight:bold;color:var(--gold);margin-bottom:8px;font-family:var(--font-display);">⚰️ REGENCY</div>' +
+            '<div style="color:#aaa;margin-bottom:20px;font-size:0.9rem;">Time is passing while your heir grows up...</div>' +
+
+            // Countdown
+            '<div style="background:rgba(196,163,90,0.1);border:1px solid rgba(196,163,90,0.3);border-radius:8px;padding:16px;margin-bottom:16px;">' +
+                '<div style="font-size:1.8rem;font-weight:bold;color:#fff;margin-bottom:4px;">' + heirSexIcon + ' ' + escapeHtml(rd.heirName) + ' — Age ' + rd.heirAge + '</div>' +
+                '<div style="font-size:1.1rem;color:var(--gold);margin-bottom:10px;">⏳ ' + yearsToGo + ' years to go (~' + realTimeStr + ' real time)</div>' +
+                // Progress bar
+                '<div style="background:rgba(0,0,0,0.4);border-radius:4px;height:20px;overflow:hidden;margin-bottom:8px;">' +
+                    '<div style="background:linear-gradient(90deg,#c4a35a,#e8d48b);height:100%;width:' + pct + '%;transition:width 0.5s;border-radius:4px;"></div>' +
+                '</div>' +
+                '<div style="font-size:0.75rem;color:#888;">Elapsed: ' + elapsedStr + ' | Speed: 300×</div>' +
+            '</div>' +
+
+            // Info panels
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;margin-bottom:16px;">' +
+                '<div style="border:1px solid rgba(196,163,90,0.2);border-radius:6px;padding:10px;">' +
+                    '<div style="font-weight:bold;margin-bottom:4px;font-size:0.85rem;">👩 Regent: ' + escapeHtml(rd.spouseName) + '</div>' +
+                    '<div style="font-size:0.8rem;">Status: ' + spouseStatus + '</div>' +
+                    '<div style="font-size:0.8rem;">Outcome: <span style="color:var(--gold);">' + escapeHtml(rd.thresholdLabel) + '</span></div>' +
+                    '<div style="font-size:0.8rem;">Score: ' + rd.regencyScore + '/100</div>' +
+                    revealedTraitsHtml +
+                '</div>' +
+                '<div style="border:1px solid rgba(196,163,90,0.2);border-radius:6px;padding:10px;">' +
+                    '<div style="font-weight:bold;margin-bottom:4px;font-size:0.85rem;">💰 Estate</div>' +
+                    '<div style="font-size:0.8rem;">Gold: ' + formatGold(rd.estateGold || 0) + '</div>' +
+                    '<div style="font-size:0.8rem;">🏠 Buildings: ' + rd.buildingsMaintained + ' maintained</div>' +
+                '</div>' +
+            '</div>' +
+
+            // Updates
+            '<div style="border:1px solid rgba(196,163,90,0.1);border-radius:6px;padding:8px;text-align:left;max-height:140px;overflow-y:auto;">' +
+                '<div style="font-weight:bold;margin-bottom:4px;font-size:0.85rem;">📜 Recent Updates</div>' +
+                updatesHtml +
+            '</div>' +
+        '</div>';
+    }
+
+    function hideRegencyFastForward() {
+        var el = document.getElementById('regencyFastForward');
+        if (el) el.remove();
+        // Also remove the small overlay
+        hideRegencyOverlay();
     }
 
     function hideRegencyOverlay() {
@@ -16984,6 +17111,8 @@ window.UI = (function () {
         askTavernAbout,
         observePerson,
         showRegencyScreen,
+        showRegencyFastForward,
+        hideRegencyFastForward,
         buyWeapon,
         buyArmor,
         unequipWeapon: unequipWeaponUI,
