@@ -15,7 +15,7 @@ Trade goods between kingdoms, build a merchant empire, navigate politics, hire w
 - ⚖️ Dynamic trade economy with supply/demand
 - 🏠 Buy property, build businesses, hire workers
 - ⚔️ Kingdom politics, wars, laws, and diplomacy
-- 👨‍👩‍👧‍👦 Family system with marriage, children, and inheritance
+- 👨‍👩‍👧‍👦 Family system with marriage, children, inheritance, and regency
 - 🎭 6 unique origin stories with special objectives
 - 📜 19-chapter interactive tutorial
 - 💾 5 save slots with download/upload support

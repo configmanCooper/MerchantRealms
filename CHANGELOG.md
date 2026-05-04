@@ -4,6 +4,39 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.90.0] - Regency Overhaul, Child Naming Fix & Post-Death State Reset
+
+### Fixed — Regency System
+- **Sick banner no longer persists during regency** — health alert hidden when entering regency screen/fast-forward and cleared on regency end
+- **Heir exits regency healthy** — illnesses, injuries, and death cause cleared when regency ends
+- **Funeral lock no longer blocks post-regency gameplay** — death notifications suppressed during regency FF; funeral lock cleared on regency end
+- **Save/Load/Settings/Menu always accessible** — whitelisted through funeral planning lock and fixed during regency FF (buttons now pause simulation, open modal, resume on close)
+- **Regency UI updates every year** — progress overlay now refreshes every ~90 game days instead of every ~300
+- **Accurate time estimate** — uses actual elapsed pace to extrapolate remaining time, with 1.5x weighting for regency years past 12
+- **Heir family properly rebuilt** — siblings, grandparents, great-grandparents, uncles, and aunts all populated correctly on regency end
+- **Self removed from friends list** after inheritance
+
+### Fixed — Child System
+- **Child naming now works** — newborns registered in person index cache so `confirmChildName()` can find them
+- **Family panel updates immediately** after naming a child (no longer waits for next daily tick)
+- **Age displays correctly** — age 0 no longer shows as "?" (was falsy in JS)
+- **Children show "child" occupation** instead of "worker" or "none" when under coming-of-age
+
+### Fixed — Heir Selection & Death
+- **Cannot X out of heir selection** — close button hidden on succession modal
+- **Loading a game resets all state** — defeat screen, funeral lock, regency FF, and health alert all cleared on load
+
+### Improved — Regency Performance
+- **10 days per frame** batching during regency fast-forward
+- **30+ engine subsystems throttled** during regency FF (every 3-7 days instead of daily)
+- **Tick cache rebuilt every 3 days** during FF instead of every tick
+
+### Fixed — Other
+- `findResource` → `findResourceById` in `tickFoodDecay`
+- Court petition kingdom display no longer shows "Unknown" for revolt kingdoms
+- Deceased personal guards automatically dismissed
+- Manage Caravans button works again after inheritance
+
 ## [0.89.1] - Funeral Overhaul, Favor System & Secret Beneficiary
 
 ### Added — Death & Funeral System
