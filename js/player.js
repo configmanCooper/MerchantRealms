@@ -6822,6 +6822,24 @@
                     _abandoned: true,
                 };
                 Engine.logEvent(player.fullName + ' has died. Young ' + selectedNpc.firstName + ' is orphaned.');
+
+                // Transfer identity to heir immediately so the UI reflects the new character
+                player.firstName = selectedNpc.firstName;
+                player.lastName = selectedNpc.lastName;
+                player.sex = selectedNpc.sex;
+                player.fullName = selectedNpc.firstName + ' ' + selectedNpc.lastName;
+                player.age = selectedNpc.age;
+                player.alive = true;
+                player.deathCause = null;
+
+                // Clear the dead player's conditions
+                player.health = 100;
+                player.illnesses = [];
+                player.injuries = [];
+                player.hunger = HUNGER_CONFIG.START;
+                player.thirst = typeof THIRST_CONFIG !== 'undefined' ? (THIRST_CONFIG.START || 80) : 80;
+                player.energy = 100;
+                player.jailedUntilDay = 0;
             }
         } else {
             // Adult child heir
@@ -16284,6 +16302,25 @@
         };
 
         Engine.logEvent(`${player.fullName} has passed. ${spouse.firstName} serves as regent for young ${heir.firstName}.`);
+
+        // Transfer identity to heir immediately so the UI reflects the new character
+        player.firstName = heir.firstName;
+        player.lastName = heir.lastName;
+        player.sex = heir.sex;
+        player.fullName = heir.firstName + ' ' + heir.lastName;
+        player.age = heir.age;
+        player.alive = true;
+        player.deathCause = null;
+
+        // Clear the dead player's conditions — the heir is a healthy child
+        player.health = 100;
+        player.illnesses = [];
+        player.injuries = [];
+        player.hunger = HUNGER_CONFIG.START;
+        player.thirst = typeof THIRST_CONFIG !== 'undefined' ? (THIRST_CONFIG.START || 80) : 80;
+        player.energy = 100;
+        player.jailedUntilDay = 0;
+
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`⚰️ You have passed. ${spouse.firstName} will raise ${heir.firstName} until they come of age.`, 'warning', 'my_actions');
         }
