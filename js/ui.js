@@ -8056,7 +8056,37 @@ window.UI = (function () {
                 '<div style="font-weight:bold;margin-bottom:4px;font-size:0.85rem;">📜 Recent Updates</div>' +
                 updatesHtml +
             '</div>' +
+
+            // System buttons
+            '<div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">' +
+                '<button id="regFF_save" style="padding:6px 16px;background:rgba(196,163,90,0.15);border:1px solid var(--gold);border-radius:4px;color:var(--gold);cursor:pointer;font-size:0.8rem;">💾 Save</button>' +
+                '<button id="regFF_load" style="padding:6px 16px;background:rgba(196,163,90,0.15);border:1px solid var(--gold);border-radius:4px;color:var(--gold);cursor:pointer;font-size:0.8rem;">📂 Load</button>' +
+                '<button id="regFF_settings" style="padding:6px 16px;background:rgba(196,163,90,0.15);border:1px solid var(--gold);border-radius:4px;color:var(--gold);cursor:pointer;font-size:0.8rem;">⚙️ Settings</button>' +
+                '<button id="regFF_menu" style="padding:6px 16px;background:rgba(196,163,90,0.15);border:1px solid rgba(200,80,80,0.5);border-radius:4px;color:#c85050;cursor:pointer;font-size:0.8rem;">🏠 Main Menu</button>' +
+            '</div>' +
         '</div>';
+
+        // Bind buttons (re-bound each update since innerHTML is replaced)
+        var btnSave = document.getElementById('regFF_save');
+        var btnLoad = document.getElementById('regFF_load');
+        var btnSettings = document.getElementById('regFF_settings');
+        var btnMenu = document.getElementById('regFF_menu');
+        if (btnSave) btnSave.addEventListener('click', function() {
+            if (typeof Game !== 'undefined' && Game.showSaveSlotPicker) Game.showSaveSlotPicker();
+        });
+        if (btnLoad) btnLoad.addEventListener('click', function() {
+            if (typeof Game !== 'undefined' && Game.showLoadSlotPicker) Game.showLoadSlotPicker();
+        });
+        if (btnSettings) btnSettings.addEventListener('click', function() {
+            openSettings();
+        });
+        if (btnMenu) btnMenu.addEventListener('click', function() {
+            if (confirm('Return to main menu? Unsaved progress will be lost.')) {
+                // Clear regency fast-forward state
+                UI._regencyToastsSuppressed = false;
+                if (typeof Game !== 'undefined' && Game.showTitleScreen) Game.showTitleScreen();
+            }
+        });
     }
 
     function hideRegencyFastForward() {
