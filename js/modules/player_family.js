@@ -2864,6 +2864,11 @@
             parentSkills: player.skills ? { ...player.skills } : {},
         };
 
+        // Clear previous character's illnesses/injuries — heir is healthy
+        player.illnesses = [];
+        player.injuries = [];
+        player.health = 100;
+
         Engine.logEvent(`${player.fullName} has passed. ${spouse.firstName} serves as regent for young ${heir.firstName}.`);
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`⚰️ You have passed. ${spouse.firstName} will raise ${heir.firstName} until they come of age.`, 'warning', 'my_actions');

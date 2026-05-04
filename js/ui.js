@@ -9580,6 +9580,12 @@ window.UI = (function () {
         var alertText = document.getElementById('healthAlertText');
         if (!alertEl || typeof Player === 'undefined') return;
 
+        // Hide during regency — heir is growing up, not sick
+        if (Player.regencyMode) {
+            alertEl.classList.remove('visible');
+            return;
+        }
+
         var isSick = Player.illnesses && Player.illnesses.length > 0;
         var isInjured = Player.injuries && Player.injuries.length > 0;
         var healthLow = (Player.health != null && Player.health < 50);
