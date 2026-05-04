@@ -14347,6 +14347,7 @@
 
                 const w = Engine.getWorld();
                 if (w && w.people) w.people.push(child);
+                if (Engine.registerPerson) Engine.registerPerson(child);
 
                 // Assign child social rank: one rank below the highest-ranked parent
                 var parentMaxRank = 0;

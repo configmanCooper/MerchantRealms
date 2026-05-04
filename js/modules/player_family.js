@@ -867,6 +867,7 @@
 
                 var w = Engine.getWorld();
                 if (w && w.people) w.people.push(newChild);
+                if (Engine.registerPerson) Engine.registerPerson(newChild);
 
                 var parentMaxRank = 0;
                 if (player.socialRank) {
