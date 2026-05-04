@@ -32917,7 +32917,14 @@
         var rng = Engine.getRng();
         if (!rng) return { chance: 0, riskLevel: 'none', isWartime: false, isSea: false };
 
-        var isSea = !!player.travelBySea;
+        // Check current segment type — mixed routes have both land and sea segments
+        var isSea = false;
+        if (player.travelBySea && player.travelRoute && player.travelRoute.length > 0) {
+            var segIdx = Math.min(Math.floor((player.travelProgress || 0) * player.travelRoute.length), player.travelRoute.length - 1);
+            isSea = player.travelRoute[segIdx] && player.travelRoute[segIdx].type === 'sea';
+        } else if (player.travelBySea) {
+            isSea = true; // fallback if no route segments
+        }
         var isWartime = isInWarzone();
         var chance;
 
