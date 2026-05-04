@@ -7861,6 +7861,9 @@ window.UI = (function () {
 
     function showRegencyScreen() {
         if (!Player.regencyMode || !Player.regencyData) return;
+        // Hide health alert banner — heir is not sick
+        var _ha = document.getElementById('healthAlert');
+        if (_ha) _ha.classList.remove('visible');
         const rd = Player.regencyData;
         const threshold = (typeof REGENCY_THRESHOLDS !== 'undefined') ?
             REGENCY_THRESHOLDS.find(t => rd.regencyScore >= t.min && rd.regencyScore <= t.max) : null;
@@ -7986,6 +7989,9 @@ window.UI = (function () {
         _regencyFFStartTime = performance.now();
         // Close any open modals
         closeModal();
+        // Hide health alert banner — heir is not sick
+        var _ha = document.getElementById('healthAlert');
+        if (_ha) _ha.classList.remove('visible');
         // Create or show the full-screen regency overlay
         var el = document.getElementById('regencyFastForward');
         if (!el) {
