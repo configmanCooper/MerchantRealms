@@ -1174,7 +1174,8 @@ window.Renderer = (function () {
 
             const quality = road.quality || 1;
             const safe = road.safe !== false;
-            const width = quality * 1.5 + 0.5;
+            // Road width varies more by quality for visual differentiation
+            const width = quality >= 3 ? 4.5 : quality >= 2 ? 3.0 : 1.8;
 
             let hasWP = road.waypoints && road.waypoints.length >= 2;
 
@@ -1444,7 +1445,7 @@ window.Renderer = (function () {
                     }
                 }
             } else {
-                // No bridge data — normal road rendering
+                // No bridge data — textured road rendering by quality
                 if (!safe) {
                     ctx.strokeStyle = '#8b4513';
                     ctx.setLineDash([6, 4]);
@@ -1453,10 +1454,55 @@ window.Renderer = (function () {
                     ctx.lineWidth = width + 1;
                     drawWaypointPath(road.waypoints);
                     ctx.setLineDash([]);
-                } else {
-                    ctx.strokeStyle = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
+                } else if (quality >= 3) {
+                    // Stone road: border shadow + main stone + stone block dash pattern
+                    ctx.strokeStyle = 'rgba(60,55,45,0.3)';
+                    ctx.lineWidth = width + 2;
                     ctx.setLineDash([]);
                     drawWaypointPath(road.waypoints);
+                    // Main stone surface
+                    ctx.strokeStyle = '#9a9080';
+                    ctx.lineWidth = width;
+                    drawWaypointPath(road.waypoints);
+                    // Stone block lines (lighter dash on top)
+                    ctx.strokeStyle = 'rgba(170,160,140,0.5)';
+                    ctx.lineWidth = width * 0.6;
+                    ctx.setLineDash([3, 2]);
+                    drawWaypointPath(road.waypoints);
+                    ctx.setLineDash([]);
+                } else if (quality >= 2) {
+                    // Packed gravel road: subtle border + gravel color + slight texture
+                    ctx.strokeStyle = 'rgba(70,60,40,0.2)';
+                    ctx.lineWidth = width + 1.5;
+                    ctx.setLineDash([]);
+                    drawWaypointPath(road.waypoints);
+                    // Main gravel surface
+                    ctx.strokeStyle = '#8b7355';
+                    ctx.lineWidth = width;
+                    drawWaypointPath(road.waypoints);
+                    // Gravel speckle (subtle dashed overlay)
+                    ctx.strokeStyle = 'rgba(160,140,110,0.3)';
+                    ctx.lineWidth = width * 0.5;
+                    ctx.setLineDash([1, 3]);
+                    drawWaypointPath(road.waypoints);
+                    ctx.setLineDash([]);
+                } else {
+                    // Dirt path: narrow, earthy brown, slightly irregular via dash
+                    ctx.strokeStyle = 'rgba(80,60,35,0.15)';
+                    ctx.lineWidth = width + 1;
+                    ctx.setLineDash([]);
+                    drawWaypointPath(road.waypoints);
+                    // Main dirt surface
+                    ctx.strokeStyle = '#6b5b4f';
+                    ctx.lineWidth = width;
+                    ctx.setLineDash([]);
+                    drawWaypointPath(road.waypoints);
+                    // Dirt texture (stippled overlay)
+                    ctx.strokeStyle = 'rgba(140,120,80,0.25)';
+                    ctx.lineWidth = width * 0.4;
+                    ctx.setLineDash([1, 4]);
+                    drawWaypointPath(road.waypoints);
+                    ctx.setLineDash([]);
                 }
             }
 
