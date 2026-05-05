@@ -974,6 +974,120 @@ window.Renderer = (function () {
 
         // Blit cached terrain to main canvas (offset by cache origin)
         ctx.drawImage(offscreenTerrain, _terrainCacheStartCol * ts, _terrainCacheStartRow * ts);
+
+        // ── Animated beach waves (drawn as overlay so terrain cache stays static) ──
+        if (camera.zoom >= CONFIG.DECORATION_SKIP_ZOOM) {
+            var waveTime = frameCount * 0.04;
+            // Wave position oscillates 0..1 (0 = at shore, 1 = pulled back)
+            var waveCycle = (Math.sin(waveTime) + 1) * 0.5;
+            var waveCycle2 = (Math.sin(waveTime * 0.7 + 1.5) + 1) * 0.5;
+
+            for (var r = startRow; r <= endRow; r++) {
+                for (var c = startCol; c <= endCol; c++) {
+                    var tileId = terrain[r * terrainWidth + c];
+                    if (tileId !== 2) continue; // only water tiles
+
+                    // Check if this water tile borders sand (beach shoreline)
+                    var bordersSand = false;
+                    var sandTop = false, sandBot = false, sandLeft = false, sandRight = false;
+                    if (r > 0 && terrain[(r - 1) * terrainWidth + c] === 5) { bordersSand = true; sandTop = true; }
+                    if (r < terrainHeight - 1 && terrain[(r + 1) * terrainWidth + c] === 5) { bordersSand = true; sandBot = true; }
+                    if (c > 0 && terrain[r * terrainWidth + (c - 1)] === 5) { bordersSand = true; sandLeft = true; }
+                    if (c < terrainWidth - 1 && terrain[r * terrainWidth + (c + 1)] === 5) { bordersSand = true; sandRight = true; }
+                    if (!bordersSand) continue;
+
+                    var wx = c * ts;
+                    var wy = r * ts;
+                    var h = tileHash(c, r);
+                    // Per-tile phase offset so waves don't all move in lockstep
+                    var phaseOff = h * Math.PI * 2;
+                    var localWave = (Math.sin(waveTime + phaseOff) + 1) * 0.5;
+                    var localWave2 = (Math.sin(waveTime * 0.7 + 1.5 + phaseOff) + 1) * 0.5;
+
+                    // Draw foam lines on edges facing sand
+                    ctx.save();
+                    ctx.globalAlpha = 0.45;
+
+                    if (sandTop) {
+                        // Foam line near top edge, oscillating vertically
+                        var foamY = wy + 1 + localWave * ts * 0.35;
+                        var foamY2 = wy + 2 + localWave2 * ts * 0.25;
+                        ctx.strokeStyle = 'rgba(220,235,255,0.7)';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.moveTo(wx + 1, foamY);
+                        // Gentle wave curve
+                        ctx.quadraticCurveTo(wx + ts * 0.3, foamY - 1.5, wx + ts * 0.5, foamY);
+                        ctx.quadraticCurveTo(wx + ts * 0.7, foamY + 1.5, wx + ts - 1, foamY);
+                        ctx.stroke();
+                        // Second thinner foam line
+                        ctx.strokeStyle = 'rgba(200,220,245,0.4)';
+                        ctx.lineWidth = 0.7;
+                        ctx.beginPath();
+                        ctx.moveTo(wx + 2, foamY2);
+                        ctx.quadraticCurveTo(wx + ts * 0.4, foamY2 + 1, wx + ts * 0.6, foamY2);
+                        ctx.quadraticCurveTo(wx + ts * 0.8, foamY2 - 1, wx + ts - 2, foamY2);
+                        ctx.stroke();
+                    }
+                    if (sandBot) {
+                        var foamY = wy + ts - 1 - localWave * ts * 0.35;
+                        var foamY2 = wy + ts - 2 - localWave2 * ts * 0.25;
+                        ctx.strokeStyle = 'rgba(220,235,255,0.7)';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.moveTo(wx + 1, foamY);
+                        ctx.quadraticCurveTo(wx + ts * 0.3, foamY + 1.5, wx + ts * 0.5, foamY);
+                        ctx.quadraticCurveTo(wx + ts * 0.7, foamY - 1.5, wx + ts - 1, foamY);
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(200,220,245,0.4)';
+                        ctx.lineWidth = 0.7;
+                        ctx.beginPath();
+                        ctx.moveTo(wx + 2, foamY2);
+                        ctx.quadraticCurveTo(wx + ts * 0.4, foamY2 - 1, wx + ts * 0.6, foamY2);
+                        ctx.quadraticCurveTo(wx + ts * 0.8, foamY2 + 1, wx + ts - 2, foamY2);
+                        ctx.stroke();
+                    }
+                    if (sandLeft) {
+                        var foamX = wx + 1 + localWave * ts * 0.35;
+                        var foamX2 = wx + 2 + localWave2 * ts * 0.25;
+                        ctx.strokeStyle = 'rgba(220,235,255,0.7)';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.moveTo(foamX, wy + 1);
+                        ctx.quadraticCurveTo(foamX - 1.5, wy + ts * 0.3, foamX, wy + ts * 0.5);
+                        ctx.quadraticCurveTo(foamX + 1.5, wy + ts * 0.7, foamX, wy + ts - 1);
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(200,220,245,0.4)';
+                        ctx.lineWidth = 0.7;
+                        ctx.beginPath();
+                        ctx.moveTo(foamX2, wy + 2);
+                        ctx.quadraticCurveTo(foamX2 + 1, wy + ts * 0.4, foamX2, wy + ts * 0.6);
+                        ctx.quadraticCurveTo(foamX2 - 1, wy + ts * 0.8, foamX2, wy + ts - 2);
+                        ctx.stroke();
+                    }
+                    if (sandRight) {
+                        var foamX = wx + ts - 1 - localWave * ts * 0.35;
+                        var foamX2 = wx + ts - 2 - localWave2 * ts * 0.25;
+                        ctx.strokeStyle = 'rgba(220,235,255,0.7)';
+                        ctx.lineWidth = 1.2;
+                        ctx.beginPath();
+                        ctx.moveTo(foamX, wy + 1);
+                        ctx.quadraticCurveTo(foamX + 1.5, wy + ts * 0.3, foamX, wy + ts * 0.5);
+                        ctx.quadraticCurveTo(foamX - 1.5, wy + ts * 0.7, foamX, wy + ts - 1);
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(200,220,245,0.4)';
+                        ctx.lineWidth = 0.7;
+                        ctx.beginPath();
+                        ctx.moveTo(foamX2, wy + 2);
+                        ctx.quadraticCurveTo(foamX2 - 1, wy + ts * 0.4, foamX2, wy + ts * 0.6);
+                        ctx.quadraticCurveTo(foamX2 + 1, wy + ts * 0.8, foamX2, wy + ts - 2);
+                        ctx.stroke();
+                    }
+
+                    ctx.restore();
+                }
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
