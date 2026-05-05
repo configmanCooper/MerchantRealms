@@ -40,6 +40,7 @@
     var _typing = false;         // true while typewriter running
     var _dialogQueue = [];       // queued dialogData objects
     var _keyHandler = null;      // bound keydown listener
+    var _savedSpeed = null;      // speed before dialog opened (for auto-slowdown)
     var _currentAudio = null;    // currently playing Audio element (pre-gen MP3)
 
     // ── TTS Voice System ──────────────────────────────────────
@@ -447,6 +448,16 @@
         _currentDialog = dialogData;
         _lineIndex = (typeof startLine === 'number' && startLine > 0) ? startLine : 0;
 
+        // Auto-slow to 1× when a conversation opens (leave paused alone)
+        // Only save on first dialog in a chain — don't overwrite with already-slowed speed
+        if (_savedSpeed === null && typeof Game !== 'undefined' && Game.getSpeed) {
+            var curSpeed = Game.getSpeed();
+            if (curSpeed > 1) {
+                _savedSpeed = curSpeed;
+                Game.setSpeed(1);
+            }
+        }
+
         // Portrait — try to use actual NPC portrait for dynamic skin tones
         var portraitKey = dialogData.portrait || dialogData.speaker;
         var emoji = STORY_PORTRAITS[portraitKey] || null;
@@ -543,6 +554,15 @@
         if (_overlay) {
             _overlay.classList.remove('sd-visible');
             _overlay.style.display = 'none';
+        }
+
+        // Restore previous speed if we slowed it down
+        if (_savedSpeed !== null && typeof Game !== 'undefined' && Game.setSpeed) {
+            // Only restore if no more dialogs are queued
+            if (_dialogQueue.length === 0) {
+                Game.setSpeed(_savedSpeed);
+                _savedSpeed = null;
+            }
         }
     }
 
