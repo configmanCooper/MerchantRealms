@@ -1809,7 +1809,7 @@
             var _ks = kingdoms[_ksi];
             var _kp = _ks.kingPersonality || {};
             var _ksTowns = towns.filter(function(t) { return _ks.territories.has(t.id); });
-            var _capitalTown = towns.find(function(t) { return t.id === _ks.capitalId; });
+            var _capitalTown = towns.find(function(t) { return t.id === _ks.capitalTownId; });
 
             // ── Starting Stockpile ──
             // All kingdoms get baseline food/goods; personality shifts the amounts
@@ -25283,7 +25283,7 @@
         // Start new feast (NPC kingdom auto-feast — skip if player is king, they schedule manually)
         var _isPlayerKingForFeast = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
         if (!_isPlayerKingForFeast && !k._activeFeast && !k._pendingFeast && !k._pendingCourt && !(k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) && world.day >= k._nextFeastDay) {
-            var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
+            var feastTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
             if (!feastTownId) return;
             var feastTown = findTown(feastTownId);
             var feastTownName = feastTown ? feastTown.name : 'the capital';
@@ -26201,7 +26201,7 @@
         if (k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) return null;
         if (k._pendingCourt) return null;
 
-        var feastTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
+        var feastTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
         if (!feastTownId) return null;
         var feastTown = findTown(feastTownId);
         var feastTownName = feastTown ? feastTown.name : 'the capital';
@@ -26371,7 +26371,7 @@
         });
         var foreignKingdoms = getKingdoms().filter(function(fk) { return fk.id !== k.id; });
 
-        var courtTownId = k.capital || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
+        var courtTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
         var courtTown = courtTownId ? findTown(courtTownId) : null;
         var courtTownName = courtTown ? courtTown.name : 'the capital';
 
@@ -29297,7 +29297,7 @@
                 var _eks = world.kingdoms[_eksi];
                 if (!_eks._employees) _eks._employees = { procurers: [], guards: [], royalGuards: [] };
                 var _eksTowns = world.towns.filter(function(t) { return _eks.territories.has(t.id); });
-                var _eCapital = world.towns.find(function(t) { return t.id === _eks.capitalId; });
+                var _eCapital = world.towns.find(function(t) { return t.id === _eks.capitalTownId; });
 
                 // Guards: 2 per town
                 for (var _egi = 0; _egi < _eksTowns.length; _egi++) {

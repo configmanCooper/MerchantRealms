@@ -509,7 +509,7 @@ window.Renderer = (function () {
                 // Feast
                 if (k._activeFeast && k._activeFeast.townId === townId) { indicators += '🍷'; }
                 // Court (active interactive session or formal court)
-                if ((k._activeCourtSession || k._courtSession) && (k.capital === townId || k.capitalTownId === townId)) { indicators += '⚖️'; }
+                if ((k._activeCourtSession || k._courtSession) && k.capitalTownId === townId) { indicators += '⚖️'; }
                 // Tournament
                 if (k.tournament && k.tournament.active && k.tournament.townId === townId) { indicators += '⚔️'; }
             }

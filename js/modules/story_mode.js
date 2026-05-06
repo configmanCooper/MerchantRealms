@@ -741,7 +741,7 @@ var StoryMode = (function () {
                 var _valdrenK2 = _valdrenId && Engine.findKingdom ? Engine.findKingdom(_valdrenId) : null;
                 if (_valdrenK2) {
                     var _courtDay = Engine.getDay() + 4;
-                    var _courtTownId = _valdrenK2.capital || _valdrenK2.capitalTownId || (_valdrenK2.territories && _valdrenK2.territories.size > 0 ? Array.from(_valdrenK2.territories)[0] : null);
+                    var _courtTownId = _valdrenK2.capitalTownId || (_valdrenK2.territories && _valdrenK2.territories.size > 0 ? Array.from(_valdrenK2.territories)[0] : null);
                     var _courtTownName = 'the capital';
                     try { var _ct = Engine.findTown(_courtTownId); if (_ct) _courtTownName = _ct.name; } catch(e2) {}
                     _valdrenK2._pendingCourt = {
@@ -2176,7 +2176,7 @@ var StoryMode = (function () {
                         }
                         if (_feastObj && _feastObj.done && _courtObj && !_courtObj.done && !valdren._pendingCourt) {
                             var _courtDay16 = Engine.getDay() + 4;
-                            var _ct16Id = valdren.capital || valdren.capitalTownId || (valdren.territories && valdren.territories.size > 0 ? Array.from(valdren.territories)[0] : null);
+                            var _ct16Id = valdren.capitalTownId || (valdren.territories && valdren.territories.size > 0 ? Array.from(valdren.territories)[0] : null);
                             var _ct16Name = 'the capital';
                             try { var _ct16 = Engine.findTown(_ct16Id); if (_ct16) _ct16Name = _ct16.name; } catch(e3) {}
                             valdren._pendingCourt = {

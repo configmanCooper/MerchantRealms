@@ -9910,7 +9910,7 @@
         if (!bt) return { success: false, message: 'Unknown building type.' };
 
         // Check constraints
-        if (bt.capitalOnly && town.id !== kingdom.capital) return { success: false, message: bt.name + ' can only be built in the capital.' };
+        if (bt.capitalOnly && town.id !== kingdom.capitalTownId) return { success: false, message: bt.name + ' can only be built in the capital.' };
         if (bt.portOnly) {
             var isPort = town.isPort || (town.buildings && town.buildings.some(function(b) { return b.type === 'dock' && b.active; }));
             if (!isPort) return { success: false, message: bt.name + ' requires a port town.' };

@@ -1020,7 +1020,7 @@ function openNobilityDialog() {
             try {
                 var _ckk2 = Engine.findKingdom(_ckId);
                 if (_ckk2) {
-                    var _ncdTown = Engine.findTown(_ckk2.capital || _ckk2.capitalTownId || '');
+                    var _ncdTown = Engine.findTown(_ckk2.capitalTownId || '');
                     if (_ncdTown) _ncdTownName = _ncdTown.name;
                 }
             } catch (e) {}
@@ -1258,7 +1258,7 @@ function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
         }
     } catch(e) {}
     if (_courtSession) {
-        var _courtTownId = _ck ? (_ck.capital || _ck.capitalTownId) : null;
+        var _courtTownId = _ck ? _ck.capitalTownId : null;
         var _playerAtCourt = !_courtTownId || Player.townId === _courtTownId;
         html += '<div style="background:rgba(80,120,200,0.1);border:1px solid rgba(80,120,200,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
         html += '<h3 style="margin:0 0 8px 0;font-size:0.95rem;color:#5dade2;">⚖️ Court in Session — ' + _courtSession._playerActionsLeft + ' actions left</h3>';
