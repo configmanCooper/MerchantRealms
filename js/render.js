@@ -128,6 +128,7 @@ window.Renderer = (function () {
         _loadTerrainTexture(0, 'base_grass_soft.png'); // grass
         _loadTerrainTexture(2, 'base_water.png');       // water
         _loadTerrainTexture(4, 'base_hills.png');       // hills
+        _loadTerrainTexture(5, 'base_sand.png');        // sand/desert
     }
 
     // Draw terrain type as one continuous pattern over matching tiles using clipping
@@ -303,6 +304,7 @@ window.Renderer = (function () {
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
+            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
         }
 
         for (var r = cSR; r <= cER; r++) {
@@ -982,6 +984,7 @@ window.Renderer = (function () {
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
+                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
             }
 
             for (var r = cSR; r <= cER; r++) {
