@@ -104,56 +104,62 @@ window.Renderer = (function () {
         return h;
     }
 
-    // ── Grass texture system ──
-    // Loads base_grass_soft.png and uses createPattern for continuous world-space fill
-    let _grassTextureImg = null;
-    let _grassPattern = null;
-    let _grassTextureLoaded = false;
-    let _grassTextureAttempted = false;
+    // ── Terrain texture system ──
+    // Loads terrain textures and uses createPattern for continuous world-space fill
+    let _terrainTextures = {}; // { tileId: { img, pattern, loaded, attempted } }
 
-    function _loadGrassTexture() {
-        if (_grassTextureAttempted) return;
-        _grassTextureAttempted = true;
+    function _loadTerrainTexture(tileId, filename) {
+        if (_terrainTextures[tileId] && _terrainTextures[tileId].attempted) return;
+        _terrainTextures[tileId] = { img: null, pattern: null, loaded: false, attempted: true };
+        var entry = _terrainTextures[tileId];
         var img = new Image();
         img.onload = function () {
-            _grassTextureImg = img;
-            _grassTextureLoaded = true;
-            terrainDirty = true; // force redraw with texture
+            entry.img = img;
+            entry.loaded = true;
+            terrainDirty = true;
         };
         img.onerror = function () {
-            _grassTextureLoaded = false; // fallback to flat color
+            entry.loaded = false;
         };
-        img.src = 'images/terrain/base_grass_soft.png?v=' + Date.now();
+        img.src = 'images/terrain/' + filename + '?v=' + Date.now();
     }
 
-    // Draw grass as one continuous pattern over all grass tiles using clipping
-    function _fillGrassTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
-        if (!_grassTextureLoaded || !_grassTextureImg) return false;
+    function _loadAllTerrainTextures() {
+        _loadTerrainTexture(0, 'base_grass_soft.png'); // grass
+        _loadTerrainTexture(4, 'base_hills.png');      // hills
+    }
+
+    // Draw terrain type as one continuous pattern over matching tiles using clipping
+    function _fillTerrainTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, tileId) {
+        var tex = _terrainTextures[tileId];
+        if (!tex || !tex.loaded || !tex.img) return false;
 
         // Create pattern on first use
-        if (!_grassPattern) {
-            _grassPattern = targetCtx.createPattern(_grassTextureImg, 'repeat');
+        if (!tex.pattern) {
+            tex.pattern = targetCtx.createPattern(tex.img, 'repeat');
         }
 
         // Scale: one texture repeat covers ~20 tiles
-        var patternScale = (ts * 20) / _grassTextureImg.width;
+        var patternScale = (ts * 20) / tex.img.width;
         var mat = new DOMMatrix();
-        // Anchor to world origin so pattern is continuous across cache rebuilds
         mat.translateSelf(-cSC * ts, -cSR * ts);
         mat.scaleSelf(patternScale, patternScale);
-        _grassPattern.setTransform(mat);
+        tex.pattern.setTransform(mat);
 
-        // Build a clipping region from all grass tiles, then fill once
+        // Build a clipping region from matching tiles, then fill once
         targetCtx.save();
         targetCtx.beginPath();
+        var found = false;
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
-                if (terrain[r * terrainWidth + c] !== 0) continue;
+                if (terrain[r * terrainWidth + c] !== tileId) continue;
                 targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
+                found = true;
             }
         }
+        if (!found) { targetCtx.restore(); return false; }
         targetCtx.clip();
-        targetCtx.fillStyle = _grassPattern;
+        targetCtx.fillStyle = tex.pattern;
         targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
         targetCtx.restore();
 
@@ -245,8 +251,8 @@ window.Renderer = (function () {
         terrainDirty = true;
         _sceneCacheDirty = true;
 
-        // Start loading grass texture
-        if (CONFIG.USE_TEXTURED_TERRAIN) _loadGrassTexture();
+        // Start loading terrain textures
+        if (CONFIG.USE_TEXTURED_TERRAIN) _loadAllTerrainTextures();
 
         // Pre-warm terrain cache so first pan/zoom is smooth
         _prewarmTerrainCache();
@@ -290,25 +296,28 @@ window.Renderer = (function () {
         var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
         var terrain = worldData.terrain;
 
-        // Textured grass: continuous pattern fill (before per-tile loop)
-        var _useGrassTexture = CONFIG.USE_TEXTURED_TERRAIN && _grassTextureLoaded;
-        if (_useGrassTexture) {
-            _fillGrassTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);
+        // Textured terrain: continuous pattern fill (before per-tile loop)
+        var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
+        if (_useTextures) {
+            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
+            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
         }
 
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
                 var tileId = terrain[r * terrainWidth + c];
-                // Skip grass tiles if texture handled them
-                if (tileId === 0 && _useGrassTexture) continue;
-                var baseColor = getTerrainColor(tileId);
+                var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
                 var h = tileHash(c, r);
                 var shift = Math.floor((h - 0.5) * 20);
                 var x = (c - cSC) * ts;
                 var y = (r - cSR) * ts;
 
-                offscreenCtx.fillStyle = rgbShift(baseColor, shift);
-                offscreenCtx.fillRect(x, y, ts, ts);
+                // Skip flat fill if texture already drew this tile type
+                if (!_texHandled) {
+                    var baseColor = getTerrainColor(tileId);
+                    offscreenCtx.fillStyle = rgbShift(baseColor, shift);
+                    offscreenCtx.fillRect(x, y, ts, ts);
+                }
 
                 // Include decorations in pre-warm for visual completeness
                 if (tileId === 1) {
@@ -965,25 +974,28 @@ window.Renderer = (function () {
             var lowZoom = camera.zoom < CONFIG.DECORATION_SKIP_ZOOM;
             var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
 
-            // Textured grass: continuous pattern fill (before per-tile loop)
-            var _useGrassTexture = CONFIG.USE_TEXTURED_TERRAIN && _grassTextureLoaded;
-            if (_useGrassTexture) {
-                _fillGrassTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);
+            // Textured terrain: continuous pattern fill (before per-tile loop)
+            var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
+            if (_useTextures) {
+                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
+                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
             }
 
             for (var r = cSR; r <= cER; r++) {
                 for (var c = cSC; c <= cEC; c++) {
                     var tileId = terrain[r * terrainWidth + c];
-                    // Skip grass tiles if texture handled them
-                    if (tileId === 0 && _useGrassTexture) continue;
-                    var baseColor = getTerrainColor(tileId);
+                    var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
                     var h = tileHash(c, r);
                     var shift = Math.floor((h - 0.5) * 20);
                     var x = (c - cSC) * ts;
                     var y = (r - cSR) * ts;
 
-                    offscreenCtx.fillStyle = rgbShift(baseColor, shift);
-                    offscreenCtx.fillRect(x, y, ts, ts);
+                    // Skip flat fill if texture already drew this tile type
+                    if (!_texHandled) {
+                        var baseColor = getTerrainColor(tileId);
+                        offscreenCtx.fillStyle = rgbShift(baseColor, shift);
+                        offscreenCtx.fillRect(x, y, ts, ts);
+                    }
 
                     // Skip decorations at very low zoom — barely visible
                     if (lowZoom) continue;
