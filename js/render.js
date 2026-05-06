@@ -119,10 +119,33 @@ window.Renderer = (function () {
 
     function _loadTreeSprites() {
         if (_treeSpriteSheet) return;
-        _treeSpriteSheet = new Image();
-        _treeSpriteSheet.onload = function () {
-            var cellW = Math.floor(_treeSpriteSheet.width / _TREE_GRID_COLS);
-            var cellH = Math.floor(_treeSpriteSheet.height / _TREE_GRID_ROWS);
+        var rawImg = new Image();
+        rawImg.onload = function () {
+            // Process image to remove white background (PNG has no alpha channel)
+            var tmpCanvas = document.createElement('canvas');
+            tmpCanvas.width = rawImg.width;
+            tmpCanvas.height = rawImg.height;
+            var tmpCtx = tmpCanvas.getContext('2d');
+            tmpCtx.drawImage(rawImg, 0, 0);
+            var imgData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+            var pixels = imgData.data;
+            for (var i = 0; i < pixels.length; i += 4) {
+                var r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+                // Treat near-white and very light pixels as transparent
+                var brightness = (r + g + b) / 3;
+                if (brightness > 240) {
+                    pixels[i + 3] = 0; // fully transparent
+                } else if (brightness > 220) {
+                    // Fade out near-white for smoother edges
+                    pixels[i + 3] = Math.floor((240 - brightness) / 20 * 255);
+                }
+            }
+            tmpCtx.putImageData(imgData, 0, 0);
+
+            // Use processed canvas as the sprite sheet
+            _treeSpriteSheet = tmpCanvas;
+            var cellW = Math.floor(tmpCanvas.width / _TREE_GRID_COLS);
+            var cellH = Math.floor(tmpCanvas.height / _TREE_GRID_ROWS);
             for (var row = 0; row < _TREE_GRID_ROWS; row++) {
                 for (var col = 0; col < _TREE_GRID_COLS; col++) {
                     _treeSprites.push({ sx: col * cellW, sy: row * cellH, sw: cellW, sh: cellH });
@@ -131,7 +154,7 @@ window.Renderer = (function () {
             _treeSpriteReady = true;
             terrainDirty = true;
         };
-        _treeSpriteSheet.src = 'images/terrain/tree_tiles.png?v=' + Date.now();
+        rawImg.src = 'images/terrain/tree_tiles.png?v=' + Date.now();
     }
 
     // Terrain blending priority — higher priority terrain bleeds INTO lower
@@ -165,7 +188,8 @@ window.Renderer = (function () {
     }
 
     // Draw terrain type as one continuous pattern over matching tiles using clipping
-    function _fillTerrainTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, tileId) {
+    // If additionalTileId is set, also includes those tiles in the fill (e.g., forest tiles get grass base)
+    function _fillTerrainTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, tileId, additionalTileId) {
         var tex = _terrainTextures[tileId];
         if (!tex || !tex.loaded || !tex.img) return false;
 
@@ -187,7 +211,8 @@ window.Renderer = (function () {
         var found = false;
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
-                if (terrain[r * terrainWidth + c] !== tileId) continue;
+                var t = terrain[r * terrainWidth + c];
+                if (t !== tileId && t !== additionalTileId) continue;
                 targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
                 found = true;
             }
@@ -201,12 +226,9 @@ window.Renderer = (function () {
         return true;
     }
 
-    // For forest tiles: draw grass base underneath, then scatter tree sprites on top
+    // For forest tiles: darken the grass base and scatter tree sprites on top
     function _fillForestWithTrees(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
-        // Step 1: Fill forest tiles with grass texture (or flat green fallback)
-        var grassTex = _terrainTextures[0];
-        var hasGrass = grassTex && grassTex.loaded && grassTex.img;
-
+        // Darken forest areas to distinguish from open grass (grass base already filled by _fillTerrainTextured)
         targetCtx.save();
         targetCtx.beginPath();
         var found = false;
@@ -219,32 +241,13 @@ window.Renderer = (function () {
         }
         if (!found) { targetCtx.restore(); return false; }
         targetCtx.clip();
-
-        if (hasGrass) {
-            // Create a fresh pattern for this context to avoid stale pattern issues
-            var grassPattern = targetCtx.createPattern(grassTex.img, 'repeat');
-            var patternScale = (ts * 20) / grassTex.img.width;
-            var mat = new DOMMatrix();
-            mat.translateSelf(-cSC * ts, -cSR * ts);
-            mat.scaleSelf(patternScale, patternScale);
-            grassPattern.setTransform(mat);
-            targetCtx.fillStyle = grassPattern;
-        } else {
-            // Fallback: flat green
-            targetCtx.fillStyle = '#4a7a3a';
-        }
-        targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
-
-        // Darken forest areas slightly to distinguish from open grass
         targetCtx.fillStyle = 'rgba(0,30,0,0.15)';
         targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
         targetCtx.restore();
 
-        // Step 2: Scatter tree sprites if loaded
+        // Scatter tree sprites if loaded
         if (!_treeSpriteReady || !_treeSpriteSheet) return true;
 
-        // Each sprite cell is ~313px in the source sheet; trees only occupy ~60% of that
-        // Draw at roughly tile size so one tree fits one tile
         var scaledTreeSize = ts * 1.1;
 
         for (var r = cSR; r <= cER; r++) {
@@ -254,12 +257,10 @@ window.Renderer = (function () {
                 var x = (c - cSC) * ts;
                 var y = (r - cSR) * ts;
 
-                // 1 tree per tile, centered with slight jitter
                 var subHash = tileHash(c * 31 + 7, r * 17 + 13);
                 var treeIdx = Math.floor(subHash * _TREE_SPRITE_COUNT);
                 var sprite = _treeSprites[treeIdx];
 
-                // Center tree on tile with small offset for variety
                 var jitterX = (h - 0.5) * ts * 0.3;
                 var jitterY = (subHash - 0.5) * ts * 0.3;
                 var tx = x + (ts - scaledTreeSize) / 2 + jitterX;
@@ -493,13 +494,12 @@ window.Renderer = (function () {
         // Textured terrain: continuous pattern fill (before per-tile loop)
         var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
         if (_useTextures) {
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
-            _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest (grass base + tree sprites)
+            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); // grass (+ forest tiles as base)
+            _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest darken + tree sprites
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
-            // Edge blending pass — soft transitions between terrain types
             _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
         }
 
@@ -507,21 +507,18 @@ window.Renderer = (function () {
             for (var c = cSC; c <= cEC; c++) {
                 var tileId = terrain[r * terrainWidth + c];
                 var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
-                // Forest tiles are always handled by _fillForestWithTrees (grass base + optional tree sprites)
                 if (_useTextures && tileId === 1) _texHandled = true;
                 var h = tileHash(c, r);
                 var shift = Math.floor((h - 0.5) * 20);
                 var x = (c - cSC) * ts;
                 var y = (r - cSR) * ts;
 
-                // Skip flat fill if texture already drew this tile type
                 if (!_texHandled) {
                     var baseColor = getTerrainColor(tileId);
                     offscreenCtx.fillStyle = rgbShift(baseColor, shift);
                     offscreenCtx.fillRect(x, y, ts, ts);
                 }
 
-                // Include decorations in pre-warm for visual completeness
                 if (tileId === 1 && !_texHandled) {
                     var treeCount = 1 + Math.floor(h * 2);
                     offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
@@ -1179,8 +1176,8 @@ window.Renderer = (function () {
             // Textured terrain: continuous pattern fill (before per-tile loop)
             var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
             if (_useTextures) {
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
-                _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest (grass base + tree sprites)
+                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); // grass (+ forest tiles as base)
+                _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest darken + tree sprites
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
