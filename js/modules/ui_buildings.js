@@ -671,11 +671,11 @@
         }
         if (!slot) { toast('No tents available.', 'warning'); return; }
         // Rent the tent
-        Player.gold -= upfront;
+        if (Player.modifyGold) Player.modifyGold(-upfront, 'housing', 'Tent rental');
         slot.occupantId = Player.state.id || 'player';
         slot.occupantType = 'player';
-        slot.rentStartDay = Engine.world().day;
-        slot.lastRentDay = Engine.world().day;
+        slot.rentStartDay = Engine.getDay();
+        slot.lastRentDay = Engine.getDay();
         // Add house record to player
         if (!Player.state.houses) Player.state.houses = [];
         var tentHouseId = 'house_tent_' + town.id + '_' + slot.tentIndex;
@@ -685,7 +685,7 @@
             townId: town.id,
             fromTentCamp: tcBld._id,
             tentIndex: slot.tentIndex,
-            rentStartDay: Engine.world().day,
+            rentStartDay: Engine.getDay(),
             monthlyCost: tcBld.tentMonthlyCost || 5
         });
         Player.state.houseType = 'tent';
@@ -2196,7 +2196,7 @@
         UI.toast(r.message, r.success ? 'success' : 'error');
         if (r.success) { UI.closeModal(); UI.showBuildingDetail(d.id); }
     });
-    UI.registerAction('showNPCDetail', function(_t, d) { UI.showNPCDetail(d.id); });
+    UI.registerAction('showNPCDetail', function(_t, d) { if (UI.talkToPerson) UI.talkToPerson(d.id); });
     UI.registerAction('kickPatientAction', function(_t, d) {
         Engine.kickPatientFromQueue(d.type, d.val, d.id);
         UI.showBuildingDetail(d.val);

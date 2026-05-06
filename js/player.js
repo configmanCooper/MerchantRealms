@@ -17851,10 +17851,8 @@
             // Military travel — instant supplies, kingdom-ordered
             Engine.logEvent('📯 ' + player.fullName + ' has been ordered to deploy to ' + bestTown.name + ' on the frontier.');
             // Use the game's travel system
-            if (typeof startTravel === 'function') {
-                startTravel(bestTown.id);
-            } else if (Player.travel) {
-                Player.travel(bestTown.id);
+            if (Player.travelTo) {
+                Player.travelTo(bestTown.id);
             }
         }
     }
@@ -29886,20 +29884,16 @@
             if (have < need) {
                 var shortfall = need - have;
                 // Try to buy from local market
-                var market = Engine.getMarketData ? Engine.getMarketData(player.townId) : null;
-                var marketItem = null;
-                if (market) {
-                    for (var mi = 0; mi < market.length; mi++) {
-                        if (market[mi].id === matId) { marketItem = market[mi]; break; }
-                    }
-                }
-                if (marketItem && marketItem.supply >= shortfall) {
-                    var buyPrice = (marketItem.price || 1) * shortfall;
+                var _bridgeTown = Engine.findTown(player.townId);
+                var _bridgeMarket = _bridgeTown && _bridgeTown.market ? _bridgeTown.market : null;
+                var marketSupply = (_bridgeMarket && _bridgeMarket.supply) ? (_bridgeMarket.supply[matId] || 0) : 0;
+                var marketPrice = (_bridgeMarket && _bridgeMarket.prices) ? (_bridgeMarket.prices[matId] || 1) : 1;
+                if (marketSupply >= shortfall) {
+                    var buyPrice = marketPrice * shortfall;
                     matBuyCost += buyPrice;
-                    matsToBuy[matId] = { qty: shortfall, price: marketItem.price || 1 };
+                    matsToBuy[matId] = { qty: shortfall, price: marketPrice };
                 } else {
-                    var avail = marketItem ? marketItem.supply : 0;
-                    return { success: false, message: 'Need ' + need + ' ' + matId + ' (have ' + have + ', market has ' + avail + '). Not enough available.' };
+                    return { success: false, message: 'Need ' + need + ' ' + matId + ' (have ' + have + ', market has ' + marketSupply + '). Not enough available.' };
                 }
             }
         }
@@ -29910,8 +29904,10 @@
         // Buy materials from market
         for (var buyMatId in matsToBuy) {
             var buyInfo = matsToBuy[buyMatId];
-            if (Engine.buyFromMarket) {
-                Engine.buyFromMarket(player.townId, buyMatId, buyInfo.qty);
+            // Deduct from town market supply
+            var _buyTown = Engine.findTown(player.townId);
+            if (_buyTown && _buyTown.market && _buyTown.market.supply) {
+                _buyTown.market.supply[buyMatId] = Math.max(0, (_buyTown.market.supply[buyMatId] || 0) - buyInfo.qty);
             }
             player.inventory[buyMatId] = (player.inventory[buyMatId] || 0) + buyInfo.qty;
         }
@@ -38946,6 +38942,8 @@
     window.Player = {
         // State access
         get state() { return player; },
+        getState() { return player; },
+        getInventory() { return player.inventory; },
         get gold() { return player.gold; },
         get townId() { return player.townId; },
         get inventory() { return player.inventory; },

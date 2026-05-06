@@ -912,14 +912,12 @@ function showTownDetail(town) {
                     var _rbMatCost = 0;
                     var _rbMatDesc = '';
                     try {
-                        var _rbMarket = Engine.getMarketData ? Engine.getMarketData(town.id) : null;
+                        var _rbTown = Engine.findTown(town.id);
+                        var _rbMarket = _rbTown && _rbTown.market ? _rbTown.market : null;
                         for (var _rbm in _rbMats) {
                             var _rbNeed = _rbMats[_rbm] - ((typeof Player !== 'undefined' && Player.state.inventory[_rbm]) || 0);
-                            if (_rbNeed > 0 && _rbMarket) {
-                                var _rbPrice = 0;
-                                for (var _rbi = 0; _rbi < (_rbMarket.length || 0); _rbi++) {
-                                    if (_rbMarket[_rbi].id === _rbm) { _rbPrice = _rbMarket[_rbi].price || 0; break; }
-                                }
+                            if (_rbNeed > 0 && _rbMarket && _rbMarket.prices) {
+                                var _rbPrice = _rbMarket.prices[_rbm] || 0;
                                 _rbMatCost += _rbNeed * _rbPrice;
                             }
                         }

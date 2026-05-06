@@ -865,7 +865,7 @@ window.UI = (function () {
             if (searchBox) searchBox.parentElement.style.display = (d.tab === 'trade') ? '' : 'none';
             if (filterBar) filterBar.style.display = (d.tab === 'trade') ? 'flex' : 'none';
         });
-        registerAction('quitAutoTravelJobUI', function() { UI.quitAutoTravelJobUI(); });
+        registerAction('quitAutoTravelJobUI', function() { quitAutoTravelJob(); });
         registerAction('turnBackUI', function() { UI.turnBackUI(); });
         registerAction('drinkUntilFull', function() { UI.drinkUntilFull(); });
         registerAction('eatUntilFull', function() { UI.eatUntilFull(); });
@@ -17319,6 +17319,7 @@ window.UI = (function () {
         // switchSchemesTab — registered by js/modules/ui_street_trading.js
         executeScheme,
         executeStealGoods,
+        updateStealDetection,
         executeCounterfeit,
         executeTargetAction,
         executeBribeGuards,

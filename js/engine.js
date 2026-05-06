@@ -27013,8 +27013,8 @@
                     }
                 } else if (roll < 0.6) {
                     // Caught gossiping
-                    if (Player.reputation !== undefined) {
-                        Player.reputation = Math.max(0, Player.reputation - 3);
+                    if (Player.state && Player.state.reputation && Player.state.reputation[kingdomId]) {
+                        Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 3);
                     }
                     result.success = true;
                     result.message = 'You were caught gossiping! Your reputation suffered. (-3 rep)';
@@ -27025,14 +27025,14 @@
                 break;
             }
             case 'drink': {
-                if (Player.happiness !== undefined) {
-                    Player.happiness = Math.min(100, Player.happiness + 3);
+                if (Player.state) {
+                    Player.state.happiness = Math.min(100, (Player.state.happiness || 50) + 3);
                 }
                 result.success = true;
                 result.message = 'You enjoyed a hearty drink at the festival! (+3 happiness)';
                 if (rng.chance(0.1)) {
-                    if (Player.energy !== undefined) {
-                        Player.energy = Math.max(0, Player.energy - 5);
+                    if (Player.state) {
+                        Player.state.energy = Math.max(0, (Player.state.energy || 50) - 5);
                     }
                     result.message += ' ...though you may have had one too many. (-5 energy)';
                 }
@@ -27072,8 +27072,10 @@
                     break;
                 }
                 var tips = rng.randInt(2, 10);
-                if (Player.gold !== undefined) Player.gold += tips;
-                if (Player.reputation !== undefined) Player.reputation = Math.min(100, Player.reputation + 2);
+                if (Player.modifyGold) Player.modifyGold(tips, 'festival', 'Performance tips');
+                if (Player.state && Player.state.reputation && kingdomId) {
+                    Player.state.reputation[kingdomId] = Math.min(100, (Player.state.reputation[kingdomId] || 50) + 2);
+                }
                 result.success = true;
                 result.message = 'You performed for the crowd and earned ' + tips + 'g in tips! (+2 rep)';
                 break;
@@ -27085,11 +27087,11 @@
                     break;
                 }
                 if (rng.chance(0.45)) {
-                    Player.gold += bet;
+                    if (Player.modifyGold) Player.modifyGold(bet, 'festival', 'Gambling winnings');
                     result.success = true;
                     result.message = 'You won the game! +' + (bet * 2) + 'g (bet ' + bet + 'g, won ' + bet + 'g profit).';
                 } else {
-                    Player.gold -= bet;
+                    if (Player.modifyGold) Player.modifyGold(-bet, 'festival', 'Gambling loss');
                     result.success = true;
                     result.message = 'You lost the game. -' + bet + 'g.';
                 }
@@ -27107,14 +27109,16 @@
                 var ppRoll = rng.random();
                 if (ppRoll < 0.3) {
                     var loot = rng.randInt(2, 8);
-                    if (Player.gold !== undefined) Player.gold += loot;
+                    if (Player.modifyGold) Player.modifyGold(loot, 'festival', 'Pickpocketing');
                     result.success = true;
                     result.message = 'You deftly lifted ' + loot + 'g from an unsuspecting festivalgoer.';
                 } else if (ppRoll < 0.7) {
                     result.success = true;
                     result.message = 'You couldn\'t find a good opportunity. Nothing happened.';
                 } else {
-                    if (Player.reputation !== undefined) Player.reputation = Math.max(0, Player.reputation - 5);
+                    if (Player.state && Player.state.reputation && kingdomId) {
+                        Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 5);
+                    }
                     result.success = true;
                     result.message = 'You were caught pickpocketing! (-5 rep, possible criminal charges)';
                 }
@@ -27139,7 +27143,9 @@
                 var noble = rng.pick(nobleTargets);
                 var nobleRank = noble.socialRank || 4;
                 if (pRank < nobleRank - 1) {
-                    if (Player.reputation !== undefined) Player.reputation = Math.max(0, Player.reputation - 1);
+                    if (Player.state && Player.state.reputation && kingdomId) {
+                        Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 1);
+                    }
                     result.success = true;
                     result.message = (noble.firstName || 'The noble') + ' barely acknowledges your presence. (-1 rep)';
                 } else {
@@ -29750,6 +29756,7 @@
         // ==== Query Methods ====
 
         getWorld() { return world; },
+        getWorldState() { return world; },
 
         classifyTownTerrain,
         computeLocalBasePrices,
