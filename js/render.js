@@ -108,6 +108,36 @@ window.Renderer = (function () {
     // Loads terrain textures and uses createPattern for continuous world-space fill
     let _terrainTextures = {}; // { tileId: { img, pattern, loaded, attempted } }
 
+    // ── Tree sprite system ──
+    let _treeSpriteSheet = null;   // Image element for tree_tiles.png
+    let _treeSpriteReady = false;
+    let _treeSprites = [];         // Array of {sx, sy, sw, sh} for each of 16 tree sprites
+    const _TREE_GRID_COLS = 4;
+    const _TREE_GRID_ROWS = 4;
+    const _TREE_SPRITE_COUNT = 16;
+    const _TREE_DRAW_SIZE = 28;    // px to draw each tree at (overlaps tile for natural look)
+
+    function _loadTreeSprites() {
+        if (_treeSpriteSheet) return;
+        _treeSpriteSheet = new Image();
+        _treeSpriteSheet.onload = function () {
+            var cellW = Math.floor(_treeSpriteSheet.width / _TREE_GRID_COLS);
+            var cellH = Math.floor(_treeSpriteSheet.height / _TREE_GRID_ROWS);
+            for (var row = 0; row < _TREE_GRID_ROWS; row++) {
+                for (var col = 0; col < _TREE_GRID_COLS; col++) {
+                    _treeSprites.push({ sx: col * cellW, sy: row * cellH, sw: cellW, sh: cellH });
+                }
+            }
+            _treeSpriteReady = true;
+            terrainDirty = true;
+        };
+        _treeSpriteSheet.src = 'images/terrain/tree_tiles.png?v=' + Date.now();
+    }
+
+    // Terrain blending priority — higher priority terrain bleeds INTO lower
+    // Water > Sand > Mountain > Hills > Forest > Grass
+    const _TERRAIN_BLEND_PRIORITY = { 2: 60, 5: 50, 3: 40, 4: 30, 1: 20, 0: 10 };
+
     function _loadTerrainTexture(tileId, filename) {
         if (_terrainTextures[tileId] && _terrainTextures[tileId].attempted) return;
         _terrainTextures[tileId] = { img: null, pattern: null, loaded: false, attempted: true };
@@ -131,6 +161,7 @@ window.Renderer = (function () {
         _loadTerrainTexture(3, 'base_mountain.png');    // mountain
         _loadTerrainTexture(4, 'base_hills.png');       // hills
         _loadTerrainTexture(5, 'base_sand.png');        // sand/desert
+        _loadTreeSprites();
     }
 
     // Draw terrain type as one continuous pattern over matching tiles using clipping
@@ -168,6 +199,165 @@ window.Renderer = (function () {
         targetCtx.restore();
 
         return true;
+    }
+
+    // For forest tiles: draw grass base underneath, then scatter tree sprites on top
+    function _fillForestWithTrees(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
+        // Step 1: Fill forest tiles with grass texture (or flat green fallback)
+        var grassTex = _terrainTextures[0];
+        var hasGrass = grassTex && grassTex.loaded && grassTex.img;
+
+        targetCtx.save();
+        targetCtx.beginPath();
+        var found = false;
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 1) continue;
+                targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
+                found = true;
+            }
+        }
+        if (!found) { targetCtx.restore(); return false; }
+        targetCtx.clip();
+
+        if (hasGrass) {
+            // Create a fresh pattern for this context to avoid stale pattern issues
+            var grassPattern = targetCtx.createPattern(grassTex.img, 'repeat');
+            var patternScale = (ts * 20) / grassTex.img.width;
+            var mat = new DOMMatrix();
+            mat.translateSelf(-cSC * ts, -cSR * ts);
+            mat.scaleSelf(patternScale, patternScale);
+            grassPattern.setTransform(mat);
+            targetCtx.fillStyle = grassPattern;
+        } else {
+            // Fallback: flat green
+            targetCtx.fillStyle = '#4a7a3a';
+        }
+        targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+
+        // Darken forest areas slightly to distinguish from open grass
+        targetCtx.fillStyle = 'rgba(0,30,0,0.15)';
+        targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+        targetCtx.restore();
+
+        // Step 2: Scatter tree sprites if loaded
+        if (!_treeSpriteReady || !_treeSpriteSheet) return true;
+
+        // Each sprite cell is ~313px in the source sheet; trees only occupy ~60% of that
+        // Draw at roughly tile size so one tree fits one tile
+        var scaledTreeSize = ts * 1.1;
+
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 1) continue;
+                var h = tileHash(c, r);
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // 1 tree per tile, centered with slight jitter
+                var subHash = tileHash(c * 31 + 7, r * 17 + 13);
+                var treeIdx = Math.floor(subHash * _TREE_SPRITE_COUNT);
+                var sprite = _treeSprites[treeIdx];
+
+                // Center tree on tile with small offset for variety
+                var jitterX = (h - 0.5) * ts * 0.3;
+                var jitterY = (subHash - 0.5) * ts * 0.3;
+                var tx = x + (ts - scaledTreeSize) / 2 + jitterX;
+                var ty = y + (ts - scaledTreeSize) / 2 + jitterY;
+
+                targetCtx.drawImage(
+                    _treeSpriteSheet,
+                    sprite.sx, sprite.sy, sprite.sw, sprite.sh,
+                    tx, ty, scaledTreeSize, scaledTreeSize
+                );
+            }
+        }
+        return true;
+    }
+
+    // Terrain edge blending — soft feathered transitions between terrain types
+    function _blendTerrainEdges(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        var blendSize = ts * 0.5; // how far the blend extends into the tile
+
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tileId = terrain[r * terrainWidth + c];
+                var myPriority = _TERRAIN_BLEND_PRIORITY[tileId] || 0;
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Check 4 cardinal neighbors
+                var nr, nc, neighborId, neighborPriority, grad, nColor;
+
+                // Top neighbor
+                nr = r - 1; nc = c;
+                if (nr >= 0) {
+                    neighborId = terrain[nr * terrainWidth + nc];
+                    if (neighborId !== tileId) {
+                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
+                        if (neighborPriority > myPriority) {
+                            nColor = getTerrainColor(neighborId);
+                            grad = targetCtx.createLinearGradient(x, y, x, y + blendSize);
+                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
+                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y, ts, blendSize);
+                        }
+                    }
+                }
+
+                // Bottom neighbor
+                nr = r + 1; nc = c;
+                if (nr < terrainHeight) {
+                    neighborId = terrain[nr * terrainWidth + nc];
+                    if (neighborId !== tileId) {
+                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
+                        if (neighborPriority > myPriority) {
+                            nColor = getTerrainColor(neighborId);
+                            grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - blendSize);
+                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
+                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y + ts - blendSize, ts, blendSize);
+                        }
+                    }
+                }
+
+                // Left neighbor
+                nr = r; nc = c - 1;
+                if (nc >= 0) {
+                    neighborId = terrain[nr * terrainWidth + nc];
+                    if (neighborId !== tileId) {
+                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
+                        if (neighborPriority > myPriority) {
+                            nColor = getTerrainColor(neighborId);
+                            grad = targetCtx.createLinearGradient(x, y, x + blendSize, y);
+                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
+                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y, blendSize, ts);
+                        }
+                    }
+                }
+
+                // Right neighbor
+                nr = r; nc = c + 1;
+                if (nc < terrainWidth) {
+                    neighborId = terrain[nr * terrainWidth + nc];
+                    if (neighborId !== tileId) {
+                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
+                        if (neighborPriority > myPriority) {
+                            nColor = getTerrainColor(neighborId);
+                            grad = targetCtx.createLinearGradient(x + ts, y, x + ts - blendSize, y);
+                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
+                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x + ts - blendSize, y, blendSize, ts);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ── Color helpers ──
@@ -304,17 +494,21 @@ window.Renderer = (function () {
         var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
         if (_useTextures) {
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 1); // forest
+            _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest (grass base + tree sprites)
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
+            // Edge blending pass — soft transitions between terrain types
+            _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
         }
 
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
                 var tileId = terrain[r * terrainWidth + c];
                 var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
+                // Forest tiles are always handled by _fillForestWithTrees (grass base + optional tree sprites)
+                if (_useTextures && tileId === 1) _texHandled = true;
                 var h = tileHash(c, r);
                 var shift = Math.floor((h - 0.5) * 20);
                 var x = (c - cSC) * ts;
@@ -986,17 +1180,21 @@ window.Renderer = (function () {
             var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
             if (_useTextures) {
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 1); // forest
+                _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest (grass base + tree sprites)
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
+                // Edge blending pass — soft transitions between terrain types
+                _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
             }
 
             for (var r = cSR; r <= cER; r++) {
                 for (var c = cSC; c <= cEC; c++) {
                     var tileId = terrain[r * terrainWidth + c];
                     var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
+                    // Forest tiles are always handled by _fillForestWithTrees (grass base + optional tree sprites)
+                    if (_useTextures && tileId === 1) _texHandled = true;
                     var h = tileHash(c, r);
                     var shift = Math.floor((h - 0.5) * 20);
                     var x = (c - cSC) * ts;
