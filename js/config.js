@@ -7,6 +7,10 @@ const CONFIG = {
     WORLD_WIDTH: 10000,
     WORLD_HEIGHT: 10000,
     TILE_SIZE: 16,
+
+    // Textured grass rendering (set false for old flat-color grass)
+    USE_TEXTURED_TERRAIN: true,
+
     NUM_KINGDOMS: 4,
     TOWNS_PER_KINGDOM: 4,
     PEOPLE_PER_TOWN: 120, // legacy reference — variable pop now used
