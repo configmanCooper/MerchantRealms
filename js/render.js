@@ -126,6 +126,7 @@ window.Renderer = (function () {
 
     function _loadAllTerrainTextures() {
         _loadTerrainTexture(0, 'base_grass_soft.png'); // grass
+        _loadTerrainTexture(1, 'base_forest.png');      // forest
         _loadTerrainTexture(2, 'base_water.png');       // water
         _loadTerrainTexture(3, 'base_mountain.png');    // mountain
         _loadTerrainTexture(4, 'base_hills.png');       // hills
@@ -303,6 +304,7 @@ window.Renderer = (function () {
         var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
         if (_useTextures) {
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
+            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 1); // forest
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
@@ -326,7 +328,7 @@ window.Renderer = (function () {
                 }
 
                 // Include decorations in pre-warm for visual completeness
-                if (tileId === 1) {
+                if (tileId === 1 && !_texHandled) {
                     var treeCount = 1 + Math.floor(h * 2);
                     offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
                     for (var t = 0; t < treeCount; t++) {
@@ -984,6 +986,7 @@ window.Renderer = (function () {
             var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
             if (_useTextures) {
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
+                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 1); // forest
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
@@ -1009,7 +1012,7 @@ window.Renderer = (function () {
                     // Skip decorations at very low zoom — barely visible
                     if (lowZoom) continue;
 
-                    if (tileId === 1) { // Forest
+                    if (tileId === 1 && !_texHandled) { // Forest
                         var treeCount = 1 + Math.floor(h * 2);
                         offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
                         for (var t = 0; t < treeCount; t++) {
