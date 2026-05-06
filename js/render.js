@@ -127,6 +127,7 @@ window.Renderer = (function () {
     function _loadAllTerrainTextures() {
         _loadTerrainTexture(0, 'base_grass_soft.png'); // grass
         _loadTerrainTexture(2, 'base_water.png');       // water
+        _loadTerrainTexture(3, 'base_mountain.png');    // mountain
         _loadTerrainTexture(4, 'base_hills.png');       // hills
         _loadTerrainTexture(5, 'base_sand.png');        // sand/desert
     }
@@ -303,6 +304,7 @@ window.Renderer = (function () {
         if (_useTextures) {
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
+            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
         }
@@ -341,7 +343,7 @@ window.Renderer = (function () {
                 } else if (tileId === 2 && !_texHandled) {
                     offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
                     offscreenCtx.fillRect(x, y, ts, ts);
-                } else if (tileId === 3) {
+                } else if (tileId === 3 && !_texHandled) {
                     offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
                     var mx = x + ts * 0.5;
                     var my = y + ts * 0.2;
@@ -983,6 +985,7 @@ window.Renderer = (function () {
             if (_useTextures) {
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0); // grass
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
+                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
             }
@@ -1023,7 +1026,7 @@ window.Renderer = (function () {
                     } else if (tileId === 2 && !_texHandled) { // Water — static overlay
                         offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
                         offscreenCtx.fillRect(x, y, ts, ts);
-                    } else if (tileId === 3) { // Mountain
+                    } else if (tileId === 3 && !_texHandled) { // Mountain
                         offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
                         var mx = x + ts * 0.5;
                         var my = y + ts * 0.2;
