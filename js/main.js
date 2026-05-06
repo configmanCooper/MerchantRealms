@@ -2608,7 +2608,7 @@ window.Game = (function () {
             rank: rankName,
             gold: Player.gold || 0,
             savedAt: Date.now(),
-            version: 4,
+            version: CURRENT_SAVE_VERSION,
             engine: engineData,
             player: playerData,
             aiMerchants: Player.serializeAI ? Player.serializeAI() : null,

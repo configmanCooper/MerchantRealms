@@ -63,6 +63,8 @@ const CONFIG = {
     DECORATION_SKIP_ZOOM: 0.65,   // skip trees/mountains below this zoom
 
     // Time — real-time: ~1 real minute ≈ 1 in-game day
+    // NOTE: 1 year = 1 season = 90 days (intentional design choice — the game
+    // treats each season as a full year for gameplay pacing purposes)
     DAYS_PER_SEASON: 90,
     SEASONS: ['Spring', 'Summer', 'Autumn', 'Winter'],
     MS_PER_DAY: 60000,          // 60 seconds real time = 1 in-game day
