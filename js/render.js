@@ -336,7 +336,7 @@ window.Renderer = (function () {
                         offscreenCtx.closePath();
                         offscreenCtx.fill();
                     }
-                } else if (tileId === 2) {
+                } else if (tileId === 2 && !_texHandled) {
                     offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
                     offscreenCtx.fillRect(x, y, ts, ts);
                 } else if (tileId === 3) {
@@ -358,7 +358,7 @@ window.Renderer = (function () {
                         offscreenCtx.closePath();
                         offscreenCtx.fill();
                     }
-                } else if (tileId === 4) {
+                } else if (tileId === 4 && !_texHandled) {
                     offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
                     offscreenCtx.beginPath();
                     offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
@@ -1017,7 +1017,7 @@ window.Renderer = (function () {
                             offscreenCtx.closePath();
                             offscreenCtx.fill();
                         }
-                    } else if (tileId === 2) { // Water — static overlay (no wave anim in cache)
+                    } else if (tileId === 2 && !_texHandled) { // Water — static overlay
                         offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
                         offscreenCtx.fillRect(x, y, ts, ts);
                     } else if (tileId === 3) { // Mountain
@@ -1039,7 +1039,7 @@ window.Renderer = (function () {
                             offscreenCtx.closePath();
                             offscreenCtx.fill();
                         }
-                    } else if (tileId === 4) { // Hills
+                    } else if (tileId === 4 && !_texHandled) { // Hills — only if not textured
                         offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
                         offscreenCtx.beginPath();
                         offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
