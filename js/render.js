@@ -121,31 +121,35 @@ window.Renderer = (function () {
         if (_treeSpriteSheet) return;
         var rawImg = new Image();
         rawImg.onload = function () {
-            // Process image to remove white background (PNG has no alpha channel)
-            var tmpCanvas = document.createElement('canvas');
-            tmpCanvas.width = rawImg.width;
-            tmpCanvas.height = rawImg.height;
-            var tmpCtx = tmpCanvas.getContext('2d');
-            tmpCtx.drawImage(rawImg, 0, 0);
-            var imgData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
-            var pixels = imgData.data;
-            for (var i = 0; i < pixels.length; i += 4) {
-                var r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-                // Treat near-white and very light pixels as transparent
-                var brightness = (r + g + b) / 3;
-                if (brightness > 240) {
-                    pixels[i + 3] = 0; // fully transparent
-                } else if (brightness > 220) {
-                    // Fade out near-white for smoother edges
-                    pixels[i + 3] = Math.floor((240 - brightness) / 20 * 255);
+            var sourceImg = rawImg;
+            // Try to remove white background via pixel processing
+            try {
+                var tmpCanvas = document.createElement('canvas');
+                tmpCanvas.width = rawImg.width;
+                tmpCanvas.height = rawImg.height;
+                var tmpCtx = tmpCanvas.getContext('2d');
+                tmpCtx.drawImage(rawImg, 0, 0);
+                var imgData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+                var pixels = imgData.data;
+                for (var i = 0; i < pixels.length; i += 4) {
+                    var r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+                    var brightness = (r + g + b) / 3;
+                    if (brightness > 240) {
+                        pixels[i + 3] = 0;
+                    } else if (brightness > 220) {
+                        pixels[i + 3] = Math.floor((240 - brightness) / 20 * 255);
+                    }
                 }
+                tmpCtx.putImageData(imgData, 0, 0);
+                sourceImg = tmpCanvas;
+            } catch (e) {
+                // CORS/security block — use raw image as-is
+                sourceImg = rawImg;
             }
-            tmpCtx.putImageData(imgData, 0, 0);
 
-            // Use processed canvas as the sprite sheet
-            _treeSpriteSheet = tmpCanvas;
-            var cellW = Math.floor(tmpCanvas.width / _TREE_GRID_COLS);
-            var cellH = Math.floor(tmpCanvas.height / _TREE_GRID_ROWS);
+            _treeSpriteSheet = sourceImg;
+            var cellW = Math.floor(sourceImg.width / _TREE_GRID_COLS);
+            var cellH = Math.floor(sourceImg.height / _TREE_GRID_ROWS);
             for (var row = 0; row < _TREE_GRID_ROWS; row++) {
                 for (var col = 0; col < _TREE_GRID_COLS; col++) {
                     _treeSprites.push({ sx: col * cellW, sy: row * cellH, sw: cellW, sh: cellH });
