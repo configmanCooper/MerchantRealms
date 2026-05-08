@@ -627,95 +627,111 @@ window.Renderer = (function () {
 
     function _forestClusterDensity(c,r){var N=5,mc=Math.floor(c/N),mr=Math.floor(r/N),fx=(c-mc*N)/N,fy=(r-mr*N)/N,a=tileHash(mc*191+13,mr*233+17),b=tileHash((mc+1)*191+13,mr*233+17),d=tileHash(mc*191+13,(mr+1)*233+17),e=tileHash((mc+1)*191+13,(mr+1)*233+17);return a*(1-fx)*(1-fy)+b*fx*(1-fy)+d*(1-fx)*fy+e*fx*fy;}
 
+    // v9p16: global forest tree placement cache. Per-forest-tile precomputed:
+    // sprite indices, position offsets, sizes. Computed once lazily; rebuilds
+    // just look up from the cache instead of running hash chains per tile.
+    // Layout (all Float32, 8 floats per tile, 32 bytes/tile, ~12 MB for 390k tiles):
+    //   [0] tree1 flag (0=skip, 1=draw)
+    //   [1] sprite1 idx
+    //   [2] ox1
+    //   [3] oy1
+    //   [4] size1 multiplier
+    //   [5] tree2 flag
+    //   [6] sprite2 idx
+    //   [7..10] ox2, oy2, size2 ... (we use 8 slots; pack tree2 in 4 only)
+    // To save memory we use a Map<tileIdx, Float32Array(10)> only for tiles
+    // that actually have a forest. Sparse storage.
+    var _forestTreeCache = null;
+    var _forestTreeCacheSig = 0;
+    function _ensureForestTreeCache(terrain, terrainWidth, spriteCount) {
+        var sig = terrainWidth * 1000003 + (terrain.length | 0) + spriteCount * 7;
+        if (_forestTreeCache && _forestTreeCacheSig === sig) return _forestTreeCache;
+        var W = terrainWidth;
+        var H = terrain.length / W;
+        // Sparse: only store entries for forest tiles that pass density gate
+        var map = new Map();
+        for (var r = 0; r < H; r++) {
+            for (var c = 0; c < W; c++) {
+                if (terrain[r * W + c] !== 1) continue;
+                // Edge detection (4-neighbor)
+                var isEdge = false;
+                if (c > 0 && terrain[r * W + (c - 1)] !== 1) isEdge = true;
+                else if (c < W - 1 && terrain[r * W + (c + 1)] !== 1) isEdge = true;
+                else if (r > 0 && terrain[(r - 1) * W + c] !== 1) isEdge = true;
+                else if (r < H - 1 && terrain[(r + 1) * W + c] !== 1) isEdge = true;
+                var h = tileHash(c, r);
+                var threshold = isEdge ? 0.6 : 0.0;
+                if (h < threshold) continue;
+                var dens = _forestClusterDensity(c, r);
+                if (dens < 0.20) continue;
+                var skipTree2 = dens < 0.45;
+
+                var th = tileHash(c * 7 + 3, r * 13 + 5);
+                var spriteIdx = Math.floor(th * spriteCount);
+                if (spriteIdx >= spriteCount) spriteIdx = spriteCount - 1;
+                var sh = tileHash(c * 19 + 11, r * 29 + 13);
+                var sizeVar = 0.8 + sh * 0.4;
+                var phx = tileHash(c * 23 + 17, r * 37 + 19);
+                var phy = tileHash(c * 41 + 23, r * 53 + 29);
+                var ox = (-0.5 + phx * 2.0); // normalized: multiply by ts at render
+                var oy = (-0.5 + phy * 2.0);
+
+                var data = new Float32Array(10);
+                data[0] = 1; data[1] = spriteIdx; data[2] = ox; data[3] = oy; data[4] = sizeVar;
+                data[5] = 0;
+                if (!skipTree2) {
+                    var th2 = tileHash(c + 101, r + 1019);
+                    var spriteIdx2 = Math.floor(th2 * spriteCount);
+                    if (spriteIdx2 >= spriteCount) spriteIdx2 = spriteCount - 1;
+                    var sh2 = tileHash(c + 359, r + 641);
+                    var sizeVar2 = 0.8 + sh2 * 0.4;
+                    var phx2 = tileHash(c + 251, r + 419);
+                    var phy2 = tileHash(c + 733, r + 881);
+                    data[5] = 1; data[6] = spriteIdx2; data[7] = (-0.5 + phx2 * 2.0); data[8] = (-0.5 + phy2 * 2.0); data[9] = sizeVar2;
+                }
+                map.set(r * W + c, data);
+            }
+        }
+        _forestTreeCache = map;
+        _forestTreeCacheSig = sig;
+        return map;
+    }
+
     // For forest tiles: sparse tree sprites scattered on the grass base (NO dark overlay)
     // Concept image shows: grass visible between trees, trees are clearly tree-shaped, sparse
     function _fillForestWithTrees(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
-        // DBG-AB2: tint disabled, tree-draw enabled (supervisor 18:55 step B isolation)
-        // NO dark green base fill - forest tiles already have grass base from _fillTerrainTextured
-        // Just add a very subtle darker tint to distinguish forest ground from open grassland
-        var forestTiles = [];
-        for (var r = cSR; r <= cER; r++) {
-            for (var c = cSC; c <= cEC; c++) {
-                if (terrain[r * terrainWidth + c] !== 1) continue;
-                forestTiles.push([c, r]);
-            }
-        }
-        if (forestTiles.length === 0) return false;
-
-        // Draw tree sprites sparsely: only ~40% of forest tiles get a tree
-        if (!_treeSpriteReady || !_treeSpriteSheet || _treeSprites.length === 0) return true;
+        if (!_treeSpriteReady || !_treeSpriteSheet || _treeSprites.length === 0) return false;
         var spriteCount = _treeSprites.length;
         var baseDrawSize = _TREE_DRAW_SIZE * (ts / 16);
-        
-        for (var i = 0; i < forestTiles.length; i++) {
-            var fc = forestTiles[i][0], fr = forestTiles[i][1];
-            var h = tileHash(fc, fr);
-            
-            // Check if this tile is a forest edge (adjacent to non-forest)
-            var isEdge = false;
-            var neighbors = [[fc-1,fr],[fc+1,fr],[fc,fr-1],[fc,fr+1]];
-            for (var n = 0; n < 4; n++) {
-                var nc = neighbors[n][0], nr = neighbors[n][1];
-                if (nc >= 0 && nc < terrainWidth && nr >= 0 && nr < (terrain.length / terrainWidth)) {
-                    if (terrain[nr * terrainWidth + nc] !== 1) { isEdge = true; break; }
+        var cache = _ensureForestTreeCache(terrain, terrainWidth, spriteCount);
+
+        for (var r = cSR; r <= cER; r++) {
+            var rowBase = r * terrainWidth;
+            var rowOffsetY = (r - cSR) * ts;
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[rowBase + c] !== 1) continue;
+                var data = cache.get(rowBase + c);
+                if (!data) continue;
+                var rowOffsetX = (c - cSC) * ts;
+
+                if (data[0]) {
+                    var sprite = _treeSprites[data[1]];
+                    if (sprite) {
+                        var drawSize = baseDrawSize * data[4];
+                        var dx = rowOffsetX + data[2] * ts - drawSize * 0.5;
+                        var dy = rowOffsetY + data[3] * ts - drawSize * 0.7;
+                        targetCtx.drawImage(_treeSpriteSheet, sprite.sx, sprite.sy, sprite.sw, sprite.sh, dx, dy, drawSize, drawSize);
+                    }
                 }
-            }
-            
-            // STEP-FOREST-THRESHOLD v9h: relaxed gate so interior forest tiles always render trees,
-            // edges keep ~40% coverage for an organic fringe (vs prior interior 0.95 / edge 0.98).
-            var threshold = isEdge ? 0.6 : 0.0;
-            if (h < threshold) continue;
-
-            // v9o.1: cluster-density gate — glades/sparse/dense
-            var dens=_forestClusterDensity(fc,fr);if(dens<0.20)continue;var skipTree2=dens<0.45;
-
-            // Pick sprite from 16 available (4x4 grid)
-            // FIX: tileHash returns float [0,1); previous `th % spriteCount` produced a sub-1 float
-            // which JS array access coerced to undefined → every tree skipped. Derive integer index.
-            var th = tileHash(fc * 7 + 3, fr * 13 + 5);
-            var spriteIdx = Math.floor(th * spriteCount);
-            if (spriteIdx >= spriteCount) spriteIdx = spriteCount - 1;
-            var sprite = _treeSprites[spriteIdx];
-            if (!sprite) continue;
-            
-            // Size variation: ±20% — use a fresh hash so it doesn't collapse to a constant
-            // (Previous `th >> 4` for float `th` in [0,1) always produced 0.)
-            var sh = tileHash(fc * 19 + 11, fr * 29 + 13);
-            var sizeVariation = 0.8 + sh * 0.4;
-            var drawSize = baseDrawSize * sizeVariation;
-            
-            // Position within tile — fresh hashes per axis
-            var phx = tileHash(fc * 23 + 17, fr * 37 + 19);
-            var phy = tileHash(fc * 41 + 23, fr * 53 + 29);
-            // STEP-TREE-JITTER v9f: widen from [0.2*ts, 0.8*ts] to [-0.5*ts, +1.5*ts]
-            // per supervisor 20:26 spec, so canopies can straddle tile borders organically
-            var ox = (-0.5 + phx * 2.0) * ts;
-            var oy = (-0.5 + phy * 2.0) * ts;
-            var dx = (fc - cSC) * ts + ox - drawSize * 0.5;
-            var dy = (fr - cSR) * ts + oy - drawSize * 0.7;
-            
-            targetCtx.drawImage(_treeSpriteSheet, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
-                dx, dy, drawSize, drawSize);
-
-            // STEP-FOREST-DENSITY v9g: draw a SECOND tree per forest tile per supervisor 20:48 spec.
-            // Independent hash recipes for sprite, size, and position so tree-2 differs from tree-1.
-            // Same jitter range and sprite-pick logic as tree-1 — only the hash inputs differ.
-            var th2 = tileHash(fc + 101, fr + 1019);
-            var spriteIdx2 = Math.floor(th2 * spriteCount);
-            if (spriteIdx2 >= spriteCount) spriteIdx2 = spriteCount - 1;
-            var sprite2 = _treeSprites[spriteIdx2];
-            if (sprite2 && !skipTree2) {
-                var sh2 = tileHash(fc + 359, fr + 641);
-                var sizeVariation2 = 0.8 + sh2 * 0.4;
-                var drawSize2 = baseDrawSize * sizeVariation2;
-                var phx2 = tileHash(fc + 251, fr + 419);
-                var phy2 = tileHash(fc + 733, fr + 881);
-                var ox2 = (-0.5 + phx2 * 2.0) * ts;
-                var oy2 = (-0.5 + phy2 * 2.0) * ts;
-                var dx2 = (fc - cSC) * ts + ox2 - drawSize2 * 0.5;
-                var dy2 = (fr - cSR) * ts + oy2 - drawSize2 * 0.7;
-                targetCtx.drawImage(_treeSpriteSheet, sprite2.sx, sprite2.sy, sprite2.sw, sprite2.sh,
-                    dx2, dy2, drawSize2, drawSize2);
+                if (data[5]) {
+                    var sprite2 = _treeSprites[data[6]];
+                    if (sprite2) {
+                        var drawSize2 = baseDrawSize * data[9];
+                        var dx2 = rowOffsetX + data[7] * ts - drawSize2 * 0.5;
+                        var dy2 = rowOffsetY + data[8] * ts - drawSize2 * 0.7;
+                        targetCtx.drawImage(_treeSpriteSheet, sprite2.sx, sprite2.sy, sprite2.sw, sprite2.sh, dx2, dy2, drawSize2, drawSize2);
+                    }
+                }
             }
         }
         return true;
@@ -2582,27 +2598,31 @@ window.Renderer = (function () {
 
             // Textured terrain: continuous pattern fill (before per-tile loop)
             var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
+            var _trace = (typeof window !== 'undefined' && window.__perfTrace);
+            var _tStart, _tStats = _trace ? (window.__perfStats = window.__perfStats || {}) : null;
+            function _tBegin(){ if(_trace) _tStart = performance.now(); }
+            function _tEnd(name){ if(_trace){ var dt = performance.now()-_tStart; _tStats[name] = (_tStats[name]||0)+dt; _tStats[name+'_n'] = (_tStats[name+'_n']||0)+1; } }
             if (_useTextures) {
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); // grass (+ forest tiles as base)
-                _addGrassVariation(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // grass color patches
-                _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest darken + tree sprites
-                _renderWaterWithDepth(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // water with depth + foam
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
-                _enhanceMountains(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
-                _enhanceHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
-                _addNoiseGrain(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts); // v9l.0 per-tile micro-grain
+                _tBegin(); _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); _tEnd('fillTexturedGrass');
+                _tBegin(); _addGrassVariation(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('addGrassVariation');
+                _tBegin(); _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts); _tEnd('fillForestWithTrees');
+                _tBegin(); _renderWaterWithDepth(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('renderWaterWithDepth');
+                _tBegin(); _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); _tEnd('fillTexturedMountain');
+                _tBegin(); _enhanceMountains(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('enhanceMountains');
+                _tBegin(); _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); _tEnd('fillTexturedHills');
+                _tBegin(); _enhanceHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('enhanceHills');
+                _tBegin(); _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); _tEnd('fillTexturedSand');
+                _tBegin(); _addNoiseGrain(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts); _tEnd('addNoiseGrain');
                 var _ne2 = _terrainTextures[99];
-                if (_ne2 && _ne2.loaded && _ne2.img) _applyNoiseOverlay(offscreenCtx, cSC, cEC, cSR, cER, ts);
-                _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _roundLandCoastCorners(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _drawBeachFringe(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _smoothCoastlines(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _softCoastlineFeather(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _coastlineJitter(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _featherForestEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-                _scatterGrasslandTrees(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _tBegin(); if (_ne2 && _ne2.loaded && _ne2.img) _applyNoiseOverlay(offscreenCtx, cSC, cEC, cSR, cER, ts); _tEnd('noiseOverlay');
+                _tBegin(); _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('blendTerrainEdges');
+                _tBegin(); _roundLandCoastCorners(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('roundLandCoastCorners');
+                _tBegin(); _drawBeachFringe(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('drawBeachFringe');
+                _tBegin(); _smoothCoastlines(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('smoothCoastlines');
+                _tBegin(); _softCoastlineFeather(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('softCoastlineFeather');
+                _tBegin(); _coastlineJitter(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('coastlineJitter');
+                _tBegin(); _featherForestEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('featherForestEdges');
+                _tBegin(); _scatterGrasslandTrees(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('scatterGrasslandTrees');
             }
 
             // v9p14: skip per-tile fallback loop when all terrain textures are loaded.
