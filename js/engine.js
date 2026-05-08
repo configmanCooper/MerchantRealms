@@ -224,6 +224,14 @@
     function generateTerrain(rng, seed) {
         const cols = Math.floor(CONFIG.WORLD_WIDTH / CONFIG.TILE_SIZE);
         const rows = Math.floor(CONFIG.WORLD_HEIGHT / CONFIG.TILE_SIZE);
+
+        // v9p25 testworld1: if pre-loaded testworld1 terrain exists, use it instead of procedural gen.
+        if (typeof window !== 'undefined' && window._testworld1 && window._testworld1.terrain &&
+            window._testworld1.cols === cols && window._testworld1.rows === rows) {
+            console.log('[engine] Using testworld1 terrain (' + cols + 'x' + rows + ')');
+            return { grid: new Uint8Array(window._testworld1.terrain), cols: cols, rows: rows };
+        }
+
         const grid = new Uint8Array(cols * rows);
 
         const elevation = createNoise(seed);

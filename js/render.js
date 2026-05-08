@@ -450,6 +450,58 @@ window.Renderer = (function () {
         for(let _i=0;_i<_v9p17F.length;_i++)_loadTerrainTexture(280+_i,'all_sprites/'+_v9p17F[_i]+'.png');
         _loadTreeSprites();
     }
+
+    // v9p25 testworld1 loader (TEMPORARY TEST)
+    // Pre-loads world.txt (text tile-map) and full.jpg (background image) so the
+    // game can use this image as the world map. Once loaded, ALL sandbox new
+    // games will use this terrain instead of procedural generation, and the
+    // image will be drawn as the terrain background.
+    function _loadTestworld1() {
+        if (typeof window === 'undefined') return;
+        if (window._testworld1 && window._testworld1.loaded) return;
+        window._testworld1 = window._testworld1 || { loaded: false };
+        // Tile-id encoding from manifest.json: G=0, F=1, W=2, M=3, H=4, S=5
+        var TILE_OF = { G: 0, F: 1, W: 2, M: 3, H: 4, S: 5 };
+        // Fetch text tile-map
+        fetch('images/testworld1/world.txt?v=' + Date.now())
+            .then(function(r){ return r.text(); })
+            .then(function(txt){
+                var lines = txt.split(/\r?\n/).filter(function(l){ return l.length > 0; });
+                var rows = lines.length, cols = lines[0].length;
+                var grid = new Uint8Array(rows * cols);
+                for (var y = 0; y < rows; y++) {
+                    var line = lines[y];
+                    for (var x = 0; x < cols; x++) {
+                        grid[y * cols + x] = (TILE_OF[line[x]] || 0);
+                    }
+                }
+                window._testworld1.terrain = grid;
+                window._testworld1.cols = cols;
+                window._testworld1.rows = rows;
+                console.log('[testworld1] terrain loaded ' + cols + 'x' + rows);
+                _checkTw1Done();
+            })
+            .catch(function(e){ console.error('[testworld1] terrain load failed:', e.message); });
+        // Load background image
+        var img = new Image();
+        img.onload = function() {
+            window._testworld1.image = img;
+            console.log('[testworld1] image loaded ' + img.naturalWidth + 'x' + img.naturalHeight);
+            _checkTw1Done();
+        };
+        img.onerror = function() { console.error('[testworld1] image load failed'); };
+        img.src = 'images/testworld1/full.jpg?v=' + Date.now();
+    }
+    function _checkTw1Done() {
+        var t = window._testworld1;
+        if (t && t.terrain && t.image && !t.loaded) {
+            t.loaded = true;
+            // Force terrain redraw next frame so a game already in progress picks it up.
+            terrainDirty = true;
+        }
+    }
+    // Kick off load immediately
+    _loadTestworld1();
     // v9p17: village=village_cluster_{1..4}, town=town_{1..4}+town_walled, city=city_castle_{1..3},
     // capital_city=city_castle_large+city_grand, outpost=outpost_building_{1..4}.
     const _v9n1T={outpost:[294,4,1.3],village:[280,4,3.0],town:[284,5,3.0],city:[289,3,3.0],capital_city:[292,2,4.0]};
@@ -2672,6 +2724,38 @@ window.Renderer = (function () {
 
             var lowZoom = camera.zoom < CONFIG.DECORATION_SKIP_ZOOM;
             var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+
+            // v9p25 testworld1: if loaded, blit the source image onto the cache and skip
+            // all the textured/flat passes. The image IS the terrain visuals; tile data
+            // drives gameplay (collision, town placement). Towns/units render on top later.
+            var _tw1 = (typeof window !== 'undefined') ? window._testworld1 : null;
+            if (_tw1 && _tw1.loaded && _tw1.image) {
+                // Source image covers the entire world: 0,0 .. WORLD_W, WORLD_H px.
+                // Cache region is at world coords (cSC*ts, cSR*ts) of size drawW x drawH.
+                // Compute the source rectangle to extract from the image.
+                var _twImg = _tw1.image;
+                var _twWorldW = CONFIG.WORLD_WIDTH || (terrainWidth * ts);
+                var _twWorldH = CONFIG.WORLD_HEIGHT || (terrainHeight * ts);
+                var _sxScale = _twImg.naturalWidth / _twWorldW;
+                var _syScale = _twImg.naturalHeight / _twWorldH;
+                var _sx = (cSC * ts) * _sxScale;
+                var _sy = (cSR * ts) * _syScale;
+                var _sw = drawW * _sxScale;
+                var _sh = drawH * _syScale;
+                offscreenCtx.imageSmoothingEnabled = true;
+                offscreenCtx.imageSmoothingQuality = 'high';
+                offscreenCtx.drawImage(_twImg, _sx, _sy, _sw, _sh, 0, 0, drawW, drawH);
+                _terrainCacheStartCol = cSC;
+                _terrainCacheEndCol = cEC;
+                _terrainCacheStartRow = cSR;
+                _terrainCacheEndRow = cER;
+                terrainDirty = false;
+                lastTerrainZoom = camera.zoom;
+                lastTerrainCamX = camera.x;
+                lastTerrainCamY = camera.y;
+                ctx.drawImage(offscreenTerrain, _terrainCacheStartCol * ts, _terrainCacheStartRow * ts);
+                return;
+            }
 
             // Textured terrain: continuous pattern fill (before per-tile loop)
             var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
