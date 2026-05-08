@@ -1,6 +1,6 @@
 {
-  "source": "testworld1-gigapixel-standard v2-10000w.png",
-  "sourceSize": [
+  "source": "source.png (Imagen 4 Ultra, 2048x2048)",
+  "upscaledTo": [
     10000,
     10000
   ],
@@ -34,11 +34,11 @@
     "S": 5
   },
   "distribution": [
-    20759,
-    71777,
-    154587,
-    6251,
-    116896,
-    20355
+    122533,
+    147208,
+    96438,
+    11207,
+    6990,
+    6249
   ]
 }
