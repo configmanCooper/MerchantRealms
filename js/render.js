@@ -14,9 +14,11 @@ window.Renderer = (function () {
     const camera = {
         x: 0, y: 0,           // world position (center of viewport)
         targetX: 0, targetY: 0,
-        zoom: CONFIG.CAMERA_ZOOM_DEFAULT,
-        targetZoom: CONFIG.CAMERA_ZOOM_DEFAULT,
-        minZoom: CONFIG.CAMERA_ZOOM_MIN,
+        // v9p10: When textured terrain is on, clamp min zoom to 1.5 (zooming
+        // out further is too expensive and the textured detail is lost anyway).
+        zoom: Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN),
+        targetZoom: Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN),
+        minZoom: CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN,
         maxZoom: CONFIG.CAMERA_ZOOM_MAX,
         lerpSpeed: 0.12,
         width: 0,
@@ -2328,11 +2330,14 @@ window.Renderer = (function () {
         var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
         var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
 
-        // Inner chunk region (the part that will be visible after crop)
+        // Inner chunk region (the part that will be visible after crop).
+        // v9p10.1: Extend inner end by 1 tile right and bottom so adjacent chunks
+        // overlap by 1 tile (16 px). This kills the sub-pixel seams that appear
+        // as black hairlines between chunk blits when the canvas is scaled.
         var innerSC = chunkX * CHUNK_TILES;
         var innerSR = chunkY * CHUNK_TILES;
-        var innerEC = Math.min(terrainWidth - 1, innerSC + CHUNK_TILES - 1);
-        var innerER = Math.min(terrainHeight - 1, innerSR + CHUNK_TILES - 1);
+        var innerEC = Math.min(terrainWidth - 1, innerSC + CHUNK_TILES); // +1 tile bleed
+        var innerER = Math.min(terrainHeight - 1, innerSR + CHUNK_TILES); // +1 tile bleed
         if (innerSC > innerEC || innerSR > innerER) return null;
 
         // Build with overscroll for correct edge effects
@@ -2434,6 +2439,15 @@ window.Renderer = (function () {
         var terrain = worldData.terrain;
         if (!terrain || !terrain.length) return;
 
+        // v9p10b: In flat (non-textured) mode, use the legacy per-tile renderer
+        // so trees on forest tiles, hill arcs, mountain triangles, etc. all
+        // come back exactly as they were before v9p10. The chunked cache is
+        // textured-mode only.
+        if (!CONFIG.USE_TEXTURED_TERRAIN) {
+            _renderTerrainLegacy();
+            return;
+        }
+
         var ts = CONFIG.TILE_SIZE;
         var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
         var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
@@ -2461,14 +2475,48 @@ window.Renderer = (function () {
         var startCY = Math.floor(startRow / CHUNK_TILES);
         var endCY = Math.floor(endRow / CHUNK_TILES);
 
+        // v9p10.1: Per-frame chunk build budget. Building a chunk runs ~17
+        // post-process passes over CHUNK_TILES² tiles which is ~50-100ms.
+        // Doing several per frame during a pan = visible hitches. Instead
+        // we build up to BUDGET chunks per frame; for any visible-but-not-yet-built
+        // chunk we draw a fast solid-color placeholder sampled from the center
+        // tile. The next few frames fill in the real content.
+        var BUDGET = 2;
+        var built = 0;
+        var chunkPx = CHUNK_TILES * ts;
+
         for (var cy = startCY; cy <= endCY; cy++) {
             for (var cx = startCX; cx <= endCX; cx++) {
-                var chunk = _getTerrainChunk(cx, cy);
-                if (!chunk) continue;
-                ctx.drawImage(chunk.canvas, chunk.innerSC * ts, chunk.innerSR * ts);
+                var key = cx + ',' + cy;
+                var chunk = _terrainChunks[key];
+                if (!chunk) {
+                    if (built < BUDGET) {
+                        chunk = _buildTerrainChunk(cx, cy);
+                        if (chunk) {
+                            _terrainChunks[key] = chunk;
+                            built++;
+                        }
+                    } else {
+                        // Placeholder: sample center tile color of this chunk and fill
+                        var sampleC = Math.min(terrainWidth - 1, cx * CHUNK_TILES + (CHUNK_TILES >> 1));
+                        var sampleR = Math.min(terrainHeight - 1, cy * CHUNK_TILES + (CHUNK_TILES >> 1));
+                        var sampleTile = terrain[sampleR * terrainWidth + sampleC];
+                        ctx.fillStyle = getTerrainColor(sampleTile);
+                        var px = cx * chunkPx;
+                        var py = cy * chunkPx;
+                        var pw = Math.min(chunkPx, (terrainWidth - cx * CHUNK_TILES) * ts);
+                        var ph = Math.min(chunkPx, (terrainHeight - cy * CHUNK_TILES) * ts);
+                        ctx.fillRect(px, py, pw, ph);
+                        continue;
+                    }
+                }
+                if (chunk) {
+                    ctx.drawImage(chunk.canvas, chunk.innerSC * ts, chunk.innerSR * ts);
+                }
             }
         }
     }
+
 
     // Legacy renderTerrain (pre-v9p10) — kept for reference; not called.
     function _renderTerrainLegacy() {
@@ -7008,6 +7056,16 @@ window.Renderer = (function () {
     function getFrameCount() { return frameCount; }
     function invalidateTerrain() { terrainDirty = true; }
 
+    // v9p10b: re-apply zoom limits based on current CONFIG.USE_TEXTURED_TERRAIN.
+    // Textured mode clamps min zoom to 1.5 (terrain build is too expensive
+    // when zoomed way out); flat mode allows the full original 0.5 min.
+    function refreshZoomLimits() {
+        var newMin = CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN;
+        camera.minZoom = newMin;
+        if (camera.targetZoom < newMin) camera.targetZoom = newMin;
+        if (camera.zoom < newMin) camera.zoom = newMin;
+    }
+
     return {
         init,
         render,
@@ -7040,5 +7098,6 @@ window.Renderer = (function () {
         startFertilitySurvey,
         startDepositSurvey,
         invalidateTerrain,
+        refreshZoomLimits,
     };
 })();

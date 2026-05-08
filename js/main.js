@@ -259,6 +259,19 @@ window.Game = (function () {
                 if (btnToggle) btnToggle.textContent = Music.isMuted() ? '🔇' : '🔊';
             });
         }
+        // Renderer toggle (debug: switch between textured and flat rendering)
+        var btnRendererToggle = document.getElementById('btnToggleRenderer');
+        if (btnRendererToggle) {
+            btnRendererToggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                CONFIG.USE_TEXTURED_TERRAIN = !CONFIG.USE_TEXTURED_TERRAIN;
+                btnRendererToggle.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '🎨 Renderer: Textured' : '🎨 Renderer: Flat';
+                // Force terrain redraw if in-game
+                if (typeof Renderer !== 'undefined' && Renderer.invalidateTerrain) Renderer.invalidateTerrain();
+                // v9p10b: textured mode clamps min zoom to 1.5; flat mode allows 0.5
+                if (typeof Renderer !== 'undefined' && Renderer.refreshZoomLimits) Renderer.refreshZoomLimits();
+            });
+        }
         var volSlider = document.getElementById('musicVolume');
         var titleVolSlider = document.getElementById('titleMusicVolume');
         function syncVolumeSliders(val) {
