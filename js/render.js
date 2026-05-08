@@ -444,13 +444,50 @@ window.Renderer = (function () {
         for(let _i=0;_i<4;_i++)_loadTerrainTexture(225+_i,'all_sprites/'+_v9pW[_i]+'.png');
         const _v9sF=['watchtower_stone_1','watchtower_stone_2','watchtower_wood','watchtower_mixed','palisade_fence','cottage_small','house_thatched','house_blue_roof','scene_village_buildings','building_cottage_tower','town_1','town_2','town_3','town_4','town_cluster','city_large','city_medium','city_walled','city_castle_large','city_port_harbor','castle_large','castle_palace_blue','castle_fortress','castle_keep','city_grand_t4'];
         for(let _i=0;_i<25;_i++)_loadTerrainTexture(250+_i,'all_sprites/'+_v9sF[_i]+'.png');
+        // v9p17: per-tier settlement sprites per supervisor spec.
+        // 280-283 villages, 284-288 towns (incl. walled), 289-291 cities, 292-293 capitals, 294-297 outposts.
+        const _v9p17F=['village_cluster_1','village_cluster_2','village_cluster_3','village_cluster_4','town_1','town_2','town_3','town_4','town_walled','city_castle_1','city_castle_2','city_castle_3','city_castle_large','city_grand','outpost_building_1','outpost_building_2','outpost_building_3','outpost_building_4'];
+        for(let _i=0;_i<_v9p17F.length;_i++)_loadTerrainTexture(280+_i,'all_sprites/'+_v9p17F[_i]+'.png');
         _loadTreeSprites();
     }
-    const _v9n1T={outpost:[250,5,1.3],village:[255,5,3.0],town:[260,5,3.0],city:[265,5,3.0],capital_city:[270,5,4.0]};
+    // v9p17: village=village_cluster_{1..4}, town=town_{1..4}+town_walled, city=city_castle_{1..3},
+    // capital_city=city_castle_large+city_grand, outpost=outpost_building_{1..4}.
+    const _v9n1T={outpost:[294,4,1.3],village:[280,4,3.0],town:[284,5,3.0],city:[289,3,3.0],capital_city:[292,2,4.0]};
+    // v9p18: persist sprite choice per town. Deterministic per (town.id, category) so the
+    // sprite is stable but re-rolls on promotion/demotion.
+    function _pickSettleIdx(town,count){
+        var s=2166136261>>>0;
+        var key=String(town.id||town.name||(town.x+'_'+town.y));
+        for(var j=0;j<key.length;j++){s=((s^key.charCodeAt(j))*16777619)>>>0;}
+        var c=town.category||'village';
+        for(var i=0;i<c.length;i++){s=((s^c.charCodeAt(i))*16777619)>>>0;}
+        return s%count;
+    }
+    function _ensureSettleSprite(town){
+        var p=_v9n1T[town.category];
+        if(!p)return null;
+        if(town._spriteCat!==town.category||town._spriteIdx==null){
+            town._spriteIdx=_pickSettleIdx(town,p[1]);
+            town._spriteCat=town.category;
+        }
+        return town._spriteIdx;
+    }
+    // Eagerly assign sprites to every town (call after Engine.generate()).
+    function _assignAllSettlementSprites(){
+        try{
+            var towns=(typeof Engine!=='undefined'&&Engine.getTowns)?Engine.getTowns():null;
+            if(!towns)return 0;
+            var n=0;
+            for(var i=0;i<towns.length;i++){
+                if(_ensureSettleSprite(towns[i])!=null)n++;
+            }
+            return n;
+        }catch(e){return 0;}
+    }
     // v9p03: single grass + single water + hills→grass come from base pattern fill (terrain IDs 0/2/4).
     // Per-tile sprite dispatch ONLY for forest(1)/mountain(3)/sand(5).
     const _v9pT={1:[205,3],3:[208,6],5:[217,4]};
-    function _v9n1Spr(t,c,x,y,b,k){var p=_v9n1T[c];if(!p||camera.zoom<0.5)return false;var s=_terrainTextures[p[0]+(tileHash(t.x,t.y)%p[1]|0)];if(!s||!s.loaded||!s.img)return false;var w=b*p[2],h=w*(s.img.naturalHeight/s.img.naturalWidth);ctx.drawImage(s.img,x-w*0.5,y-h*0.85,w,h);ctx.fillStyle=k;ctx.fillRect(x+1,y-h*0.85-4,5,3);return true;}
+    function _v9n1Spr(t,c,x,y,b,k){var p=_v9n1T[c];if(!p||camera.zoom<0.5)return false;var idx=_ensureSettleSprite(t);if(idx==null)idx=tileHash(t.x,t.y)%p[1]|0;var s=_terrainTextures[p[0]+idx];if(!s||!s.loaded||!s.img)return false;var w=b*p[2],h=w*(s.img.naturalHeight/s.img.naturalWidth);ctx.drawImage(s.img,x-w*0.5,y-h*0.85,w,h);ctx.fillStyle=k;ctx.fillRect(x+1,y-h*0.85-4,5,3);return true;}
     // v9p02: cache a radial-alpha-masked copy of a sprite for soft-edge blending
     function _v9pFeather(img){var sz=96,c=document.createElement('canvas');c.width=sz;c.height=sz;var x=c.getContext('2d');x.drawImage(img,0,0,sz,sz);var g=x.createRadialGradient(sz/2,sz/2,sz*0.34,sz/2,sz/2,sz*0.56);g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');x.globalCompositeOperation='destination-in';x.fillStyle=g;x.fillRect(0,0,sz,sz);return c;}
     // v9p05: build a seamless mirror-tiled 2W×2H canvas so non-tileable sprites can be pattern-filled without edge seams.
@@ -7149,5 +7186,7 @@ window.Renderer = (function () {
         startDepositSurvey,
         invalidateTerrain,
         refreshZoomLimits,
+        // v9p18: assign per-tier sprites to all towns (idempotent; safe to call multiple times)
+        assignSettlementSprites: _assignAllSettlementSprites,
     };
 })();

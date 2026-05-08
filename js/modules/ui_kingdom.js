@@ -124,6 +124,7 @@
     function regenerateWorld() {
         if (typeof Engine !== 'undefined' && Engine.generate) {
             Engine.generate(Math.floor(Math.random() * 999999) + 1);
+            if (window.Renderer && Renderer.assignSettlementSprites) Renderer.assignSettlementSprites();
             showKingdomSelection(window._kingdomSelectCallback);
         }
     }

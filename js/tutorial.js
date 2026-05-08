@@ -2007,6 +2007,7 @@ window.Tutorial = (function () {
 
         // Generate tutorial world with fixed seed
         Engine.generate(7777);
+        if (window.Renderer && Renderer.assignSettlementSprites) Renderer.assignSettlementSprites();
         var world = Engine.getWorld();
         var towns = Engine.getTowns();
         var startTownId = towns.length > 0 ? towns[0].id : null;

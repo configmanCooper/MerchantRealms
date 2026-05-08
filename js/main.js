@@ -1073,6 +1073,11 @@ window.Game = (function () {
                 Engine.generate(Math.floor(Math.random() * 999999) + 1);
             }
 
+            // v9p18: assign per-tier settlement sprites at world gen
+            if (window.Renderer && Renderer.assignSettlementSprites) {
+                Renderer.assignSettlementSprites();
+            }
+
             // Story Mode: set up story towns in the generated world
             const startConfig = window._selectedStartConfig || CONFIG.GAME_STARTS.find(s => s.id === 'normal') || null;
             if (startConfig && startConfig.special === 'story_mode') {
