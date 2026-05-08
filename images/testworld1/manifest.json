@@ -1,5 +1,18 @@
 {
-  "source": "source.png (Imagen 4 Ultra, 2048x2048)",
+  "sourceFile": "upscaled_3840_longedge.png",
+  "sourceSize": [
+    3840,
+    2160
+  ],
+  "paddedTo": [
+    3840,
+    3840
+  ],
+  "padColour": {
+    "r": 1,
+    "g": 39,
+    "b": 70
+  },
   "upscaledTo": [
     10000,
     10000
@@ -12,10 +25,6 @@
   "split": [
     4,
     4
-  ],
-  "subPixels": [
-    2500,
-    2500
   ],
   "legend": {
     "G": "grass",
@@ -34,11 +43,11 @@
     "S": 5
   },
   "distribution": [
-    60271,
-    107809,
-    179498,
-    19073,
-    14338,
-    9636
+    35337,
+    36771,
+    280814,
+    6291,
+    12007,
+    19405
   ]
 }
