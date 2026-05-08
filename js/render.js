@@ -71,6 +71,17 @@ window.Renderer = (function () {
     let selectedTarget = null;
     let _lastSeason = null; // Track season for terrain color changes
 
+    // ── v9p10: Chunked terrain cache ──
+    // Build the world terrain in fixed-size square chunks, cache each chunk
+    // canvas forever once built. Pan/zoom = blit visible chunks (zero rebuild).
+    // CHUNK_TILES tiles per chunk × TILE_SIZE px = chunk canvas size.
+    // OVERSCROLL provides a few tiles of neighbor data so multi-tile post-process
+    // passes (coastlines, beach, edge blends) don't show seams at chunk borders.
+    const CHUNK_TILES = 32;
+    const CHUNK_OVERSCROLL = 6;
+    let _terrainChunks = {};        // key: "cx,cy" → { canvas, season }
+    let _terrainChunksSeason = null;
+
     // ── Minimap cache (redrawn once per game day) ──
     let _minimapCacheCanvas = null;
     let _minimapCacheDirty = true;
@@ -1674,6 +1685,8 @@ window.Renderer = (function () {
 
         worldData = world;
         _minimapTerrainCanvas = null; // Rebuild terrain cache for new world
+        _terrainChunks = {};          // v9p10: clear chunked terrain cache for new world
+        _terrainChunksSeason = null;
 
         // v9p08: Clean up grid-aligned 1-tile-wide water channels left over from old anisotropic
         // river noise (engine.js generateTerrain prior to v9p08). Detect water tiles whose 3x3
@@ -1723,9 +1736,10 @@ window.Renderer = (function () {
         _prewarmTerrainCache();
     }
 
-    // Pre-build terrain cache for a large region around the player at startup.
-    // Covers enough tiles for the lowest zoom level so zooming/panning never
-    // hits an uncached region on the first interaction.
+    // v9p10: Pre-warm a small radius of terrain chunks around the player so
+    // the very first paint and initial pans are smooth. The chunked cache
+    // lazily builds chunks as they enter the viewport, so this is just a
+    // courtesy warmup — keep the radius modest.
     function _prewarmTerrainCache() {
         if (!worldData || !worldData.terrain || !worldData.terrain.length) return;
 
@@ -1733,134 +1747,24 @@ window.Renderer = (function () {
         var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
         var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
 
-        // Compute visible tiles at the lowest practical zoom (0.3) centered on current camera
-        var halfW = (camera.width / 0.3) / 2;
-        var halfH = (camera.height / 0.3) / 2;
-        var vbLeft = camera.x - halfW;
-        var vbTop = camera.y - halfH;
-        var vbRight = camera.x + halfW;
-        var vbBottom = camera.y + halfH;
+        var playerCol = Math.floor(camera.x / ts);
+        var playerRow = Math.floor(camera.y / ts);
+        var playerCX = Math.floor(playerCol / CHUNK_TILES);
+        var playerCY = Math.floor(playerRow / CHUNK_TILES);
 
-        // Extra margin so initial panning is also free
-        var margin = CONFIG.TERRAIN_MARGIN_EXTREME || 30;
-        var cSC = Math.max(0, Math.floor(vbLeft / ts) - margin);
-        var cEC = Math.min(terrainWidth - 1, Math.ceil(vbRight / ts) + margin);
-        var cSR = Math.max(0, Math.floor(vbTop / ts) - margin);
-        var cER = Math.min(terrainHeight - 1, Math.ceil(vbBottom / ts) + margin);
+        var maxCX = Math.floor((terrainWidth - 1) / CHUNK_TILES);
+        var maxCY = Math.floor((terrainHeight - 1) / CHUNK_TILES);
 
-        var drawW = (cEC - cSC + 1) * ts;
-        var drawH = (cER - cSR + 1) * ts;
-
-        if (!offscreenTerrain) {
-            offscreenTerrain = document.createElement('canvas');
-            offscreenCtx = offscreenTerrain.getContext('2d');
-        }
-        offscreenTerrain.width = drawW;
-        offscreenTerrain.height = drawH;
-
-        var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
-        var terrain = worldData.terrain;
-
-        // Textured terrain: continuous pattern fill (before per-tile loop)
-        var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
-        if (_useTextures) {
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); // grass (+ forest tiles as base)
-            _addGrassVariation(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // grass color patches
-            _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest darken + tree sprites
-            _renderWaterWithDepth(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // water with depth + foam
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
-            _enhanceMountains(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
-            _enhanceHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
-            _addNoiseGrain(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts); // v9l.0 per-tile micro-grain
-            var _ne1 = _terrainTextures[99];
-            if (_ne1 && _ne1.loaded && _ne1.img) _applyNoiseOverlay(offscreenCtx, cSC, cEC, cSR, cER, ts);
-            _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _roundLandCoastCorners(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _drawBeachFringe(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _smoothCoastlines(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _softCoastlineFeather(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _coastlineJitter(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _featherForestEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-            _scatterGrasslandTrees(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
-        }
-
-        for (var r = cSR; r <= cER; r++) {
-            for (var c = cSC; c <= cEC; c++) {
-                var tileId = terrain[r * terrainWidth + c];
-                var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
-                if (_useTextures && tileId === 1) _texHandled = true;
-                var h = tileHash(c, r);
-                var shift = Math.floor((h - 0.5) * 20);
-                var x = (c - cSC) * ts;
-                var y = (r - cSR) * ts;
-
-                if (!_texHandled) {
-                    var baseColor = getTerrainColor(tileId);
-                    offscreenCtx.fillStyle = rgbShift(baseColor, shift);
-                    offscreenCtx.fillRect(x, y, ts, ts);
-                }
-
-                if (tileId === 1 && !_texHandled) {
-                    var treeCount = 1 + Math.floor(h * 2);
-                    offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#3a5a48' : '#1a4020', shift);
-                    for (var t = 0; t < treeCount; t++) {
-                        var tx = x + (h * 37 + t * 5.7) % ts;
-                        var ty = y + (h * 23 + t * 7.3) % ts;
-                        var sz = 3 + h * 3;
-                        offscreenCtx.beginPath();
-                        offscreenCtx.moveTo(tx, ty - sz);
-                        offscreenCtx.lineTo(tx - sz * 0.6, ty + sz * 0.4);
-                        offscreenCtx.lineTo(tx + sz * 0.6, ty + sz * 0.4);
-                        offscreenCtx.closePath();
-                        offscreenCtx.fill();
-                    }
-                } else if (tileId === 2 && !_texHandled) {
-                    offscreenCtx.fillStyle = 'rgba(180,220,255,0.08)';
-                    offscreenCtx.fillRect(x, y, ts, ts);
-                } else if (tileId === 3 && !_texHandled) {
-                    offscreenCtx.fillStyle = rgbShift('#6b5b4f', shift);
-                    var mx = x + ts * 0.5;
-                    var my = y + ts * 0.2;
-                    offscreenCtx.beginPath();
-                    offscreenCtx.moveTo(mx, my);
-                    offscreenCtx.lineTo(x + ts * 0.2, y + ts * 0.9);
-                    offscreenCtx.lineTo(x + ts * 0.8, y + ts * 0.9);
-                    offscreenCtx.closePath();
-                    offscreenCtx.fill();
-                    if (_isWinterSeason || h > 0.6) {
-                        offscreenCtx.fillStyle = 'rgba(240,240,255,0.6)';
-                        offscreenCtx.beginPath();
-                        offscreenCtx.moveTo(mx, my);
-                        offscreenCtx.lineTo(mx - ts * 0.12, my + ts * 0.2);
-                        offscreenCtx.lineTo(mx + ts * 0.12, my + ts * 0.2);
-                        offscreenCtx.closePath();
-                        offscreenCtx.fill();
-                    }
-                } else if (tileId === 4 && !_texHandled) {
-                    offscreenCtx.fillStyle = rgbShift(_isWinterSeason ? '#7a8a6a' : '#5a7a42', shift - 8);
-                    offscreenCtx.beginPath();
-                    offscreenCtx.arc(x + ts * 0.35, y + ts * 0.65, ts * 0.25, Math.PI, 0);
-                    offscreenCtx.fill();
-                    offscreenCtx.beginPath();
-                    offscreenCtx.arc(x + ts * 0.7, y + ts * 0.55, ts * 0.2, Math.PI, 0);
-                    offscreenCtx.fill();
-                }
+        // Pre-build a 5×5 chunk neighborhood around the player (~150 tiles each side)
+        var R = 2;
+        for (var dy = -R; dy <= R; dy++) {
+            for (var dx = -R; dx <= R; dx++) {
+                var cx = playerCX + dx;
+                var cy = playerCY + dy;
+                if (cx < 0 || cy < 0 || cx > maxCX || cy > maxCY) continue;
+                _getTerrainChunk(cx, cy);
             }
         }
-
-        // Warm atmospheric overlay on terrain
-        _applyWarmOverlay(offscreenCtx, drawW, drawH);
-
-        _terrainCacheStartCol = cSC;
-        _terrainCacheEndCol = cEC;
-        _terrainCacheStartRow = cSR;
-        _terrainCacheEndRow = cER;
-        terrainDirty = false;
-        lastTerrainZoom = camera.zoom;
-        lastTerrainCamX = camera.x;
-        lastTerrainCamY = camera.y;
     }
 
     function resize() {
@@ -2413,7 +2317,161 @@ window.Renderer = (function () {
     //  1. TERRAIN
     // ═══════════════════════════════════════════════════════════
 
+    // v9p10: Build a single terrain chunk on demand. Each chunk covers
+    // CHUNK_TILES × CHUNK_TILES tiles. We render with a CHUNK_OVERSCROLL
+    // tile margin so multi-tile post-process passes (coastlines, beach
+    // gradients, edge blends) don't show seams at chunk borders, then
+    // crop to the inner chunk region when we cache the canvas.
+    function _buildTerrainChunk(chunkX, chunkY) {
+        var terrain = worldData.terrain;
+        var ts = CONFIG.TILE_SIZE;
+        var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
+        var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
+
+        // Inner chunk region (the part that will be visible after crop)
+        var innerSC = chunkX * CHUNK_TILES;
+        var innerSR = chunkY * CHUNK_TILES;
+        var innerEC = Math.min(terrainWidth - 1, innerSC + CHUNK_TILES - 1);
+        var innerER = Math.min(terrainHeight - 1, innerSR + CHUNK_TILES - 1);
+        if (innerSC > innerEC || innerSR > innerER) return null;
+
+        // Build with overscroll for correct edge effects
+        var cSC = Math.max(0, innerSC - CHUNK_OVERSCROLL);
+        var cEC = Math.min(terrainWidth - 1, innerEC + CHUNK_OVERSCROLL);
+        var cSR = Math.max(0, innerSR - CHUNK_OVERSCROLL);
+        var cER = Math.min(terrainHeight - 1, innerER + CHUNK_OVERSCROLL);
+
+        var fullW = (cEC - cSC + 1) * ts;
+        var fullH = (cER - cSR + 1) * ts;
+
+        var workCanvas = document.createElement('canvas');
+        workCanvas.width = fullW;
+        workCanvas.height = fullH;
+        var workCtx = workCanvas.getContext('2d');
+
+        var _isWinterSeason = (typeof Engine !== 'undefined' && Engine.getSeason && Engine.getSeason() === 'Winter');
+        var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
+
+        if (_useTextures) {
+            _fillTerrainTextured(workCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1);
+            _addGrassVariation(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _fillForestWithTrees(workCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);
+            _renderWaterWithDepth(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _fillTerrainTextured(workCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3);
+            _enhanceMountains(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _fillTerrainTextured(workCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4);
+            _enhanceHills(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _fillTerrainTextured(workCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5);
+            _addNoiseGrain(workCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);
+            var _ne = _terrainTextures[99];
+            if (_ne && _ne.loaded && _ne.img) _applyNoiseOverlay(workCtx, cSC, cEC, cSR, cER, ts);
+            _blendTerrainEdges(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _roundLandCoastCorners(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _drawBeachFringe(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _smoothCoastlines(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _softCoastlineFeather(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _coastlineJitter(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _featherForestEdges(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _scatterGrasslandTrees(workCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+        }
+
+        // Per-tile fallback for any unhandled tile types
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tileId = terrain[r * terrainWidth + c];
+                var _texHandled = _useTextures && _terrainTextures[tileId] && _terrainTextures[tileId].loaded;
+                if (_useTextures && tileId === 1) _texHandled = true;
+                if (_texHandled) continue;
+                if (_useTextures && (tileId === 0 || tileId === 2 || tileId === 4)) continue;
+                var h = tileHash(c, r);
+                var shift = Math.floor((h - 0.5) * 20);
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+                var baseColor = getTerrainColor(tileId);
+                workCtx.fillStyle = rgbShift(baseColor, shift);
+                workCtx.fillRect(x, y, ts, ts);
+            }
+        }
+
+        _applyWarmOverlay(workCtx, fullW, fullH);
+
+        // Crop the inner chunk out of the overscrolled work canvas
+        var innerW = (innerEC - innerSC + 1) * ts;
+        var innerH = (innerER - innerSR + 1) * ts;
+        var offsetX = (innerSC - cSC) * ts;
+        var offsetY = (innerSR - cSR) * ts;
+
+        var chunkCanvas = document.createElement('canvas');
+        chunkCanvas.width = innerW;
+        chunkCanvas.height = innerH;
+        var chunkCtx = chunkCanvas.getContext('2d');
+        chunkCtx.drawImage(workCanvas, offsetX, offsetY, innerW, innerH, 0, 0, innerW, innerH);
+
+        return {
+            canvas: chunkCanvas,
+            innerSC: innerSC,
+            innerSR: innerSR,
+            innerW: innerW,
+            innerH: innerH
+        };
+    }
+
+    function _getTerrainChunk(chunkX, chunkY) {
+        var key = chunkX + ',' + chunkY;
+        var hit = _terrainChunks[key];
+        if (hit) return hit;
+        var built = _buildTerrainChunk(chunkX, chunkY);
+        if (!built) return null;
+        _terrainChunks[key] = built;
+        return built;
+    }
+
+    function _invalidateTerrainChunks() {
+        _terrainChunks = {};
+    }
+
     function renderTerrain() {
+        var terrain = worldData.terrain;
+        if (!terrain || !terrain.length) return;
+
+        var ts = CONFIG.TILE_SIZE;
+        var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
+        var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
+
+        // v9p10: Season-driven cache invalidation (season changes terrain palette)
+        var _curSeason = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : null;
+        if (_curSeason !== _terrainChunksSeason) {
+            _invalidateTerrainChunks();
+            _terrainChunksSeason = _curSeason;
+        }
+        // Honor legacy terrainDirty flag (e.g., texture finished loading)
+        if (terrainDirty) {
+            _invalidateTerrainChunks();
+            terrainDirty = false;
+        }
+
+        var vb = getVisibleBounds();
+        var startCol = Math.max(0, Math.floor(vb.left / ts));
+        var endCol = Math.min(terrainWidth - 1, Math.ceil(vb.right / ts));
+        var startRow = Math.max(0, Math.floor(vb.top / ts));
+        var endRow = Math.min(terrainHeight - 1, Math.ceil(vb.bottom / ts));
+
+        var startCX = Math.floor(startCol / CHUNK_TILES);
+        var endCX = Math.floor(endCol / CHUNK_TILES);
+        var startCY = Math.floor(startRow / CHUNK_TILES);
+        var endCY = Math.floor(endRow / CHUNK_TILES);
+
+        for (var cy = startCY; cy <= endCY; cy++) {
+            for (var cx = startCX; cx <= endCX; cx++) {
+                var chunk = _getTerrainChunk(cx, cy);
+                if (!chunk) continue;
+                ctx.drawImage(chunk.canvas, chunk.innerSC * ts, chunk.innerSR * ts);
+            }
+        }
+    }
+
+    // Legacy renderTerrain (pre-v9p10) — kept for reference; not called.
+    function _renderTerrainLegacy() {
         var terrain = worldData.terrain;
         if (!terrain || !terrain.length) return;
 
