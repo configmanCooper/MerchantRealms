@@ -2743,8 +2743,10 @@ window.Renderer = (function () {
             }
             } // _allTexturesLoaded skip
 
-            // v9p11: 20% darken + 20% contrast on grass/forest/hills tiles (user preference)
-            _darkenGrassForestHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            // v9p11: 20% darken + 20% contrast on grass/forest/hills tiles (user preference).
+            // v9p20: gate on textured mode — flat mode should match the pre-v9p11 lightweight look.
+            // The full-canvas filter pass is expensive on huge caches at low zoom (~150ms @ z0.5).
+            if (_useTextures) { _tBegin(); _darkenGrassForestHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); _tEnd('darkenGrassForestHills'); }
 
             // Warm atmospheric overlay on terrain
             _applyWarmOverlay(offscreenCtx, drawW, drawH);
