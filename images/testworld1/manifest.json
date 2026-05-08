@@ -1,17 +1,17 @@
 {
-  "sourceFile": "upscaled_3840_longedge.png",
+  "sourceFile": "upscaled_4k_map.png",
   "sourceSize": [
     3840,
-    2160
+    3840
   ],
   "paddedTo": [
     3840,
     3840
   ],
   "padColour": {
-    "r": 1,
-    "g": 39,
-    "b": 70
+    "r": 0,
+    "g": 29,
+    "b": 60
   },
   "upscaledTo": [
     10000,
@@ -43,11 +43,11 @@
     "S": 5
   },
   "distribution": [
-    35560,
-    37359,
-    279769,
-    6530,
-    12006,
-    19401
+    61027,
+    59920,
+    229485,
+    5368,
+    10293,
+    24532
   ]
 }
