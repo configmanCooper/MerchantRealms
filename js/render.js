@@ -1941,12 +1941,12 @@ window.Renderer = (function () {
 
         // Check if terrain needs redraw
         const dz = Math.abs(camera.zoom - lastTerrainZoom);
-        const dx = Math.abs(camera.x - lastTerrainCamX);
-        const dy = Math.abs(camera.y - lastTerrainCamY);
-        // At low zoom, generous threshold since terrain cache has large margin tiles
-        // At mid zoom (1.0-1.5), slightly increased threshold for perf
-        const panThreshold = camera.zoom < 0.5 ? CONFIG.PAN_THRESHOLD_EXTREME : camera.zoom < 0.7 ? CONFIG.PAN_THRESHOLD_LOW : camera.zoom < 1.0 ? CONFIG.PAN_THRESHOLD_MEDIUM : camera.zoom < 1.5 ? CONFIG.PAN_THRESHOLD_NORMAL : CONFIG.PAN_THRESHOLD_HIGH;
-        if (dz > 0.005 || dx > panThreshold || dy > panThreshold) {
+        // v9p12: removed pan-driven terrainDirty trigger. The cache-bounds check
+        // in _renderTerrainLegacy (viewport vs _terrainCacheStart/End cols/rows)
+        // is the authoritative pan-redraw trigger. The previous PAN_THRESHOLD_HIGH=4
+        // was forcing a full terrain rebuild every 4 world px (~6 screen px @ zoom 1.5)
+        // even though TERRAIN_MARGIN cache had room to spare. That was the panning hitch.
+        if (dz > 0.005) {
             terrainDirty = true;
         }
         // Scene cache invalidation is handled in _renderViaSceneCache via bounds check

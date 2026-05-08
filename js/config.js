@@ -50,8 +50,8 @@ const CONFIG = {
     TERRAIN_MARGIN_EXTREME: 40,   // zoom < 0.5
     TERRAIN_MARGIN_LOW: 28,       // 0.5 <= zoom < 0.7
     TERRAIN_MARGIN_MEDIUM: 20,    // 0.7 <= zoom < 1.0
-    TERRAIN_MARGIN_NORMAL: 10,    // 1.0 <= zoom < 1.5
-    TERRAIN_MARGIN_HIGH: 6,       // zoom >= 1.5
+    TERRAIN_MARGIN_NORMAL: 24,    // 1.0 <= zoom < 1.5  (v9p12: was 10)
+    TERRAIN_MARGIN_HIGH: 24,      // zoom >= 1.5         (v9p12: was 6)
 
     // Pan thresholds in px (how far camera moves before terrain redraws)
     PAN_THRESHOLD_EXTREME: 200,   // zoom < 0.5
