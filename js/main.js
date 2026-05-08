@@ -263,7 +263,7 @@ window.Game = (function () {
         // Helper used by both the menu button (btnToggleRenderer) and the in-game
         // god-mode button (btnRendererMode). Keeps CONFIG.RENDERER_MODE,
         // CONFIG.USE_TEXTURED_TERRAIN, both button labels, and renderer caches in sync.
-        var RENDERER_MODES = ['textured', 'flat', 'map'];
+        var RENDERER_MODES = ['flat', 'map'];
         function _modeLabel(mode, withPrefix) {
             var name = mode.charAt(0).toUpperCase() + mode.slice(1);
             if (withPrefix === 'menu') return '🎨 Renderer: ' + name;
@@ -288,8 +288,11 @@ window.Game = (function () {
             }
         }
         function _cycleRendererMode(opts) {
-            var cur = CONFIG.RENDERER_MODE || (CONFIG.USE_TEXTURED_TERRAIN ? 'textured' : 'flat');
+            var cur = CONFIG.RENDERER_MODE || (CONFIG.USE_TEXTURED_TERRAIN ? 'flat' : 'flat');
+            // v9p33: textured removed from the cycle — coerce existing 'textured' state to 'flat'.
+            if (cur === 'textured') cur = 'flat';
             var idx = RENDERER_MODES.indexOf(cur);
+            if (idx < 0) idx = 0;
             var next = RENDERER_MODES[(idx + 1) % RENDERER_MODES.length];
             _applyRendererMode(next, opts);
         }

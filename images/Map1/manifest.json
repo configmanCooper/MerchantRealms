@@ -1,0 +1,53 @@
+{
+  "sourceFile": "upscaled_10k_from_quad4k.png",
+  "sourceSize": [
+    10000,
+    10000
+  ],
+  "paddedTo": [
+    10000,
+    10000
+  ],
+  "padColour": {
+    "r": 1,
+    "g": 30,
+    "b": 61
+  },
+  "upscaledTo": [
+    10000,
+    10000
+  ],
+  "tilePixels": 16,
+  "gridSize": [
+    625,
+    625
+  ],
+  "split": [
+    4,
+    4
+  ],
+  "legend": {
+    "G": "grass",
+    "F": "forest",
+    "W": "water",
+    "M": "mountain",
+    "H": "hills",
+    "S": "sand"
+  },
+  "tileIds": {
+    "G": 0,
+    "F": 1,
+    "W": 2,
+    "M": 3,
+    "H": 4,
+    "S": 5
+  },
+  "distribution": [
+    61157,
+    59858,
+    229507,
+    5318,
+    10404,
+    24381
+  ]
+}

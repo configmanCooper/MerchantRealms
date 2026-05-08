@@ -16,10 +16,13 @@ window.Renderer = (function () {
         targetX: 0, targetY: 0,
         // v9p10: When textured terrain is on, clamp min zoom to 1.5 (zooming
         // out further is too expensive and the textured detail is lost anyway).
-        zoom: Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN),
-        targetZoom: Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN),
-        minZoom: CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN,
-        maxZoom: CONFIG.CAMERA_ZOOM_MAX,
+        // v9p33: 'map' mode just blits a pre-loaded image — cheap at any zoom —
+        // and uses range [0.4, 1.0] with default 0.7 (zoomed-out world overview).
+        // Flat mode default zoom = 1.0.
+        zoom: (CONFIG.RENDERER_MODE === 'map') ? 0.7 : (CONFIG.RENDERER_MODE === 'flat' ? 1.0 : Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN)),
+        targetZoom: (CONFIG.RENDERER_MODE === 'map') ? 0.7 : (CONFIG.RENDERER_MODE === 'flat' ? 1.0 : Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN)),
+        minZoom: (CONFIG.RENDERER_MODE === 'map') ? 0.4 : (CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN),
+        maxZoom: (CONFIG.RENDERER_MODE === 'map') ? 1.0 : CONFIG.CAMERA_ZOOM_MAX,
         lerpSpeed: 0.12,
         width: 0,
         height: 0,
@@ -539,7 +542,8 @@ window.Renderer = (function () {
     // v9p03: single grass + single water + hills→grass come from base pattern fill (terrain IDs 0/2/4).
     // Per-tile sprite dispatch ONLY for forest(1)/mountain(3)/sand(5).
     const _v9pT={1:[205,3],3:[208,6],5:[217,4]};
-    function _v9n1Spr(t,c,x,y,b,k){var p=_v9n1T[c];if(!p||camera.zoom<0.5)return false;var idx=_ensureSettleSprite(t);if(idx==null)idx=tileHash(t.x,t.y)%p[1]|0;var s=_terrainTextures[p[0]+idx];if(!s||!s.loaded||!s.img)return false;var w=b*p[2],h=w*(s.img.naturalHeight/s.img.naturalWidth);ctx.drawImage(s.img,x-w*0.5,y-h*0.85,w,h);ctx.fillStyle=k;ctx.fillRect(x+1,y-h*0.85-4,5,3);return true;}
+    var _lastSpriteTopY = null; // v9p33: set by _v9n1Spr when it draws (sprite top in world coords) — used for label placement
+    function _v9n1Spr(t,c,x,y,b,k){var p=_v9n1T[c];if(!p)return false;var _mm=(CONFIG.RENDERER_MODE==='map');if(!_mm&&camera.zoom<0.5)return false;var idx=_ensureSettleSprite(t);if(idx==null)idx=tileHash(t.x,t.y)%p[1]|0;var s=_terrainTextures[p[0]+idx];if(!s||!s.loaded||!s.img)return false;var _scale=_mm?(c==='capital_city'?1.25:1.5):1;var w=b*p[2]*_scale,h=w*(s.img.naturalHeight/s.img.naturalWidth);var _topY=y-h*0.85;ctx.drawImage(s.img,x-w*0.5,_topY,w,h);ctx.fillStyle=k;ctx.fillRect(x+1,_topY-4,5,3);_lastSpriteTopY=_topY;return true;}
     // v9p02: cache a radial-alpha-masked copy of a sprite for soft-edge blending
     function _v9pFeather(img){var sz=96,c=document.createElement('canvas');c.width=sz;c.height=sz;var x=c.getContext('2d');x.drawImage(img,0,0,sz,sz);var g=x.createRadialGradient(sz/2,sz/2,sz*0.34,sz/2,sz/2,sz*0.56);g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');x.globalCompositeOperation='destination-in';x.fillStyle=g;x.fillRect(0,0,sz,sz);return c;}
     // v9p05: build a seamless mirror-tiled 2W×2H canvas so non-tileable sprites can be pattern-filled without edge seams.
@@ -2945,9 +2949,9 @@ window.Renderer = (function () {
         const townMap = _frameTownMap;
         const ts = CONFIG.TILE_SIZE;
 
-        // v9o.0-paths: pattern world-anchored via setTransform(identity)
-        var _ppt = (camera.zoom >= 0.4) && _terrainTextures[100], _pathPatt = null;
-        if (_ppt && _ppt.loaded && _ppt.img) { if (!_ppt.pattern) { _ppt.pattern = ctx.createPattern(_ppt.img, 'repeat'); if (_ppt.pattern && _ppt.pattern.setTransform) _ppt.pattern.setTransform(new DOMMatrix()); } _pathPatt = _ppt.pattern; }
+        // v9p33-paths: textured paths disabled — they look bad. Paths render
+        // as solid colours via the existing `||` fallbacks below.
+        var _pathPatt = null;
 
         // Helper: draw a Catmull-Rom spline through waypoints
         function drawWaypointPath(pts) {
@@ -3588,8 +3592,11 @@ window.Renderer = (function () {
             } else if (isStruggling) {
                 kColor = '#8a7a64';
             }
+            _lastSpriteTopY = null; // v9p33: reset per-town so label placement falls back to baseSize-relative if no sprite drew
 
-            if (camera.zoom < 0.6) {
+            // v9p33: in map mode always go to the detailed sprite render path,
+            // regardless of zoom — user wants town/city sprites visible at every zoom.
+            if (camera.zoom < 0.6 && CONFIG.RENDERER_MODE !== 'map') {
                 // Zoomed out: shape varies by category
                 const cat = town.category || 'village';
 
@@ -4205,12 +4212,17 @@ window.Renderer = (function () {
                 ctx.fillStyle = cat === 'capital_city' ? '#ffd700' : cat === 'city' ? '#e8dcc8' : '#d0c8b0';
                 ctx.strokeStyle = 'rgba(0,0,0,0.7)';
                 ctx.lineWidth = 2.5;
-                const fontSize = cat === 'capital_city' ? 14 : cat === 'city' ? 12 : cat === 'town' ? 11 : 9;
+                // v9p33: in map mode, bump font size 60% and place the label
+                // just above the actual sprite top (rather than relative to the
+                // shape baseSize). Other modes keep the original behaviour.
+                var _isMap = (CONFIG.RENDERER_MODE === 'map');
+                const fontSize = (cat === 'capital_city' ? 14 : cat === 'city' ? 12 : cat === 'town' ? 11 : 9) * (_isMap ? 1.6 : 1);
                 ctx.font = `bold ${fontSize}px 'Cinzel', serif`;
                 ctx.textAlign = 'center';
                 const nameLabel = cat === 'capital_city' ? `👑 ${town.name}` : (town.isFrontline ? `⚔️ ${town.name}` : town.name);
-                ctx.strokeText(nameLabel, cx, cy - baseSize - 12);
-                ctx.fillText(nameLabel, cx, cy - baseSize - 12);
+                var _labelY = (_isMap && _lastSpriteTopY !== null) ? (_lastSpriteTopY - 6) : (cy - baseSize - 12);
+                ctx.strokeText(nameLabel, cx, _labelY);
+                ctx.fillText(nameLabel, cx, _labelY);
 
                 // Security indicator — subtle red dot, only at higher zoom
                 const securityLevel = town.security || 0;
@@ -7273,11 +7285,17 @@ window.Renderer = (function () {
     // v9p10b: re-apply zoom limits based on current CONFIG.USE_TEXTURED_TERRAIN.
     // Textured mode clamps min zoom to 1.5 (terrain build is too expensive
     // when zoomed way out); flat mode allows the full original 0.5 min.
+    // v9p33: map mode uses [0.4, 1.0] (cheap source-image blit, no upscale past native).
     function refreshZoomLimits() {
-        var newMin = CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN;
+        var mapMode = (CONFIG.RENDERER_MODE === 'map');
+        var newMin = mapMode ? 0.4 : (CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN);
+        var newMax = mapMode ? 1.0 : CONFIG.CAMERA_ZOOM_MAX;
         camera.minZoom = newMin;
+        camera.maxZoom = newMax;
         if (camera.targetZoom < newMin) camera.targetZoom = newMin;
+        if (camera.targetZoom > newMax) camera.targetZoom = newMax;
         if (camera.zoom < newMin) camera.zoom = newMin;
+        if (camera.zoom > newMax) camera.zoom = newMax;
     }
 
     return {
