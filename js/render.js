@@ -509,51 +509,75 @@ window.Renderer = (function () {
     }
 
     // Grass color variation — warm golden-green tint + subtle per-tile color patches
-    // Two-pass: golden tint overlay + per-tile color variation
+    // v9p11.1: bilinear-interpolated low-frequency variation across 16x16 macro grid
+    // (was discrete 8x8 blocks which created visible checker squares amplified by v9p11 contrast)
     function _addGrassVariation(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
-        // Low-frequency grass color variation: large patches (8x8 tile blocks) get warm/cool tints
-        // This avoids per-tile noise that creates camouflage, instead gives gentle rolling color
+        var BSZ = 16;
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
                 var tileId = terrain[r * terrainWidth + c];
                 if (tileId !== 0 && tileId !== 1) continue; // only grass/forest tiles
-                
-                // Low-frequency hash: group tiles into 8x8 blocks for smooth variation
-                var blockC = Math.floor(c / 8);
-                var blockR = Math.floor(r / 8);
-                var blockHash = tileHash(blockC * 3 + 17, blockR * 5 + 31);
-                
-                // Only apply to ~40% of blocks for subtlety
-                if (blockHash > 0.4) continue;
-                
+
+                // Bilinear-interpolate hash across 4 corners of the macro block
+                var bc = Math.floor(c / BSZ), br = Math.floor(r / BSZ);
+                var fx = (c - bc * BSZ) / BSZ;
+                var fy = (r - br * BSZ) / BSZ;
+                fx = fx * fx * (3 - 2 * fx); // smoothstep
+                fy = fy * fy * (3 - 2 * fy);
+                var h00 = tileHash(bc * 3 + 17, br * 5 + 31);
+                var h10 = tileHash((bc + 1) * 3 + 17, br * 5 + 31);
+                var h01 = tileHash(bc * 3 + 17, (br + 1) * 5 + 31);
+                var h11 = tileHash((bc + 1) * 3 + 17, (br + 1) * 5 + 31);
+                var h = h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) + h01 * (1 - fx) * fy + h11 * fx * fy;
+
+                // Mid-range = no tint, ends ramp smoothly to color (no hard step boundaries)
+                if (h > 0.30 && h < 0.70) continue;
+
                 var x = (c - cSC) * ts;
                 var y = (r - cSR) * ts;
-                
-                // Warm/cool/brown patches at very low alpha
-                if (blockHash < 0.15) {
-                    // Warmer golden patch
-                    targetCtx.fillStyle = 'rgba(180, 160, 60, 0.08)';
-                } else if (blockHash < 0.28) {
-                    // Slightly browner/drier patch
-                    targetCtx.fillStyle = 'rgba(140, 120, 60, 0.06)';
+                if (h <= 0.30) {
+                    var t = (0.30 - h) / 0.30; // 0..1
+                    var a = (t * 0.07).toFixed(3); // smoothly ramps from 0
+                    targetCtx.fillStyle = 'rgba(180,160,60,' + a + ')'; // warm golden
                 } else {
-                    // Slightly lighter/fresher patch
-                    targetCtx.fillStyle = 'rgba(100, 180, 80, 0.05)';
+                    var t2 = (h - 0.70) / 0.30;
+                    var a2 = (t2 * 0.06).toFixed(3);
+                    targetCtx.fillStyle = 'rgba(100,180,80,' + a2 + ')'; // cool fresh
                 }
                 targetCtx.fillRect(x, y, ts, ts);
             }
         }
     }
 
-    // v9l.0 ADD-NOISE-GRAIN-PER-TILE — break visible texture-pattern repetition with deterministic per-tile micro-grain
+    // v9p11.2 ADD-NOISE-GRAIN — low-frequency bilinear-interpolated macro grain
+    // (was per-tile fillRect with 4 discrete colors which v9p11 contrast(1.2) amplified into a visible per-tile checker)
+    // Now uses 12-tile macro blocks with smoothstep blending for smooth large-scale variation.
     function _addNoiseGrain(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
+        if (typeof window !== 'undefined' && window.__noNoiseGrain) return;
+        var BSZ = 12;
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
-                var h = tileHash(c * 13 + 5, r * 17 + 11);
-                if (h < 0.25)      targetCtx.fillStyle = 'rgba(0,0,0,0.050)';
-                else if (h < 0.50) targetCtx.fillStyle = 'rgba(255,255,255,0.038)';
-                else if (h < 0.75) targetCtx.fillStyle = 'rgba(120,90,40,0.034)';
-                else               targetCtx.fillStyle = 'rgba(40,60,90,0.034)';
+                var bc = Math.floor(c / BSZ), br = Math.floor(r / BSZ);
+                var fx = (c - bc * BSZ) / BSZ;
+                var fy = (r - br * BSZ) / BSZ;
+                fx = fx * fx * (3 - 2 * fx);
+                fy = fy * fy * (3 - 2 * fy);
+                var h00 = tileHash(bc * 7 + 23, br * 11 + 41);
+                var h10 = tileHash((bc + 1) * 7 + 23, br * 11 + 41);
+                var h01 = tileHash(bc * 7 + 23, (br + 1) * 11 + 41);
+                var h11 = tileHash((bc + 1) * 7 + 23, (br + 1) * 11 + 41);
+                var h = h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) + h01 * (1 - fx) * fy + h11 * fx * fy;
+                // Skip mid-range to avoid solid-fill of every tile (cheap perf, no visual loss)
+                if (h > 0.35 && h < 0.65) continue;
+                if (h <= 0.35) {
+                    var t = (0.35 - h) / 0.35;
+                    var a = (t * 0.025).toFixed(3);
+                    targetCtx.fillStyle = 'rgba(0,0,0,' + a + ')';
+                } else {
+                    var t2 = (h - 0.65) / 0.35;
+                    var a2 = (t2 * 0.020).toFixed(3);
+                    targetCtx.fillStyle = 'rgba(255,255,255,' + a2 + ')';
+                }
                 targetCtx.fillRect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
             }
         }
@@ -1612,6 +1636,41 @@ window.Renderer = (function () {
         targetCtx.restore();
     }
 
+    // v9p11: Apply 20% darken + 20% contrast on grass / forest / hills tiles only.
+    // Uses ctx.filter via a temp canvas, masked to those tile types so water,
+    // mountains, sand, and roads/towns are untouched.
+    function _darkenGrassForestHills(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        if (typeof window !== 'undefined' && window.__noP11) return; // diag toggle for A/B
+        if (typeof targetCtx.filter === 'undefined') return; // safety: very old browser
+        var w = targetCtx.canvas.width;
+        var h = targetCtx.canvas.height;
+        if (w <= 0 || h <= 0) return;
+
+        var tmp = document.createElement('canvas');
+        tmp.width = w;
+        tmp.height = h;
+        var tctx = tmp.getContext('2d');
+        tctx.drawImage(targetCtx.canvas, 0, 0);
+
+        targetCtx.save();
+        targetCtx.beginPath();
+        var found = false;
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var t = terrain[r * terrainWidth + c];
+                if (t !== 0 && t !== 1 && t !== 4) continue; // grass/forest/hills only
+                targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
+                found = true;
+            }
+        }
+        if (!found) { targetCtx.restore(); return; }
+        targetCtx.clip();
+        targetCtx.filter = 'brightness(0.8) contrast(1.2)';
+        targetCtx.drawImage(tmp, 0, 0);
+        targetCtx.filter = 'none';
+        targetCtx.restore();
+    }
+
     // ── Color helpers ──
     function hexToRgb(hex) {
         const r = parseInt(hex.slice(1, 3), 16);
@@ -2582,6 +2641,9 @@ window.Renderer = (function () {
                     }
                 }
             }
+
+            // v9p11: 20% darken + 20% contrast on grass/forest/hills tiles (user preference)
+            _darkenGrassForestHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
 
             // Warm atmospheric overlay on terrain
             _applyWarmOverlay(offscreenCtx, drawW, drawH);
