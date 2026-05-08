@@ -270,6 +270,25 @@ window.Game = (function () {
                 if (typeof Renderer !== 'undefined' && Renderer.invalidateTerrain) Renderer.invalidateTerrain();
                 // v9p10b: textured mode clamps min zoom to 1.5; flat mode allows 0.5
                 if (typeof Renderer !== 'undefined' && Renderer.refreshZoomLimits) Renderer.refreshZoomLimits();
+                // v9p19: keep in-game renderer mode button label in sync
+                var bgm = document.getElementById('btnRendererMode');
+                if (bgm) bgm.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '⚡ Textured' : '⚡ Flat';
+            });
+        }
+        // v9p19: in-game renderer toggle (mirrors main menu btnToggleRenderer).
+        // Per supervisor: "god mode button to switch between textured and flat".
+        var btnRendererMode = document.getElementById('btnRendererMode');
+        if (btnRendererMode) {
+            btnRendererMode.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '⚡ Textured' : '⚡ Flat';
+            btnRendererMode.addEventListener('click', function (e) {
+                e.stopPropagation();
+                CONFIG.USE_TEXTURED_TERRAIN = !CONFIG.USE_TEXTURED_TERRAIN;
+                btnRendererMode.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '⚡ Textured' : '⚡ Flat';
+                if (typeof Renderer !== 'undefined' && Renderer.invalidateTerrain) Renderer.invalidateTerrain();
+                if (typeof Renderer !== 'undefined' && Renderer.refreshZoomLimits) Renderer.refreshZoomLimits();
+                var brt = document.getElementById('btnToggleRenderer');
+                if (brt) brt.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '🎨 Renderer: Textured' : '🎨 Renderer: Flat';
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('Renderer: ' + (CONFIG.USE_TEXTURED_TERRAIN ? 'Textured' : 'Flat'), 'info');
             });
         }
         var volSlider = document.getElementById('musicVolume');
