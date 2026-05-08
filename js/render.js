@@ -212,49 +212,77 @@ window.Renderer = (function () {
     const _FOAM_COLOR = 'rgba(220,240,250,0.6)';
     const _FOAM_INNER_COLOR = 'rgba(180,220,235,0.4)';
 
-    // Compute distance from nearest non-water tile for each water tile in the visible range
-    function _computeWaterDepth(terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER) {
-        var cols = cEC - cSC + 1;
-        var rows = cER - cSR + 1;
-        var depth = new Int8Array(cols * rows);
-        depth.fill(5); // default deep
+    // v9p15: global water depth cache. Terrain is static after generation, so we
+    // compute depth-from-shore for the entire world ONCE (lazy) and slice from it
+    // per region. Saves a 5-pass tile scan + 4-pass BFS on every terrain rebuild.
+    var _globalDepth = null;
+    var _globalDepthW = 0;
+    var _globalDepthH = 0;
+    var _globalDepthSig = 0;
 
-        // Pass 1: mark tiles adjacent to non-water as depth 0
-        for (var r = cSR; r <= cER; r++) {
-            for (var c = cSC; c <= cEC; c++) {
-                if (terrain[r * terrainWidth + c] !== 2) {
-                    depth[(r - cSR) * cols + (c - cSC)] = -1; // not water
-                    continue;
-                }
-                // Check 8 neighbors for non-water
+    function _ensureGlobalDepth(terrain, terrainWidth, terrainHeight) {
+        // Signature check: if terrain changed (size or identity), invalidate.
+        var sig = terrainWidth * 1000003 + terrainHeight * 17 + (terrain.length | 0);
+        if (_globalDepth && _globalDepthSig === sig &&
+            _globalDepthW === terrainWidth && _globalDepthH === terrainHeight) {
+            return _globalDepth;
+        }
+        var W = terrainWidth, H = terrainHeight;
+        var d = new Int8Array(W * H);
+        // Init: -1 for non-water, 5 for water (will be overwritten by BFS)
+        for (var i = 0; i < terrain.length; i++) {
+            d[i] = (terrain[i] === 2) ? 5 : -1;
+        }
+        // Pass: mark water tiles adjacent to non-water as depth 0 (shore)
+        for (var r = 0; r < H; r++) {
+            for (var c = 0; c < W; c++) {
+                if (d[r * W + c] !== 5) continue;
                 var isShore = false;
                 for (var dr = -1; dr <= 1 && !isShore; dr++) {
                     for (var dc = -1; dc <= 1 && !isShore; dc++) {
                         if (dr === 0 && dc === 0) continue;
                         var nr = r + dr, nc = c + dc;
-                        if (nr < 0 || nr >= terrainHeight || nc < 0 || nc >= terrainWidth) continue;
-                        if (terrain[nr * terrainWidth + nc] !== 2) isShore = true;
+                        if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue;
+                        if (terrain[nr * W + nc] !== 2) isShore = true;
                     }
                 }
-                if (isShore) depth[(r - cSR) * cols + (c - cSC)] = 0;
+                if (isShore) d[r * W + c] = 0;
             }
         }
-
-        // BFS passes to propagate depth (up to 4)
-        for (var d = 0; d < 4; d++) {
-            for (var r = cSR; r <= cER; r++) {
-                for (var c = cSC; c <= cEC; c++) {
-                    var idx = (r - cSR) * cols + (c - cSC);
-                    if (depth[idx] !== d) continue;
-                    // Propagate to cardinal neighbors
-                    var neighbors = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+        // BFS passes (up to 4)
+        for (var dd = 0; dd < 4; dd++) {
+            for (var r = 0; r < H; r++) {
+                for (var c = 0; c < W; c++) {
+                    if (d[r * W + c] !== dd) continue;
+                    var ns = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
                     for (var n = 0; n < 4; n++) {
-                        var nr = neighbors[n][0] - cSR, nc = neighbors[n][1] - cSC;
-                        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-                        var nIdx = nr * cols + nc;
-                        if (depth[nIdx] > d + 1) depth[nIdx] = d + 1;
+                        var nr = ns[n][0], nc = ns[n][1];
+                        if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue;
+                        var nIdx = nr * W + nc;
+                        if (d[nIdx] > dd + 1) d[nIdx] = dd + 1;
                     }
                 }
+            }
+        }
+        _globalDepth = d;
+        _globalDepthW = W;
+        _globalDepthH = H;
+        _globalDepthSig = sig;
+        return d;
+    }
+
+    // Compute distance from nearest non-water tile for each water tile in the visible range
+    // v9p15: now slices from the global depth cache instead of recomputing each call.
+    function _computeWaterDepth(terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER) {
+        var globalD = _ensureGlobalDepth(terrain, terrainWidth, terrainHeight);
+        var cols = cEC - cSC + 1;
+        var rows = cER - cSR + 1;
+        var depth = new Int8Array(cols * rows);
+        for (var r = cSR; r <= cER; r++) {
+            var srcRow = r * terrainWidth;
+            var dstRow = (r - cSR) * cols;
+            for (var c = cSC; c <= cEC; c++) {
+                depth[dstRow + (c - cSC)] = globalD[srcRow + c];
             }
         }
         return depth;
