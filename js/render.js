@@ -2436,85 +2436,9 @@ window.Renderer = (function () {
     }
 
     function renderTerrain() {
-        var terrain = worldData.terrain;
-        if (!terrain || !terrain.length) return;
-
-        // v9p10b: In flat (non-textured) mode, use the legacy per-tile renderer
-        // so trees on forest tiles, hill arcs, mountain triangles, etc. all
-        // come back exactly as they were before v9p10. The chunked cache is
-        // textured-mode only.
-        if (!CONFIG.USE_TEXTURED_TERRAIN) {
-            _renderTerrainLegacy();
-            return;
-        }
-
-        var ts = CONFIG.TILE_SIZE;
-        var terrainWidth = worldData.gridCols || Math.floor(CONFIG.WORLD_WIDTH / ts);
-        var terrainHeight = worldData.gridRows || Math.floor(CONFIG.WORLD_HEIGHT / ts);
-
-        // v9p10: Season-driven cache invalidation (season changes terrain palette)
-        var _curSeason = (typeof Engine !== 'undefined' && Engine.getSeason) ? Engine.getSeason() : null;
-        if (_curSeason !== _terrainChunksSeason) {
-            _invalidateTerrainChunks();
-            _terrainChunksSeason = _curSeason;
-        }
-        // Honor legacy terrainDirty flag (e.g., texture finished loading)
-        if (terrainDirty) {
-            _invalidateTerrainChunks();
-            terrainDirty = false;
-        }
-
-        var vb = getVisibleBounds();
-        var startCol = Math.max(0, Math.floor(vb.left / ts));
-        var endCol = Math.min(terrainWidth - 1, Math.ceil(vb.right / ts));
-        var startRow = Math.max(0, Math.floor(vb.top / ts));
-        var endRow = Math.min(terrainHeight - 1, Math.ceil(vb.bottom / ts));
-
-        var startCX = Math.floor(startCol / CHUNK_TILES);
-        var endCX = Math.floor(endCol / CHUNK_TILES);
-        var startCY = Math.floor(startRow / CHUNK_TILES);
-        var endCY = Math.floor(endRow / CHUNK_TILES);
-
-        // v9p10.1: Per-frame chunk build budget. Building a chunk runs ~17
-        // post-process passes over CHUNK_TILES² tiles which is ~50-100ms.
-        // Doing several per frame during a pan = visible hitches. Instead
-        // we build up to BUDGET chunks per frame; for any visible-but-not-yet-built
-        // chunk we draw a fast solid-color placeholder sampled from the center
-        // tile. The next few frames fill in the real content.
-        var BUDGET = 2;
-        var built = 0;
-        var chunkPx = CHUNK_TILES * ts;
-
-        for (var cy = startCY; cy <= endCY; cy++) {
-            for (var cx = startCX; cx <= endCX; cx++) {
-                var key = cx + ',' + cy;
-                var chunk = _terrainChunks[key];
-                if (!chunk) {
-                    if (built < BUDGET) {
-                        chunk = _buildTerrainChunk(cx, cy);
-                        if (chunk) {
-                            _terrainChunks[key] = chunk;
-                            built++;
-                        }
-                    } else {
-                        // Placeholder: sample center tile color of this chunk and fill
-                        var sampleC = Math.min(terrainWidth - 1, cx * CHUNK_TILES + (CHUNK_TILES >> 1));
-                        var sampleR = Math.min(terrainHeight - 1, cy * CHUNK_TILES + (CHUNK_TILES >> 1));
-                        var sampleTile = terrain[sampleR * terrainWidth + sampleC];
-                        ctx.fillStyle = getTerrainColor(sampleTile);
-                        var px = cx * chunkPx;
-                        var py = cy * chunkPx;
-                        var pw = Math.min(chunkPx, (terrainWidth - cx * CHUNK_TILES) * ts);
-                        var ph = Math.min(chunkPx, (terrainHeight - cy * CHUNK_TILES) * ts);
-                        ctx.fillRect(px, py, pw, ph);
-                        continue;
-                    }
-                }
-                if (chunk) {
-                    ctx.drawImage(chunk.canvas, chunk.innerSC * ts, chunk.innerSR * ts);
-                }
-            }
-        }
+        // v9p10c: chunked cache reverted per user request — always use the
+        // legacy per-tile renderer (the milestone-1 v9p09 behavior).
+        _renderTerrainLegacy();
     }
 
 
