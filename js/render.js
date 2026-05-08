@@ -500,15 +500,12 @@ window.Renderer = (function () {
     function _fillTerrainTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, tileId, additionalTileId) {
         var V=_v9pT[tileId], FE=V&&V[2];
 
-        // v9p09: For grass/water/hills (IDs 0/2/4), use solid color fill instead of texture pattern.
-        // The pattern fill (with v9p05 mirror-tiled seamless source) was producing a visible
-        // ~20-tile grid: every flip-seam between mirrored copies of the source sprite created
-        // a faint brown/lighter line at the same pattern-anchored coordinates. The user
-        // confirmed: "they just seem to be where the texture tiles you used lined up — perfect
-        // squares across the entire map, including in the water." Solid color base eliminates
-        // the seams entirely; texture/variation comes from _addGrassVariation, _addNoiseGrain,
-        // _renderWaterWithDepth, _drawBeachFringe, and scattered tree sprites layered on top.
-        if (tileId === 0 || tileId === 2 || tileId === 4) {
+        // v9p09: For water (ID 2), use solid color fill — no texture (water has its own
+        // depth-based renderer). v9p24: grass (0) and hills (4) now use the light-grass
+        // texture pattern (terrain_grass_light at index 201). The v9p23 sprite cleanup
+        // removed the lighter outer frame that previously caused a visible brown grid
+        // when tiled with createPattern, so plain repeat tiling is now seam-free.
+        if (tileId === 2) {
             targetCtx.save();
             targetCtx.beginPath();
             var _v9p09Found = false;
@@ -523,6 +520,49 @@ window.Renderer = (function () {
             if (!_v9p09Found) { targetCtx.restore(); return false; }
             targetCtx.clip();
             targetCtx.fillStyle = getTerrainColor(tileId);
+            targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+            targetCtx.restore();
+            return true;
+        }
+        // v9p24: grass / hills — fill with light-grass texture pattern. Falls back to
+        // solid color if texture isn't loaded yet.
+        if (tileId === 0 || tileId === 4) {
+            var _v9p24Light = _terrainTextures[201]; // terrain_grass_light.png
+            if (!_v9p24Light || !_v9p24Light.loaded || !_v9p24Light.img) {
+                targetCtx.save(); targetCtx.beginPath();
+                var _gFound = false;
+                for (var _gR = cSR; _gR <= cER; _gR++) {
+                    for (var _gC = cSC; _gC <= cEC; _gC++) {
+                        var _gT = terrain[_gR * terrainWidth + _gC];
+                        if (_gT !== tileId && _gT !== additionalTileId) continue;
+                        targetCtx.rect((_gC - cSC) * ts, (_gR - cSR) * ts, ts, ts);
+                        _gFound = true;
+                    }
+                }
+                if (!_gFound) { targetCtx.restore(); return false; }
+                targetCtx.clip();
+                targetCtx.fillStyle = getTerrainColor(tileId);
+                targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+                targetCtx.restore();
+                return true;
+            }
+            targetCtx.save();
+            targetCtx.beginPath();
+            var _v9p24Found = false;
+            for (var _r24 = cSR; _r24 <= cER; _r24++) {
+                for (var _c24 = cSC; _c24 <= cEC; _c24++) {
+                    var _t24 = terrain[_r24 * terrainWidth + _c24];
+                    if (_t24 !== tileId && _t24 !== additionalTileId) continue;
+                    targetCtx.rect((_c24 - cSC) * ts, (_r24 - cSR) * ts, ts, ts);
+                    _v9p24Found = true;
+                }
+            }
+            if (!_v9p24Found) { targetCtx.restore(); return false; }
+            targetCtx.clip();
+            // Mirror-tile the source so opposite edges match seamlessly. Cache the result.
+            if (!_v9p24Light._mirrorCanvas) _v9p24Light._mirrorCanvas = _v9p05Seamless(_v9p24Light.img);
+            var _pat24 = targetCtx.createPattern(_v9p24Light._mirrorCanvas, 'repeat');
+            targetCtx.fillStyle = _pat24;
             targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
             targetCtx.restore();
             return true;
