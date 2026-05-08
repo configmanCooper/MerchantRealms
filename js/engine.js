@@ -252,10 +252,14 @@
                 const lakeNoise = elevation(nx * 25 + 300, ny * 25 + 300, 2);
                 const isLake = (lakeNoise > 0.55) && (e < 0.25);
 
-                // Rivers — thin sinuous water channels
-                const riverNoise = elevation(nx * 3 + 50, ny * 12 + 50, 3);
-                const river2 = elevation(nx * 12 + 200, ny * 3 + 200, 3);
-                const isRiver = (Math.abs(riverNoise) < 0.03) || (Math.abs(river2) < 0.03);
+                // Rivers — DISABLED v9p08: anisotropic noise (nx*3,ny*12) and (nx*12,ny*3) produced
+                // near-straight contour lines that formed a grid of 1-tile-wide horizontal+vertical
+                // water channels across the entire world (visible as a "brown grid" of beach fringe).
+                // Real rivers come from the deterministic carve loop below.
+                // const riverNoise = elevation(nx * 3 + 50, ny * 12 + 50, 3);
+                // const river2 = elevation(nx * 12 + 200, ny * 3 + 200, 3);
+                // const isRiver = (Math.abs(riverNoise) < 0.03) || (Math.abs(river2) < 0.03);
+                const isRiver = false;
 
                 let terrain;
                 if (e < -0.15) terrain = TERRAIN.WATER.id;

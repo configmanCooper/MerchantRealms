@@ -72,6 +72,7 @@
             <button id="btnLoadGame" class="btn-medieval btn-large" style="margin-top:12px;">📂 Load Game</button>
             <button id="btnTutorial" class="btn-medieval btn-large btn-tutorial" style="margin-top:12px;">📖 Tutorial</button>
             <button id="btnTitleMusicToggle" class="btn-medieval" style="display:block;margin:18px auto 0;font-size:0.9rem;padding:6px 18px;opacity:0.85;">🔊 Music: On</button>
+            <button id="btnToggleRenderer" class="btn-medieval" style="display:block;margin:8px auto 0;font-size:0.78rem;padding:4px 14px;opacity:0.7;">🎨 Renderer: Textured</button>
             <div style="margin:8px auto 0;display:flex;align-items:center;justify-content:center;gap:8px;opacity:0.85;">
                 <span style="font-size:0.75rem;color:var(--text-dim);">🔈</span>
                 <input id="titleMusicVolume" type="range" min="0" max="100" value="30"
@@ -332,7 +333,7 @@
     <!-- Scripts loaded in dependency order -->
     <script src="js/lz-string.min.js"></script>
     <script src="js/wasm-loader.js"></script>
-    <script src="js/config.js"></script>
+    <script src="js/config.js?v=v9p09"></script>
     <script src="js/engine.js?v=1"></script>
     <script src="js/modules/engine_elite_merchants.js"></script>
     <script src="js/modules/engine_health.js"></script>
@@ -353,7 +354,7 @@
     <script src="js/modules/player_conquest.js"></script>
     <script src="js/modules/player_family.js"></script>
     <script src="js/modules/player_building_mgmt.js"></script>
-    <script src="js/render.js"></script>
+    <script src="js/render.js?v=v9p09"></script>
     <script src="js/ui.js?v=5"></script>
     <!-- UI Modules (extend window.UI) -->
     <script src="js/modules/ui_king.js"></script>

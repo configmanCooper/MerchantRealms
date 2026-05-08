@@ -109,61 +109,265 @@ window.Renderer = (function () {
     let _terrainTextures = {}; // { tileId: { img, pattern, loaded, attempted } }
 
     // ── Tree sprite system ──
-    let _treeSpriteSheet = null;   // Image element for tree_tiles.png
+    let _treeSpriteSheet = null;   // Image element for tree_sprites.png (concept tileset trees)
     let _treeSpriteReady = false;
-    let _treeSprites = [];         // Array of {sx, sy, sw, sh} for each of 16 tree sprites
+    let _treeSprites = [];         // Array of {sx, sy, sw, sh} for each tree sprite
     const _TREE_GRID_COLS = 4;
     const _TREE_GRID_ROWS = 4;
     const _TREE_SPRITE_COUNT = 16;
-    const _TREE_DRAW_SIZE = 28;    // px to draw each tree at (overlaps tile for natural look)
+    const _TREE_DRAW_SIZE = 32;    // px to draw each tree — ~2x tile (16px) to match concept2's tree-to-tile ratio at default zoom
 
     function _loadTreeSprites() {
         if (_treeSpriteSheet) return;
         var rawImg = new Image();
         rawImg.onload = function () {
-            var sourceImg = rawImg;
-            // Try to remove white background via pixel processing
+            console.log('[GFX] tree_sprites.png LOADED successfully:', rawImg.width, 'x', rawImg.height);
+            // Sprite sheet ships as RGBA but every pixel has alpha=255 — color-key the
+            // near-white background and the dark cell-border row so trees blend with terrain
+            var keyCanvas = document.createElement('canvas');
+            keyCanvas.width = rawImg.width;
+            keyCanvas.height = rawImg.height;
+            var keyCtx = keyCanvas.getContext('2d');
+            keyCtx.drawImage(rawImg, 0, 0);
             try {
-                var tmpCanvas = document.createElement('canvas');
-                tmpCanvas.width = rawImg.width;
-                tmpCanvas.height = rawImg.height;
-                var tmpCtx = tmpCanvas.getContext('2d');
-                tmpCtx.drawImage(rawImg, 0, 0);
-                var imgData = tmpCtx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
-                var pixels = imgData.data;
-                for (var i = 0; i < pixels.length; i += 4) {
-                    var r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-                    var brightness = (r + g + b) / 3;
-                    if (brightness > 240) {
-                        pixels[i + 3] = 0;
-                    } else if (brightness > 220) {
-                        pixels[i + 3] = Math.floor((240 - brightness) / 20 * 255);
+                var idata = keyCtx.getImageData(0, 0, keyCanvas.width, keyCanvas.height);
+                var d = idata.data;
+                for (var i = 0; i < d.length; i += 4) {
+                    var r = d[i], g = d[i + 1], b = d[i + 2];
+                    if (r > 230 && g > 230 && b > 230) {
+                        d[i + 3] = 0;
+                    } else if (r < 40 && g < 40 && b < 40) {
+                        d[i + 3] = 0;
                     }
                 }
-                tmpCtx.putImageData(imgData, 0, 0);
-                sourceImg = tmpCanvas;
+                keyCtx.putImageData(idata, 0, 0);
             } catch (e) {
-                // CORS/security block — use raw image as-is
-                sourceImg = rawImg;
+                console.warn('[GFX] tree sprite color-key failed:', e.message);
             }
-
-            _treeSpriteSheet = sourceImg;
-            var cellW = Math.floor(sourceImg.width / _TREE_GRID_COLS);
-            var cellH = Math.floor(sourceImg.height / _TREE_GRID_ROWS);
-            for (var row = 0; row < _TREE_GRID_ROWS; row++) {
-                for (var col = 0; col < _TREE_GRID_COLS; col++) {
-                    _treeSprites.push({ sx: col * cellW, sy: row * cellH, sw: cellW, sh: cellH });
+            var processed = new Image();
+            processed.onload = function () {
+                _treeSpriteSheet = processed;
+                var cellW = Math.floor(processed.width / _TREE_GRID_COLS);
+                var cellH = Math.floor(processed.height / _TREE_GRID_ROWS);
+                console.log('[GFX] Tree sprite cells:', cellW, 'x', cellH, '- total sprites:', _TREE_GRID_COLS * _TREE_GRID_ROWS);
+                for (var row = 0; row < _TREE_GRID_ROWS; row++) {
+                    for (var col = 0; col < _TREE_GRID_COLS; col++) {
+                        _treeSprites.push({ sx: col * cellW, sy: row * cellH, sw: cellW, sh: cellH });
+                    }
                 }
-            }
-            _treeSpriteReady = true;
-            terrainDirty = true;
+                _treeSpriteReady = true;
+                terrainDirty = true;
+                _sceneCacheDirty = true;
+            };
+            processed.src = keyCanvas.toDataURL('image/png');
         };
-        rawImg.src = 'images/terrain/tree_tiles.png?v=' + Date.now();
+        rawImg.onerror = function() {
+            console.warn('[GFX] tree_sprites.png FAILED to load, trying tree_tiles.png fallback');
+            var fallbackImg = new Image();
+            fallbackImg.onload = function() {
+                console.log('[GFX] Fallback tree_tiles.png loaded:', fallbackImg.width, 'x', fallbackImg.height);
+                _treeSpriteSheet = fallbackImg;
+                var cellW = Math.floor(fallbackImg.width / 4);
+                var cellH = Math.floor(fallbackImg.height / 4);
+                for (var row = 0; row < 4; row++) {
+                    for (var col = 0; col < 4; col++) {
+                        _treeSprites.push({ sx: col * cellW, sy: row * cellH, sw: cellW, sh: cellH });
+                    }
+                }
+                _treeSpriteReady = true;
+                terrainDirty = true;
+                _sceneCacheDirty = true;
+            };
+            fallbackImg.src = 'images/terrain/tree_tiles.png?v=' + Date.now();
+        };
+        rawImg.src = 'images/terrain/tree_sprites.png?v=' + Date.now();
     }
 
     // Terrain blending priority — higher priority terrain bleeds INTO lower
     // Water > Sand > Mountain > Hills > Forest > Grass
     const _TERRAIN_BLEND_PRIORITY = { 2: 60, 5: 50, 3: 40, 4: 30, 1: 20, 0: 10 };
+
+    // Water depth colors — from shallow (near land) to deep ocean
+    // Warmer turquoise palette matching concept image
+    const _WATER_DEPTH_COLORS = [
+        'rgba(80,210,195,0.35)',   // depth 0: vivid turquoise at shore
+        'rgba(55,180,185,0.40)',   // depth 1: bright teal
+        'rgba(40,150,175,0.50)',   // depth 2: medium blue-teal
+        'rgba(30,115,160,0.65)',   // depth 3: deeper blue
+        'rgba(20,75,135,0.95)',    // depth 4+: deep ocean
+    ];
+    const _FOAM_COLOR = 'rgba(220,240,250,0.6)';
+    const _FOAM_INNER_COLOR = 'rgba(180,220,235,0.4)';
+
+    // Compute distance from nearest non-water tile for each water tile in the visible range
+    function _computeWaterDepth(terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER) {
+        var cols = cEC - cSC + 1;
+        var rows = cER - cSR + 1;
+        var depth = new Int8Array(cols * rows);
+        depth.fill(5); // default deep
+
+        // Pass 1: mark tiles adjacent to non-water as depth 0
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 2) {
+                    depth[(r - cSR) * cols + (c - cSC)] = -1; // not water
+                    continue;
+                }
+                // Check 8 neighbors for non-water
+                var isShore = false;
+                for (var dr = -1; dr <= 1 && !isShore; dr++) {
+                    for (var dc = -1; dc <= 1 && !isShore; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        var nr = r + dr, nc = c + dc;
+                        if (nr < 0 || nr >= terrainHeight || nc < 0 || nc >= terrainWidth) continue;
+                        if (terrain[nr * terrainWidth + nc] !== 2) isShore = true;
+                    }
+                }
+                if (isShore) depth[(r - cSR) * cols + (c - cSC)] = 0;
+            }
+        }
+
+        // BFS passes to propagate depth (up to 4)
+        for (var d = 0; d < 4; d++) {
+            for (var r = cSR; r <= cER; r++) {
+                for (var c = cSC; c <= cEC; c++) {
+                    var idx = (r - cSR) * cols + (c - cSC);
+                    if (depth[idx] !== d) continue;
+                    // Propagate to cardinal neighbors
+                    var neighbors = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+                    for (var n = 0; n < 4; n++) {
+                        var nr = neighbors[n][0] - cSR, nc = neighbors[n][1] - cSC;
+                        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+                        var nIdx = nr * cols + nc;
+                        if (depth[nIdx] > d + 1) depth[nIdx] = d + 1;
+                    }
+                }
+            }
+        }
+        return depth;
+    }
+
+    // Render water tiles with depth-based coloring + foam at shoreline
+    function _renderWaterWithDepth(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        var cols = cEC - cSC + 1;
+        var rows = cER - cSR + 1;
+        var depthMap = _computeWaterDepth(terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER);
+
+        // First: fill water with base texture if available
+        _fillTerrainTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2);
+
+        // Then: overlay depth-based coloring per-tile
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var idx = (r - cSR) * cols + (c - cSC);
+                var tileDepth = depthMap[idx];
+                if (tileDepth < 0) continue; // not water
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+                var d = Math.min(tileDepth, 4);
+                targetCtx.fillStyle = _WATER_DEPTH_COLORS[d];
+                targetCtx.fillRect(x, y, ts, ts);
+
+                // Add gradient blending toward deeper neighbors for smooth transitions
+                if (d < 4) {
+                    var dirs = [[0,-1,'top'],[0,1,'bottom'],[-1,0,'left'],[1,0,'right']];
+                    for (var di = 0; di < 4; di++) {
+                        var dc = dirs[di][0], dr = dirs[di][1];
+                        var nr = r + dr, nc = c + dc;
+                        if (nr < cSR || nr > cER || nc < cSC || nc > cEC) continue;
+                        var nIdx = (nr - cSR) * cols + (nc - cSC);
+                        var nDepth = depthMap[nIdx];
+                        if (nDepth <= d || nDepth < 0) continue;
+                        var nD = Math.min(nDepth, 4);
+                        // Subtle gradient blend only for 1-level differences
+                        if (nD - d > 1) nD = d + 1;
+                        var grad;
+                        var blendW = ts * 0.3;
+                        targetCtx.globalAlpha = 0.35;
+                        if (dirs[di][2] === 'top') {
+                            grad = targetCtx.createLinearGradient(x, y, x, y + blendW);
+                            grad.addColorStop(0, _WATER_DEPTH_COLORS[nD]);
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y, ts, blendW);
+                        } else if (dirs[di][2] === 'bottom') {
+                            grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - blendW);
+                            grad.addColorStop(0, _WATER_DEPTH_COLORS[nD]);
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y + ts - blendW, ts, blendW);
+                        } else if (dirs[di][2] === 'left') {
+                            grad = targetCtx.createLinearGradient(x, y, x + blendW, y);
+                            grad.addColorStop(0, _WATER_DEPTH_COLORS[nD]);
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y, blendW, ts);
+                        } else {
+                            grad = targetCtx.createLinearGradient(x + ts, y, x + ts - blendW, y);
+                            grad.addColorStop(0, _WATER_DEPTH_COLORS[nD]);
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x + ts - blendW, y, blendW, ts);
+                        }
+                        targetCtx.globalAlpha = 1.0;
+                    }
+                }
+            }
+        }
+
+        // Foam pass: draw foam lines on shore-adjacent water tiles
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var idx = (r - cSR) * cols + (c - cSC);
+                if (depthMap[idx] !== 0) continue; // only shore tiles
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Draw foam toward each non-water neighbor
+                for (var dr = -1; dr <= 1; dr++) {
+                    for (var dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        if (dr !== 0 && dc !== 0) continue; // cardinal only for foam
+                        var nr = r + dr, nc = c + dc;
+                        if (nr < 0 || nr >= terrainHeight || nc < 0 || nc >= terrainWidth) continue;
+                        if (terrain[nr * terrainWidth + nc] === 2) continue;
+
+                        // Draw foam fringe toward this land neighbor
+                        var foamW = ts*(0.35+tileHash(c*67,r*71)*0.15);
+                        if (dr === -1 && dc === 0) { // land above
+                            var grad = targetCtx.createLinearGradient(x, y, x, y + foamW);
+                            grad.addColorStop(0, _FOAM_COLOR);
+                            grad.addColorStop(0.4, _FOAM_INNER_COLOR);
+                            grad.addColorStop(1, 'rgba(220,240,250,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y, ts, foamW);
+                        } else if (dr === 1 && dc === 0) { // land below
+                            var grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - foamW);
+                            grad.addColorStop(0, _FOAM_COLOR);
+                            grad.addColorStop(0.4, _FOAM_INNER_COLOR);
+                            grad.addColorStop(1, 'rgba(220,240,250,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y + ts - foamW, ts, foamW);
+                        } else if (dc === -1 && dr === 0) { // land left
+                            var grad = targetCtx.createLinearGradient(x, y, x + foamW, y);
+                            grad.addColorStop(0, _FOAM_COLOR);
+                            grad.addColorStop(0.4, _FOAM_INNER_COLOR);
+                            grad.addColorStop(1, 'rgba(220,240,250,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x, y, foamW, ts);
+                        } else if (dc === 1 && dr === 0) { // land right
+                            var grad = targetCtx.createLinearGradient(x + ts, y, x + ts - foamW, y);
+                            grad.addColorStop(0, _FOAM_COLOR);
+                            grad.addColorStop(0.4, _FOAM_INNER_COLOR);
+                            grad.addColorStop(1, 'rgba(220,240,250,0)');
+                            targetCtx.fillStyle = grad;
+                            targetCtx.fillRect(x + ts - foamW, y, foamW, ts);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     function _loadTerrainTexture(tileId, filename) {
         if (_terrainTextures[tileId] && _terrainTextures[tileId].attempted) return;
@@ -174,36 +378,91 @@ window.Renderer = (function () {
             entry.img = img;
             entry.loaded = true;
             terrainDirty = true;
+            _sceneCacheDirty = true;
         };
         img.onerror = function () {
             entry.loaded = false;
         };
-        img.src = 'images/terrain/' + filename + '?v=' + Date.now();
+        img.src = 'images/' + (filename.indexOf('/') < 0 ? 'terrain/' : '') + filename + '?v=' + Date.now();
     }
 
     function _loadAllTerrainTextures() {
-        _loadTerrainTexture(0, 'base_grass_soft.png'); // grass
-        _loadTerrainTexture(1, 'base_forest.png');      // forest
-        _loadTerrainTexture(2, 'base_water.png');       // water
-        _loadTerrainTexture(3, 'base_mountain.png');    // mountain
-        _loadTerrainTexture(4, 'base_hills.png');       // hills
-        _loadTerrainTexture(5, 'base_sand.png');        // sand/desert
+        _loadTerrainTexture(0, 'all_sprites/terrain_grass_lush.png'); // v9p03: single grass sprite as base pattern
+        _loadTerrainTexture(1, 'base_forest.jpg');      // forest canopy texture
+        _loadTerrainTexture(2, 'all_sprites/terrain_water_deep_a.png'); // v9p03: single water sprite as base pattern
+        _loadTerrainTexture(3, 'base_mountain.jpg');    // mountain
+        _loadTerrainTexture(4, 'all_sprites/terrain_grass_lush.png'); // v9p03: hills use grass per user (for now)
+        _loadTerrainTexture(5, 'base_sand.jpg');        // sand/desert
+        _loadTerrainTexture(99, 'light_noise_01.png'); // v9l.y: noise overlay layer (id 99 chosen to skip terrain-id range 0-5)
+        _loadTerrainTexture(100, 'structures/paths_v9n.png'); // v9n.0
+        const _v9n1F='outpost_small,outpost_medium,outpost_fortified,outpost_tower,outpost_large,village_small,village_medium,village_large,village_sprawl,town_small,town_medium,town_large,town_walled,city_capital,city_fortress,city_grand'.split(',');
+        for(let _i=0;_i<16;_i++)_loadTerrainTexture((_i<5?110:_i<9?115:_i<13?121:127)+_i,'structures/'+_v9n1F[_i]+'_v9n2.png');
+        const _v9pF='grass_lush,grass_light,grass_1,grass_2,grassland_dry,forest_canopy,forest_dense,conifer_forest,mountain_peaks,mountain_range,mountain_grey,mountain_dark,mountain_green,mountain_hill,mountain_hill,mountain_green,grass_lush,sand_desert,sand_dunes,desert_1,desert_2'.split(',');
+        for(let _i=0;_i<21;_i++)_loadTerrainTexture(200+_i,'all_sprites/terrain_'+_v9pF[_i]+'.png');
+        const _v9pW=['terrain_water_deep_a','terrain_water_deep_b','ocean_tile_a','ocean_tile_b'];
+        for(let _i=0;_i<4;_i++)_loadTerrainTexture(225+_i,'all_sprites/'+_v9pW[_i]+'.png');
+        const _v9sF=['watchtower_stone_1','watchtower_stone_2','watchtower_wood','watchtower_mixed','palisade_fence','cottage_small','house_thatched','house_blue_roof','scene_village_buildings','building_cottage_tower','town_1','town_2','town_3','town_4','town_cluster','city_large','city_medium','city_walled','city_castle_large','city_port_harbor','castle_large','castle_palace_blue','castle_fortress','castle_keep','city_grand_t4'];
+        for(let _i=0;_i<25;_i++)_loadTerrainTexture(250+_i,'all_sprites/'+_v9sF[_i]+'.png');
         _loadTreeSprites();
     }
+    const _v9n1T={outpost:[250,5,1.3],village:[255,5,3.0],town:[260,5,3.0],city:[265,5,3.0],capital_city:[270,5,4.0]};
+    // v9p03: single grass + single water + hills→grass come from base pattern fill (terrain IDs 0/2/4).
+    // Per-tile sprite dispatch ONLY for forest(1)/mountain(3)/sand(5).
+    const _v9pT={1:[205,3],3:[208,6],5:[217,4]};
+    function _v9n1Spr(t,c,x,y,b,k){var p=_v9n1T[c];if(!p||camera.zoom<0.5)return false;var s=_terrainTextures[p[0]+(tileHash(t.x,t.y)%p[1]|0)];if(!s||!s.loaded||!s.img)return false;var w=b*p[2],h=w*(s.img.naturalHeight/s.img.naturalWidth);ctx.drawImage(s.img,x-w*0.5,y-h*0.85,w,h);ctx.fillStyle=k;ctx.fillRect(x+1,y-h*0.85-4,5,3);return true;}
+    // v9p02: cache a radial-alpha-masked copy of a sprite for soft-edge blending
+    function _v9pFeather(img){var sz=96,c=document.createElement('canvas');c.width=sz;c.height=sz;var x=c.getContext('2d');x.drawImage(img,0,0,sz,sz);var g=x.createRadialGradient(sz/2,sz/2,sz*0.34,sz/2,sz/2,sz*0.56);g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(1,'rgba(0,0,0,0)');x.globalCompositeOperation='destination-in';x.fillStyle=g;x.fillRect(0,0,sz,sz);return c;}
+    // v9p05: build a seamless mirror-tiled 2W×2H canvas so non-tileable sprites can be pattern-filled without edge seams.
+    // Source sprites (terrain_grass_lush, terrain_water_deep_a) have lighter-colored borders that produce a visible
+    // brown/lighter grid when tiled with createPattern(img,'repeat'). Mirror tiling guarantees matching edges.
+    function _v9p05Seamless(img){var w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;var c=document.createElement('canvas');c.width=w*2;c.height=h*2;var x=c.getContext('2d');x.drawImage(img,0,0,w,h);x.save();x.translate(w*2,0);x.scale(-1,1);x.drawImage(img,0,0,w,h);x.restore();x.save();x.translate(0,h*2);x.scale(1,-1);x.drawImage(img,0,0,w,h);x.restore();x.save();x.translate(w*2,h*2);x.scale(-1,-1);x.drawImage(img,0,0,w,h);x.restore();return c;}
 
     // Draw terrain type as one continuous pattern over matching tiles using clipping
     // If additionalTileId is set, also includes those tiles in the fill (e.g., forest tiles get grass base)
     function _fillTerrainTextured(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, tileId, additionalTileId) {
+        var V=_v9pT[tileId], FE=V&&V[2];
+
+        // v9p09: For grass/water/hills (IDs 0/2/4), use solid color fill instead of texture pattern.
+        // The pattern fill (with v9p05 mirror-tiled seamless source) was producing a visible
+        // ~20-tile grid: every flip-seam between mirrored copies of the source sprite created
+        // a faint brown/lighter line at the same pattern-anchored coordinates. The user
+        // confirmed: "they just seem to be where the texture tiles you used lined up — perfect
+        // squares across the entire map, including in the water." Solid color base eliminates
+        // the seams entirely; texture/variation comes from _addGrassVariation, _addNoiseGrain,
+        // _renderWaterWithDepth, _drawBeachFringe, and scattered tree sprites layered on top.
+        if (tileId === 0 || tileId === 2 || tileId === 4) {
+            targetCtx.save();
+            targetCtx.beginPath();
+            var _v9p09Found = false;
+            for (var _v9p09R = cSR; _v9p09R <= cER; _v9p09R++) {
+                for (var _v9p09C = cSC; _v9p09C <= cEC; _v9p09C++) {
+                    var _v9p09T = terrain[_v9p09R * terrainWidth + _v9p09C];
+                    if (_v9p09T !== tileId && _v9p09T !== additionalTileId) continue;
+                    targetCtx.rect((_v9p09C - cSC) * ts, (_v9p09R - cSR) * ts, ts, ts);
+                    _v9p09Found = true;
+                }
+            }
+            if (!_v9p09Found) { targetCtx.restore(); return false; }
+            targetCtx.clip();
+            targetCtx.fillStyle = getTerrainColor(tileId);
+            targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+            targetCtx.restore();
+            return true;
+        }
+
         var tex = _terrainTextures[tileId];
         if (!tex || !tex.loaded || !tex.img) return false;
 
-        // Create pattern on first use
+        // Create pattern on first use (v9p05: build seamless mirror-tiled source to kill non-tileable edge seams)
         if (!tex.pattern) {
-            tex.pattern = targetCtx.createPattern(tex.img, 'repeat');
+            var _src = tex._seamless || (tex._seamless = _v9p05Seamless(tex.img));
+            tex.pattern = targetCtx.createPattern(_src, 'repeat');
+            tex._patSrcW = _src.width;
         }
 
-        // Scale: one texture repeat covers ~20 tiles
-        var patternScale = (ts * 20) / tex.img.width;
+        // Scale: one texture repeat covers ~20 tiles (against original sprite size — seamless canvas is 2x but still represents the same feature density)
+        var _origW = tex.img.naturalWidth || tex.img.width;
+        var patternScale = (ts * 20) / _origW;
         var mat = new DOMMatrix();
         mat.translateSelf(-cSC * ts, -cSR * ts);
         mat.scaleSelf(patternScale, patternScale);
@@ -212,157 +471,1132 @@ window.Renderer = (function () {
         // Build a clipping region from matching tiles, then fill once
         targetCtx.save();
         targetCtx.beginPath();
-        var found = false;
+        var found = false, FT=FE?[]:null;
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
                 var t = terrain[r * terrainWidth + c];
                 if (t !== tileId && t !== additionalTileId) continue;
-                targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
+                if(V&&!FE){var SS=_terrainTextures[V[0]+(tileHash(c,r)*V[1]|0)];if(SS&&SS.loaded&&SS.img)targetCtx.drawImage(SS.img,(c-cSC)*ts,(r-cSR)*ts,ts,ts);}
+                else {targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts); if(FE)FT.push(c,r);}
                 found = true;
             }
         }
         if (!found) { targetCtx.restore(); return false; }
-        targetCtx.clip();
-        targetCtx.fillStyle = tex.pattern;
-        targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+        if(!V||FE){
+            targetCtx.clip();
+            var BP=tex.pattern;
+            if(FE){var BS=_terrainTextures[V[0]];if(BS&&BS.loaded&&BS.img){if(!BS.pattern){var _bsrc=BS._seamless||(BS._seamless=_v9p05Seamless(BS.img));BS.pattern=targetCtx.createPattern(_bsrc,'repeat');}var _bow=BS.img.naturalWidth||BS.img.width,bs=(ts*20)/_bow,bm=new DOMMatrix();bm.translateSelf(-cSC*ts,-cSR*ts);bm.scaleSelf(bs,bs);BS.pattern.setTransform(bm);BP=BS.pattern;}}
+            targetCtx.fillStyle=BP;
+            targetCtx.fillRect(0,0,(cEC-cSC+1)*ts,(cER-cSR+1)*ts);
+            if(FE){var ovr=ts*0.40;for(var i=0;i<FT.length;i+=2){var c2=FT[i],r2=FT[i+1],SS=_terrainTextures[V[0]+(tileHash(c2,r2)*V[1]|0)];if(SS&&SS.loaded&&SS.img){if(!SS.feathered)SS.feathered=_v9pFeather(SS.img);targetCtx.drawImage(SS.feathered,(c2-cSC)*ts-ovr*0.5,(r2-cSR)*ts-ovr*0.5,ts+ovr,ts+ovr);}}}
+        }
         targetCtx.restore();
 
         return true;
     }
 
-    // For forest tiles: darken the grass base and scatter tree sprites on top
-    function _fillForestWithTrees(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
-        // Darken forest areas to distinguish from open grass (grass base already filled by _fillTerrainTextured)
-        targetCtx.save();
-        targetCtx.beginPath();
-        var found = false;
-        for (var r = cSR; r <= cER; r++) {
-            for (var c = cSC; c <= cEC; c++) {
-                if (terrain[r * terrainWidth + c] !== 1) continue;
-                targetCtx.rect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
-                found = true;
-            }
-        }
-        if (!found) { targetCtx.restore(); return false; }
-        targetCtx.clip();
-        targetCtx.fillStyle = 'rgba(0,30,0,0.15)';
-        targetCtx.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
-        targetCtx.restore();
-
-        // Scatter tree sprites if loaded
-        if (!_treeSpriteReady || !_treeSpriteSheet) return true;
-
-        var scaledTreeSize = ts * 1.1;
-
-        for (var r = cSR; r <= cER; r++) {
-            for (var c = cSC; c <= cEC; c++) {
-                if (terrain[r * terrainWidth + c] !== 1) continue;
-                var h = tileHash(c, r);
-                var x = (c - cSC) * ts;
-                var y = (r - cSR) * ts;
-
-                var subHash = tileHash(c * 31 + 7, r * 17 + 13);
-                var treeIdx = Math.floor(subHash * _TREE_SPRITE_COUNT);
-                var sprite = _treeSprites[treeIdx];
-
-                var jitterX = (h - 0.5) * ts * 0.3;
-                var jitterY = (subHash - 0.5) * ts * 0.3;
-                var tx = x + (ts - scaledTreeSize) / 2 + jitterX;
-                var ty = y + (ts - scaledTreeSize) / 2 + jitterY;
-
-                targetCtx.drawImage(
-                    _treeSpriteSheet,
-                    sprite.sx, sprite.sy, sprite.sw, sprite.sh,
-                    tx, ty, scaledTreeSize, scaledTreeSize
-                );
-            }
-        }
-        return true;
-    }
-
-    // Terrain edge blending — soft feathered transitions between terrain types
-    function _blendTerrainEdges(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
-        var blendSize = ts * 0.5; // how far the blend extends into the tile
-
+    // Grass color variation — warm golden-green tint + subtle per-tile color patches
+    // Two-pass: golden tint overlay + per-tile color variation
+    function _addGrassVariation(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        // Low-frequency grass color variation: large patches (8x8 tile blocks) get warm/cool tints
+        // This avoids per-tile noise that creates camouflage, instead gives gentle rolling color
         for (var r = cSR; r <= cER; r++) {
             for (var c = cSC; c <= cEC; c++) {
                 var tileId = terrain[r * terrainWidth + c];
+                if (tileId !== 0 && tileId !== 1) continue; // only grass/forest tiles
+                
+                // Low-frequency hash: group tiles into 8x8 blocks for smooth variation
+                var blockC = Math.floor(c / 8);
+                var blockR = Math.floor(r / 8);
+                var blockHash = tileHash(blockC * 3 + 17, blockR * 5 + 31);
+                
+                // Only apply to ~40% of blocks for subtlety
+                if (blockHash > 0.4) continue;
+                
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+                
+                // Warm/cool/brown patches at very low alpha
+                if (blockHash < 0.15) {
+                    // Warmer golden patch
+                    targetCtx.fillStyle = 'rgba(180, 160, 60, 0.08)';
+                } else if (blockHash < 0.28) {
+                    // Slightly browner/drier patch
+                    targetCtx.fillStyle = 'rgba(140, 120, 60, 0.06)';
+                } else {
+                    // Slightly lighter/fresher patch
+                    targetCtx.fillStyle = 'rgba(100, 180, 80, 0.05)';
+                }
+                targetCtx.fillRect(x, y, ts, ts);
+            }
+        }
+    }
+
+    // v9l.0 ADD-NOISE-GRAIN-PER-TILE — break visible texture-pattern repetition with deterministic per-tile micro-grain
+    function _addNoiseGrain(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var h = tileHash(c * 13 + 5, r * 17 + 11);
+                if (h < 0.25)      targetCtx.fillStyle = 'rgba(0,0,0,0.050)';
+                else if (h < 0.50) targetCtx.fillStyle = 'rgba(255,255,255,0.038)';
+                else if (h < 0.75) targetCtx.fillStyle = 'rgba(120,90,40,0.034)';
+                else               targetCtx.fillStyle = 'rgba(40,60,90,0.034)';
+                targetCtx.fillRect((c - cSC) * ts, (r - cSR) * ts, ts, ts);
+            }
+        }
+    }
+
+    // v9l.y: PNG noise overlay, soft-light @ 0.12, breaks 2048-px terrain repeat
+    function _applyNoiseOverlay(c, cSC, cEC, cSR, cER, ts) {
+        var e = _terrainTextures[99];
+        if (!e || !e.loaded || !e.img) return;
+        if (!e.pattern) e.pattern = c.createPattern(e.img, 'repeat');
+        e.pattern.setTransform(new DOMMatrix().translateSelf(-cSC * ts, -cSR * ts));
+        c.save();
+        c.globalCompositeOperation = 'soft-light';
+        c.globalAlpha = 0.12;
+        c.fillStyle = e.pattern;
+        c.fillRect(0, 0, (cEC - cSC + 1) * ts, (cER - cSR + 1) * ts);
+        c.restore();
+    }
+
+    function _forestClusterDensity(c,r){var N=5,mc=Math.floor(c/N),mr=Math.floor(r/N),fx=(c-mc*N)/N,fy=(r-mr*N)/N,a=tileHash(mc*191+13,mr*233+17),b=tileHash((mc+1)*191+13,mr*233+17),d=tileHash(mc*191+13,(mr+1)*233+17),e=tileHash((mc+1)*191+13,(mr+1)*233+17);return a*(1-fx)*(1-fy)+b*fx*(1-fy)+d*(1-fx)*fy+e*fx*fy;}
+
+    // For forest tiles: sparse tree sprites scattered on the grass base (NO dark overlay)
+    // Concept image shows: grass visible between trees, trees are clearly tree-shaped, sparse
+    function _fillForestWithTrees(targetCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts) {
+        // DBG-AB2: tint disabled, tree-draw enabled (supervisor 18:55 step B isolation)
+        // NO dark green base fill - forest tiles already have grass base from _fillTerrainTextured
+        // Just add a very subtle darker tint to distinguish forest ground from open grassland
+        var forestTiles = [];
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 1) continue;
+                forestTiles.push([c, r]);
+            }
+        }
+        if (forestTiles.length === 0) return false;
+
+        // Draw tree sprites sparsely: only ~40% of forest tiles get a tree
+        if (!_treeSpriteReady || !_treeSpriteSheet || _treeSprites.length === 0) return true;
+        var spriteCount = _treeSprites.length;
+        var baseDrawSize = _TREE_DRAW_SIZE * (ts / 16);
+        
+        for (var i = 0; i < forestTiles.length; i++) {
+            var fc = forestTiles[i][0], fr = forestTiles[i][1];
+            var h = tileHash(fc, fr);
+            
+            // Check if this tile is a forest edge (adjacent to non-forest)
+            var isEdge = false;
+            var neighbors = [[fc-1,fr],[fc+1,fr],[fc,fr-1],[fc,fr+1]];
+            for (var n = 0; n < 4; n++) {
+                var nc = neighbors[n][0], nr = neighbors[n][1];
+                if (nc >= 0 && nc < terrainWidth && nr >= 0 && nr < (terrain.length / terrainWidth)) {
+                    if (terrain[nr * terrainWidth + nc] !== 1) { isEdge = true; break; }
+                }
+            }
+            
+            // STEP-FOREST-THRESHOLD v9h: relaxed gate so interior forest tiles always render trees,
+            // edges keep ~40% coverage for an organic fringe (vs prior interior 0.95 / edge 0.98).
+            var threshold = isEdge ? 0.6 : 0.0;
+            if (h < threshold) continue;
+
+            // v9o.1: cluster-density gate — glades/sparse/dense
+            var dens=_forestClusterDensity(fc,fr);if(dens<0.20)continue;var skipTree2=dens<0.45;
+
+            // Pick sprite from 16 available (4x4 grid)
+            // FIX: tileHash returns float [0,1); previous `th % spriteCount` produced a sub-1 float
+            // which JS array access coerced to undefined → every tree skipped. Derive integer index.
+            var th = tileHash(fc * 7 + 3, fr * 13 + 5);
+            var spriteIdx = Math.floor(th * spriteCount);
+            if (spriteIdx >= spriteCount) spriteIdx = spriteCount - 1;
+            var sprite = _treeSprites[spriteIdx];
+            if (!sprite) continue;
+            
+            // Size variation: ±20% — use a fresh hash so it doesn't collapse to a constant
+            // (Previous `th >> 4` for float `th` in [0,1) always produced 0.)
+            var sh = tileHash(fc * 19 + 11, fr * 29 + 13);
+            var sizeVariation = 0.8 + sh * 0.4;
+            var drawSize = baseDrawSize * sizeVariation;
+            
+            // Position within tile — fresh hashes per axis
+            var phx = tileHash(fc * 23 + 17, fr * 37 + 19);
+            var phy = tileHash(fc * 41 + 23, fr * 53 + 29);
+            // STEP-TREE-JITTER v9f: widen from [0.2*ts, 0.8*ts] to [-0.5*ts, +1.5*ts]
+            // per supervisor 20:26 spec, so canopies can straddle tile borders organically
+            var ox = (-0.5 + phx * 2.0) * ts;
+            var oy = (-0.5 + phy * 2.0) * ts;
+            var dx = (fc - cSC) * ts + ox - drawSize * 0.5;
+            var dy = (fr - cSR) * ts + oy - drawSize * 0.7;
+            
+            targetCtx.drawImage(_treeSpriteSheet, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
+                dx, dy, drawSize, drawSize);
+
+            // STEP-FOREST-DENSITY v9g: draw a SECOND tree per forest tile per supervisor 20:48 spec.
+            // Independent hash recipes for sprite, size, and position so tree-2 differs from tree-1.
+            // Same jitter range and sprite-pick logic as tree-1 — only the hash inputs differ.
+            var th2 = tileHash(fc + 101, fr + 1019);
+            var spriteIdx2 = Math.floor(th2 * spriteCount);
+            if (spriteIdx2 >= spriteCount) spriteIdx2 = spriteCount - 1;
+            var sprite2 = _treeSprites[spriteIdx2];
+            if (sprite2 && !skipTree2) {
+                var sh2 = tileHash(fc + 359, fr + 641);
+                var sizeVariation2 = 0.8 + sh2 * 0.4;
+                var drawSize2 = baseDrawSize * sizeVariation2;
+                var phx2 = tileHash(fc + 251, fr + 419);
+                var phy2 = tileHash(fc + 733, fr + 881);
+                var ox2 = (-0.5 + phx2 * 2.0) * ts;
+                var oy2 = (-0.5 + phy2 * 2.0) * ts;
+                var dx2 = (fc - cSC) * ts + ox2 - drawSize2 * 0.5;
+                var dy2 = (fr - cSR) * ts + oy2 - drawSize2 * 0.7;
+                targetCtx.drawImage(_treeSpriteSheet, sprite2.sx, sprite2.sy, sprite2.sw, sprite2.sh,
+                    dx2, dy2, drawSize2, drawSize2);
+            }
+        }
+        return true;
+    }
+
+    // Terrain edge blending — gradient fringes between terrain types
+    function _blendTerrainEdges(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tileId = terrain[r * terrainWidth + c];
+                if (tileId === 2) continue; // water handled by _renderWaterWithDepth
                 var myPriority = _TERRAIN_BLEND_PRIORITY[tileId] || 0;
                 var x = (c - cSC) * ts;
                 var y = (r - cSR) * ts;
 
-                // Check 4 cardinal neighbors
-                var nr, nc, neighborId, neighborPriority, grad, nColor;
+                // Blend from non-water higher-priority neighbors
+                var dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                for (var d = 0; d < 4; d++) {
+                    var nr = r + dirs[d][0], nc = c + dirs[d][1];
+                    if (nr < 0 || nr >= terrainHeight || nc < 0 || nc >= terrainWidth) continue;
+                    var neighborId = terrain[nr * terrainWidth + nc];
+                    if (neighborId === tileId) continue;
+                    var neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
+                    if (neighborPriority <= myPriority) continue;
+                    if (neighborId === 2) continue; // water blending handled separately
 
-                // Top neighbor
-                nr = r - 1; nc = c;
-                if (nr >= 0) {
-                    neighborId = terrain[nr * terrainWidth + nc];
-                    if (neighborId !== tileId) {
-                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
-                        if (neighborPriority > myPriority) {
-                            nColor = getTerrainColor(neighborId);
-                            grad = targetCtx.createLinearGradient(x, y, x, y + blendSize);
-                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
-                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
-                            targetCtx.fillStyle = grad;
-                            targetCtx.fillRect(x, y, ts, blendSize);
-                        }
+                    var blendSize = ts * 0.6;
+                    var alpha = 0.3;
+                    var nColor = getTerrainColor(neighborId);
+                    var grad;
+
+                    if (d === 0) { // top
+                        grad = targetCtx.createLinearGradient(x, y, x, y + blendSize);
+                    } else if (d === 1) { // bottom
+                        grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - blendSize);
+                    } else if (d === 2) { // left
+                        grad = targetCtx.createLinearGradient(x, y, x + blendSize, y);
+                    } else { // right
+                        grad = targetCtx.createLinearGradient(x + ts, y, x + ts - blendSize, y);
                     }
+                    grad.addColorStop(0, colorWithAlpha(nColor, alpha));
+                    grad.addColorStop(1, colorWithAlpha(nColor, 0));
+                    targetCtx.fillStyle = grad;
+
+                    if (d === 0) targetCtx.fillRect(x, y, ts, blendSize);
+                    else if (d === 1) targetCtx.fillRect(x, y + ts - blendSize, ts, blendSize);
+                    else if (d === 2) targetCtx.fillRect(x, y, blendSize, ts);
+                    else targetCtx.fillRect(x + ts - blendSize, y, blendSize, ts);
+                }
+            }
+        }
+
+        // Coastal blending: land tiles adjacent to water get a sandy/turquoise fringe
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tileId = terrain[r * terrainWidth + c];
+                if (tileId === 2) continue; // skip water tiles
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Check if this land tile borders water
+                var dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+                for (var d = 0; d < 4; d++) {
+                    var nr = r + dirs[d][0], nc = c + dirs[d][1];
+                    if (nr < 0 || nr >= terrainHeight || nc < 0 || nc >= terrainWidth) continue;
+                    if (terrain[nr * terrainWidth + nc] !== 2) continue;
+
+                    // This land tile borders water — draw sandy transition
+                    var blendSize = ts * 0.7;
+                    var grad;
+                    var sandColor = tileId === 5 ? '#c2b280' : '#b8a87a'; // sand or wet sand
+
+                    if (d === 0) { // water above
+                        grad = targetCtx.createLinearGradient(x, y, x, y + blendSize);
+                    } else if (d === 1) { // water below
+                        grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - blendSize);
+                    } else if (d === 2) { // water left
+                        grad = targetCtx.createLinearGradient(x, y, x + blendSize, y);
+                    } else { // water right
+                        grad = targetCtx.createLinearGradient(x + ts, y, x + ts - blendSize, y);
+                    }
+                    grad.addColorStop(0, colorWithAlpha(sandColor, 0.5));
+                    grad.addColorStop(0.4, colorWithAlpha(sandColor, 0.25));
+                    grad.addColorStop(1, colorWithAlpha(sandColor, 0));
+                    targetCtx.fillStyle = grad;
+
+                    if (d === 0) targetCtx.fillRect(x, y, ts, blendSize);
+                    else if (d === 1) targetCtx.fillRect(x, y + ts - blendSize, ts, blendSize);
+                    else if (d === 2) targetCtx.fillRect(x, y, blendSize, ts);
+                    else targetCtx.fillRect(x + ts - blendSize, y, blendSize, ts);
+                }
+            }
+        }
+    }
+
+    // Coastline smoothing — rounds off staircase patterns at water/land boundary
+    function _smoothCoastlines(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        return; // v9p03: DISABLED per user 17:48 — green half-circles on coasts. Sprite-pattern + soft feather supersede this.
+        // Aggressive coastline smoothing — eliminates staircase patterns
+        // Strategy: For water tiles adjacent to land, draw land-colored shapes that
+        // round off the square tile boundaries
+
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 2) continue; // only water tiles
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Determine which cardinal neighbors are land
+                var landAbove = (r > 0 && terrain[(r-1) * terrainWidth + c] !== 2);
+                var landBelow = (r < terrainHeight-1 && terrain[(r+1) * terrainWidth + c] !== 2);
+                var landLeft = (c > 0 && terrain[r * terrainWidth + (c-1)] !== 2);
+                var landRight = (c < terrainWidth-1 && terrain[r * terrainWidth + (c+1)] !== 2);
+
+                // Get dominant land color for this coastline segment
+                var landTileId = -1;
+                if (landAbove) landTileId = terrain[(r-1) * terrainWidth + c];
+                else if (landBelow) landTileId = terrain[(r+1) * terrainWidth + c];
+                else if (landLeft) landTileId = terrain[r * terrainWidth + (c-1)];
+                else if (landRight) landTileId = terrain[r * terrainWidth + (c+1)];
+                if (landTileId < 0) continue; // no adjacent land
+
+                // Use warm grass green for grass/forest, sand color for sand, etc.
+                var baseColor;
+                if (landTileId === 5) baseColor = '#c4b888';
+                else if (landTileId === 0 || landTileId === 1) baseColor = '#6a9a52';
+                else if (landTileId === 4) baseColor = '#7a9a5a';
+                else baseColor = getTerrainColor(landTileId);
+
+                // CONVEX CORNERS: Both adjacent cardinal sides are land → big quarter-circle
+                var radius = ts * 1.0; // full tile radius for smooth rounding
+
+                if (landAbove && landLeft) {
+                    targetCtx.save();
+                    targetCtx.beginPath();
+                    targetCtx.rect(x, y, ts, ts);
+                    targetCtx.clip();
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(x, y);
+                    targetCtx.arc(x, y, radius, 0, Math.PI * 0.5);
+                    targetCtx.closePath();
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                    targetCtx.restore();
+                }
+                if (landAbove && landRight) {
+                    targetCtx.save();
+                    targetCtx.beginPath();
+                    targetCtx.rect(x, y, ts, ts);
+                    targetCtx.clip();
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(x + ts, y);
+                    targetCtx.arc(x + ts, y, radius, Math.PI * 0.5, Math.PI);
+                    targetCtx.closePath();
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                    targetCtx.restore();
+                }
+                if (landBelow && landLeft) {
+                    targetCtx.save();
+                    targetCtx.beginPath();
+                    targetCtx.rect(x, y, ts, ts);
+                    targetCtx.clip();
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(x, y + ts);
+                    targetCtx.arc(x, y + ts, radius, Math.PI * 1.5, Math.PI * 2);
+                    targetCtx.closePath();
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                    targetCtx.restore();
+                }
+                if (landBelow && landRight) {
+                    targetCtx.save();
+                    targetCtx.beginPath();
+                    targetCtx.rect(x, y, ts, ts);
+                    targetCtx.clip();
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(x + ts, y + ts);
+                    targetCtx.arc(x + ts, y + ts, radius, Math.PI, Math.PI * 1.5);
+                    targetCtx.closePath();
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                    targetCtx.restore();
                 }
 
-                // Bottom neighbor
-                nr = r + 1; nc = c;
-                if (nr < terrainHeight) {
-                    neighborId = terrain[nr * terrainWidth + nc];
-                    if (neighborId !== tileId) {
-                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
-                        if (neighborPriority > myPriority) {
-                            nColor = getTerrainColor(neighborId);
-                            grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - blendSize);
-                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
-                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
-                            targetCtx.fillStyle = grad;
-                            targetCtx.fillRect(x, y + ts - blendSize, ts, blendSize);
-                        }
-                    }
+                // SINGLE-SIDE land: DISABLED per user 17:20 — the half-disc ellipses produced the
+                // ugly green half-circle artifacts on coastlines. Keep convex/concave corner work above
+                // but remove the standalone ellipse intrusions.
+                if (false && landAbove && !landLeft && !landRight) {
+                    // Large elliptical intrusion from top — extends beyond tile for smooth coast
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(x + ts/2, y, ts * 0.8, ts * 0.65, 0, 0, Math.PI);
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                }
+                if (false && landBelow && !landLeft && !landRight) {
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(x + ts/2, y + ts, ts * 0.8, ts * 0.65, 0, Math.PI, Math.PI * 2);
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                }
+                if (false && landLeft && !landAbove && !landBelow) {
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(x, y + ts/2, ts * 0.65, ts * 0.8, 0, Math.PI * 1.5, Math.PI * 0.5);
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
+                }
+                if (false && landRight && !landAbove && !landBelow) {
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(x + ts, y + ts/2, ts * 0.65, ts * 0.8, 0, Math.PI * 0.5, Math.PI * 1.5);
+                    targetCtx.fillStyle = baseColor;
+                    targetCtx.fill();
                 }
 
-                // Left neighbor
-                nr = r; nc = c - 1;
-                if (nc >= 0) {
-                    neighborId = terrain[nr * terrainWidth + nc];
-                    if (neighborId !== tileId) {
-                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
-                        if (neighborPriority > myPriority) {
-                            nColor = getTerrainColor(neighborId);
-                            grad = targetCtx.createLinearGradient(x, y, x + blendSize, y);
-                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
-                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
-                            targetCtx.fillStyle = grad;
-                            targetCtx.fillRect(x, y, blendSize, ts);
-                        }
-                    }
+                // CONCAVE CORNERS: diagonal land exists but cardinal neighbors are both water
+                var diagChecks = [
+                    { dr: -1, dc: -1, needA: !landAbove, needB: !landLeft, cx: x, cy: y },
+                    { dr: -1, dc: 1, needA: !landAbove, needB: !landRight, cx: x + ts, cy: y },
+                    { dr: 1, dc: -1, needA: !landBelow, needB: !landLeft, cx: x, cy: y + ts },
+                    { dr: 1, dc: 1, needA: !landBelow, needB: !landRight, cx: x + ts, cy: y + ts },
+                ];
+                for (var di = 0; di < 4; di++) {
+                    var dg = diagChecks[di];
+                    if (!dg.needA || !dg.needB) continue;
+                    var dnr = r + dg.dr, dnc = c + dg.dc;
+                    if (dnr < 0 || dnr >= terrainHeight || dnc < 0 || dnc >= terrainWidth) continue;
+                    var diagTileId = terrain[dnr * terrainWidth + dnc];
+                    if (diagTileId === 2) continue;
+
+                    // Land dot at corner for concave coastline — larger for smoother coast
+                    var dColor = diagTileId === 5 ? '#c4b888' : '#6a9a52';
+                    var smallR = ts * 0.75;
+                    targetCtx.save();
+                    targetCtx.beginPath();
+                    targetCtx.rect(x, y, ts, ts);
+                    targetCtx.clip();
+                    targetCtx.fillStyle=dColor;targetCtx.globalAlpha=0.04;targetCtx.beginPath();targetCtx.arc(dg.cx,dg.cy,smallR*1.5,0,6.283);targetCtx.fill();targetCtx.globalAlpha=1;targetCtx.beginPath();targetCtx.arc(dg.cx,dg.cy,smallR,0,6.283);targetCtx.fill();
+                    targetCtx.restore();
+                }
+            }
+        }
+
+        // EXTRA PASS: Staircase anti-aliasing — for water tiles that are part of a diagonal
+        // staircase (land alternates diagonally), fill additional coverage to smooth the edge
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 2) continue;
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Count cardinal land neighbors
+                var landTop = (r > 0 && terrain[(r-1) * terrainWidth + c] !== 2);
+                var landBot = (r < terrainHeight-1 && terrain[(r+1) * terrainWidth + c] !== 2);
+                var landLft = (c > 0 && terrain[r * terrainWidth + (c-1)] !== 2);
+                var landRgt = (c < terrainWidth-1 && terrain[r * terrainWidth + (c+1)] !== 2);
+                var cardCount = (landTop?1:0) + (landBot?1:0) + (landLft?1:0) + (landRgt?1:0);
+
+                // For water tiles with exactly 2 adjacent cardinal land tiles (L-shape),
+                // add extra smoothing in the pocket
+                if (cardCount === 2 && ((landTop && landLft) || (landTop && landRgt) || (landBot && landLft) || (landBot && landRgt))) {
+                    // Already handled by convex corners above; skip
+                    continue;
                 }
 
-                // Right neighbor
-                nr = r; nc = c + 1;
-                if (nc < terrainWidth) {
-                    neighborId = terrain[nr * terrainWidth + nc];
-                    if (neighborId !== tileId) {
-                        neighborPriority = _TERRAIN_BLEND_PRIORITY[neighborId] || 0;
-                        if (neighborPriority > myPriority) {
-                            nColor = getTerrainColor(neighborId);
-                            grad = targetCtx.createLinearGradient(x + ts, y, x + ts - blendSize, y);
-                            grad.addColorStop(0, colorWithAlpha(nColor, 0.35));
-                            grad.addColorStop(1, colorWithAlpha(nColor, 0));
-                            targetCtx.fillStyle = grad;
-                            targetCtx.fillRect(x + ts - blendSize, y, blendSize, ts);
+                // For water tiles with exactly 1 cardinal land neighbor,
+                // check if they're part of a staircase (adjacent water in perpendicular also has same pattern)
+                if (cardCount === 1) {
+                    var lColor = '#6a9a52';
+                    if (landTop || landBot) {
+                        var landR = landTop ? r - 1 : r + 1;
+                        var lTid = terrain[landR * terrainWidth + c];
+                        if (lTid === 5) lColor = '#c4b888';
+                        // Check for staircase: does the land tile above/below also have water on the opposite perpendicular?
+                        // If there's a pattern of alternating land/water diagonally, add extra fill
+                        var perpWaterLeft = (c > 0 && terrain[r * terrainWidth + (c-1)] === 2);
+                        var perpWaterRight = (c < terrainWidth-1 && terrain[r * terrainWidth + (c+1)] === 2);
+                        // Check diagonal for matching staircase pattern
+                        if (perpWaterLeft && c > 0) {
+                            var diagR = landTop ? r - 1 : r + 1;
+                            if (c > 0 && diagR >= 0 && diagR < terrainHeight) {
+                                var diagTile = terrain[diagR * terrainWidth + (c-1)];
+                                if (diagTile !== 2) {
+                                    // Staircase detected going top-left / bot-left
+                                    targetCtx.save();
+                                    targetCtx.beginPath();
+                                    targetCtx.rect(x, y, ts, ts);
+                                    targetCtx.clip();
+                                    targetCtx.beginPath();
+                                    var ey = landTop ? y : y + ts;
+                                    targetCtx.ellipse(x, ey, ts * 0.45, ts * 0.35, 0, 0, Math.PI * 2);
+                                    targetCtx.fillStyle = lColor;
+                                    targetCtx.globalAlpha = 0.7;
+                                    targetCtx.fill();
+                                    targetCtx.globalAlpha = 1.0;
+                                    targetCtx.restore();
+                                }
+                            }
+                        }
+                        if (perpWaterRight && c < terrainWidth - 1) {
+                            var diagR = landTop ? r - 1 : r + 1;
+                            if (diagR >= 0 && diagR < terrainHeight) {
+                                var diagTile = terrain[diagR * terrainWidth + (c+1)];
+                                if (diagTile !== 2) {
+                                    targetCtx.save();
+                                    targetCtx.beginPath();
+                                    targetCtx.rect(x, y, ts, ts);
+                                    targetCtx.clip();
+                                    targetCtx.beginPath();
+                                    var ey = landTop ? y : y + ts;
+                                    targetCtx.ellipse(x + ts, ey, ts * 0.45, ts * 0.35, 0, 0, Math.PI * 2);
+                                    targetCtx.fillStyle = lColor;
+                                    targetCtx.globalAlpha = 0.7;
+                                    targetCtx.fill();
+                                    targetCtx.globalAlpha = 1.0;
+                                    targetCtx.restore();
+                                }
+                            }
+                        }
+                    }
+                    if (landLft || landRgt) {
+                        var landC = landLft ? c - 1 : c + 1;
+                        var lTid = terrain[r * terrainWidth + landC];
+                        if (lTid === 5) lColor = '#c4b888';
+                        var perpWaterTop = (r > 0 && terrain[(r-1) * terrainWidth + c] === 2);
+                        var perpWaterBot = (r < terrainHeight-1 && terrain[(r+1) * terrainWidth + c] === 2);
+                        if (perpWaterTop && r > 0) {
+                            var diagC = landLft ? c - 1 : c + 1;
+                            if (r > 0 && diagC >= 0 && diagC < terrainWidth) {
+                                var diagTile = terrain[(r-1) * terrainWidth + diagC];
+                                if (diagTile !== 2) {
+                                    targetCtx.save();
+                                    targetCtx.beginPath();
+                                    targetCtx.rect(x, y, ts, ts);
+                                    targetCtx.clip();
+                                    targetCtx.beginPath();
+                                    var ex = landLft ? x : x + ts;
+                                    targetCtx.ellipse(ex, y, ts * 0.35, ts * 0.45, 0, 0, Math.PI * 2);
+                                    targetCtx.fillStyle = lColor;
+                                    targetCtx.globalAlpha = 0.7;
+                                    targetCtx.fill();
+                                    targetCtx.globalAlpha = 1.0;
+                                    targetCtx.restore();
+                                }
+                            }
+                        }
+                        if (perpWaterBot && r < terrainHeight - 1) {
+                            var diagC = landLft ? c - 1 : c + 1;
+                            if (diagC >= 0 && diagC < terrainWidth) {
+                                var diagTile = terrain[(r+1) * terrainWidth + diagC];
+                                if (diagTile !== 2) {
+                                    targetCtx.save();
+                                    targetCtx.beginPath();
+                                    targetCtx.rect(x, y, ts, ts);
+                                    targetCtx.clip();
+                                    targetCtx.beginPath();
+                                    var ex = landLft ? x : x + ts;
+                                    targetCtx.ellipse(ex, y + ts, ts * 0.35, ts * 0.45, 0, 0, Math.PI * 2);
+                                    targetCtx.fillStyle = lColor;
+                                    targetCtx.globalAlpha = 0.7;
+                                    targetCtx.fill();
+                                    targetCtx.globalAlpha = 1.0;
+                                    targetCtx.restore();
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Forest edge feathering — simple semi-transparent green overlay on grass tiles adjacent to forest
+    // Creates soft treeline transition without expensive arc() calls
+    function _featherForestEdges(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        // DISABLED — no more circles/feathering, texture-only approach
+        return;
+    }
+
+    // Scattered trees on grassland — isolated trees (2-3%) for natural look
+    function _scatterGrasslandTrees(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        if (!_treeSpriteReady || !_treeSpriteSheet || _treeSprites.length === 0) return;
+        var spriteCount = _treeSprites.length;
+        var baseDrawSize = (_TREE_DRAW_SIZE * 0.8) * (ts / 16); // slightly smaller than forest trees
+        
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tileId = terrain[r * terrainWidth + c];
+                if (tileId !== 0) continue; // only grass tiles
+                
+                var h = tileHash(c, r);
+                // 3% of grass tiles get an isolated tree
+                if (h > 0.03) continue;
+                
+                // FIX: same float-index bug as _fillForestWithTrees — derive integer index + fresh hashes
+                var th = tileHash(c * 11 + 7, r * 17 + 3);
+                var spriteIdx = Math.floor(th * spriteCount);
+                if (spriteIdx >= spriteCount) spriteIdx = spriteCount - 1;
+                var sprite = _treeSprites[spriteIdx];
+                if (!sprite) continue;
+                
+                var sh = tileHash(c * 19 + 11, r * 29 + 13);
+                var sizeVariation = 0.7 + sh * 0.3;
+                var drawSize = baseDrawSize * sizeVariation;
+                var phx = tileHash(c * 23 + 17, r * 37 + 19);
+                var phy = tileHash(c * 41 + 23, r * 53 + 29);
+                var ox = (0.2 + phx * 0.6) * ts;
+                var oy = (0.2 + phy * 0.6) * ts;
+                var dx = (c - cSC) * ts + ox - drawSize * 0.5;
+                var dy = (r - cSR) * ts + oy - drawSize * 0.7;
+                
+                targetCtx.drawImage(_treeSpriteSheet, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
+                    dx, dy, drawSize, drawSize);
+            }
+        }
+    }
+
+    // Land-side coastline rounding — draws water-colored arcs on land tile corners
+    // facing diagonally into water, smoothing staircase from the land side
+    function _roundLandCoastCorners(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        var waterColor = 'rgba(70,160,175,0.85)'; // matches shallow water
+        var radius = ts * 0.55;
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tid = terrain[r * terrainWidth + c];
+                if (tid === 2) continue; // skip water tiles
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Check each corner: if diagonal is water AND both adjacent cardinals are land,
+                // draw a water arc to round off the land corner
+                var cardinals = {
+                    up: (r > 0) ? terrain[(r-1) * terrainWidth + c] : -1,
+                    down: (r < terrainHeight-1) ? terrain[(r+1) * terrainWidth + c] : -1,
+                    left: (c > 0) ? terrain[r * terrainWidth + (c-1)] : -1,
+                    right: (c < terrainWidth-1) ? terrain[r * terrainWidth + (c+1)] : -1,
+                };
+
+                // Top-left corner: water at diagonal (-1,-1), land above and left
+                if (r > 0 && c > 0) {
+                    var diag = terrain[(r-1) * terrainWidth + (c-1)];
+                    if (diag === 2 && cardinals.up !== 2 && cardinals.left !== 2) {
+                        targetCtx.save();
+                        targetCtx.beginPath();
+                        targetCtx.rect(x, y, ts, ts);
+                        targetCtx.clip();
+                        targetCtx.beginPath();
+                        targetCtx.arc(x, y, radius, 0, Math.PI * 0.5);
+                        targetCtx.lineTo(x, y);
+                        targetCtx.closePath();
+                        targetCtx.fillStyle = waterColor;
+                        targetCtx.fill();
+                        targetCtx.restore();
+                    }
+                }
+                // Top-right corner
+                if (r > 0 && c < terrainWidth - 1) {
+                    var diag = terrain[(r-1) * terrainWidth + (c+1)];
+                    if (diag === 2 && cardinals.up !== 2 && cardinals.right !== 2) {
+                        targetCtx.save();
+                        targetCtx.beginPath();
+                        targetCtx.rect(x, y, ts, ts);
+                        targetCtx.clip();
+                        targetCtx.beginPath();
+                        targetCtx.arc(x + ts, y, radius, Math.PI * 0.5, Math.PI);
+                        targetCtx.lineTo(x + ts, y);
+                        targetCtx.closePath();
+                        targetCtx.fillStyle = waterColor;
+                        targetCtx.fill();
+                        targetCtx.restore();
+                    }
+                }
+                // Bottom-left corner
+                if (r < terrainHeight - 1 && c > 0) {
+                    var diag = terrain[(r+1) * terrainWidth + (c-1)];
+                    if (diag === 2 && cardinals.down !== 2 && cardinals.left !== 2) {
+                        targetCtx.save();
+                        targetCtx.beginPath();
+                        targetCtx.rect(x, y, ts, ts);
+                        targetCtx.clip();
+                        targetCtx.beginPath();
+                        targetCtx.arc(x, y + ts, radius, Math.PI * 1.5, Math.PI * 2);
+                        targetCtx.lineTo(x, y + ts);
+                        targetCtx.closePath();
+                        targetCtx.fillStyle = waterColor;
+                        targetCtx.fill();
+                        targetCtx.restore();
+                    }
+                }
+                // Bottom-right corner
+                if (r < terrainHeight - 1 && c < terrainWidth - 1) {
+                    var diag = terrain[(r+1) * terrainWidth + (c+1)];
+                    if (diag === 2 && cardinals.down !== 2 && cardinals.right !== 2) {
+                        targetCtx.save();
+                        targetCtx.beginPath();
+                        targetCtx.rect(x, y, ts, ts);
+                        targetCtx.clip();
+                        targetCtx.beginPath();
+                        targetCtx.arc(x + ts, y + ts, radius, Math.PI, Math.PI * 1.5);
+                        targetCtx.lineTo(x + ts, y + ts);
+                        targetCtx.closePath();
+                        targetCtx.fillStyle = waterColor;
+                        targetCtx.fill();
+                        targetCtx.restore();
+                    }
+                }
+            }
+        }
+    }
+
+    // Mountain peak enhancement — draws rocky peaks with snow caps over mountain texture
+    // Concept image shows dramatic grey/tan mountains with white snow
+    function _enhanceMountains(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        var rockColors = ['#8a8070', '#7a7060', '#9a9080', '#6a6555', '#857a6a'];
+        var darkRockColors = ['#5a5548', '#4a4540', '#6a6458'];
+        var snowColor = 'rgba(245,245,250,0.85)';
+        var snowEdge = 'rgba(220,225,235,0.6)';
+
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 3) continue;
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+                var h = tileHash(c, r);
+
+                // Count adjacent mountain tiles for cluster-aware rendering
+                var mtCount = 0;
+                for (var dr = -1; dr <= 1; dr++) {
+                    for (var dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        var nr = r + dr, nc = c + dc;
+                        if (nr >= 0 && nr < terrainHeight && nc >= 0 && nc < terrainWidth) {
+                            if (terrain[nr * terrainWidth + nc] === 3) mtCount++;
+                        }
+                    }
+                }
+
+                // Draw 2-3 overlapping rocky peak shapes per tile
+                var numPeaks = 2 + Math.floor(h * 2);
+                for (var p = 0; p < numPeaks; p++) {
+                    var ph = tileHash(c * 13 + p * 7, r * 17 + p * 11);
+                    var peakX = x + ph * ts * 0.7 + ts * 0.15;
+                    var peakY = y + ts * 0.1 + ph * ts * 0.15;
+                    var baseW = ts * (0.4 + ph * 0.4);
+                    var peakH = ts * (0.6 + tileHash(c + p * 3, r + p * 5) * 0.5);
+
+                    // Rocky peak triangle
+                    var rColorIdx = Math.floor(ph * rockColors.length);
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(peakX, peakY);
+                    targetCtx.lineTo(peakX - baseW / 2, peakY + peakH);
+                    targetCtx.lineTo(peakX + baseW / 2, peakY + peakH);
+                    targetCtx.closePath();
+                    targetCtx.fillStyle = rockColors[rColorIdx];
+                    targetCtx.fill();
+
+                    // Dark side (right face shading)
+                    targetCtx.beginPath();
+                    targetCtx.moveTo(peakX, peakY);
+                    targetCtx.lineTo(peakX + baseW * 0.1, peakY + peakH * 0.3);
+                    targetCtx.lineTo(peakX + baseW / 2, peakY + peakH);
+                    targetCtx.closePath();
+                    var dColorIdx = Math.floor(ph * darkRockColors.length);
+                    targetCtx.fillStyle = darkRockColors[dColorIdx];
+                    targetCtx.fill();
+
+                    // Snow cap on top third
+                    if (ph > 0.25 || mtCount > 4) {
+                        var snowH = peakH * (0.25 + ph * 0.15);
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(peakX, peakY);
+                        targetCtx.lineTo(peakX - baseW * 0.2, peakY + snowH);
+                        targetCtx.lineTo(peakX + baseW * 0.2, peakY + snowH);
+                        targetCtx.closePath();
+                        targetCtx.fillStyle = snowColor;
+                        targetCtx.fill();
+                        // Snow edge drip
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(peakX - baseW * 0.2, peakY + snowH);
+                        targetCtx.lineTo(peakX - baseW * 0.25, peakY + snowH + ts * 0.08);
+                        targetCtx.lineTo(peakX + baseW * 0.25, peakY + snowH + ts * 0.05);
+                        targetCtx.lineTo(peakX + baseW * 0.2, peakY + snowH);
+                        targetCtx.closePath();
+                        targetCtx.fillStyle = snowEdge;
+                        targetCtx.fill();
+                    }
+                }
+
+                // Rocky stipple detail at base
+                var stippleCount = 3 + Math.floor(h * 4);
+                for (var s = 0; s < stippleCount; s++) {
+                    var sx = x + tileHash(c * 41 + s, r * 43) * ts;
+                    var sy = y + ts * 0.5 + tileHash(c * 47 + s, r * 53) * ts * 0.5;
+                    var sr = 0.5 + tileHash(c * 59 + s, r * 61) * 1.5;
+                    targetCtx.beginPath();
+                    targetCtx.arc(sx, sy, sr, 0, Math.PI * 2);
+                    targetCtx.fillStyle = darkRockColors[s % darkRockColors.length];
+                    targetCtx.fill();
+                }
+            }
+        }
+    }
+
+    // Hills enhancement — draws rounded green mounds with shadow and grass texture
+    // Concept image shows gentle rolling hills with visible depth
+    function _enhanceHills(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        return; // TEMP DISABLED for tree-fix evaluation, see supervisor 18:42 — restore by removing this line
+        var hillColors = ['#8ab462', '#7aa555', '#96c06c', '#6b9a4a', '#82ae5a'];
+        var shadowColor = 'rgba(40,65,25,0.25)';
+        var highlightColor = 'rgba(165,210,100,0.4)';
+
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 4) continue;
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+                var h = tileHash(c, r);
+
+                // Draw 2-3 overlapping mound shapes per tile
+                var numMounds = 2 + (h > 0.6 ? 1 : 0);
+                for (var i = 0; i < numMounds; i++) {
+                    var subH = tileHash(c * 17 + i * 11, r * 23 + i * 7);
+                    var mx = x + (0.15 + subH * 0.5) * ts;
+                    var my = y + (0.3 + tileHash(c * 29 + i, r * 31 + i) * 0.5) * ts;
+                    var mw = ts * (0.5 + subH * 0.4);
+                    var mh = ts * (0.25 + subH * 0.2);
+                    var colorIdx = Math.floor(subH * hillColors.length);
+
+                    // Shadow (slightly offset down)
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(mx, my + mh * 0.3, mw * 0.5, mh * 0.8, 0, 0, Math.PI * 2);
+                    targetCtx.fillStyle = shadowColor;
+                    targetCtx.fill();
+
+                    // Main mound body
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(mx, my, mw * 0.5, mh, 0, 0, Math.PI * 2);
+                    targetCtx.fillStyle = hillColors[colorIdx];
+                    targetCtx.fill();
+
+                    // Highlight on top
+                    targetCtx.beginPath();
+                    targetCtx.ellipse(mx - mw * 0.1, my - mh * 0.3, mw * 0.25, mh * 0.4, 0, 0, Math.PI * 2);
+                    targetCtx.fillStyle = highlightColor;
+                    targetCtx.fill();
+                }
+
+                // Add small grass tufts for texture
+                var tufts = 2 + Math.floor(h * 3);
+                for (var t = 0; t < tufts; t++) {
+                    var tx = x + tileHash(c * 37 + t, r * 41) * ts;
+                    var ty = y + tileHash(c * 43 + t, r * 47) * ts;
+                    targetCtx.beginPath();
+                    targetCtx.arc(tx, ty, ts * 0.04, 0, Math.PI * 2);
+                    targetCtx.fillStyle = hillColors[(t + 2) % hillColors.length];
+                    targetCtx.fill();
+                }
+            }
+        }
+    }
+
+    // Sandy beach fringe — draw sandy border on land tiles adjacent to water
+    // Creates the beach strip visible in the concept image between grass and water
+    function _drawBeachFringe(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        var beachColor1 = 'rgba(195,185,140,0.7)';
+        var beachColor2 = 'rgba(180,170,120,0.45)';
+        var beachColor3 = 'rgba(170,160,110,0.25)'; // for 2nd-tile subtle sandy tint
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tid = terrain[r * terrainWidth + c];
+                if (tid === 2 || tid === 3) continue; // skip water and mountain tiles
+                // Check if adjacent to water (distance 1)
+                var waterAbove = false, waterBelow = false, waterLeft = false, waterRight = false;
+                if (r > 0 && terrain[(r-1) * terrainWidth + c] === 2) waterAbove = true;
+                if (r < terrainHeight - 1 && terrain[(r+1) * terrainWidth + c] === 2) waterBelow = true;
+                if (c > 0 && terrain[r * terrainWidth + (c-1)] === 2) waterLeft = true;
+                if (c < terrainWidth - 1 && terrain[r * terrainWidth + (c+1)] === 2) waterRight = true;
+
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                if (waterAbove || waterBelow || waterLeft || waterRight) {
+                    // Direct coastal tile — wide beach fringe covering most of the tile
+                    var beachW = ts*(0.55+tileHash(c*53,r*61)*0.15);
+                    if (waterAbove) {
+                        var grad = targetCtx.createLinearGradient(x, y, x, y + beachW);
+                        grad.addColorStop(0, beachColor1);
+                        grad.addColorStop(0.6, beachColor2);
+                        grad.addColorStop(1, 'rgba(180,170,120,0)');
+                        targetCtx.fillStyle = grad;
+                        targetCtx.fillRect(x, y, ts, beachW);
+                    }
+                    if (waterBelow) {
+                        var grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - beachW);
+                        grad.addColorStop(0, beachColor1);
+                        grad.addColorStop(0.6, beachColor2);
+                        grad.addColorStop(1, 'rgba(180,170,120,0)');
+                        targetCtx.fillStyle = grad;
+                        targetCtx.fillRect(x, y + ts - beachW, ts, beachW);
+                    }
+                    if (waterLeft) {
+                        var grad = targetCtx.createLinearGradient(x, y, x + beachW, y);
+                        grad.addColorStop(0, beachColor1);
+                        grad.addColorStop(0.6, beachColor2);
+                        grad.addColorStop(1, 'rgba(180,170,120,0)');
+                        targetCtx.fillStyle = grad;
+                        targetCtx.fillRect(x, y, beachW, ts);
+                    }
+                    if (waterRight) {
+                        var grad = targetCtx.createLinearGradient(x + ts, y, x + ts - beachW, y);
+                        grad.addColorStop(0, beachColor1);
+                        grad.addColorStop(0.6, beachColor2);
+                        grad.addColorStop(1, 'rgba(180,170,120,0)');
+                        targetCtx.fillStyle = grad;
+                        targetCtx.fillRect(x + ts - beachW, y, beachW, ts);
+                    }
+                } else {
+                    // Check if 2 tiles from water — add subtle sandy tint
+                    var nearWater = false;
+                    for (var dr = -2; dr <= 2 && !nearWater; dr++) {
+                        for (var dc = -2; dc <= 2 && !nearWater; dc++) {
+                            if (Math.abs(dr) <= 1 && Math.abs(dc) <= 1) continue;
+                            var nr = r + dr, nc = c + dc;
+                            if (nr >= 0 && nr < terrainHeight && nc >= 0 && nc < terrainWidth) {
+                                if (terrain[nr * terrainWidth + nc] === 2) nearWater = true;
+                            }
+                        }
+                    }
+                    if (nearWater && tid === 0) {
+                        // Subtle warm sandy tint on 2nd-ring tiles
+                        targetCtx.fillStyle = beachColor3;
+                        targetCtx.fillRect(x, y, ts, ts);
+                    }
+                }
+            }
+        }
+    }
+
+    // Soft coastline feathering — draws wide blurred land-color glow over water edge tiles
+    // This eliminates visible 16px stair-step patterns by painting a soft organic border
+    function _softCoastlineFeather(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        // v9p03: RE-ENABLED with subtle alphas + matched grass-lush color (was disabled 17:20).
+        // Pass 1: For each WATER tile adjacent to land, draw large soft land-colored radial gradient
+        // covering most of the tile. This "grows" the land into the water softly.
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                if (terrain[r * terrainWidth + c] !== 2) continue; // only water tiles
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+
+                // Check cardinal neighbors for land
+                var landAbove = (r > 0 && terrain[(r-1) * terrainWidth + c] !== 2);
+                var landBelow = (r < terrainHeight-1 && terrain[(r+1) * terrainWidth + c] !== 2);
+                var landLeft = (c > 0 && terrain[r * terrainWidth + (c-1)] !== 2);
+                var landRight = (c < terrainWidth-1 && terrain[r * terrainWidth + (c+1)] !== 2);
+                
+                if (!landAbove && !landBelow && !landLeft && !landRight) continue;
+
+                // Determine land color from nearest land neighbor
+                var landColor = 'rgba(106,154,82,'; // warm grass green
+                var landTid = -1;
+                if (landAbove) landTid = terrain[(r-1) * terrainWidth + c];
+                else if (landBelow) landTid = terrain[(r+1) * terrainWidth + c];
+                else if (landLeft) landTid = terrain[r * terrainWidth + (c-1)];
+                else if (landRight) landTid = terrain[r * terrainWidth + (c+1)];
+                
+                if (landTid === 5) landColor = 'rgba(196,184,136,'; // sand
+                else if (landTid === 4) landColor = 'rgba(122,154,90,'; // hills
+
+                // Draw soft feathered gradient extending from land edge into water
+                var featherSize = ts * 1.2;
+                
+                if (landAbove) {
+                    var grad = targetCtx.createLinearGradient(x, y, x, y + featherSize);
+                    grad.addColorStop(0, landColor + '0.16)');
+                    grad.addColorStop(0.3, landColor + '0.07)');
+                    grad.addColorStop(0.7, landColor + '0.02)');
+                    grad.addColorStop(1, landColor + '0)');
+                    targetCtx.fillStyle = grad;
+                    targetCtx.fillRect(x - ts * 0.1, y, ts * 1.2, featherSize);
+                }
+                if (landBelow) {
+                    var grad = targetCtx.createLinearGradient(x, y + ts, x, y + ts - featherSize);
+                    grad.addColorStop(0, landColor + '0.16)');
+                    grad.addColorStop(0.3, landColor + '0.07)');
+                    grad.addColorStop(0.7, landColor + '0.02)');
+                    grad.addColorStop(1, landColor + '0)');
+                    targetCtx.fillStyle = grad;
+                    targetCtx.fillRect(x - ts * 0.1, y + ts - featherSize, ts * 1.2, featherSize);
+                }
+                if (landLeft) {
+                    var grad = targetCtx.createLinearGradient(x, y, x + featherSize, y);
+                    grad.addColorStop(0, landColor + '0.16)');
+                    grad.addColorStop(0.3, landColor + '0.07)');
+                    grad.addColorStop(0.7, landColor + '0.02)');
+                    grad.addColorStop(1, landColor + '0)');
+                    targetCtx.fillStyle = grad;
+                    targetCtx.fillRect(x, y - ts * 0.1, featherSize, ts * 1.2);
+                }
+                if (landRight) {
+                    var grad = targetCtx.createLinearGradient(x + ts, y, x + ts - featherSize, y);
+                    grad.addColorStop(0, landColor + '0.16)');
+                    grad.addColorStop(0.3, landColor + '0.07)');
+                    grad.addColorStop(0.7, landColor + '0.02)');
+                    grad.addColorStop(1, landColor + '0)');
+                    targetCtx.fillStyle = grad;
+                    targetCtx.fillRect(x + ts - featherSize, y - ts * 0.1, featherSize, ts * 1.2);
+                }
+
+                // Corner feathering for diagonal land neighbors
+                var diagChecks = [
+                    { dr: -1, dc: -1, ox: x, oy: y },
+                    { dr: -1, dc: 1, ox: x + ts, oy: y },
+                    { dr: 1, dc: -1, ox: x, oy: y + ts },
+                    { dr: 1, dc: 1, ox: x + ts, oy: y + ts },
+                ];
+                for (var di = 0; di < 4; di++) {
+                    var dg = diagChecks[di];
+                    var dnr = r + dg.dr, dnc = c + dg.dc;
+                    if (dnr < 0 || dnr >= terrainHeight || dnc < 0 || dnc >= terrainWidth) continue;
+                    if (terrain[dnr * terrainWidth + dnc] === 2) continue;
+                    // Diagonal land — draw radial gradient at corner
+                    var grad = targetCtx.createRadialGradient(dg.ox, dg.oy, 0, dg.ox, dg.oy, ts * 0.9);
+                    grad.addColorStop(0, landColor + '0.12)');
+                    grad.addColorStop(0.4, landColor + '0.05)');
+                    grad.addColorStop(1, landColor + '0)');
+                    targetCtx.fillStyle = grad;
+                    targetCtx.beginPath();
+                    targetCtx.arc(dg.ox, dg.oy, ts * 0.9, 0, Math.PI * 2);
+                    targetCtx.fill();
+                }
+            }
+        }
+    }
+
+    // Coastline jitter — draws irregular shapes along straight coast runs to break up grid lines
+    // Works on LAND tiles adjacent to water, drawing water-colored nibbles into the land
+    function _coastlineJitter(targetCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts) {
+        var waterShallowColor = 'rgba(80,195,180,0.28)';
+        var sandNibbleColor = 'rgba(175,165,115,0.30)';
+        for (var r = cSR; r <= cER; r++) {
+            for (var c = cSC; c <= cEC; c++) {
+                var tid = terrain[r * terrainWidth + c];
+                if (tid === 2) continue; // skip water tiles (we work on land)
+                // Check if this land tile is directly adjacent to water
+                var waterAbove = (r > 0 && terrain[(r-1) * terrainWidth + c] === 2);
+                var waterBelow = (r < terrainHeight-1 && terrain[(r+1) * terrainWidth + c] === 2);
+                var waterLeft = (c > 0 && terrain[r * terrainWidth + (c-1)] === 2);
+                var waterRight = (c < terrainWidth-1 && terrain[r * terrainWidth + (c+1)] === 2);
+                if (!waterAbove && !waterBelow && !waterLeft && !waterRight) continue;
+
+                var x = (c - cSC) * ts;
+                var y = (r - cSR) * ts;
+                var h = tileHash(c, r);
+
+                // Draw irregular water nibbles into the land at the water edge
+                // This breaks up the straight grid line creating an organic boundary
+                var nibbleCount = 1 + Math.floor(h * 2);
+                for (var i = 0; i < nibbleCount; i++) {
+                    var nh = tileHash(c * 17 + i * 7, r * 23 + i * 11);
+                    var nh2 = tileHash(c * 31 + i * 3, r * 37 + i * 5);
+                    var nibbleR = ts * (0.10 + nh * 0.14);
+
+                    if (waterAbove) {
+                        var nx = x + nh * ts;
+                        var ny = y + nh2 * ts * 0.3;
+                        targetCtx.beginPath();
+                        targetCtx.arc(nx, ny, nibbleR, 0, Math.PI * 2);
+                        targetCtx.fillStyle = waterShallowColor;
+                        targetCtx.fill();
+                    }
+                    if (waterBelow) {
+                        var nx = x + nh * ts;
+                        var ny = y + ts - nh2 * ts * 0.3;
+                        targetCtx.beginPath();
+                        targetCtx.arc(nx, ny, nibbleR, 0, Math.PI * 2);
+                        targetCtx.fillStyle = waterShallowColor;
+                        targetCtx.fill();
+                    }
+                    if (waterLeft) {
+                        var nx = x + nh2 * ts * 0.3;
+                        var ny = y + nh * ts;
+                        targetCtx.beginPath();
+                        targetCtx.arc(nx, ny, nibbleR, 0, Math.PI * 2);
+                        targetCtx.fillStyle = waterShallowColor;
+                        targetCtx.fill();
+                    }
+                    if (waterRight) {
+                        var nx = x + ts - nh2 * ts * 0.3;
+                        var ny = y + nh * ts;
+                        targetCtx.beginPath();
+                        targetCtx.arc(nx, ny, nibbleR, 0, Math.PI * 2);
+                        targetCtx.fillStyle = waterShallowColor;
+                        targetCtx.fill();
+                    }
+                }
+
+                // Also add sand-colored irregular dots for beach effect
+                if (tid === 0 || tid === 4) { // grass or hills
+                    var sandCount = 1 + Math.floor(h * 2);
+                    for (var i = 0; i < sandCount; i++) {
+                        var sh = tileHash(c * 41 + i * 9, r * 43 + i * 13);
+                        var sr = ts * (0.08 + sh * 0.12);
+                        if (waterAbove) {
+                            targetCtx.beginPath();
+                            targetCtx.arc(x + sh * ts, y + sh * ts * 0.25, sr, 0, Math.PI * 2);
+                            targetCtx.fillStyle = sandNibbleColor;
+                            targetCtx.fill();
+                        }
+                        if (waterBelow) {
+                            targetCtx.beginPath();
+                            targetCtx.arc(x + sh * ts, y + ts - sh * ts * 0.25, sr, 0, Math.PI * 2);
+                            targetCtx.fillStyle = sandNibbleColor;
+                            targetCtx.fill();
+                        }
+                        if (waterLeft) {
+                            targetCtx.beginPath();
+                            targetCtx.arc(x + sh * ts * 0.25, y + sh * ts, sr, 0, Math.PI * 2);
+                            targetCtx.fillStyle = sandNibbleColor;
+                            targetCtx.fill();
+                        }
+                        if (waterRight) {
+                            targetCtx.beginPath();
+                            targetCtx.arc(x + ts - sh * ts * 0.25, y + sh * ts, sr, 0, Math.PI * 2);
+                            targetCtx.fillStyle = sandNibbleColor;
+                            targetCtx.fill();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+        // Warm atmospheric overlay — adds golden warmth to terrain matching concept image
+    function _applyWarmOverlay(targetCtx, width, height) {
+        // Golden overlay — gives the warm illustrated medieval map feel (concept image warmth)
+        targetCtx.save();
+        targetCtx.globalCompositeOperation = 'overlay';
+        targetCtx.fillStyle = 'rgba(200,170,60,0.26)';
+        targetCtx.fillRect(0, 0, width, height);
+        targetCtx.restore();
+        // Additive golden glow for extra warmth
+        targetCtx.save();
+        targetCtx.globalCompositeOperation = 'source-over';
+        targetCtx.fillStyle = 'rgba(220,190,55,0.08)';
+        targetCtx.fillRect(0, 0, width, height);
+        targetCtx.restore();
     }
 
     // ── Color helpers ──
@@ -440,6 +1674,38 @@ window.Renderer = (function () {
 
         worldData = world;
         _minimapTerrainCanvas = null; // Rebuild terrain cache for new world
+
+        // v9p08: Clean up grid-aligned 1-tile-wide water channels left over from old anisotropic
+        // river noise (engine.js generateTerrain prior to v9p08). Detect water tiles whose 3x3
+        // neighborhood contains <=3 water tiles (definition of a thin line / isolated speck) and
+        // convert them to grass. Preserves carved rivers (2 tiles wide), lakes, and ocean coasts.
+        if (worldData && worldData.terrain && !worldData._v9p08_cleaned) {
+            var _gpCols = worldData.gridCols || worldData.cols || 0;
+            var _gpRows = worldData.gridRows || worldData.rows || 0;
+            if (_gpCols > 0 && _gpRows > 0 && worldData.terrain.length >= _gpCols * _gpRows) {
+                var _t = worldData.terrain;
+                var _snap = new Uint8Array(_t);
+                var _converted = 0;
+                for (var _gy = 1; _gy < _gpRows - 1; _gy++) {
+                    for (var _gx = 1; _gx < _gpCols - 1; _gx++) {
+                        var _gi = _gy * _gpCols + _gx;
+                        if (_snap[_gi] !== 2) continue;
+                        var _wn = 0;
+                        for (var _dy = -1; _dy <= 1; _dy++) {
+                            for (var _dx = -1; _dx <= 1; _dx++) {
+                                if (_snap[(_gy + _dy) * _gpCols + (_gx + _dx)] === 2) _wn++;
+                            }
+                        }
+                        if (_wn <= 3) { _t[_gi] = 0; _converted++; }
+                    }
+                }
+                worldData._v9p08_cleaned = true;
+                if (typeof console !== 'undefined' && console.log) {
+                    console.log('[v9p08] Cleaned ' + _converted + ' grid-river water tiles → grass');
+                }
+            }
+        }
+
         resize();
         window.removeEventListener('resize', resize);
         window.addEventListener('resize', resize);
@@ -499,12 +1765,25 @@ window.Renderer = (function () {
         var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
         if (_useTextures) {
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); // grass (+ forest tiles as base)
+            _addGrassVariation(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // grass color patches
             _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest darken + tree sprites
-            _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
+            _renderWaterWithDepth(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // water with depth + foam
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
+            _enhanceMountains(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
+            _enhanceHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
             _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
+            _addNoiseGrain(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts); // v9l.0 per-tile micro-grain
+            var _ne1 = _terrainTextures[99];
+            if (_ne1 && _ne1.loaded && _ne1.img) _applyNoiseOverlay(offscreenCtx, cSC, cEC, cSR, cER, ts);
             _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _roundLandCoastCorners(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _drawBeachFringe(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _smoothCoastlines(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _softCoastlineFeather(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _coastlineJitter(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _featherForestEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+            _scatterGrasslandTrees(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
         }
 
         for (var r = cSR; r <= cER; r++) {
@@ -570,6 +1849,9 @@ window.Renderer = (function () {
                 }
             }
         }
+
+        // Warm atmospheric overlay on terrain
+        _applyWarmOverlay(offscreenCtx, drawW, drawH);
 
         _terrainCacheStartCol = cSC;
         _terrainCacheEndCol = cEC;
@@ -913,7 +2195,7 @@ window.Renderer = (function () {
         }
 
         // 5. People (only when zoomed in and not panning)
-        if (camera.zoom > 1.5 && !_cameraMoving) {
+        if (camera.zoom > 2.5 && !_cameraMoving) {
             renderPeople();
         }
 
@@ -1181,13 +2463,25 @@ window.Renderer = (function () {
             var _useTextures = CONFIG.USE_TEXTURED_TERRAIN;
             if (_useTextures) {
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 0, 1); // grass (+ forest tiles as base)
+                _addGrassVariation(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // grass color patches
                 _fillForestWithTrees(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts);     // forest darken + tree sprites
-                _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 2); // water
+                _renderWaterWithDepth(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts); // water with depth + foam
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 3); // mountain
+                _enhanceMountains(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 4); // hills
+                _enhanceHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
                 _fillTerrainTextured(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts, 5); // sand
-                // Edge blending pass — soft transitions between terrain types
+                _addNoiseGrain(offscreenCtx, terrain, terrainWidth, cSC, cEC, cSR, cER, ts); // v9l.0 per-tile micro-grain
+                var _ne2 = _terrainTextures[99];
+                if (_ne2 && _ne2.loaded && _ne2.img) _applyNoiseOverlay(offscreenCtx, cSC, cEC, cSR, cER, ts);
                 _blendTerrainEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _roundLandCoastCorners(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _drawBeachFringe(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _smoothCoastlines(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _softCoastlineFeather(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _coastlineJitter(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _featherForestEdges(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
+                _scatterGrasslandTrees(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
             }
 
             for (var r = cSR; r <= cER; r++) {
@@ -1259,6 +2553,9 @@ window.Renderer = (function () {
                 }
             }
 
+            // Warm atmospheric overlay on terrain
+            _applyWarmOverlay(offscreenCtx, drawW, drawH);
+
             _terrainCacheStartCol = cSC;
             _terrainCacheEndCol = cEC;
             _terrainCacheStartRow = cSR;
@@ -1327,6 +2624,10 @@ window.Renderer = (function () {
 
         const townMap = _frameTownMap;
         const ts = CONFIG.TILE_SIZE;
+
+        // v9o.0-paths: pattern world-anchored via setTransform(identity)
+        var _ppt = (camera.zoom >= 0.4) && _terrainTextures[100], _pathPatt = null;
+        if (_ppt && _ppt.loaded && _ppt.img) { if (!_ppt.pattern) { _ppt.pattern = ctx.createPattern(_ppt.img, 'repeat'); if (_ppt.pattern && _ppt.pattern.setTransform) _ppt.pattern.setTransform(new DOMMatrix()); } _pathPatt = _ppt.pattern; }
 
         // Helper: draw a Catmull-Rom spline through waypoints
         function drawWaypointPath(pts) {
@@ -1403,6 +2704,10 @@ window.Renderer = (function () {
             const to = townMap[road.toTownId];
             if (!from || !to) continue;
 
+            // Soft rounded road ends and joins for painterly path look
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
             const fx = from.x;
             const fy = from.y;
             const tx = to.x;
@@ -1428,10 +2733,19 @@ window.Renderer = (function () {
             if (road._bbox.maxX < _rdVb.left - 200 || road._bbox.minX > _rdVb.right + 200 ||
                 road._bbox.maxY < _rdVb.top - 200 || road._bbox.minY > _rdVb.bottom + 200) continue;
 
+            // v9p06: cull pass-through roads (both endpoints far off-screen) to remove
+            // the "brown grid" of distant roads spanning the visible area. Local roads
+            // (where at least one endpoint town is on or near screen) are unaffected.
+            var _vw06 = _rdVb.right - _rdVb.left, _vh06 = _rdVb.bottom - _rdVb.top;
+            var _epM06 = Math.max(_vw06, _vh06) * 0.35;
+            var _fxOff06 = (fx < _rdVb.left - _epM06 || fx > _rdVb.right + _epM06 || fy < _rdVb.top - _epM06 || fy > _rdVb.bottom + _epM06);
+            var _txOff06 = (tx < _rdVb.left - _epM06 || tx > _rdVb.right + _epM06 || ty < _rdVb.top - _epM06 || ty > _rdVb.bottom + _epM06);
+            if (_fxOff06 && _txOff06) continue;
+
             const quality = road.quality || 1;
             const safe = road.safe !== false;
-            // Road width varies more by quality for visual differentiation
-            const width = quality >= 3 ? 4.5 : quality >= 2 ? 3.0 : 1.8;
+            // Wider roads for more visible paths (concept image style)
+            const width = quality >= 3 ? 5.5 : quality >= 2 ? 4.0 : 2.5;
 
             let hasWP = road.waypoints && road.waypoints.length >= 2;
 
@@ -1464,7 +2778,7 @@ window.Renderer = (function () {
             // single coloured line for the whole road (huge perf win).
             if (_hasBridgeData && camera.zoom < 0.8) {
                 var _roadColor = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
-                ctx.strokeStyle = safe ? _roadColor : '#8b4513';
+                ctx.strokeStyle = safe ? _roadColor : '#d4b54a';
                 ctx.lineWidth = width;
                 ctx.setLineDash(safe ? [] : [6, 4]);
                 drawWaypointPath(_wps);
@@ -1498,10 +2812,10 @@ window.Renderer = (function () {
 
                 // First pass: draw road segments (only over land)
                 if (!safe) {
-                    ctx.strokeStyle = '#8b4513';
+                    ctx.strokeStyle = '#d4b54a';
                     ctx.setLineDash([6, 4]);
                 } else {
-                    ctx.strokeStyle = _roadColor;
+                    ctx.strokeStyle = _pathPatt || _roadColor;
                     ctx.setLineDash([]);
                 }
                 ctx.lineWidth = width;
@@ -1703,7 +3017,7 @@ window.Renderer = (function () {
             } else {
                 // No bridge data — textured road rendering by quality
                 if (!safe) {
-                    ctx.strokeStyle = '#8b4513';
+                    ctx.strokeStyle = '#d4b54a';
                     ctx.setLineDash([6, 4]);
                     drawWaypointPath(road.waypoints);
                     ctx.strokeStyle = 'rgba(180,40,30,0.45)';
@@ -1717,7 +3031,7 @@ window.Renderer = (function () {
                     ctx.setLineDash([]);
                     drawWaypointPath(road.waypoints);
                     // Main stone surface
-                    ctx.strokeStyle = '#9a9080';
+                    ctx.strokeStyle = _pathPatt || '#9a9080';
                     ctx.lineWidth = width;
                     drawWaypointPath(road.waypoints);
                     // Stone block lines (lighter dash on top)
@@ -1733,7 +3047,7 @@ window.Renderer = (function () {
                     ctx.setLineDash([]);
                     drawWaypointPath(road.waypoints);
                     // Main gravel surface
-                    ctx.strokeStyle = '#8b7355';
+                    ctx.strokeStyle = _pathPatt || '#8b7355';
                     ctx.lineWidth = width;
                     drawWaypointPath(road.waypoints);
                     // Gravel speckle (subtle dashed overlay)
@@ -1743,22 +3057,21 @@ window.Renderer = (function () {
                     drawWaypointPath(road.waypoints);
                     ctx.setLineDash([]);
                 } else {
-                    // Dirt path: narrow, earthy brown, slightly irregular via dash
-                    ctx.strokeStyle = 'rgba(80,60,35,0.15)';
-                    ctx.lineWidth = width + 1;
+                    // Dirt path: soft warm brown, wider, natural look (concept image style)
+                    ctx.strokeStyle = 'rgba(90, 65, 35, 0.25)';
+                    ctx.lineWidth = width + 2;
                     ctx.setLineDash([]);
                     drawWaypointPath(road.waypoints);
-                    // Main dirt surface
-                    ctx.strokeStyle = '#6b5b4f';
+                    // Main dirt surface (warm tan-brown)
+                    ctx.strokeStyle = _pathPatt || '#9a7b55';
                     ctx.lineWidth = width;
                     ctx.setLineDash([]);
                     drawWaypointPath(road.waypoints);
-                    // Dirt texture (stippled overlay)
-                    ctx.strokeStyle = 'rgba(140,120,80,0.25)';
+                    // Center highlight for depth
+                    ctx.strokeStyle = 'rgba(180,150,100,0.3)';
                     ctx.lineWidth = width * 0.4;
-                    ctx.setLineDash([1, 4]);
-                    drawWaypointPath(road.waypoints);
                     ctx.setLineDash([]);
+                    drawWaypointPath(road.waypoints);
                 }
             }
 
@@ -2094,10 +3407,12 @@ window.Renderer = (function () {
             } else {
                 // Detailed town rendering — distinct graphics per category
                 const cat = town.category || 'village';
+                let _spriteRendered = false; // v9n.1.3: gate decorative rings (walls/towers/island) when sprite drew
 
                 // ── OUTPOST: Small camp with tents, fence, flag ──
                 if (cat === 'outpost') {
                     const baseSize = 12;
+                    if((_spriteRendered=_v9n1Spr(town,'outpost',cx,cy,baseSize,kColor))===false){
                     // Cleared ground circle
                     ctx.fillStyle = 'rgba(120,100,70,0.25)';
                     ctx.beginPath();
@@ -2172,6 +3487,7 @@ window.Renderer = (function () {
                     const opLabel = '⛺ ' + town.name;
                     ctx.strokeText(opLabel, cx, cy - baseSize - 8);
                     ctx.fillText(opLabel, cx, cy - baseSize - 8);
+                    }
                 } else {
 
                 const baseSize = cat === 'capital_city' ? 18 + Math.sqrt(pop) * 0.7
@@ -2180,7 +3496,7 @@ window.Renderer = (function () {
                                : 9 + Math.sqrt(pop) * 0.5; // village
 
                 // Island beach ring
-                if (town.isIsland) {
+                if (town.isIsland && !_spriteRendered) {
                     ctx.fillStyle = 'rgba(210,190,140,0.35)';
                     ctx.beginPath();
                     ctx.arc(cx, cy, baseSize + 14, 0, Math.PI * 2);
@@ -2196,6 +3512,7 @@ window.Renderer = (function () {
 
                 // ── VILLAGE: Scattered huts, thatched roofs, dirt feel ──
                 if (cat === 'village') {
+                    if((_spriteRendered=_v9n1Spr(town,'village',cx,cy,baseSize,kColor))===false){
                     const buildingCount = Math.min(10, 3 + Math.floor(pop / 25));
                     const bColors = ['#5a4a38', '#6b5b4f', '#4a3a2e'];
                     for (let i = 0; i < buildingCount; i++) {
@@ -2224,10 +3541,12 @@ window.Renderer = (function () {
                     ctx.strokeStyle = '#5a4a38';
                     ctx.lineWidth = 1;
                     ctx.stroke();
+                    }
                 }
 
                 // ── TOWN: More buildings, timber frames, small market square ──
                 else if (cat === 'town') {
+                    if((_spriteRendered=_v9n1Spr(town,'town',cx,cy,baseSize,kColor))===false){
                     const buildingCount = Math.min(18, 6 + Math.floor(pop / 18));
                     const bColors = ['#5a4a38', '#6b5b4f', '#4a3a2e', '#7b6b55'];
                     for (let i = 0; i < buildingCount; i++) {
@@ -2259,10 +3578,12 @@ window.Renderer = (function () {
                     ctx.strokeStyle = '#5a4a38';
                     ctx.lineWidth = 0.8;
                     ctx.strokeRect(cx - 5, cy - 5, 10, 10);
+                    }
                 }
 
                 // ── CITY: Dense buildings, stone structures, church spire, market ──
                 else if (cat === 'city') {
+                    if((_spriteRendered=_v9n1Spr(town,'city',cx,cy,baseSize,kColor))===false){
                     const buildingCount = Math.min(28, 10 + Math.floor(pop / 14));
                     const bColors = ['#5a4a38', '#6b5b4f', '#7b6b55', '#8a7a64', '#555'];
                     for (let i = 0; i < buildingCount; i++) {
@@ -2315,10 +3636,12 @@ window.Renderer = (function () {
                     ctx.strokeStyle = '#6a5a48';
                     ctx.lineWidth = 0.8;
                     ctx.strokeRect(cx - 7, cy - 7, 14, 14);
+                    }
                 }
 
                 // ── CAPITAL CITY: Grand structures, castle keep, inner/outer walls feel ──
                 else if (cat === 'capital_city') {
+                    if((_spriteRendered=_v9n1Spr(town,'capital_city',cx,cy,baseSize,kColor))===false){
                     // Outer ring — larger, denser buildings
                     const outerCount = Math.min(22, 8 + Math.floor(pop / 20));
                     const outerColors = ['#5a4a38', '#6b5b4f', '#7b6b55', '#8a7a64'];
@@ -2416,10 +3739,11 @@ window.Renderer = (function () {
                     ctx.arc(cx, cy, baseSize * 0.45, 0, Math.PI * 2);
                     ctx.stroke();
                     ctx.setLineDash([]);
+                    }
                 }
 
                 // Watchtower rendering
-                if (town.towers && town.towers > 0) {
+                if (town.towers && town.towers > 0 && !_spriteRendered) {
                     for (let tw = 0; tw < Math.min(town.towers, 4); tw++) {
                         const tAngle = (tw / Math.max(town.towers, 4)) * Math.PI * 2 + Math.PI * 0.25;
                         const tDist = baseSize + 8;
@@ -2518,7 +3842,7 @@ window.Renderer = (function () {
 
                 // Walls outline
                 const walls = town.walls || 0;
-                if (walls > 0) {
+                if (walls > 0 && !_spriteRendered) {
                     ctx.strokeStyle = walls >= 3 ? '#888' : walls >= 2 ? '#777' : '#666';
                     ctx.lineWidth = walls;
                     ctx.setLineDash(walls >= 2 ? [] : [3, 3]);
@@ -5624,6 +6948,7 @@ window.Renderer = (function () {
     function setSelected(target) { selectedTarget = target; }
     function getCamera() { return camera; }
     function getFrameCount() { return frameCount; }
+    function invalidateTerrain() { terrainDirty = true; }
 
     return {
         init,
@@ -5656,5 +6981,6 @@ window.Renderer = (function () {
         isFertilityOn() { return showFertility; },
         startFertilitySurvey,
         startDepositSurvey,
+        invalidateTerrain,
     };
 })();
