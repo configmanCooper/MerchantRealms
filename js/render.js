@@ -2577,6 +2577,17 @@ window.Renderer = (function () {
                 _scatterGrasslandTrees(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
             }
 
+            // v9p14: skip per-tile fallback loop when all terrain textures are loaded.
+            // The loop body is entirely gated on !_texHandled, so for typical textured
+            // mode after warmup it's just ~16k tileHash() calls doing nothing useful.
+            var _allTexturesLoaded = _useTextures &&
+                _terrainTextures[0] && _terrainTextures[0].loaded &&
+                _terrainTextures[2] && _terrainTextures[2].loaded &&
+                _terrainTextures[3] && _terrainTextures[3].loaded &&
+                _terrainTextures[4] && _terrainTextures[4].loaded &&
+                _terrainTextures[5] && _terrainTextures[5].loaded;
+
+            if (!_allTexturesLoaded) {
             for (var r = cSR; r <= cER; r++) {
                 for (var c = cSC; c <= cEC; c++) {
                     var tileId = terrain[r * terrainWidth + c];
@@ -2645,6 +2656,7 @@ window.Renderer = (function () {
                     }
                 }
             }
+            } // _allTexturesLoaded skip
 
             // v9p11: 20% darken + 20% contrast on grass/forest/hills tiles (user preference)
             _darkenGrassForestHills(offscreenCtx, terrain, terrainWidth, terrainHeight, cSC, cEC, cSR, cER, ts);
