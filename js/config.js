@@ -11,6 +11,13 @@ const CONFIG = {
     // Textured grass rendering (set false for old flat-color grass)
     USE_TEXTURED_TERRAIN: true,
 
+    // v9p27 — Renderer mode: 'textured' | 'flat' | 'map'.
+    // 'textured' = sprite tiles (USE_TEXTURED_TERRAIN=true, normal proc terrain)
+    // 'flat'     = flat-colour tiles (USE_TEXTURED_TERRAIN=false, normal proc terrain)
+    // 'map'      = blit testworld1 source image as terrain (testworld1 terrain grid)
+    // Default 'map' so the current testworld1 test stays active until user toggles.
+    RENDERER_MODE: 'map',
+
     NUM_KINGDOMS: 4,
     TOWNS_PER_KINGDOM: 4,
     PEOPLE_PER_TOWN: 120, // legacy reference — variable pop now used

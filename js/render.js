@@ -2728,8 +2728,9 @@ window.Renderer = (function () {
             // v9p25 testworld1: if loaded, blit the source image onto the cache and skip
             // all the textured/flat passes. The image IS the terrain visuals; tile data
             // drives gameplay (collision, town placement). Towns/units render on top later.
+            // v9p27: only when RENDERER_MODE === 'map'. Other modes draw normal tiles.
             var _tw1 = (typeof window !== 'undefined') ? window._testworld1 : null;
-            if (_tw1 && _tw1.loaded && _tw1.image) {
+            if (_tw1 && _tw1.loaded && _tw1.image && CONFIG.RENDERER_MODE === 'map') {
                 // Source image covers the entire world: 0,0 .. WORLD_W, WORLD_H px.
                 // Cache region is at world coords (cSC*ts, cSR*ts) of size drawW x drawH.
                 // Compute the source rectangle to extract from the image.

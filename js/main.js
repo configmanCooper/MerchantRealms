@@ -259,36 +259,59 @@ window.Game = (function () {
                 if (btnToggle) btnToggle.textContent = Music.isMuted() ? '🔇' : '🔊';
             });
         }
-        // Renderer toggle (debug: switch between textured and flat rendering)
+        // v9p27 — Renderer mode cycle: textured -> flat -> map -> textured.
+        // Helper used by both the menu button (btnToggleRenderer) and the in-game
+        // god-mode button (btnRendererMode). Keeps CONFIG.RENDERER_MODE,
+        // CONFIG.USE_TEXTURED_TERRAIN, both button labels, and renderer caches in sync.
+        var RENDERER_MODES = ['textured', 'flat', 'map'];
+        function _modeLabel(mode, withPrefix) {
+            var name = mode.charAt(0).toUpperCase() + mode.slice(1);
+            if (withPrefix === 'menu') return '🎨 Renderer: ' + name;
+            return '⚡ ' + name;
+        }
+        function _applyRendererMode(mode, opts) {
+            opts = opts || {};
+            CONFIG.RENDERER_MODE = mode;
+            // Keep legacy boolean in sync: textured -> true, flat -> false,
+            // map -> true so terrain sprites stay loaded for fallback / settlement tiles.
+            CONFIG.USE_TEXTURED_TERRAIN = (mode !== 'flat');
+            var bMenu = document.getElementById('btnToggleRenderer');
+            var bGame = document.getElementById('btnRendererMode');
+            if (bMenu) bMenu.textContent = _modeLabel(mode, 'menu');
+            if (bGame) bGame.textContent = _modeLabel(mode);
+            if (typeof Renderer !== 'undefined') {
+                if (Renderer.invalidateTerrain) Renderer.invalidateTerrain();
+                if (Renderer.refreshZoomLimits) Renderer.refreshZoomLimits();
+            }
+            if (opts.toast && typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('Renderer: ' + mode.charAt(0).toUpperCase() + mode.slice(1), 'info');
+            }
+        }
+        function _cycleRendererMode(opts) {
+            var cur = CONFIG.RENDERER_MODE || (CONFIG.USE_TEXTURED_TERRAIN ? 'textured' : 'flat');
+            var idx = RENDERER_MODES.indexOf(cur);
+            var next = RENDERER_MODES[(idx + 1) % RENDERER_MODES.length];
+            _applyRendererMode(next, opts);
+        }
+
+        // Renderer toggle (menu button)
         var btnRendererToggle = document.getElementById('btnToggleRenderer');
         if (btnRendererToggle) {
+            btnRendererToggle.textContent = _modeLabel(CONFIG.RENDERER_MODE || 'textured', 'menu');
             btnRendererToggle.addEventListener('click', function (e) {
                 e.stopPropagation();
-                CONFIG.USE_TEXTURED_TERRAIN = !CONFIG.USE_TEXTURED_TERRAIN;
-                btnRendererToggle.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '🎨 Renderer: Textured' : '🎨 Renderer: Flat';
-                // Force terrain redraw if in-game
-                if (typeof Renderer !== 'undefined' && Renderer.invalidateTerrain) Renderer.invalidateTerrain();
-                // v9p10b: textured mode clamps min zoom to 1.5; flat mode allows 0.5
-                if (typeof Renderer !== 'undefined' && Renderer.refreshZoomLimits) Renderer.refreshZoomLimits();
-                // v9p19: keep in-game renderer mode button label in sync
-                var bgm = document.getElementById('btnRendererMode');
-                if (bgm) bgm.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '⚡ Textured' : '⚡ Flat';
+                _cycleRendererMode();
             });
         }
         // v9p19: in-game renderer toggle (mirrors main menu btnToggleRenderer).
-        // Per supervisor: "god mode button to switch between textured and flat".
+        // Per supervisor: "god mode button to switch between textured / flat / map".
         var btnRendererMode = document.getElementById('btnRendererMode');
         if (btnRendererMode) {
-            btnRendererMode.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '⚡ Textured' : '⚡ Flat';
+            btnRendererMode.textContent = _modeLabel(CONFIG.RENDERER_MODE || 'textured');
+            btnRendererMode.title = 'God Mode: Toggle Renderer (Textured / Flat / Map)';
             btnRendererMode.addEventListener('click', function (e) {
                 e.stopPropagation();
-                CONFIG.USE_TEXTURED_TERRAIN = !CONFIG.USE_TEXTURED_TERRAIN;
-                btnRendererMode.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '⚡ Textured' : '⚡ Flat';
-                if (typeof Renderer !== 'undefined' && Renderer.invalidateTerrain) Renderer.invalidateTerrain();
-                if (typeof Renderer !== 'undefined' && Renderer.refreshZoomLimits) Renderer.refreshZoomLimits();
-                var brt = document.getElementById('btnToggleRenderer');
-                if (brt) brt.textContent = CONFIG.USE_TEXTURED_TERRAIN ? '🎨 Renderer: Textured' : '🎨 Renderer: Flat';
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('Renderer: ' + (CONFIG.USE_TEXTURED_TERRAIN ? 'Textured' : 'Flat'), 'info');
+                _cycleRendererMode({ toast: true });
             });
         }
         var volSlider = document.getElementById('musicVolume');

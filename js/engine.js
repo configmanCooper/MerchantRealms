@@ -226,8 +226,10 @@
         const rows = Math.floor(CONFIG.WORLD_HEIGHT / CONFIG.TILE_SIZE);
 
         // v9p25 testworld1: if pre-loaded testworld1 terrain exists, use it instead of procedural gen.
+        // v9p27: only when RENDERER_MODE is 'map'. Other modes use procedural worldgen.
         if (typeof window !== 'undefined' && window._testworld1 && window._testworld1.terrain &&
-            window._testworld1.cols === cols && window._testworld1.rows === rows) {
+            window._testworld1.cols === cols && window._testworld1.rows === rows &&
+            (typeof CONFIG === 'undefined' || CONFIG.RENDERER_MODE === 'map')) {
             console.log('[engine] Using testworld1 terrain (' + cols + 'x' + rows + ')');
             return { grid: new Uint8Array(window._testworld1.terrain), cols: cols, rows: rows };
         }
