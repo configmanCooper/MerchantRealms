@@ -1940,13 +1940,17 @@ window.Renderer = (function () {
         camera.targetY = Math.max(halfH, Math.min(worldPxH - halfH, camera.targetY));
 
         // Check if terrain needs redraw
-        const dz = Math.abs(camera.zoom - lastTerrainZoom);
-        // v9p12: removed pan-driven terrainDirty trigger. The cache-bounds check
-        // in _renderTerrainLegacy (viewport vs _terrainCacheStart/End cols/rows)
-        // is the authoritative pan-redraw trigger. The previous PAN_THRESHOLD_HIGH=4
-        // was forcing a full terrain rebuild every 4 world px (~6 screen px @ zoom 1.5)
-        // even though TERRAIN_MARGIN cache had room to spare. That was the panning hitch.
-        if (dz > 0.005) {
+        // v9p13: only mark dirty on zoom changes that affect cache CONTENT
+        // (not just blit destination). Cache is at world-pixel resolution and
+        // gets scaled by ctx.scale(camera.zoom). So zoom in/out alone doesn't
+        // invalidate the cache — only zoom that crosses DECORATION_SKIP_ZOOM
+        // threshold actually changes what's drawn into the cache. The
+        // cache-bounds check (viewport vs cache extents) handles zoom-out
+        // that exposes new uncached terrain.
+        var skipZ = CONFIG.DECORATION_SKIP_ZOOM;
+        var crossedDecorationThreshold =
+            (camera.zoom < skipZ) !== (lastTerrainZoom < skipZ);
+        if (crossedDecorationThreshold) {
             terrainDirty = true;
         }
         // Scene cache invalidation is handled in _renderViaSceneCache via bounds check
