@@ -4729,7 +4729,7 @@ function clickTown(townId) {
             { id: 'iron', name: 'Iron' }, { id: 'iron_ore', name: 'Iron Ore' }, { id: 'steel', name: 'Steel' },
             { id: 'tools', name: 'Tools' }, { id: 'swords', name: 'Swords' }, { id: 'armor', name: 'Armor' },
             { id: 'bows', name: 'Bows' }, { id: 'arrows', name: 'Arrows' },
-            { id: 'wood', name: 'Wood' }, { id: 'stone', name: 'Stone' }, { id: 'charcoal', name: 'Charcoal' },
+            { id: 'wood', name: 'Wood' }, { id: 'stone', name: 'Stone' }, { id: 'charcoal', name: 'Charcoal' }, { id: 'coal', name: 'Coal' },
             { id: 'cloth', name: 'Cloth' }, { id: 'wool', name: 'Wool' }, { id: 'silk', name: 'Silk' },
             { id: 'leather', name: 'Leather' }, { id: 'dye', name: 'Dye' },
             { id: 'wine', name: 'Wine' }, { id: 'ale', name: 'Ale' }, { id: 'mead', name: 'Mead' },

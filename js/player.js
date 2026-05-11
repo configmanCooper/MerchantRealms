@@ -5882,30 +5882,42 @@
             var _pSiegePenalty = 1.0;
             if (town.siege) _pSiegePenalty = 0.5;
 
-            // Optional boost (manure for farms, charcoal for smelters)
+            // Optional boost (manure for farms, charcoal/coal for smelters)
             var _pOptBoostMod = 1.0;
             if (bt.optionalBoost) {
-                var _pBoostRes = bt.optionalBoost.resource;
+                // v9p33-coal: support `alternates` list so coal is interchangeable with charcoal
+                var _pBoostFuels = [bt.optionalBoost.resource].concat(bt.optionalBoost.alternates || []);
                 var _pBoostConsume = bt.optionalBoost.consumeRate || 1;
-                var _pBoostKey = '_boostStorage_' + _pBoostRes;
                 var _pBoostMax = bt.optionalBoost.storageMax || 20;
-                if (bld[_pBoostKey] == null) bld[_pBoostKey] = 0;
-                // Auto-buy boost resource from market
-                if (bld[_pBoostKey] < _pBoostMax && bld.autoBuy !== false) {
-                    var _pMarketAvail = (town.market && town.market.supply && town.market.supply[_pBoostRes]) || 0;
-                    var _pWant = Math.min(_pBoostMax - bld[_pBoostKey], _pMarketAvail, 5);
-                    if (_pWant > 0) {
-                        var _pBPrice = (town.market.prices[_pBoostRes] || 5) * _pWant;
-                        if (player.gold >= _pBPrice) {
-                            town.market.supply[_pBoostRes] -= _pWant;
-                            player.gold -= _pBPrice;
-                            bld[_pBoostKey] += _pWant;
+                // Auto-buy: refill the first fuel with cheapest market stock
+                if (bld.autoBuy !== false) {
+                    for (var _pbfi = 0; _pbfi < _pBoostFuels.length; _pbfi++) {
+                        var _pbfRes = _pBoostFuels[_pbfi];
+                        var _pbfKey = '_boostStorage_' + _pbfRes;
+                        if (bld[_pbfKey] == null) bld[_pbfKey] = 0;
+                        if (bld[_pbfKey] < _pBoostMax) {
+                            var _pbfAvail = (town.market && town.market.supply && town.market.supply[_pbfRes]) || 0;
+                            var _pbfWant = Math.min(_pBoostMax - bld[_pbfKey], _pbfAvail, 5);
+                            if (_pbfWant > 0) {
+                                var _pbfPrice = (town.market.prices[_pbfRes] || 5) * _pbfWant;
+                                if (player.gold >= _pbfPrice) {
+                                    town.market.supply[_pbfRes] -= _pbfWant;
+                                    player.gold -= _pbfPrice;
+                                    bld[_pbfKey] += _pbfWant;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
-                if (bld[_pBoostKey] >= _pBoostConsume) {
-                    bld[_pBoostKey] -= _pBoostConsume;
-                    _pOptBoostMod = 1.0 + (bt.optionalBoost.bonusPct / 100);
+                // Consume from any fuel bucket that has stock
+                for (var _pbci = 0; _pbci < _pBoostFuels.length; _pbci++) {
+                    var _pbcKey = '_boostStorage_' + _pBoostFuels[_pbci];
+                    if ((bld[_pbcKey] || 0) >= _pBoostConsume) {
+                        bld[_pbcKey] -= _pBoostConsume;
+                        _pOptBoostMod = 1.0 + (bt.optionalBoost.bonusPct / 100);
+                        break;
+                    }
                 }
             }
 

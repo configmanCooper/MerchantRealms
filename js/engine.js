@@ -313,12 +313,20 @@
 
     /**
      * Survey terrain deposits at a world-pixel point within a radius.
-     * Each terrain tile has a chance to yield deposits (deterministic from tile hash).
-     * Per-tile chances: Mountain: iron 25%, stone 30%, gold 8%, coal 12%, copper 10%
-     *   Hills: iron 10%, stone 20%, copper 8%, clay 15%
-     *   Forest: wood 60%, herbs 12%, honey 8%, hemp 10%, hide 15%
-     *   Grass: wheat 20%, wool 10%, hide 8%, grapes 5%, clay 10%, hemp 6%
-     *   Sand: salt 15%, clay 20%, stone 5%   Water: fish 35%, salt 10%, pearls 3%
+     * Each terrain tile has a chance to yield deposits (deterministic from
+     * world.seed + tile coordinate hash, so the same spot always has the same
+     * resources for a given world — destroying and rebuilding an outpost in
+     * the same tile yields identical deposits).
+     * Per-tile chances:
+     *   Mountain: iron 25%, stone 30%, gold 8%, coal 12%, sulfur 10%
+     *   Hills:    iron 10%, stone 20%, clay 15%, coal 6%
+     *   Forest:   wood 60%, coal 2%
+     *   Grass:    clay 10%, coal 1%
+     *   Sand:     salt 15%, clay 20%, stone 5%
+     *   Water:    fish 35%, salt 10%, pearls 3%
+     * (Hemp/hide/wool/grapes removed — not geological. Honey/herbs/wheat
+     *  removed — produced by farms without deposit requirements. Copper
+     *  removed — has no in-game producer or consumer.)
      * Each hit adds 3-8 units.
      */
     function _surveyDepositsAtPoint(wx, wy, radius) {
@@ -328,13 +336,24 @@
         var result = {};
         var totalLand = 0;
 
-        var mountainChances = [['iron_ore',0.25],['stone',0.30],['gold_ore',0.08],['coal',0.12],['copper_ore',0.10]];
-        var hillsChances =    [['iron_ore',0.10],['stone',0.20],['copper_ore',0.08],['clay',0.15]];
-        var forestChances =   [['wood',0.60],['herbs',0.12],['honey',0.08],['hemp',0.10],['hide',0.15]];
-        var grassChances =    [['wheat',0.20],['wool',0.10],['hide',0.08],['grapes',0.05],['clay',0.10],['hemp',0.06]];
+        var mountainChances = [['iron_ore',0.25],['stone',0.30],['gold_ore',0.08],['coal',0.12],['sulfur',0.10]];
+        var hillsChances =    [['iron_ore',0.10],['stone',0.20],['clay',0.15],['coal',0.06]];
+        var forestChances =   [['wood',0.60],['coal',0.02]];
+        var grassChances =    [['clay',0.10],['coal',0.01]];
         var sandChances =     [['salt',0.15],['clay',0.20],['stone',0.05]];
         var waterChances =    [['fish',0.35],['salt',0.10],['pearls',0.03]];
         var terrainTables = [grassChances, forestChances, waterChances, mountainChances, hillsChances, sandChances];
+
+        // Mix world.seed into the per-tile hash so different worlds have
+        // different deposit layouts but same world+spot is reproducible.
+        var seed = (world && world.seed) ? (world.seed | 0) : 42;
+        // 32-bit integer hash mixer (xorshift-like)
+        function mix32(a) {
+            a = (a ^ 0x9E3779B9) >>> 0;
+            a = Math.imul(a ^ (a >>> 16), 0x85ebca6b) >>> 0;
+            a = Math.imul(a ^ (a >>> 13), 0xc2b2ae35) >>> 0;
+            return (a ^ (a >>> 16)) >>> 0;
+        }
 
         // Count raw tile hits per resource
         var rawHits = {};
@@ -350,11 +369,14 @@
                 var chances = terrainTables[tid];
                 if (!chances) continue;
 
-                var tHash = ((_tx * 73856093) ^ (_ty * 19349663)) >>> 0;
+                // Combine seed + tile coords into a base hash
+                var baseHash = mix32(((_tx * 73856093) ^ (_ty * 19349663) ^ Math.imul(seed, 2654435761)) >>> 0);
                 for (var ci = 0; ci < chances.length; ci++) {
                     var resId = chances[ci][0];
                     var chance = chances[ci][1];
-                    var roll = ((tHash >>> (ci * 3)) % 1000) / 1000;
+                    // Re-mix per resource slot so each resource gets independent entropy
+                    var rollHash = mix32((baseHash ^ Math.imul(ci + 1, 0x27d4eb2d)) >>> 0);
+                    var roll = (rollHash % 10000) / 10000;
                     if (roll < chance) {
                         rawHits[resId] = (rawHits[resId] || 0) + 1;
                     }
@@ -363,21 +385,47 @@
         }
         if (totalLand === 0) return {};
 
-        // Scale raw hits to realistic deposit amounts using NATURAL_DEPOSITS config
+        // Scale raw hits to deposit amounts. Each hit contributes a per-hit unit
+        // (derived from cfg.min/cfg.max midpoint) — rich tile clusters with many
+        // hits produce LARGE deposits (more amount = "more left in the deposit").
+        // Allow amounts up to 2x cfg.max for very rich locations so hit-rich spots
+        // feel meaningfully better than average ones.
         var ND = CONFIG.NATURAL_DEPOSITS;
         for (var resId in rawHits) {
             var hits = rawHits[resId];
             var cfg = ND[resId];
             if (cfg) {
-                // Scale: each hit = portion of min..max range, with some variance from hash
-                var basePerHit = Math.floor((cfg.min + cfg.max) / 2 / Math.max(8, totalLand * 0.3));
-                result[resId] = Math.max(cfg.min, Math.min(cfg.max, hits * basePerHit));
+                var mid = (cfg.min + cfg.max) / 2;
+                // Per-hit yield scaled so ~3-5 hits gets you mid range, more hits
+                // pushes above. Smaller surveys still produce min-floor amounts.
+                var perHit = Math.max(Math.floor(mid / 5), Math.floor(cfg.min / 2));
+                // Linear scaling — no longer capped at cfg.max so rich clusters
+                // produce richer deposits.
+                var amt = hits * perHit;
+                if (amt < cfg.min) amt = cfg.min;
+                if (amt > cfg.max * 2) amt = cfg.max * 2;
+                result[resId] = amt;
             } else {
                 // Non-config resources (herbs, honey, wheat etc) — use moderate amounts
                 result[resId] = hits * 200;
             }
         }
-        for (var k in result) { if (result[k] <= 0) delete result[k]; }
+        // Wood: expose bonus-grove count derived from hits. Every 3 hits gives a
+        // deterministic 50% chance (per group of 3) for an extra grove. Stored as
+        // a special field consumed by _createWoodDeposits.
+        if (rawHits.wood) {
+            var woodHits = rawHits.wood;
+            var bonusGroves = 0;
+            // Hash specifically for wood-bonus rolls so it's seed+location-stable
+            var woodBonusHash = mix32((Math.imul(seed, 0x9E3779B1) ^ Math.imul(wx | 0, 0x85EBCA6B) ^ Math.imul(wy | 0, 0xC2B2AE35)) >>> 0);
+            var groupCount = Math.floor(woodHits / 3);
+            for (var g = 0; g < groupCount; g++) {
+                var rh = mix32((woodBonusHash ^ Math.imul(g + 1, 0x27D4EB2D)) >>> 0);
+                if ((rh % 1000) / 1000 < 0.50) bonusGroves++;
+            }
+            if (bonusGroves > 0) result.__wood_bonus_groves = bonusGroves;
+        }
+        for (var k in result) { if (result[k] <= 0 && k !== '__wood_bonus_groves') delete result[k]; }
         return result;
     }
 
@@ -387,6 +435,9 @@
         var step = ts * 2;
         var terrFert = [65, 55, 0, 20, 50, 25];
         var totalWeight = 0, weightedSum = 0;
+        // Mix world.seed so different worlds have different fertility maps,
+        // but same world+spot is reproducible.
+        var seed = (world && world.seed) ? (world.seed | 0) : 42;
         for (var sy = wy - radius; sy <= wy + radius; sy += step) {
             for (var sx = wx - radius; sx <= wx + radius; sx += step) {
                 var ddx = sx - wx, ddy = sy - wy;
@@ -395,7 +446,7 @@
                 if (tid === 2) continue;
                 var f = terrFert[tid] || 50;
                 var _tx2 = Math.floor(sx / ts), _ty2 = Math.floor(sy / ts);
-                var h = (((_tx2 * 73856093) ^ (_ty2 * 19349663)) >>> 0) % 10000 / 10000;
+                var h = (((_tx2 * 73856093) ^ (_ty2 * 19349663) ^ Math.imul(seed, 2654435761)) >>> 0) % 10000 / 10000;
                 f += Math.floor((h - 0.5) * 30);
                 totalWeight++;
                 weightedSum += f;
@@ -425,11 +476,15 @@
     ];
 
     // Create multiple wood deposit objects from a total wood amount and forest tile count
-    function _createWoodDeposits(totalWood, forestTiles, rng, fertility) {
+    function _createWoodDeposits(totalWood, forestTiles, rng, fertility, bonusGroves) {
         var numDeposits = Math.max(1, Math.floor(forestTiles / 3));
-        numDeposits = Math.min(numDeposits, 8); // Cap at 8 groves
+        numDeposits = Math.min(numDeposits, 4); // v9p33river19: cap at 4 groves per location
         // Don't create more groves than we can reasonably fill
         if (totalWood > 0) numDeposits = Math.min(numDeposits, Math.max(1, Math.floor(totalWood / 100)));
+        // v9p33river13: bonus groves from survey hits — but never exceed the 4-grove cap.
+        if (bonusGroves && bonusGroves > 0) {
+            numDeposits = Math.min(4, numDeposits + bonusGroves);
+        }
         // Starting fill: 30-100% based on soil fertility (1.0 = baseline)
         var fert = fertility || 1.0;
         var fillMin = 0.30;
@@ -469,9 +524,36 @@
         return deposits;
     }
 
+    // v9p33river19: cap any town's woodDeposits to 4 groves. Keeps the 4 largest
+    // (by maxAmount), merges the dropped groves' amount + maxAmount proportionally
+    // into the kept ones so total wood is preserved. Idempotent — no-op once <= 4.
+    function _capWoodDepositsAt4(town) {
+        if (!town.woodDeposits || town.woodDeposits.length <= 4) return;
+        // Sort by maxAmount descending, take top 4
+        town.woodDeposits.sort(function(a, b) { return (b.maxAmount || 0) - (a.maxAmount || 0); });
+        var keep = town.woodDeposits.slice(0, 4);
+        var drop = town.woodDeposits.slice(4);
+        var dropAmount = 0, dropMax = 0;
+        for (var di = 0; di < drop.length; di++) {
+            dropAmount += drop[di].amount || 0;
+            dropMax    += drop[di].maxAmount || 0;
+        }
+        // Distribute dropped capacity + amount proportionally across the kept 4
+        var keepMaxSum = 0;
+        for (var ki = 0; ki < keep.length; ki++) keepMaxSum += keep[ki].maxAmount || 0;
+        if (keepMaxSum <= 0) keepMaxSum = 1;
+        for (var ki2 = 0; ki2 < keep.length; ki2++) {
+            var frac = (keep[ki2].maxAmount || 0) / keepMaxSum;
+            keep[ki2].maxAmount = Math.round((keep[ki2].maxAmount || 0) + dropMax * frac);
+            keep[ki2].amount    = Math.min(keep[ki2].maxAmount, Math.round((keep[ki2].amount || 0) + dropAmount * frac));
+        }
+        town.woodDeposits = keep;
+    }
+
     // Sync town.naturalDeposits.wood from woodDeposits array total
     function _syncWoodDepositTotal(town) {
         if (!town.woodDeposits || town.woodDeposits.length === 0) return;
+        _capWoodDepositsAt4(town);
         var total = 0;
         for (var i = 0; i < town.woodDeposits.length; i++) {
             total += town.woodDeposits[i].amount;
@@ -1341,6 +1423,161 @@
         const numIslands = rng.randInt(2, 3);
         let islandsPlaced = 0;
 
+        // v9p33river23: Find existing small islands on the map first; only fall
+        // back to creating new ones if we can't fill the quota.
+        // A "small island" = connected land component (4-conn) with size 3-80
+        // tiles that is fully surrounded by water (no boundary touches map edge,
+        // no adjacent land outside the component beyond a tiny margin).
+        var _existingIslands = (function _findExistingSmallIslands() {
+            var labels = new Int32Array(cols * rows).fill(-1);
+            var queue = new Int32Array(cols * rows);
+            var compId = 0;
+            var componentInfo = [];
+            for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+                var idx = y * cols + x;
+                if (world.terrain[idx] === TERRAIN.WATER.id || labels[idx] !== -1) continue;
+                var head = 0, tail = 0;
+                queue[tail++] = idx;
+                labels[idx] = compId;
+                var size = 0;
+                var sumX = 0, sumY = 0;
+                var touchesEdge = false;
+                var sample = []; // remember tiles for centroid snap
+                while (head < tail) {
+                    var cur = queue[head++];
+                    var cy = (cur / cols) | 0, cx = cur - cy * cols;
+                    size++;
+                    sumX += cx; sumY += cy;
+                    if (cx === 0 || cy === 0 || cx === cols - 1 || cy === rows - 1) touchesEdge = true;
+                    if (sample.length < 50) sample.push({ x: cx, y: cy });
+                    var exp = [[1,0],[-1,0],[0,1],[0,-1]];
+                    for (var e = 0; e < 4; e++) {
+                        var nx = cx + exp[e][0], ny = cy + exp[e][1];
+                        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+                        var nidx = ny * cols + nx;
+                        if (world.terrain[nidx] !== TERRAIN.WATER.id && labels[nidx] === -1) {
+                            labels[nidx] = compId;
+                            queue[tail++] = nidx;
+                        }
+                    }
+                }
+                componentInfo.push({ id: compId, size: size, cx: sumX / size, cy: sumY / size, touchesEdge: touchesEdge, sample: sample });
+                compId++;
+            }
+            // Filter: size 3-80, not touching edge (true islands surrounded by water)
+            var islands = componentInfo.filter(function(c) { return c.size >= 3 && c.size <= 80 && !c.touchesEdge; });
+            // Shuffle so different worlds pick different islands
+            for (var si = islands.length - 1; si > 0; si--) {
+                var sj = rng.randInt(0, si);
+                var tmp = islands[si]; islands[si] = islands[sj]; islands[sj] = tmp;
+            }
+            return islands;
+        })();
+        console.log('[worldgen] Found ' + _existingIslands.length + ' candidate small islands on the map (size 3-80 tiles, fully water-surrounded)');
+
+        // Try to place island towns on existing small islands first
+        for (var _eii = 0; _eii < _existingIslands.length && islandsPlaced < numIslands; _eii++) {
+            var _ei = _existingIslands[_eii];
+            // Pick a centroid-nearest land tile to anchor the town on
+            var _bestTile = _ei.sample[0];
+            var _bestDist = Infinity;
+            for (var _sti = 0; _sti < _ei.sample.length; _sti++) {
+                var _st = _ei.sample[_sti];
+                var _dd = (_st.x - _ei.cx) * (_st.x - _ei.cx) + (_st.y - _ei.cy) * (_st.y - _ei.cy);
+                if (_dd < _bestDist) { _bestDist = _dd; _bestTile = _st; }
+            }
+            var _eipx = _bestTile.x * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+            var _eipy = _bestTile.y * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+            if (tooCloseToExisting(towns, _eipx, _eipy, CONFIG.TILE_SIZE * 10)) continue;
+
+            // Find nearest kingdom (same logic as below)
+            var _eNearestK = kingdoms[0];
+            var _eNearestDist = Infinity;
+            for (var _eki = 0; _eki < kingdoms.length; _eki++) {
+                var _ek = kingdoms[_eki];
+                var _ekTowns = towns.filter(function(t) { return t.kingdomId === _ek.id; });
+                if (_ekTowns.length === 0) {
+                    if (regionCenters && regionCenters[_eki]) {
+                        var _ercx = regionCenters[_eki].x * CONFIG.TILE_SIZE;
+                        var _ercy = regionCenters[_eki].y * CONFIG.TILE_SIZE;
+                        var _edd = Math.hypot(_ercx - _eipx, _ercy - _eipy);
+                        if (_edd < _eNearestDist) { _eNearestDist = _edd; _eNearestK = _ek; }
+                    }
+                } else {
+                    for (var _eti = 0; _eti < _ekTowns.length; _eti++) {
+                        var _etn = _ekTowns[_eti];
+                        var _ed2 = Math.hypot(_etn.x - _eipx, _etn.y - _eipy);
+                        if (_ed2 < _eNearestDist) { _eNearestDist = _ed2; _eNearestK = _ek; }
+                    }
+                }
+            }
+
+            var _existingIslandTown = {
+                id: uid('town'),
+                name: islandNames[islandsPlaced] || ('Island_' + islandsPlaced),
+                x: _eipx, y: _eipy,
+                kingdomId: _eNearestK.id,
+                tier: 'village',
+                population: 0,
+                buildings: generateIslandBuildings(rng),
+                market: createMarket(1, 'village'),
+                prosperity: rng.randInt(30, 50),
+                walls: 0,
+                garrison: rng.randInt(5, 15),
+                happiness: rng.randInt(55, 80),
+                isPort: true,
+                isIsland: true,
+                towers: 0,
+                livestock: { livestock_cow: 0, livestock_pig: 0, livestock_chicken: 0 },
+            };
+            _existingIslandTown.terrainType = classifyTownTerrain(_existingIslandTown);
+            computeLocalBasePrices(_existingIslandTown);
+            for (var _erid in _existingIslandTown.localBasePrice) {
+                _existingIslandTown.market.prices[_erid] = _existingIslandTown.localBasePrice[_erid];
+            }
+            _existingIslandTown.market.supply.fish = (_existingIslandTown.market.supply.fish || 0) + 120;
+            _existingIslandTown.market.supply.salt = (_existingIslandTown.market.supply.salt || 0) + 60;
+            _existingIslandTown.market.supply.pearls = (_existingIslandTown.market.supply.pearls || 0) + 15;
+
+            // Run the same deposit-survey path used for synthetic islands (v9p33river22)
+            (function _existingIslandDeposits() {
+                var ND = CONFIG.NATURAL_DEPOSITS;
+                var fertCfg = CONFIG.SOIL_FERTILITY;
+                var baseFert = fertCfg.mapAverageFertility + (rng.random() - 0.5) * 2 * fertCfg.mapFertilityVariance;
+                baseFert -= fertCfg.coastalPenalty;
+                baseFert = Math.max(fertCfg.minFertility, Math.min(fertCfg.maxFertility, Math.round(baseFert)));
+                _existingIslandTown.soilFertility = baseFert / fertCfg.baselineFertility;
+                _existingIslandTown.soilFertilityRating = baseFert;
+                _existingIslandTown.naturalDeposits = _surveyDepositsAtPoint(_existingIslandTown.x, _existingIslandTown.y, 96) || {};
+                var _itwBonus = _existingIslandTown.naturalDeposits.__wood_bonus_groves || 0;
+                if (_existingIslandTown.naturalDeposits.__wood_bonus_groves) delete _existingIslandTown.naturalDeposits.__wood_bonus_groves;
+                if (_existingIslandTown.naturalDeposits.wood) {
+                    var _itx = Math.floor(_existingIslandTown.x / CONFIG.TILE_SIZE), _ity = Math.floor(_existingIslandTown.y / CONFIG.TILE_SIZE);
+                    var _iForest = 0;
+                    for (var _ddy = -3; _ddy <= 3; _ddy++) for (var _ddx = -3; _ddx <= 3; _ddx++) {
+                        var _isx = _itx + _ddx, _isy = _ity + _ddy;
+                        if (_isx >= 0 && _isx < cols && _isy >= 0 && _isy < rows && world.terrain[_isy * cols + _isx] === TERRAIN.FOREST.id) _iForest++;
+                    }
+                    _existingIslandTown._forestTileCount = _iForest;
+                    _existingIslandTown.woodDeposits = _createWoodDeposits(_existingIslandTown.naturalDeposits.wood, Math.max(1, _iForest), rng, _existingIslandTown.soilFertility, _itwBonus);
+                }
+                if (!_existingIslandTown.naturalDeposits.wood) {
+                    _existingIslandTown.naturalDeposits.wood = rng.randInt(Math.floor(ND.wood.min * 0.10), Math.floor(ND.wood.max * 0.20));
+                    _existingIslandTown.woodDeposits = [{ name: 'Scattered Groves', amount: _existingIslandTown.naturalDeposits.wood, maxAmount: _existingIslandTown.naturalDeposits.wood }];
+                }
+                if (!_existingIslandTown.naturalDeposits.fish) _existingIslandTown.naturalDeposits.fish = rng.randInt(ND.fish.min, ND.fish.max);
+                if (!_existingIslandTown.naturalDeposits.salt && ND.salt) _existingIslandTown.naturalDeposits.salt = rng.randInt(ND.salt.min, ND.salt.max);
+                if (!_existingIslandTown.naturalDeposits.pearls && ND.pearls && rng.chance(0.55)) _existingIslandTown.naturalDeposits.pearls = rng.randInt(ND.pearls.min, ND.pearls.max);
+                if (!_existingIslandTown.naturalDeposits.clay && ND.clay) _existingIslandTown.naturalDeposits.clay = rng.randInt(ND.clay.min, ND.clay.max);
+                _existingIslandTown.wildlifeAbundance = 0.3 + rng.random() * 0.4;
+            })();
+
+            towns.push(_existingIslandTown);
+            _eNearestK.territories.add(_existingIslandTown.id);
+            islandsPlaced++;
+            console.log('[worldgen] Placed island town "' + _existingIslandTown.name + '" on existing ' + _ei.size + '-tile island at (' + _bestTile.x + ',' + _bestTile.y + ')');
+        }
+
         for (let attempt = 0; attempt < 200 && islandsPlaced < numIslands; attempt++) {
             // Find a large water area
             const sx = rng.randInt(Math.floor(cols * 0.1), Math.floor(cols * 0.9));
@@ -1441,6 +1678,58 @@
             islandTown.market.supply.salt = (islandTown.market.supply.salt || 0) + 60;
             islandTown.market.supply.pearls = (islandTown.market.supply.pearls || 0) + 15;
 
+            // v9p33river22: BUGFIX — island towns weren't getting natural deposits.
+            // generateStartingBuildings() runs the deposit survey block for mainland
+            // towns, but generateIslandBuildings() doesn't. Run the same survey here
+            // so islands have fish/salt/pearls/clay/wood deposits.
+            (function _islandDeposits() {
+                var ND = CONFIG.NATURAL_DEPOSITS;
+                var fertCfg = CONFIG.SOIL_FERTILITY;
+                var baseFert = fertCfg.mapAverageFertility + (rng.random() - 0.5) * 2 * fertCfg.mapFertilityVariance;
+                baseFert -= fertCfg.coastalPenalty; // islands are coastal
+                baseFert = Math.max(fertCfg.minFertility, Math.min(fertCfg.maxFertility, Math.round(baseFert)));
+                islandTown.soilFertility = baseFert / fertCfg.baselineFertility;
+                islandTown.soilFertilityRating = baseFert;
+
+                islandTown.naturalDeposits = _surveyDepositsAtPoint(islandTown.x, islandTown.y, 96) || {};
+                var _itwBonus = islandTown.naturalDeposits.__wood_bonus_groves || 0;
+                if (islandTown.naturalDeposits.__wood_bonus_groves) delete islandTown.naturalDeposits.__wood_bonus_groves;
+
+                // Build wood deposits if survey awarded any wood
+                if (islandTown.naturalDeposits.wood) {
+                    var _scanR = 3, _itx = Math.floor(islandTown.x / CONFIG.TILE_SIZE), _ity = Math.floor(islandTown.y / CONFIG.TILE_SIZE);
+                    var _iForest = 0;
+                    for (var _ddy = -_scanR; _ddy <= _scanR; _ddy++) for (var _ddx = -_scanR; _ddx <= _scanR; _ddx++) {
+                        var _isx = _itx + _ddx, _isy = _ity + _ddy;
+                        if (_isx >= 0 && _isx < cols && _isy >= 0 && _isy < rows && world.terrain[_isy * cols + _isx] === TERRAIN.FOREST.id) _iForest++;
+                    }
+                    islandTown._forestTileCount = _iForest;
+                    islandTown.woodDeposits = _createWoodDeposits(islandTown.naturalDeposits.wood, Math.max(1, _iForest), rng, islandTown.soilFertility, _itwBonus);
+                }
+                // Islands always get a small wood deposit even if survey gave none
+                if (!islandTown.naturalDeposits.wood) {
+                    islandTown.naturalDeposits.wood = rng.randInt(Math.floor(ND.wood.min * 0.10), Math.floor(ND.wood.max * 0.20));
+                    islandTown.woodDeposits = [{ name: 'Scattered Groves', amount: islandTown.naturalDeposits.wood, maxAmount: islandTown.naturalDeposits.wood }];
+                }
+                // Islands always get fish (already kept since isPort), boost slightly
+                if (!islandTown.naturalDeposits.fish) {
+                    islandTown.naturalDeposits.fish = rng.randInt(ND.fish.min, ND.fish.max);
+                }
+                // Salt + pearls baseline (matches market supply already set)
+                if (!islandTown.naturalDeposits.salt && ND.salt) {
+                    islandTown.naturalDeposits.salt = rng.randInt(ND.salt.min, ND.salt.max);
+                }
+                if (!islandTown.naturalDeposits.pearls && ND.pearls && rng.chance(0.55)) {
+                    islandTown.naturalDeposits.pearls = rng.randInt(ND.pearls.min, ND.pearls.max);
+                }
+                // Clay always available
+                if (!islandTown.naturalDeposits.clay && ND.clay) {
+                    islandTown.naturalDeposits.clay = rng.randInt(ND.clay.min, ND.clay.max);
+                }
+                // Wildlife: islands have low wildlife
+                islandTown.wildlifeAbundance = 0.3 + rng.random() * 0.4;
+            })();
+
             towns.push(islandTown);
             nearestK.territories.add(islandTown.id);
             islandsPlaced++;
@@ -1478,11 +1767,12 @@
             var _sk = kingdoms[_ski];
             var _skTowns = towns.filter(function(t) { return _sk.territories.has(t.id); });
             var _hasSulfurMine = false;
-            var _hasCharcoalKiln = false;
+            var _hasFuelSource = false; // v9p33-coal: charcoal_kiln OR coal_mine satisfies smelter fuel
             for (var _sti = 0; _sti < _skTowns.length; _sti++) {
                 for (var _sbi = 0; _sbi < _skTowns[_sti].buildings.length; _sbi++) {
                     if (_skTowns[_sti].buildings[_sbi].type === 'sulfur_mine') _hasSulfurMine = true;
-                    if (_skTowns[_sti].buildings[_sbi].type === 'charcoal_kiln') _hasCharcoalKiln = true;
+                    if (_skTowns[_sti].buildings[_sbi].type === 'charcoal_kiln') _hasFuelSource = true;
+                    if (_skTowns[_sti].buildings[_sbi].type === 'coal_mine') _hasFuelSource = true;
                 }
             }
             // Place sulfur mine in a mountain town with sulfur deposit (or add deposit)
@@ -1496,30 +1786,36 @@
                 }
                 _smTown.buildings.push({ type: 'sulfur_mine', ownerId: _sk.id, level: 1, condition: 'new', workers: [], storage: {} });
             }
-            // Place charcoal kiln in any town with wood access
-            if (!_hasCharcoalKiln && _skTowns.length > 0) {
-                var _ckTown = _skTowns.find(function(t) { return t.naturalDeposits && t.naturalDeposits.wood; }) || _skTowns[0];
-                _ckTown.buildings.push({ type: 'charcoal_kiln', ownerId: _sk.id, level: 1, condition: 'new', workers: [], storage: {} });
+            // Place fuel source: prefer coal_mine in a town with coal deposit, else charcoal_kiln in a town with wood
+            if (!_hasFuelSource && _skTowns.length > 0) {
+                var _coalTown = _skTowns.find(function(t) { return t.naturalDeposits && t.naturalDeposits.coal; });
+                if (_coalTown) {
+                    _coalTown.buildings.push({ type: 'coal_mine', ownerId: _sk.id, level: 1, condition: 'new', workers: [], storage: {} });
+                } else {
+                    var _ckTown = _skTowns.find(function(t) { return t.naturalDeposits && t.naturalDeposits.wood; }) || _skTowns[0];
+                    _ckTown.buildings.push({ type: 'charcoal_kiln', ownerId: _sk.id, level: 1, condition: 'new', workers: [], storage: {} });
+                }
             }
         }
 
         // --- Post-processing: ensure at least 1 kingdom produces steel ---
-        // Find a kingdom with both a smelter and a charcoal kiln, set the smelter to produce steel
+        // Find a kingdom with both a smelter and a fuel source (charcoal_kiln OR coal_mine), set the smelter to produce steel
         var _steelSetUp = false;
         for (var _stki = 0; _stki < kingdoms.length && !_steelSetUp; _stki++) {
             var _stk = kingdoms[_stki];
             var _stkTowns = towns.filter(function(t) { return _stk.territories.has(t.id); });
-            var _hasSmelter = false, _hasCharcoal = false, _smelterTown = null, _smelterBld = null;
+            var _hasSmelter = false, _hasFuel = false, _smelterTown = null, _smelterBld = null, _hasCoalMineX = false;
             for (var _stTi = 0; _stTi < _stkTowns.length; _stTi++) {
                 for (var _stBi = 0; _stBi < _stkTowns[_stTi].buildings.length; _stBi++) {
                     var _stBld = _stkTowns[_stTi].buildings[_stBi];
                     if (_stBld.type === 'smelter' && !_smelterBld) { _hasSmelter = true; _smelterTown = _stkTowns[_stTi]; _smelterBld = _stBld; }
-                    if (_stBld.type === 'charcoal_kiln') _hasCharcoal = true;
+                    if (_stBld.type === 'charcoal_kiln') _hasFuel = true;
+                    if (_stBld.type === 'coal_mine') { _hasFuel = true; _hasCoalMineX = true; }
                 }
             }
-            if (_hasSmelter && _hasCharcoal && _smelterBld) {
-                // Set this smelter to produce steel
-                _smelterBld.currentProduct = 'steel';
+            if (_hasSmelter && _hasFuel && _smelterBld) {
+                // Set this smelter to produce steel — coal-fueled if coal_mine present, else charcoal recipe
+                _smelterBld.currentProduct = _hasCoalMineX ? 'steel_from_coal' : 'steel';
                 // Seed some steel in the town market
                 if (_smelterTown.market && _smelterTown.market.supply) {
                     _smelterTown.market.supply.steel = rng.randInt(5, 15);
@@ -1651,6 +1947,7 @@
             { type: 'arrow_maker',         chance: 0.70, culture: 'military' },
             { type: 'armorer',             chance: 0.70, culture: 'military' },
             { type: 'charcoal_kiln',       chance: 0.80, culture: 'industrial' },
+            { type: 'coal_mine',           chance: 0.70, culture: 'industrial' },
             { type: 'sulfur_mine',         chance: 0.70, culture: 'industrial' },
             { type: 'powder_works',        chance: 0.85, culture: 'military' },
         ];
@@ -2404,7 +2701,6 @@
 
         // Assign natural deposits — organic distribution, not just terrain-locked
         if (town) {
-            town.naturalDeposits = {};
             const depRng = rng;
             // Generate regional soil fertility (0-100 scale)
             var fertCfg = CONFIG.SOIL_FERTILITY;
@@ -2416,49 +2712,20 @@
             town.soilFertilityRating = baseFert; // Raw 0-100 rating for display
             const ND = CONFIG.NATURAL_DEPOSITS;
 
-            // Mountains: guaranteed iron + stone, likely gold
-            if (terrainBias === 'mountain') {
-                town.naturalDeposits.iron_ore = depRng.randInt(ND.iron_ore.min, ND.iron_ore.max);
-                town.naturalDeposits.stone = depRng.randInt(ND.stone.min, ND.stone.max);
-                if (depRng.chance(0.65)) town.naturalDeposits.gold_ore = depRng.randInt(ND.gold_ore.min, ND.gold_ore.max);
-                // Sulfur: 40% chance in mountains, separate from iron
-                if (depRng.chance(0.40)) town.naturalDeposits.sulfur = depRng.randInt(ND.sulfur.min, ND.sulfur.max);
-            } else if (terrainBias === 'forest') {
-                // Scale wood deposit by actual forest tile count: 1 deposit per ~3 tiles
-                var _forestDeposit = Math.floor(forestTiles / 3);
-                var _woodBase = Math.max(ND.wood.min, Math.min(ND.wood.max, _forestDeposit * depRng.randInt(80, 120)));
-                town.naturalDeposits.wood = _woodBase;
-                town._forestTileCount = forestTiles;
-                town.woodDeposits = _createWoodDeposits(_woodBase, forestTiles, depRng, town.soilFertility);
-                // Forests can have iron veins (~20%) or stone outcrops (~15%)
-                if (depRng.chance(0.20)) town.naturalDeposits.iron_ore = depRng.randInt(Math.floor(ND.iron_ore.min * 0.4), Math.floor(ND.iron_ore.max * 0.5));
-                if (depRng.chance(0.15)) town.naturalDeposits.stone = depRng.randInt(Math.floor(ND.stone.min * 0.3), Math.floor(ND.stone.max * 0.4));
-            } else if (terrainBias === 'coastal') {
-                town.naturalDeposits.fish = depRng.randInt(ND.fish.min, ND.fish.max);
-                town.naturalDeposits.salt = depRng.randInt(ND.salt.min, ND.salt.max);
-                // Coastal cliffs can have stone (~20%) or small iron (~10%)
-                if (depRng.chance(0.20)) town.naturalDeposits.stone = depRng.randInt(Math.floor(ND.stone.min * 0.3), Math.floor(ND.stone.max * 0.4));
-                if (depRng.chance(0.10)) town.naturalDeposits.iron_ore = depRng.randInt(Math.floor(ND.iron_ore.min * 0.3), Math.floor(ND.iron_ore.max * 0.3));
-            } else {
-                // Grassland/plains — small chance of surface deposits
-                if (depRng.chance(0.25)) town.naturalDeposits.stone = depRng.randInt(Math.floor(ND.stone.min * 0.2), Math.floor(ND.stone.max * 0.35));
-                if (depRng.chance(0.15)) town.naturalDeposits.iron_ore = depRng.randInt(Math.floor(ND.iron_ore.min * 0.25), Math.floor(ND.iron_ore.max * 0.35));
-                if (depRng.chance(0.05)) town.naturalDeposits.gold_ore = depRng.randInt(Math.floor(ND.gold_ore.min * 0.2), Math.floor(ND.gold_ore.max * 0.25));
-            }
+            // v9p33-deposits: worldgen towns now use the same _surveyDepositsAtPoint
+            // tile-survey as new-foundation towns. Radius 144px = 9-tile circle (matches
+            // the old terrainBias 9x9 scan area). The per-tile probability tables in
+            // _surveyDepositsAtPoint determine resources organically from the actual
+            // surrounding terrain rather than from a single dominant-bias bucket.
+            town.naturalDeposits = _surveyDepositsAtPoint(town.x, town.y, 144) || {};
+            // v9p33river13: extract wood-bonus-groves marker (if any) from survey
+            var _twBonus = town.naturalDeposits.__wood_bonus_groves || 0;
+            if (town.naturalDeposits.__wood_bonus_groves) delete town.naturalDeposits.__wood_bonus_groves;
 
-            // Nearby terrain bonus: forests/mountains within scan radius grant scaled deposits
-            // even if the town's primary bias is different
-            if (terrainBias !== 'forest' && nearbyForestPct > 0.05) {
-                // Scale wood deposit by actual forest tile count: 1 deposit per ~4 tiles
-                var _nfDeposit = Math.floor(forestTiles / 4);
-                var woodScale = Math.min(1.0, nearbyForestPct / 0.35);
-                var woodMin = Math.max(1, Math.floor(ND.wood.min * woodScale));
-                var woodMax = Math.max(woodMin + 1, Math.floor(ND.wood.max * woodScale));
-                var _nfBase = depRng.randInt(woodMin, woodMax);
-                var _nfWood = Math.max(_nfBase, _nfDeposit * depRng.randInt(60, 100));
-                town.naturalDeposits.wood = (town.naturalDeposits.wood || 0) + _nfWood;
+            // Build per-grove wood-deposit structure if survey awarded wood
+            if (town.naturalDeposits.wood) {
                 town._forestTileCount = forestTiles;
-                town.woodDeposits = _createWoodDeposits(town.naturalDeposits.wood, forestTiles, depRng, town.soilFertility);
+                town.woodDeposits = _createWoodDeposits(town.naturalDeposits.wood, Math.max(1, forestTiles), depRng, town.soilFertility, _twBonus);
             }
             // Grassland always gets a small amount of wood from scattered groves
             if (!town.naturalDeposits.wood && terrainBias !== 'coastal') {
@@ -2469,17 +2736,15 @@
             if (town.naturalDeposits.wood && !town.woodDeposits) {
                 town.woodDeposits = [{ name: 'Forest', amount: town.naturalDeposits.wood, maxAmount: town.naturalDeposits.wood }];
             }
-            if (terrainBias !== 'mountain' && nearbyMountainPct > 0.10) {
-                var mScale = Math.min(1.0, nearbyMountainPct / 0.35);
-                if (!town.naturalDeposits.iron_ore) town.naturalDeposits.iron_ore = depRng.randInt(Math.max(1, Math.floor(ND.iron_ore.min * mScale * 0.5)), Math.max(2, Math.floor(ND.iron_ore.max * mScale * 0.5)));
-                if (!town.naturalDeposits.stone) town.naturalDeposits.stone = depRng.randInt(Math.max(1, Math.floor(ND.stone.min * mScale * 0.5)), Math.max(2, Math.floor(ND.stone.max * mScale * 0.5)));
-            }
+
             // Fish only for seaports
             if (!town.isPort && !town.isIsland) {
                 delete town.naturalDeposits.fish;
             }
             // All towns can have clay
-            town.naturalDeposits.clay = depRng.randInt(ND.clay.min, ND.clay.max);
+            if (!town.naturalDeposits.clay) {
+                town.naturalDeposits.clay = depRng.randInt(ND.clay.min, ND.clay.max);
+            }
 
             // Wildlife abundance — affects hunting lodge output
             // Forest and hills have most wildlife, grassland moderate, mountain/coastal less
@@ -2744,6 +3009,7 @@
             'wheelwright': { cart: 5, small_wagon: 2, wagon: 1 },
             'powder_works': { saltpeter: 8, blasting_powder: 3 },
             'charcoal_kiln': { charcoal: 10 },
+            'coal_mine': { coal: 12 },
             'smelter': { iron: 15, steel: 3 },
         };
 
@@ -5372,25 +5638,33 @@
                     // Optional boost (manure for farms, charcoal for smelters)
                     var optBoostMod = 1.0;
                     if (bt.optionalBoost && bld.ownerId !== 'player') {
-                        var _boostRes = bt.optionalBoost.resource;
+                        // v9p33-coal: optionalBoost can list `alternates` so coal is interchangeable with charcoal etc.
+                        var _boostFuels = [bt.optionalBoost.resource].concat(bt.optionalBoost.alternates || []);
                         var _boostConsume = bt.optionalBoost.consumeRate || 1;
-                        var _boostStorageKey = '_boostStorage_' + _boostRes;
-                        // Initialize boost storage if missing
-                        if (bld[_boostStorageKey] == null) bld[_boostStorageKey] = 0;
-                        // Try to refill from market
                         var _boostMax = bt.optionalBoost.storageMax || 20;
-                        if (bld[_boostStorageKey] < _boostMax) {
-                            var _marketAvail = town.market.supply[_boostRes] || 0;
-                            var _want = Math.min(_boostMax - bld[_boostStorageKey], _marketAvail, 5);
-                            if (_want > 0) {
-                                town.market.supply[_boostRes] -= _want;
-                                bld[_boostStorageKey] += _want;
+                        // Refill: prefer first fuel with market stock; refill its bucket
+                        for (var _bfi = 0; _bfi < _boostFuels.length; _bfi++) {
+                            var _bfRes = _boostFuels[_bfi];
+                            var _bfKey = '_boostStorage_' + _bfRes;
+                            if (bld[_bfKey] == null) bld[_bfKey] = 0;
+                            if (bld[_bfKey] < _boostMax) {
+                                var _bfAvail = town.market.supply[_bfRes] || 0;
+                                var _bfWant = Math.min(_boostMax - bld[_bfKey], _bfAvail, 5);
+                                if (_bfWant > 0) {
+                                    town.market.supply[_bfRes] -= _bfWant;
+                                    bld[_bfKey] += _bfWant;
+                                    break;
+                                }
                             }
                         }
-                        // Consume boost resource
-                        if (bld[_boostStorageKey] >= _boostConsume) {
-                            bld[_boostStorageKey] -= _boostConsume;
-                            optBoostMod = 1.0 + (bt.optionalBoost.bonusPct / 100);
+                        // Consume from any bucket that has stock
+                        for (var _bci = 0; _bci < _boostFuels.length; _bci++) {
+                            var _bcKey = '_boostStorage_' + _boostFuels[_bci];
+                            if ((bld[_bcKey] || 0) >= _boostConsume) {
+                                bld[_bcKey] -= _boostConsume;
+                                optBoostMod = 1.0 + (bt.optionalBoost.bonusPct / 100);
+                                break;
+                            }
                         }
                     }
 
@@ -14514,6 +14788,9 @@
         // Assign natural deposits based on terrain survey (consistent with right-click survey)
         var _newTownR = 120;
         newTown.naturalDeposits = _surveyDepositsAtPoint(foundX, foundY, _newTownR);
+        // v9p33river13: extract wood-bonus-groves marker
+        var _ntwBonus = newTown.naturalDeposits.__wood_bonus_groves || 0;
+        if (newTown.naturalDeposits.__wood_bonus_groves) delete newTown.naturalDeposits.__wood_bonus_groves;
         // Guarantee clay
         var foundND = CONFIG.NATURAL_DEPOSITS;
         if (!newTown.naturalDeposits.clay) {
@@ -14534,7 +14811,7 @@
                 }
             }
             newTown._forestTileCount = nForest;
-            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, Math.max(1, nForest), rng, newTown.soilFertility || 1.0);
+            newTown.woodDeposits = _createWoodDeposits(newTown.naturalDeposits.wood, Math.max(1, nForest), rng, newTown.soilFertility || 1.0, _ntwBonus);
         }
         newTown.wildlifeAbundance = (newTown.terrainType || 'plains') === 'forest' ? (0.8 + rng.random() * 0.8) :
                                     (newTown.terrainType || 'plains') === 'mountain' ? (0.3 + rng.random() * 0.4) :
@@ -20962,7 +21239,10 @@
                     { id: 'bows_excellent', needed: Math.max(0, Math.floor(armySize * 0.01)) },
                     { id: 'arrows_good', needed: Math.max(0, Math.floor(armySize * 0.3)) },
                     { id: 'steel', needed: Math.max(0, Math.floor(armySize * 0.05)) },
-                    { id: 'charcoal', needed: Math.max(0, Math.floor(armySize * 0.03)) }
+                    // v9p33-coal: split fuel need between charcoal and coal (interchangeable for smelting/forging).
+                    // Combined demand is unchanged; AI procures whichever is available/cheaper in each town's market.
+                    { id: 'charcoal', needed: Math.max(0, Math.floor(armySize * 0.015)) },
+                    { id: 'coal',     needed: Math.max(0, Math.floor(armySize * 0.015)) }
                 ];
                 for (var qmi = 0; qmi < qualityMilitary.length; qmi++) {
                     var qmg = qualityMilitary[qmi];
@@ -22960,6 +23240,26 @@
                     _syncWoodDepositTotal(town);
                 } else {
                     town.naturalDeposits[resId] = Math.min(cfg.max, amount + cfg.regenPerDay * daysSinceCheck);
+                }
+            }
+
+            // v9p33river15: auto-unflag any depositDepleted building once its deposit
+            // has regenerated above 5% of cfg.max. Previously only lumber camps were
+            // unflagged (via tree_plantation handler), so fisheries / other renewable-
+            // resource buildings stayed permanently depleted even after stocks recovered.
+            for (var _ufbi = 0; _ufbi < town.buildings.length; _ufbi++) {
+                var _ufBld = town.buildings[_ufbi];
+                if (!_ufBld.depositDepleted) continue;
+                var _ufBt = findBuildingType(_ufBld.type);
+                if (!_ufBt || !_ufBt.produces) continue;
+                var _ufResId = _ufBt.produces;
+                var _ufCfg = CONFIG.NATURAL_DEPOSITS[_ufResId];
+                if (!_ufCfg) continue;
+                var _ufAmt = town.naturalDeposits[_ufResId] || 0;
+                if (_ufAmt > _ufCfg.max * 0.05) {
+                    _ufBld.depositDepleted = false;
+                    _ufBld._lowDepositWarned = false;
+                    logEvent(town.name + "'s " + _ufBt.name + " has resumed production as " + _ufResId.replace('_', ' ') + " has recovered.");
                 }
             }
             
@@ -30864,13 +31164,22 @@
             for (const [resId, amount] of Object.entries(town.naturalDeposits)) {
                 // For wood: return individual grove deposits instead of single aggregate
                 if (resId === 'wood' && town.woodDeposits && town.woodDeposits.length > 0) {
+                    _capWoodDepositsAt4(town); // v9p33river19: enforce 4-grove cap on read
+                    var _woodCfg = CONFIG.NATURAL_DEPOSITS.wood;
                     for (var _wdi = 0; _wdi < town.woodDeposits.length; _wdi++) {
                         var _wd = town.woodDeposits[_wdi];
                         var _wdKey = 'wood_grove_' + _wdi;
+                        // v9p33river17: Scattered Groves are a small fraction of a real
+                        // forest, so showing them as 100% of their tiny maxAmount is
+                        // misleading. Display them as a percent of cfg.max (a full forest
+                        // reference) instead, so users see they hold much less wood than
+                        // a proper grove. Real named groves still show per-grove %.
+                        var _isScattered = (_wd.name === 'Scattered Groves');
+                        var _refMax = _isScattered && _woodCfg ? _woodCfg.max : _wd.maxAmount;
                         result[_wdKey] = {
                             current: _wd.amount,
                             max: _wd.maxAmount,
-                            pct: _wd.maxAmount > 0 ? Math.round((_wd.amount / _wd.maxAmount) * 100) : 0,
+                            pct: _refMax > 0 ? Math.min(100, Math.round((_wd.amount / _refMax) * 100)) : 0,
                             renewable: true,
                             groveName: _wd.name,
                             isWoodGrove: true,
@@ -30882,7 +31191,7 @@
                 result[resId] = {
                     current: amount,
                     max: cfg ? cfg.max : amount,
-                    pct: cfg ? Math.round((amount / cfg.max) * 100) : 100,
+                    pct: cfg ? Math.min(100, Math.round((amount / cfg.max) * 100)) : 100,
                     renewable: cfg ? cfg.renewable : false,
                 };
             }
@@ -30970,6 +31279,7 @@
                 seed: world.seed,
                 day: world.day,
                 hour: world.hour || 0,
+                mapName: (typeof window !== 'undefined' && window._testworld1 && window._testworld1.mapName) ? window._testworld1.mapName : null,
                 terrainB64,
                 gridCols: world.gridCols,
                 gridRows: world.gridRows,
@@ -31008,6 +31318,21 @@
             world.rng = createRNG(world.seed);
             // Advance RNG to current state (approximate — re-seed is good enough)
             for (let i = 0; i < world.day; i++) world.rng.random();
+
+            // v9p33river31: restore the saved map's background image if it differs from
+            // what was auto-loaded at page boot. Renderer's _loadTestworld1 picks at boot
+            // based on Math.random; the save's mapName is authoritative.
+            if (typeof window !== 'undefined' && data.mapName) {
+                var _curMap = window._testworld1 && window._testworld1.mapName;
+                if (_curMap !== data.mapName) {
+                    console.log('[map-pool] Save uses ' + data.mapName + ' (currently loaded ' + _curMap + ') — swapping');
+                    window._mapDirOverride = 'images/' + data.mapName;
+                    window._testworld1 = { loaded: false, mapName: data.mapName };
+                    if (typeof Renderer !== 'undefined' && Renderer._reloadTestworld1) {
+                        Renderer._reloadTestworld1();
+                    }
+                }
+            }
 
             // Restore terrain from base64
             if (data.terrainB64) {
@@ -31110,6 +31435,29 @@
                     town.naturalDeposits = {};
                     const ND = CONFIG.NATURAL_DEPOSITS;
                     town.naturalDeposits.clay = Math.floor((ND.clay.min + ND.clay.max) / 2);
+                }
+                // v9p33river22: backfill island-town deposits if they were generated
+                // before the bugfix (had missing or near-empty naturalDeposits).
+                if (town.isIsland) {
+                    var _ndKeys = Object.keys(town.naturalDeposits || {});
+                    var _isEmpty = _ndKeys.length === 0 || (_ndKeys.length === 1 && _ndKeys[0] === 'clay');
+                    if (_isEmpty && typeof _surveyDepositsAtPoint === 'function') {
+                        var _NDref = CONFIG.NATURAL_DEPOSITS;
+                        var _islRng = world.rng || createRNG(world.seed || 42);
+                        var _surveyed = _surveyDepositsAtPoint(town.x, town.y, 96) || {};
+                        if (_surveyed.__wood_bonus_groves) delete _surveyed.__wood_bonus_groves;
+                        // Merge into town.naturalDeposits (preserves any existing clay)
+                        for (var _sk in _surveyed) town.naturalDeposits[_sk] = _surveyed[_sk];
+                        // Guarantee fish, salt, baseline wood, clay
+                        if (!town.naturalDeposits.fish) town.naturalDeposits.fish = _islRng.randInt(_NDref.fish.min, _NDref.fish.max);
+                        if (!town.naturalDeposits.salt && _NDref.salt) town.naturalDeposits.salt = _islRng.randInt(_NDref.salt.min, _NDref.salt.max);
+                        if (!town.naturalDeposits.wood) {
+                            town.naturalDeposits.wood = _islRng.randInt(Math.floor(_NDref.wood.min * 0.10), Math.floor(_NDref.wood.max * 0.20));
+                            town.woodDeposits = [{ name: 'Scattered Groves', amount: town.naturalDeposits.wood, maxAmount: town.naturalDeposits.wood }];
+                        }
+                        if (!town.naturalDeposits.clay && _NDref.clay) town.naturalDeposits.clay = _islRng.randInt(_NDref.clay.min, _NDref.clay.max);
+                        if (!town.naturalDeposits.pearls && _NDref.pearls && _islRng.chance(0.55)) town.naturalDeposits.pearls = _islRng.randInt(_NDref.pearls.min, _NDref.pearls.max);
+                    }
                 }
                 if (town.soilFertility == null) town.soilFertility = 1.0;
                 if (town.soilFertilityRating == null) town.soilFertilityRating = Math.round(town.soilFertility * CONFIG.SOIL_FERTILITY.baselineFertility);

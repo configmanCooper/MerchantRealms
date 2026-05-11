@@ -1,0 +1,53 @@
+{
+  "sourceFile": "gemini4kmap4.jpg",
+  "sourceSize": [
+    4096,
+    4096
+  ],
+  "paddedTo": [
+    4096,
+    4096
+  ],
+  "padColour": {
+    "r": 30,
+    "g": 46,
+    "b": 68
+  },
+  "upscaledTo": [
+    10000,
+    10000
+  ],
+  "tilePixels": 16,
+  "gridSize": [
+    625,
+    625
+  ],
+  "split": [
+    4,
+    4
+  ],
+  "legend": {
+    "G": "grass",
+    "F": "forest",
+    "W": "water",
+    "M": "mountain",
+    "H": "hills",
+    "S": "sand"
+  },
+  "tileIds": {
+    "G": 0,
+    "F": 1,
+    "W": 2,
+    "M": 3,
+    "H": 4,
+    "S": 5
+  },
+  "distribution": [
+    33284,
+    31955,
+    250493,
+    19755,
+    8851,
+    46287
+  ]
+}

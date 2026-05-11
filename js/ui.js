@@ -1489,10 +1489,12 @@ window.UI = (function () {
             }
         }
 
-        // Show family button if player has family
+        // v9p33river38: Family button always visible per user spec
+        // (was: hidden when player has no familyMembers — but Aspiring Merchant
+        //  start spawns with no family by default, leaving the button missing).
         var familyBtn = document.getElementById('btnFamily');
         if (familyBtn) {
-            familyBtn.style.display = (typeof Player !== 'undefined' && Player.familyMembers && Player.familyMembers.length > 0) ? '' : 'none';
+            familyBtn.style.display = '';
         }
 
         // Auto-refresh town view panel (every ~36 update calls ≈ 3 sec, or immediately on day change)

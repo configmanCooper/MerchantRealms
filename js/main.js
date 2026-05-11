@@ -615,6 +615,20 @@ window.Game = (function () {
         // Store the selected start config
         window._selectedStartConfig = startConfig;
 
+        // v9p33river38: if story mode selected, re-pin the map to Map2 (story canon).
+        // Renderer._loadTestworld1 ran at boot with a random pick; redo it now that
+        // we know story mode is wanted.
+        if (startConfig.special === 'story_mode') {
+            try {
+                window._mapDirOverride = 'images/Map2';
+                window._testworld1 = { loaded: false, mapName: 'Map2' };
+                if (typeof Renderer !== 'undefined' && Renderer._reloadTestworld1) {
+                    Renderer._reloadTestworld1();
+                    console.log('[map-pool] Story mode start -> swapped to Map2');
+                }
+            } catch (e) { console.warn('[map-pool] story-mode swap failed:', e); }
+        }
+
         // Hide mode selection, show char creation
         var el = _getGameModeScreenEl();
         el.style.display = 'none';

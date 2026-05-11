@@ -139,6 +139,8 @@
         // Generate natural deposits from terrain survey at this location
         var _outpostR = 120;
         outpost.naturalDeposits = _surveyDepositsAtPoint(outpost.x, outpost.y, _outpostR);
+        // v9p33river13: clean up the wood-bonus marker (outposts don't have woodDeposits arrays)
+        if (outpost.naturalDeposits.__wood_bonus_groves) delete outpost.naturalDeposits.__wood_bonus_groves;
         if (!outpost.naturalDeposits.clay) {
             var ND = CONFIG.NATURAL_DEPOSITS;
             outpost.naturalDeposits.clay = world.rng.randInt(ND.clay.min, ND.clay.max);

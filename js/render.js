@@ -22,7 +22,7 @@ window.Renderer = (function () {
         zoom: (CONFIG.RENDERER_MODE === 'map') ? 0.7 : (CONFIG.RENDERER_MODE === 'flat' ? 1.0 : Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN)),
         targetZoom: (CONFIG.RENDERER_MODE === 'map') ? 0.7 : (CONFIG.RENDERER_MODE === 'flat' ? 1.0 : Math.max(CONFIG.CAMERA_ZOOM_DEFAULT, CONFIG.USE_TEXTURED_TERRAIN ? 1.5 : CONFIG.CAMERA_ZOOM_MIN)),
         minZoom: (CONFIG.RENDERER_MODE === 'map') ? 0.4 : (CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN),
-        maxZoom: (CONFIG.RENDERER_MODE === 'map') ? 1.0 : CONFIG.CAMERA_ZOOM_MAX,
+        maxZoom: (CONFIG.RENDERER_MODE === 'map') ? 2.0 : CONFIG.CAMERA_ZOOM_MAX,
         lerpSpeed: 0.12,
         width: 0,
         height: 0,
@@ -451,6 +451,9 @@ window.Renderer = (function () {
         // 280-283 villages, 284-288 towns (incl. walled), 289-291 cities, 292-293 capitals, 294-297 outposts.
         const _v9p17F=['village_cluster_1','village_cluster_2','village_cluster_3','village_cluster_4','town_1','town_2','town_3','town_4','town_walled','city_castle_1','city_castle_2','city_castle_3','city_castle_large','city_grand','outpost_building_1','outpost_building_2','outpost_building_3','outpost_building_4'];
         for(let _i=0;_i<_v9p17F.length;_i++)_loadTerrainTexture(280+_i,'all_sprites/'+_v9p17F[_i]+'.png');
+        // v9p33river25: NPC sprites by occupation (IDs 300-307)
+        const _npcSpriteFiles = ['npc_merchant','npc_guard','npc_peasant','npc_standing_1','npc_standing_2','npc_standing_3','npc_sitting','npc_distant'];
+        for(let _i=0;_i<_npcSpriteFiles.length;_i++)_loadTerrainTexture(300+_i,'all_sprites/'+_npcSpriteFiles[_i]+'.png');
         _loadTreeSprites();
     }
 
@@ -459,14 +462,63 @@ window.Renderer = (function () {
     // game can use this image as the world map. Once loaded, ALL sandbox new
     // games will use this terrain instead of procedural generation, and the
     // image will be drawn as the terrain background.
+    //
+    // v9p33river31: random map pool. Picks one of Map2..Map13 each load via a
+    // seeded RNG (uses world.seed if available, else Math.random) so the same
+    // saved game always loads the same map. The choice is persisted on
+    // window._testworld1.mapName so save/load cycles stay consistent.
+    function _pickMapDir() {
+        // If a previous run already picked, reuse it (load-game path)
+        if (window._mapDirOverride) return window._mapDirOverride;
+        if (window._testworld1 && window._testworld1.mapName) return 'images/' + window._testworld1.mapName;
+        // v9p33river38: story mode always uses Map2 (canonical story map).
+        try {
+            var _selStart = window._selectedStartConfig;
+            if (_selStart && _selStart.special === 'story_mode') {
+                window._testworld1 = window._testworld1 || { loaded: false };
+                window._testworld1.mapName = 'Map2';
+                console.log('[map-pool] Story mode detected -> always Map2');
+                return 'images/Map2';
+            }
+        } catch (e) {}
+        var pool = ['Map1','Map2','Map3','Map4','Map5','Map6','Map7','Map8','Map9','Map10','Map11','Map12','Map13'];
+        // Deterministic-ish: prefer engine seed if engine is loaded; else random
+        var seedVal = null;
+        try {
+            if (typeof Engine !== 'undefined' && Engine.getWorld) {
+                var w = Engine.getWorld();
+                if (w && w.seed) seedVal = (w.seed | 0);
+            }
+        } catch (e) {}
+        // Or check a stashed pending-seed from main.js setup before engine is up
+        if (seedVal == null && window._pendingMapSeed) seedVal = window._pendingMapSeed | 0;
+        var idx;
+        if (seedVal != null) {
+            // Seeded pick
+            var x = seedVal >>> 0;
+            x = (x ^ 0x9E3779B9) >>> 0;
+            x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+            x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+            x = (x ^ (x >>> 16)) >>> 0;
+            idx = x % pool.length;
+        } else {
+            idx = Math.floor(Math.random() * pool.length);
+        }
+        var mapName = pool[idx];
+        window._testworld1 = window._testworld1 || { loaded: false };
+        window._testworld1.mapName = mapName;
+        console.log('[map-pool] Selected map: ' + mapName + ' (seed=' + seedVal + ', idx=' + idx + ')');
+        return 'images/' + mapName;
+    }
     function _loadTestworld1() {
         if (typeof window === 'undefined') return;
         if (window._testworld1 && window._testworld1.loaded) return;
         window._testworld1 = window._testworld1 || { loaded: false };
+        var mapDir = _pickMapDir();
         // Tile-id encoding from manifest.json: G=0, F=1, W=2, M=3, H=4, S=5
         var TILE_OF = { G: 0, F: 1, W: 2, M: 3, H: 4, S: 5 };
         // Fetch text tile-map
-        fetch('images/testworld1/world.txt?v=' + Date.now())
+        fetch(mapDir + '/world.txt?v=' + Date.now())
             .then(function(r){ return r.text(); })
             .then(function(txt){
                 var lines = txt.split(/\r?\n/).filter(function(l){ return l.length > 0; });
@@ -481,19 +533,19 @@ window.Renderer = (function () {
                 window._testworld1.terrain = grid;
                 window._testworld1.cols = cols;
                 window._testworld1.rows = rows;
-                console.log('[testworld1] terrain loaded ' + cols + 'x' + rows);
+                console.log('[map-pool] terrain loaded ' + cols + 'x' + rows + ' from ' + mapDir);
                 _checkTw1Done();
             })
-            .catch(function(e){ console.error('[testworld1] terrain load failed:', e.message); });
+            .catch(function(e){ console.error('[map-pool] terrain load failed:', e.message); });
         // Load background image
         var img = new Image();
         img.onload = function() {
             window._testworld1.image = img;
-            console.log('[testworld1] image loaded ' + img.naturalWidth + 'x' + img.naturalHeight);
+            console.log('[map-pool] image loaded ' + img.naturalWidth + 'x' + img.naturalHeight + ' from ' + mapDir);
             _checkTw1Done();
         };
-        img.onerror = function() { console.error('[testworld1] image load failed'); };
-        img.src = 'images/testworld1/full.jpg?v=' + Date.now();
+        img.onerror = function() { console.error('[map-pool] image load failed: ' + mapDir); };
+        img.src = mapDir + '/full.jpg?v=' + Date.now();
     }
     function _checkTw1Done() {
         var t = window._testworld1;
@@ -2341,7 +2393,8 @@ window.Renderer = (function () {
         }
 
         // 5. People (only when zoomed in and not panning)
-        if (camera.zoom > 2.5 && !_cameraMoving) {
+        // v9p33river30: NPCs visible at 1.5x zoom and greater
+        if (camera.zoom >= 1.5 && !_cameraMoving) {
             renderPeople();
         }
 
@@ -3099,7 +3152,9 @@ window.Renderer = (function () {
 
             // ── LOW-ZOOM FAST PATH: skip per-segment terrain checks ──
             // At low zoom, bridges are too small to see detail; just draw a
-            // single coloured line for the whole road (huge perf win).
+            // single coloured line for the whole road (huge perf win). Then
+            // overlay simplified bridge stubs so bridges remain visible at any
+            // render distance (v9p33river20).
             if (_hasBridgeData && camera.zoom < 0.8) {
                 var _roadColor = quality >= 3 ? '#a08050' : quality >= 2 ? '#8b7355' : '#6b5b4f';
                 ctx.strokeStyle = safe ? _roadColor : '#d4b54a';
@@ -3112,6 +3167,34 @@ window.Renderer = (function () {
                     ctx.strokeStyle = 'rgba(255,215,0,0.25)';
                     ctx.lineWidth = width + 2;
                     drawWaypointPath(_wps);
+                }
+                // v9p33river20: simplified bridge overlay so bridges are visible
+                // even at low zoom. Draw a wider, brighter stub from each bridge's
+                // start waypoint to its end waypoint. Skip destroyed bridges.
+                if (road.bridges && road.bridges.length > 0) {
+                    ctx.lineCap = 'round';
+                    var _bridgeWidth = Math.max(2, width + 1);
+                    for (var _lbi = 0; _lbi < road.bridges.length; _lbi++) {
+                        var _lbBridge = road.bridges[_lbi];
+                        if (_lbBridge.destroyed) continue;
+                        var _lbStart = _wps[_lbBridge.startWpIdx];
+                        var _lbEnd = _wps[_lbBridge.endWpIdx];
+                        if (!_lbStart || !_lbEnd) continue;
+                        // Bright wood/plank tone with dark outline so visible against water
+                        ctx.strokeStyle = 'rgba(40,25,15,0.85)';
+                        ctx.lineWidth = _bridgeWidth + 2;
+                        ctx.beginPath();
+                        ctx.moveTo(_lbStart.x - camera.x, _lbStart.y - camera.y);
+                        ctx.lineTo(_lbEnd.x - camera.x, _lbEnd.y - camera.y);
+                        ctx.stroke();
+                        ctx.strokeStyle = '#c89860';
+                        ctx.lineWidth = _bridgeWidth;
+                        ctx.beginPath();
+                        ctx.moveTo(_lbStart.x - camera.x, _lbStart.y - camera.y);
+                        ctx.lineTo(_lbEnd.x - camera.x, _lbEnd.y - camera.y);
+                        ctx.stroke();
+                    }
+                    ctx.lineCap = 'butt';
                 }
                 continue; // skip detailed bridge rendering at low zoom
             }
@@ -4595,8 +4678,11 @@ window.Renderer = (function () {
         var baseSeed2 = tileHash(numId * 7 + 13, numId * 11 + 3);
 
         // Base position spread around town center
+        // v9p33river29: widened spread so the +50%-bigger NPC sprites don't overlap.
+        // Was: dist = 10 + baseSeed2 * 35  -> 10..45
+        // Now: dist = 18 + baseSeed2 * 60  -> 18..78
         var angle = baseSeed * Math.PI * 2;
-        var dist  = 10 + baseSeed2 * 35;
+        var dist  = 18 + baseSeed2 * 60;
         var baseX = cx + Math.cos(angle) * dist;
         var baseY = cy + Math.sin(angle) * dist;
 
@@ -4607,8 +4693,8 @@ window.Renderer = (function () {
         // Smoothstep for natural decel/accel between waypoints
         frac = frac * frac * (3 - 2 * frac);
 
-        // Wander radius from base position
-        var wander = 5 + baseSeed2 * 8;
+        // Wander radius from base position (also bumped slightly)
+        var wander = 7 + baseSeed2 * 12;
 
         // Waypoint A (current) and B (next) — each fully unique per NPC + step
         var dirA  = tileHash(numId * 41 + currentStep * 13, currentStep * 29 + numId * 7) * Math.PI * 2;
@@ -4643,7 +4729,32 @@ window.Renderer = (function () {
             none: '#666',
         };
 
+        // v9p33river25: occupation -> NPC sprite ID (300-307 from _loadAllTerrainTextures)
+        // 300 npc_merchant | 301 npc_guard | 302 npc_peasant | 303-305 npc_standing_1/2/3
+        // 306 npc_sitting | 307 npc_distant
+        function _npcSpriteIdForOcc(occ) {
+            switch (occ) {
+                case 'merchant': return 300;
+                case 'guard':
+                case 'soldier': return 301;
+                case 'farmer':
+                case 'laborer': return 302;
+                case 'craftsman': return 303;
+                case 'woodcutter':
+                case 'miner': return 304;
+                case 'noble': return 305;
+                default: return 302; // generic peasant
+            }
+        }
+        // Base sprite size in world pixels, scaled +50% per user spec
+        const NPC_BASE_W = 6;
+        const NPC_SCALE = 1.5;
+
         for (const town of towns) {
+            // v9p33river28: only show NPCs in the player's current town/location
+            try {
+                if (typeof Player !== 'undefined' && Player.townId && town.id !== Player.townId) continue;
+            } catch (e) {}
             const cx = town.x;
             const cy = town.y;
             if (!isVisible(cx, cy, 150)) continue;
@@ -4668,20 +4779,45 @@ window.Renderer = (function () {
                 var pos = _npcPosition(numId, cx, cy, _npcAnimTime);
 
                 if (p.isEliteMerchant) {
-                    // Elite merchants get a distinct gold dot, slightly larger
-                    ctx.fillStyle = '#FFD700';
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, 2.5, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.strokeStyle = '#8B6914';
-                    ctx.lineWidth = 0.5;
-                    ctx.stroke();
+                    // Elite merchants get the merchant sprite tinted gold below + a gold dot above for distinction
+                    var emEntry = _terrainTextures[300]; // npc_merchant
+                    if (emEntry && emEntry.loaded && emEntry.img) {
+                        var emW = NPC_BASE_W * NPC_SCALE;
+                        var emH = emW * (emEntry.img.naturalHeight / Math.max(1, emEntry.img.naturalWidth));
+                        ctx.drawImage(emEntry.img, pos.x - emW * 0.5, pos.y - emH * 0.85, emW, emH);
+                        // Gold marker dot above the head
+                        ctx.fillStyle = '#FFD700';
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y - emH * 0.95, 1.8, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#8B6914';
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    } else {
+                        // Sprite not loaded yet: fall back to gold dot
+                        ctx.fillStyle = '#FFD700';
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, 2.5 * NPC_SCALE, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#8B6914';
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
                 } else {
                     const occ = (p.occupation || 'none').toLowerCase();
-                    ctx.fillStyle = occColors[occ] || '#888';
-                    ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, 1.8, 0, Math.PI * 2);
-                    ctx.fill();
+                    const sprId = _npcSpriteIdForOcc(occ);
+                    const entry = _terrainTextures[sprId];
+                    if (entry && entry.loaded && entry.img) {
+                        var w = NPC_BASE_W * NPC_SCALE;
+                        var h = w * (entry.img.naturalHeight / Math.max(1, entry.img.naturalWidth));
+                        ctx.drawImage(entry.img, pos.x - w * 0.5, pos.y - h * 0.85, w, h);
+                    } else {
+                        // Sprite still loading: fall back to colored circle (also +50%)
+                        ctx.fillStyle = occColors[occ] || '#888';
+                        ctx.beginPath();
+                        ctx.arc(pos.x, pos.y, 1.8 * NPC_SCALE, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 }
             }
         }
@@ -5780,7 +5916,13 @@ window.Renderer = (function () {
             if (!town) return;
             const cx = town.x;
             const cy = town.y;
-            const r = 10 + Math.sqrt(town.population || 100) * 0.35;
+            let r = 10 + Math.sqrt(town.population || 100) * 0.35;
+
+            // v9p33river24: bigger selection rings for cities (+25%) and capital cities (+50%)
+            const _isCapital = !!town.isCapital || town.category === 'capital_city' || town.tier === 'capital';
+            const _isCity = !_isCapital && (town.category === 'city' || town.tier === 'city');
+            if (_isCapital) r *= 1.50;
+            else if (_isCity) r *= 1.25;
 
             ctx.strokeStyle = 'rgba(232,212,139,0.6)';
             ctx.lineWidth = 2;
@@ -6183,7 +6325,12 @@ window.Renderer = (function () {
                     if (town.isJunction) continue;
                     const cx = town.x;
                     const cy = town.y;
-                    const r = 10 + Math.sqrt(town.population || 100) * 0.35;
+                    let r = 10 + Math.sqrt(town.population || 100) * 0.35;
+                    // v9p33river24: match the bigger selection rings for cities (+25%) and capital cities (+50%)
+                    const _isCap = !!town.isCapital || town.category === 'capital_city' || town.tier === 'capital';
+                    const _isCty = !_isCap && (town.category === 'city' || town.tier === 'city');
+                    if (_isCap) r *= 1.50;
+                    else if (_isCty) r *= 1.25;
                     const dist = Math.sqrt((w.x - cx) ** 2 + (w.y - cy) ** 2);
                     if (dist < r + 8) {
                         return { type: 'town', data: town };
@@ -6274,7 +6421,12 @@ window.Renderer = (function () {
                     if (town.isJunction) continue;
                     const cx = town.x;
                     const cy = town.y;
-                    const r = 10 + Math.sqrt(town.population || 100) * 0.35;
+                    let r = 10 + Math.sqrt(town.population || 100) * 0.35;
+                    // v9p33river24: match the bigger selection rings for cities (+25%) and capital cities (+50%)
+                    const _isCap = !!town.isCapital || town.category === 'capital_city' || town.tier === 'capital';
+                    const _isCty = !_isCap && (town.category === 'city' || town.tier === 'city');
+                    if (_isCap) r *= 1.50;
+                    else if (_isCty) r *= 1.25;
                     const dist = Math.sqrt((w.x - cx) ** 2 + (w.y - cy) ** 2);
                     if (dist < r + 8) {
                         return { type: 'town', data: town };
@@ -7284,12 +7436,11 @@ window.Renderer = (function () {
 
     // v9p10b: re-apply zoom limits based on current CONFIG.USE_TEXTURED_TERRAIN.
     // Textured mode clamps min zoom to 1.5 (terrain build is too expensive
-    // when zoomed way out); flat mode allows the full original 0.5 min.
-    // v9p33: map mode uses [0.4, 1.0] (cheap source-image blit, no upscale past native).
+    // v9p33river27: map mode now uses [0.4, 2.0] per user request.
     function refreshZoomLimits() {
         var mapMode = (CONFIG.RENDERER_MODE === 'map');
         var newMin = mapMode ? 0.4 : (CONFIG.USE_TEXTURED_TERRAIN ? Math.max(CONFIG.CAMERA_ZOOM_MIN, 1.5) : CONFIG.CAMERA_ZOOM_MIN);
-        var newMax = mapMode ? 1.0 : CONFIG.CAMERA_ZOOM_MAX;
+        var newMax = mapMode ? 2.0 : CONFIG.CAMERA_ZOOM_MAX;
         camera.minZoom = newMin;
         camera.maxZoom = newMax;
         if (camera.targetZoom < newMin) camera.targetZoom = newMin;
@@ -7307,6 +7458,8 @@ window.Renderer = (function () {
         setZoom,
         panTo,
         centerOnPlayer,
+        // v9p33river31: expose for engine.deserialize so it can swap maps after a load
+        _reloadTestworld1: function() { _loadTestworld1(); },
         screenToWorld,
         worldToScreen,
         hitTest,
