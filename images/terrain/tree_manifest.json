@@ -1,9 +1,0 @@
-{
-  "sheetFile": "tree_sprites.png",
-  "cellSize": 301,
-  "cols": 4,
-  "rows": 4,
-  "count": 16,
-  "source": "user-provided 1207x1233 painted tree sheet (4x4 grid of oaks/firs/willows/birches)",
-  "note": "render.js uses hard-coded constants _TREE_GRID_COLS/_TREE_GRID_ROWS=4 and _TREE_SPRITE_COUNT=16; this manifest is informational only"
-}

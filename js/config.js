@@ -8,14 +8,11 @@ const CONFIG = {
     WORLD_HEIGHT: 10000,
     TILE_SIZE: 16,
 
-    // Textured grass rendering (set false for old flat-color grass)
-    USE_TEXTURED_TERRAIN: true,
-
-    // v9p27 — Renderer mode: 'textured' | 'flat' | 'map'.
-    // 'textured' = sprite tiles (USE_TEXTURED_TERRAIN=true, normal proc terrain)
-    // 'flat'     = flat-colour tiles (USE_TEXTURED_TERRAIN=false, normal proc terrain)
-    // 'map'      = blit testworld1 source image as terrain (testworld1 terrain grid)
+    // v9p27 — Renderer mode: 'flat' | 'map'.
+    // 'flat' = flat-colour tiles (procedural terrain)
+    // 'map'  = blit testworld1 source image as terrain (testworld1 terrain grid)
     // Default 'map' so the current testworld1 test stays active until user toggles.
+    // (v9p33river56: 'textured' mode and USE_TEXTURED_TERRAIN flag retired.)
     RENDERER_MODE: 'map',
 
     NUM_KINGDOMS: 4,
@@ -561,14 +558,14 @@ const CONFIG = {
           abilities: ['own_basic_buildings', 'petition', 'trade_licenses', 'vote_town'],
           description: 'A recognized citizen. Can own farms and workshops, petition the king, and get trade licenses.' },
         { id: 'burgher', name: 'Burgher', index: 2, icon: '⚖️',
-          maxWorkers: 15, maxBuildings: 8, maxLand: 6,
+          maxWorkers: 15, maxBuildings: 8, maxLand: 8,
           goldReq: 5000, repReq: 55, extraReq: '90 days trading, 1+ building, 50+ trades',
           fee: 1000, minTrades: 50, minBuildings: 1, tradingDays: 90,
           taxDiscount: 0.05,
           abilities: ['own_processing_buildings', 'buy_luxury', 'hire_caravan_guards', 'supply_chains'],
           description: 'An established merchant. Can own processing buildings, buy luxury goods, and run supply chains.' },
         { id: 'guildmaster', name: 'Guildmaster', index: 3, icon: '🔨',
-          maxWorkers: 40, maxBuildings: 25, maxLand: 15,
+          maxWorkers: 40, maxBuildings: 25, maxLand: 25,
           goldReq: 20000, repReq: 70, extraReq: '3 production buildings, 8+ workers, buildings in 2+ towns, 180 days trading, 250+ goods moved by caravan',
           fee: 5000, minProductionBuildings: 3, minWorkers: 8, minTownsWithBuildings: 2, tradingDays: 180, minCaravanGoodsMoved: 250,
           taxDiscount: 0.05,
@@ -576,7 +573,7 @@ const CONFIG = {
           abilities: ['build_toll_roads', 'trade_weapons', 'hire_petitioners', 'production_bonus'],
           description: 'Master of commerce. Can build toll roads, trade weapons, and hire petitioners. +10% production output.' },
         { id: 'minor_noble', name: 'Minor Noble', index: 4, icon: '👑',
-          maxWorkers: 80, maxBuildings: 50, maxLand: 30,
+          maxWorkers: 80, maxBuildings: 50, maxLand: 50,
           goldReq: 50000, repReq: 80, extraReq: 'Marry a Minor Noble (waives petitions & endorsements) OR 3 petitions + 5 noble endorsements, property in 3+ towns',
           fee: 15000, minPetitionsCompleted: 3, minEndorsements: 5, minEndorsementLevel: 60, minTownsWithProperty: 3,
           taxDiscount: 0.10,
@@ -657,7 +654,8 @@ const CONFIG = {
     RESTRICTED_GOODS_COUNT_MAX: 3,
     LICENSE_FEE: 500,              // Base fee for non-war goods
     LICENSE_FEE_WAR: 1000,         // Base fee for war-related goods (swords, armor, blasting_powder, demolition_tools)
-    LICENSE_DURATION: 360,         // License expires after ~1 year (360 days)
+    LICENSE_DURATION: 90,         // License expires after 90 days (v9p33river94)
+    COASTAL_MAX_TILES_FROM_LAND: 3,  // Small ships (rowboat/fishing boat) limited to coastal travel (v9p33river94)
     LICENSE_FEE_MIN: 300,          // Minimum a king can set license fees
     LICENSE_FEE_MAX: 3000,         // Maximum a king can set license fees
     LICENSE_FEE_WAR_MIN: 500,      // Minimum for war goods
@@ -2000,7 +1998,7 @@ const BUILDING_TYPES = {
     TAPESTRY_LOOM:    { id: 'tapestry_loom',    name: 'Tapestry Loom',   cost: 800,  workers: 3, produces: 'tapestry',    consumes: { silk: 2, cloth: 3 },        rate: 1, category: 'luxury',     storage: 20, materials: { planks: 15, iron: 3 }, icon: '🖼️' },
     GOLDSMITH:        { id: 'goldsmith',        name: 'Goldsmith',       cost: 900,  workers: 2, produces: 'gold_goblet', consumes: { gold_ore: 2 },              rate: 1, category: 'luxury',     storage: 20, materials: { planks: 10, stone: 5, iron: 3 }, icon: '🏆' },
     // --- Tree Plantation ---
-    TREE_PLANTATION:  { id: 'tree_plantation',  name: 'Tree Plantation', cost: 200,  workers: 2, produces: null,           consumes: {},                           rate: 0, category: 'harvest',    materials: { planks: 5 }, icon: '🌲', description: 'Replants trees, regenerating wood deposits (+10/day per worker). Can create new forests.' },
+    TREE_PLANTATION:  { id: 'tree_plantation',  name: 'Tree Plantation', cost: 200,  workers: 2, produces: null,           consumes: {},                           rate: 0, category: 'harvest',    materials: { planks: 5 }, icon: '🌲', description: 'Replants trees, regenerating wood deposits (+2/day per worker, +10% per level above 1; each level also unlocks +1 worker slot). Can create new forests.' },
     // --- Warehouse tiers ---
     WAREHOUSE_SMALL:  { id: 'warehouse_small',  name: 'Small Warehouse',  cost: 200,  workers: 1, produces: null,          consumes: {},                           rate: 0, category: 'storage',    storage: 400, materials: { planks: 8, bricks: 3 }, icon: '📦', description: 'Storage for 400 weight units' },
     WAREHOUSE_LARGE:  { id: 'warehouse_large',  name: 'Large Warehouse',  cost: 1200, workers: 3, produces: null,          consumes: {},                           rate: 0, category: 'storage',    storage: 1200, materials: { planks: 30, bricks: 15, iron: 5, stone: 8 }, icon: '🏭', description: 'Massive storage for 1200 weight units' },
@@ -2013,7 +2011,7 @@ const BUILDING_TYPES = {
             herbal_remedy:             { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 2 },
             herbal_poultice:           { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 2 },
             healing_tonic:             { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 1, minLevel: 3 },
-            fever_tonic:               { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2, sulfur: 1 }, rate: 1 },
+            fever_tonic:               { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 }, rate: 1 },
             poison:                    { produces: 'poison',          consumes: { hemp: 2 },                  rate: 1 },
             saltpeter:                 { produces: 'saltpeter',       consumes: { manure: 4 },                rate: 2 },
             blasting_powder:           { produces: 'blasting_powder', consumes: { saltpeter: 2, charcoal: 1, sulfur: 1 }, rate: 2 },
@@ -2026,7 +2024,7 @@ const BUILDING_TYPES = {
             herbal_remedy:             { produces: 'herbal_remedy',   consumes: { herbs: 3 },                 rate: 3 },
             herbal_poultice:           { produces: 'herbal_poultice', consumes: { herbs: 2, cloth: 1 },       rate: 3 },
             healing_tonic:             { produces: 'healing_tonic',   consumes: { herbs: 4, honey: 1 },       rate: 2 },
-            fever_tonic:               { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2, sulfur: 1 }, rate: 2 },
+            fever_tonic:               { produces: 'fever_tonic',     consumes: { herbs: 3, water: 2 }, rate: 2 },
             splint:                    { produces: 'splint',          consumes: { wood: 2, cloth: 1 },        rate: 3 },
             antidote:                  { produces: 'antidote',        consumes: { herbs: 5, honey: 2, sulfur: 1 }, rate: 2 },
             poison:                    { produces: 'poison',          consumes: { hemp: 2 },                  rate: 2 },
@@ -4720,6 +4718,7 @@ const PETITION_TYPES = [
     { id: 'build_sea_route', name: 'Establish Sea Route', icon: '⚓', desc: 'Request the kingdom to establish a sea trade route between two port towns', requiresTarget: true, targetType: 'port_pair', costFactor: 0.08 },
     { id: 'promote_outpost', name: 'Promote Outpost to Village', icon: '🏘️', desc: 'Request the king to officially promote an outpost with 20+ residents to village status', requiresTarget: true, targetType: 'town', costFactor: 0.02 },
     { id: 'build_defense', name: 'Build Defensive Structure', icon: '🏰', desc: 'Request the kingdom to build a defensive structure (watchtower, walls, fortress) in a town', requiresTarget: true, targetType: 'town', costFactor: 0.04 },
+    { id: 'build_well', name: 'Build a Well', icon: '🪣', desc: 'Request the kingdom to dig a public well in a town for fresh water', requiresTarget: true, targetType: 'town', costFactor: 0.02 },
 ];
 
 // ============================================================

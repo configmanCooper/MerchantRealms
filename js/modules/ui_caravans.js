@@ -726,6 +726,21 @@
                     }
                 });
             }
+
+            // v9p33river109: refresh building dropdown when the location selector
+            // changes so Pickup/Store choices reflect buildings at the newly
+            // selected town (source / destination / waypoint).
+            var locSelLive = document.getElementById('orderLocation');
+            if (locSelLive) {
+                locSelLive.addEventListener('change', function() {
+                    var bRow = document.getElementById('orderBuildingRow');
+                    var bSel = document.getElementById('orderBuilding');
+                    if (!bRow || !bSel) return;
+                    if (bRow.style.display === 'none') return; // not pickup/store mode
+                    var actSel = document.getElementById('orderAction');
+                    _populateBuildingDropdown(bSel, actSel ? actSel.value : 'pickup');
+                });
+            }
         }, 50);
     }
 
@@ -1675,6 +1690,36 @@
             var qtyInput = document.getElementById('orderQty');
             if (maxCheck && qtyInput) {
                 maxCheck.addEventListener('change', function() { qtyInput.disabled = maxCheck.checked; if (maxCheck.checked) qtyInput.value = ''; });
+            }
+
+            // v9p33river109: Edit-orders modal also needs the action/location wiring
+            // so the Pickup/Store building dropdown reflects the selected town.
+            var actionSel2 = document.getElementById('orderAction');
+            var priceInput2 = document.getElementById('orderPriceLimit');
+            if (actionSel2) {
+                actionSel2.addEventListener('change', function() {
+                    if (priceInput2) priceInput2.placeholder = (actionSel2.value === 'buy') ? 'max price' : (actionSel2.value === 'sell') ? 'min price' : 'limit';
+                    var bRow = document.getElementById('orderBuildingRow');
+                    var bSel = document.getElementById('orderBuilding');
+                    if (bRow) {
+                        var show = (actionSel2.value === 'store' || actionSel2.value === 'pickup');
+                        bRow.style.display = show ? '' : 'none';
+                        var bLabel = bRow.querySelector('label');
+                        if (bLabel) bLabel.textContent = actionSel2.value === 'store' ? 'Store in:' : 'Pickup from:';
+                        if (show && bSel) _populateBuildingDropdown(bSel, actionSel2.value);
+                    }
+                });
+            }
+            var locSel2 = document.getElementById('orderLocation');
+            if (locSel2) {
+                locSel2.addEventListener('change', function() {
+                    var bRow = document.getElementById('orderBuildingRow');
+                    var bSel = document.getElementById('orderBuilding');
+                    if (!bRow || !bSel) return;
+                    if (bRow.style.display === 'none') return;
+                    var actSel = document.getElementById('orderAction');
+                    _populateBuildingDropdown(bSel, actSel ? actSel.value : 'pickup');
+                });
             }
         }, 50);
     }

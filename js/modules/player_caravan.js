@@ -1459,6 +1459,8 @@
                 caravan.totalSpent = (caravan.totalSpent || 0) + cost;
                 caravan.totalProfit = (caravan.totalProfit || 0) - cost;
                 town.market.supply[o.good] = Math.max(0, marketSupply - buyQty);
+                // v9p33river85: caravan bought goods → gold flows into the town's market
+                if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, cost);
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) + buyQty;
                 logCaravan(caravan, '🛒 Bought ' + buyQty + ' ' + resName + ' for ' + cost + 'g at ' + townName + '.');
             } else if (o.action === 'store') {
@@ -1651,11 +1653,19 @@
                 var grossRevenue = Math.floor(sellPrice * sellQty);
                 var _cTariff = _applyCaravanTariff(grossRevenue, townId);
                 var revenue = _cTariff.net;
+                // v9p33river85: refuse caravan sale if market can't pay (silent — caravan keeps the goods).
+                var _mAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(townId) : Infinity;
+                if (_mAvail < revenue) {
+                    logCaravan(caravan, '🪙 ' + townName + ' market lacks gold to buy ' + sellQty + ' ' + resName + ' (need ' + revenue + 'g, has ' + _mAvail + 'g). Caravan keeps the goods.');
+                    continue;
+                }
                 player.gold += revenue;
                 logFinance(revenue, 'caravan_sales', 'Caravan sold ' + sellQty + ' ' + res.name);
                 player.stats.totalGoldEarned += revenue;
                 caravan.totalProfit = (caravan.totalProfit || 0) + revenue;
                 town.market.supply[o.good] = (town.market.supply[o.good] || 0) + sellQty;
+                // v9p33river85: gold flows out of the town's market to the caravan
+                if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -revenue);
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
                 if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
@@ -1723,11 +1733,18 @@
                     var remGross = Math.floor(remPrice3 * remQty);
                     var remTar = _applyCaravanTariff(remGross, townId);
                     var remRev = remTar.net;
+                    // v9p33river85: refuse if market lacks gold
+                    var _remAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(townId) : Infinity;
+                    if (_remAvail < remRev) {
+                        logCaravan(caravan, '🪙 ' + townName + ' market lacks gold to buy ' + remQty + ' ' + _asResName + ' (need ' + remRev + 'g, has ' + _remAvail + 'g).');
+                        continue;
+                    }
                     player.gold += remRev;
                     logFinance(remRev, 'caravan_sales', 'Caravan auto-sold ' + _asResName);
                     player.stats.totalGoldEarned += remRev;
                     caravan.totalProfit = (caravan.totalProfit || 0) + remRev;
                     town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;
+                    if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -remRev);
                     player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
                     var _remTMsg = remTar.tariff > 0 ? ' (tariff: ' + remTar.tariff + 'g)' : '';
                     logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + _asResName + ' for ' + remRev + 'g at ' + townName + '.' + _remTMsg);
@@ -2173,11 +2190,18 @@
                                 const grossRev = Math.floor(price * qty);
                                 const _legTar = _applyCaravanTariff(grossRev, destTownId);
                                 const revenue = _legTar.net;
+                                // v9p33river85: refuse if dest market can't pay
+                                const _legAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(destTownId) : Infinity;
+                                if (_legAvail < revenue) {
+                                    Engine.logEvent('🪙 ' + destTown.name + ' market lacks gold for caravan goods (need ' + revenue + 'g, has ' + _legAvail + 'g) — kept aboard.', null, 'my_business');
+                                    continue;
+                                }
                                 player.gold += revenue;
                                 logFinance(revenue, 'caravan_sales', 'Caravan sold goods');
                                 player.stats.totalGoldEarned += revenue;
                                 tripRevenue += revenue;
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
+                                if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, -revenue);
                                 var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
                                 Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, null, 'my_business');
                                 // Track cross-kingdom caravan trade for story mode
@@ -2214,6 +2238,7 @@
                                 boughtWeight += buyQty * rw;
                                 buySpent += cost;
                                 destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
+                                if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, cost);
                                 Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`, null, 'my_business');
                             }
                             if (buySpent > 0) {

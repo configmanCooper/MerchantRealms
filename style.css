@@ -107,6 +107,25 @@ body {
     z-index: 0;
 }
 
+/* v9p33river50: keep merchant-desk background on character creation screen too */
+#charCreateScreen {
+    background: #0d0a06;
+    position: relative;
+}
+#charCreateScreen::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: url('images/merchant_desk_bg.gif') center center / cover no-repeat;
+    opacity: 0.40;
+    pointer-events: none;
+    z-index: 0;
+}
+#charCreateScreen > .title-content {
+    position: relative;
+    z-index: 2;
+}
+
 /* Dark vignette over the background to draw focus inward */
 #titleScreen::before {
     content: '';
@@ -123,14 +142,6 @@ body {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     background: radial-gradient(ellipse at center, transparent 20%, rgba(8, 6, 3, 0.6) 60%, rgba(8, 6, 3, 0.95) 100%);
-    pointer-events: none;
-    z-index: 1;
-}
-#gameModeScreen::after {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.45) 100%);
     pointer-events: none;
     z-index: 1;
 }
@@ -2842,12 +2853,25 @@ body {
     align-items: flex-start;
     justify-content: center;
     padding: 20px;
+    background: #0d0a06;
+    position: relative;
 }
-
+/* v9p33river51: merchant-desk background on kingdom selection screen */
+#kingdomSelectScreen::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: url('images/merchant_desk_bg.gif') center center / cover no-repeat;
+    opacity: 0.40;
+    pointer-events: none;
+    z-index: 0;
+}
 .kingdom-select-content {
     max-width: 1400px;
     width: 100%;
     padding: 20px;
+    position: relative;
+    z-index: 2;
 }
 
 .kingdom-select-title {

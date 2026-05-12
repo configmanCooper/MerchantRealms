@@ -259,10 +259,10 @@ window.Game = (function () {
                 if (btnToggle) btnToggle.textContent = Music.isMuted() ? '🔇' : '🔊';
             });
         }
-        // v9p27 — Renderer mode cycle: textured -> flat -> map -> textured.
-        // Helper used by both the menu button (btnToggleRenderer) and the in-game
-        // god-mode button (btnRendererMode). Keeps CONFIG.RENDERER_MODE,
-        // CONFIG.USE_TEXTURED_TERRAIN, both button labels, and renderer caches in sync.
+        // v9p27 — Renderer mode cycle: flat -> map -> flat. Helper used by both
+        // the menu button (btnToggleRenderer) and the in-game god-mode button
+        // (btnRendererMode). Keeps CONFIG.RENDERER_MODE, both button labels, and
+        // renderer caches in sync. (v9p33river56: textured mode removed.)
         var RENDERER_MODES = ['flat', 'map'];
         function _modeLabel(mode, withPrefix) {
             var name = mode.charAt(0).toUpperCase() + mode.slice(1);
@@ -272,9 +272,6 @@ window.Game = (function () {
         function _applyRendererMode(mode, opts) {
             opts = opts || {};
             CONFIG.RENDERER_MODE = mode;
-            // Keep legacy boolean in sync: textured -> true, flat -> false,
-            // map -> true so terrain sprites stay loaded for fallback / settlement tiles.
-            CONFIG.USE_TEXTURED_TERRAIN = (mode !== 'flat');
             var bMenu = document.getElementById('btnToggleRenderer');
             var bGame = document.getElementById('btnRendererMode');
             if (bMenu) bMenu.textContent = _modeLabel(mode, 'menu');
@@ -288,8 +285,7 @@ window.Game = (function () {
             }
         }
         function _cycleRendererMode(opts) {
-            var cur = CONFIG.RENDERER_MODE || (CONFIG.USE_TEXTURED_TERRAIN ? 'flat' : 'flat');
-            // v9p33: textured removed from the cycle — coerce existing 'textured' state to 'flat'.
+            var cur = CONFIG.RENDERER_MODE || 'map';
             if (cur === 'textured') cur = 'flat';
             var idx = RENDERER_MODES.indexOf(cur);
             if (idx < 0) idx = 0;
@@ -2079,6 +2075,38 @@ window.Game = (function () {
             Renderer.setHover({ type: 'caravan', data: hc });
             UI.showTooltip(sx, sy, hcTip);
             document.getElementById('gameCanvas').style.cursor = 'pointer';
+        } else if (hit.type === 'army' && hit.data) {
+            // v9p33river59: army-on-the-move tooltip
+            var ha = hit.data;
+            var haFrom = '', haTo = '', haKing = '';
+            try {
+                var haFromTown = Engine.findTown(ha.fromTownId);
+                var haToTown = Engine.findTown(ha.toTownId);
+                haFrom = haFromTown ? haFromTown.name : '?';
+                haTo = haToTown ? haToTown.name : '?';
+                var haK = Engine.findKingdom(ha.kingdomId);
+                if (haK) haKing = haK.name || '';
+            } catch(e) {}
+            var haStatus;
+            if (ha._retreating) haStatus = '🏳️ Retreating';
+            else if (ha._besieging) haStatus = '🏰 Besieging ' + haTo;
+            else if (ha._recoveryUntil) haStatus = '🛏️ Recovering';
+            else if (ha._consolidating) haStatus = '📦 Consolidating';
+            else if (ha.status === 'fighting') haStatus = '⚔️ Fighting';
+            else if (ha.status === 'returning') haStatus = '🔙 Returning to ' + haTo;
+            else haStatus = '🚶 Marching to ' + haTo;
+            var haProg = Math.round(((ha.progress != null ? ha.progress : ha.legProgress) || 0) * 100);
+            var haTip = '🛡️ Army (' + (haKing || 'Unknown Kingdom') + ')';
+            haTip += '\n' + haStatus;
+            if (haFrom) haTip += '\nFrom: ' + haFrom;
+            haTip += '\n👥 ' + (ha.soldiers || 0) + ' soldiers';
+            if (ha.mounted) haTip += ' 🐴 mounted';
+            if (ha.morale != null) haTip += '\n💪 Morale: ' + Math.round(ha.morale);
+            if (!ha._besieging && haProg > 0 && haProg < 100) haTip += '\n📍 Progress: ' + haProg + '%';
+            if (ha.commander && ha.commander.name) haTip += '\n👤 ' + ha.commander.name;
+            Renderer.setHover({ type: 'army', data: ha });
+            UI.showTooltip(sx, sy, haTip);
+            document.getElementById('gameCanvas').style.cursor = 'pointer';
         } else if (hit.type === 'town' && hit.data) {
             const town = hit.data;
             Renderer.setHover({ type: 'town', data: town });
@@ -2181,6 +2209,9 @@ window.Game = (function () {
         if (hit.type === 'town') {
             const town = hit.data;
             const isHere = typeof Player !== 'undefined' && Player.townId === town.id;
+            // v9p33river66: "sailing mode" includes being boarded on a ship at the
+            // coast (embarkedShipId set), not just actively under-sail.
+            const playerSailing = typeof Player !== 'undefined' && (Player.travelOffSea || !!Player.embarkedShipId);
 
             items.push({ icon: '👁', label: 'View Details', action: `UI.showTownDetail(Engine.getTown('${town.id}'))` });
             if (!isHere) {
@@ -2190,8 +2221,49 @@ window.Game = (function () {
                 if (Player.townId && !Player.traveling && !_isOutpostNoRoad) {
                     items.push({ icon: '🗺️', label: 'Travel Here...', action: `UI.openTravelOptions('${town.id}')` });
                 }
-                // Offroad travel always available
-                items.push({ icon: '🥾', label: 'Travel Off-road to ' + town.name, action: 'UI.confirmFreeTravel(' + town.x + ',' + town.y + ')' });
+                // v9p33river60/66/72: when sailing/embarked, off-road land travel is
+                // hidden entirely. Ports get "Sail Here"; non-ports get a hint.
+                if (playerSailing) {
+                    if (town.isPort) {
+                        items.push({ icon: '⛵', label: 'Sail to ' + town.name, action: 'UI.showOffSeaDialog(' + town.x + ',' + town.y + ')' });
+                    } else {
+                        items.push({ icon: '⚓', label: 'Cannot dock — not a port. Land on a coast tile instead.', action: 'void(0)' });
+                    }
+                } else {
+                    // v9p33river72: in a port town with a docked ship + target is also
+                    // a port → offer "Sail to {town}" alongside off-road land travel.
+                    var _curTownObj = Player.townId ? Engine.findTown(Player.townId) : null;
+                    var _hasDockedShip = false;
+                    if (_curTownObj && _curTownObj.isPort && Player.ships) {
+                        for (var _shi = 0; _shi < Player.ships.length; _shi++) {
+                            var _sh = Player.ships[_shi];
+                            if (!_sh.assignedCaravanId && !_sh.assignedOffSea && _sh.townId === Player.townId) {
+                                _hasDockedShip = true; break;
+                            }
+                        }
+                    }
+                    if (_hasDockedShip && town.isPort && !Player.traveling) {
+                        // v9p33river73: don't show "Sail Here" if a sea route already
+                        // exists between these two ports — the regular "Travel Here..."
+                        // option will route via that sea route and let the player pick a ship.
+                        var _hasSeaRoute = false;
+                        try {
+                            var _sr = (Engine.getSeaRoutes && Engine.getSeaRoutes()) || [];
+                            for (var _sri = 0; _sri < _sr.length; _sri++) {
+                                var _r = _sr[_sri];
+                                if ((_r.fromTownId === Player.townId && _r.toTownId === town.id) ||
+                                    (_r.toTownId === Player.townId && _r.fromTownId === town.id)) {
+                                    _hasSeaRoute = true; break;
+                                }
+                            }
+                        } catch (_e) {}
+                        if (!_hasSeaRoute) {
+                            items.push({ icon: '⛵', label: 'Sail to ' + town.name, action: 'UI.showOffSeaDialog(' + town.x + ',' + town.y + ')' });
+                        }
+                    }
+                    // Off-road land travel (only when NOT sailing/embarked)
+                    items.push({ icon: '🥾', label: 'Travel Off-road to ' + town.name, action: 'UI.confirmFreeTravel(' + town.x + ',' + town.y + ')' });
+                }
                 if (!_isOutpostNoRoad) {
                     items.push({ icon: '🐴', label: 'Send Caravan', action: `UI.openCaravanDialog()` });
                 }
@@ -2208,6 +2280,23 @@ window.Game = (function () {
                 if (_pkKingdom && _pkKingdom.atWar && _pkKingdom.atWar.has && _pkKingdom.atWar.has(town.kingdomId)) {
                     items.push({ icon: '⚔️', label: 'Send Army to ' + town.name, action: "UI._openSendArmyModal('" + town.id + "')" });
                 }
+            }
+        } else if (hit.type === 'army') {
+            // Armies are info-only on right-click
+            items.push({ icon: '👁', label: 'View army (hover for details)', action: 'void(0)' });
+        } else if (hit.type === 'dockedShip') {
+            // v9p33river60/63/66: docked ship — player offroad-travels to it,
+            // and on arrival auto-boards. Adjacency for instant board = 1 tile.
+            var ds = hit.data;
+            var dsName = ds.name || (CONFIG.SHIP_TYPES[ds.type] && CONFIG.SHIP_TYPES[ds.type].name) || ds.type || 'ship';
+            var pPos = (typeof Player !== 'undefined' && Player.getPlayerWorldPosition) ? Player.getPlayerWorldPosition() : null;
+            var nearShip = pPos && Math.hypot(ds.dockedCoords.x - pPos.x, ds.dockedCoords.y - pPos.y) <= (CONFIG.TILE_SIZE || 16);
+            if (Player.traveling && !nearShip) {
+                items.push({ icon: '⛵', label: dsName + ' (docked here)', action: 'void(0)' });
+            } else if (nearShip && !Player.traveling) {
+                items.push({ icon: '⛵', label: 'Board ' + dsName + ' & Sail', action: "UI.boardDockedShipUI('" + ds.id + "')" });
+            } else {
+                items.push({ icon: '🥾', label: 'Travel to ' + dsName + ' & Board', action: "UI.travelToDockedShip('" + ds.id + "')" });
             }
         } else if (hit.type === 'person') {
             const p = hit.data;
@@ -2260,8 +2349,8 @@ window.Game = (function () {
                     }
                 }
             }
-            // Offroad travel to this point on the road
-            if (typeof Player !== 'undefined') {
+            // Offroad travel to this point on the road (hidden while sailing)
+            if (typeof Player !== 'undefined' && !Player.travelOffSea && !Player.embarkedShipId) {
                 var roadWorldCoords = Renderer.screenToWorld(x, y);
                 if (roadWorldCoords) {
                     items.push({
@@ -2285,16 +2374,21 @@ window.Game = (function () {
                         return;
                     }
                     if (terrain !== 2 && terrain !== 3) { // Not water or mountains
-                        items.push({
-                            icon: '🥾',
-                            label: Player.traveling ? 'Go Off-road Here (Leave Route)' : 'Travel Here (Off-road)',
-                            action: 'UI.confirmFreeTravel(' + worldCoords.x + ',' + worldCoords.y + ')'
-                        });
-                        items.push({
-                            icon: '⛺',
-                            label: 'Travel & Found Outpost Here',
-                            action: 'UI.travelAndFoundOutpost(' + worldCoords.x + ',' + worldCoords.y + ')'
-                        });
+                        // v9p33river66: hide land off-road options entirely while
+                        // sailing/embarked. Show only the landing option.
+                        var _sailing = Player.travelOffSea || !!Player.embarkedShipId;
+                        if (!_sailing) {
+                            items.push({
+                                icon: '🥾',
+                                label: Player.traveling ? 'Go Off-road Here (Leave Route)' : 'Travel Here (Off-road)',
+                                action: 'UI.confirmFreeTravel(' + worldCoords.x + ',' + worldCoords.y + ')'
+                            });
+                            items.push({
+                                icon: '⛺',
+                                label: 'Travel & Found Outpost Here',
+                                action: 'UI.travelAndFoundOutpost(' + worldCoords.x + ',' + worldCoords.y + ')'
+                            });
+                        }
                         // Off-sea landing option (when sailing in open water)
                         if (Player.travelOffSea) {
                             items.push({
@@ -2311,7 +2405,10 @@ window.Game = (function () {
                             var pTown = Engine.findTown(Player.townId);
                             if (pTown && pTown.isPort) inPort = true;
                         }
-                        if (inPort || Player.travelOffSea) {
+                        // v9p33river60: also allow sailing if player has just boarded
+                        // a previously-docked ship (Player.embarkedShipId is set).
+                        var embarked = !!Player.embarkedShipId;
+                        if (inPort || Player.travelOffSea || embarked) {
                             items.push({
                                 icon: '⛵',
                                 label: Player.travelOffSea ? 'Redirect Course Here' : 'Sail Here (Off-Sea)',

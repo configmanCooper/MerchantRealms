@@ -1090,13 +1090,28 @@
         // Capacity utilization — more patients waiting = higher price
         var queue = bld._treatmentQueue || [];
         var baseHealers2 = (bt && bt.maxHealers) || (bt && bt.workers) || 2;
-        var workerCount2 = (bld.workers && bld.workers.length) || 0;
+        var workerCount2 = _resolveWorkerCount(bld);
         var maxHealers = baseHealers2 + Math.floor(workerCount2 / 2);
         var utilization = queue.length / Math.max(maxHealers, 1);
         var demandMod = 1.0 + Math.min(1.0, utilization) * 0.5; // up to +50% at full capacity
 
         fee = Math.round(fee * econMod * prospMod * demandMod);
         return Math.max(1, fee);
+    }
+
+    // v9p33river115: town.buildings entries for player-owned buildings are slim
+    // copies and do NOT carry the workers array. Helper resolves the canonical
+    // worker count from Player.buildings when needed.
+    function _resolveWorkerCount(bld) {
+        if (Array.isArray(bld.workers)) return bld.workers.length;
+        if (bld.ownerId === 'player' && typeof Player !== 'undefined' && Array.isArray(Player.buildings)) {
+            for (var _i = 0; _i < Player.buildings.length; _i++) {
+                if (Player.buildings[_i].id === bld.id) {
+                    return Array.isArray(Player.buildings[_i].workers) ? Player.buildings[_i].workers.length : 0;
+                }
+            }
+        }
+        return 0;
     }
 
     /**
@@ -1153,13 +1168,15 @@
     function _checkStockAvailable(bld, town, goodId, qty) {
         var available = 0;
         if (bld._medicalStock && bld._medicalStock[goodId]) available += bld._medicalStock[goodId];
-        // Check player building retail stock
+        // Check player building retail stock + input/output storage (bld.inventory)
         if (bld.ownerId === 'player' || !bld.ownerId) {
             if (typeof Player !== 'undefined' && Player.buildings) {
                 for (var _pi = 0; _pi < Player.buildings.length; _pi++) {
                     if (Player.buildings[_pi].id === bld.id) {
                         var _prs = Player.buildings[_pi].retailStock;
                         if (_prs && _prs[goodId]) available += _prs[goodId];
+                        var _pinv = Player.buildings[_pi].inventory;
+                        if (_pinv && _pinv[goodId]) available += _pinv[goodId];
                         break;
                     }
                 }
@@ -1181,11 +1198,16 @@
         if (!supplyDef) return true; // no supplies required
 
         var medRank = NPC_HEALTH_CONFIG.MEDICINE_RANK || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
-        // Resolve Player building's retailStock for player-owned buildings
+        // Resolve Player building's retailStock + inventory for player-owned buildings
         var _pRetail = null;
+        var _pInv = null;
         if (bld && bld.ownerId === 'player' && typeof Player !== 'undefined' && Player.buildings) {
             for (var _pi = 0; _pi < Player.buildings.length; _pi++) {
-                if (Player.buildings[_pi].id === bld.id) { _pRetail = Player.buildings[_pi].retailStock || null; break; }
+                if (Player.buildings[_pi].id === bld.id) {
+                    _pRetail = Player.buildings[_pi].retailStock || null;
+                    _pInv = Player.buildings[_pi].inventory || null;
+                    break;
+                }
             }
         }
 
@@ -1194,6 +1216,7 @@
             if (bld && bld._medicalStock && (bld._medicalStock[supKey] || 0) >= needed) continue;
             if (bld && bld.retailStock && (bld.retailStock[supKey] || 0) >= needed) continue;
             if (_pRetail && (_pRetail[supKey] || 0) >= needed) continue;
+            if (_pInv && (_pInv[supKey] || 0) >= needed) continue;
             if (town && town.market && town.market.supply && (town.market.supply[supKey] || 0) >= needed) continue;
             // Try substitutes (medicine only)
             var rankIdx = medRank.indexOf(supKey);
@@ -1204,6 +1227,7 @@
                     if ((bld && bld._medicalStock && (bld._medicalStock[sub] || 0) >= needed) ||
                         (bld && bld.retailStock && (bld.retailStock[sub] || 0) >= needed) ||
                         (_pRetail && (_pRetail[sub] || 0) >= needed) ||
+                        (_pInv && (_pInv[sub] || 0) >= needed) ||
                         (town && town.market && town.market.supply && (town.market.supply[sub] || 0) >= needed)) {
                         found = true; break;
                     }
@@ -1225,14 +1249,20 @@
             if (bld.retailStock[resId] <= 0) delete bld.retailStock[resId];
             return true;
         }
-        // Player-owned buildings: also check Player.buildings copy's retailStock
+        // Player-owned buildings: also check Player.buildings copy's retailStock + inventory
         if (bld && bld.ownerId === 'player' && typeof Player !== 'undefined' && Player.buildings) {
             for (var _pbi = 0; _pbi < Player.buildings.length; _pbi++) {
-                if (Player.buildings[_pbi].id === bld.id && Player.buildings[_pbi].retailStock) {
+                if (Player.buildings[_pbi].id === bld.id) {
                     var _pRet = Player.buildings[_pbi].retailStock;
-                    if ((_pRet[resId] || 0) >= qty) {
+                    if (_pRet && (_pRet[resId] || 0) >= qty) {
                         _pRet[resId] -= qty;
                         if (_pRet[resId] <= 0) delete _pRet[resId];
+                        return true;
+                    }
+                    var _pInv2 = Player.buildings[_pbi].inventory;
+                    if (_pInv2 && (_pInv2[resId] || 0) >= qty) {
+                        _pInv2[resId] -= qty;
+                        if (_pInv2[resId] <= 0) delete _pInv2[resId];
                         return true;
                     }
                     break;
@@ -1271,7 +1301,7 @@
 
                 var bt = findBuildingType(bld.type);
                 var baseHealers = (bt && bt.maxHealers) || 2;
-                var workerCount = (bld.workers && bld.workers.length) || 0;
+                var workerCount = _resolveWorkerCount(bld);
                 var maxHealers = baseHealers + Math.floor(workerCount / 2);
                 var kingdom = findKingdom(town.kingdomId);
                 var isKingdomOwned = bld.ownerId && kingdom && bld.ownerId === kingdom.id;
@@ -1876,7 +1906,7 @@
                 var taxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
                 var queueLen = bld._treatmentQueue ? bld._treatmentQueue.length : 0;
                 var _fBaseHealers = (bt && bt.maxHealers) || 2;
-                var _fWorkerCount = (bld.workers && bld.workers.length) || 0;
+                var _fWorkerCount = _resolveWorkerCount(bld);
                 var maxHealers = _fBaseHealers + Math.floor(_fWorkerCount / 2);
                 result[bld.type] = {
                     fees: bld._treatmentFees,

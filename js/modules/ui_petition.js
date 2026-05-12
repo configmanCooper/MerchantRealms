@@ -2416,38 +2416,76 @@
         var options = [];
         var inv = Player.inventory || {};
 
-        // Caravan wagon (mobile home) — best option
-        if (Player.hasCaravanWagon) {
-            options.push({ id: 'caravan_wagon', icon: '\uD83C\uDFE0', name: 'Rest in Mobile Home', energy: '5.5/tick', risks: '1% theft' });
+        // v9p33river62: at sea — sailing-appropriate rest options based on ship.
+        var atSea = !!Player.travelOffSea;
+        var ship = null, shipType = null;
+        if (atSea) {
+            ship = (Player.ships || []).find(function(s) { return s.id === Player.offSeaShipId; });
+            if (ship) shipType = CONFIG.SHIP_TYPES[ship.type] || null;
         }
-        var _wearPct = (Player.hasSkill && Player.hasSkill('wilderness_survival')) ? '10' : '25';
-        if ((inv.camping_kit || 0) > 0) {
-            options.push({ id: 'camping_kit_travel', icon: '\uD83C\uDFD5\uFE0F', name: 'Camp with Kit', energy: '5.0/tick', risks: 'Minimal · ' + _wearPct + '% wear' });
-        }
-        // Bedroll + Tent combo
-        if ((inv.bedroll || 0) > 0 && (inv.tent || 0) > 0) {
-            options.push({ id: 'bedroll_tent_travel', icon: '\u26FA\uD83D\uDECF\uFE0F', name: 'Tent & Bedroll', energy: '4.5/tick', risks: '2% theft, 1% disease · ' + _wearPct + '% wear each' });
-        } else if ((inv.tent || 0) > 0) {
-            options.push({ id: 'tent_travel', icon: '\u26FA', name: 'Pitch Tent', energy: '4.0/tick', risks: '3% theft · ' + _wearPct + '% wear' });
-        } else if ((inv.bedroll || 0) > 0) {
-            options.push({ id: 'bedroll_travel', icon: '\uD83D\uDECF\uFE0F', name: 'Use Bedroll', energy: '3.0/tick', risks: '5% theft, 3% disease · ' + _wearPct + '% wear' });
-        }
-        // Sleep in wagon (storage container with 30+ space)
-        if (!Player.hasCaravanWagon && Player.storageContainer) {
-            var wagonTypes = ['small_wagon', 'wagon', 'large_wagon'];
-            if (wagonTypes.indexOf(Player.storageContainer) !== -1) {
-                var cap = Player.getCarryCapacity ? Player.getCarryCapacity() : 0;
-                var used = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
-                if (cap - used >= 30) {
-                    var cName = (CONFIG.STORAGE_CONTAINERS[Player.storageContainer] || {}).name || 'Wagon';
-                    options.push({ id: 'wagon_sleep_travel', icon: '\uD83D\uDEDE', name: 'Sleep in ' + cName, energy: '2.5/tick', risks: '8% theft' });
+
+        if (atSea && shipType) {
+            // Energy/tick scales with ship's restBonus + size category. Baseline 2.0
+            // (open deck), +restBonus*4 (so 0=2.0, 0.3=3.2, 0.4=3.6, 0.6=4.4),
+            // +0.5 if size=large (galleon), +0.3 if medium.
+            var sizeBump = shipType.sizeCategory === 'large' ? 0.5 : shipType.sizeCategory === 'medium' ? 0.3 : 0;
+            var capRate = (2.0 + (shipType.restBonus || 0) * 4 + sizeBump).toFixed(1);
+            // Captain's quarters (ship has restBonus → has crew/passenger quarters)
+            if ((shipType.restBonus || 0) >= 0.5) {
+                options.push({ id: 'ship_captain_cabin', icon: '\uD83D\uDEAA', name: "Captain's Cabin (" + shipType.name + ')', energy: capRate + '/tick', risks: 'Safe & dry · gentle sway' });
+            } else if ((shipType.restBonus || 0) >= 0.3) {
+                options.push({ id: 'ship_cabin', icon: '\uD83D\uDECF\uFE0F', name: 'Crew Quarters (' + shipType.name + ')', energy: capRate + '/tick', risks: 'Cramped but sheltered' });
+            }
+            // Tent on deck (if player has tent)
+            if ((inv.tent || 0) > 0) {
+                var deckTentRate = ((shipType.restBonus || 0) >= 0.3 ? 3.5 : 3.0).toFixed(1);
+                options.push({ id: 'ship_tent_deck', icon: '\u26FA', name: 'Pitch Tent on Deck', energy: deckTentRate + '/tick', risks: 'Sea spray · 15% tent wear' });
+            }
+            // Bedroll on deck (if player has bedroll)
+            if ((inv.bedroll || 0) > 0) {
+                var deckBedRate = ((shipType.restBonus || 0) >= 0.3 ? 3.0 : 2.5).toFixed(1);
+                options.push({ id: 'ship_bedroll_deck', icon: '\uD83D\uDECF\uFE0F', name: 'Bedroll on Deck', energy: deckBedRate + '/tick', risks: 'Damp from sea spray' });
+            }
+            // Sleep on open deck — always available
+            var openDeckRate = ((shipType.restBonus || 0) >= 0.3 ? 2.5 : 2.0).toFixed(1);
+            options.push({ id: 'ship_open_deck', icon: '\uD83C\uDF0A', name: 'Sleep on Open Deck', energy: openDeckRate + '/tick', risks: 'Exposed · 8% chance to catch chill' });
+        } else {
+            // Caravan wagon (mobile home) — best option
+            if (Player.hasCaravanWagon) {
+                options.push({ id: 'caravan_wagon', icon: '\uD83C\uDFE0', name: 'Rest in Mobile Home', energy: '5.5/tick', risks: '1% theft' });
+            }
+            var _wearPct = (Player.hasSkill && Player.hasSkill('wilderness_survival')) ? '10' : '25';
+            if ((inv.camping_kit || 0) > 0) {
+                options.push({ id: 'camping_kit_travel', icon: '\uD83C\uDFD5\uFE0F', name: 'Camp with Kit', energy: '5.0/tick', risks: 'Minimal · ' + _wearPct + '% wear' });
+            }
+            // Bedroll + Tent combo
+            if ((inv.bedroll || 0) > 0 && (inv.tent || 0) > 0) {
+                options.push({ id: 'bedroll_tent_travel', icon: '\u26FA\uD83D\uDECF\uFE0F', name: 'Tent & Bedroll', energy: '4.5/tick', risks: '2% theft, 1% disease · ' + _wearPct + '% wear each' });
+            } else if ((inv.tent || 0) > 0) {
+                options.push({ id: 'tent_travel', icon: '\u26FA', name: 'Pitch Tent', energy: '4.0/tick', risks: '3% theft · ' + _wearPct + '% wear' });
+            } else if ((inv.bedroll || 0) > 0) {
+                options.push({ id: 'bedroll_travel', icon: '\uD83D\uDECF\uFE0F', name: 'Use Bedroll', energy: '3.0/tick', risks: '5% theft, 3% disease · ' + _wearPct + '% wear' });
+            }
+            // Sleep in wagon (storage container with 30+ space)
+            if (!Player.hasCaravanWagon && Player.storageContainer) {
+                var wagonTypes = ['small_wagon', 'wagon', 'large_wagon'];
+                if (wagonTypes.indexOf(Player.storageContainer) !== -1) {
+                    var cap = Player.getCarryCapacity ? Player.getCarryCapacity() : 0;
+                    var used = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
+                    if (cap - used >= 30) {
+                        var cName = (CONFIG.STORAGE_CONTAINERS[Player.storageContainer] || {}).name || 'Wagon';
+                        options.push({ id: 'wagon_sleep_travel', icon: '\uD83D\uDEDE', name: 'Sleep in ' + cName, energy: '2.5/tick', risks: '8% theft' });
+                    }
                 }
             }
+            options.push({ id: 'outside', icon: '\uD83C\uDF3F', name: 'Sleep Roadside', energy: '2.0/tick', risks: '10% theft, 5% disease, 5% injury' });
         }
-        options.push({ id: 'outside', icon: '\uD83C\uDF3F', name: 'Sleep Roadside', energy: '2.0/tick', risks: '10% theft, 5% disease, 5% injury' });
 
         var html = '<div>';
-        html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">Choose where to rest. Travel pauses while camping. Bandits may still attack!</p>';
+        var headerCopy = atSea
+            ? 'Rest at sea. Travel pauses while resting. Pirates may still strike!'
+            : 'Choose where to rest. Travel pauses while camping. Bandits may still attack!';
+        html += '<p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;">' + headerCopy + '</p>';
 
         for (var i = 0; i < options.length; i++) {
             var opt = options[i];
@@ -2458,7 +2496,9 @@
         }
         html += '</div>';
 
-        openModal('\uD83C\uDFD5\uFE0F Camp & Rest', html);
+        var titleIcon = atSea ? '\u26F5' : '\uD83C\uDFD5\uFE0F';
+        var titleText = atSea ? 'Rest at Sea' : 'Camp & Rest';
+        openModal(titleIcon + ' ' + titleText, html);
     }
 
     function startTravelRest(locationId) {
@@ -2642,8 +2682,12 @@
 
     // travelToCoords: multi-statement wrapper
     UI.registerAction('travelToCoords', function(_t, d) {
-        Player.travelToCoords(parseInt(d.x), parseInt(d.y));
+        var result = Player.travelToCoords(parseInt(d.x), parseInt(d.y));
         UI.closeModal();
+        // v9p33river65: surface failure (water-blocked, etc) as a toast.
+        if (result && result.success === false && result.message) {
+            UI.toast(result.message, 'warning');
+        }
     });
 
     // useSpouseSuggestion: fill child name input + update button

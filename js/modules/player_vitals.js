@@ -380,6 +380,16 @@
                 if (!player._campPromptNeeded) {
                     player._campPromptNeeded = true;
                     Engine.logEvent('⚠️ You are exhausted! Click 🏕️ Camp to rest before you collapse.');
+                    // v9p33river96: pause IMMEDIATELY so the rest UI isn't skipped
+                    // at high game speed (60x can drain the rest of energy and
+                    // arrive at the destination before the UI gets to render).
+                    try {
+                        if (typeof Game !== 'undefined' && Game.getSpeed && Game.setSpeed) {
+                            var _curSpd = Game.getSpeed();
+                            if (_curSpd > 0) window._restPauseSavedSpeed = _curSpd;
+                            Game.setSpeed(0);
+                        }
+                    } catch (_e) {}
                 }
             }
         } else if (player.autoRest !== false && !player.resting && (player.energy || 0) < 10) {
@@ -441,6 +451,22 @@
 
     function getRestEnergyRate(locationId) {
         _sync();
+        // v9p33river62: ship-rest options derive their rate from the player's
+        // current ship's restBonus + size. Independent of REST_ENERGY_PER_TICK.
+        if (locationId === 'ship_captain_cabin' || locationId === 'ship_cabin'
+            || locationId === 'ship_open_deck' || locationId === 'ship_tent_deck'
+            || locationId === 'ship_bedroll_deck') {
+            var s = (player.ships || []).find(function(sh) { return sh.id === player.offSeaShipId; });
+            var st = s ? CONFIG.SHIP_TYPES[s.type] : null;
+            var rb = st ? (st.restBonus || 0) : 0;
+            var sizeBump = st && st.sizeCategory === 'large' ? 0.5 : st && st.sizeCategory === 'medium' ? 0.3 : 0;
+            if (locationId === 'ship_captain_cabin') return 2.0 + rb * 4 + sizeBump;
+            if (locationId === 'ship_cabin')         return 2.0 + rb * 4 + sizeBump;
+            if (locationId === 'ship_tent_deck')     return rb >= 0.3 ? 3.5 : 3.0;
+            if (locationId === 'ship_bedroll_deck')  return rb >= 0.3 ? 3.0 : 2.5;
+            // ship_open_deck
+            return rb >= 0.3 ? 2.5 : 2.0;
+        }
         var rate = ENERGY_CONFIG.REST_ENERGY_PER_TICK[locationId] || ENERGY_CONFIG.REST_ENERGY_PER_TICK.outside;
         // Wilderness Survival: +50% rest while traveling
         if (hasSkill('wilderness_survival') && (locationId === 'camping_kit_travel' || locationId === 'tent_travel' || locationId === 'bedroll_travel' || (player.traveling && locationId === 'outside'))) {
@@ -776,7 +802,7 @@
 
     function restForTicks(locationId, ticks) {
         _sync();
-        var isTravelRest = ['camping_kit_travel', 'tent_travel', 'bedroll_travel', 'bedroll_tent_travel', 'wagon_sleep_travel', 'caravan_wagon', 'ship_cabin'].indexOf(locationId) !== -1;
+        var isTravelRest = ['camping_kit_travel', 'tent_travel', 'bedroll_travel', 'bedroll_tent_travel', 'wagon_sleep_travel', 'caravan_wagon', 'ship_cabin', 'ship_captain_cabin', 'ship_open_deck', 'ship_tent_deck', 'ship_bedroll_deck'].indexOf(locationId) !== -1;
         var isRoadsideRest = player.traveling && locationId === 'outside';
 
         // Block non-travel rest while traveling

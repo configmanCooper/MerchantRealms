@@ -39,6 +39,85 @@
     var kingdomBuild = function(k, town, type, rng) { return Engine.kingdomBuild(k, town, type, rng); };
     var distributeConstructionWages = function(townId, amount, rng) { return Engine.distributeConstructionWages(townId, amount, rng); };
     var buildNewRoad = function(from, to, kingdomId, opts) { return Engine.buildNewRoad(from, to, kingdomId, opts); };
+    var buildNewSeaRoute = function(from, to, kingdomId, opts) { return Engine.buildNewSeaRoute ? Engine.buildNewSeaRoute(from, to, kingdomId, opts) : null; };
+    // v9p33river47: lightweight BFS over road / sea-route graph to estimate
+    // existing connection distance between two towns (returns null if no path).
+    // Used to gate cross-kingdom infrastructure: don't build a new route if
+    // existing routing is already reasonably fast.
+    function _shortestRoadDistance(townA, townB) {
+        if (!townA || !townB) return null;
+        var roads = (typeof world !== 'undefined' && world.roads) || (Engine.getRoads ? Engine.getRoads() : []);
+        if (!roads || !roads.length) return null;
+        var townMap = {};
+        var allTowns = (typeof world !== 'undefined' && world.towns) || (Engine.getTowns ? Engine.getTowns() : []);
+        for (var i = 0; i < allTowns.length; i++) townMap[allTowns[i].id] = allTowns[i];
+        // Build adjacency
+        var adj = {};
+        for (var ri = 0; ri < roads.length; ri++) {
+            var r = roads[ri];
+            if (r.condition === 'destroyed') continue;
+            var d = Math.hypot(townMap[r.fromTownId].x - townMap[r.toTownId].x, townMap[r.fromTownId].y - townMap[r.toTownId].y);
+            if (!adj[r.fromTownId]) adj[r.fromTownId] = [];
+            if (!adj[r.toTownId]) adj[r.toTownId] = [];
+            adj[r.fromTownId].push({ id: r.toTownId, d });
+            adj[r.toTownId].push({ id: r.fromTownId, d });
+        }
+        // Dijkstra-lite (simple priority via best-known per-node)
+        var dist = {}; dist[townA.id] = 0;
+        var queue = [{ id: townA.id, d: 0 }];
+        var maxIter = 400;
+        while (queue.length > 0 && maxIter-- > 0) {
+            queue.sort(function(p, q) { return p.d - q.d; });
+            var cur = queue.shift();
+            if (cur.id === townB.id) return cur.d;
+            if (cur.d > (dist[cur.id] || Infinity)) continue;
+            var nb = adj[cur.id] || [];
+            for (var ni = 0; ni < nb.length; ni++) {
+                var alt = cur.d + nb[ni].d;
+                if (alt < (dist[nb[ni].id] || Infinity)) {
+                    dist[nb[ni].id] = alt;
+                    queue.push({ id: nb[ni].id, d: alt });
+                }
+            }
+        }
+        return null;
+    }
+    function _shortestSeaDistance(townA, townB) {
+        if (!townA || !townB) return null;
+        var routes = (typeof world !== 'undefined' && world.seaRoutes) || (Engine.getSeaRoutes ? Engine.getSeaRoutes() : []);
+        if (!routes || !routes.length) return null;
+        var townMap = {};
+        var allTowns = (typeof world !== 'undefined' && world.towns) || (Engine.getTowns ? Engine.getTowns() : []);
+        for (var i = 0; i < allTowns.length; i++) townMap[allTowns[i].id] = allTowns[i];
+        var adj = {};
+        for (var ri = 0; ri < routes.length; ri++) {
+            var r = routes[ri];
+            if (r.condition === 'destroyed') continue;
+            var d = Math.hypot(townMap[r.fromTownId].x - townMap[r.toTownId].x, townMap[r.fromTownId].y - townMap[r.toTownId].y);
+            if (!adj[r.fromTownId]) adj[r.fromTownId] = [];
+            if (!adj[r.toTownId]) adj[r.toTownId] = [];
+            adj[r.fromTownId].push({ id: r.toTownId, d });
+            adj[r.toTownId].push({ id: r.fromTownId, d });
+        }
+        var dist = {}; dist[townA.id] = 0;
+        var queue = [{ id: townA.id, d: 0 }];
+        var maxIter = 400;
+        while (queue.length > 0 && maxIter-- > 0) {
+            queue.sort(function(p, q) { return p.d - q.d; });
+            var cur = queue.shift();
+            if (cur.id === townB.id) return cur.d;
+            if (cur.d > (dist[cur.id] || Infinity)) continue;
+            var nb = adj[cur.id] || [];
+            for (var ni = 0; ni < nb.length; ni++) {
+                var alt = cur.d + nb[ni].d;
+                if (alt < (dist[nb[ni].id] || Infinity)) {
+                    dist[nb[ni].id] = alt;
+                    queue.push({ id: nb[ni].id, d: alt });
+                }
+            }
+        }
+        return null;
+    }
     var checkWaterPath = function(x1, y1, x2, y2) { return Engine.checkWaterPath(x1, y1, x2, y2); };
     var computeRoadImportance = function(a, b) { return Engine.computeRoadImportance(a, b); };
     var rebuildBridge = function(roadIndex, bridgeId) { return Engine.rebuildBridge(roadIndex, bridgeId); };
@@ -2612,6 +2691,119 @@
                     k.gold -= buildCost;
                     buildNewRoad(bestPair.a.id, bestPair.b.id, k.id);
                     logEvent(`\uD83D\uDC51 ${k.name} has commissioned a new road between ${bestPair.a.name} and ${bestPair.b.name}!`);
+                }
+            }
+        }
+
+        // v9p33river47: CROSS-KINGDOM infrastructure cooperation.
+        // If two kingdoms are allied OR have an active trade agreement, both kings
+        // can chip in 50/50 to build a new road or sea route between their towns.
+        // Smart filter: skip if existing routing is already reasonably fast (the
+        // new connection wouldn't materially improve travel time).
+        var coopChance = p.intelligence === 'brilliant' ? 0.018 : p.intelligence === 'clever' ? 0.010 : p.intelligence === 'average' ? 0.005 : p.intelligence === 'dim' ? 0.002 : 0;
+        if (coopChance > 0 && k.gold >= 1500 && rng.chance(coopChance)) {
+            // Find partner kingdoms (allied or active trade agreement)
+            var partnerIds = new Set();
+            if (k.alliances && k.alliances.size > 0) {
+                k.alliances.forEach(function(aid) { partnerIds.add(aid); });
+            }
+            if (k._activeTreaties) {
+                for (var ti = 0; ti < k._activeTreaties.length; ti++) {
+                    var _tr = k._activeTreaties[ti];
+                    if ((_tr.type === 'trade_agreement' || _tr.type === 'mutual_defense') && _tr.partnerId) {
+                        partnerIds.add(_tr.partnerId);
+                    }
+                }
+            }
+            if (partnerIds.size > 0) {
+                var kTowns = world.towns.filter(function(t) { return k.territories.has(t.id) && !t.destroyed && !t.abandoned && !t.isOutpost; });
+                var bestCoopRoad = null, bestCoopRoadScore = -Infinity;
+                var bestCoopSea  = null, bestCoopSeaScore  = -Infinity;
+                partnerIds.forEach(function(pid) {
+                    var partner = findKingdom(pid);
+                    if (!partner || partner.destroyed) return;
+                    if (partner.gold < 1500) return; // partner needs to chip in too
+                    var pTowns = world.towns.filter(function(t) { return partner.territories.has(t.id) && !t.destroyed && !t.abandoned && !t.isOutpost; });
+                    for (var ai = 0; ai < kTowns.length; ai++) for (var bi = 0; bi < pTowns.length; bi++) {
+                        var a = kTowns[ai], b = pTowns[bi];
+                        if (a.id === b.id) continue;
+                        var d = Math.hypot(a.x - b.x, a.y - b.y);
+
+                        // ── ROAD candidate: ≤1500px, low water fraction, no fast existing route
+                        if (d <= 1500) {
+                            var hasDirectRoad = world.roads.some(function(r) {
+                                return ((r.fromTownId === a.id && r.toTownId === b.id) ||
+                                        (r.fromTownId === b.id && r.toTownId === a.id)) && r.condition !== 'destroyed';
+                            });
+                            if (!hasDirectRoad) {
+                                // Skip if existing roads can already get there in ≤1.5x straight-line distance
+                                var existingPath = _shortestRoadDistance(a, b);
+                                var skipBecauseFast = existingPath != null && existingPath <= d * 1.5;
+                                if (!skipBecauseFast) {
+                                    var waterFrac = checkWaterPath(a.x, a.y, b.x, b.y);
+                                    if (waterFrac <= (CONFIG.ROAD_MAX_WATER_FRACTION || 0.15)) {
+                                        var sc = computeRoadImportance(a, b);
+                                        // Bonus for connecting an isolated town
+                                        if (existingPath == null) sc += 50;
+                                        if (sc > bestCoopRoadScore) { bestCoopRoadScore = sc; bestCoopRoad = { a, b, d, partner }; }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── SEA ROUTE candidate: ≤2500px, both must be ports/islands
+                        if (d <= 2500 && (a.isPort || a.isIsland) && (b.isPort || b.isIsland)) {
+                            var hasDirectSea = (world.seaRoutes || []).some(function(sr) {
+                                return ((sr.fromTownId === a.id && sr.toTownId === b.id) ||
+                                        (sr.fromTownId === b.id && sr.toTownId === a.id)) && sr.condition !== 'destroyed';
+                            });
+                            if (!hasDirectSea) {
+                                var existingSeaPath = _shortestSeaDistance(a, b);
+                                var skipSeaBecauseFast = existingSeaPath != null && existingSeaPath <= d * 1.5;
+                                if (!skipSeaBecauseFast) {
+                                    var seaWaterFrac = 1 - checkWaterPath(a.x, a.y, b.x, b.y); // approximate inverse — checkWaterPath returns water fraction
+                                    // A real sea path needs MOSTLY water, so inverse-check-water > ~0.85
+                                    var ssc = computeRoadImportance(a, b);
+                                    if (existingSeaPath == null) ssc += 40;
+                                    if (ssc > bestCoopSeaScore) { bestCoopSeaScore = ssc; bestCoopSea = { a, b, d, partner }; }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Pick whichever is more valuable; build it with 50/50 funding
+                var chosen = null, chosenType = null;
+                if (bestCoopRoad && bestCoopRoadScore >= (bestCoopSea ? bestCoopSeaScore : -Infinity)) {
+                    chosen = bestCoopRoad; chosenType = 'road';
+                } else if (bestCoopSea) {
+                    chosen = bestCoopSea; chosenType = 'sea';
+                }
+                if (chosen) {
+                    var totalCost = chosenType === 'road'
+                        ? Math.floor(800 + chosen.d * 1.2)   // road slightly more expensive than intra-kingdom (border tariffs etc.)
+                        : Math.floor(600 + chosen.d * 0.4);  // sea route mostly maintenance
+                    var halfCost = Math.floor(totalCost / 2);
+                    if (k.gold >= halfCost && chosen.partner.gold >= halfCost) {
+                        k.gold -= halfCost;
+                        chosen.partner.gold -= halfCost;
+                        var built = false;
+                        if (chosenType === 'road') {
+                            var _r = buildNewRoad(chosen.a.id, chosen.b.id, k.id);
+                            built = _r && _r.success;
+                        } else {
+                            var _s = buildNewSeaRoute(chosen.a.id, chosen.b.id, k.id);
+                            built = _s && _s.success;
+                        }
+                        if (built) {
+                            var infra = chosenType === 'road' ? '\uD83D\uDEE4\uFE0F road' : '\u26F5 sea route';
+                            logEvent(`\uD83E\uDD1D ${k.name} and ${chosen.partner.name} jointly funded a new ${infra} between ${chosen.a.name} and ${chosen.b.name}!`);
+                        } else {
+                            // Refund if construction failed
+                            k.gold += halfCost;
+                            chosen.partner.gold += halfCost;
+                        }
+                    }
                 }
             }
         }

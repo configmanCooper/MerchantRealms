@@ -208,14 +208,14 @@ window.UI = (function () {
             btnSkills.addEventListener('click', function() { UI.openSkillsDialog(); });
             if (rowManage) rowManage.appendChild(btnSkills);
 
-            // Family button → Manage row (hidden until player has family)
+            // Family button → Manage row (v9p33river48: always visible)
             const btnFamily = document.createElement('button');
             btnFamily.className = 'btn-action';
             btnFamily.id = 'btnFamily';
             btnFamily.title = 'Family';
             btnFamily.textContent = '👨‍👩‍👧‍👦 Family';
             btnFamily.addEventListener('click', function() { UI.openFamilyPanel(); });
-            btnFamily.style.display = 'none';
+            // (was: btnFamily.style.display = 'none' — hidden until player had family)
             if (rowManage) rowManage.appendChild(btnFamily);
 
             // Outposts button → Manage row
@@ -471,7 +471,11 @@ window.UI = (function () {
         registerAction('openSpousePanel', function() { UI.openSpousePanel(); });
         registerAction('showPersonDetail', function(_t, d) { if (d.id) UI.showPersonDetail(d.id); });
         registerAction('specialAction', function(_t, d) { if (d.id) UI.specialAction(d.id); });
-        registerAction('familyAction', function(_t, d) { if (d.id) UI.familyAction(d.id); });
+        // v9p33river76: removed broken stub `registerAction('familyAction', ...)`
+        // that was overwriting the proper handler in ui_kingdom.js (which loads
+        // earlier but bindEvents runs after, last-write-wins). The stub passed
+        // only one arg so dinner/celebration/advice/caretake never fired and
+        // per-family-member buttons routed the wrong values to the handler.
         registerAction('spouseInteraction', function(_t, d) { if (d.id) UI.spouseInteraction(d.id); });
         registerAction('treatCompanionUI', function(_t, d) { if (d.type) treatCompanionUI(d.type, d.id, d.val); });
         registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val) setNotifFilter(d.key, d.val); });
@@ -707,6 +711,10 @@ window.UI = (function () {
         registerAction('buyShipAndOpenShipsDialog', function(_t, d) { UI.buyShip(d.id); UI.openShipsDialog(); });
         registerAction('showShipAddons', function(_t, d) { if (d.id) UI.showShipAddons(d.id); });
         registerAction('repairShipAndOpenShipsDialog', function(_t, d) { Player.repairShip(d.id); UI.openShipsDialog(); });
+        // v9p33river74
+        registerAction('openShipCargo', function(_t, d) { if (d.id) UI.openShipCargoDialog(d.id); });
+        registerAction('shipCargoLoad', function(_t, d) { UI._shipCargoTransfer(d.id, d.res, parseInt(d.qty), 'load'); });
+        registerAction('shipCargoUnload', function(_t, d) { UI._shipCargoTransfer(d.id, d.res, parseInt(d.qty), 'unload'); });
         registerAction('openGuildsPanel', function() { UI.openGuildsPanel(); });
         registerAction('guildCraftExecute', function(_t, d) { if (d.id && d.val) UI.guildCraftExecute(d.id, d.val); });
         registerAction('guildCraftPrompt', function(_t, d) { if (d.id && d.product) UI.guildCraftPrompt(d.id, d.product, d.name); });
@@ -2529,6 +2537,9 @@ window.UI = (function () {
 
         var trendButtonsHtml = '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap;"><button class="btn-trade" style="font-size:0.7rem;background:rgba(100,150,200,0.15);border-color:rgba(100,150,200,0.3);" data-action="askTavernFoodTrends">📊 Food Trends (5g)</button><button class="btn-trade" style="font-size:0.7rem;background:rgba(200,120,50,0.15);border-color:rgba(200,120,50,0.3);" data-action="askTavernFashionTrends">🎭 Fashion Trends (10g)</button></div>';
 
+        // v9p33river80/85: town market gold via Engine helper (NPC sum + delta)
+        var _marketGold = (Engine.getTownMarketGold ? Engine.getTownMarketGold(town.id) : 0);
+
         const html = `<div class="trade-sticky-header">${marketDayBanner}${capacityHtml}${tradeInfoHtml}${filterBarHtml}${tradeTabBarHtml}${_activeTradeTab === 'trade' ? columnHeadersHtml : ''}</div><div id="tradeTabTrade" style="${tradeTabDisplay}"><div class="trade-columns">
             <div class="trade-column">${buyHtml}</div>
             <div class="trade-column">${sellHtml}</div>
@@ -2537,7 +2548,8 @@ window.UI = (function () {
         <div id="tradeTabLicenses" style="${licensesTabDisplay}">${licenseTabContent}</div>
         <div id="tradeTabPrices" style="${pricesTabDisplay}">${rememberedTabContent}</div>
         <div id="tradeTabIntel" style="${intelTabDisplay}">${intelTabContent}${trendButtonsHtml}</div>
-        <div class="trade-summary">Your gold: <span class="gold-value">🪙 ${formatGold(Player.gold)}</span></div>`;
+        <div class="trade-summary">Your gold: <span class="gold-value">🪙 ${formatGold(Player.gold)}</span><br>
+            <span style="font-size:0.78rem;color:#aaa;">Town market gold: <span style="color:#d4af37;">🏛️ ${formatGold(_marketGold)}</span></span></div>`;
 
         openModal(`📊 Trade — ${town.name}`, html);
 
@@ -5593,21 +5605,9 @@ window.UI = (function () {
         } else {
             html += `<div class="text-dim">No ships owned</div>`;
         }
-        // Buy ship buttons (only at port towns) — dynamic pricing
-        if (isAtPort) {
-            html += `<div style="margin-top:8px;"><strong>🏗️ Build a Ship</strong></div>`;
-            html += `<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">`;
-            var shipTypes = CONFIG.SHIP_TYPES || {};
-            for (var stId in shipTypes) {
-                var stCfg = shipTypes[stId];
-                var stPrice = Player.getShipPrice ? Player.getShipPrice(stId) : (stCfg.laborCost || 100);
-                var canAfford = Player.gold >= stPrice;
-                html += `<button class="btn-medieval" data-action="buyShip" data-id="${stId}" style="font-size:0.7rem;padding:4px 10px;background:rgba(0,140,160,${canAfford ? '0.4' : '0.15'});border-color:rgba(0,200,220,${canAfford ? '0.6' : '0.3'});color:${canAfford ? '#e0f4f4' : '#666'};" title="${stCfg.description || ''}\nCap:${stCfg.capacity} Spd:${stCfg.speed}x Pass:${stCfg.passengers || 0} Def:${stCfg.defense || 0} Cannons:${stCfg.cannons || 0}">${stCfg.icon || '⛵'} ${stCfg.name} (${Math.round(stPrice)}g)</button>`;
-            }
-            html += `</div>`;
-        } else {
-            html += `<div class="text-dim" style="margin-top:4px;font-size:0.75rem;">Visit a port town to build ships</div>`;
-        }
+        // v9p33river81: Build a Ship moved out of the Character menu entirely
+        // (was duplicated here in addition to the Ships dialog). Build via the
+        // dedicated Ships menu instead, or wherever ship-building is exposed.
         html += `</div>`;
 
         // ── Storage / Capacity Section ──
@@ -9698,7 +9698,7 @@ window.UI = (function () {
             { icon: '📦', label: 'Inventory', fn: 'openPlayerInventory' },
             { icon: '🩺', label: 'Treatment', fn: 'openHealthDialog', conditional: 'treatment' },
             { icon: '📚', label: 'Skills', fn: 'openSkillsDialog' },
-            { icon: '👨‍👩‍👧‍👦', label: 'Family', fn: 'openFamilyPanel', conditional: 'family' },
+            { icon: '👨‍👩‍👧‍👦', label: 'Family', fn: 'openFamilyPanel' },
             { icon: '💚', label: 'Friends', fn: 'openFriendsPanel' },
             { icon: '🏡', label: 'Housing', fn: 'openHousingDialog' },
             { icon: '🏛️', label: 'Guilds', fn: 'openGuildsPanel' },
@@ -10862,6 +10862,7 @@ window.UI = (function () {
                 // Buttons
                 html += '<div style="margin-top:4px;">';
                 html += '<button class="btn-medieval" data-action="repairShipAndOpenShipsDialog" data-id="' + ship.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;"' + (condition >= 100 ? ' disabled' : '') + '>🔧 Repair</button>';
+                html += '<button class="btn-medieval" data-action="openShipCargo" data-id="' + ship.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Cargo</button>';
                 if ((sType.maxAddons || 0) > 0) {
                     html += '<button class="btn-medieval" data-action="showShipAddons" data-id="' + ship.id + '" style="font-size:0.75rem;padding:3px 8px;margin:2px;">📦 Addons';
                     if (ship.addons) html += ' (' + ship.addons.length + '/' + sType.maxAddons + ')';
@@ -10871,7 +10872,10 @@ window.UI = (function () {
             }
         }
 
-        // ── Section 2: Build a Ship ──
+        // v9p33river83: Build a Ship section restored to the Ships dialog
+        // (was removed in v9p33river75 per earlier user request, then user
+        // changed their mind). Still removed from the Character > Inventory
+        // dialog (v9p33river81).
         html += '<h3 style="margin-top:12px;">🏗️ Build a Ship</h3>';
         var atLimit = shipsHere.length >= maxShips;
         if (atLimit) {
@@ -10967,6 +10971,97 @@ window.UI = (function () {
 
         html += '</div>';
         openModal('⛵ Ships & Vessels', html);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  v9p33river74: SHIP CARGO DIALOG (load/unload between ship & inventory)
+    // ═══════════════════════════════════════════════════════════
+    function openShipCargoDialog(shipId) {
+        if (typeof Player === 'undefined') return;
+        var ship = (Player.ships || []).find(function(s) { return s.id === shipId; });
+        if (!ship) { toast('Ship not found.', 'error'); return; }
+        var sType = CONFIG.SHIP_TYPES[ship.type] || {};
+        var capacity = sType.capacity || 0;
+        var cargo = Player.getShipCargo ? Player.getShipCargo(shipId) : (ship.cargo || {});
+        var cargoWeight = Player.getShipCargoWeight ? Player.getShipCargoWeight(shipId) : 0;
+        var inv = Player.inventory || {};
+        var carry = Player.getCarryCapacity ? Player.getCarryCapacity() : 0;
+        var carried = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
+
+        var pctShip = capacity > 0 ? Math.min(100, Math.floor(cargoWeight / capacity * 100)) : 0;
+        var pctYou = carry > 0 ? Math.min(100, Math.floor(carried / carry * 100)) : 0;
+
+        var html = '<div style="max-height:520px;overflow-y:auto;">';
+        html += '<div style="display:flex;gap:12px;margin-bottom:10px;">';
+        html += '<div style="flex:1;background:rgba(40,80,120,0.18);border:1px solid #4a7090;border-radius:6px;padding:8px;">';
+        html += '<div style="font-weight:bold;">' + (sType.icon || '⛵') + ' ' + (ship.name || sType.name || 'Ship') + '</div>';
+        html += '<div style="font-size:0.78rem;color:#aaa;">Cargo: ' + cargoWeight + ' / ' + capacity + ' weight (' + pctShip + '%)</div>';
+        html += '<div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;margin-top:4px;"><div style="width:' + pctShip + '%;height:100%;background:#4a90c0;border-radius:3px;"></div></div>';
+        html += '</div>';
+        html += '<div style="flex:1;background:rgba(110,90,40,0.18);border:1px solid #8a7040;border-radius:6px;padding:8px;">';
+        html += '<div style="font-weight:bold;">🎒 You</div>';
+        html += '<div style="font-size:0.78rem;color:#aaa;">Carry: ' + carried + ' / ' + carry + ' weight (' + pctYou + '%)</div>';
+        html += '<div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;margin-top:4px;"><div style="width:' + pctYou + '%;height:100%;background:#c0a050;border-radius:3px;"></div></div>';
+        html += '</div>';
+        html += '</div>';
+
+        // Two-column layout: ship side / inventory side
+        html += '<div style="display:flex;gap:10px;">';
+
+        // Ship cargo (unload)
+        html += '<div style="flex:1;border:1px solid #444;border-radius:6px;padding:6px;">';
+        html += '<div style="font-weight:bold;margin-bottom:4px;">⛵ On Ship</div>';
+        var shipKeys = Object.keys(cargo).filter(function(k) { return cargo[k] > 0; }).sort();
+        if (shipKeys.length === 0) {
+            html += '<div style="font-size:0.8rem;color:#888;">Empty.</div>';
+        } else {
+            for (var i = 0; i < shipKeys.length; i++) {
+                var k = shipKeys[i];
+                var qty = cargo[k];
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
+                html += '<span style="font-size:0.8rem;">' + k + ' × ' + qty + '</span>';
+                html += '<span>';
+                html += '<button class="btn-medieval" data-action="shipCargoUnload" data-id="' + shipId + '" data-res="' + k + '" data-qty="1" style="font-size:0.7rem;padding:1px 5px;">▶ 1</button> ';
+                html += '<button class="btn-medieval" data-action="shipCargoUnload" data-id="' + shipId + '" data-res="' + k + '" data-qty="10" style="font-size:0.7rem;padding:1px 5px;">▶ 10</button> ';
+                html += '<button class="btn-medieval" data-action="shipCargoUnload" data-id="' + shipId + '" data-res="' + k + '" data-qty="' + qty + '" style="font-size:0.7rem;padding:1px 5px;">▶ All</button>';
+                html += '</span></div>';
+            }
+        }
+        html += '</div>';
+
+        // Inventory (load)
+        html += '<div style="flex:1;border:1px solid #444;border-radius:6px;padding:6px;">';
+        html += '<div style="font-weight:bold;margin-bottom:4px;">🎒 Inventory</div>';
+        var invKeys = Object.keys(inv).filter(function(k) { return inv[k] > 0 && k !== 'horses'; }).sort();
+        if (invKeys.length === 0) {
+            html += '<div style="font-size:0.8rem;color:#888;">Nothing to load.</div>';
+        } else {
+            for (var ii = 0; ii < invKeys.length; ii++) {
+                var ik = invKeys[ii];
+                var iq = inv[ik];
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);">';
+                html += '<span style="font-size:0.8rem;">' + ik + ' × ' + iq + '</span>';
+                html += '<span>';
+                html += '<button class="btn-medieval" data-action="shipCargoLoad" data-id="' + shipId + '" data-res="' + ik + '" data-qty="1" style="font-size:0.7rem;padding:1px 5px;">◀ 1</button> ';
+                html += '<button class="btn-medieval" data-action="shipCargoLoad" data-id="' + shipId + '" data-res="' + ik + '" data-qty="10" style="font-size:0.7rem;padding:1px 5px;">◀ 10</button> ';
+                html += '<button class="btn-medieval" data-action="shipCargoLoad" data-id="' + shipId + '" data-res="' + ik + '" data-qty="' + iq + '" style="font-size:0.7rem;padding:1px 5px;">◀ All</button>';
+                html += '</span></div>';
+            }
+        }
+        html += '</div>';
+
+        html += '</div>';
+        html += '</div>';
+        openModal('📦 Cargo: ' + (ship.name || sType.name || 'Ship'), html, '<button class="btn-medieval" data-action="closeModal">Close</button> <button class="btn-medieval" data-action="openShipsDialog">⛵ Back to Ships</button>');
+    }
+
+    function _shipCargoTransfer(shipId, resId, qty, direction) {
+        if (!Player.transferShipCargo) return;
+        var r = Player.transferShipCargo(shipId, resId, qty, direction);
+        if (r.success) toast(r.message, 'success');
+        else toast(r.message, 'warning');
+        // Refresh dialog
+        openShipCargoDialog(shipId);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -17392,6 +17487,8 @@ window.UI = (function () {
         openJournal,
         // Ships & Vessels
         openShipsDialog,
+        openShipCargoDialog,
+        _shipCargoTransfer,
         // Housing & Rest
         openHousingDialog,
         openRealEstateReport,

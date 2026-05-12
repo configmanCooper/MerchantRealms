@@ -1517,6 +1517,10 @@
             var _tradeInc = Math.floor(3 + rng.random() * 5);
             em.gold = (em.gold || 0) + _tradeInc;
             em._incomeLog.trade += _tradeInc;
+            // v9p33river85: trade income comes from the town's market gold pool.
+            try {
+                if (em.townId && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(em.townId, -_tradeInc);
+            } catch (_e) {}
             grantEmXp(em, 1, 'daily');
 
             // ---- FINANCIAL DISTRESS & BANKRUPTCY ----
@@ -5342,7 +5346,15 @@
 
             // ── Merchant Travel Progress (elite and regular NPC) ──
             if (p.traveling) {
-                var progressRate = p.isEliteMerchant ? (p.travelOffroad ? 0.07 : 0.15) : 0.05; // NPCs are slower
+                // v9p33river58: off-sea EMs are slower than sea-route, off-road EMs slower than road.
+                var progressRate;
+                if (p.isEliteMerchant) {
+                    if (p.travelOffSea) progressRate = 0.08;
+                    else if (p.travelOffroad) progressRate = 0.07;
+                    else progressRate = 0.15;
+                } else {
+                    progressRate = 0.05;
+                }
                 p.travelProgress = (p.travelProgress || 0) + progressRate;
 
                 // ── EM Travel Encounters (bandits/pirates/soldiers) ──
@@ -5360,10 +5372,10 @@
                         });
                         var roadThreat = emRoad ? (emRoad.banditThreat || 0) : 0;
 
-                        // Sea travel: pirates
-                        if (p.travelBySea || (emRoad && emRoad.seaRoute)) {
+                        // Sea travel: pirates (covers sea route, off-sea, or recorded sea flag)
+                        if (p.travelBySea || p.travelOffSea || (emRoad && emRoad.seaRoute)) {
                             encounterType = 'pirate';
-                            encounterChance = 0.15;
+                            encounterChance = p.travelOffSea ? 0.20 : 0.15; // open-water riskier
                         }
                         // War zone: soldiers
                         else if (emOriginTown.kingdomId !== emDestTown.kingdomId) {
@@ -5448,6 +5460,8 @@
                     p.travelProgress = 0;
                     p.travelDestination = null;
                     p.travelOffroad = false;
+                    p.travelOffSea = false;
+                    p.travelBySea = false;
                     // NPC merchants return home after selling
                     if (!p.isEliteMerchant && p.travelOriginTown) {
                         p._returnHome = true;
@@ -5641,48 +5655,90 @@
                         }
                     }
 
-                    // If no good connected town, consider off-road travel to any reachable town
+                    // If no good connected town, consider off-road or off-sea travel.
+                    // v9p33river58: Both modes evaluated; AI picks the better-scored option
+                    // and validates the path with Engine.findTerrainPath so EMs follow the
+                    // same land/sea constraints the player does.
                     if (!bestDest || bestScore < 200) {
                         var allTowns = world.towns.filter(function(t) {
                             return t.id !== p.townId && !t.isIsland;
                         });
+
+                        var bestOffroadDest = null, bestOffroadScore = 0;
+                        var bestOffSeaDest = null, bestOffSeaScore = 0;
+                        var emInPort = !!(emTown && emTown.isPort);
+                        var _findPath = (typeof Engine !== 'undefined' && Engine.findTerrainPath) ? Engine.findTerrainPath : null;
 
                         for (var ati = 0; ati < Math.min(allTowns.length, 5); ati++) {
                             var randTown = allTowns[rng.randInt(0, allTowns.length - 1)];
                             if (!randTown || !randTown.market) continue;
 
                             var dist = Math.hypot((randTown.x || 0) - (emTown.x || 0), (randTown.y || 0) - (emTown.y || 0));
-                            if (dist > 3000) continue; // Too far for off-road
-
-                            var offroadScore = 0;
                             var distPenalty = dist * 0.1;
 
-                            // Check for big arbitrage opportunities
+                            // Score arbitrage potential
+                            var arbScore = 0;
                             var oInv = p.npcMerchantInventory || {};
                             for (var oResId in oInv) {
                                 var oLocal = emTown.market.prices[oResId] || 0;
                                 var oDest = randTown.market.prices[oResId] || 0;
                                 if (oDest > oLocal * 1.5) {
-                                    offroadScore += (oDest - oLocal) * (oInv[oResId] || 0);
+                                    arbScore += (oDest - oLocal) * (oInv[oResId] || 0);
                                 }
                             }
 
-                            offroadScore -= distPenalty;
+                            // ── Off-road land travel: <=3000px, validated land path
+                            if (dist <= 3000 && _findPath) {
+                                var landScore = arbScore - distPenalty;
+                                if (landScore > bestOffroadScore && landScore > 400) {
+                                    var landPath = _findPath(emTown.x, emTown.y, randTown.x, randTown.y, 'land');
+                                    var landWp = (landPath && Array.isArray(landPath)) ? landPath
+                                        : (landPath && landPath.waypoints) ? landPath.waypoints : null;
+                                    if (landWp && landWp.length >= 2) {
+                                        bestOffroadScore = landScore;
+                                        bestOffroadDest = randTown.id;
+                                    }
+                                }
+                            }
 
-                            if (offroadScore > bestScore && offroadScore > 400) {
-                                bestScore = offroadScore;
-                                bestDest = randTown.id;
+                            // ── Off-sea travel: requires both ports, <=5000px, validated sea path.
+                            // Slower distance penalty (sea has fewer obstacles than wilderness).
+                            if (emInPort && randTown.isPort && dist <= 5000 && _findPath) {
+                                var seaScore = arbScore - dist * 0.06;
+                                if (seaScore > bestOffSeaScore && seaScore > 350) {
+                                    var seaPath = _findPath(emTown.x, emTown.y, randTown.x, randTown.y, 'sea');
+                                    var seaWp = (seaPath && Array.isArray(seaPath)) ? seaPath
+                                        : (seaPath && seaPath.waypoints) ? seaPath.waypoints : null;
+                                    if (seaWp && seaWp.length >= 2) {
+                                        bestOffSeaScore = seaScore;
+                                        bestOffSeaDest = randTown.id;
+                                    }
+                                }
                             }
                         }
 
-                        // Start off-road travel if threshold met
-                        if (bestDest && bestScore > 400) {
+                        // Pick the better of the two (or override the on-road bestScore)
+                        if (bestOffSeaDest && bestOffSeaScore > bestOffroadScore && bestOffSeaScore > bestScore) {
                             p.traveling = true;
-                            p.travelDestination = bestDest;
+                            p.travelDestination = bestOffSeaDest;
+                            p.travelProgress = 0;
+                            p.travelOffroad = false;
+                            p.travelOffSea = true;
+                            p.travelBySea = true;
+                            bestDest = null; // suppress the on-road branch below
+                            var seaDestName = findTown(bestOffSeaDest) ? findTown(bestOffSeaDest).name : 'unknown';
+                            logEvent('⛵ Elite merchant ' + (p.firstName || 'Unknown') + ' ' + (p.lastName || '') + ' set sail from ' + emTown.name + ' bound for ' + seaDestName + ' across open water.',
+                                { type: 'merchant' }, 'npc_activity');
+                            emitTrackedEMNotification(p, 'is sailing open water to ' + seaDestName, { townId: p.townId });
+                        } else if (bestOffroadDest && bestOffroadScore > bestScore) {
+                            p.traveling = true;
+                            p.travelDestination = bestOffroadDest;
                             p.travelProgress = 0;
                             p.travelOffroad = true;
-
-                            var offDestName = findTown(bestDest) ? findTown(bestDest).name : 'unknown';
+                            p.travelOffSea = false;
+                            p.travelBySea = false;
+                            bestDest = null; // suppress the on-road branch below
+                            var offDestName = findTown(bestOffroadDest) ? findTown(bestOffroadDest).name : 'unknown';
                             logEvent('📦 Elite merchant ' + (p.firstName || 'Unknown') + ' ' + (p.lastName || '') + ' departed from ' + emTown.name + ' heading off-road to ' + offDestName + '.',
                                 { type: 'merchant' }, 'npc_activity');
                             emitTrackedEMNotification(p, 'is traveling off-road to ' + offDestName, { townId: p.townId });
@@ -5883,7 +5939,7 @@
                     var bt = findBuildingType(bldg.type);
                     if (!bt || !bt.workers) continue;
                     var currentWorkers = bldg.workers ? bldg.workers.length : 0;
-                    var maxWorkers = bt.workers * (bldg.level || 1);
+                    var maxWorkers = bt.workers + ((bldg.level || 1) - 1);
                     if (currentWorkers < maxWorkers) {
                         p.occupation = bt.jobTitle || 'worker';
                         if (!bldg.workers) bldg.workers = [];

@@ -57,6 +57,22 @@
             player.ticksRemaining = 0;
         }
 
+        // v9p33river98: working at your own building now costs energy too,
+        // matching the regular work-job flow. Cost scales with building category.
+        if (Player.consumeEnergy) {
+            var _bt = findBuildingType(bld.type);
+            var _ePerTick = 2.0; // default = medium
+            if (_bt) {
+                if (_bt.category === 'farm') _ePerTick = 2.0;
+                else if (_bt.category === 'mining') _ePerTick = 3.0;
+                else if (_bt.category === 'processing') _ePerTick = 2.5;
+                else if (_bt.category === 'finished') _ePerTick = 2.0;
+                else if (_bt.category === 'retail') _ePerTick = 1.5;
+                else if (_bt.category === 'storage') _ePerTick = 0.5;
+            }
+            Player.consumeEnergy(15 * _ePerTick);
+        }
+
         var bt = findBuildingType(bld.type);
         if (!bt) return { success: false, message: 'Unknown building type.' };
 

@@ -4,6 +4,66 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [TestingMilestone1] - graphic-milestone-5 polish: docks, funerals, courtship, building UI, kingdom rep, plantation balance
+
+### Added
+- **Sail / Off-Sea travel** — render docked ship sprite, hit-test, auto-board on offroad arrival; port-to-port sailing with sea-route empty-market refusal; rowboats / fishing boats restricted to within 3 tiles of land (`COASTAL_MAX_TILES_FROM_LAND`)
+- **Build a Well petition** — new `build_well` `PETITION_TYPES` entry; NPC-suggested when town >15 pop and lacks a well; resolution adds a kingdom-owned `well` building and bumps prosperity
+- **Town market gold pool** — `Engine.getTownMarketGold` / `adjustTownMarketGold`; player + caravan sales refused when pool empty; EM trade income deducted from pool
+- **Funeral system overhaul** — pause game on death modal, AI-funeral synthesis on arrival, location in toast/log/modal, funeral attendance UI pause, `funeralNotification` & `funeralPlan` serialized
+- **Minor noble rep bonus** — passive +1 kingdom rep per 25 relationship with each minor noble of that kingdom, capped at +10/kingdom; bypasses the diminishing-returns Proxy
+- **Kingdom rep diminishing returns** — gains scale to 0.75× / 0.5× / 0.25× at 60+/70+/80+
+- **Map14** added to the random world pool; every kingdom guaranteed ≥1 port town
+- **Build-a-Ship** restored in the Ships dialog; cargo system (`Player.transferShipCargo`)
+- **Ship cabin rest options** while traveling at sea; immediate pause on camp prompt
+
+### Changed — Crime Penalties (sweeping rework)
+- All caught-crime kingdom-rep losses converted to **town-rep losses** (`applyCorruptPenalty` 4th arg now town rep)
+- New 8th `opts` arg `{kingdomRepLoss: N, isNobleTarget: bool}`; noble target adds +10 kingdom rep loss
+- Specific overrides: Turn Noble Against King = -5 kingdom rep; Expose Noble Secrets = -2 kingdom rep
+- Variable-target schemes (frame, poison, blackmail, hire-assassin, assassinate-passenger) check `target.occupation` at runtime
+- `stealFromNpc` reworked: -5 town rep, -20 relationship; -5 kingdom rep only if noble target
+
+### Changed — Building Level Scaling (unified)
+- All NPC production, extraction (lumber camp, mines, fisheries), horse-bonus farms, and theft now use `+10% per level` instead of `× level`
+- NPC hiring max-workers uses `bt.workers + (level - 1)` (was `× level`)
+- Tree Plantation rebalanced: **2 wood/day per worker**, +10% per level above 1; each upgrade also unlocks +1 worker slot
+
+### Changed — Other Balance / UX
+- License duration 360 → **90 days**
+- Land caps: Burgher 6→**8**, Guildmaster 15→**25**, Minor Noble 30→**50**
+- EM starting gold ×4
+- Fever Tonic recipe drops sulfur (now 3 herbs + 2 water)
+- "Have a drink" festival action → "Eat & drink", fills hunger and thirst
+- "Approach Noble" festival action accepts the Burgher rank check correctly
+- Honest Assessment reveals only ONE trait
+
+### Fixed — Critical
+- **Cache version bumped on ALL 43 script tags** (was only 4) — fixed long-running issue where many UI/module fixes never reached the browser
+- **`countWorkersForBuilding`** now falls through to `Player.buildings` for player-owned town-copy entries (the slim `town.buildings` entry lacks the workers array). Symptom: tree plantations and other player buildings the engine touches via `town.buildings` were silently treated as 0-worker
+- Player employer prosperity boost, monthly employer reputation, and hospital/clinic max-healers all fixed to read player workers via `Player.buildings`
+- Clinic/Hospital now uses `bld.inventory` as medical stock (in addition to `_medicalStock` / `retailStock`); 5 fixes across UI display + engine `_checkStockAvailable` / `_checkSuppliesAvailable` / `_tryConsumeFromStocks`
+- Tree-plantation regen no longer stranded when scattered groves hit 0 — always distributes to existing groves first; create-from-scratch only when there are zero groves
+- Output Storage display includes `_transferBuffer` so it matches the "Deliver Now" count
+- Caravan source-location orders execute at dispatch (not just on return leg); building dropdown in caravan order builder refreshes when location changes; "Edit Orders" modal had missing action+location wiring
+- Roads always render — removed pass-through cull at zoom > 1.5×
+- Camp/rest UI no longer skipped at 60× speed — pause moved into `tickEnergy`
+- Removed misleading combined "Building Storage: N items" header (separate Output / Input pools rendered below)
+- `storageColor is not defined` ReferenceError on building details (orphaned bar)
+- Player working own buildings now consumes energy
+- Cross-kingdom EM off-sea AI + smart pathfinding
+- Family-button stub overwriting good handler removed
+- Family panel renders player as child/sibling with relation badges
+- Courtship hidden for family / king / jail / non-interactable NPCs
+- Jail blocks all NPC interactions, favors, courtship
+- Story-mode smuggling fines now apply
+- NPC hover scoped to current town
+- Funeral arrival auto-docks at port; AI-funeral plan tick early-return fixed
+- Removed textured renderer + tree sprites + base_*.jpg files (~2.5MB freed; render.js −1499 lines)
+
+### Removed
+- Build-a-Ship moved out of Character menu; combined Building Storage line; legacy textured terrain renderer
+
 ## [0.90.0] - Regency Overhaul, Child Naming Fix & Post-Death State Reset
 
 ### Fixed — Regency System

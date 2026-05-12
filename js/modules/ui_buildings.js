@@ -747,13 +747,17 @@
         html += '</div>';
         var _medStock = _medBld._medicalStock || {};
         var _retStock = _medBld.retailStock || bld.retailStock || {};
+        // v9p33river112: also count items in the building's input storage
+        // (deposited from inventory / town storage) toward Medical Stock so the
+        // breakdown numbers and engine consumption agree.
+        var _bldInv = bld.inventory || {};
         var _medGoods = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'fever_tonic', 'antidote', 'splint'];
         var _medStockTotal = 0;
-        for (var _msi = 0; _msi < _medGoods.length; _msi++) _medStockTotal += (_medStock[_medGoods[_msi]] || 0) + (_retStock[_medGoods[_msi]] || 0);
+        for (var _msi = 0; _msi < _medGoods.length; _msi++) _medStockTotal += (_medStock[_medGoods[_msi]] || 0) + (_retStock[_medGoods[_msi]] || 0) + (_bldInv[_medGoods[_msi]] || 0);
         var _medStorageCap = (bt && bt.medicalStorage) || 40;
         var _medPct = _medStorageCap > 0 ? Math.round(_medStockTotal / _medStorageCap * 100) : 0;
         var _medColor = _medPct >= 60 ? '#55a868' : _medPct >= 25 ? 'var(--gold)' : 'var(--danger)';
-        html += '<div style="font-size:0.78rem;margin-bottom:4px;">📦 Medical Stock: <span style="color:' + _medColor + ';">' + _medStockTotal + '/' + _medStorageCap + '</span> <span style="font-size:0.68rem;color:#888;">(dedicated + retail)</span></div>';
+        html += '<div style="font-size:0.78rem;margin-bottom:4px;">📦 Medical Stock: <span style="color:' + _medColor + ';">' + _medStockTotal + '/' + _medStorageCap + '</span> <span style="font-size:0.68rem;color:#888;">(dedicated + retail + storage)</span></div>';
         html += '<div style="background:#333;border-radius:3px;height:6px;margin-bottom:8px;overflow:hidden;">';
         html += '<div style="background:' + _medColor + ';height:100%;width:' + Math.min(100, _medPct) + '%;"></div></div>';
         html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">';
@@ -761,12 +765,17 @@
             var _mgId = _medGoods[_mgi];
             var _mgDed = _medStock[_mgId] || 0;
             var _mgRet = _retStock[_mgId] || 0;
-            var _mgQty = _mgDed + _mgRet;
+            var _mgInv = _bldInv[_mgId] || 0;
+            var _mgQty = _mgDed + _mgRet + _mgInv;
             var _mgRes = findResource(_mgId);
             var _mgName = _mgRes ? _mgRes.name : _mgId;
             var _mgIcon = _mgRes ? (_mgRes.icon || '💊') : '💊';
             var _mgCol = _mgQty > 0 ? '#55a868' : '#666';
-            var _mgDetail = _mgDed > 0 && _mgRet > 0 ? ' (' + _mgDed + '+' + _mgRet + ')' : '';
+            var _detailParts = [];
+            if (_mgDed > 0) _detailParts.push(_mgDed + 'd');
+            if (_mgRet > 0) _detailParts.push(_mgRet + 'r');
+            if (_mgInv > 0) _detailParts.push(_mgInv + 's');
+            var _mgDetail = _detailParts.length > 1 ? ' (' + _detailParts.join('+') + ')' : '';
             html += '<span style="font-size:0.72rem;padding:2px 5px;border:1px solid #444;border-radius:3px;color:' + _mgCol + ';">' + _mgIcon + ' ' + _mgName + ': ' + _mgQty + _mgDetail + '</span>';
         }
         html += '</div>';
@@ -794,13 +803,13 @@
                 var list = [];
                 for (var _supRes in supplies) {
                     var _supQty = supplies[_supRes];
-                    var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0);
+                    var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0) + (_bldInv[_supRes] || 0);
                     var _supMkt = (town && town.market && town.market.supply[_supRes]) || 0;
                     var _supAvail = _supHave + _supMkt;
                     var _rIdx = _medRank.indexOf(_supRes);
                     if (!(_supAvail >= _supQty) && _rIdx >= 0) {
                         for (var _ssi = _rIdx + 1; _ssi < _medRank.length; _ssi++) {
-                            var _altHave = (_medStock[_medRank[_ssi]] || 0) + (_retStock[_medRank[_ssi]] || 0);
+                            var _altHave = (_medStock[_medRank[_ssi]] || 0) + (_retStock[_medRank[_ssi]] || 0) + (_bldInv[_medRank[_ssi]] || 0);
                             var _altMkt = (town && town.market && town.market.supply[_medRank[_ssi]]) || 0;
                             if (_altHave + _altMkt >= _supQty) { _supAvail = _supQty; break; }
                         }
@@ -1059,15 +1068,13 @@
             // Current storage — show ALL tiers combined (weight-aware)
             var bldStorageCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             if (bldStorageCap > 0) {
-                // Use storedAllTiers for weight calc — all tiers share the same weight
-                var _prodRes = (typeof findResource !== 'undefined') ? findResource(currentProduct) : null;
-                var _prodWeight = (_prodRes && _prodRes.weight) || 1;
-                var storedWeight = info.storedAllTiers * _prodWeight;
-                var storagePct = Math.min(100, Math.round((storedWeight / bldStorageCap) * 100));
-                var storageColor = storagePct >= 90 ? '#e74c3c' : storagePct >= 60 ? '#e67e22' : '#55a868';
-                // Show combined total
-                html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Building Storage: ${info.storedAllTiers} items — ${storedWeight} / ${bldStorageCap} wt <span style="color:${storageColor};">(${storagePct}%)</span></div>`;
-                // Show per-tier breakdown if multiple tiers present
+                // v9p33river97: removed the misleading aggregated "Building
+                // Storage: N items - X/Y wt" line. Buildings actually have
+                // separate Output Storage and Input Storage (each rendered
+                // below with their own weight bars). The combined line was
+                // computing weight as items × outputProductWeight which gave
+                // wrong totals (e.g. 18 items × 5 = 90 wt vs the real 39 wt
+                // split across input + output).
                 if (info.storedByTier && Object.keys(info.storedByTier).length > 0) {
                     var _tierParts = [];
                     for (var _tierKey in info.storedByTier) {
@@ -1078,7 +1085,6 @@
                     }
                     html += `<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">${_tierParts.join(' · ')}</div>`;
                 }
-                html += `<div style="background:#333;border-radius:3px;height:6px;margin-top:2px;"><div style="background:${storageColor};height:100%;border-radius:3px;width:${storagePct}%;"></div></div>`;
             } else {
                 html += `<div style="font-size:0.78rem;margin-top:4px;">📋 Current Storage: ${info.storedAllTiers} items</div>`;
                 if (info.storedByTier && Object.keys(info.storedByTier).length > 0) {
@@ -1233,6 +1239,14 @@
                     else _inputWeight += _bw;
                 }
             }
+            // v9p33river111: include the pending transfer buffer in Output Storage
+            // so the displayed total matches the "Deliver Now" button (the
+            // transfer buffer is logically output that hasn't shipped yet).
+            var _xferBuffer = bld._transferBuffer || 0;
+            if (_xferBuffer > 0 && _producesId) {
+                var _xRes = findResource(_producesId);
+                _outputWeight += _xferBuffer * (_xRes ? (_xRes.weight || 1) : 1);
+            }
             var _inputOnly = bld.inputOnly !== false;
             if (_bldCap > 0) {
                 html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
@@ -1262,7 +1276,14 @@
                         html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="collectOutputUI" data-id="' + bld.id + '" data-val="' + _ok + '" data-qty="' + _oQty + '">All</button>';
                         html += '</div>';
                     }
-                    if (!_hasOutput) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
+                    if (!_hasOutput && _xferBuffer <= 0) html += '<div style="font-size:0.72rem;color:#888;">No output stored.</div>';
+                    // v9p33river111: show pending transfer buffer so the displayed
+                    // total matches the "Deliver Now" button count.
+                    if (_xferBuffer > 0 && _producesId) {
+                        var _xRes2 = findResource(_producesId);
+                        var _xName2 = _xRes2 ? ((_xRes2.icon || '') + ' ' + _xRes2.name) : _producesId;
+                        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">🚚 Pending delivery: ' + _xferBuffer + ' ' + _xName2 + '</div>';
+                    }
                     if (_outputPct >= 100 && !bld.transferEnabled) {
                         html += '<div style="font-size:0.72rem;color:#7cb342;margin-top:2px;">💰 Storage full — overflow auto-selling to market</div>';
                     }

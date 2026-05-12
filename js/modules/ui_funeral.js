@@ -149,6 +149,14 @@
             toast('A family member has passed away.', 'warning');
             return;
         }
+        // v9p33river87: pause the game when this modal opens so the player can read it.
+        try {
+            if (typeof Game !== 'undefined' && Game.getSpeed && Game.setSpeed) {
+                var _curSpd = Game.getSpeed();
+                if (_curSpd > 0) window._funeralPauseSavedSpeed = _curSpd;
+                Game.setSpeed(0);
+            }
+        } catch (_e) {}
 
         var name = snapshot ? snapshot.personName : _getPersonName(p);
         var relLabel = _getRelationshipLabel(relationship);
@@ -215,7 +223,22 @@
         } else if (inheritInfo.funeralPlannedBy) {
             html += '<div style="background:rgba(155,89,182,0.1);border:1px solid #9b59b6;border-radius:6px;padding:10px;margin-bottom:10px;">';
             html += '<div style="color:#9b59b6;font-weight:bold;margin-bottom:6px;">🪦 Funeral Arrangements</div>';
-            html += '<div style="font-size:0.78rem;color:#ccc;">' + escapeHtml(inheritInfo.funeralPlannedBy) + ' will handle the funeral arrangements.</div>';
+            // v9p33river88/89: prefer the authoritative funeralNotification stored
+            // by engine.js's _setupAIFuneral path (it has correct town + day).
+            var _arrLine = escapeHtml(inheritInfo.funeralPlannedBy) + ' will handle the funeral arrangements.';
+            var _funNotif = (Player && Player.state && Player.state.funeralNotification) || null;
+            var _useNotif = _funNotif && (_funNotif.deceasedId === personId || _funNotif.deceasedName === name);
+            var _funTown = _useNotif ? _funNotif.funeralTownId : inheritInfo.funeralTownId;
+            var _funDay  = _useNotif ? _funNotif.funeralDay   : inheritInfo.funeralDay;
+            if (_funTown || _funDay) {
+                var _tn = _funTown ? _getTownName(_funTown) : null;
+                _arrLine += '<br><span style="color:#bbb;font-size:0.74rem;">';
+                if (_tn) _arrLine += '📍 ' + escapeHtml(_tn);
+                if (_tn && _funDay) _arrLine += ' &middot; ';
+                if (_funDay) _arrLine += '🗓️ Day ' + _funDay;
+                _arrLine += '</span>';
+            }
+            html += '<div style="font-size:0.78rem;color:#ccc;">' + _arrLine + '</div>';
             html += '</div>';
         }
 
@@ -240,7 +263,10 @@
             playerPlansFuneral: false,
             goldAmount: 0,
             buildings: [],
-            funeralPlannedBy: null
+            funeralPlannedBy: null,
+            funeralPlannedByTownId: null,
+            funeralTownId: null,
+            funeralDay: null
         };
 
         var ps = Player.state;
@@ -273,6 +299,11 @@
             if (otherParentAlive) {
                 // Other parent inherits and plans funeral
                 result.funeralPlannedBy = otherParentName;
+                // v9p33river88: track where the funeral will be held
+                var _opPerson = ps.parentIds.map(function(pid) { return Engine.findPerson ? Engine.findPerson(pid) : null; }).find(function(pp) { return pp && pp.alive; });
+                if (_opPerson) result.funeralPlannedByTownId = _opPerson.townId || null;
+                result.funeralTownId = result.funeralPlannedByTownId || (p ? p.townId : null);
+                result.funeralDay = (Engine.getDay ? Engine.getDay() : 0) + 7;
             } else {
                 // Both parents dead — inheritance goes to children (siblings + player)
                 var siblings = [];
@@ -313,6 +344,11 @@
                         }
                     }
                     result.funeralPlannedBy = allEligible[0].name;
+                    // v9p33river88: track town/day for the elder sibling who plans
+                    var _elder = Engine.findPerson ? Engine.findPerson(allEligible[0].id) : null;
+                    if (_elder) result.funeralPlannedByTownId = _elder.townId || null;
+                    result.funeralTownId = result.funeralPlannedByTownId || (p ? p.townId : null);
+                    result.funeralDay = (Engine.getDay ? Engine.getDay() : 0) + 7;
                 }
             }
         } else if (relationship === 'sibling') {
@@ -473,6 +509,14 @@
             toast('No funeral is scheduled.', 'warning');
             return;
         }
+        // v9p33river93: pause the game when the funeral attendance UI opens
+        try {
+            if (typeof Game !== 'undefined' && Game.getSpeed && Game.setSpeed) {
+                var _curSpd = Game.getSpeed();
+                if (_curSpd > 0) window._funeralPauseSavedSpeed = _curSpd;
+                Game.setSpeed(0);
+            }
+        } catch (_e) {}
 
         var name = plan.deceasedName || 'the deceased';
         var rel = plan.relationship || 'family member';
@@ -723,34 +767,36 @@
         var ps = Player.state;
         if (!ps) return;
 
-        var plan = ps.funeralPlan;
-        if (!plan) return;
-
         var currentDay = Engine.getDay ? Engine.getDay() : 0;
 
-        // Build attendees list if not done yet
-        if (!plan._attendeesBuilt) {
-            _buildAttendeeList(plan);
-            plan._attendeesBuilt = true;
-        }
+        var plan = ps.funeralPlan;
 
-        // Check if funeral day has arrived
-        if (currentDay >= plan.funeralDay) {
-            var playerTownId = ps.townId || (Player.townId || null);
+        // Player-planned funeral progression
+        if (plan) {
+            // Build attendees list if not done yet
+            if (!plan._attendeesBuilt) {
+                _buildAttendeeList(plan);
+                plan._attendeesBuilt = true;
+            }
 
-            if (playerTownId === plan.funeralTownId) {
-                // Player is in town — show funeral event
-                showFuneralEvent();
-            } else {
-                // Player missed the funeral
-                if (Engine.logEvent) {
-                    Engine.logEvent('⚰️ The funeral of ' + (plan.deceasedName || 'your family member') + ' was held in ' + _getTownName(plan.funeralTownId) + ' without you.', {
-                        type: 'funeral_missed',
-                        deceasedId: plan.deceasedId
-                    }, 'player_activity');
+            // Check if funeral day has arrived
+            if (currentDay >= plan.funeralDay) {
+                var playerTownId = ps.townId || (Player.townId || null);
+
+                if (playerTownId === plan.funeralTownId) {
+                    // Player is in town — show funeral event
+                    showFuneralEvent();
+                } else {
+                    // Player missed the funeral
+                    if (Engine.logEvent) {
+                        Engine.logEvent('⚰️ The funeral of ' + (plan.deceasedName || 'your family member') + ' was held in ' + _getTownName(plan.funeralTownId) + ' without you.', {
+                            type: 'funeral_missed',
+                            deceasedId: plan.deceasedId
+                        }, 'player_activity');
+                    }
+                    toast('The funeral was held without you.', 'warning');
+                    _resolveFuneral(plan);
                 }
-                toast('The funeral was held without you.', 'warning');
-                _resolveFuneral(plan);
             }
         }
 
@@ -759,7 +805,23 @@
         if (notif && currentDay >= notif.funeralDay) {
             var playerTown = ps.townId || (Player.townId || null);
             if (playerTown === notif.funeralTownId) {
-                // Player is at the funeral location
+                // v9p33river91: synthesize a funeralPlan so the full attendance UI
+                // opens (was just a toast before, which felt empty).
+                ps.funeralPlan = {
+                    deceasedId: notif.deceasedId,
+                    deceasedName: notif.deceasedName,
+                    relationship: notif.relationship,
+                    funeralDay: notif.funeralDay,
+                    funeralTownId: notif.funeralTownId,
+                    plannedBy: notif.plannedBy,
+                    timing: 'standard',
+                    burialType: 'family_plot',
+                    ceremonyStyle: 'public',
+                    aiPlanned: true,
+                    attendees: []
+                };
+                _buildAttendeeList(ps.funeralPlan);
+                ps.funeralPlan._attendeesBuilt = true;
                 if (Engine.logEvent) {
                     Engine.logEvent('⚰️ You attend the funeral of ' + (notif.deceasedName || 'your family member') + ', arranged by ' + (notif.plannedBy || 'the family') + '.', {
                         type: 'funeral_attended_ai',
@@ -767,6 +829,7 @@
                     }, 'player_activity');
                 }
                 toast('You attend the funeral of ' + (notif.deceasedName || 'your family member') + '.', 'info');
+                showFuneralEvent();
             } else {
                 if (Engine.logEvent) {
                     Engine.logEvent('⚰️ The funeral of ' + (notif.deceasedName || 'your family member') + ' was held in ' + _getTownName(notif.funeralTownId) + '. You were unable to attend.', {
@@ -1024,7 +1087,12 @@
             plannedBy: plannedByName
         };
 
-        toast('⚰️ ' + (plannedByName || 'The family') + ' is planning the funeral of ' + _getPersonName(deceasedPerson) + ' for day ' + funeralDay + '.', 'info');
+        // v9p33river88: include the funeral location in both the toast and the
+        // event log so the player knows WHERE to go.
+        var _funTownName = funeralTownId ? _getTownName(funeralTownId) : 'an unknown town';
+        var _msg = '⚰️ ' + (plannedByName || 'The family') + ' is planning the funeral of ' + _getPersonName(deceasedPerson) + ' in ' + _funTownName + ' for day ' + funeralDay + '.';
+        toast(_msg, 'info');
+        try { if (Engine.logEvent) Engine.logEvent(_msg, { type: 'family' }, 'family'); } catch (_e) {}
     }
 
     // ── ACTION REGISTRATIONS ──

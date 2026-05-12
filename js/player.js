@@ -5,6 +5,48 @@
 (function () {
     'use strict';
 
+    // v9p33river99: diminishing returns on kingdom reputation gains.
+    // 60+ → 25% reduction, 70+ → 50% reduction, 80+ → 75% reduction.
+    // Implemented via a Proxy on player.reputation that scales any positive
+    // delta on assignment. Idempotent: reinstall after any reassignment.
+    function _wrapRepProxy(target) {
+        if (!target || target.__repProxy) return target;
+        var inner = {};
+        for (var k in target) inner[k] = target[k];
+        var p = new Proxy(inner, {
+            set: function(obj, prop, val) {
+                if (typeof val === 'number' && typeof prop === 'string' && prop.length > 0) {
+                    var prev = obj[prop];
+                    if (typeof prev === 'number' && val > prev) {
+                        var delta = val - prev;
+                        var scale = 1.0;
+                        if (prev >= 80) scale = 0.25;
+                        else if (prev >= 70) scale = 0.50;
+                        else if (prev >= 60) scale = 0.75;
+                        val = prev + delta * scale;
+                        if (val > 100) val = 100;
+                    }
+                }
+                obj[prop] = val;
+                return true;
+            }
+        });
+        Object.defineProperty(p, '__repProxy', { value: true, enumerable: false });
+        return p;
+    }
+    function _installRepDiminisher(playerObj) {
+        if (!playerObj || playerObj.__repInstalled) return;
+        var initial = playerObj.reputation || {};
+        playerObj._repBacking = _wrapRepProxy(initial);
+        Object.defineProperty(playerObj, 'reputation', {
+            configurable: true,
+            enumerable: true,
+            get: function() { return playerObj._repBacking; },
+            set: function(v) { playerObj._repBacking = _wrapRepProxy(v || {}); }
+        });
+        Object.defineProperty(playerObj, '__repInstalled', { value: true, enumerable: false });
+    }
+
     // Forward reference — assigned after window.Player is constructed (§13).
     // Extracted modules attach their functions to Player, so code here can
     // call them via this reference at runtime.
@@ -239,6 +281,11 @@
         // ── Town Reputation ──
         townReputation: {},             // townId → 0-100
 
+        // ── Minor Noble Rep Bonus (v9p33river104) ──
+        // Per-kingdom passive kingdom-rep bonus from minor-noble relationships.
+        // +1 per 25 relationship per minor noble of the kingdom, capped at +10.
+        _minorNobleRepBonus: {},        // kingdomId → currently-applied bonus value
+
         // ── Wartime Profiteering ──
         wartimeGoldEarned: 0,           // gold earned from selling war goods during war
 
@@ -348,6 +395,9 @@
         // Scholar
         scholar: null,              // { active, townsVisited, knowledgeGathered, npcsTaughtBy, bookProgress, totalKnowledge }
     };
+
+    // v9p33river99: install diminishing-returns Proxy on player.reputation
+    _installRepDiminisher(player);
 
     // ── Portrait System ──
     // Emoji face portraits for all characters. Each person gets a portrait based on sex + skinTone + faceType.
@@ -1533,6 +1583,8 @@
         // Execute trade
         player.gold -= totalCost;
         logFinance(-totalCost, 'trading', 'Bought ' + qty + ' ' + resourceId);
+        // v9p33river80/85: gold flowed into market from player
+        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, totalCost);
 
         // Track tax revenue for kingdom (trade tax + tariff + foreign surcharge)
         if (kingdom) {
@@ -1737,16 +1789,18 @@
             }
         }
 
-        // Story mode: skip banned/restricted goods checks entirely
-        var _storyActive = player.storyMode && player.storyMode.active && !player.storyMode.complete;
+        // v9p33river78: smuggling fines + seizure still apply in story mode —
+        // only the jail time is suppressed (handled in _checkCanAct, which auto-
+        // clears jailedUntilDay during story mode). Previously these checks were
+        // skipped entirely, letting story players sell anything with no penalty.
 
         // Check if the good is banned in this kingdom
-        if (!_storyActive && kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(resourceId)) {
+        if (kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(resourceId)) {
             return Player.attemptSmuggle(resourceId, qty, town, kingdom, price);
         }
 
         // Check if the good is restricted and player lacks license
-        if (!_storyActive && kingdom && kingdom.laws && kingdom.laws.restrictedGoods && kingdom.laws.restrictedGoods.includes(resourceId)) {
+        if (kingdom && kingdom.laws && kingdom.laws.restrictedGoods && kingdom.laws.restrictedGoods.includes(resourceId)) {
             if (!hasLicense(kingdom.id, resourceId)) {
                 player.restrictedTradesWithoutLicense = (player.restrictedTradesWithoutLicense || 0) + 1;
                 if (player.restrictedTradesWithoutLicense >= 10) unlockAchievement('tax_evader');
@@ -1852,12 +1906,20 @@
         const effectivePrice = price * (1 + salesBonus);
         const totalRevenue = Math.max(qty > 0 ? 1 : 0, Math.floor(effectivePrice * qty));
 
+        // v9p33river85: refuse the sale if the town market doesn't have enough gold to pay.
+        var _marketAvail = (Engine.getTownMarketGold && town) ? Engine.getTownMarketGold(town.id) : Infinity;
+        if (_marketAvail < totalRevenue) {
+            return { success: false, message: '🪙 The town market only has ' + _marketAvail + 'g — not enough to pay you ' + totalRevenue + 'g for that.' };
+        }
+
         // Track first trade day
         if (player.tradingStartDay === 0) player.tradingStartDay = Engine.getDay();
 
         // Execute trade
         player.gold += totalRevenue;
         logFinance(totalRevenue, 'trading', 'Sold ' + qty + ' ' + resourceId);
+        // v9p33river80/85: track market gold delta (gold flowed out of market to player)
+        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -totalRevenue);
 
         // Track tax revenue for kingdom (trade tax + tariff + foreign surcharge)
         if (kingdom) {
@@ -2133,11 +2195,17 @@
             return { success: false, message: `Your rank (${rankInfo.name}) allows only ${rankInfo.maxBuildings + (hasSkill('property_magnate') ? 1 : 0)} buildings in this kingdom. Petition for promotion!` };
         }
 
-        // Check guild restrictions
+        // Check guild restrictions — citizens may also bypass by being a member
+        // of the guild that covers this building category. v9p33river86.
         if (kingdom && kingdom.laws && kingdom.laws.guildRestrictions) {
             const rankIdx = player.socialRank[kingdom.id] || 0;
             if (rankIdx < 2 && (bt.category === 'processing' || bt.category === 'finished')) {
-                return { success: false, message: `${kingdom.name} requires Burgher rank to operate ${bt.category} buildings.` };
+                var _grGuild = Player.getGuildForCategory ? Player.getGuildForCategory(bt.category) : null;
+                var _grInGuild = _grGuild && Player.isGuildMember && Player.isGuildMember(_grGuild.id);
+                if (!_grInGuild) {
+                    var _grName = _grGuild ? _grGuild.name : 'the relevant guild';
+                    return { success: false, message: `${kingdom.name} requires Burgher rank OR membership in ${_grName} to operate ${bt.category} buildings.` };
+                }
             }
         }
 
@@ -3221,7 +3289,17 @@
         crewMsg += ')';
         const tripType = recurring ? ' [Recurring Route]' : (roundTrip ? ' [Round Trip]' : '');
         Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType, null, 'my_business');
-        // Story Mode: notify of caravan send
+
+        // v9p33river110: execute any source-location orders at dispatch time so
+        // the caravan loads/sells goods at its starting town BEFORE departing.
+        // (Previously source orders only fired on the return leg, which meant
+        // they never ran on a one-way trip and ran late on a round trip.)
+        if (caravan.orders && caravan.orders.length > 0 && Player.processCaravanOrders) {
+            try {
+                Player.processCaravanOrders(caravan, fromTownId, true);
+            } catch (_e) { console.error('source-order dispatch failed:', _e); }
+        }
+        // Story mode: notify of caravan send
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             var _storyOrders = [];
             if (caravan.orders) {
@@ -4347,22 +4425,69 @@
             if (straightDist < 5000) {
                 waypoints = [{ x: startX, y: startY }, { x: destX, y: destY }];
             } else {
-                return { success: false, message: 'No path found to that location.' };
+                return { success: false, message: 'Unable to off-road travel to that location — there is no way over land to get there.' };
             }
         }
 
-        // Calculate total distance along path
+        // Calculate total distance along path AND classify terrain along the route.
+        // v9p33river61: regular offroad land travel rejects water-crossing paths,
+        // applies per-tile speed multipliers (grass/sand=1, hills=1.25x slower,
+        // mountain=2x slower; with rope, mountain=1.5x slower at the cost of
+        // 1 rope per day spent on mountain tiles).
+        var TS = CONFIG.TILE_SIZE || 16;
         var totalDist = 0;
+        var hillsDist = 0, mountainDist = 0, waterDist = 0;
+        var sampleStep = TS;
         for (var i = 1; i < waypoints.length; i++) {
-            totalDist += Math.hypot(waypoints[i].x - waypoints[i-1].x, waypoints[i].y - waypoints[i-1].y);
+            var sx = waypoints[i-1].x, sy = waypoints[i-1].y;
+            var ex = waypoints[i].x,   ey = waypoints[i].y;
+            var segDist = Math.hypot(ex - sx, ey - sy);
+            totalDist += segDist;
+            if (segDist <= 0) continue;
+            var steps = Math.max(1, Math.ceil(segDist / sampleStep));
+            for (var st = 1; st <= steps; st++) {
+                var tx = sx + (ex - sx) * (st / steps);
+                var ty = sy + (ey - sy) * (st / steps);
+                var tt = Engine.getTerrainAtPixel(tx, ty);
+                var sLen = segDist / steps;
+                if (tt === 2) waterDist += sLen;
+                else if (tt === 3) mountainDist += sLen;
+                else if (tt === 4) hillsDist += sLen;
+            }
         }
         if (totalDist < 1) totalDist = Math.hypot(destX - startX, destY - startY);
+        // Reject any path that traverses substantial water — sailing is a separate
+        // mode. v9p33river67: more lenient threshold so coastal/port destinations
+        // (where the path may briefly nick a 1-2 tile coastal water cell or hop
+        // across a small river/bridge) are not rejected. Reject only when water
+        // exceeds 8 tiles AND more than 10% of the path is water.
+        var waterTileBudget = sampleStep * 8;
+        var waterFracBudget = 0.10;
+        if (waterDist > waterTileBudget && (totalDist > 0 && (waterDist / totalDist) > waterFracBudget)) {
+            return { success: false, message: 'Unable to off-road travel to that location — there is no way over land to get there.' };
+        }
+
+        // Effective distance — base 1x for grass/sand, +0.25x for hills, +1x for
+        // mountain (or +0.5x with rope). The "+ 1x" formulation means the
+        // contribution to effectiveDist is segLen * (1 + extraMult).
+        var ropePerDay = false;
+        var inv = player.inventory || {};
+        var hasRope = (inv.rope || 0) > 0;
+        var mountainExtra;
+        if (hasRope && mountainDist > 0) {
+            mountainExtra = 0.5;
+            ropePerDay = true;
+        } else {
+            mountainExtra = 1.0;
+        }
+        var hillsExtra = 0.25;
+        var terrainAdjustedDist = totalDist + hillsDist * hillsExtra + mountainDist * mountainExtra;
 
         // Apply offroad speed multiplier
         var offRoadMult = CONFIG.OFFROAD_SPEED_MULTIPLIER || 0.25;
         if (hasSkill('cartographer')) offRoadMult *= 1.5;
 
-        var effectiveDist = totalDist / offRoadMult;
+        var effectiveDist = terrainAdjustedDist / offRoadMult;
 
         // Apply horse bonus
         if (player.horses && player.horses.length > 0) {
@@ -4383,12 +4508,29 @@
         player.travelOffroad = true;
         player.travelPaid = false;
         player.travelMode = (player.horses && player.horses.length > 0) ? 'horse' : 'walk';
+        // v9p33river61: track mountain-tile traversal for per-day rope consumption.
+        if (mountainDist > 0 && ropePerDay) {
+            // Convert mountain distance to "mountain days" — each game day along
+            // the route covers travelTotalDist / totalTravelDays distance, but
+            // we approximate using the same proportion: mountainDist / totalDist
+            // of the days are mountain-days.
+            var _approxDays = Math.max(1, Math.ceil(effectiveDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24)));
+            player.travelMountainDaysRemaining = Math.max(1, Math.ceil(_approxDays * (mountainDist / totalDist)));
+        } else {
+            player.travelMountainDaysRemaining = 0;
+        }
         player.townId = null;
 
         var days = Math.ceil(effectiveDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24));
-        Engine.logEvent('\uD83E\uDDB6 ' + (player.firstName || 'You') + ' ' + (player.lastName || '') + ' departed into the wilderness.', { type: 'travel_start' }, 'travel_events');
+        var startMsg = '\uD83E\uDDB6 ' + (player.firstName || 'You') + ' ' + (player.lastName || '') + ' departed into the wilderness.';
+        if (mountainDist > 0) {
+            startMsg += hasRope
+                ? ' (Mountain pass — using rope to halve the slowdown.)'
+                : ' (Mountain pass — slow going without rope.)';
+        }
+        Engine.logEvent(startMsg, { type: 'travel_start' }, 'travel_events');
 
-        return { success: true, days: days };
+        return { success: true, days: days, mountainDist: mountainDist, hillsDist: hillsDist, ropePerDay: ropePerDay };
     }
 
     /**
@@ -4397,7 +4539,11 @@
     function startOffSeaTravel(destX, destY, shipId) {
         // Validate prerequisites
         var currentTown = Engine.findTown(player.townId);
-        if (!currentTown && !player.travelOffSea) return { success: false, message: 'You must be in a port town to start sailing.' };
+        // v9p33river60: allow starting from an embarked (boarded) ship at coast tile
+        // even when player.townId is null.
+        if (!currentTown && !player.travelOffSea && !player.embarkedShipId) {
+            return { success: false, message: 'You must be in a port town or boarded on a ship to start sailing.' };
+        }
         
         // If already traveling off-sea, allow redirecting
         var startX, startY;
@@ -4407,15 +4553,61 @@
             startX = pos.x;
             startY = pos.y;
             shipId = shipId || player.offSeaShipId;
+        } else if (player.embarkedShipId && !currentTown) {
+            // v9p33river60: starting from an embarked ship (player at coast tile)
+            var ePos = getPlayerWorldPosition();
+            if (!ePos) return { success: false, message: 'Cannot determine position.' };
+            startX = ePos.x;
+            startY = ePos.y;
+            shipId = shipId || player.embarkedShipId;
         } else {
             if (!currentTown || !currentTown.isPort) return { success: false, message: 'You must be in a port town to set sail.' };
             startX = currentTown.x;
             startY = currentTown.y;
         }
 
-        // Validate destination is water
+        // Validate destination is water (or a port town — we'll auto-route to a
+        // nearby water tile and arrive docked at that port).
         var destTerrain = Engine.getTerrainAtPixel(destX, destY);
-        if (destTerrain !== 2) return { success: false, message: 'Destination must be water.' };
+        var destPortTown = null;
+        if (destTerrain !== 2) {
+            // v9p33river60: if the destination is a port town's coords, find the
+            // nearest water tile and use that as the actual sailing destination.
+            try {
+                var _allTowns = Engine.getTowns ? Engine.getTowns() : [];
+                for (var _ti = 0; _ti < _allTowns.length; _ti++) {
+                    var _tt = _allTowns[_ti];
+                    if (!_tt.isPort) continue;
+                    if (Math.hypot(_tt.x - destX, _tt.y - destY) < 24) {
+                        destPortTown = _tt;
+                        break;
+                    }
+                }
+            } catch (_e) {}
+            if (!destPortTown) return { success: false, message: 'Destination must be water or a port town.' };
+            // Search outward for the nearest water tile to the port
+            var TS_p = CONFIG.TILE_SIZE || 16;
+            var ptx = Math.floor(destPortTown.x / TS_p), pty = Math.floor(destPortTown.y / TS_p);
+            var foundWater = null;
+            for (var rad = 1; rad <= 8 && !foundWater; rad++) {
+                for (var ddy = -rad; ddy <= rad && !foundWater; ddy++) {
+                    for (var ddx = -rad; ddx <= rad && !foundWater; ddx++) {
+                        if (Math.abs(ddx) !== rad && Math.abs(ddy) !== rad) continue;
+                        var wxw = (ptx + ddx) * TS_p, wyw = (pty + ddy) * TS_p;
+                        if (Engine.getTerrainAtPixel(wxw, wyw) === 2) {
+                            foundWater = { x: wxw, y: wyw };
+                        }
+                    }
+                }
+            }
+            if (!foundWater) return { success: false, message: 'Could not find open water near that port.' };
+            destX = foundWater.x;
+            destY = foundWater.y;
+            // v9p33river70: stash the target port so arrival auto-docks.
+            player._sailTargetPortId = destPortTown.id;
+        } else {
+            player._sailTargetPortId = null;
+        }
 
         // Validate ship
         if (!player.ships || player.ships.length === 0) return { success: false, message: 'You don\'t own any ships.' };
@@ -4459,6 +4651,44 @@
             }
         }
 
+        // v9p33river94: enforce coastal-only for small ships (rowboat / fishing boat).
+        // Sample tiles along the waypoint path; reject if any sample is more than
+        // CONFIG.COASTAL_MAX_TILES_FROM_LAND tiles from the nearest land tile.
+        if (shipType.sizeCategory === 'small') {
+            var TS_c = CONFIG.TILE_SIZE || 16;
+            var maxTilesFromLand = CONFIG.COASTAL_MAX_TILES_FROM_LAND || 3;
+            var sampleStep = TS_c * 2;
+            var farthestPos = null;
+            for (var wpi = 1; wpi < waypoints.length; wpi++) {
+                var sxw = waypoints[wpi-1].x, syw = waypoints[wpi-1].y;
+                var exw = waypoints[wpi].x,   eyw = waypoints[wpi].y;
+                var segDistW = Math.hypot(exw - sxw, eyw - syw);
+                var stepsW = Math.max(1, Math.ceil(segDistW / sampleStep));
+                for (var sti = 1; sti <= stepsW; sti++) {
+                    var sxp = sxw + (exw - sxw) * (sti / stepsW);
+                    var syp = syw + (eyw - syw) * (sti / stepsW);
+                    if (Engine.getTerrainAtPixel(sxp, syp) !== 2) continue; // skip non-water samples
+                    // Search outward for nearest land within (maxTilesFromLand+1) tiles
+                    var stx = Math.floor(sxp / TS_c), sty = Math.floor(syp / TS_c);
+                    var foundLand = false;
+                    for (var rad = 1; rad <= maxTilesFromLand && !foundLand; rad++) {
+                        for (var ddy = -rad; ddy <= rad && !foundLand; ddy++) {
+                            for (var ddx = -rad; ddx <= rad && !foundLand; ddx++) {
+                                if (Math.abs(ddx) !== rad && Math.abs(ddy) !== rad) continue;
+                                var tt = Engine.getTerrainAtPixel((stx + ddx) * TS_c, (sty + ddy) * TS_c);
+                                if (tt !== 2) { foundLand = true; }
+                            }
+                        }
+                    }
+                    if (!foundLand) { farthestPos = { x: sxp, y: syp }; break; }
+                }
+                if (farthestPos) break;
+            }
+            if (farthestPos) {
+                return { success: false, message: '🚣 ' + (shipType.name || ship.type) + ' can only travel within ' + maxTilesFromLand + ' tiles of land. Route goes too far into open water.' };
+            }
+        }
+
         // Calculate distance
         var totalDist = 0;
         for (var di = 1; di < waypoints.length; di++) {
@@ -4487,6 +4717,12 @@
             player.travelProgress = 0;
             player.travelTotalDist = effectiveDist;
             player.travelDestCoords = { x: destX, y: destY };
+            // v9p33river69: if we're offsea but stopped (anchored), resume traveling.
+            if (!player.traveling) {
+                player.traveling = true;
+                player.travelBySea = true;
+                player.travelMode = player.travelMode || 'ship';
+            }
             return { success: true, message: '⛵ Redirecting course.' };
         }
 
@@ -4506,6 +4742,8 @@
         player.travelPaid = false;
         player.travelMode = 'ship';
         player.townId = null;
+        // v9p33river60: clear embarked flag — the ship is now actively sailing
+        player.embarkedShipId = null;
 
         // Mark ship as in-use
         ship.assignedOffSea = true;
@@ -4541,11 +4779,20 @@
     function attemptLanding(destX, destY) {
         if (!player.travelOffSea) return { success: false, message: 'Not sailing in open water.' };
 
+        // v9p33river64/65: must be within ~5 tiles of the landing target.
+        var TS = CONFIG.TILE_SIZE || 16;
+        var posL = getPlayerWorldPosition();
+        if (posL) {
+            var distTiles = Math.hypot(destX - posL.x, destY - posL.y) / TS;
+            if (distTiles > 5) {
+                return { success: false, message: 'Too far to land here — must be within 5 tiles. Sail closer first.' };
+            }
+        }
+
         var terrain = Engine.getTerrainAtPixel(destX, destY);
         if (terrain === 2) return { success: false, message: 'That\'s water — you need a land tile to land.' };
 
         // Check adjacency to water (must be coastal)
-        var TS = CONFIG.TILE_SIZE || 16;
         var tx = Math.floor(destX / TS), ty = Math.floor(destY / TS);
         var touchesWater = false;
         for (var dy = -1; dy <= 1 && !touchesWater; dy++) {
@@ -4635,6 +4882,35 @@
             }
             return { success: true, landed: false, damage: damage, message: '⚠️ Landing failed! Ship damaged by ' + damage + '%. Try again or redirect.' };
         }
+    }
+
+    /**
+     * v9p33river60: Re-board a ship that was previously docked on a coastal land tile
+     * via off-sea landing. The player must be at (or very close to) the ship's
+     * dockedCoords. Boarding clears dockedCoords and lets the player start sailing
+     * again from that exact spot.
+     */
+    function boardDockedShip(shipId) {
+        if (player.traveling) return { success: false, message: 'You are already traveling.' };
+        var ship = (player.ships || []).find(function(s) { return s.id === shipId; });
+        if (!ship) return { success: false, message: 'Ship not found.' };
+        if (!ship.dockedCoords) return { success: false, message: 'That ship is not docked on the coast.' };
+        var pos = getPlayerWorldPosition();
+        if (!pos) return { success: false, message: 'Cannot determine your position.' };
+        var dist = Math.hypot(ship.dockedCoords.x - pos.x, ship.dockedCoords.y - pos.y);
+        if (dist > (CONFIG.TILE_SIZE || 16)) {
+            return { success: false, message: 'You must be standing on the ship to board (within 1 tile).' };
+        }
+        // Move the player onto the ship's tile and clear the docked marker.
+        player.worldX = ship.dockedCoords.x;
+        player.worldY = ship.dockedCoords.y;
+        player.townId = null;
+        ship.dockedCoords = null;
+        // v9p33river60: mark the player as embarked so the context menu can offer
+        // "Sail Here" on water without requiring a port town.
+        player.embarkedShipId = ship.id;
+        Engine.logEvent('⛵ ' + (player.firstName || 'You') + ' boarded the ' + (ship.name || ship.type) + '. Right-click open water to set sail.', {}, 'travel_events');
+        return { success: true, message: '⛵ Boarded the ' + (ship.name || ship.type) + '. Right-click open water to set sail.' };
     }
 
     /**
@@ -4750,7 +5026,31 @@
         if (!player.traveling) return { success: false, message: 'Not traveling.' };
         if (player.travelPaid) return { success: false, message: 'Cannot stop paid transport.' };
 
+        // v9p33river64: clear pending board action — user explicitly stopped.
+        player._pendingShipBoardId = null;
+
         var pos = getPlayerWorldPosition();
+
+        // v9p33river69: if the player stops while sailing in open water, KEEP
+        // them in sailing mode (boarded/embarked at the current sea position).
+        // This preserves travelOffSea + offSeaShipId so right-clicking water
+        // still offers "Sail Here" / "Redirect Course Here" without forcing the
+        // player back to a port.
+        if (player.travelOffSea && pos) {
+            var _sailedShipId = player.offSeaShipId;
+            player.traveling = false;
+            player.travelProgress = 0;
+            player.travelDestCoords = null;
+            player.travelWaypoints = null;
+            player.travelTotalDist = 0;
+            // Leave travelOffSea/offSeaShipId set so the embarked-on-water state
+            // persists. Right-click water will reuse the same ship via "Redirect".
+            player.worldX = pos.x;
+            player.worldY = pos.y;
+            player.townId = null;
+            Engine.logEvent('\u2693 ' + (player.firstName || 'You') + ' dropped anchor in open water.', { type: 'travel_stop' }, 'travel_events');
+            return { success: true, inWilderness: true, atSea: true };
+        }
 
         player.traveling = false;
         player.travelProgress = 0;
@@ -4789,6 +5089,9 @@
 
         // Can only turn back if traveling by own means (not paid transport)
         if (player.travelPaid) return { success: false, message: 'Cannot turn back on paid transport.' };
+
+        // v9p33river64: turning back cancels any pending docked-ship board.
+        player._pendingShipBoardId = null;
 
         // Reverse direction: progress becomes (1 - progress)
         // Swap origin and destination
@@ -5020,6 +5323,21 @@
                 player.escort = null;
             }
         }
+        // v9p33river61: consume 1 rope per day spent on mountain offroad terrain.
+        if (player.travelOffroad && (player.travelMountainDaysRemaining || 0) > 0) {
+            player.inventory = player.inventory || {};
+            if ((player.inventory.rope || 0) > 0) {
+                player.inventory.rope = (player.inventory.rope || 0) - 1;
+                player.travelMountainDaysRemaining--;
+                Engine.logEvent('\uD83E\uDDF5 Used 1 rope to scale the mountain pass.', null, 'travel_events');
+            } else {
+                // Out of rope mid-mountain: trip continues but at the slower 2x rate.
+                // We can't easily re-pace the path, so log a warning and clear the
+                // counter so we don't spam the event log.
+                Engine.logEvent('\u26A0\uFE0F Out of rope crossing the mountains \u2014 the going is rough.', null, 'travel_events');
+                player.travelMountainDaysRemaining = 0;
+            }
+        }
         // Progress is now advanced by travelSubtick() every sub-tick (60x per day)
 
         // Handle waypoint-based free travel: check if passing through a town
@@ -5211,14 +5529,40 @@
         if (player.travelProgress >= 1.0) {
             // Handle off-sea travel arrival at water waypoint
             if (player.travelOffSea && player.travelDestCoords) {
-                // Arrived at water destination — stop here, player must redirect or land
+                // v9p33river70: if this trip targeted a port town, auto-dock there.
+                var _portId = player._sailTargetPortId;
+                var _port = _portId ? Engine.findTown(_portId) : null;
+                if (_port && _port.isPort) {
+                    var _arrShip = (player.ships || []).find(function(s) { return s.id === player.offSeaShipId; });
+                    // Land player at the port
+                    player.townId = _port.id;
+                    player.worldX = null;
+                    player.worldY = null;
+                    player.traveling = false;
+                    player.travelProgress = 0;
+                    player.travelOffSea = false;
+                    player.travelBySea = false;
+                    // Dock the ship at this port
+                    if (_arrShip) {
+                        _arrShip.assignedOffSea = false;
+                        _arrShip.dockedCoords = null;
+                        _arrShip.townId = _port.id;
+                    }
+                    player.offSeaShipId = null;
+                    player._sailTargetPortId = null;
+                    cleanupTravelState();
+                    if (typeof _moveGuardsToPlayer === 'function') _moveGuardsToPlayer();
+                    Engine.logEvent('⛵ Arrived at ' + _port.name + '. Your ' + (_arrShip ? (_arrShip.name || _arrShip.type) : 'ship') + ' is docked at the port.', { type: 'travel_arrive' }, 'travel_events');
+                    if (typeof Engine.pause === 'function') Engine.pause();
+                    return;
+                }
+                // No port target — stop in open water; player must redirect or land
                 player.travelProgress = 1.0;
                 var arrPos = player.travelDestCoords;
                 player.worldX = arrPos.x;
                 player.worldY = arrPos.y;
                 player.traveling = false;
                 // Keep travelOffSea true so player can redirect or land
-                // Don't cleanup full travel state — keep ship info
                 Engine.logEvent('⛵ Arrived at destination in open water. Right-click to continue sailing or land.', { type: 'travel_arrive' }, 'travel_events');
                 if (typeof Engine.pause === 'function') Engine.pause();
                 return;
@@ -5260,6 +5604,17 @@
                     if (typeof UI !== 'undefined' && UI.foundOutpostFromTravel) {
                         setTimeout(function() { UI.foundOutpostFromTravel(); }, 100);
                     }
+                }
+                // v9p33river63: pending docked-ship board on arrival
+                if (player._pendingShipBoardId) {
+                    var _bid = player._pendingShipBoardId;
+                    player._pendingShipBoardId = null;
+                    setTimeout(function() {
+                        var res = Player.boardDockedShip(_bid);
+                        if (typeof UI !== 'undefined' && UI.toast) {
+                            UI.toast(res.message, res.success ? 'success' : 'error');
+                        }
+                    }, 100);
                 }
                 return;
             }
@@ -6455,6 +6810,64 @@
     // ========================================================
     // §11.5 PLAYER AGING, DEATH, HEIR SYSTEM
     // ========================================================
+    // ── Minor Noble Rep Bonus (v9p33river104) ──
+    // Each kingdom gets a passive kingdom-rep bonus of +1 per 25 relationship
+    // points the player has with each minor noble of that kingdom (occupation
+    // === 'noble'), capped at +10 per kingdom. Applied as a delta against the
+    // backing reputation store, BYPASSING the diminishing-returns Proxy.
+    function tickMinorNobleRepBonus() {
+        if (!player) return;
+        var people = (Engine.getPeople ? Engine.getPeople() : null);
+        if (!people) {
+            // Engine.getPeople(townId) requires a townId in some impls; try Engine.world.people fallback
+            var w = Engine.getWorld ? Engine.getWorld() : null;
+            people = w && w.people ? w.people : [];
+        }
+        if (!people || !people.length) return;
+        if (!player._minorNobleRepBonus) player._minorNobleRepBonus = {};
+        if (!player._repBacking) return;
+
+        var bonusByKingdom = {};
+        var rels = player.relationships || {};
+        for (var i = 0; i < people.length; i++) {
+            var npc = people[i];
+            if (!npc || !npc.alive) continue;
+            if (npc.occupation !== 'noble') continue;
+            if (npc.isKing) continue;
+            var rel = rels[npc.id];
+            if (!rel || !rel.level) continue;
+            var kId = null;
+            if (npc.kingdomId) kId = npc.kingdomId;
+            else if (npc.townId) {
+                var t = Engine.findTown ? Engine.findTown(npc.townId) : null;
+                if (t) kId = t.kingdomId;
+            }
+            if (!kId) continue;
+            var contrib = Math.floor(rel.level / 25);
+            if (contrib <= 0) continue;
+            bonusByKingdom[kId] = (bonusByKingdom[kId] || 0) + contrib;
+        }
+
+        var allKingdoms = {};
+        var k;
+        for (k in bonusByKingdom) allKingdoms[k] = true;
+        for (k in player._minorNobleRepBonus) allKingdoms[k] = true;
+
+        for (k in allKingdoms) {
+            var newBonus = Math.min(10, bonusByKingdom[k] || 0);
+            var prevBonus = player._minorNobleRepBonus[k] || 0;
+            var delta = newBonus - prevBonus;
+            if (delta !== 0) {
+                var cur = (player._repBacking[k] != null) ? player._repBacking[k] : 50;
+                var next = cur + delta;
+                if (next < 0) next = 0;
+                if (next > 100) next = 100;
+                player._repBacking[k] = next;
+            }
+            player._minorNobleRepBonus[k] = newBonus;
+        }
+    }
+
     function tickPlayerAging() {
         if (!player.alive) return;
         const day = Engine.getDay();
@@ -7749,10 +8162,17 @@
                 petOptions.push({ typeId: 'fund_festival', title: 'Fund a Festival in ' + petTown.name, desc: 'The people of ' + petTown.name + ' are unhappy. A festival would raise spirits.', targetData: { townId: petTown.id } });
             }
             var _hasMarket = false;
+            var _hasWell = false;
             var _ptBlds = petTown.buildings || [];
-            for (var _bmi = 0; _bmi < _ptBlds.length; _bmi++) { if (_ptBlds[_bmi].type === 'marketplace') { _hasMarket = true; break; } }
+            for (var _bmi = 0; _bmi < _ptBlds.length; _bmi++) {
+                if (_ptBlds[_bmi].type === 'marketplace') _hasMarket = true;
+                if (_ptBlds[_bmi].type === 'well') _hasWell = true;
+            }
             if (!_hasMarket && (petTown.population || 0) > 30) {
                 petOptions.push({ typeId: 'build_market', title: 'Build Market in ' + petTown.name, desc: petTown.name + ' needs a marketplace to boost trade.', targetData: { townId: petTown.id } });
+            }
+            if (!_hasWell && (petTown.population || 0) > 15) {
+                petOptions.push({ typeId: 'build_well', title: 'Build a Well in ' + petTown.name, desc: petTown.name + ' lacks a public well — residents have to fetch water from afar.', targetData: { townId: petTown.id } });
             }
             var _hasTentCamps = false;
             for (var _tci2 = 0; _tci2 < _ptBlds.length; _tci2++) { if (_ptBlds[_tci2].type === 'tent_camp') { _hasTentCamps = true; break; } }
@@ -9856,6 +10276,7 @@
         declare_war: 300, seek_peace: 0, fund_festival: 200,
         demolish_tent_camps: 50, build_sea_route: 500,
         promote_outpost: 250, build_defense: 300,
+        build_well: 250,
         build_structure: 400, fortify_town: 150
     };
 
@@ -13306,17 +13727,37 @@
                 if (!player.revealedTraits) player.revealedTraits = {};
                 if (!player.revealedTraits[personId]) player.revealedTraits[personId] = { traits: {}, quirks: [] };
                 var revealed = player.revealedTraits[personId];
+                // v9p33river77: reveal ONE random unrevealed trait or quirk per use
+                // (was: revealed ALL traits + quirks at once, made the favor too good).
+                var _haRng = Engine.getRng ? Engine.getRng() : null;
+                var _haUnrTraits = [];
                 if (person.personality) {
-                    for (var trait in person.personality) {
-                        revealed.traits[trait] = person.personality[trait];
+                    for (var _hat in person.personality) {
+                        if (!(_hat in revealed.traits)) _haUnrTraits.push(_hat);
                     }
                 }
+                var _haUnrQuirks = [];
                 if (person.quirks) {
-                    for (var qi = 0; qi < person.quirks.length; qi++) {
-                        if (revealed.quirks.indexOf(person.quirks[qi]) === -1) revealed.quirks.push(person.quirks[qi]);
+                    for (var _haq = 0; _haq < person.quirks.length; _haq++) {
+                        if (revealed.quirks.indexOf(person.quirks[_haq]) === -1) _haUnrQuirks.push(person.quirks[_haq]);
                     }
                 }
-                message = person.firstName + ' tells you honestly about themselves. All traits revealed!';
+                if (_haUnrTraits.length === 0 && _haUnrQuirks.length === 0) {
+                    message = person.firstName + ' shares about themselves, but there\'s nothing new to learn.';
+                    Engine.logEvent('\u{1FA9E} ' + message);
+                    break;
+                }
+                // Prefer a trait if any remain; otherwise reveal a quirk.
+                if (_haUnrTraits.length > 0) {
+                    var _haPick = _haRng ? _haRng.pick(_haUnrTraits) : _haUnrTraits[0];
+                    revealed.traits[_haPick] = person.personality[_haPick];
+                    message = person.firstName + ' opens up a little — you learn their ' + _haPick + ' is ' + person.personality[_haPick] + '.';
+                } else {
+                    var _haPickQ = _haRng ? _haRng.pick(_haUnrQuirks) : _haUnrQuirks[0];
+                    revealed.quirks.push(_haPickQ);
+                    var _qDef = (typeof CONFIG !== 'undefined' && CONFIG.QUIRKS && CONFIG.QUIRKS[_haPickQ]) || { name: _haPickQ };
+                    message = person.firstName + ' shares a quirk: ' + _qDef.name + '.';
+                }
                 Engine.logEvent('\u{1FA9E} ' + message);
                 break;
             }
@@ -18369,6 +18810,7 @@
             _warContributions: player._warContributions ? structuredClone(player._warContributions) : {},
             // Town Reputation
             townReputation: structuredClone(player.townReputation || {}),
+            _minorNobleRepBonus: structuredClone(player._minorNobleRepBonus || {}),
             // Town Quests
             townQuests: structuredClone(player.townQuests || {}),
             activeQuests: structuredClone(player.activeQuests || []),
@@ -18465,6 +18907,9 @@
             jailReason: player.jailReason || null,
             // Tracked Merchants
             trackedMerchants: structuredClone(player.trackedMerchants || []),
+            // v9p33river90: funeral notification + funeral plan persist across save/load
+            funeralNotification: player.funeralNotification ? structuredClone(player.funeralNotification) : null,
+            funeralPlan: player.funeralPlan ? structuredClone(player.funeralPlan) : null,
             // Travel state (complete)
             travelOrigin: player.travelOrigin || null,
             travelPaid: player.travelPaid || 0,
@@ -18474,6 +18919,13 @@
             travelDestCoords: player.travelDestCoords || null,
             travelRestBonus: player.travelRestBonus || 0,
             travelCompanions: player.travelCompanions ? structuredClone(player.travelCompanions) : [],
+            // v9p33river68/70: world position + offroad/sailing extras
+            worldX: (player.worldX != null) ? player.worldX : null,
+            worldY: (player.worldY != null) ? player.worldY : null,
+            travelMountainDaysRemaining: player.travelMountainDaysRemaining || 0,
+            embarkedShipId: player.embarkedShipId || null,
+            _pendingShipBoardId: player._pendingShipBoardId || null,
+            _sailTargetPortId: player._sailTargetPortId || null,
             // Spouse modifiers
             spouseProdMod: player.spouseProdMod != null ? player.spouseProdMod : 1.0,
             spouseCostMod: player.spouseCostMod != null ? player.spouseCostMod : 1.0,
@@ -18599,6 +19051,23 @@
         player.perkCooldowns = data.perkCooldowns || {};
         player.escort = data.escort || null;
         player.travelCompanions = data.travelCompanions || [];
+        // v9p33river68: missing travel-state restores. Without these the player
+        // appeared at their last town instead of their actual mid-journey
+        // wilderness position after save/load.
+        player.travelOrigin = data.travelOrigin || null;
+        player.travelMode = data.travelMode || null;
+        player.travelPaid = data.travelPaid || 0;
+        player.travelRestBonus = data.travelRestBonus || 0;
+        player.travelWaypoints = data.travelWaypoints || null;
+        player.travelDestCoords = data.travelDestCoords || null;
+        // World position (in wilderness, on a coast tile after landing, etc.)
+        player.worldX = (data.worldX != null) ? data.worldX : null;
+        player.worldY = (data.worldY != null) ? data.worldY : null;
+        // Mountain rope counter + embarked ship reference
+        player.travelMountainDaysRemaining = data.travelMountainDaysRemaining || 0;
+        player.embarkedShipId = data.embarkedShipId || null;
+        player._pendingShipBoardId = data._pendingShipBoardId || null;
+        player._sailTargetPortId = data._sailTargetPortId || null;
         player.discountRepair = data.discountRepair || null;
         player.marketDiscounts = data.marketDiscounts || {};
         player.foragingBonus = data.foragingBonus || null;
@@ -18824,6 +19293,7 @@
         player._warContributions = data._warContributions || {};
         // Town Reputation
         player.townReputation = data.townReputation || {};
+        player._minorNobleRepBonus = data._minorNobleRepBonus || {};
         // Town Quests
         player.townQuests = data.townQuests || {};
         player.activeQuests = data.activeQuests || [];
@@ -19069,6 +19539,9 @@
         player.jailReason = data.jailReason || null;
         // Tracked Merchants
         player.trackedMerchants = data.trackedMerchants || [];
+        // v9p33river90: restore funeral notification + plan
+        player.funeralNotification = data.funeralNotification || null;
+        player.funeralPlan = data.funeralPlan || null;
         // Clean up dead/non-existent EM IDs on load
         if (player.trackedMerchants.length > 0 && typeof Engine !== 'undefined') {
             var w = Engine.getWorld ? Engine.getWorld() : null;
@@ -19882,6 +20355,7 @@
         }
 
         // Player aging and death check
+        tickMinorNobleRepBonus();
         tickPlayerAging();
         if (!player.alive && !player.regencyMode) return; // died with no heir and no regency — game over
         if (player.regencyMode) return; // just entered regency this tick
@@ -23984,6 +24458,13 @@
         var person = Engine.findPerson(personId);
         if (!person) return { canTalk: true };
 
+        // v9p33river101: jail blocks all NPC interaction.
+        var _today = 0;
+        try { _today = Engine.getDay(); } catch(e) {}
+        if (player.jailedUntilDay && player.jailedUntilDay > _today) {
+            return { canTalk: false, reason: '⛓️ You are in jail and cannot interact with anyone right now.' };
+        }
+
         if (person.age < 10) return { canTalk: false, reason: 'This person is too young to interact with.' };
 
         // Check if this person is a king
@@ -25982,7 +26463,7 @@
                 if (rng.chance(theftChance)) {
                     const bt = Engine.findBuildingType(bld.type);
                     if (bt && bt.produces) {
-                        const stolen = Math.ceil(bt.rate * bld.level * 2);
+                        const stolen = Math.ceil(bt.rate * (1 + 0.10 * ((bld.level || 1) - 1)) * 2);
                         player.inventory[bt.produces] = Math.max(0, (player.inventory[bt.produces] || 0) - stolen);
                         const resName = (Object.values(RESOURCE_TYPES).find(r => r.id === bt.produces) || {}).name || bt.produces;
                         if (typeof UI !== 'undefined' && UI.toast) {
@@ -30841,6 +31322,18 @@
                         town.buildings.push({ type: 'marketplace', level: 1, ownerId: petition.kingdomId, active: true, workers: [] });
                         town.prosperity = Math.min(100, (town.prosperity || 50) + 5);
                         Engine.logEvent('🏪 A new market was built in ' + town.name + '!');
+                    }
+                }
+                break;
+            }
+            case 'build_well': {
+                if (td.townId) {
+                    var town = Engine.findTown(td.townId);
+                    if (town) {
+                        if (!town.buildings) town.buildings = [];
+                        town.buildings.push({ type: 'well', level: 1, ownerId: petition.kingdomId, active: true, workers: [] });
+                        town.prosperity = Math.min(100, (town.prosperity || 50) + 2);
+                        Engine.logEvent('🪣 A public well was dug in ' + town.name + '!');
                     }
                 }
                 break;
@@ -37827,6 +38320,10 @@
 
         var townPeople = Engine.getPeople(player.townId);
         player.familyMembers = [];
+        // v9p33river71: ~95% of the time the family shares the player's surname.
+        var shareSurname = rng.chance(0.95);
+        var fatherRef = null, motherRef = null;
+        var siblingRefs = [];
 
         // Determine family wealth class
         var familyGold = 100;
@@ -37869,6 +38366,11 @@
             parent.gold = Math.floor(familyGold / 2);
             if (startConfig.id === 'easy') parent.occupation = 'merchant';
             if (startConfig.id === 'very_easy') parent.wealthClass = 'upper';
+            // v9p33river71: surname matches the player most of the time.
+            if (shareSurname && player.lastName) {
+                parent.lastName = player.lastName;
+            }
+            if (parentSexes[pi] === 'M') fatherRef = parent; else motherRef = parent;
 
             var relLevel = rng.randInt(75, 85);
             player.relationships[parent.id] = { level: relLevel, type: 'family' };
@@ -37895,6 +38397,11 @@
             var sib = potentialSiblings[si];
             sib.isPlayerFamily = true;
             sib.familyRole = 'sibling';
+            // v9p33river71: siblings share the surname too.
+            if (shareSurname && player.lastName) {
+                sib.lastName = player.lastName;
+            }
+            siblingRefs.push(sib);
 
             var sibRole = sib.sex === 'M' ? 'brother' : 'sister';
             var sibRelLevel = rng.randInt(65, 75);
@@ -37904,6 +38411,32 @@
                 role: sibRole,
                 name: sib.firstName + ' ' + sib.lastName
             });
+        }
+
+        // v9p33river71: stitch family relationships properly.
+        // - Mark parents as spouses
+        // - Add player + siblings to parent.childrenIds
+        // - Set sibling.parentIds + player.parentIds to point at the actual NPCs
+        if (fatherRef && motherRef) {
+            fatherRef.spouseId = motherRef.id;
+            motherRef.spouseId = fatherRef.id;
+        }
+        var parentIdsList = [];
+        if (fatherRef) parentIdsList.push(fatherRef.id);
+        if (motherRef) parentIdsList.push(motherRef.id);
+        if (parentIdsList.length > 0) {
+            player.parentIds = parentIdsList.slice();
+            for (var spi = 0; spi < siblingRefs.length; spi++) {
+                siblingRefs[spi].parentIds = parentIdsList.slice();
+            }
+            // Add the player + siblings as children of the parents
+            var childList = ['player'].concat(siblingRefs.map(function(s) { return s.id; }));
+            if (fatherRef) {
+                fatherRef.childrenIds = (fatherRef.childrenIds || []).concat(childList);
+            }
+            if (motherRef) {
+                motherRef.childrenIds = (motherRef.childrenIds || []).concat(childList);
+            }
         }
 
         // Give the family a house matching their wealth level
@@ -38979,6 +39512,7 @@
         get travelOffroad() { return player.travelOffroad; },
         get travelOffSea() { return player.travelOffSea; },
         get offSeaShipId() { return player.offSeaShipId; },
+        get embarkedShipId() { return player.embarkedShipId || null; },
         get travelTotalDist() { return player.travelTotalDist; },
         get travelOrigin() { return player.travelOrigin; },
         get travelPaid() { return player.travelPaid; },
@@ -39316,6 +39850,7 @@
         startOffSeaTravel,
         attemptLanding,
         executeLanding,
+        boardDockedShip,
         getPlayerWorldPosition,
         useTransportService,
         buyHorseForTravel,
@@ -39745,6 +40280,7 @@
         modifyTownReputation,
         getTownReputation,
         getTownReputationPriceModifier,
+        tickMinorNobleRepBonus,
 
         // Kingdom Orders & Supply Deals
         getAvailableOrders,

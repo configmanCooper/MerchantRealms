@@ -1324,28 +1324,67 @@
             const cx = regionCenters[ki].x;
             const cy = regionCenters[ki].y;
             const numTowns = CONFIG.TOWNS_PER_KINGDOM;
+            let kingdomHasPort = false;
 
             for (let t = 0; t < numTowns; t++) {
                 let px, py, tx, ty;
                 let attempts = 0;
-                do {
-                    tx = cx + rng.randInt(-Math.floor(cols * 0.12), Math.floor(cols * 0.12));
-                    ty = cy + rng.randInt(-Math.floor(rows * 0.12), Math.floor(rows * 0.12));
-                    tx = Math.max(2, Math.min(cols - 3, tx));
-                    ty = Math.max(2, Math.min(rows - 3, ty));
-                    px = tx * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
-                    py = ty * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
-                    attempts++;
-                } while (
-                    attempts < 500 &&
-                    (!isBuildable(tx, ty) || tooCloseToExisting(towns, px, py, CONFIG.TILE_SIZE * 12))
-                );
+                const isLastTown = (t === numTowns - 1);
+                const needPort = isLastTown && !kingdomHasPort;
+                const portProx = CONFIG.PORT_WATER_PROXIMITY || 3;
+                const _isPortLoc = (ttx, tty) => {
+                    for (let dy2 = -portProx; dy2 <= portProx; dy2++) {
+                        for (let dx2 = -portProx; dx2 <= portProx; dx2++) {
+                            const wx = ttx + dx2, wy = tty + dy2;
+                            if (wx >= 0 && wx < cols && wy >= 0 && wy < rows
+                                && world.terrain[wy * cols + wx] === TERRAIN.WATER.id) return true;
+                        }
+                    }
+                    return false;
+                };
+                let _placed = false;
+                // v9p33river53: ensure each kingdom has at least one port — last
+                // town gets a port-biased search across an expanding radius.
+                if (needPort) {
+                    const radSteps = [0.12, 0.18, 0.25, 0.33, 0.42];
+                    for (let rsi = 0; rsi < radSteps.length && !_placed; rsi++) {
+                        const radMul = radSteps[rsi];
+                        const rxSpan = Math.floor(cols * radMul);
+                        const rySpan = Math.floor(rows * radMul);
+                        for (let pa = 0; pa < 600 && !_placed; pa++) {
+                            tx = cx + rng.randInt(-rxSpan, rxSpan);
+                            ty = cy + rng.randInt(-rySpan, rySpan);
+                            tx = Math.max(2, Math.min(cols - 3, tx));
+                            ty = Math.max(2, Math.min(rows - 3, ty));
+                            px = tx * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+                            py = ty * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+                            if (isBuildable(tx, ty)
+                                && !tooCloseToExisting(towns, px, py, CONFIG.TILE_SIZE * 12)
+                                && _isPortLoc(tx, ty)) {
+                                _placed = true;
+                            }
+                        }
+                    }
+                }
+                if (!_placed) {
+                    do {
+                        tx = cx + rng.randInt(-Math.floor(cols * 0.12), Math.floor(cols * 0.12));
+                        ty = cy + rng.randInt(-Math.floor(rows * 0.12), Math.floor(rows * 0.12));
+                        tx = Math.max(2, Math.min(cols - 3, tx));
+                        ty = Math.max(2, Math.min(rows - 3, ty));
+                        px = tx * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+                        py = ty * CONFIG.TILE_SIZE + CONFIG.TILE_SIZE / 2;
+                        attempts++;
+                    } while (
+                        attempts < 500 &&
+                        (!isBuildable(tx, ty) || tooCloseToExisting(towns, px, py, CONFIG.TILE_SIZE * 12))
+                    );
+                }
 
                 const isCapital = (t === 0);
 
                 // Detect port status early so building generation can use terrain
                 let isPort = false;
-                const portProx = CONFIG.PORT_WATER_PROXIMITY || 3;
                 for (let dy2 = -portProx; dy2 <= portProx && !isPort; dy2++) {
                     for (let dx2 = -portProx; dx2 <= portProx && !isPort; dx2++) {
                         const wx = tx + dx2;
@@ -1357,6 +1396,7 @@
                         }
                     }
                 }
+                if (isPort) kingdomHasPort = true;
 
                 // Assign population based on settlement hierarchy:
                 // capital → city → town → village
@@ -4019,14 +4059,14 @@
             }
         }
 
-        // Wealth diversity based on age
+        // v9p33river82: 4× starting gold for elite merchants.
         for (const em of eliteMerchants) {
             if (em.age <= 35) {
-                em.gold = rng.randInt(500, 2000);
-            } else if (em.age <= 50) {
                 em.gold = rng.randInt(2000, 8000);
+            } else if (em.age <= 50) {
+                em.gold = rng.randInt(8000, 32000);
             } else {
-                em.gold = rng.randInt(5000, 15000);
+                em.gold = rng.randInt(20000, 60000);
             }
         }
 
@@ -5668,7 +5708,8 @@
                         }
                     }
 
-                    const output = Math.ceil(activeRate * workerFraction * seasonMod * (bld.level || 1) * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * siegePenalty * happyMod * _townHousingProd * workerSkillMod * optBoostMod);
+                    const _lvlMod = 1 + 0.10 * (((bld.level || 1)) - 1);
+                    const output = Math.ceil(activeRate * workerFraction * seasonMod * _lvlMod * conditionEff * apprenticePenalty * fertilityMod * wildlifeMod * warZonePenalty * siegePenalty * happyMod * _townHousingProd * workerSkillMod * optBoostMod);
                     // Animal Husbandry: player livestock buildings produce 10% more
                     var livestockTypes = ['cattle_ranch', 'sheep_farm', 'chicken_farm', 'pig_farm', 'horse_ranch'];
                     var animalBonus = 0;
@@ -5842,7 +5883,7 @@
                     if (farmTypes.includes(bld.type)) {
                         const bt = findBuildingType(bld.type);
                         if (bt && bt.produces) {
-                            const bonus = Math.floor(bt.rate * horseBonus * bld.level);
+                            const bonus = Math.floor(bt.rate * horseBonus * (1 + 0.10 * ((bld.level || 1) - 1)));
                             if (bonus > 0) {
                                 town.market.supply[bt.produces] = (town.market.supply[bt.produces] || 0) + bonus;
                             }
@@ -6420,9 +6461,18 @@
             // Player employer prosperity boost
             if (typeof Player !== 'undefined') {
                 try {
-                    var playerWorkers = (town.buildings || []).reduce(function(sum, b) {
-                        return sum + (b.ownerId === 'player' && b.workers ? b.workers.length : 0);
-                    }, 0);
+                    // v9p33river115: town.buildings entries for player-owned buildings
+                    // are slim ({id,type,...}) without a workers array. Source-of-truth
+                    // worker counts live on Player.buildings — sum from there for this town.
+                    var playerWorkers = 0;
+                    if (Array.isArray(Player.buildings)) {
+                        for (var _pwbi = 0; _pwbi < Player.buildings.length; _pwbi++) {
+                            var _pwb = Player.buildings[_pwbi];
+                            if (_pwb.townId === town.id && Array.isArray(_pwb.workers)) {
+                                playerWorkers += _pwb.workers.length;
+                            }
+                        }
+                    }
                     if (playerWorkers > 0) {
                         town.prosperity = Math.min(100, town.prosperity + playerWorkers * 0.2);
                     }
@@ -6669,9 +6719,19 @@
             const bt = findBuildingType(bld.type);
             return bt ? bt.workers : 0; // assume fully staffed for town buildings
         }
-        // Player buildings track workers explicitly — handled by player.js
+        // Player buildings track workers explicitly — but the engine's town copy
+        // (the slim {id,type,level,ownerId,...} entry) doesn't carry the workers
+        // array. Look up the canonical Player.buildings entry by id.
         if (bld.ownerId === 'player') {
-            return Array.isArray(bld.workers) ? bld.workers.length : 0;
+            if (Array.isArray(bld.workers)) return bld.workers.length;
+            if (typeof Player !== 'undefined' && Player.buildings) {
+                for (var _pwi = 0; _pwi < Player.buildings.length; _pwi++) {
+                    if (Player.buildings[_pwi].id === bld.id) {
+                        return Array.isArray(Player.buildings[_pwi].workers) ? Player.buildings[_pwi].workers.length : 0;
+                    }
+                }
+            }
+            return 0;
         }
         // Bug 3/4 fix: Kingdom-owned and NPC-owned buildings use explicit
         // workers if assigned, otherwise auto-staff from community
@@ -10899,14 +10959,14 @@
                 playerBuildingTypes[bld.type] = (playerBuildingTypes[bld.type] || 0) + 1;
                 var bt = findBuildingType(bld.type);
                 if (bt && bt.produces) {
-                    playerProduction[bt.produces] = (playerProduction[bt.produces] || 0) + (bt.rate || 1) * (bld.level || 1);
+                    playerProduction[bt.produces] = (playerProduction[bt.produces] || 0) + (bt.rate || 1) * (1 + 0.10 * ((bld.level || 1) - 1));
                 }
                 // Check recipes too
                 if (bt && bt.recipes) {
                     for (var ri = 0; ri < bt.recipes.length; ri++) {
                         var recipe = bt.recipes[ri];
                         if (recipe.output) {
-                            playerProduction[recipe.output] = (playerProduction[recipe.output] || 0) + (recipe.rate || 1) * (bld.level || 1);
+                            playerProduction[recipe.output] = (playerProduction[recipe.output] || 0) + (recipe.rate || 1) * (1 + 0.10 * ((bld.level || 1) - 1));
                         }
                     }
                 }
@@ -21579,11 +21639,20 @@
             for (const town of world.towns) {
                 if (!town.employerReputation) town.employerReputation = {};
                 for (const bld of town.buildings) {
-                    if (!bld.ownerId || !bld.workers || bld.workers.length === 0) continue;
+                    if (!bld.ownerId) continue;
+                    // v9p33river115: town.buildings player entries are slim and lack
+                    // .workers — fall through to Player.buildings for the canonical list.
+                    var _erpWorkers = bld.workers;
+                    if ((!_erpWorkers || _erpWorkers.length === 0) && bld.ownerId === 'player' && typeof Player !== 'undefined' && Array.isArray(Player.buildings)) {
+                        for (var _erpi = 0; _erpi < Player.buildings.length; _erpi++) {
+                            if (Player.buildings[_erpi].id === bld.id) { _erpWorkers = Player.buildings[_erpi].workers; break; }
+                        }
+                    }
+                    if (!_erpWorkers || _erpWorkers.length === 0) continue;
                     const rep = town.employerReputation[bld.ownerId] || 0;
                     let delta = 0;
 
-                    for (const wid of bld.workers) {
+                    for (const wid of _erpWorkers) {
                         const w = findPerson(wid);
                         if (!w || !w.alive) continue;
                         // Paying above minimum wage
@@ -23183,7 +23252,7 @@
                 const workerFraction = Math.min(1, assignedWorkers / Math.max(1, requiredWorkers));
                 if (workerFraction <= 0) continue;
                 
-                const extracted = Math.floor(bt.rate * workerFraction * daysSinceCheck * (bld.level || 1));
+                const extracted = Math.floor(bt.rate * workerFraction * daysSinceCheck * (1 + 0.10 * ((bld.level || 1) - 1)));
                 
                 // For wood: extract from individual grove deposits
                 if (resId === 'wood' && town.woodDeposits && town.woodDeposits.length > 0) {
@@ -23270,24 +23339,39 @@
                 var _tpRegen = 0;
                 for (var _tpi = 0; _tpi < treePlantations.length; _tpi++) {
                     var _tpWorkers = countWorkersForBuilding(town, treePlantations[_tpi]);
-                    _tpRegen += 10 * _tpWorkers;
+                    var _tpLevel = treePlantations[_tpi].level || 1;
+                    var _tpLevelMod = 1 + 0.10 * (_tpLevel - 1);
+                    _tpRegen += 2 * _tpWorkers * _tpLevelMod;
                 }
                 if (_tpRegen > 0) {
-                    // If no wood deposit exists, create one from scratch (needs grass in sphere)
-                    if (town.naturalDeposits.wood == null || town.naturalDeposits.wood <= 0) {
+                    // v9p33river113: prefer refilling existing groves -- even when
+                    // naturalDeposits.wood is 0/exhausted, scattered groves should
+                    // recover from plantation regen. Previously, exhausted groves
+                    // were stuck because the code fell into the create-from-scratch
+                    // branch (which only touches woodDeposits[0] and requires grass).
+                    if (town.woodDeposits && town.woodDeposits.length > 0) {
+                        var _tpTotal = _tpRegen * daysSinceCheck;
+                        var _tpPerGrove = Math.max(1, Math.floor(_tpTotal / town.woodDeposits.length));
+                        for (var _tpg = 0; _tpg < town.woodDeposits.length; _tpg++) {
+                            town.woodDeposits[_tpg].amount = Math.min(town.woodDeposits[_tpg].maxAmount, (town.woodDeposits[_tpg].amount || 0) + _tpPerGrove);
+                        }
+                        _syncWoodDepositTotal(town);
+                        // Unflag any depleted lumber camps since wood is regenerating
+                        for (var _ufb2 = 0; _ufb2 < town.buildings.length; _ufb2++) {
+                            if (town.buildings[_ufb2].type === 'lumber_camp' && town.buildings[_ufb2].depositDepleted && (town.naturalDeposits.wood || 0) > woodCfg.max * 0.05) {
+                                town.buildings[_ufb2].depositDepleted = false;
+                                town.buildings[_ufb2]._lowDepositWarned = false;
+                            }
+                        }
+                    } else if (town.naturalDeposits.wood == null || town.naturalDeposits.wood <= 0) {
+                        // No groves at all and no wood pool -- create one from scratch
+                        // (requires at least one grass tile in the town's sphere).
                         var _hasSoil = _townHasGrassTiles(town);
                         if (_hasSoil) {
                             if (town.naturalDeposits.wood == null) town.naturalDeposits.wood = 0;
                             var _tpAdd = Math.floor(_tpRegen * 0.5) * daysSinceCheck;
-                            town.naturalDeposits.wood = Math.min(woodCfg.max, town.naturalDeposits.wood + _tpAdd);
-                            // Create a new grove deposit
-                            if (!town.woodDeposits) town.woodDeposits = [];
-                            if (town.woodDeposits.length === 0) {
-                                town.woodDeposits.push({ name: 'New Plantation', amount: town.naturalDeposits.wood, maxAmount: Math.floor(woodCfg.max / 4) });
-                            } else {
-                                town.woodDeposits[0].amount = town.naturalDeposits.wood;
-                            }
-                            // Unflag depleted lumber camps since deposit is returning
+                            town.naturalDeposits.wood = Math.min(woodCfg.max, town.naturalDeposits.wood + _tpAdd);                            if (!town.woodDeposits) town.woodDeposits = [];
+                            town.woodDeposits.push({ name: 'New Plantation', amount: town.naturalDeposits.wood, maxAmount: Math.floor(woodCfg.max / 4) });
                             for (var _ufb = 0; _ufb < town.buildings.length; _ufb++) {
                                 if (town.buildings[_ufb].type === 'lumber_camp' && town.buildings[_ufb].depositDepleted) {
                                     town.buildings[_ufb].depositDepleted = false;
@@ -23295,15 +23379,8 @@
                                 }
                             }
                         }
-                    } else if (town.woodDeposits && town.woodDeposits.length > 0) {
-                        // Distribute plantation growth evenly across groves
-                        var _tpTotal = _tpRegen * daysSinceCheck;
-                        var _tpPerGrove = Math.max(1, Math.floor(_tpTotal / town.woodDeposits.length));
-                        for (var _tpg = 0; _tpg < town.woodDeposits.length; _tpg++) {
-                            town.woodDeposits[_tpg].amount = Math.min(town.woodDeposits[_tpg].maxAmount, town.woodDeposits[_tpg].amount + _tpPerGrove);
-                        }
-                        _syncWoodDepositTotal(town);
                     } else {
+                        // Has bulk wood but no individual grove records -- bump bulk
                         town.naturalDeposits.wood = Math.min(woodCfg.max, town.naturalDeposits.wood + _tpRegen * daysSinceCheck);
                     }
                 }
@@ -24099,7 +24176,15 @@
         const waterInfo = analyzeRoadWater(fromT.x, fromT.y, toT.x, toT.y);
         const hasBridge = waterInfo.bridgeSegments.length > 0;
         var _pathResult = findTerrainPath(fromT.x, fromT.y, toT.x, toT.y, 'land');
-        var _roadWaypoints = (_pathResult && _pathResult.waypoints) ? _pathResult.waypoints : [];
+        // v9p33river49: REJECT road build if no valid land path. findTerrainPath
+        // returns null when water-fraction > ROAD_MAX_WATER_FRACTION or any
+        // bridge span > BRIDGE_MAX_WATER_TILES. Without this check, callers
+        // (worldgen connectivity safety net, king cooperation, petitions, etc.)
+        // could create unwalkable phantom roads with no waypoints.
+        if (!_pathResult || !_pathResult.waypoints || _pathResult.waypoints.length < 2) {
+            return { success: false, message: 'No valid land path between ' + fromT.name + ' and ' + toT.name + ' (too much water).' };
+        }
+        var _roadWaypoints = _pathResult.waypoints;
         var _roadBridges = createBridgeObjects(_roadWaypoints);
         options = options || {};
         world.roads.push({
@@ -27339,11 +27424,14 @@
                 break;
             }
             case 'drink': {
+                // v9p33river102: festival "Eat & Drink" — fills hunger + thirst, plus happiness
                 if (Player.state) {
                     Player.state.happiness = Math.min(100, (Player.state.happiness || 50) + 3);
+                    Player.state.hunger = Math.min(100, (Player.state.hunger || 0) + 60);
+                    Player.state.thirst = Math.min(100, (Player.state.thirst || 0) + 60);
                 }
                 result.success = true;
-                result.message = 'You enjoyed a hearty drink at the festival! (+3 happiness)';
+                result.message = '🍺🍗 You ate and drank your fill at the festival! (+3 happiness, hunger & thirst restored)';
                 if (rng.chance(0.1)) {
                     if (Player.state) {
                         Player.state.energy = Math.max(0, (Player.state.energy || 50) - 5);
@@ -27443,8 +27531,8 @@
                 try {
                     if (Player.socialRank && Player.socialRank[kingdomId]) pRank = Player.socialRank[kingdomId];
                 } catch(e) {}
-                if (pRank < 3) {
-                    result.message = 'You need to be at least burgher rank (3+) to approach nobles at the festival.';
+                if (pRank < 2) {
+                    result.message = 'You need to be at least Burgher rank to approach nobles at the festival.';
                     break;
                 }
                 var nobleTargets = world.people.filter(function(p) {
@@ -29393,6 +29481,47 @@
             _buildOffroadEdgeCache();
             _pathCache = {};
 
+            // v9p33river47: GUARANTEE every town has at least one road or sea route.
+            // The intra-generators (generateRoads, generateSeaRoutes) each ensure
+            // their own type, but a coastal-only town might fall through gaps. Final
+            // safety net: any town with NO connections gets connected to its nearest
+            // valid neighbor via whichever route type works.
+            var _orphans = world.towns.filter(function(t) { return !t.connectedTowns || t.connectedTowns.length === 0; });
+            if (_orphans.length > 0) {
+                console.log('[worldgen] Connectivity safety net: ' + _orphans.length + ' orphaned town(s) found');
+                for (var _oi = 0; _oi < _orphans.length; _oi++) {
+                    var _orph = _orphans[_oi];
+                    var _candidates = world.towns.slice().filter(function(t) { return t.id !== _orph.id; });
+                    _candidates.sort(function(a, b) {
+                        return Math.hypot(a.x - _orph.x, a.y - _orph.y) - Math.hypot(b.x - _orph.x, b.y - _orph.y);
+                    });
+                    var _connected = false;
+                    for (var _ci2 = 0; _ci2 < _candidates.length && !_connected; _ci2++) {
+                        var _other = _candidates[_ci2];
+                        var _wf = checkWaterPath(_orph.x, _orph.y, _other.x, _other.y);
+                        if (_wf <= (CONFIG.ROAD_MAX_WATER_FRACTION || 0.15) && !_orph.isIsland && !_other.isIsland) {
+                            var _newRoad = buildNewRoad(_orph.id, _other.id, null, { skipLimitCheck: true, suppressLog: true });
+                            if (_newRoad && _newRoad.success) {
+                                if (_orph.connectedTowns.indexOf(_other.id) === -1) _orph.connectedTowns.push(_other.id);
+                                if (_other.connectedTowns.indexOf(_orph.id) === -1) _other.connectedTowns.push(_orph.id);
+                                _connected = true;
+                                console.log('[worldgen]   Connected ' + _orph.name + ' -> ' + _other.name + ' via road');
+                            }
+                        }
+                        if (!_connected && (_orph.isPort || _orph.isIsland) && (_other.isPort || _other.isIsland)) {
+                            var _newSea = buildNewSeaRoute(_orph.id, _other.id, null, { skipLimitCheck: true, suppressLog: true });
+                            if (_newSea && _newSea.success) {
+                                if (_orph.connectedTowns.indexOf(_other.id) === -1) _orph.connectedTowns.push(_other.id);
+                                if (_other.connectedTowns.indexOf(_orph.id) === -1) _other.connectedTowns.push(_orph.id);
+                                _connected = true;
+                                console.log('[worldgen]   Connected ' + _orph.name + ' -> ' + _other.name + ' via sea route');
+                            }
+                        }
+                    }
+                    if (!_connected) console.warn('[worldgen]   Failed to connect ' + _orph.name + ' (no valid neighbor)');
+                }
+            }
+
             // People — _popOverride assigned in generateTowns for non-island towns
             var phaseRngPeople = createRNG(seed * 3 + 6);
             for (const town of world.towns) {
@@ -30384,6 +30513,27 @@
         findTerrainPath: function(sx, sy, ex, ey, mode) { return findTerrainPath(sx, sy, ex, ey, mode); },
         getTerrainAtPixel: function(px, py) { return terrainAt(Math.floor(px / CONFIG.TILE_SIZE), Math.floor(py / CONFIG.TILE_SIZE)); },
 
+        // v9p33river85: town market gold pool — sum of every alive NPC currently
+        // in the town, plus the running buy/sell delta for player + tracked NPC trades.
+        getTownMarketGold: function(townId) {
+            var t = findTown(townId);
+            if (!t) return 0;
+            var sum = 0;
+            if (world && world.people) {
+                for (var i = 0; i < world.people.length; i++) {
+                    var p = world.people[i];
+                    if (!p || !p.alive || p.townId !== t.id) continue;
+                    sum += Math.floor(p.gold || 0);
+                }
+            }
+            return Math.floor(sum + (t._marketGoldDelta || 0));
+        },
+        adjustTownMarketGold: function(townId, delta) {
+            var t = findTown(townId);
+            if (!t) return;
+            t._marketGoldDelta = (t._marketGoldDelta || 0) + delta;
+        },
+
         surveyDepositsAtPoint: function(wx, wy, radius) { return _surveyDepositsAtPoint(wx, wy, radius); },
         surveyFertilityAtPoint: function(wx, wy, radius) { return _surveyFertilityAtPoint(wx, wy, radius); },
 
@@ -30582,6 +30732,7 @@
         destroyBridge: destroyBridge,
         _expandGoodsToTiers: _expandGoodsToTiers,
         buildNewRoad: buildNewRoad,
+        buildNewSeaRoute: buildNewSeaRoute,
         checkWaterPath: checkWaterPath,
         computeRoadImportance: computeRoadImportance,
         consumeFromMarket: consumeFromMarket,

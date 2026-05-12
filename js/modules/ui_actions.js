@@ -1541,16 +1541,53 @@ function showPersonDetail(person) {
 
     // ── Family ──
     html += `<div class="detail-section"><h3>Family</h3>`;
+
+    // v9p33river79: relation-to-player badge (Mother / Father / Sister / Brother / Child / Spouse)
+    var _playerRelationLabel = null;
+    if (isPlayer) {
+        if (isSpouse) _playerRelationLabel = 'Spouse';
+        else if (Player.parentIds && Player.parentIds.indexOf(person.id) >= 0) _playerRelationLabel = (person.sex === 'M' ? 'Father' : 'Mother');
+        else if (Player.childrenIds && Player.childrenIds.indexOf(person.id) >= 0) _playerRelationLabel = (person.sex === 'M' ? 'Son' : 'Daughter');
+        else if (Player.familyMembers) {
+            for (var _fmi = 0; _fmi < Player.familyMembers.length; _fmi++) {
+                if (Player.familyMembers[_fmi].npcId === person.id) {
+                    var _r = Player.familyMembers[_fmi].role;
+                    _playerRelationLabel = _r ? (_r.charAt(0).toUpperCase() + _r.slice(1)) : null;
+                    break;
+                }
+            }
+        }
+        // Fallback: if we share parent IDs with the player → sibling
+        if (!_playerRelationLabel && Player.parentIds && person.parentIds) {
+            for (var _ppi = 0; _ppi < person.parentIds.length; _ppi++) {
+                if (Player.parentIds.indexOf(person.parentIds[_ppi]) >= 0) {
+                    _playerRelationLabel = (person.sex === 'M' ? 'Brother' : 'Sister');
+                    break;
+                }
+            }
+        }
+    }
+    if (_playerRelationLabel) {
+        html += `<div class="detail-row"><span class="label">To You</span>
+            <span class="value" style="color:#d4af37;font-weight:bold;">💞 ${_playerRelationLabel}</span></div>`;
+    }
+
     if (person.spouseId) {
         let spouse;
-        try { spouse = Engine.getPerson(person.spouseId); } catch (e) { /* no-op */ }
-        if (spouse) {
-            var spBadge = spouse.isEliteMerchant ? '⭐ ' : '';
+        // v9p33river79: handle 'player' as a spouseId
+        if (person.spouseId === 'player' && isPlayer) {
             html += `<div class="detail-row"><span class="label">Spouse</span>
-                <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="${spouse.id}">${spBadge}${spouse.firstName} ${spouse.lastName}</a></span></div>`;
+                <span class="value">${Player.firstName || ''} ${Player.lastName || ''} (You)</span></div>`;
         } else {
-            html += `<div class="detail-row"><span class="label">Spouse</span>
-                <span class="value text-dim">Unknown</span></div>`;
+            try { spouse = Engine.getPerson(person.spouseId); } catch (e) { /* no-op */ }
+            if (spouse) {
+                var spBadge = spouse.isEliteMerchant ? '⭐ ' : '';
+                html += `<div class="detail-row"><span class="label">Spouse</span>
+                    <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="${spouse.id}">${spBadge}${spouse.firstName} ${spouse.lastName}</a></span></div>`;
+            } else {
+                html += `<div class="detail-row"><span class="label">Spouse</span>
+                    <span class="value text-dim">Unknown</span></div>`;
+            }
         }
     } else {
         html += `<div class="detail-row"><span class="label">Spouse</span>
@@ -1569,15 +1606,63 @@ function showPersonDetail(person) {
         }
     }
     if (person.childrenIds && person.childrenIds.length) {
+        var _kidLabelDone = false;
         for (var cci = 0; cci < person.childrenIds.length; cci++) {
+            var _cid = person.childrenIds[cci];
+            // v9p33river79: render the player as a child when their id appears
+            if (_cid === 'player' && isPlayer) {
+                var _kidLabel = _kidLabelDone ? '' : (person.childrenIds.length === 1 ? 'Child' : 'Children');
+                _kidLabelDone = true;
+                var _pAge = Player.age || '?';
+                html += `<div class="detail-row"><span class="label">${_kidLabel}</span>
+                    <span class="value">${Player.firstName || ''} ${Player.lastName || ''} (${_pAge}) <span style="color:#d4af37;">— You</span></span></div>`;
+                continue;
+            }
             var child = null;
-            try { child = Engine.getPerson(person.childrenIds[cci]); } catch (e) { /* no-op */ }
+            try { child = Engine.getPerson(_cid); } catch (e) { /* no-op */ }
             if (child) {
                 var chBadge = child.isEliteMerchant ? '⭐ ' : '';
                 var chAlive = child.alive !== false ? '' : ' <span style="color:#888;font-size:0.75rem;">(deceased)</span>';
-                var chLabel = person.childrenIds.length === 1 ? 'Child' : (cci === 0 ? 'Children' : '');
+                var chLabel = _kidLabelDone ? '' : (person.childrenIds.length === 1 ? 'Child' : 'Children');
+                _kidLabelDone = true;
                 html += `<div class="detail-row"><span class="label">${chLabel}</span>
                     <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="${child.id}">${chBadge}${child.firstName} ${child.lastName}</a> (${child.age || '?'})${chAlive}</span></div>`;
+            }
+        }
+    }
+    // v9p33river79: siblings — derive from shared parent ids.
+    if (person.parentIds && person.parentIds.length) {
+        var _sibIds = {};
+        for (var _spi = 0; _spi < person.parentIds.length; _spi++) {
+            var _par;
+            try { _par = Engine.getPerson(person.parentIds[_spi]); } catch (e) { _par = null; }
+            if (!_par || !_par.childrenIds) continue;
+            for (var _ci = 0; _ci < _par.childrenIds.length; _ci++) {
+                var _sid = _par.childrenIds[_ci];
+                if (_sid === person.id) continue;
+                _sibIds[_sid] = true;
+            }
+        }
+        var _sibList = Object.keys(_sibIds);
+        if (_sibList.length > 0) {
+            var _sibLabelDone = false;
+            for (var _slI = 0; _slI < _sibList.length; _slI++) {
+                var _sibId = _sibList[_slI];
+                var _sibLabel = _sibLabelDone ? '' : (_sibList.length === 1 ? 'Sibling' : 'Siblings');
+                _sibLabelDone = true;
+                if (_sibId === 'player' && isPlayer) {
+                    html += `<div class="detail-row"><span class="label">${_sibLabel}</span>
+                        <span class="value">${Player.firstName || ''} ${Player.lastName || ''} (${Player.age || '?'}) <span style="color:#d4af37;">— You</span></span></div>`;
+                    continue;
+                }
+                var _sib = null;
+                try { _sib = Engine.getPerson(_sibId); } catch (e) { _sib = null; }
+                if (_sib) {
+                    var _sBadge = _sib.isEliteMerchant ? '⭐ ' : '';
+                    var _sAlive = _sib.alive !== false ? '' : ' <span style="color:#888;font-size:0.75rem;">(deceased)</span>';
+                    html += `<div class="detail-row"><span class="label">${_sibLabel}</span>
+                        <span class="value"><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="${_sib.id}">${_sBadge}${_sib.firstName} ${_sib.lastName}</a> (${_sib.age || '?'})${_sAlive}</span></div>`;
+                }
             }
         }
     }
@@ -1898,7 +1983,7 @@ function showPersonDetail(person) {
                 }
             }
 
-            // ── Dating Actions (if eligible, not a king) ──
+            // ── Dating Actions (if eligible, not a king, not family) ──
             var _isKingNPC = person.occupation === 'king' || person.occupation === 'reigning_queen' || person.occupation === 'queen' || person.occupation === 'queens_lord';
             if (!_isKingNPC && Engine.getKingdoms) {
                 var _kkList = Engine.getKingdoms();
@@ -1906,7 +1991,25 @@ function showPersonDetail(person) {
                     if (_kkList[_kki].king === person.id) { _isKingNPC = true; break; }
                 }
             }
-            const canDate = person.age >= 16 && !isChild && !_isKingNPC;
+            // v9p33river77: don't show courtship for the player's own family —
+            // parents, siblings, children. Family panel handles family relations.
+            var _isFamilyNPC = false;
+            try {
+                var _pSt = Player.state || Player;
+                if (_pSt) {
+                    if (_pSt.parentIds && _pSt.parentIds.indexOf(person.id) >= 0) _isFamilyNPC = true;
+                    else if (_pSt.childrenIds && _pSt.childrenIds.indexOf(person.id) >= 0) _isFamilyNPC = true;
+                    else if (_pSt.familyMembers) {
+                        for (var _fmi = 0; _fmi < _pSt.familyMembers.length; _fmi++) {
+                            if (_pSt.familyMembers[_fmi].npcId === person.id) { _isFamilyNPC = true; break; }
+                        }
+                    }
+                }
+            } catch (_e) {}
+            // v9p33river100: don't offer courtship for NPCs the player can't directly
+            // interact with (e.g., minor noble without an introduction).
+            var _canTalkForCourtship = (typeof _talkCheck !== 'undefined') ? _talkCheck.canTalk : true;
+            const canDate = person.age >= 16 && !isChild && !_isKingNPC && !_isFamilyNPC && _canTalkForCourtship;
             if (canDate && typeof DATING_ACTIVITIES !== 'undefined') {
                 html += `<div class="detail-section"><h3>💕 Courtship</h3>
                     <div style="display:flex;flex-direction:column;gap:3px;">`;
@@ -4338,7 +4441,7 @@ function clickTown(townId) {
         var actions = [
             { id: 'mingle', icon: '🤝', name: 'Mingle', desc: 'Meet someone new (+3-6 relationship)' },
             { id: 'gossip', icon: '🗣️', name: 'Gossip', desc: 'Hear what people are saying (may learn secrets)' },
-            { id: 'drink', icon: '🍺', name: 'Have a Drink', desc: 'Enjoy festival drinks (+3 happiness)' },
+            { id: 'drink', icon: '🍺', name: 'Eat & Drink', desc: 'Festival food and drinks (+3 happiness, restores hunger & thirst)' },
             { id: 'shop', icon: '🛒', name: 'Browse Stalls', desc: 'Find discounted goods at festival stalls' },
             { id: 'gamble', icon: '🎲', name: 'Gamble', desc: 'Bet gold on games of chance (45% win, 55% lose)' },
             { id: 'socialize_noble', icon: '👑', name: 'Approach a Noble', desc: 'Try to meet a noble (Burgher+ required)' }

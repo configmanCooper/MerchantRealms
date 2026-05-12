@@ -1201,6 +1201,8 @@
         var ships = (Player.ships || []).filter(function(s) {
             if (s.assignedCaravanId || s.assignedOffSea) return false;
             if (Player.travelOffSea) return s.id === Player.offSeaShipId;
+            // v9p33river60: if the player just boarded a docked ship, only that one is selectable.
+            if (Player.embarkedShipId) return s.id === Player.embarkedShipId;
             return s.townId === Player.townId;
         });
 
@@ -1496,6 +1498,35 @@
     UI._confirmOffSea = _confirmOffSea;
     UI.showLandingDialog = showLandingDialog;
     UI._executeLanding = _executeLanding;
+    // v9p33river60: re-board a previously-docked ship
+    UI.boardDockedShipUI = function(shipId) {
+        var result = Player.boardDockedShip(shipId);
+        if (result.success) {
+            toast(result.message, 'success');
+        } else {
+            toast(result.message, 'error');
+        }
+    };
+    // v9p33river63/64: stash a pending board action on the player, then start
+    // offroad travel to the ship's coords. On arrival, tickTravel auto-boards.
+    UI.travelToDockedShip = function(shipId) {
+        var ship = (Player.ships || []).find(function(s) { return s.id === shipId; });
+        if (!ship || !ship.dockedCoords) {
+            toast('Ship is not docked on the coast.', 'error');
+            return;
+        }
+        // Clear any stale pending flag from a prior aborted attempt.
+        if (Player.state) Player.state._pendingShipBoardId = null;
+        // Start offroad travel directly (no extra confirm modal — the right-click
+        // menu was the confirmation). Only set the pending flag if travel succeeds.
+        var res = Player.travelToCoords(ship.dockedCoords.x, ship.dockedCoords.y);
+        if (!res || !res.success) {
+            toast(res && res.message ? res.message : 'Cannot travel to ship.', 'error');
+            return;
+        }
+        if (Player.state) Player.state._pendingShipBoardId = shipId;
+        toast('🥾 Traveling to ' + (ship.name || ship.type) + '. You will board on arrival.', 'info');
+    };
     // Skills
     UI.openSkillsDialog = openSkillsDialog;
     UI.learnSkill = learnSkill;

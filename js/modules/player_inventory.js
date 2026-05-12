@@ -1679,4 +1679,77 @@
     Player.setWarAllegiance = setWarAllegiance;
     Player.processWarEnd = processWarEnd;
     Player.shouldShowWarAllegiancePopup = shouldShowWarAllegiancePopup;
+
+    // ── v9p33river74: Ship cargo system ──
+    function _getShipCargoWeight(ship) {
+        if (!ship || !ship.cargo) return 0;
+        var t = 0;
+        for (var rId in ship.cargo) {
+            var qty = ship.cargo[rId] || 0;
+            if (qty <= 0) continue;
+            var res = findResource(rId);
+            t += qty * (res ? (res.weight || 1) : 1);
+        }
+        return t;
+    }
+    function getShipCapacity(ship) {
+        if (!ship) return 0;
+        var st = CONFIG.SHIP_TYPES[ship.type];
+        return st ? (st.capacity || 0) : 0;
+    }
+    function getShipCargo(shipId) {
+        _sync();
+        var ship = (player.ships || []).find(function(s) { return s.id === shipId; });
+        return ship ? (ship.cargo || {}) : {};
+    }
+    function getShipCargoWeight(shipId) {
+        _sync();
+        var ship = (player.ships || []).find(function(s) { return s.id === shipId; });
+        return _getShipCargoWeight(ship);
+    }
+    // Move qty of resId between player.inventory and ship.cargo.
+    // direction: 'load' (player → ship) or 'unload' (ship → player).
+    function transferShipCargo(shipId, resId, qty, direction) {
+        _sync();
+        qty = Math.floor(qty);
+        if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
+        var ship = (player.ships || []).find(function(s) { return s.id === shipId; });
+        if (!ship) return { success: false, message: 'Ship not found.' };
+        ship.cargo = ship.cargo || {};
+        var res = findResource(resId);
+        var w = res ? (res.weight || 1) : 1;
+
+        if (direction === 'load') {
+            var have = player.inventory[resId] || 0;
+            if (have < qty) return { success: false, message: 'You only have ' + have + '.' };
+            var cap = getShipCapacity(ship);
+            var used = _getShipCargoWeight(ship);
+            var room = cap - used;
+            if (room < qty * w) return { success: false, message: 'Ship has only ' + Math.floor(room / w) + ' room for ' + resId + '.' };
+            player.inventory[resId] = have - qty;
+            if (player.inventory[resId] <= 0) delete player.inventory[resId];
+            ship.cargo[resId] = (ship.cargo[resId] || 0) + qty;
+            return { success: true, message: '📦 Loaded ' + qty + ' ' + resId + ' onto ship.' };
+        } else if (direction === 'unload') {
+            var aboard = ship.cargo[resId] || 0;
+            if (aboard < qty) return { success: false, message: 'Ship only has ' + aboard + '.' };
+            // Player capacity check (allow overflow if at port — town storage handles it)
+            var maxCarry = Player.getCarryCapacity ? Player.getCarryCapacity() : Infinity;
+            var carried = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
+            var roomP = maxCarry - carried;
+            if (roomP < qty * w) {
+                // Overflow handled silently if at a town with storage; otherwise reject.
+                if (!player.townId) return { success: false, message: 'You can carry only ' + Math.floor(roomP / w) + ' ' + resId + ' more.' };
+            }
+            ship.cargo[resId] = aboard - qty;
+            if (ship.cargo[resId] <= 0) delete ship.cargo[resId];
+            player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+            return { success: true, message: '📦 Unloaded ' + qty + ' ' + resId + ' from ship.' };
+        }
+        return { success: false, message: 'Invalid direction.' };
+    }
+    Player.getShipCargo = getShipCargo;
+    Player.getShipCargoWeight = getShipCargoWeight;
+    Player.getShipCapacity = function(ship) { return getShipCapacity(ship); };
+    Player.transferShipCargo = transferShipCargo;
 })(window.Player);
