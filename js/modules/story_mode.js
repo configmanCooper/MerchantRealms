@@ -185,7 +185,7 @@ var StoryMode = (function () {
             ],
             endDialog: 'ch5b_complete',
             unlockButtons: [],
-            onStart: null,
+            onStart: '_onChapter5bStart',
             onComplete: null
         },
 
@@ -1635,6 +1635,20 @@ var StoryMode = (function () {
         if (ashford && ashford.market && ashford.market.supply) {
             ashford.market.supply['iron_ore'] = 0;
         }
+    };
+
+    // ── Ch 5b: Settling In — seed iron, planks, stone in player's town for workshop install + crafting ──
+    _hooks._onChapter5bStart = function () {
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        if (!w || !w.towns) return;
+        var playerTownId = (typeof Player !== 'undefined') ? Player.townId : null;
+        if (!playerTownId) return;
+        var pTown = w.towns.find(function(t) { return t.id === playerTownId; });
+        if (!pTown || !pTown.market || !pTown.market.supply) return;
+        pTown.market.supply.iron = (pTown.market.supply.iron || 0) + 10;
+        pTown.market.supply.planks = (pTown.market.supply.planks || 0) + 10;
+        pTown.market.supply.stone = (pTown.market.supply.stone || 0) + 10;
+        _log('A merchant has stocked iron bars, planks, and stone in the local market for your workshop project.');
     };
 
     // ── Ch 9c: Pack and Haul — seed leather & cloth in player's town market ──
