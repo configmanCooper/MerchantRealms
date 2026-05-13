@@ -1219,6 +1219,14 @@ window.Game = (function () {
             //  bridge-span limits, no phantom roads).
             _ensureRoad(ashford_t, ferrowdale_t, 3);
 
+            // v9p33river187: also ensure a direct quality-3 road
+            // Ferrowdale ↔ Millhaven so the player has the canonical
+            // story-mode triangle (Ashford, Ferrowdale, Millhaven) wired up
+            // at game start. Millhaven is _valdrenCapital (named at L822).
+            if (_valdrenCapital && _valdrenCapital.id !== ferrowdale_t.id) {
+                _ensureRoad(ferrowdale_t, _valdrenCapital, 3);
+            }
+
             // v9p33river143: ensure both Ashford and Ferrowdale can reach
             // the Valdren capital (directly or through the Valdren road
             // network). BFS over Valdren roads from Ashford and from
