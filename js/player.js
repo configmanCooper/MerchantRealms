@@ -28662,6 +28662,16 @@
             grantXP(job.xpReward, job.name);
         }
 
+        // v9p33river174: tax collector job slightly upsets the locals every
+        // time you do it. Townfolk dislike being squeezed for coin even if
+        // the crown approves of efficient collection.
+        if (job.jobTypeKey === 'tax_collector' && player.townId) {
+            modifyTownReputation(player.townId, -0.25);
+            if (typeof UI !== 'undefined' && UI.toast) {
+                UI.toast('⬇️ -0.25 Town Rep: 📜 Locals resent the tax collection.', 'info', 'my_actions');
+            }
+        }
+
         // Kingdom reputation gain — occasional, not every job completion
         // Rep is earned sometimes based on job type, with contextual triggers
         if (job.repGain) {
@@ -28669,7 +28679,7 @@
             if (town) {
                 // Per-job-type chance of earning rep (default 30%)
                 var _repChances = {
-                    'tax_collector': 0.4,
+                    'tax_collector': 0.15,
                     'road_repair': 0.35,
                     'castle_servant': 0.20,
                     'royal_scribe': 0.35,
