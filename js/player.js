@@ -36982,6 +36982,7 @@
                     legs: legs,
                     letters: letters,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 10,
                     repGain: 2,
@@ -37047,6 +37048,7 @@
                     currentLeg: 0,
                     legs: spyLegs,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 15,
                     repGain: 3,
@@ -37098,6 +37100,7 @@
                     currentLeg: 0,
                     legs: courierLegs,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 7,
                     repGain: 1,
@@ -37159,6 +37162,7 @@
                     currentLeg: 0,
                     legs: pvtLegs,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 12,
                     repGain: 1,
@@ -37209,6 +37213,7 @@
                     currentLeg: 0,
                     legs: guardLegs,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 6,
                     repGain: 1,
@@ -37259,6 +37264,7 @@
                     currentLeg: 0,
                     legs: tradeLegs,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 10,
                     repGain: 1,
@@ -37309,6 +37315,7 @@
                     currentLeg: 0,
                     legs: healLegs,
                     totalPaid: 0,
+                    dailyPay: Math.max(0, Math.round(job.pay || 0)),
                     status: 'traveling',
                     xpReward: 8,
                     repGain: 2,
@@ -37396,6 +37403,34 @@
             Engine.logEvent('🗺️ ' + mission.name + ' mission timed out. Returning home.');
             completeAutoTravelMission(false);
             return;
+        }
+
+        // v9p33river172: daily wage accrual. Auto-travel jobs are listed in the
+        // job board with a per-day wage like every other job (e.g. Weapons
+        // Courier "pay: 25"). Previously we only paid per-leg lump sums (~20g
+        // total over a 4-day mission), so the player effectively earned ~5g/day
+        // — far less than the listed wage. Now we pay the full listed wage
+        // every day on the mission; per-leg lump sums remain as small task
+        // completion bonuses on top.
+        if (mission.dailyPay && mission.dailyPay > 0) {
+            if (mission._lastPaidDay == null) mission._lastPaidDay = mission.startDay;
+            if (day > mission._lastPaidDay) {
+                var daysOwed = day - mission._lastPaidDay;
+                var effDp = (Player.getWorkEfficiencyModifier ? Player.getWorkEfficiencyModifier() : 1);
+                var owed = Math.round(mission.dailyPay * daysOwed * effDp);
+                if (owed > 0) {
+                    if (player.conquestServitude && player.conquestServitude.active) {
+                        var ksrv = Engine.findKingdom(player.conquestServitude.kingdomId);
+                        if (ksrv) ksrv.gold += owed;
+                    } else {
+                        player.gold += owed;
+                        if (player.stats) player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + owed;
+                    }
+                    mission.totalPaid = (mission.totalPaid || 0) + owed;
+                    Engine.logEvent('🪙 Daily wage: ' + owed + 'g for ' + daysOwed + ' day' + (daysOwed > 1 ? 's' : '') + ' on ' + mission.name + '.');
+                }
+                mission._lastPaidDay = day;
+            }
         }
 
         var leg = mission.legs[mission.currentLeg];
