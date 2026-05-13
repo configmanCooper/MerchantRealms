@@ -1664,6 +1664,33 @@ var StoryMode = (function () {
             }
         }
         _log('Leather and cloth are available in the local market.');
+
+        // v9p33river192: pre-complete objectives the player already satisfies
+        // (player walks into the chapter with leather, cloth, or a backpack
+        // already from prior gameplay).
+        try {
+            var ch = _currentChapterDef();
+            if (!ch || !ch.objectives) return;
+            var inv = (typeof Player !== 'undefined' && Player.state && Player.state.inventory) ? Player.state.inventory : {};
+            var haveLeather = inv.leather || 0;
+            var haveCloth = inv.cloth || 0;
+            var haveBackpack = (inv.backpack || 0) > 0 || (typeof Player !== 'undefined' && Player.state && Player.state._backpack === true);
+            for (var oi = 0; oi < ch.objectives.length; oi++) {
+                var o = ch.objectives[oi];
+                if (!o || o.done) continue;
+                if (o.id === 'ch9c_buy_leather' && haveLeather >= 2) {
+                    o.done = true; _storyState.objectives[o.id] = true;
+                    _log('Pre-completed ch9c_buy_leather (already have ' + haveLeather + ' leather).');
+                } else if (o.id === 'ch9c_buy_cloth' && haveCloth >= 1) {
+                    o.done = true; _storyState.objectives[o.id] = true;
+                    _log('Pre-completed ch9c_buy_cloth (already have ' + haveCloth + ' cloth).');
+                } else if (o.id === 'ch9c_craft_backpack' && haveBackpack) {
+                    o.done = true; _storyState.objectives[o.id] = true;
+                    _log('Pre-completed ch9c_craft_backpack (player already has a backpack).');
+                }
+            }
+            _refreshTracker();
+        } catch(e) { _log('ch9c pre-complete check failed: ' + e.message); }
     };
 
     // ── Ch 10: Bread and Butter — seed bricks in Ashford & Ferrowdale ──
