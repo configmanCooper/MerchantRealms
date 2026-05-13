@@ -842,8 +842,20 @@
                 var totalWeight = 0;
                 var maxCapacity = Math.min(CONFIG.EM_CARAVAN_CAPACITY_MAX || 200,
                                            CONFIG.EM_CARAVAN_CAPACITY_MIN + Math.floor((em.gold || 0) / 50));
-                // Wagon bonus: each wagon owned adds 100 capacity
-                var _wagonBonus = Math.min((em._wagons || 0), 3) * 100;
+                // v9p33river194: tier-weighted transport capacity bonus
+                // (was flat +100 per wagon). Reads em._transports if set,
+                // otherwise falls back to flat +100 × em._wagons (legacy EMs).
+                var _wagonBonus = 0;
+                if (em._transports) {
+                    var _tCaps = { backpack: 15, cart: 40, small_wagon: 70, wagon: 100, large_wagon: 150 };
+                    for (var _tk in _tCaps) {
+                        _wagonBonus += (em._transports[_tk] || 0) * _tCaps[_tk];
+                    }
+                    // Cap at 450 (3× large wagon equivalent) so a hoarder isn't infinite
+                    if (_wagonBonus > 450) _wagonBonus = 450;
+                } else {
+                    _wagonBonus = Math.min((em._wagons || 0), 3) * 100;
+                }
                 maxCapacity += _wagonBonus;
 
                 // Score based on goods we can send from inventory
@@ -905,7 +917,16 @@
                     fromTownId: em.townId,
                     toTownId: bestDest,
                     goods: bestGoods,
-                    capacity: (CONFIG.EM_CARAVAN_CAPACITY_MAX || 200) + Math.min((em._wagons || 0), 3) * 100,
+                    capacity: (CONFIG.EM_CARAVAN_CAPACITY_MAX || 200) + (function() {
+                        // v9p33river194: tier-weighted transport capacity
+                        if (em._transports) {
+                            var _tCaps = { backpack: 15, cart: 40, small_wagon: 70, wagon: 100, large_wagon: 150 };
+                            var _b = 0;
+                            for (var _tk in _tCaps) _b += (em._transports[_tk] || 0) * _tCaps[_tk];
+                            return Math.min(_b, 450);
+                        }
+                        return Math.min((em._wagons || 0), 3) * 100;
+                    })(),
                     progress: 0,
                     speed: CONFIG.EM_CARAVAN_SPEED || 0.08,
                     startDay: world.day,
@@ -1804,33 +1825,48 @@
                 eliteBuildAI(em, town, rng, strategy);
             }
 
-            // ---- 3a. WAGON ACQUISITION (every 15 days) ----
-            // EMs try to buy wagons to increase caravan capacity (max 3 wagons)
-            if (day % 15 === 0 && (em._wagons || 0) < 3 && (em.gold || 0) > 500) {
+            // ---- 3a. TRANSPORT ACQUISITION (every 15 days) ----
+            // v9p33river194: EMs now consider ALL transport tiers (backpack →
+            // cart → small_wagon → wagon → large_wagon) when boosting caravan
+            // capacity. They prefer the largest they can afford, with cart
+            // and large_wagon previously missing from their AI. Tracked in
+            // em._transports {backpack, cart, small_wagon, wagon, large_wagon}
+            // with em._wagons retained as a count for back-compat.
+            if (day % 15 === 0 && (em._wagons || 0) < 3 && (em.gold || 0) > 100) {
                 var _wantWagon = (em._wagons || 0) === 0 || (em.gold || 0) > 2000;
                 if (_wantWagon) {
-                    // Try to buy wagon from local market
+                    if (!em._transports) em._transports = { backpack: 0, cart: 0, small_wagon: 0, wagon: 0, large_wagon: 0 };
+                    // Priority: try the biggest the EM can afford from market
+                    var _transportTiers = [
+                        { id: 'large_wagon', minGold: 1500, name: 'Large Wagon' },
+                        { id: 'wagon',       minGold: 500,  name: 'Wagon' },
+                        { id: 'small_wagon', minGold: 200,  name: 'Small Wagon' },
+                        { id: 'cart',        minGold: 80,   name: 'Cart' },
+                        { id: 'backpack',    minGold: 30,   name: 'Backpack' }
+                    ];
                     var _wagonBought = false;
-                    if (town.market && (town.market.supply.wagon || 0) > 0) {
-                        var _wPrice = town.market.prices.wagon || 120;
-                        if ((em.gold || 0) >= _wPrice) {
-                            em.gold -= _wPrice;
-                            town.market.supply.wagon = (town.market.supply.wagon || 0) - 1;
-                            em._wagons = (em._wagons || 0) + 1;
-                            _wagonBought = true;
-                        }
+                    for (var _tti = 0; _tti < _transportTiers.length && !_wagonBought; _tti++) {
+                        var _tier = _transportTiers[_tti];
+                        if ((em.gold || 0) < _tier.minGold) continue;
+                        if (!town.market || (town.market.supply[_tier.id] || 0) <= 0) continue;
+                        var _tPrice = town.market.prices[_tier.id] || 50;
+                        if ((em.gold || 0) < _tPrice) continue;
+                        em.gold -= _tPrice;
+                        town.market.supply[_tier.id] = (town.market.supply[_tier.id] || 0) - 1;
+                        em._transports[_tier.id] = (em._transports[_tier.id] || 0) + 1;
+                        em._wagons = (em._wagons || 0) + 1;
+                        _wagonBought = true;
+                        logEvent(em.firstName + ' acquired a ' + _tier.name + ' for ' + Math.round(_tPrice) + 'g — caravan capacity boosted.', {
+                            type: 'elite_logistics',
+                            cause: em.firstName + ' invested in better transport.',
+                            effects: ['Caravan capacity +' + (
+                                _tier.id === 'large_wagon' ? 150 :
+                                _tier.id === 'wagon' ? 100 :
+                                _tier.id === 'small_wagon' ? 70 :
+                                _tier.id === 'cart' ? 40 : 15)]
+                        });
                     }
-                    // Try small_wagon as fallback
-                    if (!_wagonBought && town.market && (town.market.supply.small_wagon || 0) > 0) {
-                        var _swPrice = town.market.prices.small_wagon || 75;
-                        if ((em.gold || 0) >= _swPrice) {
-                            em.gold -= _swPrice;
-                            town.market.supply.small_wagon = (town.market.supply.small_wagon || 0) - 1;
-                            em._wagons = (em._wagons || 0) + 1;
-                            _wagonBought = true;
-                        }
-                    }
-                    // If no wagons available and EM is wealthy, consider building a wheelwright
+                    // If no transport available and EM is wealthy, consider building a wheelwright
                     if (!_wagonBought && (em._lastWagonCheck || 0) + 60 < day && (em.gold || 0) > 1500) {
                         em._lastWagonCheck = day;
                         var _hasWheelwright = (em.buildings || []).some(function(b) { return b.type === 'wheelwright'; });

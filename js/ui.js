@@ -463,6 +463,7 @@ window.UI = (function () {
         registerAction('openHireDialog', function() { openHireDialog(); });
         registerAction('openCaravanDialog', function() { UI.openCaravanDialog(); });
         registerAction('openCharacterDialog', function() { openCharacterDialog(); });
+        registerAction('charTabSwitch', function(_t, d) { if (d.id) _applyCharTab(d.id); });
         registerAction('openMapView', function() { openMapView(); });
         registerAction('openEventLog', function() { openEventLog(); });
         registerAction('openSettings', function() { openSettings(); });
@@ -5351,7 +5352,11 @@ window.UI = (function () {
         var _playerPortrait = Player.portrait || '';
         var _portraitDisplay = _playerPortrait ? '<span style="font-size:2.5rem;vertical-align:middle;margin-right:8px;">' + _playerPortrait + '</span>' : '';
 
-        let html = `<div class="detail-section">
+        let html = `<div id="char-tab-bar" style="display:flex;gap:6px;margin:-4px -4px 10px;padding:6px 4px 8px;border-bottom:1px solid rgba(255,255,255,0.08);position:sticky;top:0;background:#1e160c;z-index:5;">
+            <button class="btn-medieval" data-action="charTabSwitch" data-id="character" style="font-size:0.85rem;padding:6px 18px;flex:1;">👤 Character</button>
+            <button class="btn-medieval" data-action="charTabSwitch" data-id="equipment" style="font-size:0.85rem;padding:6px 18px;flex:1;">🎒 Equipment</button>
+        </div>
+        <div class="detail-section">
             <h3>Identity</h3>
             <div style="text-align:center;margin-bottom:8px;">${_portraitDisplay}</div>
             <div class="detail-row"><span class="label">Name</span>
@@ -5471,7 +5476,7 @@ window.UI = (function () {
             }
         }
 
-        html += '<div class="detail-section"><h3>Equipment</h3>';
+        html += '<div class="detail-section" data-char-tab="equipment"><h3>Equipment</h3>';
         html += '<div class="detail-row"><span class="label">Weapon</span><span class="value">' + weaponDisplay + '</span></div>';
         html += '<div class="detail-row"><span class="label">Armor</span><span class="value">' + armorDisplay + '</span></div>';
 
@@ -5572,7 +5577,7 @@ window.UI = (function () {
         } catch (e) { /* no-op */ }
 
         // Ships section
-        html += `<div class="detail-section">
+        html += `<div class="detail-section" data-char-tab="equipment">
             <h3>⛵ Ships</h3>`;
         if (Player.ships && Player.ships.length > 0) {
             for (const ship of Player.ships) {
@@ -5611,7 +5616,7 @@ window.UI = (function () {
         html += `</div>`;
 
         // ── Storage / Capacity Section ──
-        html += `<div class="detail-section"><h3>📦 Storage & Capacity</h3>`;
+        html += `<div class="detail-section" data-char-tab="equipment"><h3>📦 Storage & Capacity</h3>`;
 
         // ── Horses Section ──
         var maxHorsesDisp = (CONFIG.MAX_HORSES || 2) + (Player.hasSkill && Player.hasSkill('horse_mastery') ? 2 : 0);
@@ -5786,6 +5791,9 @@ window.UI = (function () {
 
         openModal(`👤 ${Player.fullName || 'Character'}`, html);
 
+        // v9p33river194: apply current tab (default character) after render
+        setTimeout(function() { _applyCharTab(window._charActiveTab || 'character'); }, 0);
+
         // Inject buttons next to the modal title
         setTimeout(function() {
             var mt = document.getElementById('modalTitle');
@@ -5797,6 +5805,29 @@ window.UI = (function () {
                     ' <button class="btn-medieval" data-action="openInventory" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📦 Inventory</button>';
             }
         }, 30);
+    }
+
+    // v9p33river194: tab switcher for the Character modal — toggles which
+    // detail-section blocks are visible. 'character' = all sections without
+    // data-char-tab="equipment"; 'equipment' = only those that DO have it.
+    function _applyCharTab(tab) {
+        var sections = document.querySelectorAll('.modal-body .detail-section');
+        for (var i = 0; i < sections.length; i++) {
+            var s = sections[i];
+            var ct = s.getAttribute('data-char-tab') || 'character';
+            s.style.display = (ct === tab) ? '' : 'none';
+        }
+        // Highlight active tab button
+        var bar = document.getElementById('char-tab-bar');
+        if (bar) {
+            var btns = bar.querySelectorAll('button[data-action="charTabSwitch"]');
+            for (var b = 0; b < btns.length; b++) {
+                var isActive = btns[b].getAttribute('data-id') === tab;
+                btns[b].style.opacity = isActive ? '1' : '0.55';
+                btns[b].style.borderColor = isActive ? 'var(--gold)' : 'var(--panel-border)';
+            }
+        }
+        window._charActiveTab = tab;
     }
 
     function _buildWarAdvisoryHtml() {
