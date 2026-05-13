@@ -21064,6 +21064,9 @@
         // Injuries & illnesses tick
         Player.tickInjuriesAndIllnesses();
 
+        // v9p33river179: home theft — once per day per player house
+        try { tickHomeTheft(); } catch(e) { console.warn('[tickHomeTheft]', e.message); }
+
         // Safety net: if health reached 0 from any source, trigger death (unless god mode invincible)
         if (player.alive && player.health <= 0 && !window._godInvincible) {
             if (!player.deathCause) player.deathCause = 'Health reached zero';
@@ -37399,6 +37402,83 @@
             message: mission.name + ' — ' + totalStops + ' deliveries. Traveling to ' + (Engine.findTown(firstLeg.townId) || { name: 'unknown' }).name + '...',
             autoTravelStarted: true
         };
+    }
+
+    // v9p33river179: Home theft. Daily roll per owned house. Combined safety
+    // s = (house.security + town.security/100) / 2, mapped to daily prob via
+    // a quadratic-log curve calibrated so:
+    //   s=0.0 (worst home + worst town)  → p≈0.333  (~1 every 3 days)
+    //   s=0.5 (mid home  + mid   town)   → p≈0.0111 (~1 every 90 days)
+    //   s=1.0 (best home + best  town)   → p≈0.00139(~1 every 720 days)
+    // Formula: p = 0.333 * exp(-8.121*s + 2.642*s^2)
+    function tickHomeTheft() {
+        if (!player.alive) return;
+        if (!player.houses || player.houses.length === 0) return;
+        var rng = Engine.getRng();
+        if (!rng) return;
+
+        for (var hi = 0; hi < player.houses.length; hi++) {
+            var house = player.houses[hi];
+            if (!house) continue;
+            // Skip rentals - the renter (NPC) experiences theft, not the owner
+            if (house.isRental) continue;
+            var ht = (CONFIG.HOUSING_TYPES || []).find(function(h) { return h.id === house.type; });
+            var houseSec = ht ? (ht.security || 0) : 0;
+            var townSec = 0;
+            if (house.townId) {
+                var t = Engine.findTown(house.townId);
+                if (t) townSec = (t.security || 0) / 100;
+            }
+            var s = (houseSec + townSec) * 0.5;
+            if (s < 0) s = 0; else if (s > 1) s = 1;
+            var p = 0.333 * Math.exp(-8.121 * s + 2.642 * s * s);
+            if (!rng.chance(p)) continue;
+
+            // Theft hit. Steal 5-15% (by item count) from this house's
+            // homeStorage. If empty, the thief still rifled through (log only).
+            var storage = house.homeStorage || {};
+            var itemKeys = [];
+            for (var ik in storage) if (storage[ik] > 0) itemKeys.push(ik);
+            var townName = house.townId ? ((Engine.findTown(house.townId) || {}).name || 'unknown') : 'unknown';
+            var houseName = ht ? ht.name : 'home';
+
+            if (itemKeys.length === 0) {
+                Engine.logEvent('🦹 Thieves broke into your ' + houseName + ' in ' + townName + ' but found nothing of value.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🦹 Empty-handed thieves hit your ' + houseName + ' in ' + townName + '!', 'warning', 'my_business');
+                continue;
+            }
+
+            var totalCount = 0;
+            for (var c = 0; c < itemKeys.length; c++) totalCount += storage[itemKeys[c]];
+            var stealPct = 0.05 + rng.random() * 0.10; // 5-15%
+            var stealRemaining = Math.max(1, Math.floor(totalCount * stealPct));
+            var stolen = {};
+            var stolenValue = 0;
+
+            // Random shuffle of item keys for fair distribution of theft
+            for (var sh = itemKeys.length - 1; sh > 0; sh--) {
+                var jj = rng.randInt(0, sh);
+                var tmp = itemKeys[sh]; itemKeys[sh] = itemKeys[jj]; itemKeys[jj] = tmp;
+            }
+            for (var ki = 0; ki < itemKeys.length && stealRemaining > 0; ki++) {
+                var key = itemKeys[ki];
+                var avail = storage[key] || 0;
+                if (avail <= 0) continue;
+                var take = Math.min(avail, Math.max(1, Math.ceil(avail * stealPct)));
+                if (take > stealRemaining) take = stealRemaining;
+                storage[key] -= take;
+                if (storage[key] <= 0) delete storage[key];
+                stolen[key] = (stolen[key] || 0) + take;
+                stealRemaining -= take;
+                // Track value
+                var res = (typeof RESOURCE_TYPES !== 'undefined') ? Object.values(RESOURCE_TYPES).find(function(r) { return r.id === key; }) : null;
+                stolenValue += take * (res ? (res.basePrice || 5) : 5);
+            }
+
+            var stolenList = Object.keys(stolen).map(function(k) { return stolen[k] + ' ' + k; }).join(', ');
+            Engine.logEvent('🦹 Thieves broke into your ' + houseName + ' in ' + townName + '! Stolen: ' + stolenList + ' (≈' + stolenValue + 'g).');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🦹 Theft in your ' + houseName + ' (' + townName + ')! Lost ≈' + stolenValue + 'g of goods.', 'danger', 'my_business');
+        }
     }
 
     // Tick processor — called every game day from playerTick
