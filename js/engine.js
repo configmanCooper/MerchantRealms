@@ -230,7 +230,7 @@
         if (typeof window !== 'undefined' && window._testworld1 && window._testworld1.terrain &&
             window._testworld1.cols === cols && window._testworld1.rows === rows &&
             (typeof CONFIG === 'undefined' || CONFIG.RENDERER_MODE === 'map')) {
-            console.log('[engine] Using testworld1 terrain (' + cols + 'x' + rows + ')');
+            console.log('[engine] Using preloaded map terrain (' + cols + 'x' + rows + ')');
             return { grid: new Uint8Array(window._testworld1.terrain), cols: cols, rows: rows };
         }
 
@@ -611,6 +611,104 @@
             const r = RESOURCE_TYPES[key];
             town.localBasePrice[r.id] = r.basePrice * (modifiers[r.id] || 1.0);
         }
+    }
+
+    // v9p33river138: hard physical check — does this town have an actual
+    // ocean/water tile within port-proximity range? Authoritative source for
+    // "is this town allowed to be a port?". Used by both deserialize cleanup
+    // (demotes ghost ports from earlier saves) and the daily diplomacy port-
+    // upgrade logic (which previously trusted a stale terrainType cache or
+    // sea-route presence).
+    function _townHasWaterNearby(town, proximity) {
+        if (!town || !world || !world.terrain) return false;
+        if (town.isIsland) return true;
+        var prox = proximity || (CONFIG.PORT_WATER_PROXIMITY || 5);
+        var cols = world.gridCols;
+        var rows = world.gridRows;
+        var ttx = Math.floor((town.x || 0) / CONFIG.TILE_SIZE);
+        var tty = Math.floor((town.y || 0) / CONFIG.TILE_SIZE);
+        for (var dy = -prox; dy <= prox; dy++) {
+            for (var dx = -prox; dx <= prox; dx++) {
+                var cx = ttx + dx, cy = tty + dy;
+                if (cx >= 0 && cx < cols && cy >= 0 && cy < rows
+                    && world.terrain[cy * cols + cx] === TERRAIN.WATER.id) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // v9p33river139: build (and cache on world) a bitmap of OCEAN tiles —
+    // water tiles connected to the map edge. Used so lakes/inland ponds
+    // (water tiles surrounded by land) don't qualify a town as a port.
+    // Rivers are currently disabled in worldgen, but this future-proofs:
+    // a river tile is "ocean" only if it eventually flows out to the edge.
+    function _buildOceanMask() {
+        if (!world || !world.terrain) return null;
+        var cols = world.gridCols;
+        var rows = world.gridRows;
+        var n = cols * rows;
+        var mask = new Uint8Array(n);
+        // BFS from every edge water tile through 4-connected water neighbors.
+        var queue = [];
+        for (var x = 0; x < cols; x++) {
+            if (world.terrain[x] === TERRAIN.WATER.id) { mask[x] = 1; queue.push(x); }
+            var idxBot = (rows - 1) * cols + x;
+            if (world.terrain[idxBot] === TERRAIN.WATER.id) { mask[idxBot] = 1; queue.push(idxBot); }
+        }
+        for (var y = 0; y < rows; y++) {
+            var idxL = y * cols;
+            if (world.terrain[idxL] === TERRAIN.WATER.id) { mask[idxL] = 1; queue.push(idxL); }
+            var idxR = y * cols + (cols - 1);
+            if (world.terrain[idxR] === TERRAIN.WATER.id) { mask[idxR] = 1; queue.push(idxR); }
+        }
+        var head = 0;
+        while (head < queue.length) {
+            var p = queue[head++];
+            var py = (p / cols) | 0;
+            var px = p - py * cols;
+            // 4-connected neighbors
+            if (px > 0)        { var l = p - 1;     if (!mask[l] && world.terrain[l] === TERRAIN.WATER.id) { mask[l] = 1; queue.push(l); } }
+            if (px < cols - 1) { var r = p + 1;     if (!mask[r] && world.terrain[r] === TERRAIN.WATER.id) { mask[r] = 1; queue.push(r); } }
+            if (py > 0)        { var u = p - cols;  if (!mask[u] && world.terrain[u] === TERRAIN.WATER.id) { mask[u] = 1; queue.push(u); } }
+            if (py < rows - 1) { var d = p + cols;  if (!mask[d] && world.terrain[d] === TERRAIN.WATER.id) { mask[d] = 1; queue.push(d); } }
+        }
+        return mask;
+    }
+
+    function _getOceanMask() {
+        if (!world || !world.terrain) return null;
+        if (!world._oceanMask || world._oceanMaskCols !== world.gridCols || world._oceanMaskRows !== world.gridRows) {
+            world._oceanMask = _buildOceanMask();
+            world._oceanMaskCols = world.gridCols;
+            world._oceanMaskRows = world.gridRows;
+        }
+        return world._oceanMask;
+    }
+
+    // v9p33river139: stricter port qualification — water within proximity
+    // tiles AND that water must be ocean (connected to map edge), not a
+    // lake or pond. Islands always pass.
+    function _townHasOceanNearby(town, proximity) {
+        if (!town || !world || !world.terrain) return false;
+        if (town.isIsland) return true;
+        var mask = _getOceanMask();
+        if (!mask) return _townHasWaterNearby(town, proximity);
+        var prox = proximity || (CONFIG.PORT_WATER_PROXIMITY || 5);
+        var cols = world.gridCols;
+        var rows = world.gridRows;
+        var ttx = Math.floor((town.x || 0) / CONFIG.TILE_SIZE);
+        var tty = Math.floor((town.y || 0) / CONFIG.TILE_SIZE);
+        for (var dy = -prox; dy <= prox; dy++) {
+            for (var dx = -prox; dx <= prox; dx++) {
+                var cx = ttx + dx, cy = tty + dy;
+                if (cx >= 0 && cx < cols && cy >= 0 && cy < rows && mask[cy * cols + cx]) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // --- A* Pathfinding with binary min-heap ---
@@ -12179,6 +12277,10 @@
 
         for (var ti = 0; ti < world.towns.length; ti++) {
             var town = world.towns[ti];
+            // v9p33river131: outposts have their own immigration system
+            // (tickOutpostImmigration / outpostResidents). Skip them entirely
+            // so happiness-driven migration doesn't drop NPCs into them.
+            if (town.isOutpost) continue;
             var h = town.happiness || 50;
             var pop = typeof town.population === 'number' ? town.population : 0;
             if (pop < 3) continue; // skip near-empty towns
@@ -12433,9 +12535,9 @@
                         });
                         for (var ei = 0; ei < Math.min(expected, availPeople.length, 2); ei++) {
                             var emigrant = availPeople[rng.randInt(0, availPeople.length - 1)];
-                            // Move to a random happier town that isn't over pop cap
+                            // Move to a random happier town that isn't over pop cap (skip outposts)
                             var betterTowns = world.towns.filter(function(bt) {
-                                if (bt.id === town.id || (bt.happiness || 50) <= h + 10) return false;
+                                if (bt.id === town.id || bt.isOutpost || (bt.happiness || 50) <= h + 10) return false;
                                 var btCat = bt.category || 'town';
                                 var btCap = (CONFIG.TOWN_POP_CAP || {})[btCat] || 9999;
                                 return (bt.population || 0) < btCap;
@@ -12503,7 +12605,7 @@
                         for (var fi = 0; fi < Math.min(exodusCount, fleeingPeople.length, 5); fi++) {
                             var refugee = fleeingPeople[rng.randInt(0, fleeingPeople.length - 1)];
                             var safeTowns = world.towns.filter(function(st) {
-                                if (st.id === town.id || (st.happiness || 50) <= 30) return false;
+                                if (st.id === town.id || st.isOutpost || (st.happiness || 50) <= 30) return false;
                                 var stCat = st.category || 'town';
                                 var stCap = (CONFIG.TOWN_POP_CAP || {})[stCat] || 9999;
                                 return (st.population || 0) < stCap;
@@ -14561,7 +14663,10 @@
                             );
                             if (lowerTaxKingdoms.length > 0) {
                                 const dest = rng.pick(lowerTaxKingdoms);
-                                const destTownId = rng.pick([...dest.territories]);
+                                // v9p33river131: skip outposts as flight destinations.
+                                const _emTowns = [...dest.territories].filter(function(_tid) { var _tt = findTown(_tid); return _tt && !_tt.isOutpost && !_tt.destroyed && !_tt.abandoned; });
+                                if (_emTowns.length === 0) continue;
+                                const destTownId = rng.pick(_emTowns);
                                 const destTown = findTown(destTownId);
                                 if (destTown) {
                                     const oldTown = findTown(em.townId);
@@ -14589,7 +14694,10 @@
                             );
                             if (lowerTaxKingdoms.length > 0) {
                                 const dest = rng.pick(lowerTaxKingdoms);
-                                const destTownId = rng.pick([...dest.territories]);
+                                // v9p33river131: skip outposts as flight destinations.
+                                const _mTowns = [...dest.territories].filter(function(_tid) { var _tt = findTown(_tid); return _tt && !_tt.isOutpost && !_tt.destroyed && !_tt.abandoned; });
+                                if (_mTowns.length === 0) continue;
+                                const destTownId = rng.pick(_mTowns);
                                 const destTown = findTown(destTownId);
                                 if (destTown) {
                                     m.townId = destTown.id;
@@ -16893,6 +17001,14 @@
             if (town.id === currentTown.id) continue;
             // NPCs can only migrate to directly connected towns with intact routes
             if (!_migReachable[town.id]) continue;
+            // v9p33river129: outposts are not valid general-migration destinations.
+            // Outpost recruitment is handled exclusively by tickOutpostImmigration
+            // (which respects housing caps and player-built upgrades). Without
+            // this filter, NPCs were silently relocating to outposts even
+            // though the outpost had no housing/jobs — population stayed 0
+            // (only outpostResidents counts) but the NPCs ended up "in" the
+            // outpost on the map.
+            if (town.isOutpost) continue;
 
             // Prefer same kingdom, or friendly kingdoms
             const sameKingdom = town.kingdomId === person.kingdomId;
@@ -16916,6 +17032,627 @@
             }
         }
         return bestTown;
+    }
+
+    // v9p33river131: relocate NPCs that ended up at outposts via paths other
+    // than tickOutpostImmigration (tax flight, refugee migration, mass exodus,
+    // resource discovery, kingdom collapse, etc.). Outposts only "have" people
+    // listed in outpostResidents; anyone else with townId pointing at an
+    // outpost is effectively stranded, contributing to a 0-pop ghost town that
+    // still renders NPCs.
+    //
+    // - Skip player guards / companions / family / employees: they belong
+    //   wherever the player currently is (which may legitimately be the
+    //   outpost). Their townId tracks the player.
+    // - Skip legitimate outpost residents.
+    // - Move strays to the nearest non-outpost town in the same kingdom
+    //   (fallback to any non-outpost town).
+    function relocateStrandedOutpostNPCs() {
+        if (!world || !world.people || !world.towns) return 0;
+        var playerGuardIds = {};
+        var playerCompanionIds = {};
+        try {
+            if (typeof Player !== 'undefined' && Player.state) {
+                var ps = Player.state;
+                if (ps.guards) {
+                    for (var _gi = 0; _gi < ps.guards.length; _gi++) {
+                        if (ps.guards[_gi].personId) playerGuardIds[ps.guards[_gi].personId] = true;
+                    }
+                }
+                if (ps.travelCompanions) {
+                    for (var _ci = 0; _ci < ps.travelCompanions.length; _ci++) {
+                        var _cmp = ps.travelCompanions[_ci];
+                        var _cmpId = _cmp && (_cmp.personId || _cmp.id);
+                        if (_cmpId) playerCompanionIds[_cmpId] = true;
+                    }
+                }
+                if (ps.spouseId) playerCompanionIds[ps.spouseId] = true;
+                if (ps.childrenIds) {
+                    for (var _chi = 0; _chi < ps.childrenIds.length; _chi++) {
+                        playerCompanionIds[ps.childrenIds[_chi]] = true;
+                    }
+                }
+                if (ps.parentIds) {
+                    for (var _pai = 0; _pai < ps.parentIds.length; _pai++) {
+                        playerCompanionIds[ps.parentIds[_pai]] = true;
+                    }
+                }
+                if (ps.employees) {
+                    for (var _ei = 0; _ei < ps.employees.length; _ei++) {
+                        var _emp = ps.employees[_ei];
+                        var _empId = _emp && (_emp.personId || _emp.id);
+                        if (_empId) playerCompanionIds[_empId] = true;
+                    }
+                }
+            }
+        } catch (e) { /* defensive */ }
+
+        var moved = 0;
+        for (var _hni = 0; _hni < world.people.length; _hni++) {
+            var _hp = world.people[_hni];
+            if (!_hp.alive) continue;
+            // Skip player-bound NPCs — their location follows the player.
+            if (_hp.occupation === 'player_guard') continue;
+            if (playerGuardIds[_hp.id]) continue;
+            if (playerCompanionIds[_hp.id]) continue;
+            var _hpTown = world.towns.find(function(t) { return t.id === _hp.townId; });
+            if (!_hpTown || !_hpTown.isOutpost) continue;
+            // Skip legitimate residents
+            if (_hpTown.outpostResidents && _hpTown.outpostResidents.indexOf(_hp.id) !== -1) continue;
+            // Find nearest non-outpost town in same kingdom
+            var _bestTown = null, _bestD = Infinity;
+            for (var _hti = 0; _hti < world.towns.length; _hti++) {
+                var _ct = world.towns[_hti];
+                if (_ct.isOutpost || _ct.destroyed || _ct.abandoned) continue;
+                if (_hpTown.kingdomId && _ct.kingdomId !== _hpTown.kingdomId) continue;
+                var _d = Math.hypot((_ct.x || 0) - (_hpTown.x || 0), (_ct.y || 0) - (_hpTown.y || 0));
+                if (_d < _bestD) { _bestD = _d; _bestTown = _ct; }
+            }
+            if (!_bestTown) {
+                for (var _hti2 = 0; _hti2 < world.towns.length; _hti2++) {
+                    var _ct2 = world.towns[_hti2];
+                    if (_ct2.isOutpost || _ct2.destroyed || _ct2.abandoned) continue;
+                    var _d2 = Math.hypot((_ct2.x || 0) - (_hpTown.x || 0), (_ct2.y || 0) - (_hpTown.y || 0));
+                    if (_d2 < _bestD) { _bestD = _d2; _bestTown = _ct2; }
+                }
+            }
+            if (_bestTown) {
+                _hp.townId = _bestTown.id;
+                if (_hp.kingdomId !== _bestTown.kingdomId) _hp.kingdomId = _bestTown.kingdomId;
+                moved++;
+            }
+        }
+        return moved;
+    }
+
+    // v9p33river139: walk every town and reconcile its isPort flag with
+    // physical reality (ocean tiles within PORT_WATER_PROXIMITY).
+    // - Demote ports without ocean nearby (lakes/ponds don't qualify);
+    //   strip dock/fishery/shipyard buildings; drop sea routes anchored at
+    //   them.
+    // - Promote any non-port town that DOES have ocean nearby; auto-add a
+    //   basic dock + fishery so the town has port infrastructure.
+    // Skips outposts (player decides their dock policy via the outpost UI).
+    function reconcilePortStatus() {
+        if (!world || !world.towns) return { demoted: 0, promoted: 0 };
+        // Force ocean mask rebuild in case terrain changed
+        world._oceanMask = null;
+        var prox = CONFIG.PORT_WATER_PROXIMITY || 5;
+        var demoted = 0, promoted = 0;
+        for (var i = 0; i < world.towns.length; i++) {
+            var t = world.towns[i];
+            if (!t || t.isOutpost) continue;
+            var hasOcean = _townHasOceanNearby(t, prox);
+            // v9p33river147: stranded "island" towns — towns marked isIsland
+            // but with no water within 5 tiles. Worldgen places islands in
+            // open ocean, but story-mode setup can move them inland (e.g. a
+            // foreign-kingdom border town picked from the closest list).
+            // Strip the island flag, treat as a normal land town.
+            if (t.isIsland && !hasOcean) {
+                t.isIsland = false;
+            }
+            if (t.isPort && !t.isIsland && !hasOcean) {
+                t.isPort = false;
+                if (t.buildings && t.buildings.length) {
+                    t.buildings = t.buildings.filter(function(b) { return b.type !== 'dock' && b.type !== 'fishery' && b.type !== 'shipyard'; });
+                }
+                if (world.seaRoutes && world.seaRoutes.length) {
+                    var _tid = t.id;
+                    world.seaRoutes = world.seaRoutes.filter(function(sr) { return (sr.fromTownId !== _tid) && (sr.toTownId !== _tid); });
+                }
+                demoted++;
+            } else if (!t.isPort && hasOcean) {
+                t.isPort = true;
+                if (!t.buildings) t.buildings = [];
+                if (!t.buildings.some(function(b) { return b.type === 'dock'; })) {
+                    t.buildings.push({ type: 'dock', level: 1, ownerId: null, builtDay: world.day || 0, condition: 'new', lastRepairDay: 0 });
+                }
+                if (!t.buildings.some(function(b) { return b.type === 'fishery'; })) {
+                    t.buildings.push({ type: 'fishery', level: 1, ownerId: null, builtDay: world.day || 0, condition: 'new', lastRepairDay: 0 });
+                }
+                if (t.market && t.market.supply) {
+                    t.market.supply.fish = Math.max(t.market.supply.fish || 0, 30);
+                    t.market.supply.salt = Math.max(t.market.supply.salt || 0, 15);
+                }
+                promoted++;
+            }
+        }
+
+        // v9p33river168: comprehensive orphaned-sea-route cleanup. The
+        // demote loop above only removes routes from towns that WERE ports
+        // and got demoted. But story-mode can also (a) reassign town.id
+        // ownership without demoting, (b) move towns whose isPort was
+        // already false, or (c) leave a worldgen route whose endpoint town
+        // was deleted. Any sea route where either endpoint is no longer a
+        // valid port becomes a phantom orange line at the old coordinates.
+        // Pass: drop every sea route unless BOTH endpoints currently exist
+        // and are isPort. Also drop routes whose waypoints terminate >50px
+        // from the current endpoint town position (stale geometry).
+        if (world.seaRoutes && world.seaRoutes.length) {
+            var _beforeCount = world.seaRoutes.length;
+            world.seaRoutes = world.seaRoutes.filter(function(sr) {
+                var fromT = townIndex[sr.fromTownId];
+                var toT = townIndex[sr.toTownId];
+                if (!fromT || !toT) return false;
+                if (!fromT.isPort || !toT.isPort) return false;
+                // Stale-waypoint check: if waypoints exist and end too far
+                // from current town positions, the town was moved without a
+                // route refresh — drop it rather than render a phantom.
+                if (sr.waypoints && sr.waypoints.length >= 2) {
+                    var first = sr.waypoints[0];
+                    var last = sr.waypoints[sr.waypoints.length - 1];
+                    var fGap = Math.min(
+                        Math.hypot(first.x - fromT.x, first.y - fromT.y),
+                        Math.hypot(first.x - toT.x, first.y - toT.y)
+                    );
+                    var lGap = Math.min(
+                        Math.hypot(last.x - fromT.x, last.y - fromT.y),
+                        Math.hypot(last.x - toT.x, last.y - toT.y)
+                    );
+                    if (fGap > 50 || lGap > 50) return false;
+                }
+                return true;
+            });
+            var _orphanedSeaRoutes = _beforeCount - world.seaRoutes.length;
+            if (_orphanedSeaRoutes > 0) {
+                try { console.log('[reconcilePortStatus] Removed ' + _orphanedSeaRoutes + ' orphaned sea routes (non-port endpoint or stale waypoints)'); } catch(e) {}
+            }
+        }
+
+        return { demoted: demoted, promoted: promoted };
+    }
+
+    // v9p33river154: deduplicate parallel roads. For every pair of REAL
+    // towns (non-junction), find all paths that consist only of junction
+    // transit nodes. If multiple distinct such paths exist, keep ONE and
+    // delete the others (and orphaned junction nodes).
+    //
+    // Picks the best path to keep by: shortest road count, then highest
+    // average road quality. Helps undo bugs where worldgen + story setup
+    // both added a road between the same two towns (one direct, one
+    // junction-spliced).
+    function deduplicateRoads() {
+        if (!world || !world.roads || !world.towns) return { removed: 0 };
+        var realTowns = world.towns.filter(function(t) {
+            return t && !t.isJunction && t.category !== 'junction';
+        });
+
+        // v9p33river155 (front-pass): aggressive simple dedup. For every
+        // pair of REAL towns that has ≥2 active DIRECT roads between them
+        // (regardless of waypoints), keep the best one and delete the rest.
+        // This catches story-mode duplicates from _ensureRoad + worldgen
+        // before the more general path-enumeration pass runs below.
+        var simpleRemoved = 0;
+        var directGroups = {};
+        for (var sri = 0; sri < world.roads.length; sri++) {
+            var sr = world.roads[sri];
+            if (sr.condition === 'destroyed') continue;
+            var fromT = townIndex[sr.fromTownId];
+            var toT = townIndex[sr.toTownId];
+            if (!fromT || !toT) continue;
+            // Only consider real-town to real-town direct edges
+            if (fromT.isJunction || fromT.category === 'junction') continue;
+            if (toT.isJunction || toT.category === 'junction') continue;
+            // Order-independent key
+            var lo = sr.fromTownId < sr.toTownId ? sr.fromTownId : sr.toTownId;
+            var hi = sr.fromTownId < sr.toTownId ? sr.toTownId : sr.fromTownId;
+            var pairKey = lo + '||' + hi;
+            if (!directGroups[pairKey]) directGroups[pairKey] = [];
+            directGroups[pairKey].push(sri);
+        }
+        var simpleDelete = {};
+        for (var pk in directGroups) {
+            var group = directGroups[pk];
+            if (group.length < 2) continue;
+            // Pick the best road: highest quality, then most waypoints
+            var bestIdx = group[0];
+            for (var gi = 1; gi < group.length; gi++) {
+                var aR = world.roads[bestIdx], bR = world.roads[group[gi]];
+                var aQ = aR.quality || 1, bQ = bR.quality || 1;
+                var aW = (aR.waypoints || []).length, bW = (bR.waypoints || []).length;
+                if (bQ > aQ || (bQ === aQ && bW > aW)) bestIdx = group[gi];
+            }
+            for (var gj = 0; gj < group.length; gj++) {
+                if (group[gj] !== bestIdx) {
+                    simpleDelete[group[gj]] = true;
+                    simpleRemoved++;
+                }
+            }
+        }
+        if (simpleRemoved > 0) {
+            world.roads = world.roads.filter(function(_r, _idx) { return !simpleDelete[_idx]; });
+            try { console.log('[deduplicateRoads] Removed ' + simpleRemoved + ' parallel direct roads'); } catch(e) {}
+        }
+
+        // v9p33river157 (redundant-direct pass): if a direct road A<->B exists
+        // AND there's also a 2-hop path A->X->B (X being any other node, real
+        // or junction), delete the direct edge. The user wants only ONE path
+        // between any two towns; the multi-hop chain serves the intermediate
+        // town and remains, and the redundant direct edge goes away.
+        // (This is the Ferrowdale↔Millhaven direct + Ferrowdale→Oakbridge→
+        // Millhaven case from v156 diagnostic.)
+        var redundantRemoved = 0;
+        for (var rPass = 0; rPass < 8; rPass++) {
+            var rdAdj = {};
+            for (var rti = 0; rti < world.towns.length; rti++) rdAdj[world.towns[rti].id] = [];
+            for (var rrri = 0; rrri < world.roads.length; rrri++) {
+                var rrR = world.roads[rrri];
+                if (rrR.condition === 'destroyed') continue;
+                if (rdAdj[rrR.fromTownId]) rdAdj[rrR.fromTownId].push({ idx: rrri, other: rrR.toTownId });
+                if (rdAdj[rrR.toTownId]) rdAdj[rrR.toTownId].push({ idx: rrri, other: rrR.fromTownId });
+            }
+            var redundantDelete = {};
+            for (var dri = 0; dri < world.roads.length; dri++) {
+                if (redundantDelete[dri]) continue;
+                var dR = world.roads[dri];
+                if (dR.condition === 'destroyed') continue;
+                var aId2 = dR.fromTownId, bId2 = dR.toTownId;
+                var aT2 = townIndex[aId2], bT2 = townIndex[bId2];
+                if (!aT2 || !bT2) continue;
+                if (aT2.isJunction || aT2.category === 'junction') continue;
+                if (bT2.isJunction || bT2.category === 'junction') continue;
+                var altExists = false;
+                var aAdj = rdAdj[aId2] || [];
+                for (var aei = 0; aei < aAdj.length && !altExists; aei++) {
+                    var aE = aAdj[aei];
+                    if (aE.idx === dri || redundantDelete[aE.idx]) continue;
+                    if (aE.other === bId2) continue;
+                    var xAdj = rdAdj[aE.other] || [];
+                    for (var xei = 0; xei < xAdj.length; xei++) {
+                        var xE = xAdj[xei];
+                        if (xE.idx === dri || redundantDelete[xE.idx] || xE.idx === aE.idx) continue;
+                        if (xE.other === bId2) { altExists = true; break; }
+                    }
+                }
+                if (altExists) {
+                    redundantDelete[dri] = true;
+                    redundantRemoved++;
+                }
+            }
+            if (Object.keys(redundantDelete).length === 0) break;
+            world.roads = world.roads.filter(function(_r, _idx) { return !redundantDelete[_idx]; });
+        }
+        if (redundantRemoved > 0) {
+            try { console.log('[deduplicateRoads] Removed ' + redundantRemoved + ' redundant direct roads (multi-hop alt existed)'); } catch(e) {}
+        }
+
+        // v9p33river155: track roads by ARRAY INDEX, not by endpoint pair.
+        // Two parallel direct roads share the same fromTownId|toTownId key,
+        // so the old string-keyed dedup couldn't tell them apart and either
+        // missed the duplicate or deleted both. Indices are unique per road.
+        var roadAdjacency = {};
+        for (var i = 0; i < world.towns.length; i++) roadAdjacency[world.towns[i].id] = [];
+        for (var ri = 0; ri < world.roads.length; ri++) {
+            var r = world.roads[ri];
+            if (r.condition === 'destroyed') continue;
+            if (roadAdjacency[r.fromTownId]) roadAdjacency[r.fromTownId].push({ road: r, idx: ri, other: r.toTownId });
+            if (roadAdjacency[r.toTownId]) roadAdjacency[r.toTownId].push({ road: r, idx: ri, other: r.fromTownId });
+        }
+        function pathScore(path) {
+            var totalQ = 0;
+            for (var pi = 0; pi < path.length; pi++) totalQ += (path[pi].road.quality || 1);
+            return [path.length, -totalQ / path.length]; // shorter first, then higher avg quality
+        }
+        function comparePaths(a, b) {
+            var sa = pathScore(a), sb = pathScore(b);
+            if (sa[0] !== sb[0]) return sa[0] - sb[0];
+            return sa[1] - sb[1];
+        }
+        // For each real-town pair, enumerate junction-only paths between them.
+        var deletedRoadIdx = {}; // keyed by world.roads index
+        for (var ai = 0; ai < realTowns.length; ai++) {
+            for (var bi = ai + 1; bi < realTowns.length; bi++) {
+                var aId = realTowns[ai].id;
+                var bId = realTowns[bi].id;
+                // BFS enumerate all distinct paths from aId to bId. Each path
+                // is an array of edges (each edge = {road, idx, other}). Path
+                // can contain only junction transit nodes between aId and bId.
+                var paths = [];
+                var queue = [{ at: aId, path: [], roadIdxSet: {}, nodes: { [aId]: true } }];
+                var MAX_PATHS = 12;
+                var MAX_LEN = 4;
+                while (queue.length && paths.length < MAX_PATHS) {
+                    var st = queue.shift();
+                    if (st.path.length >= MAX_LEN) continue;
+                    var adj = roadAdjacency[st.at] || [];
+                    for (var ei = 0; ei < adj.length; ei++) {
+                        var edge = adj[ei];
+                        if (st.roadIdxSet[edge.idx] || deletedRoadIdx[edge.idx]) continue;
+                        if (edge.other === bId) {
+                            paths.push(st.path.concat([edge]));
+                            continue;
+                        }
+                        var nxtTown = townIndex[edge.other] || world.towns.find(function(_t) { return _t.id === edge.other; });
+                        if (!nxtTown || (!nxtTown.isJunction && nxtTown.category !== 'junction')) continue;
+                        if (st.nodes[edge.other]) continue;
+                        var newSet = Object.assign({}, st.roadIdxSet);
+                        newSet[edge.idx] = true;
+                        var newNodes = Object.assign({}, st.nodes);
+                        newNodes[edge.other] = true;
+                        queue.push({ at: edge.other, path: st.path.concat([edge]), roadIdxSet: newSet, nodes: newNodes });
+                    }
+                }
+                if (paths.length <= 1) continue;
+                paths.sort(comparePaths);
+                // Keep paths[0]; delete every road in paths[1..] not in paths[0].
+                var keepIdx = {};
+                for (var k = 0; k < paths[0].length; k++) keepIdx[paths[0][k].idx] = true;
+                for (var pi = 1; pi < paths.length; pi++) {
+                    for (var pri = 0; pri < paths[pi].length; pri++) {
+                        var edgeRef = paths[pi][pri];
+                        if (keepIdx[edgeRef.idx] || deletedRoadIdx[edgeRef.idx]) continue;
+                        deletedRoadIdx[edgeRef.idx] = true;
+                    }
+                }
+            }
+        }
+        var removed = Object.keys(deletedRoadIdx).length;
+        if (removed > 0) {
+            world.roads = world.roads.filter(function(_r, _idx) {
+                return !deletedRoadIdx[_idx];
+            });
+        }
+
+        // v9p33river155: cascade-clean STUB junctions. A junction is only
+        // meaningful if ≥2 roads touch it (it splices ≥2 paths together).
+        // A junction with 0 roads is orphaned. A junction with 1 road is a
+        // dead-end "stub" — that road points into the middle of nowhere and
+        // shows up as a phantom road segment in render. Delete the junction
+        // AND its lone remaining road, then repeat (cascading chain cleanup).
+        var stubsRemoved = 0;
+        for (var pass = 0; pass < 16; pass++) {
+            var roadsByTown = {};
+            for (var ti2 = 0; ti2 < world.towns.length; ti2++) roadsByTown[world.towns[ti2].id] = [];
+            for (var rii2 = 0; rii2 < world.roads.length; rii2++) {
+                var rrr = world.roads[rii2];
+                if (rrr.condition === 'destroyed') continue;
+                if (roadsByTown[rrr.fromTownId]) roadsByTown[rrr.fromTownId].push(rrr);
+                if (roadsByTown[rrr.toTownId]) roadsByTown[rrr.toTownId].push(rrr);
+            }
+            var stubJunctions = [];
+            var orphanJunctions = [];
+            for (var ti3 = 0; ti3 < world.towns.length; ti3++) {
+                var t3 = world.towns[ti3];
+                if (!t3.isJunction && t3.category !== 'junction') continue;
+                var n = (roadsByTown[t3.id] || []).length;
+                if (n === 0) orphanJunctions.push(t3);
+                else if (n === 1) stubJunctions.push(t3);
+            }
+            if (stubJunctions.length === 0 && orphanJunctions.length === 0) break;
+            // Delete stub roads
+            var stubRoadKeys = {};
+            for (var sji = 0; sji < stubJunctions.length; sji++) {
+                var stubRoad = roadsByTown[stubJunctions[sji].id][0];
+                if (stubRoad) stubRoadKeys[stubRoad.fromTownId + '|' + stubRoad.toTownId] = true;
+            }
+            if (Object.keys(stubRoadKeys).length > 0) {
+                world.roads = world.roads.filter(function(r) {
+                    return !stubRoadKeys[r.fromTownId + '|' + r.toTownId];
+                });
+            }
+            // Delete the junction nodes themselves (both stubs and orphans)
+            var killSet = {};
+            for (var ki = 0; ki < stubJunctions.length; ki++) killSet[stubJunctions[ki].id] = true;
+            for (var ki2 = 0; ki2 < orphanJunctions.length; ki2++) killSet[orphanJunctions[ki2].id] = true;
+            world.towns = world.towns.filter(function(t) {
+                if (killSet[t.id]) {
+                    if (townIndex[t.id]) delete townIndex[t.id];
+                    return false;
+                }
+                return true;
+            });
+            stubsRemoved += stubJunctions.length + orphanJunctions.length;
+        }
+        if (stubsRemoved > 0) {
+            try { console.log('[deduplicateRoads] Cleaned ' + stubsRemoved + ' stub/orphan junctions'); } catch(e) {}
+        }
+
+        // v9p33river164: orphan-road-cluster cleanup. A 2-junction (or longer)
+        // island like J1↔J2↔J3 isn't caught by stub-junction cascade because
+        // every junction has ≥2 roads. But the cluster is still detached
+        // from any real settlement and renders as a phantom road segment
+        // floating in mid-field. Solution: BFS from every real town through
+        // the road graph; any road not visited is part of an orphan cluster.
+        var orphanRoadCount = 0;
+        try {
+            var adjacency = {};
+            for (var ti4 = 0; ti4 < world.towns.length; ti4++) adjacency[world.towns[ti4].id] = [];
+            for (var rii3 = 0; rii3 < world.roads.length; rii3++) {
+                var rrr2 = world.roads[rii3];
+                if (rrr2.condition === 'destroyed') continue;
+                if (adjacency[rrr2.fromTownId]) adjacency[rrr2.fromTownId].push({ other: rrr2.toTownId, idx: rii3 });
+                if (adjacency[rrr2.toTownId]) adjacency[rrr2.toTownId].push({ other: rrr2.fromTownId, idx: rii3 });
+            }
+            var reachableRoads = {};
+            var visitedTowns = {};
+            var bfs = [];
+            for (var ti5 = 0; ti5 < world.towns.length; ti5++) {
+                var t5 = world.towns[ti5];
+                if (t5.isJunction || t5.category === 'junction') continue;
+                bfs.push(t5.id);
+                visitedTowns[t5.id] = true;
+            }
+            while (bfs.length > 0) {
+                var cur = bfs.shift();
+                var nbrs = adjacency[cur] || [];
+                for (var ni = 0; ni < nbrs.length; ni++) {
+                    reachableRoads[nbrs[ni].idx] = true;
+                    if (!visitedTowns[nbrs[ni].other]) {
+                        visitedTowns[nbrs[ni].other] = true;
+                        bfs.push(nbrs[ni].other);
+                    }
+                }
+            }
+            var orphanIdx = {};
+            for (var rii4 = 0; rii4 < world.roads.length; rii4++) {
+                if (!reachableRoads[rii4] && world.roads[rii4].condition !== 'destroyed') {
+                    orphanIdx[rii4] = true;
+                    orphanRoadCount++;
+                }
+            }
+            if (orphanRoadCount > 0) {
+                world.roads = world.roads.filter(function(_r, _i) { return !orphanIdx[_i]; });
+                // Also delete junctions that are now disconnected
+                var stillReferenced = {};
+                for (var rii5 = 0; rii5 < world.roads.length; rii5++) {
+                    stillReferenced[world.roads[rii5].fromTownId] = true;
+                    stillReferenced[world.roads[rii5].toTownId] = true;
+                }
+                world.towns = world.towns.filter(function(t) {
+                    if ((t.isJunction || t.category === 'junction') && !stillReferenced[t.id]) {
+                        if (townIndex[t.id]) delete townIndex[t.id];
+                        return false;
+                    }
+                    return true;
+                });
+                try { console.log('[deduplicateRoads] Removed ' + orphanRoadCount + ' orphan-cluster roads (junction islands not connected to any real settlement)'); } catch(e) {}
+            }
+        } catch(e) { /* defensive */ }
+
+        return { removed: removed, simpleRemoved: simpleRemoved, stubsRemoved: stubsRemoved, orphanRoads: orphanRoadCount };
+    }
+
+    // v9p33river167: ensure every road has dense waypoints AND that the
+    // waypoint chain is anchored to the road's current endpoint towns. Story
+    // setup can move towns after worldgen; if a road keeps its old dense path,
+    // the sparse-only repair below would skip it and render a stale tail in a
+    // field. Prefer a fresh terrain path; fall back to endpoint anchoring only.
+    function repairSparseRoadWaypoints() {
+        if (!world || !world.roads || !world.towns) return { regenerated: 0, densified: 0, anchored: 0 };
+        var TARGET_SEG = 40; // max px between waypoints
+        var ANCHOR_TOL = 30; // max px from road endpoints to current towns
+        var regenerated = 0;
+        var densified = 0;
+        var anchored = 0;
+
+        function densifyLine(wps, maxSeg) {
+            if (!wps || wps.length < 2) return wps;
+            var out = [wps[0]];
+            for (var i = 0; i < wps.length - 1; i++) {
+                var a = wps[i], b = wps[i + 1];
+                var d = Math.hypot(b.x - a.x, b.y - a.y);
+                if (d > maxSeg) {
+                    var n = Math.ceil(d / maxSeg);
+                    for (var k = 1; k < n; k++) {
+                        var t = k / n;
+                        out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+                    }
+                }
+                out.push(b);
+            }
+            return out;
+        }
+
+        function cloneWaypoints(wps) {
+            var out = [];
+            for (var i = 0; i < wps.length; i++) out.push({ x: wps[i].x, y: wps[i].y });
+            return out;
+        }
+
+        function refreshRoadGeometry(road, wps, pathResult) {
+            road.waypoints = wps;
+            if (typeof createBridgeObjects === 'function') {
+                road.bridges = createBridgeObjects(wps) || [];
+                road.hasBridge = road.bridges.length > 0 || !!(pathResult && pathResult.bridgeSegments && pathResult.bridgeSegments.length > 0);
+                // bridgeSegments are indexed to the pre-densified path, so do
+                // not keep stale indices after changing waypoint density.
+                road.bridgeSegments = [];
+            }
+            if (road._bbox) delete road._bbox;
+            if (road._waypointLookupDone) delete road._waypointLookupDone;
+        }
+
+        function terrainPath(fromT, toT) {
+            try { return findTerrainPath(fromT.x, fromT.y, toT.x, toT.y, 'land'); }
+            catch(e) { return null; }
+        }
+
+        for (var ri = 0; ri < world.roads.length; ri++) {
+            var r = world.roads[ri];
+            if (r.condition === 'destroyed') continue;
+            var fromT = townIndex[r.fromTownId];
+            var toT = townIndex[r.toTownId];
+            if (!fromT || !toT) continue;
+            var wps = (r.waypoints && r.waypoints.length >= 2)
+                ? cloneWaypoints(r.waypoints)
+                : [{ x: fromT.x, y: fromT.y }, { x: toT.x, y: toT.y }];
+
+            // Normalize orientation if a saved/generated road has waypoints
+            // in to→from order; the anchoring checks below assume from→to.
+            var first = wps[0];
+            var last = wps[wps.length - 1];
+            var normalGap = Math.hypot(first.x - fromT.x, first.y - fromT.y) + Math.hypot(last.x - toT.x, last.y - toT.y);
+            var reverseGap = Math.hypot(first.x - toT.x, first.y - toT.y) + Math.hypot(last.x - fromT.x, last.y - fromT.y);
+            if (reverseGap + 1 < normalGap) {
+                wps.reverse();
+                first = wps[0];
+                last = wps[wps.length - 1];
+            }
+
+            var firstGap = Math.hypot(first.x - fromT.x, first.y - fromT.y);
+            var lastGap = Math.hypot(last.x - toT.x, last.y - toT.y);
+            var staleAnchors = firstGap > ANCHOR_TOL || lastGap > ANCHOR_TOL;
+
+            if (staleAnchors) {
+                var anchorPath = terrainPath(fromT, toT);
+                if (anchorPath && anchorPath.waypoints && anchorPath.waypoints.length >= 2) {
+                    refreshRoadGeometry(r, densifyLine(anchorPath.waypoints, TARGET_SEG), anchorPath);
+                    regenerated++;
+                } else {
+                    wps[0] = { x: fromT.x, y: fromT.y };
+                    wps[wps.length - 1] = { x: toT.x, y: toT.y };
+                    refreshRoadGeometry(r, densifyLine(wps, TARGET_SEG), null);
+                    densified++;
+                }
+                anchored++;
+                continue;
+            }
+
+            // Compute longest segment to detect sparseness
+            var maxSeg = 0;
+            for (var wi = 0; wi < wps.length - 1; wi++) {
+                var sd = Math.hypot(wps[wi + 1].x - wps[wi].x, wps[wi + 1].y - wps[wi].y);
+                if (sd > maxSeg) maxSeg = sd;
+            }
+            if (maxSeg <= TARGET_SEG) continue; // already anchored and dense
+
+            // Try terrain-aware re-path first
+            var pr = terrainPath(fromT, toT);
+            if (pr && pr.waypoints && pr.waypoints.length >= 2) {
+                refreshRoadGeometry(r, densifyLine(pr.waypoints, TARGET_SEG), pr);
+                regenerated++;
+            } else {
+                // Fallback: just densify the existing line in place. Preserves
+                // geometric position; only adds intermediate points so bezier
+                // draws smoothly and render.js lazy fallback never fires.
+                refreshRoadGeometry(r, densifyLine(wps, TARGET_SEG), null);
+                densified++;
+            }
+        }
+        if (regenerated > 0 || densified > 0 || anchored > 0) {
+            try { console.log('[repairSparseRoadWaypoints] regenerated=' + regenerated + ' densified=' + densified + ' anchored=' + anchored); } catch(e) {}
+        }
+        return { regenerated: regenerated, densified: densified, anchored: anchored };
     }
 
     function tickMigration() {
@@ -18580,6 +19317,17 @@
             // Outposts and junctions don't use population-based categories
             if (town.category === 'outpost' || town.isOutpost) continue;
             if (town.category === 'junction' || town.isJunction) continue;
+            // v9p33river143: towns with a locked category never upgrade or
+            // downgrade — used by story mode to keep the Valdren capital a
+            // capital city for the whole story regardless of pop swings.
+            if (town._lockedCategory && CONFIG.TOWN_CATEGORIES[town._lockedCategory]) {
+                if (town.category !== town._lockedCategory) {
+                    town.category = town._lockedCategory;
+                    town.maxBuildingSlots = CONFIG.TOWN_CATEGORIES[town._lockedCategory].maxBuildingSlots;
+                }
+                town._categoryHoldStart = null;
+                continue;
+            }
             const newCat = getTownCategory(town.population);
             const oldCat = town.category || getTownCategory(town.population);
             if (newCat !== oldCat) {
@@ -18629,8 +19377,8 @@
                 town.category = 'abandoned';
                 town.maxBuildingSlots = 0;
                 logEvent(`💀 ${town.name} has been abandoned! The remaining ${town.population} souls scatter to nearby settlements.`);
-                // Migrate remaining people to nearest non-abandoned town
-                const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.abandoned && !t.destroyed && t.population > 10);
+                // Migrate remaining people to nearest non-abandoned town (skip outposts)
+                const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.isOutpost && !t.abandoned && !t.destroyed && t.population > 10);
                 if (nearbyTowns.length > 0) {
                     var migrants = getPeopleInTown(town.id);
                     for (const p of migrants) {
@@ -18653,8 +19401,8 @@
                     town.destroyed = true;
                     town.category = 'destroyed';
                     logEvent(`🏚️ The ruins of ${town.name} have crumbled beyond recognition. The settlement is lost to history.`);
-                    // Migrate ALL remaining people to nearest non-destroyed town
-                    const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.destroyed && t.population > 10);
+                    // Migrate ALL remaining people to nearest non-destroyed town (skip outposts)
+                    const nearbyTowns = world.towns.filter(t => t.id !== town.id && !t.isOutpost && !t.destroyed && t.population > 10);
                     if (nearbyTowns.length > 0) {
                         const remainingPeople = getPeopleInTown(town.id);
                         for (const p of remainingPeople) {
@@ -29111,9 +29859,9 @@
             if (!m._nextTravelDay) m._nextTravelDay = world.day + rng.randInt(15, 30);
             if (world.day >= m._nextTravelDay) {
                 m._nextTravelDay = world.day + rng.randInt(15, 30);
-                // Pick a connected town or random town
+                // Pick a connected town or random town (skip outposts — no tavern/audience)
                 var destTowns = world.towns.filter(function(t) {
-                    return t.id !== m.townId && !t.abandoned && !t.destroyed && t.population > 20;
+                    return t.id !== m.townId && !t.isOutpost && !t.abandoned && !t.destroyed && t.population > 20;
                 });
                 if (destTowns.length > 0) {
                     // Prefer towns with taverns and feasts/festivals
@@ -29486,7 +30234,7 @@
             // their own type, but a coastal-only town might fall through gaps. Final
             // safety net: any town with NO connections gets connected to its nearest
             // valid neighbor via whichever route type works.
-            var _orphans = world.towns.filter(function(t) { return !t.connectedTowns || t.connectedTowns.length === 0; });
+            var _orphans = world.towns.filter(function(t) { return !t.isOutpost && (!t.connectedTowns || t.connectedTowns.length === 0); });
             if (_orphans.length > 0) {
                 console.log('[worldgen] Connectivity safety net: ' + _orphans.length + ' orphaned town(s) found');
                 for (var _oi = 0; _oi < _orphans.length; _oi++) {
@@ -29858,6 +30606,28 @@
             }
 
             logEvent('The world of Merchant Realms has been created.');
+
+            // v9p33river139: post-worldgen port reconciliation. Walks every
+            // town and ensures its isPort flag matches physical reality:
+            // demote ports without ocean within PORT_WATER_PROXIMITY,
+            // promote any non-port town that DOES have ocean nearby.
+            // (Same logic as in deserialize, kept in sync.)
+            try {
+                if (typeof reconcilePortStatus === 'function') reconcilePortStatus();
+            } catch(e) { /* defensive */ }
+
+            // v9p33river154: dedupe parallel roads (worldgen + story setup
+            // can produce duplicates when a road already exists via a junction).
+            try {
+                if (typeof deduplicateRoads === 'function') deduplicateRoads();
+            } catch(e) { /* defensive */ }
+            // v9p33river161: regenerate sparse-waypoint roads (worldgen sometimes
+            // creates ≤2-waypoint direct roads that render as straight lines
+            // cutting terrain — actual phantom-line bug).
+            try {
+                if (typeof repairSparseRoadWaypoints === 'function') repairSparseRoadWaypoints();
+            } catch(e) { /* defensive */ }
+
             return world;
         },
 
@@ -30137,6 +30907,11 @@
             if (world.day % (CONFIG.MIGRATION_CHECK_INTERVAL || 30) === 0) {
                 tickMigration();
             }
+
+            // v9p33river131: daily safety net — relocate any NPCs stranded
+            // at outposts (e.g. via tax flight, refugee migration paths that
+            // didn't get filtered). Cheap O(N people) scan.
+            relocateStrandedOutpostNPCs();
 
             // Frontline town updates (daily during wars)
             if (world.activeWars && Object.keys(world.activeWars).length > 0) {
@@ -30721,6 +31496,11 @@
         findResourceById: findResourceById,
         createMarket: createMarket,
         classifyTownTerrain: classifyTownTerrain,
+        townHasWaterNearby: _townHasWaterNearby,
+        townHasOceanNearby: _townHasOceanNearby,
+        reconcilePortStatus: reconcilePortStatus,
+        deduplicateRoads: deduplicateRoads,
+        repairSparseRoadWaypoints: repairSparseRoadWaypoints,
         computeLocalBasePrices: computeLocalBasePrices,
         createBridgeObjects: createBridgeObjects,
         registerPerson: registerPerson,
@@ -31835,10 +32615,16 @@
                 }
             }
             // Step 3: Connect disconnected towns to the main component
+            // v9p33river128: skip outposts. Player can deliberately found an
+            // outpost with no road ("Found (No Road)" option) and the post-load
+            // safety net was silently re-connecting them, which felt like the
+            // kingdom built a free road. Outpost connectivity is the player's
+            // own concern (they can pay to add a road later via the outpost UI).
             var _mainTowns = world.towns.filter(function(t) { return _mainComponent.has(t.id); });
             for (var rfi = 0; rfi < world.towns.length; rfi++) {
                 var fixTown = world.towns[rfi];
                 if (fixTown.destroyed || fixTown.abandoned || fixTown.isIsland) continue;
+                if (fixTown.isOutpost) continue;
                 if (_mainComponent.has(fixTown.id)) continue;
                 // Find nearest town in the main component
                 var nearestForRoad = null;
@@ -31899,6 +32685,20 @@
                     if (toPort.connectedTowns.indexOf(fromPort.id) === -1) toPort.connectedTowns.push(fromPort.id);
                 }
             }
+
+            // v9p33river129/131: heal NPCs that previously migrated to outposts via
+            // the migration bug (now also happens via tax flight, refugees, etc).
+            // Move them back to the nearest non-outpost town in the same kingdom.
+            relocateStrandedOutpostNPCs();
+
+            // v9p33river138/139: port-status reconciliation. Walks every
+            // town: demotes ghost ports without ocean nearby (lakes/ponds
+            // don't qualify) and promotes towns that physically ARE coastal.
+            try { reconcilePortStatus(); } catch(e) { /* defensive */ }
+            // v9p33river154: clean up duplicate roads on save load too
+            try { deduplicateRoads(); } catch(e) { /* defensive */ }
+            // v9p33river161: regenerate sparse-waypoint roads on load too
+            try { repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
 
             // Post-load town recovery: un-abandon towns that still have viable population
             for (var _tri = 0; _tri < world.towns.length; _tri++) {

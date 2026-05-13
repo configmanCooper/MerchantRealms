@@ -49,7 +49,7 @@
         if (!opts || !opts.founderId || !opts.name) return { success: false, message: 'Invalid outpost parameters.' };
 
         // Minimum distance check — must be at least N tiles from any existing location
-        var minDistTiles = cfg.minDistanceTiles || 5;
+        var minDistTiles = cfg.minDistanceTiles || 10;
         var minDistPx = minDistTiles * (CONFIG.TILE_SIZE || 16);
         var tooCloseLocation = null;
         for (var ci = 0; ci < world.towns.length; ci++) {
@@ -98,6 +98,11 @@
             isCapital: false,
             population: 0,
             buildings: [],
+            // v9p33river126: outposts technically retain an internal market
+            // structure (so building production / consumption can still run),
+            // but the UI hides it everywhere outposts shouldn't trade through
+            // a market. The buy/sell paths in caravan-orders already refuse
+            // outposts via town.isOutpost guards.
             market: createMarket(1, 'village'),
             prosperity: 10,
             walls: 0,
@@ -1243,6 +1248,139 @@
     function tickEliteMerchantOutposts() {
         var cfg = CONFIG.OUTPOST_CONFIG;
         var rng = world.rng;
+        var TS = CONFIG.TILE_SIZE || 16;
+        var _emMinDistPx = (cfg.minDistanceTiles || 10) * TS;
+
+        // v9p33river123: helper — does any existing town sit within minDist of (x,y)?
+        function _spotIsClear(x, y) {
+            for (var ci = 0; ci < world.towns.length; ci++) {
+                var ct = world.towns[ci];
+                if (ct.abandoned || ct.destroyed) continue;
+                if (Math.hypot(x - ct.x, y - ct.y) < _emMinDistPx) return false;
+            }
+            return true;
+        }
+        // Helper — terrain id at world coords
+        function _terrainAt(wx, wy) {
+            if (!world.terrain || !world.gridCols) return -1;
+            var tx = Math.floor(wx / TS), ty = Math.floor(wy / TS);
+            if (tx < 0 || ty < 0 || tx >= world.gridCols || ty >= world.gridRows) return -1;
+            return world.terrain[ty * world.gridCols + tx];
+        }
+        // Helper — count tiles of given terrain id within `radTiles` of (wx,wy)
+        function _terrainCountNear(wx, wy, terrainId, radTiles) {
+            if (!world.terrain || !world.gridCols) return 0;
+            var ctx = Math.floor(wx / TS), cty = Math.floor(wy / TS);
+            var n = 0;
+            for (var dy = -radTiles; dy <= radTiles; dy++) {
+                for (var dx = -radTiles; dx <= radTiles; dx++) {
+                    var nx = ctx + dx, ny = cty + dy;
+                    if (nx < 0 || ny < 0 || nx >= world.gridCols || ny >= world.gridRows) continue;
+                    if (world.terrain[ny * world.gridCols + nx] === terrainId) n++;
+                }
+            }
+            return n;
+        }
+
+        // Map raw resources → terrain that's most likely to have them in-world.
+        // Used to pick which terrain to seek when the EM has scarcity for a good.
+        var RESOURCE_TERRAIN = {
+            wood:    TERRAIN.FOREST.id,
+            iron:    TERRAIN.MOUNTAIN.id,
+            iron_ore: TERRAIN.MOUNTAIN.id,
+            gold:    TERRAIN.MOUNTAIN.id,
+            gold_ore: TERRAIN.MOUNTAIN.id,
+            stone:   TERRAIN.MOUNTAIN.id,
+            coal:    TERRAIN.MOUNTAIN.id,
+            sulfur:  TERRAIN.MOUNTAIN.id,
+            copper:  TERRAIN.MOUNTAIN.id,
+            silver:  TERRAIN.MOUNTAIN.id,
+            herbs:   TERRAIN.FOREST.id,
+            game:    TERRAIN.FOREST.id,
+            hide:    TERRAIN.FOREST.id,
+            furs:    TERRAIN.FOREST.id,
+        };
+
+        // Determine what raw goods this EM most needs: scan their buildings'
+        // recipes for inputs that the home town's market is short on.
+        function _emNeededTerrain(em, emTown) {
+            if (!em.buildings || !emTown || !emTown.market || !emTown.market.supply) return null;
+            var terrainTally = {};
+            for (var bi = 0; bi < em.buildings.length; bi++) {
+                var bRef = em.buildings[bi];
+                var bTown = findTown(bRef.townId);
+                if (!bTown || bTown.id !== emTown.id) continue;
+                var bt = findBuildingType(bRef.type);
+                if (!bt) continue;
+                var recipes = [];
+                if (bt.consumes) recipes.push({ consumes: bt.consumes });
+                if (bt.availableProducts) {
+                    for (var pk in bt.availableProducts) {
+                        var rp = bt.availableProducts[pk];
+                        if (rp && rp.consumes) recipes.push({ consumes: rp.consumes });
+                    }
+                }
+                for (var ri = 0; ri < recipes.length; ri++) {
+                    for (var inputId in recipes[ri].consumes) {
+                        var supply = emTown.market.supply[inputId] || 0;
+                        var demand = emTown.market.demand[inputId] || 1;
+                        // scarcity: low supply relative to demand OR almost zero
+                        if (supply < 5 || supply < demand * 0.5) {
+                            var terr = RESOURCE_TERRAIN[inputId];
+                            if (terr != null) terrainTally[terr] = (terrainTally[terr] || 0) + 1;
+                        }
+                    }
+                }
+            }
+            // Return the terrain id with highest scarcity vote, or null
+            var bestT = null, bestN = 0;
+            for (var tk in terrainTally) {
+                if (terrainTally[tk] > bestN) { bestN = terrainTally[tk]; bestT = +tk; }
+            }
+            return bestT;
+        }
+
+        // Find a legal outpost spot within `searchR` of (cx,cy) that lies on or
+        // adjacent to terrain `terrainId` (within 2-tile radius). Returns
+        // {x,y} or null.
+        function _findResourceSpot(cx, cy, searchR, terrainId) {
+            for (var t = 0; t < 20; t++) {
+                var x = cx + rng.randInt(-searchR, searchR);
+                var y = cy + rng.randInt(-searchR, searchR);
+                if (!_spotIsClear(x, y)) continue;
+                if (_terrainCountNear(x, y, terrainId, 2) >= 3) return { x: x, y: y, strategy: 'resource' };
+            }
+            return null;
+        }
+        // Find a midpoint outpost spot between two trade-partner towns.
+        function _findMidpointSpot(townA, townB) {
+            if (!townA || !townB || townA.id === townB.id) return null;
+            var mx = (townA.x + townB.x) / 2;
+            var my = (townA.y + townB.y) / 2;
+            // jitter around the midpoint by up to 5 tiles to find a legal spot
+            for (var t = 0; t < 16; t++) {
+                var jx = mx + rng.randInt(-_emMinDistPx, _emMinDistPx);
+                var jy = my + rng.randInt(-_emMinDistPx, _emMinDistPx);
+                if (_spotIsClear(jx, jy)) return { x: Math.round(jx), y: Math.round(jy), strategy: 'trade-route' };
+            }
+            return null;
+        }
+        // Identify the EM's most-used trade partner (their busiest non-home destination)
+        function _emTopTradePartner(em, emTown) {
+            if (!world.npcCaravans) return null;
+            var counts = {};
+            for (var ci = 0; ci < world.npcCaravans.length; ci++) {
+                var c = world.npcCaravans[ci];
+                if (c.ownerId !== em.id) continue;
+                if (!c.toTownId || c.toTownId === emTown.id) continue;
+                counts[c.toTownId] = (counts[c.toTownId] || 0) + 1;
+            }
+            var bestId = null, bestN = 1;
+            for (var tid in counts) {
+                if (counts[tid] > bestN) { bestN = counts[tid]; bestId = tid; }
+            }
+            return bestId ? findTown(bestId) : null;
+        }
 
         var _emList = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().eliteMerchants || []) : [];
         if (_emList.length === 0) {
@@ -1265,21 +1403,36 @@
             var emTown = findTown(em.townId);
             if (!emTown) continue;
 
-            // Find a valid position (must be at least minDistanceTiles from any location)
-            var _emMinDistPx = (cfg.minDistanceTiles || 5) * (CONFIG.TILE_SIZE || 16);
-            var outpostX, outpostY, _emPosOk = false;
-            for (var _emTry = 0; _emTry < 8; _emTry++) {
-                outpostX = emTown.x + rng.randInt(-80, 80);
-                outpostY = emTown.y + rng.randInt(-80, 80);
-                var _emTooClose = false;
-                for (var _emCi = 0; _emCi < world.towns.length; _emCi++) {
-                    var _emCt = world.towns[_emCi];
-                    if (_emCt.abandoned || _emCt.destroyed) continue;
-                    if (Math.hypot(outpostX - _emCt.x, outpostY - _emCt.y) < _emMinDistPx) { _emTooClose = true; break; }
-                }
-                if (!_emTooClose) { _emPosOk = true; break; }
+            // ── v9p33river123: smart location strategy ──
+            // 1. RESOURCE strategy — if EM needs a scarce raw input, look for
+            //    an outpost site near matching terrain (forest/mountain).
+            // 2. TRADE-ROUTE strategy — if EM has a busy trade partner, place
+            //    an outpost near the midpoint to act as a relay.
+            // 3. RANDOM fallback — original behaviour, anywhere within
+            //    expanded search radius around the home town.
+            var spot = null;
+            var neededTerrain = _emNeededTerrain(em, emTown);
+            if (neededTerrain != null) {
+                // Search a wider radius for resource spots — let EMs reach
+                // distant forests/mountains rather than just home territory.
+                spot = _findResourceSpot(emTown.x, emTown.y, Math.max(_emMinDistPx + 200, 400), neededTerrain);
             }
-            if (!_emPosOk) continue; // couldn't find valid spot
+            if (!spot) {
+                var partner = _emTopTradePartner(em, emTown);
+                if (partner) spot = _findMidpointSpot(emTown, partner);
+            }
+            if (!spot) {
+                // Random fallback near home
+                var _emSearchR = Math.max(_emMinDistPx + 80, 200);
+                for (var _emTry = 0; _emTry < 16; _emTry++) {
+                    var rx = emTown.x + rng.randInt(-_emSearchR, _emSearchR);
+                    var ry = emTown.y + rng.randInt(-_emSearchR, _emSearchR);
+                    if (_spotIsClear(rx, ry)) { spot = { x: rx, y: ry, strategy: 'random' }; break; }
+                }
+            }
+            if (!spot) continue; // couldn't find valid spot
+            var outpostX = spot.x;
+            var outpostY = spot.y;
 
             // Outpost names — ensure unique name
             var prefixes = ['New', 'Fort', 'Camp', 'Post', 'Watch', 'Trade', 'Old', 'North', 'South', 'East', 'West', 'Upper', 'Lower'];
@@ -1311,6 +1464,7 @@
             if (result.success && result.outpost) {
                 result.outpost.hiredWorkers = rng.randInt(1, 3);
                 result.outpost.hiredGuards = rng.randInt(0, 1);
+                result.outpost._foundStrategy = spot.strategy;
             }
         }
     }

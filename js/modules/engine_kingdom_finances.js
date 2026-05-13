@@ -1386,7 +1386,8 @@
                 var destKingdoms = world.kingdoms.filter(function(ok) { return ok.id !== k.id; });
                 if (destKingdoms.length > 0) {
                     var destK = rng.pick(destKingdoms);
-                    var destTowns = world.towns.filter(function(dt) { return dt.kingdomId === destK.id && !dt.destroyed && !dt.abandoned; });
+                    // v9p33river131: outposts not valid flee destinations.
+                    var destTowns = world.towns.filter(function(dt) { return dt.kingdomId === destK.id && !dt.destroyed && !dt.abandoned && !dt.isOutpost; });
                     if (destTowns.length > 0) {
                         var destTown2 = rng.pick(destTowns);
                         shuffledFlee[fi].townId = destTown2.id;
@@ -1424,8 +1425,8 @@
         );
         for (const m of merchants) {
             if (rng.chance(0.4)) {
-                // Find a neighboring kingdom town to flee to
-                const safeTowns = world.towns.filter(t => t.kingdomId !== k.id);
+                // Find a neighboring kingdom town to flee to (skip outposts)
+                const safeTowns = world.towns.filter(t => t.kingdomId !== k.id && !t.isOutpost && !t.destroyed && !t.abandoned);
                 if (safeTowns.length > 0) {
                     const dest = rng.pick(safeTowns);
                     m.townId = dest.id;

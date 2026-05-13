@@ -6175,16 +6175,10 @@
                 for (var dti = 0; dti < territories.length && infraSpent < infraBudget; dti++) {
                     var dTown = findTown(territories[dti]);
                     if (!dTown || dTown.isPort) continue;
-                    // Check if town is coastal (has water nearby)
-                    var isCoastal = false;
-                    if (dTown.terrainType === 'coast' || dTown.terrain === 'coast') isCoastal = true;
-                    if (!isCoastal && world.seaRoutes) {
-                        for (var sri = 0; sri < world.seaRoutes.length; sri++) {
-                            if (world.seaRoutes[sri].fromTownId === dTown.id || world.seaRoutes[sri].toTownId === dTown.id) {
-                                isCoastal = true; break;
-                            }
-                        }
-                    }
+                    // v9p33river138/139: authoritative water-proximity check.
+                    // Must be OCEAN (connected to map edge) within
+                    // PORT_WATER_PROXIMITY tiles — lakes/ponds don't qualify.
+                    var isCoastal = (typeof Engine !== 'undefined' && Engine.townHasOceanNearby) ? Engine.townHasOceanNearby(dTown) : false;
                     if (!isCoastal) continue;
                     var dockCost = 500;
                     if (dockCost <= infraBudget - infraSpent && k.gold >= dockCost) {

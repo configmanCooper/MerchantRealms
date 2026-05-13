@@ -341,13 +341,23 @@
         if (!stored) return 0;
         var total = 0;
         for (var resId in stored) {
-            var qty = stored[resId] || 0;
-            if (qty <= 0) continue;
+            // v9p33river127/130: skip internal underscore-prefixed fields
+            // (e.g. _foodAge cohort ledger) and defensively coerce values.
+            if (resId.charAt(0) === '_') continue;
+            var qty = Number(stored[resId]);
+            if (!isFinite(qty) || qty <= 0) {
+                if (stored[resId] !== 0 && stored[resId] != null) {
+                    console.warn('[townStorage] non-finite qty for ' + resId + ' in town ' + tid + ': ' + stored[resId] + ' — zeroing.');
+                    delete stored[resId];
+                }
+                continue;
+            }
             var res = findResource(resId);
-            var weight = res ? (res.weight || 1) : 1;
+            var weight = res ? Number(res.weight || 1) : 1;
+            if (!isFinite(weight) || weight <= 0) weight = 1;
             total += qty * weight;
         }
-        return total;
+        return isFinite(total) ? total : 0;
     }
 
     function getEffectiveCapacity() {

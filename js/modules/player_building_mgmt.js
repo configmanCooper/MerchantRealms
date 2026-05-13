@@ -315,6 +315,16 @@
         if (!bld.workers) bld.workers = [];
         if (bld.workers.indexOf(manager.id) < 0) bld.workers.push(manager.id);
 
+        // v9p33river121: register manager as an employee so player.employees
+        // stays in sync with bld.workers (used by sidebar count and other
+        // legacy reads).
+        if (Player && Player.state && Player.state.employees) {
+            if (Player.state.employees.indexOf(manager.id) < 0) {
+                Player.state.employees.push(manager.id);
+            }
+        }
+        if (manager.employerId == null) manager.employerId = 'player';
+
         // Track employee relationship
         if (Player.modifyRelationship) Player.modifyRelationship(manager.id, 5, 'employer');
 
@@ -514,6 +524,11 @@
                                 bld.workers.indexOf(wp.id) < 0 &&
                                 (!wp.occupation || wp.occupation === 'laborer' || wp.occupation === 'none')) {
                                 bld.workers.push(wp.id);
+                                // v9p33river121: register in player.employees
+                                if (Player && Player.state && Player.state.employees && Player.state.employees.indexOf(wp.id) < 0) {
+                                    Player.state.employees.push(wp.id);
+                                }
+                                wp.employerId = 'player';
                                 break;
                             }
                         }

@@ -1280,6 +1280,7 @@ window.Renderer = (function () {
         }
 
         for (const road of roads) {
+            if (road.condition === 'destroyed') continue; // v9p33river164: never render destroyed roads
             const from = townMap[road.fromTownId];
             const to = townMap[road.toTownId];
             if (!from || !to) continue;
@@ -1381,18 +1382,23 @@ window.Renderer = (function () {
                         var _lbStart = _wps[_lbBridge.startWpIdx];
                         var _lbEnd = _wps[_lbBridge.endWpIdx];
                         if (!_lbStart || !_lbEnd) continue;
-                        // Bright wood/plank tone with dark outline so visible against water
+                        // v9p33river169 PHANTOM-ROAD-FIX: canvas already has
+                        // ctx.translate(-camera.x,-camera.y) applied (see L724/806/949/965)
+                        // so use RAW world coords. Old code subtracted camera AGAIN here,
+                        // making bridge stubs render at (world - 2*camera) — visible as
+                        // thin orange/brown phantom segments cutting fields at zoom <0.8,
+                        // moving at double-speed when panning.
                         ctx.strokeStyle = 'rgba(40,25,15,0.85)';
                         ctx.lineWidth = _bridgeWidth + 2;
                         ctx.beginPath();
-                        ctx.moveTo(_lbStart.x - camera.x, _lbStart.y - camera.y);
-                        ctx.lineTo(_lbEnd.x - camera.x, _lbEnd.y - camera.y);
+                        ctx.moveTo(_lbStart.x, _lbStart.y);
+                        ctx.lineTo(_lbEnd.x, _lbEnd.y);
                         ctx.stroke();
                         ctx.strokeStyle = '#c89860';
                         ctx.lineWidth = _bridgeWidth;
                         ctx.beginPath();
-                        ctx.moveTo(_lbStart.x - camera.x, _lbStart.y - camera.y);
-                        ctx.lineTo(_lbEnd.x - camera.x, _lbEnd.y - camera.y);
+                        ctx.moveTo(_lbStart.x, _lbStart.y);
+                        ctx.lineTo(_lbEnd.x, _lbEnd.y);
                         ctx.stroke();
                     }
                     ctx.lineCap = 'butt';
@@ -5703,6 +5709,31 @@ window.Renderer = (function () {
     function getCamera() { return camera; }
     function getFrameCount() { return frameCount; }
     function invalidateTerrain() { terrainDirty = true; }
+    // v9p33river168: scene cache (low-zoom offscreen overlay) bakes in
+    // road/sea-route/border pixels at first low-zoom render. If world
+    // contents mutate after init (e.g. story-mode setup deletes orphan sea
+    // routes / repairs road waypoints), the cache stays stale until zoom or
+    // camera changes enough. Expose explicit invalidation so engine + main
+    // can poke the cache after world mutations. Also clears any per-road
+    // lazy-pathfind cache so render's fallback A* won't re-emit a stale path.
+    function invalidateSceneCache() {
+        _sceneCacheDirty = true;
+        terrainDirty = true;
+        try {
+            var w = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
+            if (w && w.roads) {
+                for (var i = 0; i < w.roads.length; i++) {
+                    if (w.roads[i]._bbox) delete w.roads[i]._bbox;
+                    if (w.roads[i]._waypointLookupDone) delete w.roads[i]._waypointLookupDone;
+                }
+            }
+            if (w && w.seaRoutes) {
+                for (var j = 0; j < w.seaRoutes.length; j++) {
+                    if (w.seaRoutes[j]._bbox) delete w.seaRoutes[j]._bbox;
+                }
+            }
+        } catch(e) { /* defensive */ }
+    }
 
     // v9p33river56: re-apply zoom limits per RENDERER_MODE (map vs flat).
     function refreshZoomLimits() {
@@ -5751,6 +5782,7 @@ window.Renderer = (function () {
         startFertilitySurvey,
         startDepositSurvey,
         invalidateTerrain,
+        invalidateSceneCache,
         refreshZoomLimits,
         // v9p18: assign per-tier sprites to all towns (idempotent; safe to call multiple times)
         assignSettlementSprites: _assignAllSettlementSprites,

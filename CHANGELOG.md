@@ -39,6 +39,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Honest Assessment reveals only ONE trait
 
 ### Fixed — Critical
+- **Phantom road segments** — thin orange/brown lines cutting across fields without connecting any town. Root cause: bridge stub low-zoom render path (`render.js` ~L1389/1395) manually subtracted `camera.x/y` from waypoints, but the canvas transform already applied `ctx.translate(-camera.x, -camera.y)`. Result: bridge stubs rendered at `(world − 2×camera)` and panned at double speed. Removed the duplicate offset. Also added orphan-sea-route cleanup in `Engine.reconcilePortStatus()` and `Renderer.invalidateSceneCache()` post-`_setupStoryWorld` to scrub stale low-zoom scene-cache pixels (v9p33river168→169)
 - **Cache version bumped on ALL 43 script tags** (was only 4) — fixed long-running issue where many UI/module fixes never reached the browser
 - **`countWorkersForBuilding`** now falls through to `Player.buildings` for player-owned town-copy entries (the slim `town.buildings` entry lacks the workers array). Symptom: tree plantations and other player buildings the engine touches via `town.buildings` were silently treated as 0-worker
 - Player employer prosperity boost, monthly employer reputation, and hospital/clinic max-healers all fixed to read player workers via `Player.buildings`

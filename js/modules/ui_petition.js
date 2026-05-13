@@ -2171,11 +2171,16 @@
         }
 
         var dist = Math.hypot(worldX - startX, worldY - startY);
-        var offRoadMult = 0.25;
+        var offRoadMult = (CONFIG.OFFROAD_SPEED_MULTIPLIER || 0.25);
         if (Player.hasSkill && Player.hasSkill('cartographer')) offRoadMult *= 1.5;
         var effectiveDist = dist / offRoadMult;
-        if (Player.horses && Player.horses.length > 0) effectiveDist *= 0.7;
-        var estDays = Math.max(1, Math.ceil(effectiveDist / (30 * 1.5)));
+        if (Player.horses && Player.horses.length > 0) {
+            effectiveDist *= (1 - (CONFIG.HORSE_TRAVEL_SPEED_BONUS || 0.3));
+            if (Player.horses.some(function(h) { return h.saddled; })) effectiveDist *= (1 - 0.3);
+        }
+        // v9p33river131: actual travel uses CARAVAN_BASE_SPEED * 1.5 per day.
+        // The previous hard-coded 30 * 1.5 (=45) made estimates ~4x too high.
+        var estDays = Math.max(1, Math.ceil(effectiveDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 1.5)));
 
         var nearbyTowns = [];
         var towns = Engine.getTowns();

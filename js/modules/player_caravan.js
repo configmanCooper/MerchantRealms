@@ -298,6 +298,12 @@
             if (player.isNoble) {
                 return { allowed: true, message: 'Your noble status grants passage through the ' + qLabel + ' at ' + t.name + '.' };
             }
+            // v9p33river134: official auto-travel kingdom missions (royal
+            // messenger, weapons courier, spy, etc.) carry sealed orders that
+            // grant passage through quarantines along the route.
+            if (player.autoTravelJob) {
+                return { allowed: true, message: '📜 Your official kingdom orders grant passage through the ' + qLabel + ' at ' + t.name + '.' };
+            }
             // Guildmasters (rank 3) can pass standard quarantine on trade business, but NOT martial
             var playerRankInKingdom = 0;
             if (t.kingdomId && player.socialRank) {
@@ -338,6 +344,8 @@
             var kingdom = t.kingdomId ? Engine.findKingdom(t.kingdomId) : null;
             var kp = kingdom ? kingdom.kingPersonality : null;
             var punishment = _quarantinePunishment(kingdom, kp, isMartial, rng);
+            // v9p33river133: caught sneaking adds +2 notoriety (bribery adds +5).
+            player.notoriety = Math.min(100, (player.notoriety || 0) + 2);
 
             if (punishment.type === 'jail') {
                 var jailDays = punishment.days;
@@ -398,11 +406,15 @@
             }
         }
 
-        // Reputation loss with kingdom: -5 to -15 based on king personality
-        var repLoss = 8;
+        // Reputation loss with kingdom: -1 to -5 based on king personality.
+        // v9p33river132: drastically reduced (was -5 to -15) since the
+        // diminishing-returns Proxy doesn't scale losses, making caught
+        // sneaks/bribes feel disproportionately punishing at high rep.
+        // High-justice kings still add +5 for bribery specifically.
+        var repLoss = 2;
         if (kp) {
-            if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') repLoss = 15;
-            else if (kp.temperament === 'merciful' || kp.temperament === 'kind') repLoss = 5;
+            if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') repLoss = 5;
+            else if (kp.temperament === 'merciful' || kp.temperament === 'kind') repLoss = 1;
             if (isBribery && typeof kp.justice === 'number' && kp.justice >= 70) repLoss += 5;
         }
         if (kingdom && kingdom.id) {
@@ -691,6 +703,11 @@
             // Nobles pass freely
             if (player.isNoble) {
                 return { allowed: true, message: 'Your noble status grants passage through the ' + _bqLabel + ' at ' + _bt.name + '.' };
+            }
+            // v9p33river134: official auto-travel kingdom missions grant
+            // passage (mirrors _checkRouteQuarantine logic).
+            if (player.autoTravelJob) {
+                return { allowed: true, message: '📜 Your official kingdom orders grant passage through the ' + _bqLabel + ' at ' + _bt.name + '.' };
             }
             var _bpRank = 0;
             if (_bt.kingdomId && player.socialRank) {

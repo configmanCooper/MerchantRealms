@@ -4509,19 +4509,18 @@
         player.travelPaid = false;
         player.travelMode = (player.horses && player.horses.length > 0) ? 'horse' : 'walk';
         // v9p33river61: track mountain-tile traversal for per-day rope consumption.
+        // v9p33river131: actual travel speed is CARAVAN_BASE_SPEED * 1.5/day,
+        // not *1.5*24 (the *24 was a stale day-vs-hour confusion that made
+        // _approxDays ~24x too small and consumed almost no rope).
         if (mountainDist > 0 && ropePerDay) {
-            // Convert mountain distance to "mountain days" — each game day along
-            // the route covers travelTotalDist / totalTravelDays distance, but
-            // we approximate using the same proportion: mountainDist / totalDist
-            // of the days are mountain-days.
-            var _approxDays = Math.max(1, Math.ceil(effectiveDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24)));
+            var _approxDays = Math.max(1, Math.ceil(effectiveDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 1.5)));
             player.travelMountainDaysRemaining = Math.max(1, Math.ceil(_approxDays * (mountainDist / totalDist)));
         } else {
             player.travelMountainDaysRemaining = 0;
         }
         player.townId = null;
 
-        var days = Math.ceil(effectiveDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24));
+        var days = Math.ceil(effectiveDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 1.5));
         var startMsg = '\uD83E\uDDB6 ' + (player.firstName || 'You') + ' ' + (player.lastName || '') + ' departed into the wilderness.';
         if (mountainDist > 0) {
             startMsg += hasRope
@@ -4753,7 +4752,7 @@
 
         Engine.logEvent('⛵ ' + (player.firstName || 'You') + ' set sail into open waters aboard ' + (ship.name || shipType.name) + '.', { type: 'travel_start' }, 'travel_events');
 
-        var days = Math.ceil(effectiveDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * 24));
+        var days = Math.ceil(effectiveDist / ((CONFIG.CARAVAN_BASE_SPEED || 120) * 1.5));
         return { success: true, days: days, message: '⛵ Setting sail! Estimated ' + days + ' days.' };
     }
 
@@ -21539,20 +21538,32 @@
         return count;
     }
 
-    // Count player employees in a specific kingdom (by employee's town kingdom)
-    function getEmployeesInKingdom(kingdomId) {
-        if (!kingdomId) return player.employees.length;
+    // v9p33river137: count player-owned land plots in a specific kingdom.
+    // Used by buyLand's per-kingdom rank cap so a player who is Guildmaster
+    // in kingdom A but Peasant in kingdom B can't use kingdom A's land cap
+    // when buying in kingdom B.
+    function getLandInKingdom(kingdomId) {
+        if (!kingdomId) {
+            var _all = 0;
+            for (var _t in (player.landOwned || {})) _all += (player.landOwned[_t] || 0);
+            return _all;
+        }
         var count = 0;
-        for (var i = 0; i < player.employees.length; i++) {
+        for (var tid in (player.landOwned || {})) {
             try {
-                var p = Engine.findPerson(player.employees[i]);
-                if (p) {
-                    var t = Engine.findTown(p.townId);
-                    if (t && t.kingdomId === kingdomId) count++;
-                }
-            } catch(e) { count++; }
+                var t2 = Engine.findTown(tid);
+                if (t2 && t2.kingdomId === kingdomId) count += (player.landOwned[tid] || 0);
+            } catch(e) { /* skip */ }
         }
         return count;
+    }
+
+    // Count player employees in a specific kingdom (by employee's town kingdom)
+    function getEmployeesInKingdom(kingdomId) {
+        // v9p33river121: use the unified worker count from Player.buildings
+        // (with employees fallback) instead of just player.employees, which
+        // misses manager-hired workers.
+        return _countMyWorkers(kingdomId || null);
     }
 
     // Get highest rank held in any kingdom OTHER than the given one
@@ -22007,6 +22018,47 @@
         };
     }
 
+    // v9p33river121: count unique workers across player buildings, optionally
+    // filtered to a specific kingdom. Source-of-truth is bld.workers (an
+    // array of person IDs); falls through to the bld in Player.buildings if
+    // the engine's slim town copy is what we have. Used by the rank tracker
+    // and any other "how many people work for me" query that previously
+    // relied on player.employees, which is missed by manager auto-hire and
+    // a few other paths.
+    function _countMyWorkers(filterKingdomId) {
+        if (!player.buildings) return 0;
+        var seen = {};
+        for (var i = 0; i < player.buildings.length; i++) {
+            var b = player.buildings[i];
+            if (!b || !Array.isArray(b.workers) || b.workers.length === 0) continue;
+            if (filterKingdomId) {
+                var t = Engine.findTown(b.townId);
+                if (!t || t.kingdomId !== filterKingdomId) continue;
+            }
+            for (var w = 0; w < b.workers.length; w++) {
+                var wid = b.workers[w];
+                if (wid) seen[wid] = true;
+            }
+        }
+        // Also include any player.employees that may not yet be assigned to
+        // a building (e.g. just-hired but waiting for placement). Filter the
+        // same way.
+        if (player.employees && player.employees.length) {
+            for (var e = 0; e < player.employees.length; e++) {
+                var eid = player.employees[e];
+                if (!eid || seen[eid]) continue;
+                if (filterKingdomId) {
+                    var p = Engine.findPerson(eid);
+                    if (!p) continue;
+                    var et = Engine.findTown(p.townId);
+                    if (!et || et.kingdomId !== filterKingdomId) continue;
+                }
+                seen[eid] = true;
+            }
+        }
+        return Object.keys(seen).length;
+    }
+
     function canPetitionForPromotion(kingdomId) {
         const kId = kingdomId || player.citizenshipKingdomId;
         if (!kId) return { can: false, reason: 'No kingdom specified.', reasons: [] };
@@ -22093,7 +22145,7 @@
                     var t = Engine.findTown(b.townId);
                     return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
                 }).length;                if (prodBuildings < (nextRank.minProductionBuildings || 3)) reasons.push(`Need ${nextRank.minProductionBuildings || 3} production buildings (have ${prodBuildings}). Marry a Lord+ to bypass all requirements`);
-                var workersInKingdom = player.employees ? player.employees.filter(function(e) { var p = Engine.findPerson(e); if (!p) return false; var t = Engine.findTown(p.townId); return t && t.kingdomId === kId; }).length : 0;
+                var workersInKingdom = _countMyWorkers(kId);
                 if (workersInKingdom < (nextRank.minWorkers || 8)) reasons.push(`Need ${nextRank.minWorkers || 8}+ workers in kingdom (have ${workersInKingdom})`);
                 var townsWithBuildings = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
                 if (townsWithBuildings < (nextRank.minTownsWithBuildings || 2)) reasons.push(`Need buildings in ${nextRank.minTownsWithBuildings || 2}+ towns (have ${townsWithBuildings})`);
@@ -22148,7 +22200,7 @@
         if (nextRank.id === 'lord') {
             var townsWithPropLord = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             if (townsWithPropLord < (nextRank.minTownsWithProperty || 4)) reasons.push(`Need property in ${nextRank.minTownsWithProperty || 4}+ towns (have ${townsWithPropLord})`);
-            var totalWorkers = player.employees ? player.employees.length : 0;
+            var totalWorkers = _countMyWorkers(null);
             if (totalWorkers < (nextRank.minTotalWorkers || 40)) reasons.push(`Need ${nextRank.minTotalWorkers || 40}+ workers (have ${totalWorkers})`);
             var infraCount = (player.roadsBuilt || 0) + (player.bridgesBuilt || 0) + (player.seaRoutesBuilt || 0);
             if (infraCount < (nextRank.minInfrastructure || 2)) reasons.push(`Need ${nextRank.minInfrastructure || 2}+ infrastructure projects (roads/bridges/sea routes) \u2014 have ${infraCount}`);
@@ -22271,7 +22323,7 @@
         }
         // Reputation
         if (effectiveRepReq > 0) {
-            bars.push({ label: '⭐ Reputation', current: Math.floor(rep), required: effectiveRepReq, pct: Math.min(100, Math.floor(rep / effectiveRepReq * 100)), met: rep >= effectiveRepReq, discounted: hasSkill('royal_favor') });
+            bars.push({ label: '⭐ Reputation', current: Math.round(rep * 10) / 10, required: effectiveRepReq, pct: Math.min(100, Math.floor(rep / effectiveRepReq * 100)), met: rep >= effectiveRepReq, discounted: hasSkill('royal_favor') });
         }
         // Fee
         if (effectiveFee > 0) {
@@ -22308,7 +22360,7 @@
                 return bt && (bt.category === 'processing' || bt.category === 'finished') && t && t.kingdomId === kId;
             }).length;
             bars.push({ label: '🏭 Prod. Buildings', current: prodBldgs, required: nextRank.minProductionBuildings || 3, pct: Math.min(100, Math.floor(prodBldgs / (nextRank.minProductionBuildings || 3) * 100)), met: prodBldgs >= (nextRank.minProductionBuildings || 3) });
-            var workersInK = player.employees ? player.employees.filter(function(e) { var p = Engine.findPerson(e); if (!p) return false; var t = Engine.findTown(p.townId); return t && t.kingdomId === kId; }).length : 0;
+            var workersInK = _countMyWorkers(kId);
             bars.push({ label: '👷 Workers', current: workersInK, required: nextRank.minWorkers || 8, pct: Math.min(100, Math.floor(workersInK / (nextRank.minWorkers || 8) * 100)), met: workersInK >= (nextRank.minWorkers || 8) });
             var townsWB = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             bars.push({ label: '🏘️ Towns', current: townsWB, required: nextRank.minTownsWithBuildings || 2, pct: Math.min(100, Math.floor(townsWB / (nextRank.minTownsWithBuildings || 2) * 100)), met: townsWB >= (nextRank.minTownsWithBuildings || 2) });
@@ -22360,7 +22412,7 @@
         if (nextRank.id === 'lord') {
             var townsWPL = new Set(player.buildings.filter(function(b) { var t = Engine.findTown(b.townId); return t && t.kingdomId === kId; }).map(function(b) { return b.townId; })).size;
             bars.push({ label: '🏘️ Towns w/ Property', current: townsWPL, required: nextRank.minTownsWithProperty || 4, pct: Math.min(100, Math.floor(townsWPL / (nextRank.minTownsWithProperty || 4) * 100)), met: townsWPL >= (nextRank.minTownsWithProperty || 4) });
-            var totalW = player.employees ? player.employees.length : 0;
+            var totalW = _countMyWorkers(null);
             bars.push({ label: '👷 Total Workers', current: totalW, required: nextRank.minTotalWorkers || 40, pct: Math.min(100, Math.floor(totalW / (nextRank.minTotalWorkers || 40) * 100)), met: totalW >= (nextRank.minTotalWorkers || 40) });
             var infraC = (player.roadsBuilt || 0) + (player.bridgesBuilt || 0) + (player.seaRoutesBuilt || 0);
             bars.push({ label: '🛤️ Infrastructure', current: infraC, required: nextRank.minInfrastructure || 2, pct: Math.min(100, Math.floor(infraC / (nextRank.minInfrastructure || 2) * 100)), met: infraC >= (nextRank.minInfrastructure || 2) });
@@ -27597,6 +27649,7 @@
             try {
                 const towns = Engine.getTowns();
                 for (const town of towns) {
+                    if (town.isOutpost) continue; // v9p33river126: outposts have no market
                     player.marketIntel[town.id] = {
                         prices: { ...town.market.prices },
                         supply: { ...town.market.supply },
@@ -27609,6 +27662,7 @@
             try {
                 const towns = Engine.getTowns();
                 for (const town of towns) {
+                    if (town.isOutpost) continue; // v9p33river126
                     if (isPlayerCitizenOf(town.kingdomId)) {
                         player.marketIntel[town.id] = {
                             prices: { ...town.market.prices },
@@ -27630,7 +27684,7 @@
                 const existing = player.marketIntel[townId];
                 if (!existing || day - existing.updatedDay >= HUNGER_CONFIG.MARKET_INTEL_UPDATE_INTERVAL) {
                     const town = Engine.findTown(townId);
-                    if (town) {
+                    if (town && !town.isOutpost) { // v9p33river126
                         player.marketIntel[townId] = {
                             prices: { ...town.market.prices },
                             supply: { ...town.market.supply },
@@ -27641,16 +27695,21 @@
             }
         }
 
-        // Always include current town
+        // Always include current town (skip outposts — they have no market)
         if (player.townId && !player.traveling) {
             const town = Engine.findTown(player.townId);
-            if (town) {
+            if (town && !town.isOutpost) {
                 player.marketIntel[player.townId] = {
                     prices: { ...town.market.prices },
                     supply: { ...town.market.supply },
                     updatedDay: day,
                 };
             }
+        }
+        // v9p33river126: purge any stale outpost entries from prior versions
+        for (var _miTownId in player.marketIntel) {
+            var _miTown = Engine.findTown(_miTownId);
+            if (_miTown && _miTown.isOutpost) delete player.marketIntel[_miTownId];
         }
     }
 
@@ -27942,6 +28001,7 @@
                     name: '📜 Tax collector', hours: 8,
                     pay: Math.round(12 * payScale), ticks: 20, type: 'kingdom',
                     xpReward: 4, repGain: 2,
+                    jobTypeKey: 'tax_collector',
                     description: _recentTaxIncrease
                         ? 'Collect taxes — the crown recently raised rates'
                         : 'Collect taxes — spring tax season'
@@ -27951,7 +28011,7 @@
         jobs.push({
             name: '🛤️ Road repair crew', hours: 8,
             pay: Math.round(7 * payScale), ticks: 20, type: 'kingdom',
-            xpReward: 2, repGain: 1, description: 'Improve road quality in the area — backbreaking work'
+            xpReward: 2, repGain: 1, jobTypeKey: 'road_repair', description: 'Improve road quality in the area — backbreaking work'
         });
 
         // Capital-only jobs
@@ -27969,7 +28029,7 @@
                     jobs.push({
                         name: '🏰 Castle servant', hours: 16,
                         pay: Math.round(20 * payScale), ticks: 40, type: 'castle',
-                        xpReward: 5, repGain: 2, description: 'Serve in the royal castle'
+                        xpReward: 5, repGain: 2, jobTypeKey: 'castle_servant', description: 'Serve in the royal castle'
                     });
                 }
                 if (isCitizen && hasCastleStanding && hasSkill('literacy')) {
@@ -27992,7 +28052,7 @@
                     jobs.push({
                         name: '🤵 Diplomat\'s Aide', hours: 16,
                         pay: Math.round(30 * payScale), ticks: 40, type: 'castle',
-                        xpReward: 12, repGain: 3, description: 'Assist in diplomatic negotiations'
+                        xpReward: 12, repGain: 3, jobTypeKey: 'diplomats_aide', description: 'Assist in diplomatic negotiations'
                     });
                 }
                 // Court Entertainer — instrument system affects pay
@@ -28054,7 +28114,7 @@
                 jobs.push({
                     name: '🏗️ Castle Work', hours: 12,
                     pay: Math.round(14 * payScale), ticks: 30, type: 'castle',
-                    xpReward: 5, repGain: 1, description: 'Manage castle operations. No risk.'
+                    xpReward: 5, repGain: 1, jobTypeKey: 'castle_work', description: 'Manage castle operations. No risk.'
                 });
             }
         }
@@ -28111,7 +28171,7 @@
             jobs.push({
                 name: '⚰️ Gravedigger', hours: 8,
                 pay: Math.round(16 * payScale), ticks: 20, type: 'kingdom',
-                xpReward: 4, repGain: 1, dangerous: true,
+                xpReward: 4, repGain: 1, dangerous: true, jobTypeKey: 'gravedigger',
                 description: '⚠️ DANGEROUS — Plague in town. 🤒 3% illness risk. Bury the dead.',
                 illnessRisk: 0.03, riskLevel: 'medium', contextReason: '⚠️ Plague in town'
             });
@@ -28119,7 +28179,7 @@
                 jobs.push({
                     name: '🚧 Quarantine Enforcer', hours: 12,
                     pay: Math.round(20 * payScale), ticks: 30, type: 'kingdom',
-                    xpReward: 5, repGain: 2,
+                    xpReward: 5, repGain: 2, jobTypeKey: 'quarantine_enforcer',
                     description: '⚠️ Plague in town. 🤒 2% illness risk. Enforce quarantine.',
                     illnessRisk: 0.02, riskLevel: 'low', contextReason: '⚠️ Plague in town'
                 });
@@ -28140,7 +28200,7 @@
                 jobs.push({
                     name: '🏗️ Siege Engineer', hours: 16,
                     pay: Math.round(40 * payScale), ticks: 40, type: 'kingdom',
-                    xpReward: 10, repGain: 2,
+                    xpReward: 10, repGain: 2, jobTypeKey: 'siege_engineer',
                     description: '🩹 High injury risk. Build siege equipment. Needs crafting.',
                     injuryRisk: 0.011, riskLevel: 'high', contextReason: '⚔️ War effort'
                 });
@@ -28377,7 +28437,7 @@
                 jobs.push({
                     name: '⚖️ Guild Enforcer', hours: 12,
                     pay: Math.round(18 * payScale), ticks: 30, type: 'kingdom',
-                    xpReward: 5, repGain: 1, description: 'Enforce guild rules. Requires citizenship.'
+                    xpReward: 5, repGain: 1, jobTypeKey: 'guild_enforcer', description: 'Enforce guild rules. Requires citizenship.'
                 });
             }
             if (canPhysical) {
@@ -28611,7 +28671,7 @@
                 var _repChances = {
                     'tax_collector': 0.4,
                     'road_repair': 0.35,
-                    'castle_servant': 0.25,
+                    'castle_servant': 0.20,
                     'royal_scribe': 0.35,
                     'royal_messenger': 0.5,
                     'diplomats_aide': 0.5,
@@ -28646,9 +28706,17 @@
                         var playerOwnsBuilding = (town.buildings || []).some(function(b) { return b.ownerId === 'player'; });
                         if (playerOwnsBuilding) repGainAmount *= 1.05;
                     }
+                    // v9p33river124: snapshot rep before write so the toast can
+                    // display the ACTUAL delta after the diminishing-returns
+                    // Proxy applies its scaling. Previously the toast always
+                    // showed the unscaled amount (e.g. "+3") even when the
+                    // Proxy had reduced it to +1 or 0 (cap).
+                    var _repBefore = player.reputation[town.kingdomId] || 50;
                     player.reputation[town.kingdomId] = Math.min(100,
-                        (player.reputation[town.kingdomId] || 50) + repGainAmount
+                        _repBefore + repGainAmount
                     );
+                    var _repAfter = player.reputation[town.kingdomId] || _repBefore;
+                    var _repActualDelta = Math.max(0, _repAfter - _repBefore);
                     // Contextual rep messages
                     var _repMsgs = {
                         'tax_collector': '📜 Efficient tax collection earned kingdom approval.',
@@ -28680,7 +28748,17 @@
                         'festival_musician': '🎉 The crowd loved your festival performance!',
                     };
                     var _repMsg = _repMsgs[job.jobTypeKey] || 'Your work earned kingdom recognition.';
-                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⬆️ +' + Math.round(repGainAmount) + ' Kingdom Rep: ' + _repMsg, 'success', 'my_actions');
+                    // v9p33river124: report the actual scaled gain. If the Proxy
+                    // diminished it to 0 (e.g. already at rep cap), report it
+                    // as a diminished gain so the player knows their high rep
+                    // throttled the reward.
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        if (_repActualDelta >= 0.5) {
+                            UI.toast('⬆️ +' + Math.round(_repActualDelta * 10) / 10 + ' Kingdom Rep: ' + _repMsg, 'success', 'my_actions');
+                        } else if (repGainAmount > 0) {
+                            UI.toast('⬆️ Kingdom Rep gain diminished (high reputation): ' + _repMsg, 'success', 'my_actions');
+                        }
+                    }
                 }
             }
         }
@@ -32845,13 +32923,19 @@
 
         var cat = town.category || 'village';
         var maxPlots = CONFIG.LAND_PLOTS_BASE[cat] || 5;
-        // Check rank-based land limit
-        var rankIdx = getPlayerRankIndex();
+        // v9p33river137: rank check is now strictly per-kingdom (use the
+        // player's rank IN THIS KINGDOM, not their citizenship-kingdom rank).
+        // Land totals are also counted per-kingdom — a guildmaster in kingdom
+        // A doesn't get to apply that rank's land cap when buying as a
+        // peasant in kingdom B.
+        var rankIdx = getPlayerRankIndex(town.kingdomId);
         var rank = CONFIG.SOCIAL_RANKS[rankIdx];
-        var ownedTotal = 0;
-        for (var tid in player.landOwned) ownedTotal += (player.landOwned[tid] || 0);
-        if (rank && rank.maxLand !== undefined && ownedTotal >= rank.maxLand) {
-            return { success: false, message: 'Your rank (' + rank.name + ') limits you to ' + rank.maxLand + ' total land plots. You own ' + ownedTotal + '. Advance your rank to buy more.' };
+        var rankName = rank ? rank.name : 'Peasant';
+        var ownedInKingdom = getLandInKingdom(town.kingdomId);
+        if (rank && rank.maxLand !== undefined && ownedInKingdom >= rank.maxLand) {
+            var _kk = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+            var _kName = _kk ? _kk.name : 'this kingdom';
+            return { success: false, message: 'Your rank in ' + _kName + ' (' + rankName + ') limits you to ' + rank.maxLand + ' land plots there. You own ' + ownedInKingdom + '. Earn rank in ' + _kName + ' to buy more.' };
         }
         var cost;
         var lockedType = null;
@@ -36851,9 +36935,19 @@
                 var letters = [];
                 for (var li = 0; li < numLetters; li++) {
                     var dest = kingdomTowns[li];
-                    // Pick a random NPC in the destination town for flavor
-                    var townPeople = Engine.getPeople().filter(function(p) { return p.townId === dest.id; });
-                    var recipientName = townPeople.length > 0 ? townPeople[rng.randInt(0, townPeople.length - 1)].fullName : 'the local magistrate';
+                    // Pick a random adult NPC in the destination town for flavor.
+                    // v9p33river135: use firstName + lastName (NPCs have no
+                    // fullName field, so the previous .fullName lookup gave
+                    // 'undefined'). Filter to adults to avoid kid recipients.
+                    var townPeople = Engine.getPeople().filter(function(p) {
+                        return p.alive && p.townId === dest.id && (p.age == null || p.age >= 18) && p.firstName && p.lastName;
+                    });
+                    var recipientName = 'the local magistrate';
+                    if (townPeople.length > 0) {
+                        var _rcpt = townPeople[rng.randInt(0, townPeople.length - 1)];
+                        recipientName = (_rcpt.firstName || '') + ' ' + (_rcpt.lastName || '');
+                        recipientName = recipientName.trim() || 'the local magistrate';
+                    }
                     letters.push({ townId: dest.id, townName: dest.name, recipientName: recipientName, delivered: false });
                     legs.push({
                         townId: dest.id,
@@ -37432,7 +37526,13 @@
             for (var i = 0; i < mission.letters.length; i++) {
                 if (mission.letters[i].townId === leg.townId && !mission.letters[i].delivered) {
                     mission.letters[i].delivered = true;
-                    Engine.logEvent('📮 Letter delivered to ' + mission.letters[i].recipientName + ' in ' + mission.letters[i].townName);
+                    // v9p33river135: tolerate legacy missions with undefined
+                    // recipientName (from older saves before the fullName fix).
+                    var _rcptName = mission.letters[i].recipientName;
+                    if (!_rcptName || _rcptName === 'undefined' || _rcptName === 'undefined undefined') {
+                        _rcptName = 'the local magistrate';
+                    }
+                    Engine.logEvent('📮 Letter delivered to ' + _rcptName + ' in ' + mission.letters[i].townName);
                     break;
                 }
             }
@@ -39730,6 +39830,7 @@
         buyLand,
         sellLand,
         getOwnedLand,
+        getLandInKingdom,
         getLandCost,
         getSubsidizedLandCost,
         getActiveSubsidy,

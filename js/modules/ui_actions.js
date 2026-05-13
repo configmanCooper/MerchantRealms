@@ -316,8 +316,17 @@ function showTownDetail(town) {
         html += `<div class="text-center mt-sm">
             <button class="btn-medieval" data-action="showTownPeople" data-id="${town.id}" style="font-size:0.8rem;padding:6px 16px;">
                 👥 View Townspeople (${pop})
-            </button>
-        </div>`;
+            </button>`;
+        // v9p33river131: surface "Manage Outpost" directly from the town
+        // panel when this is the player's outpost (avoids hunting through
+        // the top-bar Outposts dialog).
+        try {
+            var _myOpId = (typeof Player !== 'undefined' && Player.state && Player.state.id) || 'player';
+            if (town.isOutpost && town.founderId === _myOpId) {
+                html += ' <button class="btn-medieval" data-action="openOutpostDetail" data-id="' + town.id + '" style="font-size:0.8rem;padding:6px 16px;">⛺ Manage Outpost</button>';
+            }
+        } catch(e) { /* defensive */ }
+        html += '</div>';
     } else {
         // Check if connected town (road or skill)
         const hasSpyNetwork = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
@@ -518,7 +527,7 @@ function showTownDetail(town) {
         html += '</div>';
     }
 
-    if (town.market && town.market.prices && canSeePrices) {
+    if (town.market && town.market.prices && canSeePrices && !town.isOutpost) {
         const isRemote = !isPlayerHere;
         html += `<div class="detail-section">
             <h3 data-collapse-id="market-prices" style="cursor:pointer;user-select:none;" data-action="_toggleCollapse">📊 Market Prices${isRemote ? ' <span class="text-dim" style="font-size:0.7rem;">(Intel)</span>' : ''} <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">${_townPanelExpandedSections['market-prices'] ? '▼' : '▶'}</span></h3>
@@ -628,7 +637,7 @@ function showTownDetail(town) {
             html += `<button class="btn-action" data-action="showKingdomTradePanel" data-id="${town.kingdomId}">🏛️ Open Kingdom Trade</button>`;
             html += `</div>`;
         }
-    } else if (town.market && town.market.prices && !canSeePrices && showStale && rememberedData) {
+    } else if (town.market && town.market.prices && !canSeePrices && showStale && rememberedData && !town.isOutpost) {
         // STALE REMEMBERED PRICES — from player's last visit
         html += `<div class="detail-section">
             <h3 data-collapse-id="market-prices-remembered" style="cursor:pointer;user-select:none;" data-action="_toggleCollapse">📊 Market Prices <span style="color:#c9a84c;font-size:0.7rem;">(Remembered)</span> <span class="collapse-arrow" style="font-size:0.7rem;opacity:0.6;">${_townPanelExpandedSections['market-prices-remembered'] ? '▼' : '▶'}</span></h3>
@@ -645,7 +654,7 @@ function showTownDetail(town) {
             html += `<tr><td>${sRes.icon} ${sRes.name}</td><td style="color:#c9a84c;">${stalePrices[srId]}g</td><td style="color:#888;">~${Math.floor(staleSupply[srId] || 0)}</td></tr>`;
         }
         html += `</table></div></div>`;
-    } else if (town.market && town.market.prices && !canSeePrices) {
+    } else if (town.market && town.market.prices && !canSeePrices && !town.isOutpost) {
         html += `<div class="detail-section"><h3>📊 Market Prices</h3>
             <div class="text-dim" style="font-size:0.8rem;">🔒 You need to visit this town or learn <b>Market Scout</b>, <b>Trade Network</b>, or <b>Global Trade Intel</b> skills to see remote prices. Prices from towns you've visited in the last 90 days will also appear here.</div>
         </div>`;

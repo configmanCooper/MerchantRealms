@@ -487,7 +487,7 @@ const CONFIG = {
         defaultRate: 15,         // Default charge to travelers
         speedMultiplier: 1.7,    // 70% faster than walking
     },
-    PORT_WATER_PROXIMITY: 3,
+    PORT_WATER_PROXIMITY: 5,
     SHIP_TYPES: {
         rowboat:       { name: 'Rowboat',           laborCost: 20,   capacity: 10,   speed: 0.8,  passengers: 2,  restBonus: 0,   maxAddons: 0, cannons: 0, defense: 0,  durabilityYears: 2, minCrew: 1, sizeCategory: 'small',
                          materials: { wood: 5, rope: 2 },                                                          icon: '🚣', description: 'A simple rowboat. Slow but cheap. Coastal travel only.' },
@@ -1034,7 +1034,7 @@ const CONFIG = {
         npcFoundChanceRefugee: 0.01,    // 1% during refugee crises
         maxDistanceFromRoad: 3,         // outpost must be within 3 tiles of a road
         abandonDaysNoMaintenance: 30,   // outpost abandoned after 30 days of no upkeep
-        minDistanceTiles: 5,            // must be at least 5 tiles from any existing location
+        minDistanceTiles: 10,           // must be at least 10 tiles from any existing location
 
         // Land plots
         startingLandPlots: 4,           // outpost starts with 4 land plots

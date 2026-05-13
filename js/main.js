@@ -809,8 +809,9 @@ window.Game = (function () {
             }
         }
 
-        // Find towns in Valdren
-        var valdrenTowns = towns.filter(function(t) { return t.kingdomId === valdren.id; });
+        // Find towns in Valdren (excluding islands — story towns must be
+        // land-based mainland settlements, not floating port-villages).
+        var valdrenTowns = towns.filter(function(t) { return t.kingdomId === valdren.id && !t.isIsland; });
         if (valdrenTowns.length < 3) {
             // Fallback: just use first 3 towns
             valdrenTowns = towns.slice(0, 3);
@@ -821,24 +822,72 @@ window.Game = (function () {
         if (valdrenTowns.length > 1) valdrenTowns[1].name = 'Millhaven';
         if (valdrenTowns.length > 2) valdrenTowns[2].name = 'Ferrowdale';
 
-        // Set capital — must NOT be Ashford (it gets captured in story)
-        if (valdren.capitalTownId) {
-            var capital = Engine.findTown(valdren.capitalTownId);
-            if (!capital || capital.name === 'Ashford' || capital.name === 'Millhaven' || capital.name === 'Ferrowdale') {
-                // Reassign capital to a non-story town
-                if (valdrenTowns.length > 3) {
-                    valdren.capitalTownId = valdrenTowns[3].id;
-                } else {
-                    // No other Valdren towns — pick any non-Ashford town
-                    for (var ci = valdrenTowns.length - 1; ci >= 0; ci--) {
-                        if (valdrenTowns[ci].name !== 'Ashford') { valdren.capitalTownId = valdrenTowns[ci].id; break; }
-                    }
+        // v9p33river143/146: Valdren capital city is ALWAYS Millhaven —
+        // the renamed valdrenTowns[1]. Force the capital pointer to it
+        // even if worldgen had assigned a different town. Capital cannot
+        // be Ashford or Ferrowdale (story plot beats).
+        var _valdrenCapital = null;
+        if (valdrenTowns.length > 1) {
+            _valdrenCapital = valdrenTowns[1]; // already named 'Millhaven' above
+        }
+        if (_valdrenCapital) {
+            valdren.capitalTownId = _valdrenCapital.id;
+            // Promote to capital city tier with the appropriate stats
+            if ((_valdrenCapital.population || 0) < 300) _valdrenCapital.population = 320;
+            _valdrenCapital.category = 'capital_city';
+            _valdrenCapital.tier = 'capital';
+            _valdrenCapital.isCapital = true;
+            _valdrenCapital.maxBuildingSlots = (CONFIG.TOWN_CATEGORIES && CONFIG.TOWN_CATEGORIES.capital_city) ? CONFIG.TOWN_CATEGORIES.capital_city.maxBuildingSlots : 35;
+            _valdrenCapital._lockedCategory = 'capital_city'; // stays a capital city all of story mode
+        }
+
+        // v9p33river146: ensure no OTHER Valdren town shares the protected
+        // story-mode names (Ashford, Millhaven, Ferrowdale). If worldgen
+        // happened to generate one of those names for another town, rename
+        // it to a unique fallback so map labels stay unambiguous.
+        var _protectedIds = {};
+        if (valdrenTowns[0]) _protectedIds[valdrenTowns[0].id] = true; // Ashford
+        if (valdrenTowns[1]) _protectedIds[valdrenTowns[1].id] = true; // Millhaven
+        if (valdrenTowns[2]) _protectedIds[valdrenTowns[2].id] = true; // Ferrowdale
+        var _protectedNames = { 'Ashford': true, 'Millhaven': true, 'Ferrowdale': true };
+        var _fallbackPool = ['Brookhollow', 'Westhaven', 'Greenford', 'Stonebridge', 'Northwatch', 'Eastvale', 'Highmeadow', 'Southkeep', 'Ravenford', 'Larkspur', 'Thornfield', 'Wheatley', 'Oakridge', 'Willowmere'];
+        var _usedNames = {};
+        for (var _vti2 = 0; _vti2 < valdrenTowns.length; _vti2++) {
+            _usedNames[valdrenTowns[_vti2].name] = true;
+        }
+        for (var _vti3 = 0; _vti3 < valdrenTowns.length; _vti3++) {
+            var _vt = valdrenTowns[_vti3];
+            if (_protectedIds[_vt.id]) continue;
+            if (_protectedNames[_vt.name]) {
+                // Find an unused fallback name
+                var _picked = null;
+                for (var _fpi = 0; _fpi < _fallbackPool.length; _fpi++) {
+                    if (!_usedNames[_fallbackPool[_fpi]]) { _picked = _fallbackPool[_fpi]; break; }
                 }
+                if (!_picked) _picked = 'Valdren ' + (_vti3 + 1); // last-resort
+                _usedNames[_picked] = true;
+                delete _usedNames[_vt.name];
+                _vt.name = _picked;
             }
         }
 
         // Ensure Ashford has required buildings
         var ashford = valdrenTowns[0];
+
+        // v9p33river140/141: ensure Ashford starts at the 'town' tier — not
+        // a village or city. After the game starts it can grow or decline
+        // naturally; this just sets the initial state.
+        if ((ashford.population || 0) < 60) {
+            ashford.population = 80;
+        }
+        if ((ashford.population || 0) > 149) {
+            // Trim down so the initial tier is unambiguously 'town'
+            // (city threshold is 150). Engine can still grow it later.
+            ashford.population = 149;
+        }
+        ashford.category = 'town';
+        ashford.tier = 'town';
+        ashford.maxBuildingSlots = (CONFIG.TOWN_CATEGORIES && CONFIG.TOWN_CATEGORIES.town) ? CONFIG.TOWN_CATEGORIES.town.maxBuildingSlots : 14;
 
         // Remove iron deposits from Ashford — iron comes from Korvathi (drives ch7-8 plot)
         if (ashford.naturalDeposits) delete ashford.naturalDeposits.iron_ore;
@@ -937,26 +986,171 @@ window.Game = (function () {
             }
         }
 
+        // v9p33river142: helper — when we move a town in story setup,
+        // every road that references it keeps its OLD waypoints (starting
+        // at the previous town position), so the road appears 'cut off'
+        // from the relocated town. This walks every road touching the
+        // given town and rebuilds its waypoints from the current endpoint
+        // positions.
+        function _refreshRoadsForTown(townId) {
+            if (!world || !world.roads) return;
+            for (var rri = 0; rri < world.roads.length; rri++) {
+                var rrr = world.roads[rri];
+                if (rrr.fromTownId !== townId && rrr.toTownId !== townId) continue;
+                var fromT = Engine.findTown(rrr.fromTownId);
+                var toT = Engine.findTown(rrr.toTownId);
+                if (!fromT || !toT) continue;
+                _refreshExistingRoad(rrr, fromT, toT, rrr.quality);
+            }
+        }
+
+        // v9p33river148: rewrite waypoints of an existing road via
+        // findTerrainPath, so quality changes / town moves produce a
+        // proper bridged path (no straight lines through ocean). Falls
+        // back to a simple 3-point line if the path engine isn't available
+        // or returns nothing usable.
+        function _refreshExistingRoad(road, fromT, toT, quality) {
+            road.quality = quality || road.quality || 2;
+            road.type = 'land';
+            // Invalidate render-side caches keyed on this road's prior geometry.
+            // Without this, render.js culls based on a stale bbox or skips a
+            // new path-lookup attempt and may show phantom road segments at
+            // the OLD waypoint positions briefly during zoom transitions.
+            if (road._bbox) delete road._bbox;
+            if (road._waypointLookupDone) delete road._waypointLookupDone;
+            if (typeof Engine !== 'undefined' && Engine.findTerrainPath) {
+                try {
+                    var pr = Engine.findTerrainPath(fromT.x, fromT.y, toT.x, toT.y, 'land');
+                    if (pr && pr.waypoints && pr.waypoints.length >= 2) {
+                        road.waypoints = pr.waypoints;
+                        if (Engine.createBridgeObjects) {
+                            road.bridges = Engine.createBridgeObjects(pr.waypoints) || [];
+                            road.hasBridge = road.bridges.length > 0 || (pr.bridgeSegments || []).length > 0;
+                            road.bridgeSegments = pr.bridgeSegments || [];
+                        }
+                        return;
+                    }
+                } catch(e) { /* fallthrough */ }
+            }
+            // v9p33river160: do NOT clobber waypoints with a straight 3-point
+            // line — that's exactly what produces the visible phantom road
+            // segments cutting diagonally through terrain. If terrain pathing
+            // fails, keep whatever waypoints the road had (or, if it never had
+            // any, leave it empty so renderer's `if (!hasWP) continue` skips
+            // drawing it instead of cutting a straight line through the map).
+            if (!road.waypoints || road.waypoints.length < 2) {
+                road.waypoints = null;
+            }
+        }
+
+        // v9p33river148: route building helper that respects engine rules
+        // (water-fraction caps, bridge-span limits, no phantom roads).
+        // Uses Engine.buildNewRoad when no road exists; refreshes the
+        // existing road's quality + waypoints otherwise. Returns true on
+        // success, false if Engine.buildNewRoad rejected the build.
+        // v9p33river154: BFS that traverses junction nodes to detect an
+        // already-existing path between two real towns. Used so we don't
+        // create a parallel direct road when worldgen produced a
+        // ``A → junction → B`` route (the naive direct-edge check missed
+        // these and added duplicates — e.g. Ferrowdale ↔ Millhaven).
+        function _findExistingTownPath(townAId, townBId) {
+            if (!world || !world.roads || townAId === townBId) return null;
+            var visited = {}; visited[townAId] = true;
+            var queue = [townAId];
+            while (queue.length) {
+                var cur = queue.shift();
+                for (var ri = 0; ri < world.roads.length; ri++) {
+                    var r = world.roads[ri];
+                    if (r.condition === 'destroyed') continue;
+                    var nxt = null;
+                    if (r.fromTownId === cur) nxt = r.toTownId;
+                    else if (r.toTownId === cur) nxt = r.fromTownId;
+                    if (!nxt || visited[nxt]) continue;
+                    if (nxt === townBId) return true;
+                    var nxtTown = Engine.findTown(nxt);
+                    // Only continue traversal through junction transit nodes;
+                    // arriving at any other real town doesn't count as the
+                    // pair being directly connected for our purposes.
+                    if (!nxtTown || (!nxtTown.isJunction && nxtTown.category !== 'junction')) continue;
+                    visited[nxt] = true;
+                    queue.push(nxt);
+                }
+            }
+            return false;
+        }
+
+        function _ensureRoad(townA, townB, quality) {
+            if (!world || !world.roads || !townA || !townB || townA.id === townB.id) return false;
+            var aId = townA.id, bId = townB.id;
+            var existing = null;
+            for (var ri = 0; ri < world.roads.length; ri++) {
+                var r = world.roads[ri];
+                if ((r.fromTownId === aId && r.toTownId === bId) || (r.fromTownId === bId && r.toTownId === aId)) {
+                    existing = r;
+                    break;
+                }
+            }
+            if (existing && existing.condition !== 'destroyed') {
+                _refreshExistingRoad(existing, townA, townB, quality);
+                return true;
+            }
+            // v9p33river154: also detect indirect (junction-spliced) existing
+            // paths so we don't add a parallel direct road.
+            if (_findExistingTownPath(aId, bId)) return true;
+            if (typeof Engine !== 'undefined' && Engine.buildNewRoad) {
+                var res = Engine.buildNewRoad(aId, bId, 'story', { quality: quality || 2 });
+                if (res && res.success) return true;
+                console.warn('[StoryMode] _ensureRoad rejected ' + (townA.name || aId) + '<->' + (townB.name || bId) + ': ' + (res && res.message));
+                return false;
+            }
+            return false;
+        }
+
+        // v9p33river148: sea-route helper that respects engine rules
+        // (both endpoints must be ports + ≥95% water path).
+        function _ensureSeaRoute(townA, townB) {
+            if (!world || !townA || !townB || townA.id === townB.id) return false;
+            var aId = townA.id, bId = townB.id;
+            if (world.seaRoutes && world.seaRoutes.some(function(sr) {
+                return (sr.fromTownId === aId && sr.toTownId === bId) || (sr.fromTownId === bId && sr.toTownId === aId);
+            })) return true;
+            if (typeof Engine !== 'undefined' && Engine.buildNewSeaRoute) {
+                var res = Engine.buildNewSeaRoute(aId, bId, 'story', {});
+                if (res && res.success) return true;
+                console.warn('[StoryMode] _ensureSeaRoute rejected ' + (townA.name || aId) + '<->' + (townB.name || bId) + ': ' + (res && res.message));
+                return false;
+            }
+            return false;
+        }
+
         // Ensure road between Ashford and Ferrowdale is short (~2 days walk)
         var world = Engine.getWorld();
+
         if (world && valdrenTowns.length > 2) {
             var ashfordId = valdrenTowns[0].id;
             var ferrowdaleId = valdrenTowns[2].id;
             var ashford_t = valdrenTowns[0];
             var ferrowdale_t = valdrenTowns[2];
 
-            // Move Ferrowdale close to Ashford if too far (max ~200 units for ~2 day walk on quality 3 road)
+            // Move Ferrowdale close to Ashford if too far. v9p33river145:
+            // bumped both the max-allowed distance (200 -> 300) and the
+            // re-snap target (180 -> 270) by ~50% per user request — gives
+            // Ferrowdale a bit more breathing room from Ashford.
             var dist = Math.hypot(ashford_t.x - ferrowdale_t.x, ashford_t.y - ferrowdale_t.y);
-            var maxDist = 200; // quality 3 road: effective = dist/2, walk speed 60/day → 2 days = 120 effective → 240 actual
+            var maxDist = 300;
             if (dist > maxDist) {
-                // Move Ferrowdale to be ~180 units from Ashford in the same direction
                 var angle = Math.atan2(ferrowdale_t.y - ashford_t.y, ferrowdale_t.x - ashford_t.x);
-                ferrowdale_t.x = Math.round(ashford_t.x + Math.cos(angle) * 180);
-                ferrowdale_t.y = Math.round(ashford_t.y + Math.sin(angle) * 180);
+                ferrowdale_t.x = Math.round(ashford_t.x + Math.cos(angle) * 270);
+                ferrowdale_t.y = Math.round(ashford_t.y + Math.sin(angle) * 270);
+                _refreshRoadsForTown(ferrowdaleId);
             }
 
-            // Ensure Ferrowdale is NOT a port (force land-only connection)
-            ferrowdale_t.isPort = false;
+            // v9p33river143: don't force Ferrowdale's port status either way.
+            // Let Engine.reconcilePortStatus() decide based on actual ocean
+            // proximity (5 tiles). Previously this hard-set isPort=false to
+            // force a land road, but the road-type is independent of the
+            // town's port flag — we only need to drop sea ROUTES between the
+            // two towns (handled below).
             ferrowdale_t.hasHarbor = false;
 
             // Remove any sea routes between Ashford and Ferrowdale
@@ -967,53 +1161,177 @@ window.Game = (function () {
                 });
             }
 
-            // Ensure a quality 3 land road exists
-            if (world.roads) {
-                for (var ri = 0; ri < world.roads.length; ri++) {
-                    var road = world.roads[ri];
-                    if ((road.fromTownId === ashfordId && road.toTownId === ferrowdaleId) ||
-                        (road.fromTownId === ferrowdaleId && road.toTownId === ashfordId)) {
-                        road.quality = 3;
-                        road.type = 'land';
-                        // Update waypoints to match new positions
-                        road.waypoints = [
-                            { x: ashford_t.x, y: ashford_t.y },
-                            { x: (ashford_t.x + ferrowdale_t.x) / 2, y: (ashford_t.y + ferrowdale_t.y) / 2 },
-                            { x: ferrowdale_t.x, y: ferrowdale_t.y }
-                        ];
-                        break;
+            // v9p33river149: Millhaven (the Valdren capital) must sit at
+            // least 500 px from BOTH Ashford and Ferrowdale. If it doesn't,
+            // try 16 candidate angles around Ashford at 600-800 px radius
+            // and pick the first that's >=500 px from Ferrowdale (and on
+            // buildable land, if engine knows). Refresh roads touching it.
+            if (_valdrenCapital && _valdrenCapital !== ashford_t && _valdrenCapital !== ferrowdale_t) {
+                var dA = Math.hypot(_valdrenCapital.x - ashford_t.x, _valdrenCapital.y - ashford_t.y);
+                var dF = Math.hypot(_valdrenCapital.x - ferrowdale_t.x, _valdrenCapital.y - ferrowdale_t.y);
+                if (dA < 500 || dF < 500) {
+                    var _ts = (typeof CONFIG !== 'undefined' && CONFIG.TILE_SIZE) ? CONFIG.TILE_SIZE : 16;
+                    var _gridCols = world.gridCols || 9999;
+                    var _gridRows = world.gridRows || 9999;
+                    function _isBuildableForCapital(px, py) {
+                        if (typeof Engine === 'undefined' || !Engine.getTerrainAtPixel) return true;
+                        try {
+                            var tt = Engine.getTerrainAtPixel(px, py);
+                            return tt !== 2 && tt !== 3; // not water, not impassable mountain
+                        } catch(e) { return true; }
                     }
+                    var bestPick = null;
+                    var radiiTry = [600, 650, 700, 750, 800];
+                    for (var _ri = 0; _ri < radiiTry.length && !bestPick; _ri++) {
+                        var R = radiiTry[_ri];
+                        for (var _ai = 0; _ai < 16 && !bestPick; _ai++) {
+                            var theta = (_ai / 16) * Math.PI * 2;
+                            var px = Math.round(ashford_t.x + Math.cos(theta) * R);
+                            var py = Math.round(ashford_t.y + Math.sin(theta) * R);
+                            // Stay in-bounds with a tile-margin
+                            if (px < _ts * 2 || px > (_gridCols - 2) * _ts) continue;
+                            if (py < _ts * 2 || py > (_gridRows - 2) * _ts) continue;
+                            var d2F = Math.hypot(px - ferrowdale_t.x, py - ferrowdale_t.y);
+                            if (d2F < 500) continue;
+                            if (!_isBuildableForCapital(px, py)) continue;
+                            bestPick = { x: px, y: py };
+                        }
+                    }
+                    // Final fallback: 600 px directly opposite from Ferrowdale relative to Ashford
+                    if (!bestPick) {
+                        var fallAngle = Math.atan2(ashford_t.y - ferrowdale_t.y, ashford_t.x - ferrowdale_t.x);
+                        bestPick = {
+                            x: Math.round(ashford_t.x + Math.cos(fallAngle) * 600),
+                            y: Math.round(ashford_t.y + Math.sin(fallAngle) * 600),
+                        };
+                    }
+                    _valdrenCapital.x = bestPick.x;
+                    _valdrenCapital.y = bestPick.y;
+                    _refreshRoadsForTown(_valdrenCapital.id);
+                }
+            }
+
+            // (note: _refreshExistingRoad and _ensureRoad are defined at
+            // the top of _setupStoryWorld and used everywhere below.)
+
+            // Ensure a quality 3 land road exists Ashford↔Ferrowdale
+            // (uses _ensureRoad → engine rules: water-fraction caps,
+            //  bridge-span limits, no phantom roads).
+            _ensureRoad(ashford_t, ferrowdale_t, 3);
+
+            // v9p33river143: ensure both Ashford and Ferrowdale can reach
+            // the Valdren capital (directly or through the Valdren road
+            // network). BFS over Valdren roads from Ashford and from
+            // Ferrowdale; if either can't reach the capital, add a direct
+            // quality-2 road to it.
+            if (_valdrenCapital && world.roads) {
+                var _valdrenSet = {};
+                for (var _vti = 0; _vti < valdrenTowns.length; _vti++) _valdrenSet[valdrenTowns[_vti].id] = true;
+                var _capId = _valdrenCapital.id;
+
+                function _canReachCapitalViaValdren(startId) {
+                    if (startId === _capId) return true;
+                    var visited = {}; visited[startId] = true;
+                    var queue = [startId];
+                    while (queue.length) {
+                        var cur = queue.shift();
+                        for (var _ri = 0; _ri < world.roads.length; _ri++) {
+                            var _r = world.roads[_ri];
+                            if (_r.condition === 'destroyed') continue;
+                            var nxt = null;
+                            if (_r.fromTownId === cur) nxt = _r.toTownId;
+                            else if (_r.toTownId === cur) nxt = _r.fromTownId;
+                            if (!nxt || visited[nxt]) continue;
+                            // v9p33river154: traverse junction transit nodes
+                            // too — kingdom worldgen splits long roads on
+                            // junctions, so a Valdren-to-Valdren path may
+                            // pass through one.
+                            var _nxtTown = Engine.findTown(nxt);
+                            var _isJunction = _nxtTown && (_nxtTown.isJunction || _nxtTown.category === 'junction');
+                            if (!_valdrenSet[nxt] && !_isJunction) continue;
+                            if (nxt === _capId) return true;
+                            visited[nxt] = true;
+                            queue.push(nxt);
+                        }
+                    }
+                    return false;
                 }
 
-                // If no direct road exists, create one
-                var hasDirectRoad = world.roads.some(function(r) {
-                    return (r.fromTownId === ashfordId && r.toTownId === ferrowdaleId) ||
-                           (r.fromTownId === ferrowdaleId && r.toTownId === ashfordId);
-                });
-                if (!hasDirectRoad) {
-                    world.roads.push({
-                        fromTownId: ashfordId,
-                        toTownId: ferrowdaleId,
-                        quality: 3,
-                        type: 'land',
-                        safe: true,
-                        hasBridge: false,
-                        bridgeDestroyed: false,
-                        bridgeSegments: [],
-                        bridges: [],
-                        waypoints: [
-                            { x: ashford_t.x, y: ashford_t.y },
-                            { x: (ashford_t.x + ferrowdale_t.x) / 2, y: (ashford_t.y + ferrowdale_t.y) / 2 },
-                            { x: ferrowdale_t.x, y: ferrowdale_t.y }
-                        ]
+                // (note: _ensureRoad helper is defined above and uses
+                // Engine.buildNewRoad to honor terrain rules)
+
+                if (!_canReachCapitalViaValdren(ashfordId)) {
+                    _ensureRoad(ashford_t, _valdrenCapital, 2);
+                }
+                if (!_canReachCapitalViaValdren(ferrowdaleId)) {
+                    _ensureRoad(ferrowdale_t, _valdrenCapital, 2);
+                }
+
+                // v9p33river145: Ferrowdale must have a direct road to at
+                // least ONE Valdren town besides Ashford. If its only
+                // existing direct neighbor in Valdren is Ashford, add a
+                // direct road to the nearest other Valdren town (the
+                // capital is preferred since it always exists).
+                // v9p33river154: walk all roads from Ferrowdale, traversing
+                // junction transit nodes — the first non-junction REAL town
+                // reached on each path is a "neighbor". Without this,
+                // Ferrowdale → junction → Millhaven looked like Ferrowdale
+                // had no Valdren neighbor (and added a parallel direct road).
+                var _ferroNeighbors = {};
+                (function _findFerroNeighbors() {
+                    var visited = {}; visited[ferrowdaleId] = true;
+                    var queue = [ferrowdaleId];
+                    while (queue.length) {
+                        var cur = queue.shift();
+                        for (var _rii = 0; _rii < world.roads.length; _rii++) {
+                            var _rrr = world.roads[_rii];
+                            if (_rrr.condition === 'destroyed') continue;
+                            var _other = null;
+                            if (_rrr.fromTownId === cur) _other = _rrr.toTownId;
+                            else if (_rrr.toTownId === cur) _other = _rrr.fromTownId;
+                            if (!_other || visited[_other]) continue;
+                            var _otTown = Engine.findTown(_other);
+                            var _otIsJ = _otTown && (_otTown.isJunction || _otTown.category === 'junction');
+                            if (_otIsJ) {
+                                visited[_other] = true;
+                                queue.push(_other);
+                                continue;
+                            }
+                            // Real town — record as neighbor (only if Valdren)
+                            if (_valdrenSet[_other]) _ferroNeighbors[_other] = true;
+                        }
+                    }
+                })();
+                var _ferroHasOtherValdren = false;
+                for (var _fnId in _ferroNeighbors) {
+                    if (_fnId !== ashfordId) { _ferroHasOtherValdren = true; break; }
+                }
+                if (!_ferroHasOtherValdren) {
+                    var _candidates = valdrenTowns.filter(function(t) {
+                        return t.id !== ferrowdaleId && t.id !== ashfordId;
                     });
+                    // Prefer the capital, then the nearest other Valdren town
+                    _candidates.sort(function(a, b) {
+                        if (a.id === _capId) return -1;
+                        if (b.id === _capId) return 1;
+                        var da = Math.hypot(a.x - ferrowdale_t.x, a.y - ferrowdale_t.y);
+                        var db = Math.hypot(b.x - ferrowdale_t.x, b.y - ferrowdale_t.y);
+                        return da - db;
+                    });
+                    if (_candidates.length > 0) {
+                        _ensureRoad(ferrowdale_t, _candidates[0], 2);
+                    }
                 }
             }
         }
 
         // Connect Ashford to a Korvathi border town that supplies iron
         if (korvath && world) {
-            var korvathTowns = towns.filter(function(t) { return t.kingdomId === korvath.id; });
+            // v9p33river147: exclude islands when picking the border town —
+            // islands are floating villages with no roads to the rest of
+            // Korvath, and moving one inland strands it as a 'port-island'
+            // sitting in the middle of grass.
+            var korvathTowns = towns.filter(function(t) { return t.kingdomId === korvath.id && !t.isIsland; });
             if (korvathTowns.length > 0) {
                 // Pick closest Korvathi town to Ashford as the border/iron town
                 var ashfordT = valdrenTowns[0];
@@ -1047,45 +1365,98 @@ window.Game = (function () {
                     ashfordT.market.prices['iron_bars'] = 35;
                 }
 
-                // Move border town closer if too far
+                // v9p33river140: place the Korvathi border town at LEAST
+                // 500 px from Ashford (was forced ≤250 — too close, the
+                // 'foreign land' felt right next door). Cap at ~700 so the
+                // road isn't absurdly long.
                 var btDist = Math.hypot(ashfordT.x - borderTown.x, ashfordT.y - borderTown.y);
-                if (btDist > 250) {
-                    var btAngle = Math.atan2(borderTown.y - ashfordT.y, borderTown.x - ashfordT.x);
-                    borderTown.x = Math.round(ashfordT.x + Math.cos(btAngle) * 220);
-                    borderTown.y = Math.round(ashfordT.y + Math.sin(btAngle) * 220);
+                var minBtDist = 500, maxBtDist = 700;
+                var btMoved = false;
+                if (btDist < minBtDist || btDist > maxBtDist) {
+                    var btAngle = (btDist > 0)
+                        ? Math.atan2(borderTown.y - ashfordT.y, borderTown.x - ashfordT.x)
+                        : (Math.random() * Math.PI * 2);
+                    var targetBtDist = (btDist < minBtDist) ? minBtDist + 50 : (maxBtDist - 50);
+                    borderTown.x = Math.round(ashfordT.x + Math.cos(btAngle) * targetBtDist);
+                    borderTown.y = Math.round(ashfordT.y + Math.sin(btAngle) * targetBtDist);
+                    btMoved = true;
+                }
+                if (btMoved) _refreshRoadsForTown(borderTown.id);
+
+                // Ensure a road exists between Ashford and the Korvathi
+                // border town (uses _ensureRoad → Engine.buildNewRoad which
+                // honors water/bridge/path-validity rules).
+                _ensureRoad(ashfordT, borderTown, 2);
+
+                // v9p33river140: ensure the border town is wired into
+                // the rest of Korvath so it isn't a stub hanging only
+                // off Ashford. Connect it to its 2 nearest fellow
+                // Korvathi towns with quality-2 land roads if no link
+                // already exists.
+                var _otherKorvath = korvathTowns.filter(function(t) { return t.id !== borderTown.id; });
+                _otherKorvath.sort(function(a, b) {
+                    var da = Math.hypot(a.x - borderTown.x, a.y - borderTown.y);
+                    var db = Math.hypot(b.x - borderTown.x, b.y - borderTown.y);
+                    return da - db;
+                });
+                var _connectN = Math.min(2, _otherKorvath.length);
+                for (var _ck = 0; _ck < _connectN; _ck++) {
+                    _ensureRoad(borderTown, _otherKorvath[_ck], 2);
                 }
 
-                // Ensure a road exists between Ashford and the Korvathi border town
-                var _ashId = ashfordT.id;
-                var _btId = borderTown.id;
-                if (world.roads) {
-                    var _hasRoad = world.roads.some(function(r) {
-                        return (r.fromTownId === _ashId && r.toTownId === _btId) ||
-                               (r.fromTownId === _btId && r.toTownId === _ashId);
-                    });
-                    if (!_hasRoad) {
-                        world.roads.push({
-                            fromTownId: _ashId,
-                            toTownId: _btId,
-                            quality: 2,
-                            type: 'land',
-                            safe: true,
-                            hasBridge: false,
-                            bridgeDestroyed: false,
-                            bridgeSegments: [],
-                            bridges: [],
-                            waypoints: [
-                                { x: ashfordT.x, y: ashfordT.y },
-                                { x: (ashfordT.x + borderTown.x) / 2, y: (ashfordT.y + borderTown.y) / 2 },
-                                { x: borderTown.x, y: borderTown.y }
-                            ]
-                        });
-                    }
-                }
-
-                console.log('[StoryMode] Korvathi border town: ' + borderTown.name + ' connected to Ashford with iron supply');
+                console.log('[StoryMode] Korvathi border town: ' + borderTown.name + ' connected to Ashford (~' + Math.round(Math.hypot(ashfordT.x - borderTown.x, ashfordT.y - borderTown.y)) + 'px) + ' + Math.min(2, korvathTowns.length - 1) + ' Korvath neighbors');
             }
         }
+
+        // v9p33river143: re-reconcile port status now that towns may have
+        // been moved (Ferrowdale + Korvath border). Promotes any town with
+        // ocean within 5 tiles, demotes any without.
+        try { if (Engine.reconcilePortStatus) Engine.reconcilePortStatus(); } catch(e) { /* defensive */ }
+        // v9p33river154/157: dedupe parallel + redundant roads created by
+        // worldgen + story setup (incl. removing direct A-B when an A-X-B
+        // multi-hop path already serves the pair).
+        try { if (Engine.deduplicateRoads) Engine.deduplicateRoads(); } catch(e) { /* defensive */ }
+        // v9p33river167: repair stale endpoint anchors and sparse waypoint
+        // chains without deleting roads (town connectivity must be preserved).
+        try { if (Engine.repairSparseRoadWaypoints) Engine.repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
+
+        // v9p33river169: PHANTOM-DEBUG diagnostic block removed — phantom road
+        // bug fixed (bridge stub double camera offset in render.js).
+        // Engine.findRoadsNear() retained below as a useful runtime helper.
+        if (typeof Engine !== 'undefined' && !Engine.findRoadsNear) {
+            Engine.findRoadsNear = function(px, py, radius) {
+                radius = radius || 50;
+                var _w = Engine.getWorld(); if (!_w) return [];
+                var _hits = [];
+                for (var _i = 0; _i < (_w.roads||[]).length; _i++) {
+                    var _r = _w.roads[_i];
+                    var _wps = _r.waypoints || [];
+                    var _from = Engine.findTown(_r.fromTownId);
+                    var _to = Engine.findTown(_r.toTownId);
+                    for (var _j = 0; _j < _wps.length; _j++) {
+                        if (Math.hypot(_wps[_j].x - px, _wps[_j].y - py) <= radius) {
+                            _hits.push({ idx: _i, road: _r, fromName: _from && _from.name, toName: _to && _to.name, wpIdx: _j, wpAt: _wps[_j], fromAt: _from && {x:_from.x,y:_from.y}, toAt: _to && {x:_to.x,y:_to.y}, condition: _r.condition, quality: _r.quality });
+                            break;
+                        }
+                    }
+                }
+                console.log('[findRoadsNear] ' + _hits.length + ' road(s) within ' + radius + 'px of (' + px + ',' + py + ')');
+                console.table(_hits.map(function(h){ return { idx:h.idx, from:h.fromName, to:h.toName, cond:h.condition, q:h.quality, wpIdx:h.wpIdx, wpX:Math.round(h.wpAt.x), wpY:Math.round(h.wpAt.y) }; }));
+                return _hits;
+            };
+        }
+
+        // v9p33river168: invalidate scene cache + per-road render caches now
+        // that worldgen + story setup have finished mutating the world.
+        // Without this, the low-zoom offscreen canvas can bake in stale
+        // sea routes / road bbox / lazy-pathfind results from a transient
+        // mid-setup state and persist them as phantom orange lines until
+        // the user zooms past the cache invalidation thresholds.
+        try {
+            if (typeof Renderer !== 'undefined' && Renderer.invalidateSceneCache) {
+                Renderer.invalidateSceneCache();
+            }
+        } catch(e) { /* defensive */ }
     }
 
     function startNewGame() {
@@ -1123,9 +1494,13 @@ window.Game = (function () {
                 charCreateScreen.style.display = 'none';
             }
 
-            // Generate world with random seed
+            // Generate world. v9p33river150: story mode always uses a
+            // fixed canonical seed (946612) so the Valdren/Korvath setup,
+            // chapter beats, and world layout stay consistent for every
+            // story playthrough. Free play still gets a random seed.
             if (typeof Engine !== 'undefined' && Engine.generate) {
-                Engine.generate(Math.floor(Math.random() * 999999) + 1);
+                var _genSeed = isStoryStart ? 946612 : (Math.floor(Math.random() * 999999) + 1);
+                Engine.generate(_genSeed);
             }
 
             // v9p18: assign per-tier settlement sprites at world gen

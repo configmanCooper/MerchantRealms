@@ -11202,16 +11202,19 @@ window.UI = (function () {
                 html += '<h3 style="margin-top:12px;">🏗️ Buy Housing in ' + town.name + '</h3>';
                 var ownedLand = Player.getOwnedLand(Player.townId);
                 var usedLand = Player.getUsedLandSlots ? Player.getUsedLandSlots(Player.townId) : 0;
-                var _rankIdx = Player.getPlayerRankIndex ? Player.getPlayerRankIndex() : 0;
+                // v9p33river137: rank/cap is per-kingdom now, not global.
+                var _townKingdomId = town.kingdomId;
+                var _rankIdx = Player.getPlayerRankIndex ? Player.getPlayerRankIndex(_townKingdomId) : 0;
                 var _rankCfg = CONFIG.SOCIAL_RANKS[_rankIdx];
                 var _rankMaxLand = (_rankCfg && _rankCfg.maxLand !== undefined) ? _rankCfg.maxLand : '∞';
-                var _totalLandOwned = 0;
-                if (Player.state && Player.state.landOwned) { for (var _lk in Player.state.landOwned) _totalLandOwned += (Player.state.landOwned[_lk] || 0); }
+                var _kingdomLandOwned = Player.getLandInKingdom ? Player.getLandInKingdom(_townKingdomId) : 0;
+                var _kingdomObj = Engine.findKingdom ? Engine.findKingdom(_townKingdomId) : null;
+                var _kingdomLabel = _kingdomObj ? _kingdomObj.name : 'this kingdom';
                 var _hdSub = Player.getActiveSubsidy ? Player.getActiveSubsidy(Player.townId) : null;
                 var _hdCost = Player.getLandCost ? Player.getLandCost(Player.townId) : '?';
                 var _hdBtnTxt = 'Buy Land (' + _hdCost + 'g)';
                 if (_hdSub) _hdBtnTxt = 'Buy Land (' + _hdCost + 'g) ⭐ Subsidy!';
-                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (global: ' + _totalLandOwned + '/' + _rankMaxLand + ' for ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" data-action="buyLandUI" style="font-size:0.75rem;padding:2px 8px;">' + _hdBtnTxt + '</button></div>';
+                html += '<div style="font-size:0.85rem;margin-bottom:8px;">Land plots: ' + usedLand + '/' + ownedLand + ' used (in ' + _kingdomLabel + ': ' + _kingdomLandOwned + '/' + _rankMaxLand + ' as ' + (_rankCfg ? _rankCfg.name : 'your rank') + ') | <button class="btn-medieval" data-action="buyLandUI" style="font-size:0.75rem;padding:2px 8px;">' + _hdBtnTxt + '</button></div>';
                 // Show subsidized (locked) plots
                 var _subLand = (Player.state && Player.state.subsidizedLand && Player.state.subsidizedLand[Player.townId]) || [];
                 if (_subLand.length > 0) {
@@ -12282,6 +12285,8 @@ window.UI = (function () {
             if (townId === currentTownId) continue;
             const town = Engine.findTown(townId);
             if (!town) continue;
+            // v9p33river126: outposts have no market — skip them in intel
+            if (town.isOutpost) continue;
             remoteTowns.push({ town, data });
         }
 
