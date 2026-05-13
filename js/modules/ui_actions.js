@@ -218,6 +218,21 @@ function showTownDetail(town) {
             <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${Math.round(prosperity)}%;background:${prosperity > 60 ? '#55a868' : prosperity > 30 ? '#ccb974' : '#c44e52'}"></div></div> ${Math.round(prosperity)}% ${prospDesc}</span></div>
         <div class="detail-row"><span class="label">Happiness</span>
             <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${happiness}%;background:${happiness > 60 ? '#55a868' : happiness > 30 ? '#ccb974' : '#c44e52'}"></div></div> ${Math.round(happiness)}% ${townTierLabel}</span></div>
+        ${(function(){
+            // v9p33river180: town security display + verbal tier
+            var sec = Math.max(0, Math.min(100, Math.round(town.security || 0)));
+            var secColor = sec >= 75 ? '#55a868' : sec >= 50 ? '#7fb37d' : sec >= 30 ? '#ccb974' : sec >= 15 ? '#d97f51' : '#c44e52';
+            var secTier;
+            if      (sec >= 90) secTier = '🛡️ Fortified — guards everywhere; theft very rare';
+            else if (sec >= 75) secTier = '🛡️ Secure — strong garrison patrols, quiet streets';
+            else if (sec >= 60) secTier = '✅ Safe — well-policed; pickpockets rare';
+            else if (sec >= 45) secTier = '⚖️ Watchful — average law-and-order';
+            else if (sec >= 30) secTier = '⚠️ Uneasy — petty crime common, watch your purse';
+            else if (sec >= 15) secTier = '🦹 Lawless — frequent robberies, guards stretched thin';
+            else                secTier = '☠️ Anarchic — bandits and cutpurses everywhere';
+            return '<div class="detail-row"><span class="label">Security</span>' +
+                '<span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:' + sec + '%;background:' + secColor + '"></div></div> ' + sec + '% ' + secTier + '</span></div>';
+        })()}
         <div class="detail-row"><span class="label">Walls</span>
             <span class="value">${walls > 0 ? '🏰 ' + wallName + ' (+' + wallDefBonus + '% defense)' + wallCondStr : 'None'}</span></div>
         <div class="detail-row"><span class="label">Garrison</span>
