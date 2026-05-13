@@ -22585,6 +22585,95 @@
             tryBuyFromMarket(person, town, 'wine');
         }
 
+        // v9p33river177: extended middle/upper purchases ===========
+        // Helper: pick the cheapest in-supply good from a list the NPC can afford
+        function _pickCheapestAffordable(list) {
+            var bestId = null, bestPrice = Infinity;
+            for (var _bi = 0; _bi < list.length; _bi++) {
+                var _gid = list[_bi];
+                var _sup = town.market.supply[_gid] || 0;
+                if (_sup <= 0) continue;
+                var _gp = getMarketPrice(town, _gid);
+                if (_gp < bestPrice && person.gold >= _gp) { bestPrice = _gp; bestId = _gid; }
+            }
+            return bestId;
+        }
+
+        // BEVERAGES — middle and upper class drink ale/cider/mead/herbal_tea
+        // (consumable, recurring). Picks cheapest in-supply they can afford.
+        if (isMiddle || isUpper) {
+            var _bevChance = isUpper ? CONFIG.NPC_BEVERAGE_UPPER_CHANCE : CONFIG.NPC_BEVERAGE_MIDDLE_CHANCE;
+            if (world.rng.chance(_bevChance)) {
+                var _bev = _pickCheapestAffordable(['ale', 'cider', 'herbal_tea', 'mead']);
+                if (_bev) {
+                    tryBuyFromMarket(person, town, _bev);
+                    person.needs.happiness = Math.min(100, (person.needs.happiness || 50) + 0.5);
+                }
+            }
+        }
+
+        // VEGETABLES — anyone with some gold buys vegetables to round out diet
+        if (person.gold >= 5 && world.rng.chance(CONFIG.NPC_VEGETABLES_CHANCE)) {
+            if (tryBuyFromMarket(person, town, 'vegetables')) {
+                // small variety happiness boost
+                person.needs.happiness = Math.min(100, (person.needs.happiness || 50) + 0.2);
+            }
+        }
+
+        // HONEY — sweet treat, rare luxury for middle/upper
+        if (isMiddle && world.rng.chance(CONFIG.NPC_HONEY_CHANCE)) {
+            if (tryBuyFromMarket(person, town, 'honey')) {
+                person.needs.happiness = Math.min(100, (person.needs.happiness || 50) + 1);
+            }
+        }
+
+        // MEDICAL — basic supplies for middle, premium for upper.
+        // Higher chance when injured/ill.
+        var _isHurtOrSick = (person.injuries && person.injuries.length > 0) || (person.illnesses && person.illnesses.length > 0) || (person.health || 100) < 70;
+        if (isMiddle) {
+            var _medBasicChance = CONFIG.NPC_MEDICAL_BASIC_CHANCE * (_isHurtOrSick ? 5 : 1);
+            if (world.rng.chance(_medBasicChance)) {
+                var _basicMed = _pickCheapestAffordable(['bandages', 'herbal_remedy', 'splint', 'herbal_poultice']);
+                if (_basicMed) tryBuyFromMarket(person, town, _basicMed);
+            }
+        }
+        if (isUpper) {
+            var _medPremChance = CONFIG.NPC_MEDICAL_PREMIUM_CHANCE * (_isHurtOrSick ? 5 : 1);
+            if (world.rng.chance(_medPremChance)) {
+                var _premMed = _pickCheapestAffordable(['healing_tonic', 'fever_tonic', 'antidote']);
+                if (_premMed) tryBuyFromMarket(person, town, _premMed);
+            }
+        }
+
+        // INSTRUMENTS — very rare durable purchase. Middle gets basic three;
+        // upper gets the full lineup (harp, hurdy_gurdy are status symbols).
+        if (isMiddle && world.rng.chance(CONFIG.NPC_INSTRUMENT_CHANCE)) {
+            var _instList = isUpper
+                ? ['flute', 'drum', 'lute', 'harp', 'hurdy_gurdy']
+                : ['flute', 'drum', 'lute'];
+            // Don't double-buy if NPC already has one (musicians track _musicianInstrument)
+            if (!person._musicianInstrument) {
+                var _inst = _pickCheapestAffordable(_instList);
+                if (_inst) {
+                    tryBuyFromMarket(person, town, _inst);
+                    person._musicianInstrument = _inst;
+                }
+            }
+        }
+
+        // TRAVEL GEAR — middle class occasionally buys bedroll/waterskin/tent
+        // for traveling work or pilgrimage. Rare durable.
+        if (isMiddle && world.rng.chance(CONFIG.NPC_TRAVEL_GEAR_CHANCE)) {
+            var _gear = _pickCheapestAffordable(['bedroll', 'waterskin', 'tent']);
+            if (_gear) tryBuyFromMarket(person, town, _gear);
+        }
+
+        // SADDLES — upper class only, occasional purchase
+        if (isUpper && world.rng.chance(CONFIG.NPC_SADDLE_CHANCE)) {
+            tryBuyFromMarket(person, town, 'saddles');
+        }
+        // ===========================================================
+
         // NPC income is now handled once-per-day in tickPeople() via OCCUPATIONS wages
         // Building workers are paid by their employer in tickEconomy()
     }

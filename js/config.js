@@ -239,6 +239,16 @@ const CONFIG = {
     NPC_LUXURY_MIDDLE_CHANCE: 0.01,
     NPC_UPPER_GOLD: 500,
     NPC_MIDDLE_GOLD: 100,
+    // v9p33river177: middle/upper class additional purchases
+    NPC_BEVERAGE_MIDDLE_CHANCE: 0.04,    // ~1.2/month — ale/cider/mead/herbal_tea
+    NPC_BEVERAGE_UPPER_CHANCE: 0.06,     // wealthier drink more often
+    NPC_VEGETABLES_CHANCE: 0.025,        // ~once every 40 days, all who can afford
+    NPC_HONEY_CHANCE: 0.005,             // ~once every 200 days, treat
+    NPC_MEDICAL_BASIC_CHANCE: 0.006,     // bandages/herbal_remedy when injured/ill
+    NPC_MEDICAL_PREMIUM_CHANCE: 0.005,   // upper-class antidote/healing/fever tonic
+    NPC_INSTRUMENT_CHANCE: 0.0006,       // very rare — durable lifetime purchase
+    NPC_TRAVEL_GEAR_CHANCE: 0.001,       // bedroll/waterskin every couple years
+    NPC_SADDLE_CHANCE: 0.002,            // upper class who own/aspire to horses
 
     // Disasters
     DISASTER_CHECK_INTERVAL: 30,  // check every 30 days
