@@ -17693,6 +17693,29 @@
         }
         if (!hasWar) return { success: false, message: 'No active war for this kingdom.' };
 
+        // v9p33river186: prevent enlisting on the OPPOSING side of any active
+        // war the player has already chosen a side in. Sided allegiances are
+        // binding for the duration of that war.
+        if (player.warAllegiances) {
+            for (const _walWid in player.warAllegiances) {
+                const _walAlleg = player.warAllegiances[_walWid];
+                if (!_walAlleg || !_walAlleg.side || _walAlleg.side === 'neutral') continue;
+                const _walWar = wars[_walWid];
+                if (!_walWar) continue; // war already ended
+                // Only block if this war involves the kingdom the player is trying to enlist in
+                if (_walWar.kingdomA !== kingdomId && _walWar.kingdomB !== kingdomId) continue;
+                // The opposing side is the one the player did NOT pick
+                const _walOpposing = (_walWar.kingdomA === _walAlleg.side) ? _walWar.kingdomB : _walWar.kingdomA;
+                if (kingdomId === _walOpposing) {
+                    var _sidedK = Engine.findKingdom(_walAlleg.side);
+                    var _enemyK = Engine.findKingdom(kingdomId);
+                    var _sidedName = _sidedK ? _sidedK.name : 'your chosen side';
+                    var _enemyName = _enemyK ? _enemyK.name : 'this kingdom';
+                    return { success: false, message: 'You sided with ' + _sidedName + ' in this war — you cannot enlist with ' + _enemyName + '.' };
+                }
+            }
+        }
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.enlist || 3);
 
         // If indentured servant, enlisting frees you from servitude but commits you to 4 years

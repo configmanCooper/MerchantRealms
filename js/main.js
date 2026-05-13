@@ -1899,9 +1899,31 @@ window.Game = (function () {
                     if (event.type === 'warDeclared') {
                         var tutorialActive = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
                         if (!tutorialActive && typeof Player !== 'undefined' && Player.shouldShowWarAllegiancePopup && Player.shouldShowWarAllegiancePopup(event)) {
+                            // v9p33river186: in story mode, auto-side with
+                            // Valdren — the player's home kingdom — without
+                            // showing the war declaration UI. The story
+                            // narrative makes Valdren the obvious side.
+                            var inStory = typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive();
                             // Auto-neutral only in the very early game (first 30 days)
                             var earlyGame = (Engine.getDay ? Engine.getDay() : 999) <= 30;
-                            if (earlyGame) {
+                            if (inStory) {
+                                var valdrenK = null;
+                                try {
+                                    var _ks = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                                    for (var _vki = 0; _vki < _ks.length; _vki++) {
+                                        if (_ks[_vki] && /valdren/i.test(_ks[_vki].name || '')) { valdrenK = _ks[_vki]; break; }
+                                    }
+                                } catch(e) {}
+                                var valdrenSide = valdrenK ? valdrenK.id : null;
+                                // Only auto-side if Valdren is one of the warring kingdoms
+                                if (valdrenSide && (event.kingdomA === valdrenSide || event.kingdomB === valdrenSide)) {
+                                    if (Player.setWarAllegiance) Player.setWarAllegiance(event.warId, valdrenSide);
+                                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ War declared! You stand with Valdren.', 'info', 'military');
+                                } else {
+                                    // Edge case: Valdren not part of war — stay neutral silently
+                                    if (Player.setWarAllegiance) Player.setWarAllegiance(event.warId, 'neutral');
+                                }
+                            } else if (earlyGame) {
                                 // New player — auto-neutral, no popup
                                 if (Player.setWarAllegiance) Player.setWarAllegiance(event.warId, 'neutral');
                                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ War declared! You remain neutral for now.', 'info', 'military');
