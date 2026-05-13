@@ -1729,6 +1729,7 @@ const RESOURCE_TYPES = {
     SMALL_WAGON: { id: 'small_wagon', name: 'Small Wagon', category: 'finished', basePrice: 80, icon: '🛞', weight: 15 },
     WAGON:    { id: 'wagon',    name: 'Wagon',     category: 'finished',  basePrice: 130, icon: '🚛', weight: 20 },
     LARGE_WAGON: { id: 'large_wagon', name: 'Large Wagon', category: 'finished', basePrice: 200, icon: '🚚', weight: 25 },
+    BACKPACK: { id: 'backpack', name: 'Backpack', category: 'finished', basePrice: 22, icon: '🎒', weight: 2 },
     EGGS:     { id: 'eggs',     name: 'Eggs',      category: 'food',      basePrice: 2,  icon: '🥚', weight: 0.5 },
     POULTRY:  { id: 'poultry',  name: 'Poultry',   category: 'food',      basePrice: 10, icon: '🍗', weight: 1 },
     FISH:     { id: 'fish',     name: 'Fish',      category: 'food',      basePrice: 5,  icon: '🐟', weight: 1 },
@@ -2175,8 +2176,9 @@ const BUILDING_TYPES = {
         },
     },
     // --- Camping & Travel Supply Production ---
-    CANVAS_WORKSHOP:  { id: 'canvas_workshop',  name: 'Canvas Workshop', cost: 250,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'finished',  materials: { wood: 10, planks: 6 }, icon: '🧵', description: 'Produces bedrolls, tents, waterskins, and camping kits from raw materials.',
+    CANVAS_WORKSHOP:  { id: 'canvas_workshop',  name: 'Canvas Workshop', cost: 250,  workers: 2, produces: null,             consumes: {},                          rate: 0,  category: 'finished',  materials: { wood: 10, planks: 6 }, icon: '🧵', description: 'Produces backpacks, bedrolls, tents, waterskins, and camping kits from raw materials.',
         availableProducts: {
+            backpack:    { produces: 'backpack',    consumes: { leather: 2, cloth: 1 },     rate: 4 },
             bedroll:     { produces: 'bedroll',     consumes: { leather: 1, cloth: 1 },     rate: 4 },
             tent:        { produces: 'tent',        consumes: { hemp: 2, cloth: 2, wood: 1 }, rate: 2 },
             camping_kit: { produces: 'camping_kit', consumes: { tent: 1, bedroll: 1, waterskin: 1 }, rate: 1 },

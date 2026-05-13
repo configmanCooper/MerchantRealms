@@ -22785,10 +22785,9 @@
             }
         }
 
-        // TRAVEL GEAR — middle class occasionally buys bedroll/waterskin/tent
-        // for traveling work or pilgrimage. Rare durable.
+        // TRAVEL GEAR — middle class occasionally buys bedroll/waterskin/tent/backpack
         if (isMiddle && world.rng.chance(CONFIG.NPC_TRAVEL_GEAR_CHANCE)) {
-            var _gear = _pickCheapestAffordable(['bedroll', 'waterskin', 'tent']);
+            var _gear = _pickCheapestAffordable(['bedroll', 'waterskin', 'tent', 'backpack']);
             if (_gear) tryBuyFromMarket(person, town, _gear);
         }
 

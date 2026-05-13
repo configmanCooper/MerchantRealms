@@ -867,6 +867,23 @@
         var container = CONFIG.STORAGE_CONTAINERS[containerId];
         if (!container) return { success: false, message: 'Unknown container.' };
 
+        // v9p33river193: backpack/cart/wagons must be CRAFTED at a home
+        // workshop in the player's current town. Carts/wagons/backpacks can
+        // also be bought as goods directly from canvas workshops or other
+        // markets, but the in-place craft-from-materials path is gated to
+        // home workshop. Exception: nothing in player.inventory of the
+        // matching good type? Then they need a workshop. If they DO have one
+        // in inventory (bought from market or canvas workshop), allow it.
+        var inventoryGood = (player.inventory && player.inventory[containerId]) || 0;
+        if (inventoryGood <= 0) {
+            var _bcHouse = (typeof getHouseInTown === 'function') ? getHouseInTown(player.townId) : null;
+            var _bcHt = _bcHouse ? CONFIG.HOUSING_TYPES.find(function(h) { return h.id === _bcHouse.type; }) : null;
+            var _bcWorkshop = (_bcHt && _bcHt.hasWorkshop) || (_bcHouse && _bcHouse.addons && _bcHouse.addons.indexOf('workshop') >= 0);
+            if (!_bcWorkshop) {
+                return { success: false, message: 'You need a home with a workshop in this town to craft a ' + container.name + '. (Or buy a ready-made one from the market.)' };
+            }
+        }
+
         // Check horse requirements
         var horsesNeeded = container.horsesRequired || 0;
         if (player.horses.length < horsesNeeded) {
@@ -904,6 +921,27 @@
 
         var laborCost = container.cost - refund;
         if (laborCost < 0) laborCost = 0;
+
+        // v9p33river193: shortcut path — player owns a ready-made backpack/
+        // cart/wagon as a good in inventory (bought from market or canvas
+        // workshop). Skip material + labor costs, just consume one unit and
+        // equip it. This is the path that does NOT require a home workshop.
+        if (inventoryGood > 0) {
+            player.inventory[containerId] = inventoryGood - 1;
+            if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
+            var _oldNm = player.storageContainer ? CONFIG.STORAGE_CONTAINERS[player.storageContainer].name : 'nothing';
+            if (containerId === 'backpack') player._backpack = true;
+            else if (player.storageContainer === 'backpack') player._backpack = true;
+            player.storageContainer = containerId;
+            var _msg = 'Equipped ' + container.icon + ' ' + container.name + ' (from inventory)!';
+            if (refund > 0) {
+                player.gold += refund;
+                _msg += ' Traded in ' + _oldNm + ' for ' + refund + 'g refund.';
+            }
+            Engine.logEvent(_msg);
+            return { success: true, message: _msg };
+        }
 
         // Calculate total cost: labor gold + market price of materials bought from market
         var totalGoldCost = laborCost;
