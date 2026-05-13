@@ -17662,6 +17662,130 @@
         return { regenerated: regenerated, densified: densified, anchored: anchored };
     }
 
+    // ── v9p33river188: Splice roads that pass through other towns ──
+    // For every road, scan its waypoints; if any town center (other than the
+    // endpoints, and not a junction transit node) lies within `tilesNear`
+    // tiles (default 1 tile = 16px) of any waypoint, split the road there.
+    // The original road is replaced with two new roads of the SAME quality,
+    // both following the original waypoint chain up to / from the splice
+    // point. Each iteration handles one town intersection per road; loops
+    // until no more splits are found (max 6 passes for safety).
+    function spliceRoadsThroughTowns(opts) {
+        if (!world || !world.roads || !world.towns) return { spliced: 0 };
+        opts = opts || {};
+        var TILE = (CONFIG && CONFIG.TILE_SIZE) || 16;
+        var nearPx = (opts.tilesNear != null ? opts.tilesNear : 1) * TILE;
+        var nearPx2 = nearPx * nearPx;
+        var totalSpliced = 0;
+
+        function isJunction(t) { return t && (t.isJunction || t.category === 'junction'); }
+
+        for (var pass = 0; pass < 6; pass++) {
+            var passSpliced = 0;
+            // Snapshot real towns (skip junctions) for the inner scan
+            var realTowns = [];
+            for (var ti = 0; ti < world.towns.length; ti++) {
+                var t = world.towns[ti];
+                if (!t || isJunction(t)) continue;
+                realTowns.push(t);
+            }
+
+            // Iterate roads; we may push new roads, so cap at original length
+            var origLen = world.roads.length;
+            for (var ri = 0; ri < origLen; ri++) {
+                var road = world.roads[ri];
+                if (!road || road.condition === 'destroyed') continue;
+                var wps = road.waypoints;
+                if (!wps || wps.length < 3) continue;
+
+                var bestTown = null, bestWpIdx = -1, bestDist2 = nearPx2;
+                for (var wi = 1; wi < wps.length - 1; wi++) {
+                    var wp = wps[wi];
+                    if (!wp) continue;
+                    for (var rti = 0; rti < realTowns.length; rti++) {
+                        var rt = realTowns[rti];
+                        if (rt.id === road.fromTownId || rt.id === road.toTownId) continue;
+                        var dx = wp.x - rt.x, dy = wp.y - rt.y;
+                        var d2 = dx * dx + dy * dy;
+                        if (d2 <= bestDist2) {
+                            bestDist2 = d2; bestTown = rt; bestWpIdx = wi;
+                        }
+                    }
+                }
+                if (!bestTown || bestWpIdx < 1) continue;
+
+                // Build the two halves' waypoint chains from the original road
+                var firstHalf = wps.slice(0, bestWpIdx + 1);
+                // Snap the splice waypoint exactly to the town center for clean rendering
+                firstHalf[firstHalf.length - 1] = { x: bestTown.x, y: bestTown.y };
+                var secondHalf = wps.slice(bestWpIdx);
+                secondHalf[0] = { x: bestTown.x, y: bestTown.y };
+
+                var qual = (typeof road.quality === 'number') ? road.quality : 2;
+
+                // Skip if either half is degenerate (0 length)
+                function chainLen(arr) {
+                    var s = 0;
+                    for (var i = 0; i < arr.length - 1; i++) s += Math.hypot(arr[i+1].x - arr[i].x, arr[i+1].y - arr[i].y);
+                    return s;
+                }
+                if (chainLen(firstHalf) < TILE * 2 || chainLen(secondHalf) < TILE * 2) continue;
+
+                // Skip if either pair already has a direct (non-destroyed) road
+                function hasDirect(aId, bId) {
+                    for (var rj = 0; rj < world.roads.length; rj++) {
+                        var rr = world.roads[rj];
+                        if (!rr || rr.condition === 'destroyed') continue;
+                        if ((rr.fromTownId === aId && rr.toTownId === bId) ||
+                            (rr.fromTownId === bId && rr.toTownId === aId)) return true;
+                    }
+                    return false;
+                }
+                var dupA = hasDirect(road.fromTownId, bestTown.id);
+                var dupB = hasDirect(bestTown.id, road.toTownId);
+
+                // Compose the two new roads (preserve quality, condition, owner, toll, builder)
+                function makeHalfRoad(fromId, toId, halfWps) {
+                    return {
+                        fromTownId: fromId, toTownId: toId,
+                        quality: qual,
+                        safe: !!road.safe,
+                        // bridges/segments will be naturally absent for the half;
+                        // repairSparseRoadWaypoints + bridge regen passes elsewhere
+                        // can rebuild them. Simpler than trying to slice bridge data.
+                        hasBridge: false,
+                        bridgeDestroyed: false,
+                        bridgeSegments: [],
+                        bridges: [],
+                        waypoints: halfWps,
+                        condition: road.condition || 'new',
+                        builtDay: road.builtDay,
+                        builtBy: road.builtBy || null,
+                        ownerId: road.ownerId || null,
+                        tollRate: road.tollRate || 0,
+                        tollRevenue: 0,
+                        isTollRoad: !!road.isTollRoad,
+                    };
+                }
+
+                // Replace the original road with the splice halves (skip dupes)
+                world.roads.splice(ri, 1); // remove original
+                ri--; origLen--;
+                if (!dupA) world.roads.push(makeHalfRoad(road.fromTownId, bestTown.id, firstHalf));
+                if (!dupB) world.roads.push(makeHalfRoad(bestTown.id, road.toTownId, secondHalf));
+                passSpliced++;
+                totalSpliced++;
+            }
+
+            if (passSpliced === 0) break;
+        }
+
+        if (totalSpliced > 0) {
+            try { console.log('[spliceRoadsThroughTowns] spliced=' + totalSpliced); } catch(e) {}
+        }
+        return { spliced: totalSpliced };
+    }
+
     function tickMigration() {
         const rng = world.rng;
 
@@ -30724,6 +30848,16 @@
                 if (typeof repairSparseRoadWaypoints === 'function') repairSparseRoadWaypoints();
             } catch(e) { /* defensive */ }
 
+            // v9p33river188: split any road that passes within 1 tile of a town
+            // it doesn't connect into TWO roads through that town (same quality)
+            try {
+                if (typeof spliceRoadsThroughTowns === 'function') spliceRoadsThroughTowns({ tilesNear: 1 });
+            } catch(e) { /* defensive */ }
+            // Re-densify any new half roads
+            try {
+                if (typeof repairSparseRoadWaypoints === 'function') repairSparseRoadWaypoints();
+            } catch(e) { /* defensive */ }
+
             return world;
         },
 
@@ -31597,6 +31731,7 @@
         reconcilePortStatus: reconcilePortStatus,
         deduplicateRoads: deduplicateRoads,
         repairSparseRoadWaypoints: repairSparseRoadWaypoints,
+        spliceRoadsThroughTowns: spliceRoadsThroughTowns,
         computeLocalBasePrices: computeLocalBasePrices,
         createBridgeObjects: createBridgeObjects,
         registerPerson: registerPerson,
@@ -32794,6 +32929,9 @@
             // v9p33river154: clean up duplicate roads on save load too
             try { deduplicateRoads(); } catch(e) { /* defensive */ }
             // v9p33river161: regenerate sparse-waypoint roads on load too
+            try { repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
+            // v9p33river188: splice through-town roads into segments on load too
+            try { spliceRoadsThroughTowns({ tilesNear: 1 }); } catch(e) { /* defensive */ }
             try { repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
 
             // Post-load town recovery: un-abandon towns that still have viable population

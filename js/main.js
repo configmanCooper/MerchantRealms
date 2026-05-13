@@ -1219,14 +1219,6 @@ window.Game = (function () {
             //  bridge-span limits, no phantom roads).
             _ensureRoad(ashford_t, ferrowdale_t, 3);
 
-            // v9p33river187: also ensure a direct quality-3 road
-            // Ferrowdale ↔ Millhaven so the player has the canonical
-            // story-mode triangle (Ashford, Ferrowdale, Millhaven) wired up
-            // at game start. Millhaven is _valdrenCapital (named at L822).
-            if (_valdrenCapital && _valdrenCapital.id !== ferrowdale_t.id) {
-                _ensureRoad(ferrowdale_t, _valdrenCapital, 3);
-            }
-
             // v9p33river143: ensure both Ashford and Ferrowdale can reach
             // the Valdren capital (directly or through the Valdren road
             // network). BFS over Valdren roads from Ashford and from
@@ -1426,6 +1418,10 @@ window.Game = (function () {
         try { if (Engine.deduplicateRoads) Engine.deduplicateRoads(); } catch(e) { /* defensive */ }
         // v9p33river167: repair stale endpoint anchors and sparse waypoint
         // chains without deleting roads (town connectivity must be preserved).
+        try { if (Engine.repairSparseRoadWaypoints) Engine.repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
+        // v9p33river188: splice any road that passes within 1 tile of an
+        // unrelated town into two roads through that town (same quality)
+        try { if (Engine.spliceRoadsThroughTowns) Engine.spliceRoadsThroughTowns({ tilesNear: 1 }); } catch(e) { /* defensive */ }
         try { if (Engine.repairSparseRoadWaypoints) Engine.repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
 
         // v9p33river169: PHANTOM-DEBUG diagnostic block removed — phantom road
