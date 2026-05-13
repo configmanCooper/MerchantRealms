@@ -126,28 +126,7 @@ window.Game = (function () {
         if (!CONFIG.WORLD_HEIGHT || CONFIG.WORLD_HEIGHT <= 0) CONFIG.WORLD_HEIGHT = 3200;
 
         // Initialize IndexedDB save system + migrate old saves
-        _initSaveSystem().then(function() {
-            // v9p33river190: if a previous in-game "Load Game" set a pending
-            // slot before reload, auto-trigger the load now that boot is done.
-            try {
-                var pending = sessionStorage.getItem('_pendingLoadSlot');
-                if (pending != null) {
-                    sessionStorage.removeItem('_pendingLoadSlot');
-                    var slotN = parseInt(pending, 10);
-                    if (!isNaN(slotN) && slotN > 0) {
-                        // Mark so loadFromSlot knows to use the in-place path
-                        // (state is still 'title' at this point — the guard
-                        // only redirects when state==='playing', so this is
-                        // belt-and-suspenders.)
-                        window._loadAfterReload = true;
-                        setTimeout(function() {
-                            try { loadFromSlot(slotN); } catch(e) { console.warn('[pendingLoad]', e); }
-                            window._loadAfterReload = false;
-                        }, 100);
-                    }
-                }
-            } catch(e) {}
-        });
+        _initSaveSystem();
 
         // Bind title screen button
         const btnNew = document.getElementById('btnNewGame');
@@ -3597,18 +3576,6 @@ window.Game = (function () {
     }
 
     function loadFromSlot(slotNum) {
-        // v9p33river190: if loading from in-game, perform a full reload first
-        // so we never inherit stale state from the previous game (the source
-        // of the "roads all messed up after returning to menu and loading"
-        // bug). Title-screen loads continue to use the in-place path.
-        if (state === 'playing' && !window._loadAfterReload) {
-            try { sessionStorage.setItem('_pendingLoadSlot', String(slotNum)); } catch(e) {}
-            try { stopAutosave(); } catch(e) {}
-            try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
-            try { if (typeof Music !== 'undefined' && Music.stopAll) Music.stopAll(); } catch(e) {}
-            window.location.reload();
-            return;
-        }
         getSlotData(slotNum).then(function(data) {
             if (!data) {
                 if (typeof UI !== 'undefined') UI.toast('No save in Slot ' + slotNum + '.', 'warning');
@@ -3992,21 +3959,42 @@ window.Game = (function () {
             startAutosave();
         },
         showTitleScreen: function () {
-            console.log('[Menu] showTitleScreen called — performing full reload for clean slate (v9p33river190)');
-            // v9p33river190: instead of trying to manually unwind every
-            // module's mutable state (roads, NPCs, story flags, music, UI
-            // overlays, animation frames, autosave timers, tutorial flags,
-            // sprite caches, scene cache, etc.) — which has historically
-            // missed corners and resulted in roads "all messed up" after
-            // returning to menu and loading — do a full page reload. The
-            // title screen is the natural fresh-load entry point and saves
-            // already live in IndexedDB so nothing is lost. Stop autosave
-            // and audio first so the unload is clean.
+            console.log('[Menu] showTitleScreen v2 called, clearing game state');
+            // CRITICAL: Clear these first before anything can throw
+            state = 'title';
+            delete window._selectedStartConfig;
+            if (typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
+                try { StoryMode.deserialize({ active: false, chapter: 0, complete: false }); } catch(e) {}
+            }
             try { stopAutosave(); } catch(e) {}
+            if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+            // Clean up tutorial if it was running
+            try {
+                if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                    Tutorial.cleanup();
+                }
+            } catch(e) {}
+            // Close story dialog if open
+            try { if (typeof UI !== 'undefined' && UI.closeStoryDialog) UI.closeStoryDialog(); } catch(e) {}
+            // Stop TTS
             try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
-            try { if (typeof Music !== 'undefined' && Music.stopAll) Music.stopAll(); } catch(e) {}
-            try { sessionStorage.removeItem('_pendingLoadSlot'); } catch(e) {}
-            window.location.reload();
+            try { if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI(); } catch(e) {}
+            var ts = document.getElementById('titleScreen');
+            if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }
+            var cs = document.getElementById('charCreateScreen');
+            if (cs) { cs.classList.add('hidden'); cs.style.display = 'none'; }
+            var gms = document.getElementById('gameModeScreen');
+            if (gms) { gms.style.display = 'none'; }
+            var kss = document.getElementById('kingdomSelectScreen');
+            if (kss) { kss.classList.add('hidden'); kss.style.display = 'none'; }
+            // Close any open modals
+            var mo = document.getElementById('modalOverlay');
+            if (mo) mo.classList.add('hidden');
+            // Refresh load button visibility
+            var btnLoad = document.getElementById('btnLoadGame');
+            if (btnLoad) btnLoad.style.display = '';
+            // Switch back to title music
+            try { if (typeof Music !== 'undefined') Music.playTitleMusic(); } catch(e) {}
         },
     };
 })();
