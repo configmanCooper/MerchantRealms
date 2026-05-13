@@ -11898,7 +11898,7 @@ window.UI = (function () {
         html += '<div style="margin:10px 0 6px;padding:6px 12px;background:rgba(85,168,104,0.1);border:1px solid rgba(85,168,104,0.25);border-radius:6px;display:inline-flex;align-items:center;gap:8px;">';
         html += '<label style="font-size:0.85rem;color:#ccc;cursor:pointer;display:flex;align-items:center;gap:6px;">';
         html += '<input type="checkbox" ' + arChecked + ' onchange="(function(cb){var r=Player.setAutoRest(cb.checked);UI.toast(r.message,r.success?\'success\':\'info\');})(this)">';
-        html += '💤 Auto-rest when energy &lt; 10 (picks best option)</label>';
+        html += '💤 Auto-rest when energy &lt; 10 (cheapest first, then best)</label>';
         html += '</div>';
 
         if (restOptions.length > 0) {

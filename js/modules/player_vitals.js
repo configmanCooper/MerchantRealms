@@ -373,9 +373,40 @@
         // This daily tick only handles: auto-rest and passive recovery
         player._energyConsumedThisTick = false;
 
-        // Auto-rest: if enabled and energy below 10, start resting automatically
-        // While traveling, don't auto-rest — prompt player to camp instead
-        if (player.traveling) {
+        // v9p33river173: auto-rest selects by CHEAPEST cost tier first, then
+        // best-energyPerTick within that tier. So a free home / sleep-outside
+        // is always preferred over a paid Inn, even if the Inn would recover
+        // faster. Among all free options, the highest-quality one wins (e.g.
+        // own home > family home > camping kit > tent > bedroll > outside).
+        // Also enabled while on auto-travel jobs (player is "traveling" but
+        // the mission is in autopilot), where it picks the best free travel
+        // rest option (camping kit > tent+bedroll > tent > bedroll > sleep on
+        // road) instead of pausing the game for the camp prompt.
+        var _onAutoMission = !!(player.autoTravelJob || (player._autoWork && player._autoWork.active));
+        function _pickAutoRestBest() {
+            var opts = getAvailableRestOptions();
+            if (!opts || opts.length === 0) return null;
+            var affordable = [];
+            for (var i = 0; i < opts.length; i++) {
+                var o = opts[i];
+                var c = o.cost || 0;
+                if (c > 0 && (player.gold || 0) < c) continue;
+                affordable.push(o);
+            }
+            if (affordable.length === 0) return null;
+            // Find min cost among affordable, then best energyPerTick at that cost
+            var minCost = Infinity;
+            for (var j = 0; j < affordable.length; j++) if ((affordable[j].cost || 0) < minCost) minCost = affordable[j].cost || 0;
+            var best = null;
+            for (var k = 0; k < affordable.length; k++) {
+                var oo = affordable[k];
+                if ((oo.cost || 0) !== minCost) continue;
+                if (!best || (oo.energyPerTick || 0) > (best.energyPerTick || 0)) best = oo;
+            }
+            return best;
+        }
+
+        if (player.traveling && !_onAutoMission) {
             if ((player.energy || 0) < 10 && !player.resting) {
                 if (!player._campPromptNeeded) {
                     player._campPromptNeeded = true;
@@ -393,20 +424,11 @@
                 }
             }
         } else if (player.autoRest !== false && !player.resting && (player.energy || 0) < 10) {
-            var opts = getAvailableRestOptions();
-            if (opts.length > 0) {
-                // Pick best option player can afford (highest energyPerTick)
-                var best = null;
-                for (var ri = 0; ri < opts.length; ri++) {
-                    var opt = opts[ri];
-                    if (opt.cost > 0 && player.gold < opt.cost) continue;
-                    if (!best || opt.energyPerTick > best.energyPerTick) best = opt;
-                }
-                if (best) {
-                    var result = restForTicks(best.id, 8);
-                    if (result && result.success) {
-                        Engine.logEvent('💤 Auto-rest: ' + best.name + (best.cost > 0 ? ' (' + best.cost + 'g)' : ''));
-                    }
+            var best = _pickAutoRestBest();
+            if (best) {
+                var result = restForTicks(best.id, 8);
+                if (result && result.success) {
+                    Engine.logEvent('💤 Auto-rest: ' + best.name + (best.cost > 0 ? ' (' + best.cost + 'g)' : ' (free)'));
                 }
             }
         }
