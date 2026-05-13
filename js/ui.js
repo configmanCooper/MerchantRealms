@@ -14476,6 +14476,13 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function openKingdomsAndNotables() {
+        var html = _buildKingdomsAndNotablesHTML();
+        openModal('👑 Kingdoms & Notables', html);
+        // Default to kings tab active
+        _switchKNTab('kings');
+    }
+
+    function _buildKingdomsAndNotablesHTML() {
         var kingdoms = [];
         var allTowns = [];
         var allPeople = [];
@@ -14618,10 +14625,35 @@ window.UI = (function () {
             html += '</div></div>';
         }
         html += '</div></div>';
+        return html;
+    }
 
-        openModal('👑 Kingdoms & Notables', html);
+    function openKingdomsAndNotables() {
+        // v9p33river185: open as a transient overlay on top of the Help dialog
+        // so closing it returns to the Help screen — same behavior as Icons /
+        // Game / Goods Guides.
+        var existing = document.getElementById('kingdoms-notables-overlay');
+        if (existing) existing.remove();
+
+        var overlay = document.createElement('div');
+        overlay.id = 'kingdoms-notables-overlay';
+        overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; display:flex; justify-content:center; align-items:center;';
+
+        var panel = document.createElement('div');
+        panel.style.cssText = 'background:#1a1a2e; border:2px solid #FFD700; border-radius:8px; width:760px; max-height:85vh; display:flex; flex-direction:column; color:#fff; font-family:sans-serif;';
+
+        var header = '<div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">';
+        header += '<span style="color:#FFD700; font-size:18px; font-weight:bold;">👑 Kingdoms & Notables</span>';
+        header += '<button data-action="removeOverlay" data-id="kingdoms-notables-overlay" style="background:#600; color:#fff; border:1px solid #a00; padding:4px 12px; cursor:pointer; border-radius:4px;">✖ Close</button>';
+        header += '</div>';
+
+        panel.innerHTML = header + '<div id="kingdoms-notables-body" style="padding:12px 16px; overflow-y:auto; flex:1;">' + _buildKingdomsAndNotablesHTML() + '</div>';
+        overlay.appendChild(panel);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+
         // Default to kings tab active
-        _switchKNTab('kings');
+        try { _switchKNTab('kings'); } catch(e) {}
     }
 
     function _switchKNTab(tab) {
