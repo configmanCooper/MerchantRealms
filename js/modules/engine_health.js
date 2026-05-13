@@ -194,6 +194,23 @@
                 }
             }
             mod = Math.max(0.30, mod);
+            // v9p33river191: in story mode, greatly reduce illness in Valdren
+            // until the jail-protection safeguard turns off (chapter 14).
+            // The early game is meant to be a calm merchant-life intro, not
+            // pummeled by random plague waves.
+            try {
+                var _smActive = typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive();
+                if (_smActive && kd && /valdren/i.test(kd.name || '')) {
+                    var _jailGuardOn = true;
+                    try {
+                        var _ps = (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
+                        if (_ps && _ps.storyMode && _ps.storyMode.flags && _ps.storyMode.flags.jailProtectionRemoved) {
+                            _jailGuardOn = false;
+                        }
+                    } catch(_eFlag) {}
+                    if (_jailGuardOn) mod *= 0.10; // ~90% less illness incidence
+                }
+            } catch(_eSm) {}
             townHealthMod[t.id] = mod;
             townHasHospital[t.id] = hasHosp;
             townHasClinic[t.id] = hasClin;

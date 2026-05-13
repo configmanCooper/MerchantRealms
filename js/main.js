@@ -3575,6 +3575,109 @@ window.Game = (function () {
         showSaveSlotPicker();
     }
 
+    // v9p33river191: comprehensive state reset that does NOT touch IndexedDB
+    // saves. Call this before loading a saved game (in-place) and before
+    // returning to the title screen, so the next phase starts from a clean
+    // slate without needing a full page reload. Touches every transient
+    // window flag, UI overlay, render cache, autosave timer, animation
+    // frame, music state, story tracker, tutorial panel, and engine/player
+    // module state we know about.
+    function _resetEverythingExceptSaves() {
+        try { stopAutosave(); } catch(e) {}
+        if (animFrameId) { try { cancelAnimationFrame(animFrameId); } catch(e) {} animFrameId = null; }
+
+        // Tutorial cleanup
+        try {
+            if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
+                Tutorial.cleanup();
+            }
+        } catch(e) {}
+        var tutPanel = document.getElementById('tutorialPanel');
+        if (tutPanel) tutPanel.remove();
+
+        // Tutorial / story flags
+        delete window._tutorialMinimapClicked;
+        delete window._tutorialLocateUsed;
+        delete window._tutorialAteFood;
+        delete window._tutorialDrankWater;
+        delete window._tutorialSocialInteracted;
+        delete window._tutorialSmallTalkDone;
+        delete window._tutorialRested;
+        delete window._restPauseSavedSpeed;
+        delete window._loadAfterReload;
+        delete window._godInvincible;
+        delete window._selectedStartConfig;
+
+        // Story-mode runtime state
+        try {
+            if (typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
+                StoryMode.deserialize({ active: false, chapter: 0, complete: false });
+            }
+        } catch(e) {}
+        try {
+            if (typeof UI !== 'undefined') {
+                if (UI.closeStoryDialog) UI.closeStoryDialog();
+                if (UI.hideStoryTracker) UI.hideStoryTracker();
+            }
+        } catch(e) {}
+
+        // UI overlays / locks / banners
+        try {
+            if (typeof UI !== 'undefined') {
+                if (UI.closeModal) UI.closeModal();
+                UI._funeralLocked = false;
+                UI._regencyToastsSuppressed = false;
+                if (UI.hideRegencyFastForward) UI.hideRegencyFastForward();
+                if (UI._clearBankruptcyLock) UI._clearBankruptcyLock();
+                if (UI.hideGameUI) UI.hideGameUI();
+            }
+        } catch(e) {}
+
+        // Stale tutorial/story highlight classes
+        try {
+            document.querySelectorAll('.tab-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
+            document.querySelectorAll('.tab-btn.active').forEach(function(t) { t.classList.remove('active'); });
+            document.querySelectorAll('.sub-menu-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
+        } catch(e) {}
+
+        // Transient overlays / floating panels
+        var transientIds = [
+            'endScreen', 'healthAlert', 'modalOverlay',
+            'storyDialogOverlay',
+            'icons-glossary-overlay', 'game-guide-overlay', 'goods-guide-overlay',
+            'kingdoms-notables-overlay'
+        ];
+        for (var ti = 0; ti < transientIds.length; ti++) {
+            var el = document.getElementById(transientIds[ti]);
+            if (!el) continue;
+            if (transientIds[ti] === 'endScreen' || transientIds[ti] === 'modalOverlay') {
+                el.classList.add('hidden');
+                if (transientIds[ti] === 'endScreen') el.style.display = 'none';
+            } else if (transientIds[ti] === 'healthAlert') {
+                el.classList.remove('visible');
+            } else {
+                el.remove();
+            }
+        }
+
+        // Stop TTS and any audio
+        try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
+        try { if (typeof Music !== 'undefined' && Music.stopAll) Music.stopAll(); } catch(e) {}
+
+        // Renderer caches — invalidate everything possible
+        try {
+            if (typeof Renderer !== 'undefined') {
+                if (Renderer.invalidateSceneCache) Renderer.invalidateSceneCache();
+                if (Renderer.invalidateTerrain) Renderer.invalidateTerrain();
+            }
+        } catch(e) {}
+
+        // Game-loop bookkeeping
+        _lastErrorCheckDay = 0;
+        _lastErrorCount = 0;
+        _consoleLogs.length = 0;
+    }
+
     function loadFromSlot(slotNum) {
         getSlotData(slotNum).then(function(data) {
             if (!data) {
@@ -3582,50 +3685,10 @@ window.Game = (function () {
                 return;
             }
             try {
-                // Clean up tutorial if it was running (prevents panel leaking into loaded game)
-                if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
-                    try { Tutorial.cleanup(); } catch(e) {}
-                }
-                // Also destroy leftover tutorial panel even if Tutorial.isActive is false
-                var tutPanel = document.getElementById('tutorialPanel');
-                if (tutPanel) tutPanel.remove();
-
-                // Clear all tutorial window flags from a prior session
-                delete window._tutorialMinimapClicked;
-                delete window._tutorialLocateUsed;
-                delete window._tutorialAteFood;
-                delete window._tutorialDrankWater;
-                delete window._tutorialSocialInteracted;
-                delete window._tutorialSmallTalkDone;
-                delete window._tutorialRested;
-
-                // Clear any stale tutorial/story highlight classes from tab buttons
-                document.querySelectorAll('.tab-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
-                document.querySelectorAll('.tab-btn.active').forEach(function(t) { t.classList.remove('active'); });
-                document.querySelectorAll('.sub-menu-btn.tutorial-highlight').forEach(function(t) { t.classList.remove('tutorial-highlight'); });
-
-                // Close any open modal from previous game
-                if (typeof UI !== 'undefined' && UI.closeModal) {
-                    try { UI.closeModal(); } catch(e) {}
-                }
-                // Clear UI locks and overlays from previous game state
-                if (typeof UI !== 'undefined') {
-                    UI._funeralLocked = false;
-                    UI._regencyToastsSuppressed = false;
-                    if (UI.hideRegencyFastForward) try { UI.hideRegencyFastForward(); } catch(e) {}
-                }
-                // Hide defeat/end screen
-                var endScreen = document.getElementById('endScreen');
-                if (endScreen) { endScreen.classList.add('hidden'); endScreen.style.display = 'none'; }
-                // Hide health alert banner
-                var healthAlert = document.getElementById('healthAlert');
-                if (healthAlert) healthAlert.classList.remove('visible');
-                // Close story dialog overlay if open
-                if (typeof UI !== 'undefined' && UI.closeStoryDialog) {
-                    try { UI.closeStoryDialog(); } catch(e) {}
-                }
-                // Stop TTS
-                if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+                // v9p33river191: comprehensive reset replaces the previous
+                // hand-rolled cleanup block. Clears tutorial / story / UI /
+                // render caches / timers without nuking IndexedDB saves.
+                _resetEverythingExceptSaves();
 
                 // Run save migrations before deserializing
                 _migrateSaveData(data);
@@ -3959,26 +4022,15 @@ window.Game = (function () {
             startAutosave();
         },
         showTitleScreen: function () {
-            console.log('[Menu] showTitleScreen v2 called, clearing game state');
-            // CRITICAL: Clear these first before anything can throw
+            console.log('[Menu] showTitleScreen — full reset (v9p33river191)');
+            // v9p33river191: route through _resetEverythingExceptSaves so we
+            // share the same cleanup pipeline as in-game load. Then put the
+            // title-screen DOM back up and start title music. No page reload
+            // (which previously caused the menu to flash and music to switch
+            // back to title during in-game load).
             state = 'title';
-            delete window._selectedStartConfig;
-            if (typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
-                try { StoryMode.deserialize({ active: false, chapter: 0, complete: false }); } catch(e) {}
-            }
-            try { stopAutosave(); } catch(e) {}
-            if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-            // Clean up tutorial if it was running
-            try {
-                if (typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive()) {
-                    Tutorial.cleanup();
-                }
-            } catch(e) {}
-            // Close story dialog if open
-            try { if (typeof UI !== 'undefined' && UI.closeStoryDialog) UI.closeStoryDialog(); } catch(e) {}
-            // Stop TTS
-            try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
-            try { if (typeof UI !== 'undefined' && UI.hideGameUI) UI.hideGameUI(); } catch(e) {}
+            _resetEverythingExceptSaves();
+
             var ts = document.getElementById('titleScreen');
             if (ts) { ts.classList.remove('hidden'); ts.style.display = 'flex'; }
             var cs = document.getElementById('charCreateScreen');
@@ -3987,13 +4039,9 @@ window.Game = (function () {
             if (gms) { gms.style.display = 'none'; }
             var kss = document.getElementById('kingdomSelectScreen');
             if (kss) { kss.classList.add('hidden'); kss.style.display = 'none'; }
-            // Close any open modals
-            var mo = document.getElementById('modalOverlay');
-            if (mo) mo.classList.add('hidden');
-            // Refresh load button visibility
             var btnLoad = document.getElementById('btnLoadGame');
             if (btnLoad) btnLoad.style.display = '';
-            // Switch back to title music
+
             try { if (typeof Music !== 'undefined') Music.playTitleMusic(); } catch(e) {}
         },
     };

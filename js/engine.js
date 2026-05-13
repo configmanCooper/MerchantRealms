@@ -23661,12 +23661,25 @@
             var _plagueCooldownDays = 360;
             var _lastPlagueDay = world._lastPlagueTriggerDay || 0;
             if (world.day > 90 && world.day - _lastPlagueDay >= _plagueCooldownDays) {
-                var earlyGameMult = world.day <= 180 ? 0.25 : 1.0;
-                const plagueMult = town.category === 'capital_city' ? CONFIG.DISASTER_PLAGUE_CAPITAL_MULT
-                                 : town.category === 'city' ? CONFIG.DISASTER_PLAGUE_CITY_MULT : 1;
-                if (rng.chance(CONFIG.DISASTER_PLAGUE_CHANCE * plagueMult * earlyGameMult)) {
-                    triggerPlague(town);
-                    world._lastPlagueTriggerDay = world.day;
+                // v9p33river191: skip plague rolls in Valdren towns during
+                // early story mode (until jail-protection safeguard is lifted).
+                var _skipStoryValdren = false;
+                try {
+                    var _smActiveP = typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive();
+                    if (_smActiveP && town.kingdomId) {
+                        var _kdP = findKingdom(town.kingdomId);
+                        var _jpr = (typeof Player !== 'undefined' && Player.state && Player.state.storyMode && Player.state.storyMode.flags && Player.state.storyMode.flags.jailProtectionRemoved);
+                        if (_kdP && /valdren/i.test(_kdP.name || '') && !_jpr) _skipStoryValdren = true;
+                    }
+                } catch(_e) {}
+                if (!_skipStoryValdren) {
+                    var earlyGameMult = world.day <= 180 ? 0.25 : 1.0;
+                    const plagueMult = town.category === 'capital_city' ? CONFIG.DISASTER_PLAGUE_CAPITAL_MULT
+                                     : town.category === 'city' ? CONFIG.DISASTER_PLAGUE_CITY_MULT : 1;
+                    if (rng.chance(CONFIG.DISASTER_PLAGUE_CHANCE * plagueMult * earlyGameMult)) {
+                        triggerPlague(town);
+                        world._lastPlagueTriggerDay = world.day;
+                    }
                 }
             }
 
