@@ -1480,6 +1480,14 @@ const CONFIG = {
             goldCost: 250, materials: { planks: 10, stone: 5, cloth: 3 },
             minHouseId: ['townhouse', 'harbor_house'],
             grants: 'occupantBonus', grantValue: 4
+        },
+        fortified_doors: {
+            id: 'fortified_doors', name: 'Fortified Doors', icon: '🚪🛡️',
+            description: 'Iron-banded oak doors with reinforced locks. +0.10 home security (significantly reduces theft chance).',
+            goldCost: 175, materials: { planks: 6, iron: 8, wood: 4 },
+            // Available for any constructed home above shack and below castle
+            minHouseId: ['cottage', 'farmstead', 'townhouse', 'apartment', 'merchant_house', 'harbor_house', 'manor', 'estate', 'fortress'],
+            grants: 'securityBonus', grantValue: 0.10
         }
     },
     // Worker productivity modifiers based on housing quality

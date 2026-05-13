@@ -37424,6 +37424,17 @@
             if (house.isRental) continue;
             var ht = (CONFIG.HOUSING_TYPES || []).find(function(h) { return h.id === house.type; });
             var houseSec = ht ? (ht.security || 0) : 0;
+            // v9p33river183: house add-ons can grant a securityBonus
+            // (e.g. fortified_doors → +0.10). Cap final houseSec at 1.0.
+            if (house.addons && house.addons.length > 0 && CONFIG.HOUSE_ADDONS) {
+                for (var _ai = 0; _ai < house.addons.length; _ai++) {
+                    var _aDef = CONFIG.HOUSE_ADDONS[house.addons[_ai]];
+                    if (_aDef && _aDef.grants === 'securityBonus' && typeof _aDef.grantValue === 'number') {
+                        houseSec += _aDef.grantValue;
+                    }
+                }
+            }
+            if (houseSec > 1) houseSec = 1;
             var townSec = 0;
             if (house.townId) {
                 var t = Engine.findTown(house.townId);
