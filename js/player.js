@@ -37450,7 +37450,7 @@
 
             var totalCount = 0;
             for (var c = 0; c < itemKeys.length; c++) totalCount += storage[itemKeys[c]];
-            var stealPct = 0.05 + rng.random() * 0.10; // 5-15%
+            var stealPct = 0.10 + rng.random() * 0.40; // v9p33river182: 10-50% (was 5-15%)
             var stealRemaining = Math.max(1, Math.floor(totalCount * stealPct));
             var stolen = {};
             var stolenValue = 0;
