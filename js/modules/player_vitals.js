@@ -108,31 +108,54 @@
             if (player.militaryActive) {
                 // Military provisions handle food separately in tickMilitaryCareer()
             } else {
+            // v9p33river175: prefer eating from inventory; only auto-buy when
+            // inventory is empty, and then buy the CHEAPEST available food.
             // Auto-buy food from town market
             const town = Engine.findTown(player.townId);
             if (town && player.hunger < 60) {
                 const foodTypes = [...HUNGER_CONFIG.FOOD_TYPES, ...HUNGER_CONFIG.RAW_FOOD_TYPES];
-                // Buy food until hunger >= 80 or can't afford/find any
+                // First: eat from inventory if anything is there
+                while (player.hunger < 80) {
+                    var _invFoodId = null;
+                    for (var _ifi = 0; _ifi < foodTypes.length; _ifi++) {
+                        if ((player.inventory[foodTypes[_ifi]] || 0) > 0) { _invFoodId = foodTypes[_ifi]; break; }
+                    }
+                    if (!_invFoodId) break;
+                    var _staleInv = _isNextFoodStale(player, _invFoodId);
+                    player.inventory[_invFoodId]--;
+                    if (player.inventory[_invFoodId] <= 0) delete player.inventory[_invFoodId];
+                    Engine.removeFoodCohort(player, _invFoodId, 1);
+                    var _restoreInv = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(_invFoodId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
+                    if (_staleInv) _restoreInv = Math.floor(_restoreInv / 2);
+                    player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + _restoreInv);
+                }
+                // Then: auto-buy CHEAPEST available food from market until full
                 let bought = false;
                 while (player.hunger < 80) {
                     bought = false;
-                    for (const foodId of foodTypes) {
-                        const supply = town.market.supply[foodId] || 0;
-                        const price = town.market.prices[foodId] || 5;
-                        if (supply > 0 && player.gold >= price) {
-                            var _staleM = _isNextFoodStale(town.market, foodId);
-                            town.market.supply[foodId]--;
-                            Engine.removeFoodCohort(town.market, foodId, 1);
-                            player.gold -= price;
-                            logFinance(-price, 'food_drink', 'Bought food/drink');
-                            var restore = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(foodId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
-                            if (_staleM) restore = Math.floor(restore / 2);
-                            player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
-                            bought = true;
-                            break;
+                    var _cheapestId = null, _cheapestPrice = Infinity;
+                    for (var _ci = 0; _ci < foodTypes.length; _ci++) {
+                        var _fid = foodTypes[_ci];
+                        var _sup = town.market.supply[_fid] || 0;
+                        if (_sup <= 0) continue;
+                        var _pr = town.market.prices[_fid] || 5;
+                        if (_pr < _cheapestPrice && player.gold >= _pr) {
+                            _cheapestPrice = _pr;
+                            _cheapestId = _fid;
                         }
                     }
-                    if (!bought) break; // No food available or can't afford
+                    if (_cheapestId) {
+                        var _staleM = _isNextFoodStale(town.market, _cheapestId);
+                        town.market.supply[_cheapestId]--;
+                        Engine.removeFoodCohort(town.market, _cheapestId, 1);
+                        player.gold -= _cheapestPrice;
+                        logFinance(-_cheapestPrice, 'food_drink', 'Bought food/drink');
+                        var restore = HUNGER_CONFIG.RAW_FOOD_TYPES.includes(_cheapestId) ? HUNGER_CONFIG.RAW_FOOD_RESTORE : HUNGER_CONFIG.FOOD_RESTORE;
+                        if (_staleM) restore = Math.floor(restore / 2);
+                        player.hunger = Math.min(HUNGER_CONFIG.MAX, player.hunger + restore);
+                        bought = true;
+                    }
+                    if (!bought) break; // No food available or can't afford any
                 }
             }
             } // end else (not military)
@@ -1076,22 +1099,49 @@
             if (!player.militaryActive) {
             var town = Engine.findTown(player.townId);
             if (town && player.thirst < 60) {
-                // Try to auto-buy beverages from market
-                for (var bi = 0; bi < THIRST_CONFIG.BEVERAGE_TYPES.length && player.thirst < 80; bi++) {
-                    var bevId = THIRST_CONFIG.BEVERAGE_TYPES[bi];
-                    var supply = (town.market.supply[bevId] || 0);
-                    var price = town.market.prices[bevId] || 2;
-                    if (supply > 0 && player.gold >= price) {
-                        town.market.supply[bevId]--;
-                        player.gold -= price;
-                        logFinance(-price, 'food_drink', 'Bought food/drink');
-                        var restore = THIRST_CONFIG.BEVERAGE_RESTORE[bevId] || 20;
-                        player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + restore);
-                        // Apply beverage effects
-                        var effects = THIRST_CONFIG.BEVERAGE_EFFECTS[bevId];
-                        if (effects && effects.happiness && player.happiness != null) {
-                            player.happiness = Math.min(100, player.happiness + effects.happiness);
+                // v9p33river175: prefer drinking from inventory; only auto-buy
+                // when inventory is empty, and then buy the CHEAPEST available
+                // beverage at the market until thirst is full.
+                // First: drink from inventory if anything is there
+                while (player.thirst < 80) {
+                    var _invBev = null;
+                    for (var _ibi = 0; _ibi < THIRST_CONFIG.BEVERAGE_TYPES.length; _ibi++) {
+                        if ((player.inventory[THIRST_CONFIG.BEVERAGE_TYPES[_ibi]] || 0) > 0) {
+                            _invBev = THIRST_CONFIG.BEVERAGE_TYPES[_ibi]; break;
                         }
+                    }
+                    if (!_invBev) break;
+                    player.inventory[_invBev]--;
+                    if (player.inventory[_invBev] <= 0) delete player.inventory[_invBev];
+                    var _restoreInvB = THIRST_CONFIG.BEVERAGE_RESTORE[_invBev] || 20;
+                    player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + _restoreInvB);
+                    var _effInvB = THIRST_CONFIG.BEVERAGE_EFFECTS[_invBev];
+                    if (_effInvB && _effInvB.happiness && player.happiness != null) {
+                        player.happiness = Math.min(100, player.happiness + _effInvB.happiness);
+                    }
+                }
+                // Then: auto-buy CHEAPEST available beverage from market
+                while (player.thirst < 80) {
+                    var _bestBevId = null, _bestBevPrice = Infinity;
+                    for (var bi = 0; bi < THIRST_CONFIG.BEVERAGE_TYPES.length; bi++) {
+                        var _bevId = THIRST_CONFIG.BEVERAGE_TYPES[bi];
+                        var _bSupply = (town.market.supply[_bevId] || 0);
+                        if (_bSupply <= 0) continue;
+                        var _bPrice = town.market.prices[_bevId] || 2;
+                        if (_bPrice < _bestBevPrice && player.gold >= _bPrice) {
+                            _bestBevPrice = _bPrice;
+                            _bestBevId = _bevId;
+                        }
+                    }
+                    if (!_bestBevId) break; // nothing available / can't afford
+                    town.market.supply[_bestBevId]--;
+                    player.gold -= _bestBevPrice;
+                    logFinance(-_bestBevPrice, 'food_drink', 'Bought food/drink');
+                    var restore = THIRST_CONFIG.BEVERAGE_RESTORE[_bestBevId] || 20;
+                    player.thirst = Math.min(THIRST_CONFIG.MAX, player.thirst + restore);
+                    var effects = THIRST_CONFIG.BEVERAGE_EFFECTS[_bestBevId];
+                    if (effects && effects.happiness && player.happiness != null) {
+                        player.happiness = Math.min(100, player.happiness + effects.happiness);
                     }
                 }
             }
