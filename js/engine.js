@@ -6457,8 +6457,15 @@
                         price *= 1.0 + (0.6 - _scarcityRatio) * 0.5; // Up to +15% at half supply
                     }
                 }
-                // H4: Widened floor/ceiling — 15% to 600% of base price
-                price = Math.max(bp * 0.15, Math.min(bp * 6.0, price));
+                // v9p33river176: tighter price band — 25% to 300% of base
+                // (was 15% to 600%). Spread compressed from 40× to 12×.
+                // Old wide band made cross-town arbitrage trivially profitable;
+                // a single caravan run could routinely 4-10× gold by buying
+                // at 0.15× and selling at 6× across one connection. New band
+                // still allows healthy regional price differences (terrain
+                // bias + war + scarcity all remain meaningful) while making
+                // arbitrage a real-skill activity instead of a free pump.
+                price = Math.max(bp * 0.25, Math.min(bp * 3.0, price));
                 // Stale food discount — if some supply is stale, blend price down
                 if (CONFIG.PERISHABLE_FOODS && CONFIG.PERISHABLE_FOODS[r.id] && s > 0) {
                     var staleCount = (town.market._staleFood && town.market._staleFood[r.id]) || 0;
