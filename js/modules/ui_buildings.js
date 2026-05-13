@@ -193,8 +193,11 @@
 
         }
 
-        // Land purchase section at top of build dialog
+        // v9p33river189: Land + categories anchored at top so they stay
+        // visible while scrolling the build grid. Player gold shown to the
+        // left of the land plots panel for at-a-glance affordability.
         let landHtml = '';
+        let goldHtml = '';
         if (town) {
             const ownedLand = Player.getOwnedLand ? Player.getOwnedLand(town.id) : 0;
             const playerTownCat = town.category || 'village';
@@ -202,7 +205,12 @@
             const landCost = Player.getLandCost ? Player.getLandCost(town.id) : CONFIG.LAND_COST_BASE;
             const usedLand = Player.getUsedLandSlots ? Player.getUsedLandSlots(town.id) : 0;
             const freeLand = Math.max(0, ownedLand - usedLand);
-            landHtml += '<div style="padding:8px;margin-bottom:8px;border:1px solid var(--border);border-radius:4px;background:rgba(60,50,30,0.15);">';
+            const playerGold = Math.floor(Player.gold || 0);
+            goldHtml += '<div style="padding:8px 12px;border:1px solid var(--border);border-radius:4px;background:rgba(60,50,30,0.15);min-width:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;">';
+            goldHtml += '<div style="font-weight:bold;font-size:0.8rem;color:#d4af37;margin-bottom:4px;">🪙 Your Gold</div>';
+            goldHtml += '<div style="font-size:1.05rem;color:#ffd700;font-weight:bold;">' + playerGold + 'g</div>';
+            goldHtml += '</div>';
+            landHtml += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;background:rgba(60,50,30,0.15);flex:1;">';
             landHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">🏞️ Land Plots</div>';
             landHtml += '<div style="font-size:0.8rem;color:#ccc;margin-bottom:6px;">Owned: ' + ownedLand + ' (' + freeLand + ' free, ' + usedLand + ' used) | Max: ' + maxPlots + '</div>';
             if (ownedLand < maxPlots) {
@@ -213,7 +221,10 @@
             landHtml += '</div>';
         }
 
-        const html = `${landHtml}<div class="build-categories">${catHtml}</div>
+        const html = `<div class="trade-sticky-header" style="display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;gap:8px;align-items:stretch;">${goldHtml}${landHtml}</div>
+                <div class="build-categories" style="margin:0;">${catHtml}</div>
+            </div>
             <div class="build-grid" id="buildGrid">${gridHtml}</div>${saleHtml}`;
 
         openModal(`🏗️ Build — ${town ? town.name : ''}`, html);
