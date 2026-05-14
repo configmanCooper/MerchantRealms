@@ -248,6 +248,9 @@ const CONFIG = {
     NPC_MEDICAL_PREMIUM_CHANCE: 0.005,   // upper-class antidote/healing/fever tonic
     NPC_INSTRUMENT_CHANCE: 0.0006,       // very rare — durable lifetime purchase
     NPC_TRAVEL_GEAR_CHANCE: 0.001,       // bedroll/waterskin every couple years
+    NPC_CAMPING_KIT_MIDDLE_CHANCE: 0.0008, // v9p33river195: middle class camping kit ~1 every 3-4 yrs
+    NPC_CAMPING_KIT_UPPER_CHANCE: 0.0015,  // v9p33river195: upper class buys camping kits more often
+    NPC_LIVESTOCK_CHANCE: 0.0015,        // v9p33river195: middle class smallholder cow/pig (~1 every 2 yrs)
     NPC_SADDLE_CHANCE: 0.002,            // upper class who own/aspire to horses
 
     // Disasters

@@ -22791,6 +22791,24 @@
             if (_gear) tryBuyFromMarket(person, town, _gear);
         }
 
+        // v9p33river195: CAMPING KIT — middle and upper class occasionally
+        // buy a complete camping kit (premium travel gear; the bundled
+        // bedroll+tent+waterskin convenience purchase). Upper class buys
+        // slightly more often.
+        if (isMiddle || isUpper) {
+            var _ckChance = isUpper ? CONFIG.NPC_CAMPING_KIT_UPPER_CHANCE : CONFIG.NPC_CAMPING_KIT_MIDDLE_CHANCE;
+            if (world.rng.chance(_ckChance)) {
+                tryBuyFromMarket(person, town, 'camping_kit');
+            }
+        }
+
+        // v9p33river195: LIVESTOCK — middle class occasionally buys cows or
+        // pigs (smallholder farm animals). Picks the cheapest in stock.
+        if (isMiddle && world.rng.chance(CONFIG.NPC_LIVESTOCK_CHANCE)) {
+            var _live = _pickCheapestAffordable(['livestock_pig', 'livestock_cow']);
+            if (_live) tryBuyFromMarket(person, town, _live);
+        }
+
         // SADDLES — upper class only, occasional purchase
         if (isUpper && world.rng.chance(CONFIG.NPC_SADDLE_CHANCE)) {
             tryBuyFromMarket(person, town, 'saddles');
