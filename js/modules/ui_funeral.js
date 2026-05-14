@@ -250,11 +250,25 @@
             footer += '<button class="btn-medieval" data-action="funeralPlanStart" data-personid="' + personId + '" data-rel="' + relationship + '" style="margin-right:6px;">🪦 Plan Funeral</button>';
             // Lock the modal — player must plan the funeral
             UI._funeralLocked = true;
+            // v9p33river216: stash the args so we can re-open this dialog if
+            // the player tries to do anything else and gets the warning toast.
+            UI._pendingFuneralArgs = { personId: personId, cause: cause, relationship: relationship, snapshot: snapshot };
         } else {
             footer += '<button class="btn-medieval" data-action="closeModal">Close</button>';
         }
 
         openModal('⚰️ A Passing in the Family', html, footer);
+    }
+
+    // v9p33river216: re-open the death notification / funeral planning dialog
+    // (used when something else triggered the funeral-lock toast).
+    function reopenPendingFuneral() {
+        if (!UI._pendingFuneralArgs) return false;
+        var a = UI._pendingFuneralArgs;
+        try {
+            showDeathNotification(a.personId, a.cause, a.relationship, a.snapshot);
+            return true;
+        } catch (_e) { return false; }
     }
 
     function _determineInheritance(p, relationship, snapshot) {
@@ -1101,6 +1115,7 @@
         var personId = d.personid;
         var rel = d.rel;
         UI._funeralLocked = false;
+        UI._pendingFuneralArgs = null;
         closeModal();
         showFuneralPlanning(personId, rel);
     });
@@ -1245,6 +1260,7 @@
     UI.showDeathNotification = showDeathNotification;
     UI.showFuneralPlanning   = showFuneralPlanning;
     UI.showFuneralEvent      = showFuneralEvent;
+    UI.reopenPendingFuneral  = reopenPendingFuneral;
     UI.tickFuneralPlan       = tickFuneralPlan;
     UI._setupAIFuneral       = _setupAIFuneral;
 

@@ -1737,8 +1737,12 @@ window.UI = (function () {
             var ftl = (title || '').toLowerCase();
             if (ftl.indexOf('funeral') === -1 && ftl.indexOf('plan funeral') === -1
                 && ftl.indexOf('save') === -1 && ftl.indexOf('load') === -1
-                && ftl.indexOf('settings') === -1 && ftl.indexOf('main menu') === -1) {
+                && ftl.indexOf('settings') === -1 && ftl.indexOf('main menu') === -1
+                && ftl.indexOf('passing') === -1) {
                 toast('⚰️ You must plan the funeral first!', 'warning');
+                // v9p33river216: re-open the funeral planning dialog if it isn't
+                // already up so the player has a clear path forward.
+                try { if (UI.reopenPendingFuneral) UI.reopenPendingFuneral(); } catch(_e) {}
                 return;
             }
         }
