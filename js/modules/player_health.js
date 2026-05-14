@@ -1238,6 +1238,13 @@
         }
 
         // Process illnesses
+        // v9p33river208: prison physician system — if jailed and an illness
+        // is untreated, after a delay (severity-scaled) the prison guards
+        // arrange treatment. Doesn't fully heal instantly: marks ill.treated
+        // with a healDay a few more days out, mirroring real treatment.
+        var _injJailedDay = (player.jailedUntilDay || 0);
+        var _injInJail = _injJailedDay > 0 && day < _injJailedDay;
+
         for (let i = player.illnesses.length - 1; i >= 0; i--) {
             const ill = player.illnesses[i];
             if (ill.treated && day >= ill.healDay) {
@@ -1247,6 +1254,21 @@
             }
             if (!ill.treated) {
                 const daysUntreated = day - ill.dayOccurred;
+                // v9p33river208: prison physician — kingdom guards arrange
+                // treatment after a delay. Minor: 2d delay + 5d to heal.
+                // Moderate: 4d + 8d. Severe: 6d + 14d. Skips if not in jail.
+                if (_injInJail) {
+                    var _delay = ill.severity === 'severe' ? 6 : ill.severity === 'moderate' ? 4 : 2;
+                    if (daysUntreated >= _delay) {
+                        var _treatTime = ill.severity === 'severe' ? 14 : ill.severity === 'moderate' ? 8 : 5;
+                        ill.treated = true;
+                        ill.healDay = day + _treatTime;
+                        ill.source = (ill.source || '') + ' [prison physician]';
+                        Engine.logEvent(`⚕️ Prison guards summoned a physician for ${player.fullName}'s ${ill.name}. Recovery in ${_treatTime} day${_treatTime !== 1 ? 's' : ''}.`);
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast(`⚕️ Prison physician treated your ${ill.name}.`, 'info');
+                        continue;
+                    }
+                }
                 if (ill.severity === 'minor' && daysUntreated >= 10) {
                     ill.severity = 'moderate';
                     Engine.logEvent(`${player.fullName}'s ${ill.name} has worsened!`);

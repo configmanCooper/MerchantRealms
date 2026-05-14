@@ -88,9 +88,10 @@
         _sync();
         if (!player.alive) return;
 
-        // Auto-feed in jail
+        // v9p33river208: jail rations — fed to a comfortable 70 (was 50).
+        // The kingdom feeds prisoners a basic diet to keep them alive.
         if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
-            if ((player.hunger || 0) < 50) player.hunger = 50;
+            if ((player.hunger || 0) < 70) player.hunger = 70;
         }
 
         // Decay hunger (spouseHungerMod reduces decay if good_cook, injuries increase it)
@@ -1085,9 +1086,9 @@
         _sync();
         if (!player.alive) return;
 
-        // Auto-thirst in jail
+        // v9p33river208: jail water rations — kept to a comfortable 70 (was 50).
         if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
-            if ((player.thirst || 0) < 50) player.thirst = 50;
+            if ((player.thirst || 0) < 70) player.thirst = 70;
         }
 
         var injDebuffs = Player.getInjuryDebuffs();
