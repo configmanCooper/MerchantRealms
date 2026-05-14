@@ -4012,12 +4012,12 @@ const NPC_HEALTH_CONFIG = {
         pneumonia:      { name: 'Pneumonia',           severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
         typhus:         { name: 'Typhus',              severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
         plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.036, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
-        // v9p33river231: healthDrain 2.5 → 5.0 — poison is now meaningfully
-        // lethal even for well-treated nobles. Treatment still helps but
-        // they no longer net-heal; they just decay slower.
-        // Treated drain: 5 × 0.3 = 1.5/d, minus 0.9/d natural heal = net 0.6/d
-        // Untreated: 5/d → ~15 days from 75hp
-        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 5.0, daysToRecover: 28,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 14, naturalRecoveryChance: 0.04, recoveryChance: 0.18 },
+        // v9p33river233: healthDrain 5 → 10 — poison is now genuinely lethal
+        // even for nobles with full treatment access. Treated NPCs net-decay
+        // at 2.1/d; treatment slows but no longer saves most victims.
+        // Treated drain: 10 × 0.3 = 3/d, minus 0.9/d natural heal = net 2.1/d
+        // Untreated: 10/d → ~7 days from 75hp
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 10.0, daysToRecover: 28, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 14, naturalRecoveryChance: 0.04, recoveryChance: 0.18 },
     },
 
     // --- Health thresholds ---
