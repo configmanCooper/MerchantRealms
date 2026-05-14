@@ -327,6 +327,16 @@
         // ── Foreign Nobility & Kingdom Crime ──
         kingdomDebts: {},               // kingdomId → gold owed
         criminalRecord: {},             // kingdomId → { crimeId: count }
+        // v9p33river203: post-crime detection / manhunt system
+        // activeManhunts[kingdomId] = { crimeId, startDay, untilDay, severity, schemeId, originTownId }
+        // The kingdom has discovered an unsolved crime is yours and is hunting you.
+        // Daily roll in Player.tick → tickManhunts() may catch you depending on
+        // location (in-kingdom vs ally vs sanctuary), town security, and skills.
+        activeManhunts: {},
+        // exiledFromKingdoms[kingdomId] = { day, reason: crimeId|'misc' }
+        // Real exile enforcement: re-entering a kingdom you've been exiled from
+        // triggers a harsher version of the closed-borders guard sneak check.
+        exiledFromKingdoms: {},
         warTradeLedger: [],             // [{ day, resourceId, qty, townId, kingdomId, enemyKingdomId }]
         kingdomSalesLedger: [],         // [{ day, kingdomId, resourceId, qty, totalPrice }]
         hasSuppliedMilitary: false,     // for Royal Advisor requirement
@@ -1251,6 +1261,8 @@
         // Multi-kingdom citizenship & rank tracking fields
         player.kingdomResidencyStart = {};
         player.criminalRecord = {};
+        player.activeManhunts = {};
+        player.exiledFromKingdoms = {};
         player.resolvedWarConflicts = {};
         player.pendingWarChoice = null;
         player.roadsBuilt = 0;
@@ -18723,6 +18735,8 @@
             tradingStartDay: player.tradingStartDay,
             kingdomResidencyStart: { ...(player.kingdomResidencyStart || {}) },
             criminalRecord: { ...(player.criminalRecord || {}) },
+            activeManhunts: { ...(player.activeManhunts || {}) },
+            exiledFromKingdoms: { ...(player.exiledFromKingdoms || {}) },
             resolvedWarConflicts: structuredClone(player.resolvedWarConflicts || {}),
             pendingWarChoice: player.pendingWarChoice ? structuredClone(player.pendingWarChoice) : null,
             roadsBuilt: player.roadsBuilt || 0,
@@ -19183,6 +19197,8 @@
         player.tradingStartDay = data.tradingStartDay || 0;
         player.kingdomResidencyStart = data.kingdomResidencyStart || {};
         player.criminalRecord = data.criminalRecord || {};
+        player.activeManhunts = data.activeManhunts || {};
+        player.exiledFromKingdoms = data.exiledFromKingdoms || {};
         player.resolvedWarConflicts = data.resolvedWarConflicts || {};
         player.pendingWarChoice = data.pendingWarChoice || null;
         player.roadsBuilt = data.roadsBuilt || 0;
@@ -20188,6 +20204,58 @@
         }
         if (!destKingdom) return { allowed: true };
 
+        // v9p33river203: REAL EXILE ENFORCEMENT — if the player has been
+        // exiled from this kingdom, attempt a HARSHER version of the
+        // closed-borders sneak check. Detection is higher, penalty is bigger,
+        // and on success the player is bounced back to the origin side.
+        if (player.exiledFromKingdoms && player.exiledFromKingdoms[destKingdom.id]) {
+            var exileEntry = player.exiledFromKingdoms[destKingdom.id];
+            var exileDay = exileEntry.day || 0;
+            var daysSinceExile = (Engine.getDay ? Engine.getDay() : 0) - exileDay;
+            // After ~5 years, exile is effectively forgotten by guards (1825d).
+            if (daysSinceExile < 1825) {
+                // Base detection: 0.90 (harsher than closed-borders 0.70)
+                var exDetect = 0.90;
+                if (hasSkill('master_smuggler')) exDetect -= 0.20;
+                else if (hasSkill('smugglers_run')) exDetect -= 0.10;
+                if (hasSkill('discrete')) exDetect -= 0.10;
+                if (hasSkill('master_disguise')) exDetect -= 0.15;
+                if (hasSkill('ghost')) exDetect -= 0.15;
+                if (hasSkill('shadow_step')) exDetect -= 0.05;
+                // Nighttime sneak bonus
+                var _exHour = (typeof Engine !== 'undefined' && Engine.getHour) ? Engine.getHour() : 12;
+                if (_exHour >= 20 || _exHour < 5) exDetect -= 0.05;
+                // Destination town security amplifies detection
+                if (typeof destTown.security === 'number') exDetect += (destTown.security - 0.4) * 0.20;
+                // Notoriety draws extra eyes
+                exDetect += Math.min(0.10, (player.notoriety || 0) / 1000);
+                // Floor at 0.20 (always 20% min — exile is harshly enforced)
+                exDetect = Math.max(0.20, Math.min(0.99, exDetect));
+
+                var _exRng = Engine.getRng();
+                if ((_exRng ? _exRng.random() : Math.random()) < exDetect) {
+                    // CAUGHT — much harsher than closed-borders 20-day/25%-gold
+                    var exJail = 45;
+                    if (hasSkill('jail_break')) exJail = Math.max(15, Math.floor(exJail * 0.5));
+                    player.jailedUntilDay = Engine.getDay() + exJail;
+                    player.jailReason = 'Returning from exile';
+                    var exFine = Math.floor((player.gold || 0) * 0.50);
+                    if (exFine < 100) exFine = 100;
+                    deductGoldOrDebt(exFine, 'kingdom', destKingdom.id, destKingdom.name, 'Returning-from-exile fine');
+                    player.notoriety = Math.min(100, (player.notoriety || 0) + 15);
+                    // Brand the player as a wanted return-exile by extending the exile entry
+                    exileEntry.day = Engine.getDay ? Engine.getDay() : 0; // reset clock
+                    Engine.logEvent('🚫 ' + player.fullName + ' was caught attempting to re-enter ' + destKingdom.name + ' as an exile! Jailed ' + exJail + ' days, fined ' + exFine + 'g.', null, 'my_actions');
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚫 EXILE BREAK! Caught re-entering ' + destKingdom.name + '! Jailed ' + exJail + 'd, fined ' + exFine + 'g.', 'danger', 'critical');
+                    return { allowed: false, caught: true, message: 'Caught re-entering ' + destKingdom.name + ' as an exile! Jailed ' + exJail + ' days, fined ' + exFine + 'g.' };
+                }
+                // Snuck through
+                Engine.logEvent('🥷 ' + player.fullName + ' slipped past the exile-watch guards into ' + destKingdom.name + '.', null, 'my_actions');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🥷 You slipped past the exile-watch guards into ' + destKingdom.name + '!', 'warning');
+                return { allowed: true, smuggled: true, exileSneak: true };
+            }
+        }
+
         // Check border laws (regular laws array + specialLaws)
         var bordersClosed = false;
         var isCitizen = isPlayerCitizenOf(destKingdom.id);
@@ -21041,6 +21109,9 @@
 
         // Check for exile
         checkExile();
+
+        // v9p33river203: roll active manhunts (post-detection catches)
+        if (Player.tickManhunts) Player.tickManhunts();
 
         // Conscription check (once per season)
         if (Engine.getDay() > 0 && Engine.getDay() % CONFIG.DAYS_PER_SEASON === 0) {
@@ -22817,6 +22888,9 @@
             // RA: demoted to Citizen, exiled, lose buildings but keep gold
             player.socialRank[kingdomId] = 1;
             player.rankSince[kingdomId] = day;
+            // v9p33river203: real exile enforcement
+            if (!player.exiledFromKingdoms) player.exiledFromKingdoms = {};
+            player.exiledFromKingdoms[kingdomId] = { day: day, reason: 'regime_change' };
             if (player.royalAdvisorKingdomId === kingdomId) {
                 player.royalAdvisorKingdomId = null;
                 player.isRoyalAdvisorFromKing = false;
@@ -22993,6 +23067,14 @@
                 // Strip rank in exiled kingdom
                 player.socialRank[_exKId] = 0;
                 delete player.rankSince[_exKId];
+                // v9p33river203: record real exile so border guards enforce it
+                if (!player.exiledFromKingdoms) player.exiledFromKingdoms = {};
+                if (!player.exiledFromKingdoms[_exKId]) {
+                    player.exiledFromKingdoms[_exKId] = {
+                        day: Engine.getDay ? Engine.getDay() : 0,
+                        reason: 'reputation_collapse'
+                    };
+                }
                 // If this was the active kingdom, pick another
                 if (player.citizenshipKingdomId === _exKId) {
                     player.citizenshipKingdomId = null;
