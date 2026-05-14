@@ -1194,39 +1194,60 @@
         return { success: true, message: '✅ Target eliminated. Their properties may become available.' };
     }
 
-    // ── (o) Poison Target ──
+    // ── (o) Poison Target — pay an agent to plant poison in food/drink ──
+    // v9p33river201: now costs 1000-3000g (paying someone to plant the poison)
+    // and on success inflicts 'food_poisoning' (severe) — survivable with fast
+    // treatment, fatal if untreated.
     function poisonTarget(targetId) {
         _sync();
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!hasSkill('poisoner')) return { success: false, message: 'Requires Poisoner skill.' };
-        const poisonQty = player.inventory.poison || 0;
-        if (poisonQty < 1) return { success: false, message: 'Need poison in inventory.' };
-
-        player.inventory.poison -= 1;
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
+        var cost = rng ? rng.randInt(1000, 3000) : 2000;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to pay an agent to plant the poison.' };
         const detection = calculateCorruptDetection(0.15, town);
         const caught = rng && rng.chance(detection);
+        player.gold -= cost;
 
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             var _ptarget = Engine.findPerson ? Engine.findPerson(targetId) : null;
             var _pIsNoble = _ptarget && (_ptarget.occupation === 'noble' || _ptarget.occupation === 'king' || _ptarget.isKing);
-            applyCorruptPenalty(town, kingdom, 500, 25, 10, false, null, _pIsNoble ? { isNobleTarget: true } : null);
+            applyCorruptPenalty(town, kingdom, 500, 25, 10, false, 'poison', _pIsNoble ? { isNobleTarget: true } : null);
             recordCorruptAction('poison', true);
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DARK_DEED_ADD || 12, 'poisoning someone');
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
-            Engine.logEvent(`${player.fullName} was caught attempting to poison someone!`);
-            return { success: false, caught: true, message: '🚨 CAUGHT! Fined 500g, jailed 10 days, reputation -25.' + _nnMsg };
+            Engine.logEvent(`${player.fullName} was caught paying an agent to poison someone!`);
+            return { success: false, caught: true, message: '🚨 CAUGHT! Lost ' + cost + 'g + 500g fine, jailed 10 days, town rep -25.' + _nnMsg };
         }
 
-        const duration = rng ? rng.randInt(5, 15) : 10;
-        player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration });
+        // Success: agent slips food_poisoning into the target's meal/drink.
+        // The illness can kill if untreated; severe but survivable with care.
+        var _ptarget2 = Engine.findPerson ? Engine.findPerson(targetId) : null;
+        var infected = false;
+        if (_ptarget2 && _ptarget2.alive && typeof Engine.infectNPC === 'function') {
+            // Force severe by setting _forcedSeverity hint; engine_health
+            // accepts a generic illness id and will roll severity per ILLNESSES
+            // config. Calling twice raises odds of severe but we'll accept its roll.
+            try { Engine.infectNPC(_ptarget2, 'food_poisoning', 'poisoned_by_player'); } catch(e) {}
+            // If the engine attached an illness, bump it to severe
+            if (_ptarget2.illnesses && _ptarget2.illnesses.length > 0) {
+                var lastIll = _ptarget2.illnesses[_ptarget2.illnesses.length - 1];
+                if (lastIll) {
+                    lastIll.severity = 'severe';
+                    lastIll.source = 'poisoned';
+                    if (_ptarget2.health > 50) _ptarget2.health = 50;
+                }
+            }
+            infected = true;
+        }
+        // Backwards compat: keep poisonTargets entry for any UI that watches it
+        player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration: 12, illness: 'food_poisoning' });
         player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
         recordCorruptAction('poison', false);
         grantXP(20, 'Poisoned target');
-        // DNA: check if target is a noble
         if (player.doubleNobleAgent && targetId) {
             var _poisTarget = Engine.findPerson ? Engine.findPerson(targetId) : null;
             if (_poisTarget && (_poisTarget.occupation === 'noble' || _poisTarget.isNoble)) {
@@ -1235,7 +1256,90 @@
             }
         }
         Engine.logEvent('Someone has fallen mysteriously ill...');
-        return { success: true, message: `✅ Poison administered. Target will sicken over ${duration} days.` };
+        return { success: true, message: '✅ Agent planted poison (' + cost + 'g paid). Target sickened with severe food poisoning — they may recover if treated quickly.' };
+    }
+
+    // v9p33river201: Hire an assassin to kill any NPC target. Costs 3000-5000g.
+    // Detection 0.25. Requires dark_connections OR assassin skill.
+    function hireAssassinAnyNpc(targetId) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('dark_connections') && !hasSkill('assassin')) {
+            return { success: false, message: 'Requires Dark Connections or Assassin skill.' };
+        }
+        var target = Engine.findPerson ? Engine.findPerson(targetId) : null;
+        if (!target || !target.alive) return { success: false, message: 'Target not found or already dead.' };
+        var rng = Engine.getRng();
+        var cost = rng ? rng.randInt(3000, 5000) : 4000;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
+        var town = Engine.findTown(player.townId);
+        var detection = calculateCorruptDetection(0.25, town);
+        var caught = rng && rng.chance(detection);
+        player.gold -= cost;
+
+        if (caught) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
+            var _isNoble = target.occupation === 'noble' || target.occupation === 'king' || target.isKing || target.isNoble;
+            applyCorruptPenalty(town, kingdom, 0, 0, 0, true, 'murder', _isNoble ? { isNobleTarget: true } : null);
+            recordCorruptAction('hire_assassin_npc', true);
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(35);
+            _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DARK_DEED_ADD || 12, 'hiring an assassin');
+            Engine.logEvent(player.fullName + ' was caught hiring an assassin to kill ' + (target.firstName || 'someone') + '!');
+            return { success: false, caught: true, message: '🚨 CAUGHT! Lost ' + cost + 'g, exiled, all assets seized.' };
+        }
+        // Success — kill the target
+        target.alive = false;
+        target.deathCause = 'assassinated (paid hit)';
+        recordCorruptAction('hire_assassin_npc', false);
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(35);
+        grantXP(35, 'Hired assassin');
+        if (player.doubleNobleAgent && (target.occupation === 'noble' || target.isNoble)) {
+            var _ahTown = Engine.findTown(target.townId);
+            if (_ahTown && _ahTown.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('assassinate_noble');
+        }
+        Engine.logEvent((target.firstName || 'A person') + ' ' + (target.lastName || '') + ' was found dead — assassinated by an unknown blade.');
+        return { success: true, message: '✅ ' + (target.firstName || 'Target') + ' eliminated. Cost: ' + cost + 'g.' };
+    }
+
+    // v9p33river201: Direct kill — player murders the target themselves.
+    // Requires: combat_trained AND (assassin OR shadow_dealings). Player must
+    // have an equipped weapon. No gold cost. Higher detection (0.40).
+    function directKillNpc(targetId) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('combat_trained')) return { success: false, message: 'Requires Combat Trained skill.' };
+        if (!hasSkill('assassin') && !hasSkill('shadow_dealings')) return { success: false, message: 'Requires Assassin or Shadow Dealings skill.' };
+        if (!player.weapon) return { success: false, message: 'You need an equipped weapon.' };
+        var target = Engine.findPerson ? Engine.findPerson(targetId) : null;
+        if (!target || !target.alive) return { success: false, message: 'Target not found or already dead.' };
+        if (target.id === (player.id || '__player')) return { success: false, message: 'Cannot target yourself.' };
+
+        var rng = Engine.getRng();
+        var town = Engine.findTown(player.townId);
+        var detection = calculateCorruptDetection(0.40, town);
+        var caught = rng && rng.chance(detection);
+
+        if (caught) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
+            var _isNobleD = target.occupation === 'noble' || target.occupation === 'king' || target.isKing || target.isNoble;
+            applyCorruptPenalty(town, kingdom, 0, 0, 0, true, 'murder', _isNobleD ? { isNobleTarget: true } : null);
+            recordCorruptAction('direct_kill', true);
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(50);
+            _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'committing direct murder');
+            Engine.logEvent(player.fullName + ' was caught murdering ' + (target.firstName || 'someone') + ' with their own blade!');
+            return { success: false, caught: true, message: '🚨 CAUGHT red-handed! Murder charge — exile + assets seized.' };
+        }
+        target.alive = false;
+        target.deathCause = 'murdered';
+        recordCorruptAction('direct_kill', false);
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(50);
+        grantXP(50, 'Direct kill');
+        if (player.doubleNobleAgent && (target.occupation === 'noble' || target.isNoble)) {
+            var _dkTown = Engine.findTown(target.townId);
+            if (_dkTown && _dkTown.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('assassinate_noble');
+        }
+        Engine.logEvent((target.firstName || 'A person') + ' ' + (target.lastName || '') + ' was found murdered (perpetrator unknown).');
+        return { success: true, message: '✅ ' + (target.firstName || 'Target') + ' is dead. You slipped away unseen.' };
     }
 
     // ── (p) Build Hidden Warehouse ──
@@ -3874,6 +3978,8 @@
                 result = hireAssassin(params[0], params[1]); break;
             case 'assassinate_passenger': result = assassinatePassenger(params[0]); break;
             case 'poison': result = poisonTarget(params[0]); break;
+            case 'hire_assassin_npc': result = hireAssassinAnyNpc(params[0]); break;
+            case 'direct_kill': result = directKillNpc(params[0]); break;
             case 'hidden_warehouse': result = buildHiddenWarehouse(params[0]); break;
             case 'cook_books': result = cookTheBooks(); break;
             case 'insider_trading': result = insiderTrading(params[0]); break;
@@ -3904,7 +4010,8 @@
             bribe_guards: 30, bribe_advisor: 60, cultivate_heir: 30, blackmail: 30,
             spread_rumors: 15, frame_competitor: 30,
             assassinate_competitor: 60, assassinate_guard_captain: 90, assassinate_king: 180,
-            assassinate_passenger: 60, poison: 20, hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
+            assassinate_passenger: 60, poison: 20, hire_assassin_npc: 75, direct_kill: 45,
+            hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
             spy_network: 90, smuggling_route: 120, forge_documents: 30, sabotage_caravan: 30,
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
             lay_low: 60, cleanse_identity: 30,
@@ -3956,6 +4063,8 @@
     Player.spreadRumors = spreadRumors;
     Player.frameCompetitor = frameCompetitor;
     Player.hireAssassin = hireAssassin;
+    Player.hireAssassinAnyNpc = hireAssassinAnyNpc;
+    Player.directKillNpc = directKillNpc;
     Player.assassinatePassenger = assassinatePassenger;
     Player.poisonTarget = poisonTarget;
     Player.buildHiddenWarehouse = buildHiddenWarehouse;
