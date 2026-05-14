@@ -916,26 +916,44 @@
         else if (value > 100) valueDetectMult = 1.3;
         else if (value > 50) valueDetectMult = 1.15;
         const detection = calculateCorruptDetection(baseDetect * valueDetectMult, town);
-        const caught = rng && rng.chance(detection);
+        var _o = _rollSchemeOutcome(detection, rng);
+        var caught = _o.caught;
+        var successful = _o.successful;
 
+        if (successful) {
+            town.market.supply[resourceId] -= qty;
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + qty;
+            const xpBonus = Math.min(10, Math.floor(value / 50));
+            grantXP(5 + xpBonus, 'Stole goods');
+            if (player.doubleNobleAgent && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('steal_treasury', value);
+            Engine.logEvent(`Goods went missing from ${town.name}'s market.`);
+        }
+
+        var caughtMsg = '';
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, value * 2, 10, 0, false, 'theft');
             recordCorruptAction('steal_goods', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             Engine.logEvent(`${player.fullName} was caught stealing in ${town.name}!`);
-            return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, reputation -10. Goods confiscated.` };
+            caughtMsg = `🚨 CAUGHT! Fined ${actualFine}g, rep -10. Goods confiscated.`;
+            // If we got the goods AND were caught, they're confiscated
+            if (successful) {
+                town.market.supply[resourceId] += qty;
+                player.inventory[resourceId] = Math.max(0, (player.inventory[resourceId] || 0) - qty);
+            }
+        } else {
+            recordCorruptAction('steal_goods', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         }
 
-        town.market.supply[resourceId] -= qty;
-        player.inventory[resourceId] = (player.inventory[resourceId] || 0) + qty;
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
-        recordCorruptAction('steal_goods', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
-        const xpBonus = Math.min(10, Math.floor(value / 50));
-        grantXP(5 + xpBonus, 'Stole goods');
-        if (player.doubleNobleAgent && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('steal_treasury', value);
-        Engine.logEvent(`Goods went missing from ${town.name}'s market.`);
-        return { success: true, message: `✅ Stole ${qty} ${res ? res.name : resourceId}! (worth ~${value}g)` };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: `✅ Stole ${qty} ${res ? res.name : resourceId}! (worth ~${value}g)`,
+            caughtMsg: caughtMsg,
+            partialMsg: `Stole ${qty} ${res ? res.name : resourceId} but were SEEN — goods confiscated! ` + caughtMsg,
+            failMsg: '❌ Failed to grab the goods but slipped away unseen.'
+        });
     }
 
     // ── (d2) Pickpocket ──
@@ -952,25 +970,39 @@
         const isNight = (hour >= 20 || hour <= 5);
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(isNight ? 0.15 : 0.30, town);
-        const caught = rng && rng.chance(detection);
+        var _o = _rollSchemeOutcome(detection, rng);
+        var caught = _o.caught;
+        var successful = _o.successful;
         const yield_ = 5 + Math.floor(Math.random() * 26); // 5-30g
 
+        if (successful) {
+            player.gold += yield_;
+            player.stats.totalGoldEarned += yield_;
+            grantXP(3, 'Pickpocketed');
+            Engine.logEvent('A townsfolk reported missing coins.');
+        }
+
+        var caughtMsg = '';
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, yield_ * 3, 5, 3, false, 'theft');
             recordCorruptAction('pickpocket', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
             Engine.logEvent(`${player.fullName} was caught pickpocketing in ${town.name}!`);
-            return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 3 days.` };
+            caughtMsg = `🚨 CAUGHT! Fined ${actualFine}g, jailed 3d.`;
+            if (successful) { player.gold = Math.max(0, player.gold - yield_); }
+        } else {
+            recordCorruptAction('pickpocket', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(2);
         }
 
-        player.gold += yield_;
-        player.stats.totalGoldEarned += yield_;
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(2);
-        recordCorruptAction('pickpocket', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
-        grantXP(3, 'Pickpocketed');
-        Engine.logEvent('A townsfolk reported missing coins.');
-        return { success: true, message: `✅ Lifted ${yield_}g from an unsuspecting local!` };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: `✅ Lifted ${yield_}g from an unsuspecting local!`,
+            caughtMsg: caughtMsg,
+            partialMsg: `Lifted ${yield_}g but were SEEN — coins recovered! ` + caughtMsg,
+            failMsg: '❌ Couldn\'t get a clean grab but slipped away unseen.'
+        });
     }
 
     // ── (d2b) Steal from NPC (targeted theft from person view) ──
@@ -1088,15 +1120,39 @@
         const isNight = (hour >= 20 || hour <= 5);
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(isNight ? 0.25 : 0.45, town);
-        const caught = rng && rng.chance(detection);
+        var _o = _rollSchemeOutcome(detection, rng);
+        var caught = _o.caught;
+        var successful = _o.successful;
 
         // Pick random goods from town market
         const marketKeys = Object.keys(town.market.supply || {}).filter(k => (town.market.supply[k] || 0) > 5);
         if (marketKeys.length === 0) return { success: false, message: 'Nothing worth stealing here.' };
 
+        var stolenMsg = [];
+        var totalValue = 0;
+        var stolenLog = []; // for unwinding if caught + successful
+        if (successful) {
+            const numGoods = 1 + Math.floor(Math.random() * 3);
+            for (let g = 0; g < numGoods && g < marketKeys.length; g++) {
+                const resId = marketKeys[Math.floor(Math.random() * marketKeys.length)];
+                const avail = town.market.supply[resId] || 0;
+                const qty = Math.min(avail, 10 + Math.floor(Math.random() * 41));
+                if (qty <= 0) continue;
+                town.market.supply[resId] -= qty;
+                player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+                stolenLog.push({ resId: resId, qty: qty });
+                const res = findResource(resId);
+                const localP = (town.market && town.market.prices && town.market.prices[resId]) || (res ? res.basePrice : 10);
+                totalValue += Math.floor(localP * qty);
+                stolenMsg.push(`${qty} ${res ? res.name : resId}`);
+            }
+            grantXP(15, 'Warehouse heist');
+            Engine.logEvent('A warehouse in ' + town.name + ' was broken into overnight.');
+        }
+
+        var caughtMsg = '';
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
-            // Estimate value of what would have been stolen for fine calculation
             var estValue = 0;
             for (var _ek = 0; _ek < Math.min(3, marketKeys.length); _ek++) {
                 var _eResId = marketKeys[_ek];
@@ -1108,31 +1164,27 @@
             recordCorruptAction('warehouse_heist', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             Engine.logEvent(`${player.fullName} was caught breaking into a warehouse in ${town.name}!`);
-            return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 10 days, reputation -20.` };
+            caughtMsg = `🚨 CAUGHT! Fined ${actualFine}g, jailed 10d, rep -20.`;
+            // Unwind any loot if caught
+            if (successful) {
+                for (var _ul = 0; _ul < stolenLog.length; _ul++) {
+                    var _u = stolenLog[_ul];
+                    town.market.supply[_u.resId] += _u.qty;
+                    player.inventory[_u.resId] = Math.max(0, (player.inventory[_u.resId] || 0) - _u.qty);
+                }
+            }
+        } else {
+            recordCorruptAction('warehouse_heist', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         }
 
-        // Steal 10-50 units of 1-3 random goods
-        let stolenMsg = [];
-        let totalValue = 0;
-        const numGoods = 1 + Math.floor(Math.random() * 3);
-        for (let g = 0; g < numGoods && g < marketKeys.length; g++) {
-            const resId = marketKeys[Math.floor(Math.random() * marketKeys.length)];
-            const avail = town.market.supply[resId] || 0;
-            const qty = Math.min(avail, 10 + Math.floor(Math.random() * 41));
-            if (qty <= 0) continue;
-            town.market.supply[resId] -= qty;
-            player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-            const res = findResource(resId);
-            const localP = (town.market && town.market.prices && town.market.prices[resId]) || (res ? res.basePrice : 10);
-            totalValue += Math.floor(localP * qty);
-            stolenMsg.push(`${qty} ${res ? res.name : resId}`);
-        }
-
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
-        recordCorruptAction('warehouse_heist', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft');
-        grantXP(15, 'Warehouse heist');
-        Engine.logEvent('A warehouse in ' + town.name + ' was broken into overnight.');
-        return { success: true, message: `✅ Heist successful! Stole: ${stolenMsg.join(', ')} (worth ~${totalValue}g)` };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: `✅ Heist successful! Stole: ${stolenMsg.join(', ')} (worth ~${totalValue}g)`,
+            caughtMsg: caughtMsg,
+            partialMsg: `Heist netted ${stolenMsg.join(', ')} but you were SEEN — goods confiscated! ` + caughtMsg,
+            failMsg: '❌ The lock held; you slipped away unseen but empty-handed.'
+        });
     }
 
     // ── (d4) Rob Traveler ──
