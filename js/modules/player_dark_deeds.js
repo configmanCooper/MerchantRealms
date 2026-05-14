@@ -221,6 +221,45 @@
     }
     Player._nobleTargetCostMult = _nobleTargetCostMult;
 
+    // v9p33river224: target wealth multiplier — wealthier targets cost more
+    // because they have better-paid guards, more bribed witnesses, harder
+    // access. Stacks with _nobleTargetCostMult. Net worth = gold + ~2k per
+    // building. EMs especially get scaled up since they often hold the most
+    // wealth in the world.
+    function _targetWealthCostMult(targetPersonId) {
+        if (!targetPersonId) return 1.0;
+        var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
+        if (!t) return 1.0;
+        var nw = (t.gold || 0);
+        if (t.buildings) nw += (t.buildings.length || 0) * 2000;
+        // Tiers: <5k → 1.0x; 5–20k → 1.4x; 20–50k → 1.8x; 50–100k → 2.5x; 100k+ → 3.5x
+        if (nw >= 100000) return 3.5;
+        if (nw >= 50000) return 2.5;
+        if (nw >= 20000) return 1.8;
+        if (nw >= 5000) return 1.4;
+        return 1.0;
+    }
+    Player._targetWealthCostMult = _targetWealthCostMult;
+
+    // v9p33river224: target wealth detection multiplier — same logic but for
+    // catch chance. Wealthy NPCs (especially EMs) have informants, paid
+    // guards, suspicious neighbors. Lighter scale than cost since detection
+    // already gets a boost from noble target mult.
+    //   <5k: 1.0x; 5–20k: 1.10x; 20–50k: 1.20x; 50k+: 1.30x; 100k+: 1.45x
+    function _targetWealthDetectMult(targetPersonId) {
+        if (!targetPersonId) return 1.0;
+        var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
+        if (!t) return 1.0;
+        var nw = (t.gold || 0);
+        if (t.buildings) nw += (t.buildings.length || 0) * 2000;
+        if (nw >= 100000) return 1.45;
+        if (nw >= 50000) return 1.30;
+        if (nw >= 20000) return 1.20;
+        if (nw >= 5000) return 1.10;
+        return 1.0;
+    }
+    Player._targetWealthDetectMult = _targetWealthDetectMult;
+
     // v9p33river212: roll catch and success chance INDEPENDENTLY.
     // Marginal probabilities preserved (catch% and success% match what the
     // scheme had before — schemes used to treat caught == failed, so success%
@@ -1585,7 +1624,7 @@
 
         const town = Engine.findTown(person.townId || player.townId);
         const rng = Engine.getRng();
-        const detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(personId));
+        const detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(personId) * _targetWealthDetectMult(personId));
         var _o = _rollSchemeOutcome(detection, rng);
         var caught = _o.caught;
         var successful = _o.successful;
@@ -1638,7 +1677,7 @@
         player.gold -= 50;
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
-        const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetMerchantId));
+        const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetMerchantId) * _targetWealthDetectMult(targetMerchantId));
         var _o = _rollSchemeOutcome(detection, rng);
         var caught = _o.caught;
         var successful = _o.successful;
@@ -1689,7 +1728,7 @@
 
         player.gold -= 200;
         const rng = Engine.getRng();
-        const detection = Math.min(0.95, calculateCorruptDetection(0.30, town) * _nobleTargetMult(targetMerchantId));
+        const detection = Math.min(0.95, calculateCorruptDetection(0.30, town) * _nobleTargetMult(targetMerchantId) * _targetWealthDetectMult(targetMerchantId));
         var _o2 = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetMerchantId));
         var caught = _o2.caught;
         var successful = _o2.successful;
@@ -1820,15 +1859,14 @@
         }
 
         // type === 'competitor' (default)
-        // v9p33river223: scale cost up sharply for noble/royal targets — taking
-        // out a King via this path now matches the dedicated assassinate_king
-        // 25k+ tier, even though the player skipped the king-specific function.
-        var costBase = rng ? rng.randInt(1000, 3000) : 2000;
-        const cost = Math.floor(costBase * _nobleTargetCostMult(targetId));
-        if (player.gold < cost) return { success: false, message: `Need ${cost}g to hire assassin.` };
+        // v9p33river224: cost = 10k–20k base × wealth mult × noble cost mult.
+        // Wealth mult helper does the tiering. Detection also wealth-scales.
+        var costBase = rng ? rng.randInt(10000, 20000) : 15000;
+        const cost = Math.floor(costBase * _targetWealthCostMult(targetId) * _nobleTargetCostMult(targetId));
+        if (player.gold < cost) return { success: false, message: `Need ${cost.toLocaleString()}g to hire assassin (target's wealth/standing makes this expensive).` };
 
         player.gold -= cost;
-        const detection = Math.min(0.95, calculateCorruptDetection(0.20, town) * _nobleTargetMult(targetId));
+        const detection = Math.min(0.95, calculateCorruptDetection(0.20, town) * _nobleTargetMult(targetId) * _targetWealthDetectMult(targetId));
         var _ho = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _ho.caught;
         var successful = _ho.successful;
@@ -1878,10 +1916,12 @@
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
         var cost = rng ? rng.randInt(1000, 3000) : 2000;
-        // v9p33river223: scale cost up sharply for noble/royal targets
-        cost = Math.floor(cost * _nobleTargetCostMult(targetId));
-        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to pay an agent to plant the poison.' };
-        const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetId));
+        // v9p33river223+v9p33river224: scale cost up sharply for noble/royal
+        // targets AND for wealthy targets (well-paid bodyguards, more
+        // bribes for staff). Detection also scales with wealth.
+        cost = Math.floor(cost * _nobleTargetCostMult(targetId) * _targetWealthCostMult(targetId));
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost.toLocaleString() + 'g to pay an agent to plant the poison.' };
+        const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetId) * _targetWealthDetectMult(targetId));
         var _po = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _po.caught;
         var successful = _po.successful;
@@ -1949,11 +1989,11 @@
         if (!target || !target.alive) return { success: false, message: 'Target not found or already dead.' };
         var rng = Engine.getRng();
         var cost = rng ? rng.randInt(3000, 5000) : 4000;
-        // v9p33river223: scale cost up sharply for noble/royal targets
-        cost = Math.floor(cost * _nobleTargetCostMult(targetId));
-        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
+        // v9p33river223+v9p33river224: scale by rank AND wealth
+        cost = Math.floor(cost * _nobleTargetCostMult(targetId) * _targetWealthCostMult(targetId));
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost.toLocaleString() + 'g.' };
         var town = Engine.findTown(player.townId);
-        var detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(targetId));
+        var detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(targetId) * _targetWealthDetectMult(targetId));
         var _aho = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _aho.caught;
         var successful = _aho.successful;
@@ -2007,7 +2047,7 @@
 
         var rng = Engine.getRng();
         var town = Engine.findTown(player.townId);
-        var detection = Math.min(0.95, calculateCorruptDetection(0.40, town) * _nobleTargetMult(targetId));
+        var detection = Math.min(0.95, calculateCorruptDetection(0.40, town) * _nobleTargetMult(targetId) * _targetWealthDetectMult(targetId));
         var _dko = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _dko.caught;
         var successful = _dko.successful;

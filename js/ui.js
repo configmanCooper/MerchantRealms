@@ -4668,6 +4668,14 @@ window.UI = (function () {
         var pState = P.state || {};
         var hasSkill = function(s) { return P.hasSkill && P.hasSkill(s); };
         var calcDetect = P.calculateCorruptDetection || function() { return 0.3; };
+        // v9p33river224: target wealth multipliers (cost + detection)
+        var personId = person.id;
+        var wealthCostMult = (P._targetWealthCostMult ? P._targetWealthCostMult(personId) : 1.0);
+        var wealthDetectMult = (P._targetWealthDetectMult ? P._targetWealthDetectMult(personId) : 1.0);
+        var rankCostMult = (P._nobleTargetCostMult ? P._nobleTargetCostMult(personId) : 1.0);
+        var combinedDetectMult = nobleMult * wealthDetectMult;
+        var isWealthy = wealthCostMult > 1.0;
+        var isNoble = nobleMult > 1.0;
 
         if (schemeId === 'steal') {
             var w = Engine.getWorld ? Engine.getWorld() : null;
@@ -4689,7 +4697,7 @@ window.UI = (function () {
             };
         }
         if (schemeId === 'rumors') {
-            var rDetect = Math.min(0.95, calcDetect(0.15, town) * nobleMult);
+            var rDetect = Math.min(0.95, calcDetect(0.15, town) * combinedDetectMult);
             var canR = hasSkill('silver_tongue_dark') || hasSkill('discrete');
             var canPay = (pState.gold || 0) >= 50;
             return {
@@ -4707,7 +4715,7 @@ window.UI = (function () {
             };
         }
         if (schemeId === 'blackmail') {
-            var bDetect = Math.min(0.95, calcDetect(0.25, town) * nobleMult);
+            var bDetect = Math.min(0.95, calcDetect(0.25, town) * combinedDetectMult);
             var canB = hasSkill('shadow_dealings') || hasSkill('silver_tongue_dark');
             var alreadyB = !!(pState.blackmailTargets && pState.blackmailTargets[person.id]);
             return {
@@ -4725,7 +4733,7 @@ window.UI = (function () {
             };
         }
         if (schemeId === 'frame') {
-            var fDetect = Math.min(0.95, calcDetect(0.30, town) * nobleMult);
+            var fDetect = Math.min(0.95, calcDetect(0.30, town) * combinedDetectMult);
             var canF = hasSkill('shadow_dealings') || hasSkill('master_forger');
             var canPayF = (pState.gold || 0) >= 200;
             return {
@@ -4743,18 +4751,18 @@ window.UI = (function () {
             };
         }
         if (schemeId === 'poison') {
-            var poDetect = Math.min(0.95, calcDetect(0.15, town) * nobleMult);
+            var poDetect = Math.min(0.95, calcDetect(0.15, town) * combinedDetectMult);
             var canP = hasSkill('poisoner');
             var hasVial = (pState.inventory && (pState.inventory.poison || 0) >= 1);
-            // v9p33river223: cost scales with target rank
-            var costMult = (P._nobleTargetCostMult ? P._nobleTargetCostMult(personId) : 1.0);
-            var poMin = Math.floor(1000 * costMult);
-            var poMax = Math.floor(3000 * costMult);
+            // v9p33river223+v9p33river224: cost scales with rank AND wealth
+            var poCostMult = rankCostMult * wealthCostMult;
+            var poMin = Math.floor(1000 * poCostMult);
+            var poMax = Math.floor(3000 * poCostMult);
             var canPayP = (pState.gold || 0) >= poMin;
             var costRange = poMin.toLocaleString() + '–' + poMax.toLocaleString();
             return {
                 icon: '☠️', title: 'Poison Target', color: '#88aa44',
-                desc: 'Pay an agent to plant your poison vial in the target\'s food or drink.' + (costMult > 1 ? ' Cost scales sharply for noble/royal targets.' : ''),
+                desc: 'Pay an agent to plant your poison vial in the target\'s food or drink.' + (poCostMult > 1 ? ' Cost scales with target wealth and standing.' : ''),
                 cost: costRange, runId: 'poison', confirmLabel: 'Plant Poison',
                 allReqsMet: canP && hasVial && canPayP,
                 reqs: [
@@ -4768,21 +4776,21 @@ window.UI = (function () {
             };
         }
         if (schemeId === 'assassin') {
-            var hireDetect = Math.min(0.95, calcDetect(0.20, town) * nobleMult);
-            var killDetect = Math.min(0.95, calcDetect(0.40, town) * nobleMult);
+            var hireDetect = Math.min(0.95, calcDetect(0.20, town) * combinedDetectMult);
+            var killDetect = Math.min(0.95, calcDetect(0.40, town) * combinedDetectMult);
             var canHire = hasSkill('dark_connections') || hasSkill('assassin');
             var canKill = hasSkill('combat_trained') && (hasSkill('assassin') || hasSkill('shadow_dealings'));
             var hasWeap = !!pState.weapon;
-            // v9p33river223: cost scales with target rank
-            var aCostMult = (P._nobleTargetCostMult ? P._nobleTargetCostMult(personId) : 1.0);
-            var hireMin = Math.floor(1000 * aCostMult);
-            var hireMax = Math.floor(3000 * aCostMult);
+            // v9p33river224: hire cost is 10k–20k base × wealth × rank
+            var aCostMult = rankCostMult * wealthCostMult;
+            var hireMin = Math.floor(10000 * aCostMult);
+            var hireMax = Math.floor(20000 * aCostMult);
             var canHirePay = (pState.gold || 0) >= hireMin;
             var hireRange = hireMin.toLocaleString() + '–' + hireMax.toLocaleString() + 'g';
 
             return {
                 icon: '🗡️', title: 'Assassinate', color: '#cc4444',
-                desc: 'Eliminate this person. Choose your approach.' + (aCostMult > 1 ? ' Hire cost scales sharply for noble/royal targets.' : ''),
+                desc: 'Eliminate this person. Choose your approach. Hire cost scales with target wealth and standing.',
                 catchChance: Math.min(hireDetect, killDetect),
                 successEffect: 'Target dies. Properties may become available.',
                 caughtPenalty: 'Murder charge → exile + asset seizure + bounty.',
