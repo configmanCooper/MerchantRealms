@@ -3701,23 +3701,37 @@
         var town = Engine.findTown(player.townId);
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.30, town);
+        var _oda = _rollSchemeOutcome(detection, rng);
+        var caught = _oda.caught;
+        var successful = _oda.successful;
 
-        if (rng && rng.chance(detection)) {
-            // Caught as traitor — devastating
+        var payPerSeason = 0;
+        if (successful) {
+            payPerSeason = rng.randInt(200, 600);
+            player.doubleAgentActive = { enemyKingdomId: enemyKingdomId, startDay: Engine.getDay(), paymentPerSeason: payPerSeason, nextPayDay: Engine.getDay() + 90 };
+            grantXP(30, 'Became double agent');
+            Engine.logEvent(player.fullName + ' has begun selling military secrets.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var fine = applyCorruptPenalty(town, myKingdom, 5000, 50, 30, true, 'treason', { isNobleTarget: true });
             recordCorruptAction('double_agent', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'treason');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(40);
             player.militaryService.active = false;
-            return { success: false, caught: true, message: '🚨 TREASON DISCOVERED! Fined ' + fine + 'g, jailed 30 days, EXILED, dishonorably discharged!' };
+            caughtMsg = '🚨 TREASON DISCOVERED! Fined ' + fine + 'g, jailed 30d, EXILED, dishonorably discharged!';
+        } else {
+            recordCorruptAction('double_agent', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'treason');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         }
 
-        var payPerSeason = rng.randInt(200, 600);
-        player.doubleAgentActive = { enemyKingdomId: enemyKingdomId, startDay: Engine.getDay(), paymentPerSeason: payPerSeason, nextPayDay: Engine.getDay() + 90 };
-        recordCorruptAction('double_agent', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'treason');
-        grantXP(30, 'Became double agent');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
-        Engine.logEvent(player.fullName + ' has begun selling military secrets.');
-        return { success: true, message: '🕵️ Now operating as a double agent! Selling secrets to ' + enemyKingdom.name + ' for ' + payPerSeason + 'g per season.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🕵️ Now operating as a double agent! Selling secrets to ' + enemyKingdom.name + ' for ' + payPerSeason + 'g per season.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Made contact with the enemy but their handler turned you in! ' + caughtMsg,
+            failMsg: '❌ The enemy handler refused to deal — but no one suspects you.'
+        });
     }
 
     // ── (p8) Protection Racket ──
@@ -3734,22 +3748,37 @@
 
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.25, town);
+        var _opr = _rollSchemeOutcome(detection, rng);
+        var caught = _opr.caught;
+        var successful = _opr.successful;
 
-        if (rng && rng.chance(detection)) {
+        var weeklyPay = 0;
+        if (successful) {
+            weeklyPay = rng.randInt(20, 60 + Math.floor((town.population || 100) * 0.1));
+            player.protectionRackets[townId] = { paymentPerWeek: weeklyPay, lastCollectDay: Engine.getDay(), npcsIntimidated: rng.randInt(2, 6) };
+            grantXP(20, 'Started protection racket');
+            Engine.logEvent('Local merchants in ' + town.name + ' are being extorted for "protection" money.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             var fine = applyCorruptPenalty(town, kingdom, 500, 25, 10, false, 'blackmail');
             recordCorruptAction('protection_racket', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'blackmail');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
-            return { success: false, caught: true, message: '🚨 CAUGHT running protection racket! Fined ' + fine + 'g, jailed 10 days.' };
+            caughtMsg = '🚨 CAUGHT! Fined ' + fine + 'g, jailed 10d.';
+        } else {
+            recordCorruptAction('protection_racket', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'blackmail');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         }
 
-        var weeklyPay = rng.randInt(20, 60 + Math.floor((town.population || 100) * 0.1));
-        player.protectionRackets[townId] = { paymentPerWeek: weeklyPay, lastCollectDay: Engine.getDay(), npcsIntimidated: rng.randInt(2, 6) };
-        recordCorruptAction('protection_racket', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'blackmail');
-        grantXP(20, 'Started protection racket');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
-        Engine.logEvent('Local merchants in ' + town.name + ' are being extorted for "protection" money.');
-        return { success: true, message: '💪 Protection racket established in ' + town.name + '! Collecting ' + weeklyPay + 'g per week from ' + player.protectionRackets[townId].npcsIntimidated + ' merchants.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '💪 Protection racket established in ' + town.name + '! Collecting ' + weeklyPay + 'g/week.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Racket established but a victim went to the guards! ' + caughtMsg,
+            failMsg: '❌ The merchants refused to pay — but no one reported you.'
+        });
     }
 
     function layLow() {
