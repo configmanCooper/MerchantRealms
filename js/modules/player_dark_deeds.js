@@ -485,6 +485,10 @@
         }
 
         var chance = base * (1 - skillReduction) * locFactor;
+        // v9p33river229: ~30% global reduction so manhunts feel less inevitable.
+        // High-risk situations (in-kingdom, no skills) still bite hard, but
+        // ordinary day-to-day exposure is more forgiving.
+        chance *= 0.70;
         return Math.max(0.001, Math.min(0.99, chance));
     }
 
