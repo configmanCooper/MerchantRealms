@@ -77,6 +77,24 @@
         return candidates[rng.randInt(0, candidates.length - 1)];
     }
 
+    // v9p33river241: poison debug logging.
+    // Toggle via window._POISON_DEBUG = false to silence. Default ON.
+    function _dbgPoison(tag, person, extra) {
+        try {
+            if (typeof window !== 'undefined' && window._POISON_DEBUG === false) return;
+            if (!person) return;
+            var d = (world && typeof world.day === 'number') ? world.day : '?';
+            var who = person.firstName ? (person.firstName + (person.lastName ? ' ' + person.lastName : '')) : ('person#' + person.id);
+            if (person.isKing) who = '👑KING ' + who;
+            else if (person.isNoble) who = '🎗️NOBLE ' + who;
+            else if (person.isEliteMerchant) who = '💼EM ' + who;
+            var hp = (typeof person.health === 'number') ? person.health.toFixed(1) : '?';
+            var line = '[POISON|d' + d + '] ' + who + ' hp=' + hp + ' | ' + tag;
+            if (extra) console.log(line, extra);
+            else console.log(line);
+        } catch(_e) {}
+    }
+
     function infectNPC(person, illnessId, rng, day, source) {
         if (!person || !person.alive || person.sick) return false;
         if (_isImmuneToIllness(person.id, illnessId)) return false;
@@ -122,6 +140,9 @@
         person.asymptomatic = _isAsymptomatic(person.id, illnessId);
         person.illnessSource = source || 'random';
         person.illnessTreated = false;
+        if (illnessId === 'poisoned') {
+            _dbgPoison('INFECTED', person, { severity: _sev, source: source, day: day });
+        }
         return true;
     }
 
@@ -380,7 +401,20 @@
         person.illnessTreated = treated;
 
         // Apply health drain
+        var _hpBefore = person.health;
         person.health = Math.max(0, person.health - healthDrain);
+        if (_isPoison) {
+            _dbgPoison('TICK drain', person, {
+                hpBefore: _hpBefore.toFixed(1),
+                hpAfter: person.health.toFixed(1),
+                drain: healthDrain.toFixed(2),
+                treated: treated,
+                hasHospital: hasHospital,
+                hasClinic: hasClinic,
+                daysSick: daysSick,
+                tickScale: tickScale
+            });
+        }
 
         // Recovery check — milder cases recover faster
         var recoveryDays = illDef.daysToRecover || 14;
@@ -392,6 +426,7 @@
         else if (_pSev === 'moderate') recovChance *= 1.6;
         recovChance *= _ageRecovMult;
         if (daysSick >= recoveryDays && rng.chance(recovChance)) {
+            if (_isPoison) _dbgPoison('RECOVERED (illness recoveryChance roll)', person, { recoveryDays: recoveryDays, recovChance: recovChance.toFixed(3), daysSick: daysSick });
             person.sick = false;
             person.illness = null;
             person.asymptomatic = false;
@@ -415,6 +450,7 @@
             else if (_pSev === 'moderate') { _natDay = Math.floor(_natDay * 0.7); _natChance *= 1.8; }
             _natChance *= _ageRecovMult;
             if (daysSick >= _natDay && rng.chance(_natChance)) {
+                if (_isPoison) _dbgPoison('RECOVERED (naturalRecovery roll)', person, { natDay: _natDay, natChance: _natChance.toFixed(3), daysSick: daysSick });
                 person.sick = false;
                 person.illness = null;
                 person.asymptomatic = false;
@@ -426,6 +462,7 @@
 
         // Death check
         if (person.health <= 0) {
+            if (_isPoison) _dbgPoison('💀 DIED of poison', person, { daysSick: daysSick, treated: treated });
             killPerson(person, 'illness');
             var _dTown = findTown(person.townId);
             var _dIllName = (illDef.name || person.illness || 'illness');
@@ -1466,6 +1503,7 @@
 
                         // Treatment complete — cure the NPC
                         if (person && person.alive) {
+                            var _wasPoisonCure = _cureIsIll && person.illness === 'poisoned';
                             if (_cureIsIll) {
                                 person.sick = false;
                                 person.illness = null;
@@ -1479,7 +1517,17 @@
                                 person.injurySeverity = null;
                             }
                             person._illnessTreatPaid = false;
+                            var _hpBeforeCure = person.health;
                             person.health = Math.min(100, (person.health || 50) + 20);
+                            if (_wasPoisonCure) {
+                                _dbgPoison('🏥 HOSPITAL CURE COMPLETE (+20hp bonus)', person, {
+                                    facility: bld.type,
+                                    townId: town.id,
+                                    hpBeforeCure: _hpBeforeCure,
+                                    hpAfterCure: person.health,
+                                    severity: _cureSev
+                                });
+                            }
                         }
                         bld._treatmentQueue.splice(qi, 1);
                         qi--; // adjust index after removal
@@ -1540,6 +1588,14 @@
                         // Pay fee
                         sick.gold -= fee;
                         sick._illnessTreatPaid = true;
+                        if (sick.illness === 'poisoned') {
+                            _dbgPoison('🏥 ADMITTED to ' + bld.type + ' (auto-admit)', sick, {
+                                townId: town.id,
+                                fee: fee,
+                                treatTicks: treatTicks,
+                                cureDay: (world && world.day != null) ? (world.day + treatTicks) : '?'
+                            });
+                        }
 
                         // Revenue split
                         var taxAmount = Math.floor(fee * healthcareTaxRate);
@@ -1692,6 +1748,14 @@
                     if (p && p.illness === 'poisoned') treatTicks *= 6;
                     // Clinics treat severe but take twice as long
                     if (fBld.type === 'clinic' && sev === 'severe') treatTicks = treatTicks * 2;
+                    if (p.illness === 'poisoned') {
+                        _dbgPoison('🏥 SOUGHT treatment at ' + fBld.type, p, {
+                            townId: town.id,
+                            fee: fee,
+                            treatTicks: treatTicks,
+                            cureDay: (world && world.day != null) ? (world.day + treatTicks) : '?'
+                        });
+                    }
 
                     // Revenue to building owner
                     var ownerKingdom = findKingdom(town.kingdomId);
