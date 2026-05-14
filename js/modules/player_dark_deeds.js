@@ -135,21 +135,63 @@
         return Math.max(0.02, Math.min(0.95, detection));
     }
 
-    // v9p33river209: small noble-target catch-rate bump. Returns a multiplier
-    // applied to the base detection chance when targeting a noble or king.
-    // Nobles have more eyes on them — guards investigate harder, witnesses
-    // are more credible. ~20% relative bump.
+    // v9p33river217: rank-scaled detection bump for noble targets. Schemes
+    // against high-rank targets are dramatically more likely to be detected
+    // because they have personal guards, courtly informants, and political
+    // allies who notice things ordinary citizens miss.
+    //   - Minor Noble (rank 4):    1.30x catch (was 1.20x)
+    //   - Lord (rank 5):           1.65x catch
+    //   - Royal Advisor (rank 6):  2.00x catch
+    //   - King:                    2.50x catch
+    //   - Generic .isNoble flag (no rank info): 1.30x
     function _nobleTargetMult(targetPersonId) {
         if (!targetPersonId) return 1.0;
         var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
         if (!t) return 1.0;
-        if (t.isKing || t.occupation === 'king') return 1.30;
-        if (t.isNoble || t.occupation === 'noble') return 1.20;
+        if (t.isKing || t.occupation === 'king') return 2.50;
+        // Look up max social rank across kingdoms for this NPC
+        var maxRank = 0;
+        if (t.socialRank) {
+            for (var _kk in t.socialRank) {
+                if ((t.socialRank[_kk] || 0) > maxRank) maxRank = t.socialRank[_kk];
+            }
+        }
+        if (maxRank >= 6) return 2.00;  // Royal Advisor
+        if (maxRank >= 5) return 1.65;  // Lord
+        if (maxRank >= 4) return 1.30;  // Minor Noble
+        if (t.isNoble || t.occupation === 'noble') return 1.30;
+        return 1.0;
+    }
+
+    // v9p33river217: rank-scaled success-rate PENALTY for noble targets.
+    // Multiplies the base success chance (independent of catch chance).
+    // Together with the higher catch chance, this means schemes against
+    // high-rank nobles are both harder to pull off AND harder to get away with.
+    //   - Minor Noble:   0.85x success
+    //   - Lord:          0.65x success
+    //   - Royal Advisor: 0.45x success
+    //   - King:          0.30x success
+    function _nobleSuccessMult(targetPersonId) {
+        if (!targetPersonId) return 1.0;
+        var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
+        if (!t) return 1.0;
+        if (t.isKing || t.occupation === 'king') return 0.30;
+        var maxRank = 0;
+        if (t.socialRank) {
+            for (var _kk2 in t.socialRank) {
+                if ((t.socialRank[_kk2] || 0) > maxRank) maxRank = t.socialRank[_kk2];
+            }
+        }
+        if (maxRank >= 6) return 0.45;
+        if (maxRank >= 5) return 0.65;
+        if (maxRank >= 4) return 0.85;
+        if (t.isNoble || t.occupation === 'noble') return 0.85;
         return 1.0;
     }
 
     // Public for the UI confirm dialog.
     Player._nobleTargetMult = _nobleTargetMult;
+    Player._nobleSuccessMult = _nobleSuccessMult;
     Player.calculateCorruptDetection = calculateCorruptDetection;
 
     // v9p33river212: roll catch and success chance INDEPENDENTLY.
@@ -157,10 +199,13 @@
     // scheme had before — schemes used to treat caught == failed, so success%
     // was implicitly 1-catch%). Now rolled separately so all 4 outcomes are
     // possible: success+caught, success+uncaught, fail+caught, fail+uncaught.
-    function _rollSchemeOutcome(detection, rng) {
+    // v9p33river217: optional successMult arg lets callers down-weight the
+    // success chance independently (used for noble-target schemes).
+    function _rollSchemeOutcome(detection, rng, successMult) {
         var rngObj = rng || Engine.getRng();
         var c = rngObj && rngObj.chance ? rngObj.chance(detection) : (Math.random() < detection);
-        var successChance = Math.max(0.05, Math.min(0.98, 1 - detection));
+        var sm = (typeof successMult === 'number') ? successMult : 1.0;
+        var successChance = Math.max(0.02, Math.min(0.98, (1 - detection) * sm));
         var s = rngObj && rngObj.chance ? rngObj.chance(successChance) : (Math.random() < successChance);
         return { caught: c, successful: s };
     }
@@ -678,7 +723,7 @@
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(0.25, town);
         // v9p33river212: independent rolls
-        var _o = _rollSchemeOutcome(detection, rng);
+        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(personId));
         var caught = _o.caught;
         var successful = _o.successful;
 
@@ -742,7 +787,7 @@
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(0.15, town);
-        var _o = _rollSchemeOutcome(detection, rng);
+        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetMerchantId));
         var caught = _o.caught;
         var successful = _o.successful;
 
@@ -953,9 +998,10 @@
         var baseDetect = (hour >= 20 || hour <= 5) ? 0.18 : 0.30;
         if (npc.isEliteMerchant) baseDetect += 0.15;
         if (npc.occupation === 'noble' || npc.occupation === 'king') baseDetect += 0.20;
-        var detection = calculateCorruptDetection(baseDetect, town);
+        var detection = Math.min(0.95, calculateCorruptDetection(baseDetect, town) * _nobleTargetMult(npcId));
         // v9p33river212: independent rolls for caught & success
-        var _o = _rollSchemeOutcome(detection, rng);
+        // v9p33river217: noble success penalty
+        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(npcId));
         var caught = _o.caught;
         var successful = _o.successful;
 
@@ -1507,7 +1553,7 @@
         player.gold -= 200;
         const rng = Engine.getRng();
         const detection = Math.min(0.95, calculateCorruptDetection(0.30, town) * _nobleTargetMult(targetMerchantId));
-        var _o2 = _rollSchemeOutcome(detection, rng);
+        var _o2 = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetMerchantId));
         var caught = _o2.caught;
         var successful = _o2.successful;
 
@@ -1617,7 +1663,7 @@
 
         player.gold -= cost;
         const detection = Math.min(0.95, calculateCorruptDetection(0.20, town) * _nobleTargetMult(targetId));
-        var _ho = _rollSchemeOutcome(detection, rng);
+        var _ho = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _ho.caught;
         var successful = _ho.successful;
 
@@ -1668,7 +1714,7 @@
         var cost = rng ? rng.randInt(1000, 3000) : 2000;
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to pay an agent to plant the poison.' };
         const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetId));
-        var _po = _rollSchemeOutcome(detection, rng);
+        var _po = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _po.caught;
         var successful = _po.successful;
         player.gold -= cost;
@@ -1738,7 +1784,7 @@
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
         var town = Engine.findTown(player.townId);
         var detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(targetId));
-        var _aho = _rollSchemeOutcome(detection, rng);
+        var _aho = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _aho.caught;
         var successful = _aho.successful;
         player.gold -= cost;
@@ -1792,7 +1838,7 @@
         var rng = Engine.getRng();
         var town = Engine.findTown(player.townId);
         var detection = Math.min(0.95, calculateCorruptDetection(0.40, town) * _nobleTargetMult(targetId));
-        var _dko = _rollSchemeOutcome(detection, rng);
+        var _dko = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _dko.caught;
         var successful = _dko.successful;
 
