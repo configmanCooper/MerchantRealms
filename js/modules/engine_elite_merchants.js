@@ -4122,7 +4122,7 @@
                         target.illnessSource = 'poisoned';
                         target.sick = true;
                     }
-                    if (target.health > 50) target.health = 50;
+                    if (target.health > 75) target.health = 75;
                 }
                 logEvent('☠️ ' + (target.firstName || '') + ' ' + (target.lastName || '') + ' has fallen mysteriously ill in ' + town.name + '...',
                     { type: 'em_scheme_poison_success', townId: town.id });

@@ -1863,12 +1863,12 @@
                 var lastIll = _ptarget2.illnesses[_ptarget2.illnesses.length - 1];
                 if (lastIll) {
                     lastIll.severity = 'severe'; lastIll.source = 'poisoned';
-                    if (_ptarget2.health > 50) _ptarget2.health = 50;
+                    if (_ptarget2.health > 75) _ptarget2.health = 75;
                 }
             } else {
                 _ptarget2.illness = 'poisoned'; _ptarget2.illnessSeverity = 'severe';
                 _ptarget2.illnessSource = 'poisoned'; _ptarget2.sick = true;
-                if (_ptarget2.health > 50) _ptarget2.health = 50;
+                if (_ptarget2.health > 75) _ptarget2.health = 75;
             }
             player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration: 30, illness: 'poisoned' });
             grantXP(20, 'Poisoned target');
