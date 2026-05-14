@@ -564,7 +564,10 @@ window.UI = (function () {
 
         // ── Additional actions from onclick conversion ──
         registerAction('ctxExec', function(_t, d) { if (d.cmd) { try { (new Function(d.cmd))(); } catch(e) { console.error('ctxExec:', e); } } });
-        registerAction('executeScheme', function(_t, d) { if (d.id) UI.executeScheme(d.id, JSON.parse((d.params || '{}').replace(/&amp;quot;/g, '"'))); });
+        // v9p33river209: data-params is an attribute, browser auto-decodes
+        // HTML entities (&quot; → "). So the writer just needs &quot; in source
+        // and the reader gets clean JSON in d.params with no decoding needed.
+        registerAction('executeScheme', function(_t, d) { if (d.id) UI.executeScheme(d.id, JSON.parse(d.params || '{}')); });
         registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
         registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
@@ -4562,71 +4565,254 @@ window.UI = (function () {
         }
     }
 
-    function stealFromPerson(personId) {
+    // v9p33river209: confirmation modal for per-NPC schemes. Shows context-
+    // aware catch chance (verbal label), cost/requirements, success effect,
+    // caught penalty, and confirms before executing.
+    function openSchemeConfirm(schemeId, personId) {
+        var person = Engine.findPerson ? Engine.findPerson(personId) : null;
+        if (!person) { toast('Person not found.', 'warning'); return; }
+
+        var town = Player.townId ? Engine.findTown(Player.townId) : null;
+        var nobleMult = (Player._nobleTargetMult ? Player._nobleTargetMult(personId) : 1.0);
+        var isNoble = nobleMult > 1.0;
+        var nobleTag = isNoble ? '<span style="color:#ffaa00;font-weight:bold;"> · NOBLE TARGET (+harder)</span>' : '';
+
+        // Build per-scheme spec
+        var spec = _buildSchemeSpec(schemeId, person, town, nobleMult);
+        if (!spec) { toast('Unknown scheme.', 'warning'); return; }
+
+        var label = (Player._manhuntCatchLabel ? Player._manhuntCatchLabel(spec.catchChance) : null);
+        var catchWord = label ? label.word : 'UNKNOWN';
+        var catchColor = label ? label.color : '#ddd';
+
+        var reqHtml = '';
+        if (spec.reqs && spec.reqs.length) {
+            reqHtml = '<div style="margin-top:10px;"><b style="color:#e0c58a;">Requirements:</b><ul style="margin:4px 0 0 18px;color:#cdb999;">';
+            for (var ri = 0; ri < spec.reqs.length; ri++) {
+                var rq = spec.reqs[ri];
+                reqHtml += '<li style="color:' + (rq.met ? '#a8d8a8' : '#ff8080') + ';">' +
+                    (rq.met ? '✓ ' : '✗ ') + rq.text + '</li>';
+            }
+            reqHtml += '</ul></div>';
+        }
+
+        var altHtml = '';
+        if (spec.alternatives && spec.alternatives.length) {
+            altHtml = '<div style="margin-top:14px;border-top:1px solid #555;padding-top:10px;">' +
+                '<b style="color:#ffd070;">Choose an approach:</b>';
+            for (var ai = 0; ai < spec.alternatives.length; ai++) {
+                var alt = spec.alternatives[ai];
+                var altLabel = (Player._manhuntCatchLabel ? Player._manhuntCatchLabel(alt.catchChance) : null);
+                var altWord = altLabel ? altLabel.word : '?';
+                var altColor = altLabel ? altLabel.color : '#ddd';
+                var disabled = alt.allReqsMet ? '' : 'disabled';
+                var disabledStyle = alt.allReqsMet ? '' : 'opacity:0.4;cursor:not-allowed;';
+                altHtml += '<div style="margin:8px 0;padding:8px;background:rgba(0,0,0,0.3);border-radius:4px;">' +
+                    '<div style="font-weight:bold;color:#ffd86a;">' + alt.title + '</div>' +
+                    '<div style="font-size:0.85rem;color:#cdb999;">' + alt.desc + '</div>' +
+                    '<div style="font-size:0.82rem;margin-top:4px;color:#aaa;">Catch risk: <span style="color:' + altColor + ';font-weight:bold;">' + altWord + '</span></div>' +
+                    (alt.notMetReason ? '<div style="font-size:0.78rem;color:#ff8080;margin-top:2px;">' + alt.notMetReason + '</div>' : '') +
+                    '<button class="btn-medieval" data-action="confirmSchemeRun" data-id="' + alt.runId + ':' + personId + '" ' + disabled + ' style="margin-top:6px;font-size:0.85rem;padding:6px 14px;background:rgba(170,40,40,0.6);' + disabledStyle + '">⚡ ' + alt.confirmLabel + '</button>' +
+                    '</div>';
+            }
+            altHtml += '</div>';
+        }
+
+        var html = '<div style="padding:14px;max-width:560px;color:#e0d6b8;">' +
+            '<h2 style="margin:0 0 6px;color:' + (spec.color || '#ff7777') + ';">' + spec.icon + ' ' + spec.title + '</h2>' +
+            '<div style="font-size:0.92rem;margin-bottom:8px;">' +
+                'Target: <b>' + ((person.firstName || '') + ' ' + (person.lastName || '')).trim() + '</b>' + nobleTag +
+            '</div>' +
+            '<div style="margin-bottom:8px;color:#cdb999;">' + spec.desc + '</div>' +
+            (spec.cost ? '<div style="color:#ffd070;">💰 Cost: <b>' + spec.cost + 'g</b></div>' : '') +
+            reqHtml +
+            (spec.alternatives && spec.alternatives.length ? '' :
+                '<div style="margin-top:10px;font-size:0.92rem;">Catch risk: <span style="color:' + catchColor + ';font-weight:bold;">' + catchWord + '</span></div>') +
+            '<div style="margin-top:8px;"><b style="color:#a8d8a8;">If successful:</b> ' + spec.successEffect + '</div>' +
+            '<div style="margin-top:6px;"><b style="color:#ff8080;">If caught:</b> ' + spec.caughtPenalty + '</div>' +
+            altHtml +
+            (spec.alternatives && spec.alternatives.length ? '' :
+                '<div style="margin-top:14px;text-align:center;">' +
+                '<button class="btn-medieval" data-action="confirmSchemeRun" data-id="' + spec.runId + ':' + personId + '"' +
+                    (spec.allReqsMet ? '' : ' disabled') +
+                    ' style="padding:8px 22px;background:rgba(170,40,40,0.6);font-size:0.95rem;' +
+                    (spec.allReqsMet ? '' : 'opacity:0.4;cursor:not-allowed;') + '">⚡ ' + (spec.confirmLabel || 'Confirm') + '</button>' +
+                '<button class="btn-medieval" data-action="closeModal" style="padding:8px 22px;margin-left:8px;font-size:0.95rem;">Cancel</button>' +
+                '</div>') +
+            '</div>';
+
+        if (UI.openModal) UI.openModal('🏴 ' + spec.title, html);
+        else if (UI.showModal) UI.showModal('🏴 ' + spec.title, html);
+    }
+
+    function _buildSchemeSpec(schemeId, person, town, nobleMult) {
+        var P = (typeof Player !== 'undefined') ? Player : null;
+        if (!P) return null;
+        var pState = P.state || {};
+        var hasSkill = function(s) { return P.hasSkill && P.hasSkill(s); };
+        var calcDetect = P.calculateCorruptDetection || function() { return 0.3; };
+
+        if (schemeId === 'steal') {
+            var w = Engine.getWorld ? Engine.getWorld() : null;
+            var hour = w ? (w.hour || 12) : 12;
+            var baseDetect = (hour >= 20 || hour <= 5) ? 0.18 : 0.30;
+            if (person.isEliteMerchant) baseDetect += 0.15;
+            if (person.occupation === 'noble' || person.occupation === 'king') baseDetect += 0.20;
+            var detect = Math.min(0.95, calcDetect(baseDetect, town));
+            var canSteal = hasSkill('discrete');
+            return {
+                icon: '💰', title: 'Steal from Person', color: '#ff8866',
+                desc: 'Pickpocket gold or items directly from this person.',
+                cost: 0, runId: 'steal',
+                confirmLabel: 'Steal', allReqsMet: canSteal,
+                reqs: [{ text: 'Discrete skill', met: canSteal }],
+                catchChance: detect,
+                successEffect: 'Gain a portion of their gold or a random inventory item. Relationship with target hidden, town learns of crime.',
+                caughtPenalty: 'Theft fine + 5d jail + town rep -5 + relationship -20. 30-day cooldown per target.'
+            };
+        }
+        if (schemeId === 'rumors') {
+            var rDetect = Math.min(0.95, calcDetect(0.15, town) * nobleMult);
+            var canR = hasSkill('silver_tongue_dark') || hasSkill('discrete');
+            var canPay = (pState.gold || 0) >= 50;
+            return {
+                icon: '🤫', title: 'Spread Rumors', color: '#e0c020',
+                desc: 'Pay gossips to ruin the target\'s reputation for 60 days.',
+                cost: 50, runId: 'rumors', confirmLabel: 'Spread Rumors',
+                allReqsMet: canR && canPay,
+                reqs: [
+                    { text: 'Silver Tongue (Dark) OR Discrete', met: canR },
+                    { text: '50g', met: canPay }
+                ],
+                catchChance: rDetect,
+                successEffect: 'Target reputation damaged for 60 days. They lose business.',
+                caughtPenalty: 'Forgery fine + 10 town rep loss. Relationship with target → 0.'
+            };
+        }
+        if (schemeId === 'blackmail') {
+            var bDetect = Math.min(0.95, calcDetect(0.25, town) * nobleMult);
+            var canB = hasSkill('shadow_dealings') || hasSkill('silver_tongue_dark');
+            var alreadyB = !!(pState.blackmailTargets && pState.blackmailTargets[person.id]);
+            return {
+                icon: '📜', title: 'Blackmail', color: '#aa66cc',
+                desc: 'Extort gold from the target every season using their secrets.',
+                cost: 0, runId: 'blackmail', confirmLabel: 'Blackmail',
+                allReqsMet: canB && !alreadyB,
+                reqs: [
+                    { text: 'Shadow Dealings OR Silver Tongue (Dark)', met: canB },
+                    { text: 'Not already blackmailing this person', met: !alreadyB }
+                ],
+                catchChance: bDetect,
+                successEffect: 'Target pays 50–200g per season. Continues until they die or escape.',
+                caughtPenalty: 'Blackmail fine + 20 town rep loss. Relationship → 0. Target may retaliate.'
+            };
+        }
+        if (schemeId === 'frame') {
+            var fDetect = Math.min(0.95, calcDetect(0.30, town) * nobleMult);
+            var canF = hasSkill('shadow_dealings') || hasSkill('master_forger');
+            var canPayF = (pState.gold || 0) >= 200;
+            return {
+                icon: '🎭', title: 'Frame for Crime', color: '#ff7777',
+                desc: 'Plant evidence so the target is charged with a crime they didn\'t commit.',
+                cost: 200, runId: 'frame', confirmLabel: 'Plant Evidence',
+                allReqsMet: canF && canPayF,
+                reqs: [
+                    { text: 'Shadow Dealings OR Master Forger', met: canF },
+                    { text: '200g', met: canPayF }
+                ],
+                catchChance: fDetect,
+                successEffect: 'Target arrested + reputation hit. Their assets may be seized.',
+                caughtPenalty: '500g forgery fine + 10d jail + town rep -25.'
+            };
+        }
+        if (schemeId === 'poison') {
+            var poDetect = Math.min(0.95, calcDetect(0.15, town) * nobleMult);
+            var canP = hasSkill('poisoner');
+            var hasVial = (pState.inventory && (pState.inventory.poison || 0) >= 1);
+            var canPayP = (pState.gold || 0) >= 1000;
+            return {
+                icon: '☠️', title: 'Poison Target', color: '#88aa44',
+                desc: 'Pay an agent (1,000–3,000g) to plant your poison vial in the target\'s food or drink.',
+                cost: '1,000–3,000', runId: 'poison', confirmLabel: 'Plant Poison',
+                allReqsMet: canP && hasVial && canPayP,
+                reqs: [
+                    { text: 'Poisoner skill', met: canP },
+                    { text: '1× poison vial in inventory', met: hasVial },
+                    { text: '1,000g (minimum)', met: canPayP }
+                ],
+                catchChance: poDetect,
+                successEffect: 'Target sickened with severe food poisoning. Survivable if they get treatment quickly; fatal otherwise.',
+                caughtPenalty: '500g + 1k–3k lost + 10d jail + 25 town rep + huge notoriety + noble notoriety.'
+            };
+        }
+        if (schemeId === 'assassin') {
+            // Two alternatives: hire (1000-3000g, 0.20 base detect) vs direct kill (0g, 0.40 base detect, requires weapon + combat_trained + assassin/shadow_dealings)
+            var hireDetect = Math.min(0.95, calcDetect(0.20, town) * nobleMult);
+            var killDetect = Math.min(0.95, calcDetect(0.40, town) * nobleMult);
+            var canHire = hasSkill('dark_connections') || hasSkill('assassin');
+            var canHirePay = (pState.gold || 0) >= 1000;
+            var canKill = hasSkill('combat_trained') && (hasSkill('assassin') || hasSkill('shadow_dealings'));
+            var hasWeap = !!pState.weapon;
+
+            return {
+                icon: '🗡️', title: 'Assassinate', color: '#cc4444',
+                desc: 'Eliminate this person. Choose your approach.',
+                catchChance: Math.min(hireDetect, killDetect),
+                successEffect: 'Target dies. Properties may become available.',
+                caughtPenalty: 'Murder charge → exile + asset seizure + bounty.',
+                alternatives: [
+                    {
+                        runId: 'assassin_hire', title: '👤 Hire an Assassin',
+                        desc: 'Pay an underworld contact 1,000–3,000g to do the job from the shadows.',
+                        catchChance: hireDetect,
+                        allReqsMet: canHire && canHirePay,
+                        notMetReason: !canHire ? 'Need Dark Connections OR Assassin skill' : (!canHirePay ? 'Need 1,000g minimum' : ''),
+                        confirmLabel: 'Hire Assassin'
+                    },
+                    {
+                        runId: 'assassin_direct', title: '🗡️ Do It Yourself',
+                        desc: 'Murder the target with your equipped weapon. No gold cost — but much higher chance of getting caught red-handed.',
+                        catchChance: killDetect,
+                        allReqsMet: canKill && hasWeap,
+                        notMetReason: !canKill ? 'Need Combat Trained + (Assassin OR Shadow Dealings)' : (!hasWeap ? 'No equipped weapon' : ''),
+                        confirmLabel: 'Do It Yourself'
+                    }
+                ]
+            };
+        }
+        return null;
+    }
+
+    function confirmSchemeRun(runIdAndPerson) {
+        var parts = (runIdAndPerson || '').split(':');
+        if (parts.length < 2) return;
+        var runId = parts[0];
+        var personId = parts.slice(1).join(':');
+        if (UI.closeModal) UI.closeModal();
         if (typeof Player === 'undefined') return;
-        if (Player.stealFromNpc) {
-            const result = Player.stealFromNpc(personId);
-            toast((result && result.message) || 'Theft attempted.', result && result.success ? 'success' : 'warning');
-            try { const p = Engine.getPerson(personId); if (p) UI.showPersonDetail(p); } catch(e) {}
-        } else {
-            toast('Stealing is not available yet.', 'warning');
+        var result = null;
+        switch (runId) {
+            case 'steal': result = Player.stealFromNpc && Player.stealFromNpc(personId); break;
+            case 'rumors': result = Player.spreadRumors && Player.spreadRumors(personId); break;
+            case 'blackmail': result = Player.blackmailNPC && Player.blackmailNPC(personId); break;
+            case 'frame': result = Player.frameCompetitor && Player.frameCompetitor(personId); break;
+            case 'poison': result = Player.poisonTarget && Player.poisonTarget(personId); break;
+            case 'assassin_hire': result = Player.hireAssassin && Player.hireAssassin(personId, 'competitor'); break;
+            case 'assassin_direct': result = Player.directKillNpc && Player.directKillNpc(personId); break;
+        }
+        if (result) {
+            var tone = result.success ? 'success' : (result.caught ? 'danger' : 'warning');
+            toast(result.message || 'Action attempted.', tone);
+            try { var p = Engine.getPerson ? Engine.getPerson(personId) : (Engine.findPerson ? Engine.findPerson(personId) : null); if (p) UI.showPersonDetail(p); } catch(_e) {}
         }
     }
 
-    function spreadRumorsAbout(personId) {
-        if (typeof Player === 'undefined') return;
-        if (Player.spreadRumors) {
-            const result = Player.spreadRumors(personId);
-            toast((result && result.message) || 'Rumors spread.', result && result.success ? 'success' : 'warning');
-            try { const p = Engine.getPerson(personId); if (p) UI.showPersonDetail(p); } catch(e) {}
-        } else {
-            toast('Spreading rumors is not available yet.', 'warning');
-        }
-    }
-
-    function blackmailPerson(personId) {
-        if (typeof Player === 'undefined') return;
-        if (Player.blackmailNPC) {
-            const result = Player.blackmailNPC(personId);
-            toast((result && result.message) || 'Blackmail attempted.', result && result.success ? 'success' : 'warning');
-            try { const p = Engine.getPerson(personId); if (p) UI.showPersonDetail(p); } catch(e) {}
-        } else {
-            toast('Blackmail is not available yet.', 'warning');
-        }
-    }
-
-    function hireAssassinFor(personId) {
-        if (typeof Player === 'undefined') return;
-        if (Player.hireAssassin) {
-            const result = Player.hireAssassin(personId);
-            toast((result && result.message) || 'Assassin hired.', result && result.success ? 'success' : 'warning', 'my_business');
-            try { const p = Engine.getPerson(personId); if (p) UI.showPersonDetail(p); } catch(e) {}
-        } else {
-            toast('Assassination is not available yet.', 'warning');
-        }
-    }
-
-    function poisonPerson(personId) {
-        if (typeof Player === 'undefined') return;
-        if (Player.poisonTarget) {
-            const result = Player.poisonTarget(personId);
-            toast((result && result.message) || 'Poison administered.', result && result.success ? 'success' : 'warning');
-            try { const p = Engine.getPerson(personId); if (p) UI.showPersonDetail(p); } catch(e) {}
-        } else {
-            toast('Poison is not available yet.', 'warning');
-        }
-    }
-
-    function framePerson(personId) {
-        if (typeof Player === 'undefined') return;
-        if (Player.frameCompetitor) {
-            const result = Player.frameCompetitor(personId);
-            toast((result && result.message) || 'Framing attempted.', result && result.success ? 'success' : 'warning');
-            try { const p = Engine.getPerson(personId); if (p) UI.showPersonDetail(p); } catch(e) {}
-        } else {
-            toast('Framing is not available yet.', 'warning');
-        }
-    }
+    function stealFromPerson(personId) { openSchemeConfirm('steal', personId); }
+    function spreadRumorsAbout(personId) { openSchemeConfirm('rumors', personId); }
+    function blackmailPerson(personId) { openSchemeConfirm('blackmail', personId); }
+    function hireAssassinFor(personId) { openSchemeConfirm('assassin', personId); }
+    function poisonPerson(personId) { openSchemeConfirm('poison', personId); }
+    function framePerson(personId) { openSchemeConfirm('frame', personId); }
 
     function showTownPeople(townId) {
         let people;
@@ -14098,7 +14284,7 @@ window.UI = (function () {
                         html += buildNobleIntrigueUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
-                            + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&amp;quot;')}">⚡ Execute</button>`;
+                            + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&quot;')}">⚡ Execute</button>`;
                     }
                 }
                 html += '</div>';
@@ -17536,6 +17722,8 @@ window.UI = (function () {
         hireAssassinFor,
         poisonPerson,
         framePerson,
+        openSchemeConfirm,
+        confirmSchemeRun,
         showTownPeople,
         openFriendsPanel,
         filterTownPeople,

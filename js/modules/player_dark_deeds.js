@@ -133,6 +133,23 @@
         return Math.max(0.02, Math.min(0.95, detection));
     }
 
+    // v9p33river209: small noble-target catch-rate bump. Returns a multiplier
+    // applied to the base detection chance when targeting a noble or king.
+    // Nobles have more eyes on them — guards investigate harder, witnesses
+    // are more credible. ~20% relative bump.
+    function _nobleTargetMult(targetPersonId) {
+        if (!targetPersonId) return 1.0;
+        var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
+        if (!t) return 1.0;
+        if (t.isKing || t.occupation === 'king') return 1.30;
+        if (t.isNoble || t.occupation === 'noble') return 1.20;
+        return 1.0;
+    }
+
+    // Public for the UI confirm dialog.
+    Player._nobleTargetMult = _nobleTargetMult;
+    Player.calculateCorruptDetection = calculateCorruptDetection;
+
     function isInTown(townId) {
         _sync();
         return !player.traveling && player.townId === townId;
@@ -1316,7 +1333,7 @@
 
         const town = Engine.findTown(person.townId || player.townId);
         const rng = Engine.getRng();
-        const detection = calculateCorruptDetection(0.25, town);
+        const detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(personId));
         const caught = rng && rng.chance(detection);
 
         if (caught) {
@@ -1356,7 +1373,7 @@
         player.gold -= 50;
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
-        const detection = calculateCorruptDetection(0.15, town);
+        const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetMerchantId));
         const caught = rng && rng.chance(detection);
 
         if (caught) {
@@ -1395,7 +1412,7 @@
 
         player.gold -= 200;
         const rng = Engine.getRng();
-        const detection = calculateCorruptDetection(0.30, town);
+        const detection = Math.min(0.95, calculateCorruptDetection(0.30, town) * _nobleTargetMult(targetMerchantId));
         const caught = rng && rng.chance(detection);
 
         if (caught) {
@@ -1492,7 +1509,7 @@
         if (player.gold < cost) return { success: false, message: `Need ${cost}g to hire assassin.` };
 
         player.gold -= cost;
-        const detection = calculateCorruptDetection(0.20, town);
+        const detection = Math.min(0.95, calculateCorruptDetection(0.20, town) * _nobleTargetMult(targetId));
         const caught = rng && rng.chance(detection);
 
         if (caught) {
@@ -1530,13 +1547,18 @@
         _sync();
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!hasSkill('poisoner')) return { success: false, message: 'Requires Poisoner skill.' };
+        // v9p33river209: poison must be a real item in inventory
+        if ((player.inventory.poison || 0) < 1) return { success: false, message: 'You need a vial of poison in your inventory.' };
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
         var cost = rng ? rng.randInt(1000, 3000) : 2000;
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to pay an agent to plant the poison.' };
-        const detection = calculateCorruptDetection(0.15, town);
+        const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetId));
         const caught = rng && rng.chance(detection);
         player.gold -= cost;
+        // Consume the poison vial
+        player.inventory.poison = Math.max(0, (player.inventory.poison || 0) - 1);
+        if ((player.inventory.poison || 0) === 0) delete player.inventory.poison;
 
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
@@ -1644,7 +1666,7 @@
 
         var rng = Engine.getRng();
         var town = Engine.findTown(player.townId);
-        var detection = calculateCorruptDetection(0.40, town);
+        var detection = Math.min(0.95, calculateCorruptDetection(0.40, town) * _nobleTargetMult(targetId));
         var caught = rng && rng.chance(detection);
 
         if (caught) {

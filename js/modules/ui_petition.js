@@ -2421,7 +2421,7 @@
         if (!banner) {
             banner = document.createElement('div');
             banner.id = 'manhuntBanner';
-            banner.style.cssText = 'position:fixed;bottom:80px;right:14px;z-index:480;background:linear-gradient(135deg,#2a0a0a,#3a1818);border:2px solid #c44e52;border-radius:8px;padding:8px 12px;color:#f4e6c8;font-family:inherit;box-shadow:0 -2px 12px rgba(196,78,82,0.45);max-width:320px;font-size:0.78rem;';
+            banner.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:480;background:linear-gradient(135deg,#2a0a0a,#3a1818);border:2px solid #c44e52;border-radius:8px;padding:8px 12px;color:#f4e6c8;font-family:inherit;box-shadow:0 -2px 12px rgba(196,78,82,0.45);max-width:320px;font-size:0.78rem;';
             var bottomBar = document.getElementById('bottomBar');
             if (bottomBar) bottomBar.parentNode.insertBefore(banner, bottomBar);
             else document.body.appendChild(banner);

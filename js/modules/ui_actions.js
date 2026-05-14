@@ -4696,6 +4696,8 @@ function clickTown(townId) {
     UI.registerAction('hireAssassinFor', function(_t, d) { UI.hireAssassinFor(d.id); });
     UI.registerAction('poisonPerson', function(_t, d) { UI.poisonPerson(d.id); });
     UI.registerAction('framePerson', function(_t, d) { UI.framePerson(d.id); });
+    // v9p33river209: confirmSchemeRun takes 'runId:personId' as data-id
+    UI.registerAction('confirmSchemeRun', function(_t, d) { if (UI.confirmSchemeRun) UI.confirmSchemeRun(d.id); });
     UI.registerAction('godRelPlus', function(_t, d) {
         var p = Engine.findPerson(d.id);
         if (!p || !Player.state) return;
