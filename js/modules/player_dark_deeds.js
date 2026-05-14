@@ -1819,13 +1819,42 @@
         }
 
         // Process poison targets
+        // v9p33river210: now that poisonTarget routes through Engine.infectNPC
+        // and the real illness system decides life/death, this ticker just
+        // tracks kill-count for achievements when the target actually dies.
+        // Old behavior fired a misleading "succumbed" event after a fixed
+        // duration regardless of NPC state.
         for (let i = player.poisonTargets.length - 1; i >= 0; i--) {
             const pt = player.poisonTargets[i];
-            if (day >= pt.startDay + pt.duration) {
+            const target = Engine.findPerson ? Engine.findPerson(pt.targetId) : null;
+            // Target died — credit the poisoner
+            if (target && !target.alive) {
                 player.poisonKills = (player.poisonKills || 0) + 1;
                 if (player.poisonKills >= 3) unlockAchievement('poisoner_ach');
                 player.poisonTargets.splice(i, 1);
-                Engine.logEvent('A poisoned individual has succumbed to their illness.');
+                Engine.logEvent('☠️ ' + ((target.firstName || '') + ' ' + (target.lastName || '')).trim() + ' has succumbed to the poison you arranged.', null, 'my_actions');
+                continue;
+            }
+            // Target recovered — illness gone after the cooldown
+            if (target && target.alive && day >= pt.startDay + pt.duration) {
+                var stillSick = false;
+                if (target.illnesses) {
+                    for (var _ii = 0; _ii < target.illnesses.length; _ii++) {
+                        var _ill = target.illnesses[_ii];
+                        if (_ill && (_ill.source === 'poisoned' || (_ill.source && _ill.source.indexOf('poisoned') >= 0))) {
+                            stillSick = true; break;
+                        }
+                    }
+                }
+                if (!stillSick) {
+                    player.poisonTargets.splice(i, 1);
+                    Engine.logEvent('A poisoning target appears to have recovered.', null, 'my_actions');
+                }
+                continue;
+            }
+            // Target gone (despawned) — drop entry quietly
+            if (!target && day >= pt.startDay + pt.duration) {
+                player.poisonTargets.splice(i, 1);
             }
         }
 
