@@ -429,6 +429,13 @@
 
         var rank = player.socialRank[kId] || 0;
 
+        // v9p33river206: King has TOTAL crime immunity in their own kingdom.
+        // Kings cannot be accused, jailed, fined, or exiled in the kingdom
+        // they rule. The trial system also skips them entirely.
+        if (player.isKing && player.kingState && player.kingState.kingdomId === kId) {
+            return { immune: true, scope: 'king', repPenalty: 0 };
+        }
+
         // Royal Advisor (rank 6): immune throughout entire kingdom
         if (rank >= 6) {
             return { immune: true, scope: 'kingdom', repPenalty: 2 };
@@ -453,7 +460,9 @@
             // Immune: no fine, no jail, no exile — but still lose reputation
             var immuneRepLoss = Math.max(immunity.repPenalty, repLoss > 0 ? Math.min(repLoss, 5) : immunity.repPenalty);
             if (kId) player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - immuneRepLoss);
-            var scopeLabel = immunity.scope === 'kingdom' ? 'Royal Advisor' : 'Lord of this town';
+            var scopeLabel = immunity.scope === 'king' ? 'King of this kingdom'
+                : immunity.scope === 'kingdom' ? 'Royal Advisor'
+                : 'Lord of this town';
             Engine.logEvent('🔓 ' + player.fullName + ' committed a crime but is immune as ' + scopeLabel + '. (-' + immuneRepLoss + ' reputation)');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔓 Crime immunity! (-' + immuneRepLoss + ' rep)', 'info');
             // Still track criminal record for RP purposes
@@ -500,8 +509,11 @@
         var _fromTrial = (_opts205 && typeof _opts205 === 'object' && _opts205.fromTrial) ? true : false;
         if (kId && !_fromTrial) {
             var _isNobleHere = (player.socialRank && (player.socialRank[kId] || 0) >= 4);
+            // v9p33river206: King of this kingdom can never be put on trial
+            // (also caught by checkCrimeImmunity above, but extra-safe here).
+            var _isKingHere = !!(player.isKing && player.kingState && player.kingState.kingdomId === kId);
             var _facingDeath = exile || jailDays >= 180;
-            if (_isNobleHere && _facingDeath && Engine.scheduleNobleTrial) {
+            if (!_isKingHere && _isNobleHere && _facingDeath && Engine.scheduleNobleTrial) {
                 var _kForTrial = Engine.findKingdom ? Engine.findKingdom(kId) : null;
                 if (_kForTrial && Engine.hasSpecialLaw && Engine.hasSpecialLaw(_kForTrial, 'noble_council')) {
                     var _trial = Engine.scheduleNobleTrial({
