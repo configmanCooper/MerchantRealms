@@ -1527,6 +1527,8 @@
                         if (!_checkSuppliesAvailable(bld, town, sev, _admitIsIllness)) continue;
 
                         var treatTicks = (NPC_HEALTH_CONFIG.TREATMENT_TICKS && NPC_HEALTH_CONFIG.TREATMENT_TICKS[sev]) || 25;
+                        // v9p33river237: poison resists standard treatment (real-world poisoning takes weeks)
+                        if (sick && sick.illness === 'poisoned') treatTicks *= 6;
                         // Clinics treat severe but take twice as long
                         if (bld.type === 'clinic' && sev === 'severe') treatTicks = treatTicks * 2;
 
@@ -1681,6 +1683,8 @@
                     p._illnessTreatPaid = true;
                     var bt = findBuildingType(fBld.type);
                     var treatTicks = (NPC_HEALTH_CONFIG.TREATMENT_TICKS && NPC_HEALTH_CONFIG.TREATMENT_TICKS[sev]) || 25;
+                    // v9p33river237: poison resists standard treatment (real-world poisoning takes weeks)
+                    if (p && p.illness === 'poisoned') treatTicks *= 6;
                     // Clinics treat severe but take twice as long
                     if (fBld.type === 'clinic' && sev === 'severe') treatTicks = treatTicks * 2;
 
