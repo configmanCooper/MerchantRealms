@@ -1571,6 +1571,18 @@ function showPersonDetail(person) {
                 </div>
             </div>`;
         }
+        // v9p33river238: also show Health (separate from needs but rendered the same)
+        if (typeof person.health === 'number') {
+            const _hp = Math.max(0, Math.min(100, person.health));
+            const _hpColor = _hp > 60 ? '#55a868' : _hp > 30 ? '#ccb974' : '#c44e52';
+            const _illTag = person.sick && person.illness ? ' <span style="font-size:0.72rem;color:#c44e52;">(' + (person.illness === 'poisoned' ? '☠️ Poisoned' : person.illness) + ')</span>' : '';
+            html += `<div class="needs-bar-container">
+                <span class="needs-bar-label">Health${_illTag}</span>
+                <div class="needs-bar-track">
+                    <div class="needs-bar-fill" style="width:${_hp}%;background:${_hpColor}"></div>
+                </div>
+            </div>`;
+        }
         html += `</div>`;
     }
 
