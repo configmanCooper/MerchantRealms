@@ -18737,6 +18737,7 @@
             criminalRecord: { ...(player.criminalRecord || {}) },
             activeManhunts: { ...(player.activeManhunts || {}) },
             exiledFromKingdoms: { ...(player.exiledFromKingdoms || {}) },
+            _activeTrial: player._activeTrial ? { ...player._activeTrial } : null,
             resolvedWarConflicts: structuredClone(player.resolvedWarConflicts || {}),
             pendingWarChoice: player.pendingWarChoice ? structuredClone(player.pendingWarChoice) : null,
             roadsBuilt: player.roadsBuilt || 0,
@@ -19199,6 +19200,7 @@
         player.criminalRecord = data.criminalRecord || {};
         player.activeManhunts = data.activeManhunts || {};
         player.exiledFromKingdoms = data.exiledFromKingdoms || {};
+        player._activeTrial = data._activeTrial || null;
         player.resolvedWarConflicts = data.resolvedWarConflicts || {};
         player.pendingWarChoice = data.pendingWarChoice || null;
         player.roadsBuilt = data.roadsBuilt || 0;

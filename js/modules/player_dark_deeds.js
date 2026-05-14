@@ -126,6 +126,10 @@
         if (player.alibi && Engine.getDay() <= player.alibi.expiresDay) {
             detection *= 0.8;
         }
+        // v9p33river205: global ~15% reduction across the board so every
+        // crime path feels slightly more forgiving (post-detection manhunt
+        // already ramps risk over time).
+        detection *= 0.85;
         return Math.max(0.02, Math.min(0.95, detection));
     }
 
@@ -329,15 +333,27 @@
         return Math.max(0.001, Math.min(0.99, chance));
     }
 
+    // v9p33river205: convert a per-day catch chance to a verbal descriptor for
+    // UI surfaces (no exact percentages). Used by the manhunt banner.
+    function _manhuntCatchLabel(chance) {
+        if (chance >= 0.70) return { word: 'CERTAIN', color: '#ff3030' };
+        if (chance >= 0.45) return { word: 'VERY HIGH', color: '#ff6644' };
+        if (chance >= 0.25) return { word: 'HIGH', color: '#ff8c2a' };
+        if (chance >= 0.12) return { word: 'MODERATE', color: '#e0c020' };
+        if (chance >= 0.05) return { word: 'LOW', color: '#7fc24c' };
+        if (chance >= 0.015) return { word: 'VERY LOW', color: '#3aa869' };
+        return { word: 'NEGLIGIBLE', color: '#8db4d8' };
+    }
+
     // Called once daily from Player.tick(). Rolls catch for each open manhunt,
     // expires manhunts that have run their duration.
     function tickManhunts() {
         _sync();
         if (!player.activeManhunts) { player.activeManhunts = {}; return; }
         var day = Engine.getDay ? Engine.getDay() : 0;
-        // Already jailed → no rolls today.
-        var inJail = (player.jailedUntilDay || 0) > day;
         var rng = Engine.getRng();
+        var inJail = (player.jailedUntilDay || 0) > day;
+        var currentTown = player.townId ? Engine.findTown(player.townId) : null;
         var kIds = Object.keys(player.activeManhunts);
         for (var i = 0; i < kIds.length; i++) {
             var kId = kIds[i];
@@ -351,36 +367,50 @@
                 delete player.activeManhunts[kId];
                 continue;
             }
-            if (inJail) continue;
+            // v9p33river205: if already imprisoned in the hunting kingdom,
+            // they have you behind bars — instant catch (extradition isn't
+            // needed). Trial deferral still applies for nobles.
+            if (inJail && currentTown && currentTown.kingdomId === kId) {
+                _manhuntCatch(kId, hunt, currentTown, true);
+                continue;
+            }
+            if (inJail) continue; // jailed elsewhere, manhunt waits
             var chance = _calcManhuntCatchChance(kId);
             if (!rng || !rng.chance(chance)) continue;
-            // CAUGHT — apply penalty per the hunting kingdom's law.
-            var huntKingdom = Engine.findKingdom ? Engine.findKingdom(kId) : null;
-            // For UX we just apply the penalty without forced teleport. The
-            // log makes the extradition fiction clear; jailedUntilDay locks
-            // movement until the sentence ends anyway.
-            var townForPenalty = Engine.findTown(player.townId);
-            if (!townForPenalty && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
-                townForPenalty = Engine.findTown(huntKingdom.towns[0]);
-            }
-            // Heavier punishment than fresh-catch: jail +50%, fine ×1.2, +30 notoriety.
-            var fine = 0;
-            var jailDays = 0;
-            var exile = false;
-            var repLoss = 25;
-            if (hunt.severity === 'severe') { exile = true; repLoss = 50; }
-            applyCorruptPenalty(townForPenalty, huntKingdom, fine, repLoss, jailDays, exile, hunt.crimeId, { isManhunt: true });
-            // Manhunt scales: extend jail by 50%.
-            if (player.jailedUntilDay && player.jailedUntilDay > day) {
-                var extra = Math.floor((player.jailedUntilDay - day) * 0.5);
-                player.jailedUntilDay += extra;
-            }
-            player.notoriety = (player.notoriety || 0) + 30;
-            Engine.logEvent('⛓️ Caught by ' + (huntKingdom ? huntKingdom.name : 'the kingdom') + '\'s manhunt for ' + hunt.crimeId + '! Penalty applied.', null, 'my_actions');
-            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⛓️ MANHUNT CAUGHT! ' + (huntKingdom ? huntKingdom.name : 'kingdom') + ' / ' + hunt.crimeId, 'error', 'critical');
-            // Manhunt cleared once they've caught you.
-            delete player.activeManhunts[kId];
+            _manhuntCatch(kId, hunt, currentTown, false);
         }
+    }
+
+    // v9p33river205: shared catch-resolution body so jail-autocatch + daily
+    // roll both go through the same penalty pipeline.
+    function _manhuntCatch(kId, hunt, currentTown, viaJail) {
+        var huntKingdom = Engine.findKingdom ? Engine.findKingdom(kId) : null;
+        var townForPenalty = currentTown;
+        if (!townForPenalty && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
+            townForPenalty = Engine.findTown(huntKingdom.towns[0]);
+        }
+        var fine = 0;
+        var jailDays = 0;
+        var exile = false;
+        var repLoss = 25;
+        if (hunt.severity === 'severe') { exile = true; repLoss = 50; }
+        applyCorruptPenalty(townForPenalty, huntKingdom, fine, repLoss, jailDays, exile, hunt.crimeId, { isManhunt: true });
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (player.jailedUntilDay && player.jailedUntilDay > day) {
+            var extra = Math.floor((player.jailedUntilDay - day) * 0.5);
+            player.jailedUntilDay += extra;
+        }
+        player.notoriety = (player.notoriety || 0) + 30;
+        var howCaught = viaJail ? '⛓️ The guards already had you behind bars when '
+            : '⛓️ Caught by ';
+        var msg = howCaught + (huntKingdom ? huntKingdom.name : 'the kingdom') +
+            (viaJail ? '\'s warrant arrived for ' : '\'s manhunt for ') +
+            hunt.crimeId + '! Penalty applied.';
+        Engine.logEvent(msg, null, 'my_actions');
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast('⛓️ MANHUNT CAUGHT! ' + (huntKingdom ? huntKingdom.name : 'kingdom') + ' / ' + hunt.crimeId, 'error', 'critical');
+        }
+        delete player.activeManhunts[kId];
     }
 
 
@@ -458,6 +488,55 @@
             if (!player.criminalRecord[kId]) player.criminalRecord[kId] = {};
             player.criminalRecord[kId][crimeId] = (player.criminalRecord[kId][crimeId] || 0) + 1;
         }
+
+        // v9p33river205: NOBLE COUNCIL TRIAL DEFERRAL
+        // If the player is a noble (rank >= 4) in a kingdom with the
+        // noble_council law and faces exile or de-facto execution (jail >= 180d),
+        // defer the punishment to a trial. The trial vote (yes=acquit, no=guilty)
+        // resolves over 10-20 days. If the verdict is GUILTY, the trial system
+        // calls back into applyCorruptPenalty with opts.fromTrial=true to actually
+        // enact the sentence (avoids infinite recursion).
+        var _opts205 = arguments[7] || null;
+        var _fromTrial = (_opts205 && typeof _opts205 === 'object' && _opts205.fromTrial) ? true : false;
+        if (kId && !_fromTrial) {
+            var _isNobleHere = (player.socialRank && (player.socialRank[kId] || 0) >= 4);
+            var _facingDeath = exile || jailDays >= 180;
+            if (_isNobleHere && _facingDeath && Engine.scheduleNobleTrial) {
+                var _kForTrial = Engine.findKingdom ? Engine.findKingdom(kId) : null;
+                if (_kForTrial && Engine.hasSpecialLaw && Engine.hasSpecialLaw(_kForTrial, 'noble_council')) {
+                    var _trial = Engine.scheduleNobleTrial({
+                        kingdomId: kId,
+                        accusedIsPlayer: true,
+                        crimeId: crimeId || 'misc',
+                        originalPunishment: {
+                            fine: fine, repLoss: repLoss, jailDays: jailDays, exile: exile,
+                            execution: exile && jailDays >= 360,
+                            town: town
+                        }
+                    });
+                    if (_trial) {
+                        // Block travel + force-travel to court town
+                        player._activeTrial = {
+                            voteId: _trial.id,
+                            kingdomId: kId,
+                            crimeId: crimeId || 'misc',
+                            courtDay: _trial.deadlineDay,
+                            courtTownId: _trial.trial.courtTownId
+                        };
+                        // Trigger forced travel (deferred so caller flow completes first)
+                        if (typeof setTimeout !== 'undefined') {
+                            setTimeout(function() {
+                                try { if (Player._forceTravelToTrial) Player._forceTravelToTrial(); } catch(_e) {}
+                            }, 50);
+                        }
+                        Engine.logEvent('⚖️ As a noble of ' + _kForTrial.name + ', your case has been deferred to the Noble Council trial.', null, 'my_actions');
+                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚖️ TRIAL SCHEDULED — court convenes day ' + _trial.deadlineDay, 'warning', 'critical');
+                        return 0;
+                    }
+                }
+            }
+        }
+
 
         // Foreign Noble crime handling
         if (kId && getForeignNobleStatus(kId) && (jailDays > 0 || exile)) {
@@ -4283,6 +4362,61 @@
     Player.recordCorruptAction = recordCorruptAction;
     Player.tickManhunts = tickManhunts;
     Player._calcManhuntCatchChance = _calcManhuntCatchChance;
+    Player._manhuntCatchLabel = _manhuntCatchLabel;
+    Player._forceTravelToTrial = function() {
+        _sync();
+        if (!player._activeTrial || !player._activeTrial.courtTownId) return;
+        var ct = Engine.findTown(player._activeTrial.courtTownId);
+        if (!ct) return;
+        if (player.townId === ct.id) return; // already there
+        // Use the standard travelTo if available; otherwise teleport.
+        if (Player.travelTo) {
+            try {
+                var r = Player.travelTo(ct.id, { force: true, skipQuarantineCheck: true, _trialAutoTravel: true });
+                if (r && r.success === false && typeof UI !== 'undefined' && UI.toast) {
+                    UI.toast('⚖️ Auto-travel to court failed: ' + (r.message || ''), 'warning');
+                }
+            } catch (_e) {}
+        }
+    };
+    Player.castTrialVote = function(voteId, kingdomId, choice) {
+        // choice: 'guilty' | 'not_guilty'
+        var k = Engine.findKingdom(kingdomId);
+        if (!k || !k._activeVotes) return { success: false, message: 'Kingdom or vote not found.' };
+        for (var i = 0; i < k._activeVotes.length; i++) {
+            var v = k._activeVotes[i];
+            if (v.id !== voteId) continue;
+            for (var vi = 0; vi < v.voters.length; vi++) {
+                if (v.voters[vi].isPlayer) {
+                    v.voters[vi].vote = choice === 'guilty' ? 'no' : 'yes';
+                    return { success: true, message: 'Vote cast: ' + (choice === 'guilty' ? 'GUILTY' : 'NOT GUILTY') };
+                }
+            }
+            return { success: false, message: 'You are not a voter on this trial.' };
+        }
+        return { success: false, message: 'Trial not found.' };
+    };
+    Player.getActiveTrials = function() {
+        // Returns array of active trials in any kingdom that involve player as accused or voter
+        var out = [];
+        if (!Engine.getKingdoms) return out;
+        var ks = Engine.getKingdoms();
+        for (var i = 0; i < ks.length; i++) {
+            var k = ks[i];
+            if (!k._activeVotes) continue;
+            for (var vi = 0; vi < k._activeVotes.length; vi++) {
+                var v = k._activeVotes[vi];
+                if (v.resolved || v.type !== 'noble_trial') continue;
+                var role = null;
+                if (v.trial && v.trial.accusedIsPlayer) role = 'accused';
+                else for (var voi = 0; voi < v.voters.length; voi++) {
+                    if (v.voters[voi].isPlayer) { role = 'voter'; break; }
+                }
+                if (role) out.push({ vote: v, kingdom: k, role: role });
+            }
+        }
+        return out;
+    };
     Player.checkCrimeImmunity = checkCrimeImmunity;
     Player.applyCorruptPenalty = applyCorruptPenalty;
     Player.sabotageBuilding = sabotageBuilding;

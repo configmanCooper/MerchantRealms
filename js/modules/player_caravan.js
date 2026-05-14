@@ -865,6 +865,19 @@
             return { success: false, message: '🔒 You are in jail until day ' + player.jailedUntilDay + '.' };
         }
 
+        // v9p33river205: Block travel while awaiting Noble Council trial.
+        // Player can only move to the court town (forced auto-travel).
+        if (player._activeTrial && player._activeTrial.courtTownId) {
+            var _atDay = Engine.getDay ? Engine.getDay() : 0;
+            if (_atDay < player._activeTrial.courtDay) {
+                if (townId !== player._activeTrial.courtTownId) {
+                    var _atK = Engine.findKingdom ? Engine.findKingdom(player._activeTrial.kingdomId) : null;
+                    var _atCourtTown = Engine.findTown(player._activeTrial.courtTownId);
+                    return { success: false, message: '⚖️ You are awaiting trial in ' + (_atK ? _atK.name : 'a kingdom') + '. You may only travel to ' + (_atCourtTown ? _atCourtTown.name : 'the court town') + '.' };
+                }
+            }
+        }
+
         // Kingdom travel ban (from double noble agent defection)
         if (player._kingdomTravelBan) {
             var _destTown = Engine.findTown(townId);

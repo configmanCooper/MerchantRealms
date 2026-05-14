@@ -1768,6 +1768,8 @@ window.Game = (function () {
                     try { UI.update(); } catch (e) { console.error('UI update error:', e); }
                     try { if (UI.updateTravelPanel) UI.updateTravelPanel(); } catch (e) { /* no-op */ }
                     try { if (UI.updateJailPanel) UI.updateJailPanel(); } catch (e) { /* no-op */ }
+                    try { if (UI.updateManhuntBanner) UI.updateManhuntBanner(); } catch (e) { /* no-op */ }
+                    try { if (UI.updateTrialBanner) UI.updateTrialBanner(); } catch (e) { /* no-op */ }
                 }
             }
             // At high speed, still update the day/year display every frame so it stays current

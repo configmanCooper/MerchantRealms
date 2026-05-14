@@ -2409,6 +2409,165 @@
         toast('⏸️ Fast forward stopped. Game paused.', 'info');
     }
 
+    // ============================================================
+    // v9p33river205 — MANHUNT BANNER (above bottomBar)
+    // ============================================================
+    function updateManhuntBanner() {
+        var pState = (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
+        var hunts = pState && pState.activeManhunts ? pState.activeManhunts : null;
+        var hasAny = hunts && Object.keys(hunts).length > 0;
+        var banner = document.getElementById('manhuntBanner');
+        if (!hasAny) { if (banner) banner.remove(); return; }
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'manhuntBanner';
+            banner.style.cssText = 'position:fixed;bottom:80px;right:14px;z-index:480;background:linear-gradient(135deg,#2a0a0a,#3a1818);border:2px solid #c44e52;border-radius:8px;padding:8px 12px;color:#f4e6c8;font-family:inherit;box-shadow:0 -2px 12px rgba(196,78,82,0.45);max-width:320px;font-size:0.78rem;';
+            var bottomBar = document.getElementById('bottomBar');
+            if (bottomBar) bottomBar.parentNode.insertBefore(banner, bottomBar);
+            else document.body.appendChild(banner);
+        }
+        var rows = '';
+        var kIds = Object.keys(hunts);
+        for (var i = 0; i < kIds.length; i++) {
+            var hunt = hunts[kIds[i]];
+            var k = (Engine.findKingdom ? Engine.findKingdom(kIds[i]) : null);
+            var kName = k ? k.name : kIds[i];
+            var chance = (Player._calcManhuntCatchChance ? Player._calcManhuntCatchChance(kIds[i]) : 0);
+            var label = (Player._manhuntCatchLabel ? Player._manhuntCatchLabel(chance) : { word: 'UNKNOWN', color: '#ddd' });
+            var crime = (hunt.crimeId || 'misc').replace(/_/g, ' ');
+            var daysLeft = Math.max(0, hunt.untilDay - (Engine.getDay ? Engine.getDay() : 0));
+            rows += '<div style="margin:2px 0;">' +
+                '<span style="color:#ffb;font-weight:bold;">' + kName + '</span>' +
+                ' • ' + crime +
+                ' • <span style="color:' + label.color + ';font-weight:bold;">' + label.word + '</span>' +
+                ' <span style="color:#aaa;font-size:0.72rem;">(' + daysLeft + 'd left)</span>' +
+                '</div>';
+        }
+        banner.innerHTML = '<div style="font-weight:bold;color:#ff8888;margin-bottom:4px;">🚨 WANTED · daily catch risk</div>' + rows;
+    }
+
+    // ============================================================
+    // v9p33river205 — TRIAL BANNER + DIALOG (Noble Council)
+    // ============================================================
+    function updateTrialBanner() {
+        if (typeof Player === 'undefined' || !Player.getActiveTrials) return;
+        var trials = Player.getActiveTrials();
+        var banner = document.getElementById('trialBanner');
+        if (!trials || trials.length === 0) { if (banner) banner.remove(); return; }
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'trialBanner';
+            banner.style.cssText = 'position:fixed;bottom:80px;left:14px;z-index:480;background:linear-gradient(135deg,#1a1a2e,#2a2a4a);border:2px solid #c0a060;border-radius:8px;padding:8px 12px;color:#f4e6c8;font-family:inherit;box-shadow:0 -2px 12px rgba(192,160,96,0.45);max-width:340px;font-size:0.78rem;cursor:pointer;';
+            var bottomBar = document.getElementById('bottomBar');
+            if (bottomBar) bottomBar.parentNode.insertBefore(banner, bottomBar);
+            else document.body.appendChild(banner);
+            banner.addEventListener('click', function() {
+                var ts = Player.getActiveTrials();
+                if (ts.length > 0) openTrialDialog(ts[0].vote.id, ts[0].kingdom.id);
+            });
+        }
+        var rows = '';
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        for (var i = 0; i < trials.length; i++) {
+            var t = trials[i];
+            var daysLeft = Math.max(0, t.vote.deadlineDay - day);
+            var crime = (t.vote.trial.crimeId || 'misc').replace(/_/g, ' ');
+            var roleTag = t.role === 'accused' ? '<span style="color:#ff7070;font-weight:bold;">ACCUSED</span>'
+                : '<span style="color:#a8d8a8;font-weight:bold;">VOTER</span>';
+            rows += '<div style="margin:2px 0;">' +
+                roleTag + ' · ' + (t.kingdom.name || '?') +
+                ' · ' + crime +
+                ' · <span style="color:#ffd86a;">' + daysLeft + 'd to verdict</span>' +
+                '</div>';
+        }
+        banner.innerHTML = '<div style="font-weight:bold;color:#ffd070;margin-bottom:4px;">⚖️ NOBLE COUNCIL TRIAL · click to view</div>' + rows;
+    }
+
+    function openTrialDialog(voteId, kingdomId) {
+        var k = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
+        if (!k || !k._activeVotes) { toast('Trial not found.', 'warning'); return; }
+        var vote = null;
+        for (var i = 0; i < k._activeVotes.length; i++) {
+            if (k._activeVotes[i].id === voteId) { vote = k._activeVotes[i]; break; }
+        }
+        if (!vote || !vote.trial) { toast('Trial not found.', 'warning'); return; }
+        var pState = Player.state || {};
+        var isAccused = !!vote.trial.accusedIsPlayer;
+        var playerVoter = null;
+        for (var vi = 0; vi < vote.voters.length; vi++) if (vote.voters[vi].isPlayer) { playerVoter = vote.voters[vi]; break; }
+        var courtTown = vote.trial.courtTownId ? Engine.findTown(vote.trial.courtTownId) : null;
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var daysLeft = Math.max(0, vote.deadlineDay - day);
+
+        // Build voter list with current votes
+        var voterRows = '';
+        var weightMap = { 7: 5, 6: 5, 5: 2, 4: 1 };
+        var nGuilty = 0, nNot = 0, wGuilty = 0, wNot = 0;
+        for (var voi = 0; voi < vote.voters.length; voi++) {
+            var v = vote.voters[voi];
+            var w = weightMap[v.rank] || 1;
+            var name, voteText, voteColor;
+            if (v.isPlayer) name = (pState.fullName || 'You');
+            else { var p = Engine.findPerson(v.id); name = p ? ((p.firstName || '') + ' ' + (p.lastName || '')).trim() : '?'; }
+            if (v.vote === 'yes') { voteText = 'NOT GUILTY'; voteColor = '#a8d8a8'; nNot++; wNot += w; }
+            else if (v.vote === 'no') { voteText = 'GUILTY'; voteColor = '#ff8080'; nGuilty++; wGuilty += w; }
+            else { voteText = 'undecided'; voteColor = '#aaa'; }
+            var rankName = v.rank === 7 ? 'King' : v.rank === 6 ? 'Royal Advisor' : v.rank === 5 ? 'Lord' : 'Minor Noble';
+            voterRows += '<tr><td style="padding:3px 8px;">' + name + (v.isPlayer ? ' <span style="color:#ffd070;">(YOU)</span>' : '') + '</td>' +
+                '<td style="padding:3px 8px;color:#bbb;">' + rankName + '</td>' +
+                '<td style="padding:3px 8px;text-align:center;color:#ddd;">×' + w + '</td>' +
+                '<td style="padding:3px 8px;color:' + voteColor + ';font-weight:bold;">' + voteText + '</td></tr>';
+        }
+
+        var voteButtonsHtml = '';
+        if (playerVoter && !vote.resolved) {
+            voteButtonsHtml = '<div style="margin-top:14px;text-align:center;">' +
+                '<button class="btn-medieval" style="padding:8px 18px;margin:0 6px;background:rgba(170,40,40,0.6);" data-action="castTrialVote" data-id="' + vote.id + ',' + k.id + ',guilty">⚖️ Vote GUILTY</button>' +
+                '<button class="btn-medieval" style="padding:8px 18px;margin:0 6px;background:rgba(40,140,80,0.6);" data-action="castTrialVote" data-id="' + vote.id + ',' + k.id + ',not_guilty">⚖️ Vote NOT GUILTY</button>' +
+                '</div>' +
+                (playerVoter.vote !== 'undecided' ? '<div style="text-align:center;color:#ffd070;margin-top:6px;font-size:0.85rem;">Your vote: <b>' + (playerVoter.vote === 'yes' ? 'NOT GUILTY' : 'GUILTY') + '</b></div>' : '');
+        }
+
+        var pun = vote.trial.originalPunishment || {};
+        var punDesc = pun.execution ? '☠️ EXECUTION' : pun.exile ? '🚪 EXILE' : '⛓️ heavy jail';
+
+        var html = '<div style="padding:14px;max-width:640px;font-family:inherit;color:#e0d6b8;">' +
+            '<h2 style="margin:0 0 8px;color:#ffd070;">⚖️ Noble Council Trial</h2>' +
+            '<div style="font-size:0.95rem;margin-bottom:6px;">' +
+                '<b>' + (vote.trial.accusedName || 'The accused') + '</b>' + (isAccused ? ' <span style="color:#ff7070;">(YOU)</span>' : '') +
+                ' is charged with <b>' + (vote.trial.crimeId || 'misc').replace(/_/g, ' ') + '</b> in <b>' + k.name + '</b>.' +
+            '</div>' +
+            '<div style="margin-bottom:8px;color:#e0c58a;">If guilty: ' + punDesc + '</div>' +
+            '<div style="margin-bottom:8px;color:#aaa;">Court town: ' + (courtTown ? courtTown.name : '—') + ' · Verdict in ' + daysLeft + ' day' + (daysLeft !== 1 ? 's' : '') + '</div>' +
+            '<div style="margin:10px 0 6px;color:#ffd070;font-weight:bold;">Tally so far: ' +
+                '<span style="color:#a8d8a8;">' + nNot + ' Not Guilty (w' + wNot + ')</span> · ' +
+                '<span style="color:#ff8080;">' + nGuilty + ' Guilty (w' + wGuilty + ')</span></div>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;background:rgba(0,0,0,0.25);border-radius:4px;">' +
+                '<thead><tr style="background:rgba(192,160,96,0.18);"><th style="padding:5px 8px;text-align:left;">Noble</th><th style="padding:5px 8px;text-align:left;">Rank</th><th style="padding:5px 8px;text-align:center;">Weight</th><th style="padding:5px 8px;text-align:left;">Vote</th></tr></thead>' +
+                '<tbody>' + voterRows + '</tbody>' +
+            '</table>' +
+            voteButtonsHtml +
+            '</div>';
+
+        if (UI.openModal) {
+            UI.openModal('⚖️ Trial', html);
+        } else if (UI.showModal) {
+            UI.showModal('⚖️ Trial', html);
+        } else {
+            alert('Trial: ' + (vote.trial.accusedName || 'accused') + ' charged with ' + (vote.trial.crimeId || 'misc'));
+        }
+    }
+
+    function castTrialVoteUI(voteId, kingdomId, choice) {
+        if (!Player.castTrialVote) return;
+        var r = Player.castTrialVote(voteId, kingdomId, choice);
+        toast(r.message || 'Vote cast.', r.success ? 'success' : 'warning');
+        if (r.success) {
+            if (UI.closeModal) UI.closeModal();
+            updateTrialBanner();
+        }
+    }
+
     function openTravelRest() {
         if (!Player.traveling) { toast('Not traveling.', 'info'); return; }
         // Pause game when player manually opens Camp dialog too
@@ -2578,6 +2737,10 @@
     UI.confirmFreeTravel = confirmFreeTravel;
     UI.updateTravelPanel = updateTravelPanel;
     UI.updateJailPanel = updateJailPanel;
+    UI.updateManhuntBanner = updateManhuntBanner;
+    UI.updateTrialBanner = updateTrialBanner;
+    UI.openTrialDialog = openTrialDialog;
+    UI.castTrialVoteUI = castTrialVoteUI;
     UI.stopJailFastForward = stopJailFastForward;
     UI.openTravelRest = openTravelRest;
     UI.startTravelRest = startTravelRest;
@@ -2624,6 +2787,14 @@
             UI.registerAction(name, function(_t, d) { UI[name](d.id, d.val); });
         })(_twoArgActions[_i]);
     }
+
+    // v9p33river205: castTrialVote takes 'voteId,kingdomId,choice' as comma string
+    UI.registerAction('castTrialVote', function(_t, d) {
+        if (!d || !d.id) return;
+        var parts = d.id.split(',');
+        if (parts.length < 3) return;
+        UI.castTrialVoteUI(parts[0], parts[1], parts[2]);
+    });
 
     // hirePetitionerUI: id + boolean val
     UI.registerAction('hirePetitionerUI', function(_t, d) {

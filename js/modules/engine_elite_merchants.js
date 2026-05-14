@@ -3806,6 +3806,26 @@
         actor.criminalRecord[kingdom.id] = (actor.criminalRecord[kingdom.id] || 0) + 1;
         actor.notoriety = Math.min(100, (actor.notoriety || 0) + 5);
         if (actor.reputation) actor.reputation[kingdom.id] = Math.max(0, (actor.reputation[kingdom.id] || 50) - 8);
+        // v9p33river205: NPC noble council trial deferral
+        // If the actor is a noble in this kingdom and the kingdom uses the
+        // Noble Council law, defer execution to a trial. The trial system will
+        // call _applyTrialVerdict on the actor when resolved.
+        var _actorRank = (actor.socialRank && actor.socialRank[kingdom.id]) || 0;
+        var _isNoble = _actorRank >= 4 || actor.isNoble;
+        if (ptype === 'execution' && _isNoble && Engine.scheduleNobleTrial && Engine.hasSpecialLaw && Engine.hasSpecialLaw(kingdom, 'noble_council')) {
+            var _emTrial = Engine.scheduleNobleTrial({
+                kingdomId: kingdom.id,
+                accusedNpcId: actor.id,
+                crimeId: crimeId,
+                originalPunishment: { execution: true, exile: true, jailDays: jailDays || 360, fine: fine, town: town }
+            });
+            if (_emTrial) {
+                logEvent('⚖️ ' + (actor.firstName || 'A merchant') + ' ' + (actor.lastName || '') + ' faces a Noble Council trial in ' + kingdom.name + ' for ' + crimeType.name + '.', {
+                    type: 'npc_noble_trial', cause: 'Noble Council law deferred execution to trial.', townId: town && town.id, kingdomId: kingdom.id
+                });
+                return fine;
+            }
+        }
         // Execution / heavy jail: kill the actor for severe crimes
         if (ptype === 'execution') {
             actor.alive = false;

@@ -12074,7 +12074,13 @@
                 if (rng.chance(0.50)) {
                     var noble = findPerson(voter.id);
                     if (!noble) { voter.vote = 'yes'; continue; }
-                    voter.vote = _computeNobleVoteInclination(noble, vote);
+                    // v9p33river205: trial votes use a custom inclination
+                    // function based on relationship + personality + king mood.
+                    if (vote.type === 'noble_trial') {
+                        voter.vote = _computeNobleTrialVote(noble, vote, kingdom);
+                    } else {
+                        voter.vote = _computeNobleVoteInclination(noble, vote);
+                    }
                 }
             }
 
@@ -12105,7 +12111,12 @@
                 }
 
                 vote.resolved = true;
-                if (yesWeight > noWeight) {
+                // v9p33river205: trial votes use their own resolution path
+                // — the standard pass/fail tally + executeFn doesn't fit
+                // because trials need separate guilty/not-guilty logic.
+                if (vote.type === 'noble_trial') {
+                    _resolveNobleTrial(kingdom, vote);
+                } else if (yesWeight > noWeight) {
                     vote.result = 'passed';
                     var execFn = _recreateVoteExecuteFn(vote);
                     if (typeof execFn === 'function') {
@@ -12118,19 +12129,319 @@
                 // Clean up closure reference
                 vote._executeFn = null;
 
-                logEvent('🗳️ Council vote on ' + vote.title + ': ' + (vote.result === 'passed' ? 'PASSED' : 'FAILED') + ' (' + yesCount + ' yes, ' + noCount + ' no)', {
-                    type: 'council_vote_resolved',
-                    kingdomId: kingdom.id,
-                    cause: 'Noble Council vote concluded after 3 days.',
-                    effects: [vote.result === 'passed' ? 'The motion has been approved by the council' : 'The motion was rejected by the council']
-                });
+                if (vote.type !== 'noble_trial') {
+                    logEvent('🗳️ Council vote on ' + vote.title + ': ' + (vote.result === 'passed' ? 'PASSED' : 'FAILED') + ' (' + yesCount + ' yes, ' + noCount + ' no)', {
+                        type: 'council_vote_resolved',
+                        kingdomId: kingdom.id,
+                        cause: 'Noble Council vote concluded after 3 days.',
+                        effects: [vote.result === 'passed' ? 'The motion has been approved by the council' : 'The motion was rejected by the council']
+                    });
+                }
             }
         }
     }
 
     // ========================================================
-    // §14B — Extracted to js/modules/engine_diplomacy.js
+    // v9p33river205 — NOBLE COUNCIL TRIAL SYSTEM
     // ========================================================
+    // When a noble (or the player while a noble) of a kingdom with the
+    // Noble Council law is sentenced to exile or execution, the punishment
+    // is deferred to a trial. All nobles + the king vote guilty/not_guilty.
+    //   Voting weight: King=5, RA=5, Lord=2, Minor Noble=1
+    //   Vote inclination = relationship + personality + king mood
+    // If GUILTY → original punishment fires. Trial cooldown clears.
+    // If NOT GUILTY → punishment cancelled. Every guilty-voter loses 10
+    //                relationship with the accused.
+    function _computeNobleTrialVote(noble, vote, kingdom) {
+        // Returns 'yes' (NOT GUILTY / acquit) or 'no' (GUILTY).
+        // The infrastructure piggybacks on the standard council vote
+        // tally, so 'yes' = motion-passes = "set them free".
+        var rng = world.rng;
+        if (!vote || !vote.trial) return 'yes';
+        var accusedId = vote.trial.accusedId;
+        var accused = findPerson(accusedId);
+        var accusedIsPlayer = !!vote.trial.accusedIsPlayer;
+        var crimeId = vote.trial.crimeId || 'misc';
+
+        // Start neutral — score > 0 leans not-guilty.
+        var score = 0;
+
+        // 1) Relationship with accused (heavy weight)
+        var rel = 0;
+        if (accusedIsPlayer) {
+            // Read from player's mirror if available; else from noble's view of player
+            if (noble.relationships && noble.relationships['player']) {
+                rel = noble.relationships['player'].level || 0;
+            } else if (typeof Player !== 'undefined' && Player.state && Player.state.relationships && Player.state.relationships[noble.id]) {
+                rel = Player.state.relationships[noble.id].level || 0;
+            }
+        } else if (accused) {
+            // NPC ↔ NPC relationship not deeply modeled — fall back to family/loyalty heuristics
+            if (noble.spouseId === accusedId) rel = 90;
+            else if ((noble.parentIds || []).indexOf(accusedId) >= 0 || (noble.childrenIds || []).indexOf(accusedId) >= 0) rel = 75;
+            else if (noble.kingdomId === accused.kingdomId && (noble.kingLoyalty || 50) > 60) rel = 30;
+            else rel = 20 + Math.floor(rng.random() * 30);
+        }
+        // Map rel [-50..100] to score swing [-30..+40]
+        if (rel >= 70) score += 40;
+        else if (rel >= 50) score += 25;
+        else if (rel >= 30) score += 10;
+        else if (rel >= 0) score += 0;
+        else score -= 20;
+
+        // 2) Personality
+        var P = noble.personality || {};
+        // Merciful / kind nobles lean toward acquittal
+        if (P.mercy != null && P.mercy > 60) score += 10;
+        else if (P.mercy != null && P.mercy < 30) score -= 10;
+        if (P.justice != null && P.justice > 70) score -= 12;     // strict justice → guilty
+        if (P.justice != null && P.justice < 30) score += 8;      // lenient → not guilty
+        if (P.honesty != null && P.honesty < 30) score += 5;      // dishonest nobles protect their own
+        if (P.ambition != null && P.ambition > 70 && accusedIsPlayer) score -= 8; // ambitious nobles see opportunity in player's downfall
+
+        // 3) Crime severity influences strict nobles further
+        if (crimeId === 'treason') score -= 8;  // treason is unforgivable to most
+        if (crimeId === 'murder') score -= 5;
+        if (crimeId === 'arson' || crimeId === 'sabotage') score -= 2;
+
+        // 4) If king is voting, mood factors in slightly
+        var isKing = (noble.id === kingdom.king);
+        if (isKing) {
+            var moodCurrent = (kingdom.kingMood && kingdom.kingMood.current) || 'content';
+            if (moodCurrent === 'jubilant' || moodCurrent === 'content') score += 8;
+            else if (moodCurrent === 'enraged' || moodCurrent === 'wrathful' || moodCurrent === 'paranoid') score -= 12;
+            else if (moodCurrent === 'mournful' || moodCurrent === 'melancholy') score -= 4;
+        }
+
+        // 5) Random ±5 wiggle so identical setups don't produce identical votes
+        score += Math.floor(rng.random() * 11) - 5;
+
+        return score >= 0 ? 'yes' : 'no';
+    }
+
+    function scheduleNobleTrial(opts) {
+        // opts: { kingdomId, accusedNpcId | accusedIsPlayer, crimeId,
+        //         originalPunishment: { exile, execution, jailDays, fine, repLoss, town },
+        //         courtTownId? }
+        var kingdom = findKingdom(opts.kingdomId);
+        if (!kingdom) return null;
+        if (!hasSpecialLaw(kingdom, 'noble_council')) return null;
+        if (!kingdom._activeVotes) kingdom._activeVotes = [];
+        var rng = world.rng;
+        // Avoid duplicate concurrent trials for the same accused
+        var accusedKey = opts.accusedIsPlayer ? '__player__' : opts.accusedNpcId;
+        for (var ei = 0; ei < kingdom._activeVotes.length; ei++) {
+            var ev = kingdom._activeVotes[ei];
+            if (!ev.resolved && ev.type === 'noble_trial' && ev.trial && (
+                (ev.trial.accusedIsPlayer && opts.accusedIsPlayer) ||
+                (ev.trial.accusedId && ev.trial.accusedId === opts.accusedNpcId)
+            )) {
+                return ev; // already scheduled
+            }
+        }
+
+        // Determine court town (capital, else biggest in kingdom)
+        var courtTown = null;
+        if (opts.courtTownId) courtTown = findTown(opts.courtTownId);
+        if (!courtTown && kingdom.capitalTownId) courtTown = findTown(kingdom.capitalTownId);
+        if (!courtTown && kingdom.towns && kingdom.towns.length) {
+            // Find biggest by population
+            var best = null; var bestPop = -1;
+            for (var ti = 0; ti < kingdom.towns.length; ti++) {
+                var tt = findTown(kingdom.towns[ti]);
+                if (!tt) continue;
+                var pp = (typeof tt.population === 'number') ? tt.population : (tt.population || []).length;
+                if (pp > bestPop) { bestPop = pp; best = tt; }
+            }
+            courtTown = best;
+        }
+
+        // Build voter list (rank 4-7 alive nobles in this kingdom)
+        var voters = [];
+        for (var pi = 0; pi < world.people.length; pi++) {
+            var person = world.people[pi];
+            if (!person.alive) continue;
+            // Skip the accused themselves (no self-vote)
+            if (person.id === opts.accusedNpcId) continue;
+            if (!person.socialRank || person.socialRank[kingdom.id] == null) continue;
+            var rank = person.socialRank[kingdom.id];
+            if (rank < 4 || rank > 7) continue;
+            voters.push({
+                id: person.id,
+                rank: rank,
+                vote: 'undecided',
+                isPlayer: false
+            });
+        }
+        // Player as voter (only if noble in this kingdom AND not the accused)
+        if (typeof Player !== 'undefined' && Player.state && !opts.accusedIsPlayer) {
+            var playerRank = (Player.state.socialRank || {})[kingdom.id] || 0;
+            if (playerRank >= 4) {
+                voters.push({ id: 'player', rank: playerRank, vote: 'undecided', isPlayer: true });
+            }
+        }
+        if (voters.length === 0) return null; // no court — fall through to immediate punishment
+
+        // Court date: 10-20 days out
+        var courtDay = world.day + (10 + rng.randInt(0, 10));
+        var voteId = 'trial_' + world.day + '_' + rng.randInt(100000, 999999).toString(36);
+
+        var titleAcc = opts.accusedIsPlayer
+            ? ((typeof Player !== 'undefined' && Player.state && Player.state.fullName) ? Player.state.fullName : 'the player')
+            : (function() { var a = findPerson(opts.accusedNpcId); return a ? (a.firstName + ' ' + (a.lastName || '')).trim() : 'the accused'; })();
+
+        var crimeName = (opts.crimeId || 'misc').replace(/_/g, ' ');
+        var trialTitle = 'Trial of ' + titleAcc + ' for ' + crimeName;
+
+        var trial = {
+            accusedId: opts.accusedNpcId || null,
+            accusedIsPlayer: !!opts.accusedIsPlayer,
+            accusedName: titleAcc,
+            crimeId: opts.crimeId || 'misc',
+            originalPunishment: opts.originalPunishment || {},
+            courtTownId: courtTown ? courtTown.id : null
+        };
+
+        var vote = {
+            id: voteId,
+            kingdomId: kingdom.id,
+            title: trialTitle,
+            description: 'Noble Council trial. The accused faces ' +
+                (opts.originalPunishment && opts.originalPunishment.execution ? 'EXECUTION' :
+                 opts.originalPunishment && opts.originalPunishment.exile ? 'EXILE' : 'severe punishment') +
+                ' for ' + crimeName + '.',
+            type: 'noble_trial',
+            createdDay: world.day,
+            deadlineDay: courtDay,
+            voters: voters,
+            resolved: false,
+            result: null,
+            trial: trial,
+            _executeFn: null,
+            _voteParams: { action: '_resolveNobleTrial', args: { voteId: voteId, kingdomId: kingdom.id } }
+        };
+        kingdom._activeVotes.push(vote);
+
+        logEvent('⚖️ NOBLE TRIAL: ' + titleAcc + ' will face the council of ' +
+            kingdom.name + ' for ' + crimeName + '. Court convenes in ' +
+            (courtDay - world.day) + ' days at ' + (courtTown ? courtTown.name : 'the capital') + '.', {
+            type: 'noble_trial_scheduled',
+            kingdomId: kingdom.id,
+            cause: 'Noble Council law deferred a death/exile sentence to trial.'
+        });
+
+        return vote;
+    }
+
+    function _resolveNobleTrial(kingdom, vote) {
+        if (!vote || !vote.trial) return;
+        // Tally: 'yes' = NOT GUILTY (acquit), 'no' = GUILTY
+        var weightMap = { 7: 5, 6: 5, 5: 2, 4: 1 };
+        var notGuiltyW = 0, guiltyW = 0, notCnt = 0, gCnt = 0;
+        var guiltyVoters = []; // for relationship penalty if acquitted
+        for (var i = 0; i < vote.voters.length; i++) {
+            var v = vote.voters[i];
+            if (v.vote === 'undecided') continue;
+            var w = weightMap[v.rank] || 1;
+            if (v.vote === 'yes') { notGuiltyW += w; notCnt++; }
+            else { guiltyW += w; gCnt++; guiltyVoters.push(v.id); }
+        }
+        var acquitted = notGuiltyW >= guiltyW; // tie favors the accused
+        vote.result = acquitted ? 'acquitted' : 'guilty';
+
+        var trial = vote.trial;
+        var pun = trial.originalPunishment || {};
+        var accusedName = trial.accusedName || 'the accused';
+
+        if (acquitted) {
+            // NOT GUILTY — cancel punishment, guilty-voters lose -10 rel with accused
+            if (trial.accusedIsPlayer && typeof Player !== 'undefined' && Player.state) {
+                Player.state.relationships = Player.state.relationships || {};
+                for (var gi = 0; gi < guiltyVoters.length; gi++) {
+                    var gid = guiltyVoters[gi];
+                    if (gid === 'player') continue;
+                    var rel = Player.state.relationships[gid] || { level: 0, type: 'acquaintance' };
+                    rel.level = Math.max(-100, (rel.level || 0) - 10);
+                    Player.state.relationships[gid] = rel;
+                }
+                // Lift the trial-pending block
+                if (Player.state._activeTrial && Player.state._activeTrial.voteId === vote.id) {
+                    delete Player.state._activeTrial;
+                }
+            } else {
+                // NPC accused: write -10 onto the noble's view of the accused
+                var accused = findPerson(trial.accusedId);
+                if (accused) {
+                    for (var gi2 = 0; gi2 < guiltyVoters.length; gi2++) {
+                        var voter = findPerson(guiltyVoters[gi2]);
+                        if (!voter) continue;
+                        voter.relationships = voter.relationships || {};
+                        var vr = voter.relationships[trial.accusedId] || { level: 0 };
+                        vr.level = Math.max(-100, (vr.level || 0) - 10);
+                        voter.relationships[trial.accusedId] = vr;
+                    }
+                }
+            }
+            logEvent('⚖️ TRIAL VERDICT — ' + accusedName + ' has been ACQUITTED by the council of ' +
+                kingdom.name + '! (' + notCnt + ' not guilty, ' + gCnt + ' guilty)', {
+                type: 'noble_trial_acquitted', kingdomId: kingdom.id,
+                effects: [accusedName + ' walks free', 'Guilty-voters lose 10 relationship with accused']
+            });
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚖️ ACQUITTED: ' + accusedName, 'success', 'critical');
+            return;
+        }
+
+        // GUILTY — apply original punishment
+        if (trial.accusedIsPlayer && typeof Player !== 'undefined' && Player.applyCorruptPenalty) {
+            var townForPen = pun.town || (trial.courtTownId ? findTown(trial.courtTownId) : null);
+            Player.applyCorruptPenalty(townForPen, kingdom,
+                pun.fine || 0,
+                pun.repLoss || 0,
+                pun.jailDays || 0,
+                !!pun.exile,
+                trial.crimeId,
+                { fromTrial: true });
+            if (Player.state && Player.state._activeTrial && Player.state._activeTrial.voteId === vote.id) {
+                delete Player.state._activeTrial;
+            }
+        } else if (!trial.accusedIsPlayer) {
+            // NPC noble: enact punishment manually
+            var accused = findPerson(trial.accusedId);
+            if (accused) {
+                if (pun.execution) {
+                    accused.alive = false;
+                    accused._deathDay = world.day;
+                    accused._deathCause = 'executed';
+                    logEvent('💀 ' + accusedName + ' was EXECUTED by order of the Noble Council of ' + kingdom.name + '.', {
+                        type: 'noble_execution', kingdomId: kingdom.id
+                    });
+                } else if (pun.exile) {
+                    accused.socialRank = accused.socialRank || {};
+                    accused.socialRank[kingdom.id] = 0;
+                    if (accused.kingdomId === kingdom.id) accused.kingdomId = null;
+                    logEvent('🚪 ' + accusedName + ' has been EXILED from ' + kingdom.name + ' by Noble Council vote.', {
+                        type: 'noble_exile', kingdomId: kingdom.id
+                    });
+                }
+            }
+        }
+        logEvent('⚖️ TRIAL VERDICT — ' + accusedName + ' found GUILTY by the council of ' +
+            kingdom.name + '. (' + gCnt + ' guilty, ' + notCnt + ' not guilty)', {
+            type: 'noble_trial_guilty', kingdomId: kingdom.id
+        });
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚖️ GUILTY: ' + accusedName, 'danger', 'critical');
+    }
+
+    // Patch into the council-vote resolution path. Called from the existing
+    // tickCouncilVotes resolver when vote.type === 'noble_trial'.
+    function _maybeApplyTrialVerdict(kingdom, vote) {
+        if (vote && vote.type === 'noble_trial') {
+            _resolveNobleTrial(kingdom, vote);
+            return true;
+        }
+        return false;
+    }
+
 
     // ========================================================
     // §14A2 DAILY HAPPINESS FLUCTUATION SYSTEM
@@ -31916,6 +32227,7 @@
         shouldCallToArms: shouldCallToArms,
         processCallToArms: processCallToArms,
         initiateCouncilVote: initiateCouncilVote,
+        scheduleNobleTrial: scheduleNobleTrial,
         // tickKingdomFinancialStrategy — set by engine_kingdom_finances.js module
         kingdomAI: kingdomAI,
         tickTownFounding: tickTownFounding,
