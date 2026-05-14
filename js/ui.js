@@ -4746,44 +4746,53 @@ window.UI = (function () {
             var poDetect = Math.min(0.95, calcDetect(0.15, town) * nobleMult);
             var canP = hasSkill('poisoner');
             var hasVial = (pState.inventory && (pState.inventory.poison || 0) >= 1);
-            var canPayP = (pState.gold || 0) >= 1000;
+            // v9p33river223: cost scales with target rank
+            var costMult = (P._nobleTargetCostMult ? P._nobleTargetCostMult(personId) : 1.0);
+            var poMin = Math.floor(1000 * costMult);
+            var poMax = Math.floor(3000 * costMult);
+            var canPayP = (pState.gold || 0) >= poMin;
+            var costRange = poMin.toLocaleString() + '–' + poMax.toLocaleString();
             return {
                 icon: '☠️', title: 'Poison Target', color: '#88aa44',
-                desc: 'Pay an agent (1,000–3,000g) to plant your poison vial in the target\'s food or drink.',
-                cost: '1,000–3,000', runId: 'poison', confirmLabel: 'Plant Poison',
+                desc: 'Pay an agent to plant your poison vial in the target\'s food or drink.' + (costMult > 1 ? ' Cost scales sharply for noble/royal targets.' : ''),
+                cost: costRange, runId: 'poison', confirmLabel: 'Plant Poison',
                 allReqsMet: canP && hasVial && canPayP,
                 reqs: [
                     { text: 'Poisoner skill', met: canP },
                     { text: '1× poison vial in inventory', met: hasVial },
-                    { text: '1,000g (minimum)', met: canPayP }
+                    { text: poMin.toLocaleString() + 'g (minimum)', met: canPayP }
                 ],
                 catchChance: poDetect,
-                successEffect: 'Target sickened with severe food poisoning. Survivable if they get treatment quickly; fatal otherwise.',
-                caughtPenalty: '500g + 1k–3k lost + 10d jail + 25 town rep + huge notoriety + noble notoriety.'
+                successEffect: 'Target sickened with severe poison. Survivable if treated quickly; fatal otherwise.',
+                caughtPenalty: '500g fine + agent fee lost + 10d jail + 25 town rep + huge notoriety.'
             };
         }
         if (schemeId === 'assassin') {
-            // Two alternatives: hire (1000-3000g, 0.20 base detect) vs direct kill (0g, 0.40 base detect, requires weapon + combat_trained + assassin/shadow_dealings)
             var hireDetect = Math.min(0.95, calcDetect(0.20, town) * nobleMult);
             var killDetect = Math.min(0.95, calcDetect(0.40, town) * nobleMult);
             var canHire = hasSkill('dark_connections') || hasSkill('assassin');
-            var canHirePay = (pState.gold || 0) >= 1000;
             var canKill = hasSkill('combat_trained') && (hasSkill('assassin') || hasSkill('shadow_dealings'));
             var hasWeap = !!pState.weapon;
+            // v9p33river223: cost scales with target rank
+            var aCostMult = (P._nobleTargetCostMult ? P._nobleTargetCostMult(personId) : 1.0);
+            var hireMin = Math.floor(1000 * aCostMult);
+            var hireMax = Math.floor(3000 * aCostMult);
+            var canHirePay = (pState.gold || 0) >= hireMin;
+            var hireRange = hireMin.toLocaleString() + '–' + hireMax.toLocaleString() + 'g';
 
             return {
                 icon: '🗡️', title: 'Assassinate', color: '#cc4444',
-                desc: 'Eliminate this person. Choose your approach.',
+                desc: 'Eliminate this person. Choose your approach.' + (aCostMult > 1 ? ' Hire cost scales sharply for noble/royal targets.' : ''),
                 catchChance: Math.min(hireDetect, killDetect),
                 successEffect: 'Target dies. Properties may become available.',
                 caughtPenalty: 'Murder charge → exile + asset seizure + bounty.',
                 alternatives: [
                     {
-                        runId: 'assassin_hire', title: '👤 Hire an Assassin',
-                        desc: 'Pay an underworld contact 1,000–3,000g to do the job from the shadows.',
+                        runId: 'assassin_hire', title: '👤 Hire an Assassin (' + hireRange + ')',
+                        desc: 'Pay an underworld contact ' + hireRange + ' to do the job from the shadows.',
                         catchChance: hireDetect,
                         allReqsMet: canHire && canHirePay,
-                        notMetReason: !canHire ? 'Need Dark Connections OR Assassin skill' : (!canHirePay ? 'Need 1,000g minimum' : ''),
+                        notMetReason: !canHire ? 'Need Dark Connections OR Assassin skill' : (!canHirePay ? 'Need ' + hireMin.toLocaleString() + 'g minimum' : ''),
                         confirmLabel: 'Hire Assassin'
                     },
                     {

@@ -21549,6 +21549,12 @@
         if (!player.jailedUntilDay || player.jailedUntilDay <= Engine.getDay()) {
             return { success: false, message: 'Not currently jailed.' };
         }
+        // v9p33river223: 90-day cooldown between escape attempts
+        var _today = Engine.getDay();
+        if (player._jailEscapeCooldownUntil && _today < player._jailEscapeCooldownUntil) {
+            var _daysLeft = player._jailEscapeCooldownUntil - _today;
+            return { success: false, message: '⛓️ Guards are watching you closely after your last attempt. Wait ' + _daysLeft + ' more day' + (_daysLeft !== 1 ? 's' : '') + '.' };
+        }
         var rng = Engine.getRng();
         var baseChance = 0.05;
         // Skills that increase escape chance
@@ -21556,6 +21562,9 @@
         if (hasSkill('street_smart')) baseChance += 0.05;
         if (hasSkill('untouchable')) baseChance += 0.05;
         if (hasSkill('silver_tongue_dark')) baseChance += 0.03;
+
+        // Set cooldown regardless of outcome
+        player._jailEscapeCooldownUntil = _today + 90;
 
         if (rng.chance(baseChance)) {
             // Escaped!

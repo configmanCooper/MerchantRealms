@@ -2382,10 +2382,21 @@
             if (window._jailFastForwarding && _jailDaysLeft < 3 && typeof Game !== 'undefined' && Game.getSpeed && Game.getSpeed() > 60) {
                 Game.setSpeed(60);
             }
+            // v9p33river223: 90-day cooldown between escape attempts
+            var _today = Engine.getDay();
+            var _cooldownUntil = (Player.state && Player.state._jailEscapeCooldownUntil) || 0;
+            var _onCooldown = _cooldownUntil > _today;
+            var _escapeBtn;
+            if (_onCooldown) {
+                var _cdLeft = _cooldownUntil - _today;
+                _escapeBtn = '<button disabled style="padding:4px 12px;font-size:0.8rem;background:rgba(60,60,60,0.4);color:#888;border:1px solid #555;border-radius:4px;cursor:not-allowed;" title="Cooldown after last attempt — guards on alert.">🔒 Escape (' + _cdLeft + 'd cooldown)</button>';
+            } else {
+                _escapeBtn = '<button data-action="attemptJailEscapeUI" style="padding:4px 12px;font-size:0.8rem;background:rgba(139,0,0,0.4);color:#e0d6b8;border:1px solid #8b0000;border-radius:4px;cursor:pointer;" title="' + _escapeChance + '% chance. If caught: more time + fine. 90-day cooldown after attempt.">🔓 Attempt Escape (' + _escapeChance + '%)</button>';
+            }
             _jailPanel.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;">' +
                 '<div>🔒 <strong style="color:#c44e52;">IMPRISONED</strong> in ' + _jailTownName + '</div>' +
                 '<div style="font-size:0.9rem;">⏳ ' + _jailDaysLeft + ' day' + (_jailDaysLeft !== 1 ? 's' : '') + ' remaining</div>' +
-                '<button data-action="attemptJailEscapeUI" style="padding:4px 12px;font-size:0.8rem;background:rgba(139,0,0,0.4);color:#e0d6b8;border:1px solid #8b0000;border-radius:4px;cursor:pointer;" title="' + _escapeChance + '% chance. If caught: more time + fine.">🔓 Attempt Escape (' + _escapeChance + '%)</button>' +
+                _escapeBtn +
                 '<button data-action="' + _ffAction + '" style="padding:4px 12px;font-size:0.8rem;background:rgba(50,50,150,0.4);color:#e0d6b8;border:1px solid #4444aa;border-radius:4px;cursor:pointer;">' + _ffLabel + '</button>' +
                 '</div>';
         } else {

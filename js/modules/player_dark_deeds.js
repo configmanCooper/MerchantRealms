@@ -194,6 +194,33 @@
     Player._nobleSuccessMult = _nobleSuccessMult;
     Player.calculateCorruptDetection = calculateCorruptDetection;
 
+    // v9p33river223: rank-scaled cost multiplier for noble targets.
+    // Killing/poisoning a noble requires more sophisticated agents, more
+    // bribes for accomplices, and more cover-up. Matches the player's
+    // intuition that taking out a king should cost king-tier prices.
+    //   Minor Noble (4): 2.5x
+    //   Lord (5):        5.0x
+    //   Royal Advisor (6): 10.0x
+    //   King:            25.0x  (so 1k poison → 25k, matching assassinate_king)
+    function _nobleTargetCostMult(targetPersonId) {
+        if (!targetPersonId) return 1.0;
+        var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
+        if (!t) return 1.0;
+        if (t.isKing || t.occupation === 'king') return 25.0;
+        var maxRank = 0;
+        if (t.socialRank) {
+            for (var _kkc in t.socialRank) {
+                if ((t.socialRank[_kkc] || 0) > maxRank) maxRank = t.socialRank[_kkc];
+            }
+        }
+        if (maxRank >= 6) return 10.0;
+        if (maxRank >= 5) return 5.0;
+        if (maxRank >= 4) return 2.5;
+        if (t.isNoble || t.occupation === 'noble') return 2.5;
+        return 1.0;
+    }
+    Player._nobleTargetCostMult = _nobleTargetCostMult;
+
     // v9p33river212: roll catch and success chance INDEPENDENTLY.
     // Marginal probabilities preserved (catch% and success% match what the
     // scheme had before — schemes used to treat caught == failed, so success%
@@ -1793,7 +1820,11 @@
         }
 
         // type === 'competitor' (default)
-        const cost = rng ? rng.randInt(1000, 3000) : 2000;
+        // v9p33river223: scale cost up sharply for noble/royal targets — taking
+        // out a King via this path now matches the dedicated assassinate_king
+        // 25k+ tier, even though the player skipped the king-specific function.
+        var costBase = rng ? rng.randInt(1000, 3000) : 2000;
+        const cost = Math.floor(costBase * _nobleTargetCostMult(targetId));
         if (player.gold < cost) return { success: false, message: `Need ${cost}g to hire assassin.` };
 
         player.gold -= cost;
@@ -1847,6 +1878,8 @@
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
         var cost = rng ? rng.randInt(1000, 3000) : 2000;
+        // v9p33river223: scale cost up sharply for noble/royal targets
+        cost = Math.floor(cost * _nobleTargetCostMult(targetId));
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g to pay an agent to plant the poison.' };
         const detection = Math.min(0.95, calculateCorruptDetection(0.15, town) * _nobleTargetMult(targetId));
         var _po = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
@@ -1916,6 +1949,8 @@
         if (!target || !target.alive) return { success: false, message: 'Target not found or already dead.' };
         var rng = Engine.getRng();
         var cost = rng ? rng.randInt(3000, 5000) : 4000;
+        // v9p33river223: scale cost up sharply for noble/royal targets
+        cost = Math.floor(cost * _nobleTargetCostMult(targetId));
         if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
         var town = Engine.findTown(player.townId);
         var detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(targetId));
