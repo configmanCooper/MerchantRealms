@@ -196,17 +196,16 @@
 
     // v9p33river223: rank-scaled cost multiplier for noble targets.
     // Killing/poisoning a noble requires more sophisticated agents, more
-    // bribes for accomplices, and more cover-up. Matches the player's
-    // intuition that taking out a king should cost king-tier prices.
+    // bribes for accomplices, and more cover-up.
     //   Minor Noble (4): 2.5x
     //   Lord (5):        5.0x
     //   Royal Advisor (6): 10.0x
-    //   King:            25.0x  (so 1k poison → 25k, matching assassinate_king)
+    //   King:            10.0x  (v9p33river226: lowered from 25.0x)
     function _nobleTargetCostMult(targetPersonId) {
         if (!targetPersonId) return 1.0;
         var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
         if (!t) return 1.0;
-        if (t.isKing || t.occupation === 'king') return 25.0;
+        if (t.isKing || t.occupation === 'king') return 10.0;
         var maxRank = 0;
         if (t.socialRank) {
             for (var _kkc in t.socialRank) {
