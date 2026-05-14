@@ -2045,10 +2045,30 @@
 
         var rng = Engine.getRng();
         var town = Engine.findTown(player.townId);
+
+        // v9p33river227: noble/royal targets require bribing guards/witnesses
+        // even when the player does the killing themselves. Cost = 10% of the
+        // equivalent hire-assassin cost (10k–20k base × wealth × rank).
+        var dkCost = 0;
+        var rankMult = _nobleTargetCostMult(targetId);
+        if (rankMult > 1.0) {
+            var dkBase = rng ? rng.randInt(10000, 20000) : 15000;
+            dkCost = Math.floor(dkBase * rankMult * _targetWealthCostMult(targetId) * 0.10);
+            if (player.gold < dkCost) {
+                return { success: false, message: 'Need ' + dkCost.toLocaleString() + 'g to bribe guards/witnesses (10% of hire-assassin cost for noble targets).' };
+            }
+        }
+
         var detection = Math.min(0.95, calculateCorruptDetection(0.40, town) * _nobleTargetMult(targetId) * _targetWealthDetectMult(targetId));
         var _dko = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetId));
         var caught = _dko.caught;
         var successful = _dko.successful;
+
+        // Pay the bribe cost up-front (whether or not the kill succeeds)
+        if (dkCost > 0) {
+            player.gold -= dkCost;
+            player.stats.totalGoldSpent += dkCost;
+        }
 
         if (successful) {
             target.alive = false;

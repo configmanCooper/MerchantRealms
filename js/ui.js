@@ -4804,11 +4804,13 @@ window.UI = (function () {
                         confirmLabel: 'Hire Assassin'
                     },
                     {
-                        runId: 'assassin_direct', title: '🗡️ Do It Yourself',
-                        desc: 'Murder the target with your equipped weapon. No gold cost — but much higher chance of getting caught red-handed.',
+                        runId: 'assassin_direct', title: '🗡️ Do It Yourself' + (rankCostMult > 1 ? ' (' + Math.floor(10000 * aCostMult * 0.10).toLocaleString() + '–' + Math.floor(20000 * aCostMult * 0.10).toLocaleString() + 'g bribes)' : ''),
+                        desc: 'Murder the target with your equipped weapon. ' + (rankCostMult > 1
+                            ? 'Costs 10% of the hire-assassin price to bribe guards/witnesses for noble targets. Much higher catch chance than hiring.'
+                            : 'No gold cost — but much higher catch chance than hiring.'),
                         catchChance: killDetect,
-                        allReqsMet: canKill && hasWeap,
-                        notMetReason: !canKill ? 'Need Combat Trained + (Assassin OR Shadow Dealings)' : (!hasWeap ? 'No equipped weapon' : ''),
+                        allReqsMet: canKill && hasWeap && (rankCostMult <= 1 || (pState.gold || 0) >= Math.floor(10000 * aCostMult * 0.10)),
+                        notMetReason: !canKill ? 'Need Combat Trained + (Assassin OR Shadow Dealings)' : (!hasWeap ? 'No equipped weapon' : (rankCostMult > 1 && (pState.gold || 0) < Math.floor(10000 * aCostMult * 0.10) ? 'Need ' + Math.floor(10000 * aCostMult * 0.10).toLocaleString() + 'g for guard bribes' : '')),
                         confirmLabel: 'Do It Yourself'
                     }
                 ]
