@@ -1725,7 +1725,15 @@ window.UI = (function () {
 
     function openModal(title, bodyHtml, footerHtml) {
         // Block opening non-encounter modals while encounter decision pending
-        if (UI._funeralLocked) {
+        // v9p33river215: skip the funeral-lock while the player is in jail —
+        // they obviously can't go arrange a funeral from a cell.
+        var _isJailedNow = false;
+        try {
+            if (typeof Player !== 'undefined' && Player.jailedUntilDay && typeof Engine !== 'undefined' && Engine.getDay) {
+                _isJailedNow = Player.jailedUntilDay > Engine.getDay();
+            }
+        } catch(_e) {}
+        if (UI._funeralLocked && !_isJailedNow) {
             var ftl = (title || '').toLowerCase();
             if (ftl.indexOf('funeral') === -1 && ftl.indexOf('plan funeral') === -1
                 && ftl.indexOf('save') === -1 && ftl.indexOf('load') === -1
