@@ -241,26 +241,21 @@ function showTownDetail(town) {
             // v9p33river197: town jail panel — list NPCs + EMs + player
             // currently jailed in this town. Player jailbreak scheme acts on
             // these targets.
+            // v9p33river214: collapsed to a single-button row that opens a
+            // dedicated dialog (UI.openTownJailDialog) instead of dumping the
+            // full list inline.
             try {
                 var people = (Engine && Engine.getPeople) ? Engine.getPeople() : [];
                 var day = (Engine && Engine.getDay) ? Engine.getDay() : 0;
                 var jailed = people.filter(function(p) {
                     return p.alive && p.townId === town.id && p._jailedUntilDay && p._jailedUntilDay > day;
                 });
-                if (jailed.length === 0) return '<div class="detail-row"><span class="label">⛓️ Jail</span><span class="value" style="color:#888;">Empty</span></div>';
-                var rows = jailed.slice(0, 10).map(function(p) {
-                    var d = p._jailedUntilDay - day;
-                    var crime = '';
-                    if (p.criminalRecord && town.kingdomId && p.criminalRecord[town.kingdomId]) {
-                        crime = ' (record: ' + p.criminalRecord[town.kingdomId] + ')';
-                    }
-                    var emTag = p.isEliteMerchant ? ' 🏛️' : '';
-                    var jbBtn = (typeof Player !== 'undefined' && Player.canJailbreak && Player.canJailbreak()) ?
-                        ' <button class="btn-medieval" data-action="attemptJailbreak" data-id="' + p.id + '" data-val="' + town.id + '" style="font-size:0.62rem;padding:2px 6px;margin-left:4px;">🔓 Break Out</button>' : '';
-                    return '<div style="font-size:0.72rem;padding:2px 0;color:#cba;">⛓️ ' + (p.firstName || '?') + ' ' + (p.lastName || '') + emTag + ' — ' + d + ' days' + crime + jbBtn + '</div>';
-                }).join('');
-                var more = jailed.length > 10 ? '<div style="font-size:0.65rem;color:#888;">…and ' + (jailed.length - 10) + ' more</div>' : '';
-                return '<div class="detail-row"><span class="label">⛓️ Jail (' + jailed.length + ')</span><span class="value">' + rows + more + '</span></div>';
+                if (jailed.length === 0) {
+                    return '<div class="detail-row"><span class="label">⛓️ Jail</span><span class="value" style="color:#888;">Empty</span></div>';
+                }
+                return '<div class="detail-row"><span class="label">⛓️ Jail</span>' +
+                    '<span class="value"><button class="btn-medieval" data-action="openTownJailDialog" data-id="' + town.id + '" style="font-size:0.78rem;padding:4px 12px;background:rgba(120,60,60,0.4);border-color:rgba(180,80,80,0.6);color:#f4d8b8;">⛓️ View Inmates (' + jailed.length + ')</button></span>' +
+                '</div>';
             } catch(e) { return ''; }
         })()}`;
     // Blockade warning
@@ -4693,10 +4688,83 @@ function clickTown(townId) {
         if (typeof Player !== 'undefined' && Player.attemptJailbreak) {
             var r = Player.attemptJailbreak(d.id, d.val);
             if (r && r.message && typeof UI !== 'undefined' && UI.toast) UI.toast(r.message, r.success ? 'success' : 'warning');
-            // Refresh town panel if open
-            try { if (UI.refreshTownPanel) UI.refreshTownPanel(); } catch(e) {}
+            // Refresh dialog if open, else town panel
+            try {
+                if (UI._currentTownJailDialogId) UI.openTownJailDialog(UI._currentTownJailDialogId);
+                else if (UI.refreshTownPanel) UI.refreshTownPanel();
+            } catch(e) {}
         }
     });
+
+    // v9p33river214: dedicated town jail dialog showing all inmates
+    UI.openTownJailDialog = function(townId) {
+        if (typeof Engine === 'undefined' || !Engine.findTown) return;
+        var town = Engine.findTown(townId);
+        if (!town) return;
+        UI._currentTownJailDialogId = townId;
+        var people = Engine.getPeople ? Engine.getPeople() : [];
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var jailed = people.filter(function(p) {
+            return p.alive && p.townId === town.id && p._jailedUntilDay && p._jailedUntilDay > day;
+        });
+        var canJB = (typeof Player !== 'undefined' && Player.canJailbreak && Player.canJailbreak());
+
+        var html = '<div style="padding:14px;max-width:640px;color:#e0d6b8;">' +
+            '<h2 style="margin:0 0 6px;color:#ffd070;">⛓️ ' + (town.name || '?') + ' Jail</h2>' +
+            '<div style="font-size:0.85rem;color:#aaa;margin-bottom:10px;">' +
+                jailed.length + ' inmate' + (jailed.length !== 1 ? 's' : '') +
+                (canJB ? ' · <span style="color:#a8d8a8;">You have the skills to attempt a jailbreak.</span>'
+                       : ' · <span style="color:#888;">Requires <b>Jail Break</b> skill (or sufficient notoriety) to break someone out.</span>') +
+            '</div>';
+
+        if (jailed.length === 0) {
+            html += '<div style="padding:20px;text-align:center;color:#888;">The cells are empty.</div>';
+        } else {
+            html += '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;background:rgba(0,0,0,0.25);border-radius:4px;">' +
+                '<thead><tr style="background:rgba(192,160,96,0.15);text-align:left;">' +
+                    '<th style="padding:6px 8px;">Inmate</th>' +
+                    '<th style="padding:6px 8px;">Status</th>' +
+                    '<th style="padding:6px 8px;">Days Left</th>' +
+                    '<th style="padding:6px 8px;">Record</th>' +
+                    '<th style="padding:6px 8px;text-align:center;">Action</th>' +
+                '</tr></thead><tbody>';
+            for (var i = 0; i < jailed.length; i++) {
+                var p = jailed[i];
+                var d = p._jailedUntilDay - day;
+                var name = ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || '?';
+                var statusBits = [];
+                if (p.isKing) statusBits.push('<span style="color:#ffd86a;">👑 King</span>');
+                else if (p.isNoble || p.occupation === 'noble') statusBits.push('<span style="color:#cc99ff;">🏰 Noble</span>');
+                else if (p.isEliteMerchant) statusBits.push('<span style="color:#ffd86a;">🏛️ Elite Merchant</span>');
+                else statusBits.push('<span style="color:#aaa;">' + (p.occupation || 'commoner') + '</span>');
+                var rec = (p.criminalRecord && town.kingdomId && p.criminalRecord[town.kingdomId])
+                    ? (typeof p.criminalRecord[town.kingdomId] === 'object'
+                        ? Object.keys(p.criminalRecord[town.kingdomId]).join(', ')
+                        : ('×' + p.criminalRecord[town.kingdomId]))
+                    : '<span style="color:#666;">—</span>';
+                var btn = canJB
+                    ? '<button class="btn-medieval" data-action="attemptJailbreak" data-id="' + p.id + '" data-val="' + town.id + '" style="font-size:0.78rem;padding:4px 10px;background:rgba(170,40,40,0.5);">🔓 Break Out</button>'
+                    : '<span style="color:#666;font-size:0.75rem;">—</span>';
+                html += '<tr style="border-bottom:1px solid #333;">' +
+                    '<td style="padding:6px 8px;">' + name + '</td>' +
+                    '<td style="padding:6px 8px;">' + statusBits.join(' ') + '</td>' +
+                    '<td style="padding:6px 8px;color:#ffd86a;">' + d + 'd</td>' +
+                    '<td style="padding:6px 8px;color:#aaa;font-size:0.78rem;">' + rec + '</td>' +
+                    '<td style="padding:6px 8px;text-align:center;">' + btn + '</td>' +
+                    '</tr>';
+            }
+            html += '</tbody></table>';
+        }
+
+        html += '<div style="text-align:center;margin-top:14px;">' +
+            '<button class="btn-medieval" data-action="closeModal" style="padding:6px 18px;">Close</button>' +
+            '</div></div>';
+
+        if (UI.openModal) UI.openModal('⛓️ ' + (town.name || 'Town') + ' Jail', html);
+        else if (UI.showModal) UI.showModal('⛓️ Jail', html);
+    };
+    UI.registerAction('openTownJailDialog', function(_t, d) { if (d.id && UI.openTownJailDialog) UI.openTownJailDialog(d.id); });
+
     UI.registerAction('spreadRumorsAbout', function(_t, d) { UI.spreadRumorsAbout(d.id); });
     UI.registerAction('blackmailPerson', function(_t, d) { UI.blackmailPerson(d.id); });
     UI.registerAction('hireAssassinFor', function(_t, d) { UI.hireAssassinFor(d.id); });
