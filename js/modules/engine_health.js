@@ -364,13 +364,17 @@
         // Treatment: check if person is being treated via hospital queue system
         var treated = person._illnessTreatPaid || false;
 
+        // v9p33river239: poison resists treatment's drain reduction
+        // Hospital × 0.3 → × 0.75 for poisoned (treatment slows but doesn't stop)
+        // Clinic × 0.6 → × 0.85
+        var _isPoison = person.illness === 'poisoned';
         if (treated) {
-            if (hasHospital) healthDrain *= 0.3;
-            else if (hasClinic) healthDrain *= 0.6;
+            if (hasHospital) healthDrain *= (_isPoison ? 0.75 : 0.3);
+            else if (hasClinic) healthDrain *= (_isPoison ? 0.85 : 0.6);
         }
         // NPC medical self-treatment
         if (person.medicalKnowledge && person.medicalKnowledge !== 'none') {
-            healthDrain *= 0.7;
+            healthDrain *= (_isPoison ? 0.9 : 0.7);
             treated = true;
         }
         person.illnessTreated = treated;
@@ -397,7 +401,8 @@
         }
 
         // Natural health recovery (slow, even while sick if treated)
-        if (treated) {
+        // v9p33river239: poison neutralizes the natural-heal benefit
+        if (treated && !_isPoison) {
             person.health = Math.min(100, person.health + (NPC_HEALTH_CONFIG.DOCTOR_HEAL_PER_DAY || 3.0) * tickScale * 0.3);
         }
 
