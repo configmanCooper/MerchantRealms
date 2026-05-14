@@ -144,13 +144,29 @@
         player.crimesCommitted[actionId] = (player.crimesCommitted[actionId] || 0) + 1;
         if (!caught) {
             player.corruptionStreak = (player.corruptionStreak || 0) + 1;
+            // v9p33river200: refund half of any tracked notoriety added during
+            // this scheme attempt. _trackedNotoriety pushes each += amount onto
+            // _schemeNotorietyPlanned so we know how much to halve.
+            if (player._schemeNotorietyPlanned > 0) {
+                var refund = player._schemeNotorietyPlanned * 0.5;
+                player.notoriety = Math.max(0, (player.notoriety || 0) - refund);
+            }
         } else {
             player.corruptionStreak = 0;
         }
+        player._schemeNotorietyPlanned = 0;
         // Achievement checks
         if (player.corruptActions === 1) unlockAchievement('first_crime');
         if (player.corruptActions >= 50) unlockAchievement('crime_lord');
         if (player.corruptionStreak >= 20) unlockAchievement('untouchable_crimes');
+    }
+
+    // v9p33river200: tracks the planned notoriety bump so recordCorruptAction
+    // can refund half on uncaught outcomes. Returns the value unchanged so
+    // call sites read like `notoriety = (notoriety||0) + _trackedNotoriety(N)`.
+    function _trackedNotoriety(amount) {
+        player._schemeNotorietyPlanned = (player._schemeNotorietyPlanned || 0) + amount;
+        return amount;
     }
 
     // ========================================================
@@ -293,7 +309,7 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, 200, 15, 5, false);
             recordCorruptAction('sabotage_building', true);
-            player.notoriety += 8;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DARK_DEED_ADD || 12, 'sabotaging buildings');
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             Engine.logEvent(`${player.fullName} was caught sabotaging a building in ${town.name}!`);
@@ -303,7 +319,7 @@
         const disabledDays = rng ? rng.randInt(15, 30) : 20;
         player.sabotagedBuildings.push({ townId, buildingIdx: buildingIndex, expiresDay: Engine.getDay() + disabledDays });
         bld._disabledUntil = Engine.getDay() + disabledDays;
-        player.notoriety += 8;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         recordCorruptAction('sabotage_building', false);
         grantXP(10, 'Sabotaged building');
         // DNA: check if military building in target kingdom
@@ -346,7 +362,7 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, 300, 20, 0, false);
             recordCorruptAction('sabotage_road', true);
-            player.notoriety += 10;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             Engine.logEvent(`${player.fullName} was caught sabotaging a road!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, reputation -20.` };
         }
@@ -354,7 +370,7 @@
         const origQuality = road.quality || 1;
         road.quality = Math.max(0, origQuality - 1);
         player.sabotagedRoads.push({ roadIdx, expiresDay: Engine.getDay() + 60, origQuality });
-        player.notoriety += 10;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         recordCorruptAction('sabotage_road', false);
         grantXP(15, 'Sabotaged road');
         if (player.doubleNobleAgent && road) {
@@ -394,7 +410,7 @@
             const doExile = rng && rng.chance(0.3);
             const actualFine = applyCorruptPenalty(town, kingdom, 1000, 30, 15, doExile);
             recordCorruptAction('arson', true);
-            player.notoriety += 25;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(25);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DARK_DEED_ADD || 12, 'committing arson');
             Engine.logEvent(`${player.fullName} was caught committing arson in ${town.name}!`);
             let msg = `🚨 CAUGHT! Fined ${actualFine}g, jailed 15 days, reputation -30.`;
@@ -406,7 +422,7 @@
         // Destroy building permanently
         town.buildings.splice(buildingIndex, 1);
         player.arsonCount = (player.arsonCount || 0) + 1;
-        player.notoriety += 25;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(25);
         recordCorruptAction('arson', false);
         grantXP(25, 'Arson');
         if (player.arsonCount >= 5) unlockAchievement('arsonist_ach');
@@ -451,14 +467,14 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, value * 2, 10, 0, false);
             recordCorruptAction('steal_goods', true);
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             Engine.logEvent(`${player.fullName} was caught stealing in ${town.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, reputation -10. Goods confiscated.` };
         }
 
         town.market.supply[resourceId] -= qty;
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + qty;
-        player.notoriety += 5;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         recordCorruptAction('steal_goods', false);
         const xpBonus = Math.min(10, Math.floor(value / 50));
         grantXP(5 + xpBonus, 'Stole goods');
@@ -488,14 +504,14 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, yield_ * 3, 5, 3, false);
             recordCorruptAction('pickpocket', true);
-            player.notoriety += 3;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
             Engine.logEvent(`${player.fullName} was caught pickpocketing in ${town.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 3 days.` };
         }
 
         player.gold += yield_;
         player.stats.totalGoldEarned += yield_;
-        player.notoriety += 2;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(2);
         recordCorruptAction('pickpocket', false);
         grantXP(3, 'Pickpocketed');
         Engine.logEvent('A townsfolk reported missing coins.');
@@ -547,7 +563,7 @@
             var _kingdomRepLoss = _isNobleTarget ? 5 : 0;
             var actualFine = applyCorruptPenalty(town, kingdom, 100, 5, 5, false, null, _isNobleTarget ? { kingdomRepLoss: 5 } : null);
             recordCorruptAction('steal_npc', true);
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             player.schemeCooldowns[cdKey] = day + 30;
 
             // Relationship with the victim drops by 20
@@ -583,7 +599,7 @@
             return { success: false, message: (npc.firstName || 'They') + ' has nothing worth stealing.' };
         }
 
-        player.notoriety += 3;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
         player.schemeCooldowns[cdKey] = day + 15;
         recordCorruptAction('steal_npc', false);
         grantXP(5, 'Stole from NPC');
@@ -630,7 +646,7 @@
             var heistFine = Math.max(200, Math.floor(estValue * 2));
             const actualFine = applyCorruptPenalty(town, kingdom, heistFine, 20, 10, false);
             recordCorruptAction('warehouse_heist', true);
-            player.notoriety += 10;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             Engine.logEvent(`${player.fullName} was caught breaking into a warehouse in ${town.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 10 days, reputation -20.` };
         }
@@ -652,7 +668,7 @@
             stolenMsg.push(`${qty} ${res ? res.name : resId}`);
         }
 
-        player.notoriety += 8;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         recordCorruptAction('warehouse_heist', false);
         grantXP(15, 'Warehouse heist');
         Engine.logEvent('A warehouse in ' + town.name + ' was broken into overnight.');
@@ -697,7 +713,7 @@
 
         if (!playerWins) {
             // Traveler fights back — player takes minor damage
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             recordCorruptAction('rob_traveler', true);
             Engine.logEvent(`${player.fullName} tried to rob a traveler but was fought off!`, null, 'my_actions');
             return { success: false, message: '⚔️ The traveler fought back! You fled empty-handed. (-5 notoriety gained)' };
@@ -707,7 +723,7 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, 300, 15, 7, false);
             recordCorruptAction('rob_traveler', true);
-            player.notoriety += 8;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
             Engine.logEvent(`${player.fullName} was caught robbing travelers near ${town.name}!`, null, 'my_actions');
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 7 days.` };
         }
@@ -728,7 +744,7 @@
             goodsMsg = ` + ${qty} ${res ? res.name : resId}`;
         }
 
-        player.notoriety += 6;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(6);
         recordCorruptAction('rob_traveler', false);
         grantXP(10, 'Robbed traveler');
         Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.', null, 'local_town');
@@ -755,7 +771,7 @@
         // 20% chance bandits just take the money and run
         if (Math.random() < 0.2) {
             recordCorruptAction('raid_caravan', true);
-            player.notoriety += 3;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
             Engine.logEvent('The bandits you hired took your gold and disappeared.');
             return { success: false, message: '💀 The bandits took your 200g and vanished! Never trust criminals.' };
         }
@@ -764,7 +780,7 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, 1000, 30, 15, true);
             recordCorruptAction('raid_caravan', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             Engine.logEvent(`${player.fullName} was linked to a caravan raid near ${town.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 15 days, reputation -30. This is a serious crime!` };
         }
@@ -783,7 +799,7 @@
             stolenMsg.push(`${qty} ${res ? res.name : resId}`);
         }
 
-        player.notoriety += 12;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
         recordCorruptAction('raid_caravan', false);
         grantXP(25, 'Raided caravan');
         Engine.logEvent('A trade caravan was ambushed on the roads near ' + town.name + '.');
@@ -818,14 +834,14 @@
             const kId = town.kingdomId;
             if (kId && player.licenses[kId]) player.licenses[kId] = [];
             recordCorruptAction('counterfeit', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             Engine.logEvent(`${player.fullName} was caught selling counterfeit goods in ${town.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 10 days, all licenses revoked.` };
         }
 
         player.gold += revenue;
         player.stats.totalGoldEarned += revenue;
-        player.notoriety += 15;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
         recordCorruptAction('counterfeit', false);
         grantXP(15, 'Sold counterfeit goods');
         return { success: true, message: `✅ Sold ${qty} counterfeit ${res.name} for ${revenue}g!` };
@@ -857,13 +873,13 @@
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             const actualFine = applyCorruptPenalty(town, kingdom, amount * 2, 15, 0, false);
             recordCorruptAction('bribe_guards', true);
-            player.notoriety += 3;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
             Engine.logEvent(`${player.fullName} was caught trying to bribe guards in ${town.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, reputation -15.` };
         }
 
         player.bribedGuards[townId] = { expiresDay: Engine.getDay() + 30, reductionPct: 40 };
-        player.notoriety += 3;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
         recordCorruptAction('bribe_guards', false);
         player.achievementStats.bribesGiven = (player.achievementStats.bribesGiven || 0) + 1;
         grantXP(5, 'Bribed guards');
@@ -910,12 +926,12 @@
         if (caught) {
             const actualFine = applyCorruptPenalty(town, kingdom, 2000, 30, 0, true, null, { isNobleTarget: true });
             recordCorruptAction('bribe_advisor', true);
-            player.notoriety += 12;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
             Engine.logEvent(`${player.fullName} was caught bribing a royal advisor in ${kingdom.name}!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, exiled from ${kingdom.name}!` };
         }
 
-        player.notoriety += 12;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
         recordCorruptAction('bribe_advisor', false);
         grantXP(25, 'Bribed royal advisor');
         // Count kingdom bribes for Shadow Emperor achievement
@@ -981,7 +997,7 @@
             applyCorruptPenalty(town, kingdom, 0, 20, 0, false, null, _isNoble ? { isNobleTarget: true } : null);
             if (player.relationships[personId]) player.relationships[personId].level = 0;
             recordCorruptAction('blackmail', true);
-            player.notoriety += 10;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'blackmailing a noble');
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             Engine.logEvent(`${player.fullName} was exposed trying to blackmail ${person.firstName}!`);
@@ -990,7 +1006,7 @@
 
         const payment = rng ? rng.randInt(50, 200) : 100;
         player.blackmailTargets[personId] = { paymentPerSeason: payment, nextPayDay: Engine.getDay() + 90 };
-        player.notoriety += 10;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         recordCorruptAction('blackmail', false);
         grantXP(15, 'Blackmailed NPC');
         // DNA task: check if target is a noble in the target kingdom
@@ -1020,12 +1036,12 @@
             applyCorruptPenalty(town, kingdom, 0, 10, 0, false);
             if (player.relationships[targetMerchantId]) player.relationships[targetMerchantId].level = 0;
             recordCorruptAction('spread_rumors', true);
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             return { success: false, caught: true, message: '🚨 CAUGHT! Reputation -10. Target knows you spread rumors.' };
         }
 
         player.rumorTargets[targetMerchantId] = { expiresDay: Engine.getDay() + 60 };
-        player.notoriety += 5;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         recordCorruptAction('spread_rumors', false);
         grantXP(8, 'Spread rumors');
         // DNA: check if target is the king
@@ -1060,12 +1076,12 @@
             var _fIsNoble = _ftarget && (_ftarget.occupation === 'noble' || _ftarget.occupation === 'king');
             const actualFine = applyCorruptPenalty(town, kingdom, 500, 25, 10, false, null, _fIsNoble ? { isNobleTarget: true } : null);
             recordCorruptAction('frame_competitor', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             Engine.logEvent(`${player.fullName} was caught trying to frame a competitor!`);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, jailed 10 days, reputation -25.` };
         }
 
-        player.notoriety += 15;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
         recordCorruptAction('frame_competitor', false);
         grantXP(20, 'Framed competitor');
         Engine.logEvent('A merchant has been falsely accused of a crime!');
@@ -1102,13 +1118,13 @@
                 }
                 player.jailedUntilDay = 0; // not jailed — exiled everywhere
                 recordCorruptAction('assassinate_king', true);
-                player.notoriety += 100;
+                player.notoriety = (player.notoriety || 0) + _trackedNotoriety(100);
                 _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'plotting regicide');
                 Engine.logEvent(`${player.fullName} was caught plotting regicide against ${kingdom.name}!`);
                 return { success: false, caught: true, message: '🚨 CAUGHT! Exiled from ALL kingdoms! All reputation lost! Permanent bounty!' };
             }
 
-            player.notoriety += 100;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(100);
             recordCorruptAction('assassinate_king', false);
             grantXP(100, 'Assassinated king');
             unlockAchievement('kingslayer_ach');
@@ -1128,14 +1144,14 @@
                 const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
                 applyCorruptPenalty(town, kingdom, 0, 0, 0, true, null, { isNobleTarget: true });
                 recordCorruptAction('assassinate_guard_captain', true);
-                player.notoriety += 40;
+                player.notoriety = (player.notoriety || 0) + _trackedNotoriety(40);
                 _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'assassinating guard captain');
                 Engine.logEvent(`${player.fullName} was caught hiring an assassin for the guard captain!`);
                 return { success: false, caught: true, message: '🚨 CAUGHT! Exiled! All kingdom assets seized!' };
             }
 
             if (town) town.security = Math.max(0, (town.security || 50) - 30);
-            player.notoriety += 40;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(40);
             recordCorruptAction('assassinate_guard_captain', false);
             grantXP(40, 'Assassinated guard captain');
             if (player.doubleNobleAgent && town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('weaken_army');
@@ -1157,13 +1173,13 @@
             var _haIsNoble = _hatarget && (_hatarget.occupation === 'noble' || _hatarget.occupation === 'king' || _hatarget.isKing);
             applyCorruptPenalty(town, kingdom, 0, 0, 0, true, null, _haIsNoble ? { isNobleTarget: true } : null);
             recordCorruptAction('assassinate_competitor', true);
-            player.notoriety += 30;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(30);
             _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DARK_DEED_ADD || 12, 'hiring an assassin');
             Engine.logEvent(`${player.fullName} was caught hiring an assassin!`);
             return { success: false, caught: true, message: '🚨 CAUGHT! Exiled! All kingdom assets seized! Bounty placed!' };
         }
 
-        player.notoriety += 30;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(30);
         recordCorruptAction('assassinate_competitor', false);
         grantXP(30, 'Hired assassin');
         // DNA: check if target was a noble
@@ -1198,7 +1214,7 @@
             var _pIsNoble = _ptarget && (_ptarget.occupation === 'noble' || _ptarget.occupation === 'king' || _ptarget.isKing);
             applyCorruptPenalty(town, kingdom, 500, 25, 10, false, null, _pIsNoble ? { isNobleTarget: true } : null);
             recordCorruptAction('poison', true);
-            player.notoriety += 20;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DARK_DEED_ADD || 12, 'poisoning someone');
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             Engine.logEvent(`${player.fullName} was caught attempting to poison someone!`);
@@ -1207,7 +1223,7 @@
 
         const duration = rng ? rng.randInt(5, 15) : 10;
         player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration });
-        player.notoriety += 20;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
         recordCorruptAction('poison', false);
         grantXP(20, 'Poisoned target');
         // DNA: check if target is a noble
@@ -1257,7 +1273,7 @@
         if (player.cookingBooks) return { success: false, message: 'Already cooking the books this season.' };
 
         player.cookingBooks = true;
-        player.notoriety += 3;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
         recordCorruptAction('cook_books', false);
         grantXP(5, 'Cooking the books');
         Engine.logEvent(`${player.fullName} is underreporting trade volumes.`);
@@ -1300,7 +1316,7 @@
         if (caught) {
             const actualFine = applyCorruptPenalty(town, kingdom, 500, 10, 0, false);
             recordCorruptAction('insider_trading', true);
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, reputation -10.` };
         }
 
@@ -1309,7 +1325,7 @@
         const infoType = infoTypes[rng ? rng.randInt(0, infoTypes.length - 1) : 0];
         const info = { kingdomId, type: infoType, revealDay: Engine.getDay(), effectDay: Engine.getDay() + 30 };
         player.insiderInfo.push(info);
-        player.notoriety += 5;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         recordCorruptAction('insider_trading', false);
         grantXP(10, 'Insider trading');
 
@@ -1434,7 +1450,7 @@
                     var _smrTown = Engine.findTown(_sr.fromTownId);
                     var _smrKingdom = _smrTown ? (Engine.findKingdom ? Engine.findKingdom(_smrTown.kingdomId) : null) : null;
                     player.smugglingRoutes.splice(_smri, 1);
-                    player.notoriety += 10;
+                    player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
                     if (_smrKingdom) player.reputation[_smrKingdom.id] = Math.max(0, (player.reputation[_smrKingdom.id] || 50) - 10);
                     Engine.logEvent('🚨 A smuggling route was discovered and shut down!');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 Smuggling route busted! Rep -10.', 'danger', 'my_business');
@@ -1454,7 +1470,7 @@
                 // Chance of resistance/discovery each week
                 if (rng && rng.chance(0.05)) {
                     delete player.protectionRackets[_prTownId];
-                    player.notoriety += 8;
+                    player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
                     var _prTown = Engine.findTown(_prTownId);
                     var _prKingdom = _prTown ? (Engine.findKingdom ? Engine.findKingdom(_prTown.kingdomId) : null) : null;
                     if (_prKingdom) player.reputation[_prKingdom.id] = Math.max(0, (player.reputation[_prKingdom.id] || 50) - 8);
@@ -1482,7 +1498,7 @@
                     applyCorruptPenalty(_daTown, _myK, 3000, 40, 20, true);
                     player.doubleAgentActive = null;
                     player.militaryService.active = false;
-                    player.notoriety += 30;
+                    player.notoriety = (player.notoriety || 0) + _trackedNotoriety(30);
                     Engine.logEvent('🚨 ' + player.fullName + ' was exposed as a double agent! Dishonorably discharged and exiled.', null, 'my_actions');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 TREASON! Discovered as a double agent! Exiled!', 'danger', 'critical');
                 }
@@ -2475,7 +2491,7 @@
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             applyCorruptPenalty(town, kingdom, 300, 15, 5, false);
             recordCorruptAction('spy_network', true);
-            player.notoriety += 10;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             player.gold -= 500;
             return { success: false, caught: true, message: '🚨 CAUGHT establishing spy network! Fined 300g, jailed 5 days.' };
         }
@@ -2484,7 +2500,7 @@
         player.spyNetworks[townId] = { expiresDay: Engine.getDay() + 180, kingdomId: town.kingdomId };
         recordCorruptAction('spy_network', false);
         grantXP(20, 'Established spy network');
-        player.notoriety += 5;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         Engine.logEvent(player.fullName + ' established intelligence contacts in ' + town.name + '.');
         return { success: true, message: '🕵️ Spy network established in ' + town.name + '! You\'ll receive advance warnings for 180 days.' };
     }
@@ -2513,7 +2529,7 @@
             var kingdom = Engine.findKingdom ? Engine.findKingdom(fromTown.kingdomId) : null;
             applyCorruptPenalty(fromTown, kingdom, 500, 20, 10, false);
             recordCorruptAction('smuggling_route', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             player.gold -= 1000;
             return { success: false, caught: true, message: '🚨 CAUGHT setting up smuggling route! Fined 500g, jailed 10 days.' };
         }
@@ -2522,7 +2538,7 @@
         player.smugglingRoutes.push({ fromTownId: fromTownId, toTownId: toTownId, expiresDay: Engine.getDay() + CONFIG.DAYS_PER_SEASON, goldEarned: 0 });
         recordCorruptAction('smuggling_route', false);
         grantXP(25, 'Established smuggling route');
-        player.notoriety += 8;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         Engine.logEvent('A new smuggling route has been established between ' + fromTown.name + ' and ' + toTown.name + '.');
         return { success: true, message: '🥷 Smuggling route established: ' + fromTown.name + ' ↔ ' + toTown.name + '! Generates passive income for 1 year.' };
     }
@@ -2562,7 +2578,7 @@
                 var kingdomCaught = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
                 var fineK = applyCorruptPenalty(town, kingdomCaught, cost * 3, 20, 7, false, 'forgery');
                 recordCorruptAction('forge_documents', true);
-                player.notoriety += 12;
+                player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
                 player.gold -= cost;
                 return { success: false, caught: true, message: '🚨 CAUGHT forging ' + actualSubject + '! Fined ' + fineK + 'g, jailed 7 days.' };
             }
@@ -2570,7 +2586,7 @@
             player.forgedKingdomDocs[targetKingdomId][docType === 'temp_citizenship' ? 'citizenship' : 'license'] = day + duration;
             recordCorruptAction('forge_documents', false);
             grantXP(15, 'Forged ' + actualSubject);
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             return { success: true, message: '📝 ' + reward + '!' };
         }
 
@@ -2603,7 +2619,7 @@
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             var fine = applyCorruptPenalty(town, kingdom, cost * 3, 20, 7, false, 'forgery');
             recordCorruptAction('forge_documents', true);
-            player.notoriety += 12;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
             player.gold -= cost;
             return { success: false, caught: true, message: '🚨 CAUGHT forging documents! Fined ' + fine + 'g, jailed 7 days.' };
         }
@@ -2612,7 +2628,7 @@
         player.forgedDocuments[docType] = day + duration;
         recordCorruptAction('forge_documents', false);
         grantXP(15, 'Forged documents');
-        player.notoriety += 5;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         return { success: true, message: '📝 Forged ' + docType.replace(/_/g, ' ') + ' created! ' + reward + '.' };
     }
 
@@ -2657,7 +2673,7 @@
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             var fine = applyCorruptPenalty(town, kingdom, 800, 25, 10, false);
             recordCorruptAction('sabotage_caravan', true);
-            player.notoriety += 20;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
             player.gold -= 300;
             return { success: false, caught: true, message: '🚨 CAUGHT sabotaging ' + (target.firstName || 'a merchant') + '\'s caravan! Fined ' + fine + 'g, jailed 10 days.' };
         }
@@ -2670,7 +2686,7 @@
         if (target.gold != null) target.gold = Math.max(0, target.gold - loot * 2);
         recordCorruptAction('sabotage_caravan', false);
         grantXP(20, 'Sabotaged caravan');
-        player.notoriety += 12;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
         Engine.logEvent('A caravan belonging to ' + (target.firstName || 'a merchant') + ' was raided by bandits near ' + town.name + '.');
         return { success: true, message: '⚔️ Caravan sabotaged! Looted ' + loot + 'g from ' + (target.firstName || 'the merchant') + '\'s goods.' };
     }
@@ -2693,7 +2709,7 @@
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             var fine = applyCorruptPenalty(town, kingdom, 400, 20, 8, false);
             recordCorruptAction('plant_evidence', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             player.gold -= 150;
             if (player.relationships[npcId]) player.relationships[npcId].level = 0;
             return { success: false, caught: true, message: '🚨 CAUGHT planting evidence on ' + (npc.firstName || 'them') + '! Fined ' + fine + 'g, jailed 8 days.' };
@@ -2712,7 +2728,7 @@
         }
         recordCorruptAction('plant_evidence', false);
         grantXP(20, 'Planted evidence');
-        player.notoriety += 8;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         // DNA: check if target is a noble
         if (player.doubleNobleAgent && npc && (npc.occupation === 'noble' || npc.isNoble)) {
             if (town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('plant_evidence_noble');
@@ -2737,7 +2753,7 @@
         if (rng && rng.chance(detection)) {
             var fine = applyCorruptPenalty(town, kingdom, 3000, 40, 20, true, null, { isNobleTarget: true });
             recordCorruptAction('incite_revolt', true);
-            player.notoriety += 30;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(30);
             player.gold -= 2000;
             return { success: false, caught: true, message: '🚨 CAUGHT inciting revolt! Fined ' + fine + 'g, jailed 20 days, EXILED!' };
         }
@@ -2749,7 +2765,7 @@
         kingdom.unrest = (kingdom.unrest || 0) + rng.randInt(15, 30);
         recordCorruptAction('incite_revolt', false);
         grantXP(40, 'Incited revolt');
-        player.notoriety += 20;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
         if (player.doubleNobleAgent && kingdom.id === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('incite_unrest');
         Engine.logEvent('Unrest is brewing in ' + kingdom.name + '! Agitators are spreading dissent.');
         return { success: true, message: '🔥 Revolt incited in ' + kingdom.name + '! Stability and prosperity reduced, unrest rising.' };
@@ -2789,7 +2805,7 @@
             // Caught as traitor — devastating
             var fine = applyCorruptPenalty(town, myKingdom, 5000, 50, 30, true, null, { isNobleTarget: true });
             recordCorruptAction('double_agent', true);
-            player.notoriety += 40;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(40);
             player.militaryService.active = false;
             return { success: false, caught: true, message: '🚨 TREASON DISCOVERED! Fined ' + fine + 'g, jailed 30 days, EXILED, dishonorably discharged!' };
         }
@@ -2798,7 +2814,7 @@
         player.doubleAgentActive = { enemyKingdomId: enemyKingdomId, startDay: Engine.getDay(), paymentPerSeason: payPerSeason, nextPayDay: Engine.getDay() + 90 };
         recordCorruptAction('double_agent', false);
         grantXP(30, 'Became double agent');
-        player.notoriety += 10;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         Engine.logEvent(player.fullName + ' has begun selling military secrets.');
         return { success: true, message: '🕵️ Now operating as a double agent! Selling secrets to ' + enemyKingdom.name + ' for ' + payPerSeason + 'g per season.' };
     }
@@ -2822,7 +2838,7 @@
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             var fine = applyCorruptPenalty(town, kingdom, 500, 25, 10, false);
             recordCorruptAction('protection_racket', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             return { success: false, caught: true, message: '🚨 CAUGHT running protection racket! Fined ' + fine + 'g, jailed 10 days.' };
         }
 
@@ -2830,7 +2846,7 @@
         player.protectionRackets[townId] = { paymentPerWeek: weeklyPay, lastCollectDay: Engine.getDay(), npcsIntimidated: rng.randInt(2, 6) };
         recordCorruptAction('protection_racket', false);
         grantXP(20, 'Started protection racket');
-        player.notoriety += 10;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         Engine.logEvent('Local merchants in ' + town.name + ' are being extorted for "protection" money.');
         return { success: true, message: '💪 Protection racket established in ' + town.name + '! Collecting ' + weeklyPay + 'g per week from ' + player.protectionRackets[townId].npcsIntimidated + ' merchants.' };
     }
@@ -3093,7 +3109,7 @@
         if (rng && rng.chance(detection)) {
             applyCorruptPenalty(town, kingdom, 500, 15, 0, false, null, { isNobleTarget: true });
             recordCorruptAction('pit_nobles', true);
-            player.notoriety += 10;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'manipulating nobles');
             modifyRelationship(nobleAId, -20);
             modifyRelationship(nobleBId, -20);
@@ -3125,7 +3141,7 @@
             nobleB._nobleRelationships[nobleAId] = Math.max(-100, (nobleB._nobleRelationships[nobleAId] || 0) - damage);
             recordCorruptAction('pit_nobles', false);
             grantXP(20, 'Pitted nobles against each other');
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             _trackDnaTask('pit_two_nobles');
             _setSchemeCooldown('pit_nobles', nobleAId, 10);
             _setSchemeCooldown('pit_nobles', nobleBId, 10);
@@ -3143,7 +3159,7 @@
         _setSchemeCooldown('pit_nobles', nobleAId, 7);
         _setSchemeCooldown('pit_nobles', nobleBId, 7);
         recordCorruptAction('pit_nobles', false);
-        player.notoriety += 2;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(2);
         var _failMsg = 'Your scheming didn\'t take hold. ' + nobleA.firstName + ' and ' + nobleB.firstName + ' saw through the manipulation. (' + Math.round(successChance * 100) + '% chance)';
         _logSchemeOutcome('pit_nobles', nobleA.firstName + ' & ' + nobleB.firstName, false, false, _failMsg);
         return { success: false, message: _failMsg };
@@ -3217,7 +3233,7 @@
         if (rng && rng.chance(detection)) {
             applyCorruptPenalty(town, kingdom, 1000, 25, 5, false, null, { kingdomRepLoss: 5 });
             recordCorruptAction('turn_noble_against_king', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'turning a noble against the king');
             modifyRelationship(nobleId, -15);
             _recordSchemeTarget(nobleId);
@@ -3248,7 +3264,7 @@
                 modifyRelationship(nobleId, 5);
                 recordCorruptAction('turn_noble_against_king', false);
                 grantXP(25, 'Turned noble against king');
-                player.notoriety += 8;
+                player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
                 _trackDnaTask('turn_noble_king');
                 _setSchemeCooldown('turn_noble', nobleId, 14);
                 _recordSchemeTarget(nobleId);
@@ -3265,7 +3281,7 @@
 
         _setSchemeCooldown('turn_noble', nobleId, 7);
         recordCorruptAction('turn_noble_against_king', false);
-        player.notoriety += 3;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
         var _fMsg = noble.firstName + ' remains loyal to the crown. Your persuasion failed. (' + Math.round(successChance * 100) + '% chance)';
         _logSchemeOutcome('turn_noble', noble.firstName, false, false, _fMsg);
         return { success: false, message: _fMsg };
@@ -3315,7 +3331,7 @@
         if (rng && rng.chance(detection)) {
             applyCorruptPenalty(town, kingdom, 600, 20, 0, false, null, { isNobleTarget: true });
             recordCorruptAction('discredit_noble', true);
-            player.notoriety += 12;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'discrediting a noble');
             modifyRelationship(nobleId, -25);
             _recordSchemeTarget(nobleId);
@@ -3355,7 +3371,7 @@
 
             recordCorruptAction('discredit_noble', false);
             grantXP(20, 'Discredited noble');
-            player.notoriety += 6;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(6);
             _trackDnaTask('discredit_noble');
             _setSchemeCooldown('discredit', nobleId, 10);
             _recordSchemeTarget(nobleId);
@@ -3371,7 +3387,7 @@
 
         _setSchemeCooldown('discredit', nobleId, 7);
         recordCorruptAction('discredit_noble', false);
-        player.notoriety += 2;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(2);
         var _fMsg = 'Your misinformation campaign failed to gain traction. (' + Math.round(successChance * 100) + '% chance)';
         _logSchemeOutcome('discredit', noble.firstName, false, false, _fMsg);
         return { success: false, message: _fMsg };
@@ -3410,7 +3426,7 @@
         if (rng && rng.chance(detection)) {
             applyCorruptPenalty(town, kingdom, 300, 10, 0, false, null, { isNobleTarget: true });
             recordCorruptAction('manipulate_vote', true);
-            player.notoriety += 5;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'manipulating noble votes');
             modifyRelationship(nobleId, -10);
             _recordSchemeTarget(nobleId);
@@ -3427,7 +3443,7 @@
             modifyRelationship(nobleId, 3);
             recordCorruptAction('manipulate_vote', false);
             grantXP(15, 'Manipulated noble vote');
-            player.notoriety += 3;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
             _trackDnaTask('manipulate_votes');
             _setSchemeCooldown('manipulate_vote', nobleId, 10);
             _recordSchemeTarget(nobleId);
@@ -3438,7 +3454,7 @@
 
         _setSchemeCooldown('manipulate_vote', nobleId, 7);
         recordCorruptAction('manipulate_vote', false);
-        player.notoriety += 1;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(1);
         var _fMsg = noble.firstName + ' refused your influence. (' + Math.round(successChance * 100) + '% chance)';
         _logSchemeOutcome('manipulate_vote', noble.firstName, false, false, _fMsg);
         return { success: false, message: _fMsg };
@@ -3491,7 +3507,7 @@
         if (rng && rng.chance(detection)) {
             applyCorruptPenalty(town, kingdom, 800, 25, 3, false, null, { kingdomRepLoss: 2 });
             recordCorruptAction('expose_secrets', true);
-            player.notoriety += 15;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'exposing noble secrets');
             modifyRelationship(nobleId, -30);
             _recordSchemeTarget(nobleId);
@@ -3550,7 +3566,7 @@
 
             recordCorruptAction('expose_secrets', false);
             grantXP(30, 'Exposed noble secrets');
-            player.notoriety += 10;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             _trackDnaTask('expose_noble');
             _setSchemeCooldown('expose_secrets', nobleId, 14);
             _recordSchemeTarget(nobleId);
@@ -3567,7 +3583,7 @@
 
         _setSchemeCooldown('expose_secrets', nobleId, 7);
         recordCorruptAction('expose_secrets', false);
-        player.notoriety += 3;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(3);
         var _fMsg = 'Couldn\'t find anything damaging on ' + noble.firstName + '. (' + Math.round(successChance * 100) + '% chance)';
         _logSchemeOutcome('expose_secrets', noble.firstName, false, false, _fMsg);
         return { success: false, message: _fMsg };
@@ -3642,7 +3658,7 @@
         if (rng && rng.chance(detection)) {
             applyCorruptPenalty(town, kingdom, 3000, 40, 15, true, null, { isNobleTarget: true });
             recordCorruptAction('double_noble_agent', true);
-            player.notoriety += 30;
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(30);
             return { success: false, caught: true, message: '🚨 TREASON! Caught contacting ' + sponsor.name + '! Fined 3000g, jailed 15 days, EXILED, reputation destroyed!' };
         }
 
@@ -3674,7 +3690,7 @@
         player._dnaTaskProgress = {};
         recordCorruptAction('double_noble_agent', false);
         grantXP(30, 'Became double noble agent');
-        player.notoriety += 10;
+        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
         Engine.logEvent('🕵️ ' + player.fullName + ' has begun a dangerous double life as a noble agent for ' + sponsor.name + '.', null, 'my_actions');
 
         var taskList = '';
