@@ -446,7 +446,10 @@
         if (hasSkill('smugglers_run')) skillReduction += 0.10;
         skillReduction = Math.min(0.85, skillReduction);
 
-        var security = (currentTown && typeof currentTown.security === 'number') ? currentTown.security : 0.4;
+        // v9p33river232: town.security is 0–100 in this codebase (not 0–1).
+        // Normalize to 0–1 here so locFactor stays sensible.
+        var _rawSec = (currentTown && typeof currentTown.security === 'number') ? currentTown.security : 40;
+        var security = Math.max(0, Math.min(1, _rawSec / 100));
 
         var base, locFactor;
         if (inHuntKingdom) {
@@ -489,9 +492,6 @@
         // High-risk situations (in-kingdom, no skills) still bite hard, but
         // ordinary day-to-day exposure is more forgiving.
         chance *= 0.70;
-        // v9p33river232: god-mode crime stealth also reduces manhunt daily roll
-        // by 95%, matching its effect on calculateCorruptDetection.
-        if (typeof window !== 'undefined' && window._godCrimeStealth) chance *= 0.05;
         return Math.max(0.001, Math.min(0.99, chance));
     }
 
