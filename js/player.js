@@ -24635,10 +24635,10 @@
         var _today = 0;
         try { _today = Engine.getDay(); } catch(e) {}
         if (player.jailedUntilDay && player.jailedUntilDay > _today) {
-            return { canTalk: false, reason: '⛓️ You are in jail and cannot interact with anyone right now.' };
+            return { canTalk: false, lockReason: 'jailed', reason: '⛓️ You are in jail and cannot interact with anyone right now.' };
         }
 
-        if (person.age < 10) return { canTalk: false, reason: 'This person is too young to interact with.' };
+        if (person.age < 10) return { canTalk: false, lockReason: 'too_young', reason: 'This person is too young to interact with.' };
 
         // Check if this person is a king
         var isKing = false;

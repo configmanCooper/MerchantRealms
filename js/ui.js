@@ -577,6 +577,11 @@ window.UI = (function () {
         registerAction('setWeddingChoice', function(_t, d) { if (d.choice && d.id) UI.setWeddingChoice(d.choice, d.id); });
         registerAction('_setWaTabAndOpen', function() { window._waAutoRefresh=!window._waAutoRefresh;UI.openWorldAnalytics() });
         registerAction('openWorldAnalytics', function() { UI.openWorldAnalytics(); });
+        registerAction('_godToggleCrimeStealth', function() {
+            window._godCrimeStealth = !window._godCrimeStealth;
+            UI.toast('🥷 God-mode crime stealth: ' + (window._godCrimeStealth ? 'ON (catch chance ×0.05)' : 'OFF'), window._godCrimeStealth ? 'success' : 'info');
+            if (UI.openGodMode) UI.openGodMode();
+        });
         registerAction('_setWaTab', function(_t, d) { window._waTab=d.id;UI.openWorldAnalytics() });
         registerAction('hireGuardUI', function() { UI.hireGuardUI(); });
         registerAction('dismissGuardUI', function(_t, d) { if (d.id) UI.dismissGuardUI(d.id); });
@@ -15263,6 +15268,10 @@ window.UI = (function () {
         // World Analytics button
         html += '<br><button data-action="openWorldAnalytics" style="margin:4px 2px; padding:6px 14px; background:linear-gradient(135deg,#1a3a5c,#2a5a8c); color:#FFD700; border:2px solid #FFD700; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">🌍 World Analytics</button> ';
 
+        // v9p33river213: Crime detection toggle
+        var _gdCrimeOn = !!window._godCrimeStealth;
+        html += '<button data-action="_godToggleCrimeStealth" style="margin:4px 2px; padding:6px 14px; background:' + (_gdCrimeOn ? 'linear-gradient(135deg,#1a5c1a,#2a8c2a)' : 'linear-gradient(135deg,#5c1a1a,#8c2a2a)') + '; color:#FFD700; border:2px solid #FFD700; cursor:pointer; font-size:13px; font-weight:bold; border-radius:4px;">🥷 Crime Stealth: ' + (_gdCrimeOn ? 'ON (-95%)' : 'OFF') + '</button> ';
+
         // Story Mode Skip Chapter (only show if story mode is active)
         if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && !StoryMode.isComplete()) {
             var _gmChInfo = StoryMode.getCurrentChapter ? StoryMode.getCurrentChapter() : null;
@@ -16209,7 +16218,61 @@ window.UI = (function () {
         }
         html += '</div>';
 
-        // ── Inter-Kingdom Relations Matrix ──
+        // ── v9p33river213: Nobility Loyalty/Fear + Active Conspiracies ──
+        html += '<h4 style="color:#FFD700;margin:16px 0 6px;">🏰 Nobility & Conspiracies</h4>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+        for (var _ni = 0; _ni < kData.length; _ni++) {
+            var _nk = kData[_ni].k;
+            // Aggregate noble loyalty/fear (rank 4-7 alive in this kingdom, excluding the king)
+            var _nobles = [];
+            for (var _npi = 0; _npi < people.length; _npi++) {
+                var _np = people[_npi];
+                if (!_np.alive) continue;
+                if (!_np.socialRank || _np.socialRank[_nk.id] == null) continue;
+                if (_np.socialRank[_nk.id] < 4) continue;
+                if (_np.id === _nk.king) continue;
+                _nobles.push(_np);
+            }
+            var _avgLoy = 0, _avgFear = 0;
+            if (_nobles.length > 0) {
+                var _sumL = 0, _sumF = 0;
+                for (var _nbi = 0; _nbi < _nobles.length; _nbi++) {
+                    _sumL += (_nobles[_nbi].kingLoyalty != null ? _nobles[_nbi].kingLoyalty : 50);
+                    _sumF += (_nobles[_nbi].fearOfKing != null ? _nobles[_nbi].fearOfKing : 15);
+                }
+                _avgLoy = Math.round(_sumL / _nobles.length);
+                _avgFear = Math.round(_sumF / _nobles.length);
+            }
+            var _loyColor = _avgLoy >= 65 ? '#4f4' : _avgLoy >= 40 ? '#ff8' : '#f44';
+            var _fearColor = _avgFear >= 50 ? '#f44' : _avgFear >= 25 ? '#ff8' : '#4f4';
+
+            // Active conspiracies (single ongoing per kingdom in current model)
+            var _csp = _nk._conspiracy;
+            var _cspCount = (_csp && !_csp.resolved) ? 1 : 0;
+            var _cspHtml = '';
+            if (_cspCount > 0) {
+                var _cType = (_csp.type || 'plot').replace(/_/g, ' ');
+                var _cStr = Math.floor(_csp.strength || 0);
+                var _cStrColor = _cStr >= 80 ? '#f44' : _cStr >= 50 ? '#fa0' : '#ff8';
+                var _detectedTag = _csp.detected ? '<span style="color:#4fc;font-size:0.7rem;">DETECTED</span>' : '<span style="color:#888;font-size:0.7rem;">undetected</span>';
+                _cspHtml = '<div style="font-size:0.74rem;color:#ddd;margin-top:4px;">' +
+                    '🤫 <span style="color:' + _cStrColor + ';font-weight:bold;">' + _cType + '</span> · str ' + _cStr + ' · ' + _detectedTag;
+                if (_csp.revoltTargetTownName) _cspHtml += '<br><span style="color:#888;">Target: ' + _csp.revoltTargetTownName + '</span>';
+                if (_csp.plotters && _csp.plotters.length) _cspHtml += '<br><span style="color:#888;">' + _csp.plotters.length + ' plotters</span>';
+                _cspHtml += '</div>';
+            } else {
+                _cspHtml = '<div style="font-size:0.74rem;color:#666;margin-top:4px;">No active conspiracies</div>';
+            }
+
+            html += '<div style="flex:1;min-width:200px;background:#1a1a2e;border-radius:4px;padding:8px;border-left:4px solid ' + (_nk.color || '#666') + ';">';
+            html += '<div style="font-weight:bold;font-size:0.82rem;margin-bottom:4px;">' + (_nk.name || '?') + ' <span style="color:#888;font-weight:normal;font-size:0.72rem;">(' + _nobles.length + ' noble' + (_nobles.length !== 1 ? 's' : '') + ')</span></div>';
+            html += '<div style="font-size:0.76rem;color:#aaa;">💛 Loyalty (avg): <span style="color:' + _loyColor + ';font-weight:bold;">' + _avgLoy + '</span>/100</div>';
+            html += '<div style="font-size:0.76rem;color:#aaa;">😨 Fear (avg): <span style="color:' + _fearColor + ';font-weight:bold;">' + _avgFear + '</span>/100</div>';
+            html += _cspHtml;
+            html += '</div>';
+        }
+        html += '</div>';
+
         var warThresh = (typeof CONFIG !== 'undefined' && CONFIG.RELATION_WAR_THRESHOLD) ? CONFIG.RELATION_WAR_THRESHOLD : -35;
         var warWarnThresh = warThresh + 20; // yellow zone
         html += '<h4 style="color:#FFD700;margin:16px 0 6px;">🤝 Inter-Kingdom Relations</h4>';

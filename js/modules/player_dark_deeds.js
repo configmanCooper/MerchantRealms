@@ -130,6 +130,8 @@
         // crime path feels slightly more forgiving (post-detection manhunt
         // already ramps risk over time).
         detection *= 0.85;
+        // v9p33river213: god-mode crime stealth (debug toggle in god panel)
+        if (typeof window !== 'undefined' && window._godCrimeStealth) detection *= 0.05;
         return Math.max(0.02, Math.min(0.95, detection));
     }
 

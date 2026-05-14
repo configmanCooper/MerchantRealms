@@ -1883,8 +1883,14 @@ function showPersonDetail(person) {
                 // Locked — show why and introduction options
                 var _npcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
                 var _rankName = _npcRank >= 7 ? 'King' : _npcRank >= 4 ? (['', '', '', '', 'Minor Noble', 'Lord', 'Royal Advisor'][_npcRank] || 'Noble') : 'Noble';
+                // v9p33river213: pick header label based on lock reason — jailed/young
+                // shouldn't say "Noble".
+                var _lockLabel = _rankName;
+                if (_talkCheck.lockReason === 'jailed') _lockLabel = 'In Jail';
+                else if (_talkCheck.lockReason === 'too_young') _lockLabel = 'Too Young';
+                else if (_npcRank < 4) _lockLabel = 'Locked';
                 html += `<div style="background:rgba(200,50,50,0.1);border:1px solid rgba(200,50,50,0.3);border-radius:6px;padding:8px;margin-bottom:6px;">`;
-                html += `<div style="font-size:0.85rem;font-weight:bold;color:#cc6666;">🔒 Cannot Interact — ${_rankName}</div>`;
+                html += `<div style="font-size:0.85rem;font-weight:bold;color:#cc6666;">🔒 Cannot Interact — ${_lockLabel}</div>`;
                 html += `<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">${_talkCheck.reason}</div>`;
                 if (_talkCheck.needsIntroduction) {
                     html += `<button class="btn-medieval" data-action="showIntroductionOptions" data-id="${person.id}" data-val="${_npcRank}" style="font-size:0.75rem;padding:5px 10px;margin-top:6px;">🤝 Find Someone to Introduce Me</button>`;
