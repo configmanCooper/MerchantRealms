@@ -1573,16 +1573,16 @@
             return { success: false, caught: true, message: '🚨 CAUGHT! Lost ' + cost + 'g + 500g fine, jailed 10 days, town rep -25.' + _nnMsg };
         }
 
-        // Success: agent slips food_poisoning into the target's meal/drink.
-        // The illness can kill if untreated; severe but survivable with care.
+        // v9p33river211: agent slips real 'poisoned' illness (severe) into
+        // the target's meal/drink. Treatment-time-sensitive — daily 2.5%
+        // death risk, lower natural recovery than plague. Source tag
+        // 'poisoned' so the poisonTargets ticker can credit kills.
         var _ptarget2 = Engine.findPerson ? Engine.findPerson(targetId) : null;
         var infected = false;
         if (_ptarget2 && _ptarget2.alive && typeof Engine.infectNPC === 'function') {
-            // Force severe by setting _forcedSeverity hint; engine_health
-            // accepts a generic illness id and will roll severity per ILLNESSES
-            // config. Calling twice raises odds of severe but we'll accept its roll.
-            try { Engine.infectNPC(_ptarget2, 'food_poisoning', 'poisoned_by_player'); } catch(e) {}
-            // If the engine attached an illness, bump it to severe
+            try { Engine.infectNPC(_ptarget2, 'poisoned', 'poisoned_by_player'); } catch(e) {}
+            // Severity is already 'severe' by config, but force it just in case
+            // and tag source so kill credit + recovery checks work.
             if (_ptarget2.illnesses && _ptarget2.illnesses.length > 0) {
                 var lastIll = _ptarget2.illnesses[_ptarget2.illnesses.length - 1];
                 if (lastIll) {
@@ -1590,11 +1590,18 @@
                     lastIll.source = 'poisoned';
                     if (_ptarget2.health > 50) _ptarget2.health = 50;
                 }
+            } else {
+                // Fallback for the older single-illness model
+                _ptarget2.illness = 'poisoned';
+                _ptarget2.illnessSeverity = 'severe';
+                _ptarget2.illnessSource = 'poisoned';
+                _ptarget2.sick = true;
+                if (_ptarget2.health > 50) _ptarget2.health = 50;
             }
             infected = true;
         }
-        // Backwards compat: keep poisonTargets entry for any UI that watches it
-        player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration: 12, illness: 'food_poisoning' });
+        // Backwards compat: keep poisonTargets entry for the death-credit ticker
+        player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration: 30, illness: 'poisoned' });
         player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
         recordCorruptAction('poison', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'poison');
         grantXP(20, 'Poisoned target');

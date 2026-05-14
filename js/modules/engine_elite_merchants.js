@@ -698,6 +698,8 @@
             if (p2.honesty < 30 && p2.risk_tolerance > 50) candidateSkills.push('shadow_dealings');
             if (p2.honesty < 30 && p2.greed > 55) candidateSkills.push('master_forger', 'silver_tongue_dark');
             if (p2.honesty < 35 && p2.risk_tolerance > 60) candidateSkills.push('arsonist_skill', 'jail_break');
+            // v9p33river211: poisoner skill for selfish + dishonest EMs
+            if (p2.honesty < 30 && p2.selfishness > 55) candidateSkills.push('poisoner');
             if (p2.honesty < 25 && p2.risk_tolerance > 70) candidateSkills.push('master_disguise', 'ghost', 'untouchable');
 
             // Survival for military types
@@ -4079,13 +4081,64 @@
             return true;
         }
 
+        // v9p33river211: EM poison scheme — pay an agent (1k-3k g) to plant
+        // 'poisoned' illness in a rival merchant's food/drink. Uses same
+        // 'poison' crime category. Caught chance bumped 1.20x for noble target
+        // (mirrors player). Severe illness, 2.5%/d death risk via tickNPCHealth.
+        function _poisonScheme(em, town, rng, personality) {
+            if (!emHasSkill(em, 'poisoner')) return false;
+            // Need gold to pay the planter (covers poison + agent fee).
+            // Player needs an actual vial; for EMs we assume the planter
+            // sources the poison themselves.
+            if ((em.gold || 0) < 1500) return false;
+            var rivals = world.people.filter(function(p) {
+                return p.alive && p.id !== em.id && p.townId === town.id &&
+                    (p.isEliteMerchant || p.isNoble || p.occupation === 'noble');
+            });
+            if (rivals.length === 0) return false;
+            var target = rivals[Math.floor(rng.random() * rivals.length)];
+            var nobleMult = (target.isKing || target.occupation === 'king') ? 1.30
+                : (target.isNoble || target.occupation === 'noble') ? 1.20 : 1.0;
+            var detection = Math.min(0.95, _calcActorDetection(em, town, 0.18) * nobleMult);
+            var cost = 1000 + Math.floor(rng.random() * 2001);
+            em.gold = Math.max(0, em.gold - cost);
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            var kingdom = findKingdom(town.kingdomId);
+            if (rng.chance(detection)) {
+                var fine = _applyActorCrimePenalty(em, town, kingdom, 'poison', 1.0);
+                logEvent('☠️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught paying an agent to poison ' +
+                    (target.firstName || '') + ' ' + (target.lastName || '') + ' in ' + town.name + ' — fined ' + fine + 'g.',
+                    { type: 'em_scheme_poison_caught', townId: town.id, kingdomId: kingdom && kingdom.id });
+            } else {
+                // Inflict 'poisoned' (severe) on the target via the real illness system
+                if (typeof Engine.infectNPC === 'function') {
+                    try { Engine.infectNPC(target, 'poisoned', 'poisoned_by_em'); } catch(_e) {}
+                    if (target.illnesses && target.illnesses.length > 0) {
+                        var li = target.illnesses[target.illnesses.length - 1];
+                        if (li) { li.severity = 'severe'; li.source = 'poisoned'; }
+                    } else {
+                        target.illness = 'poisoned';
+                        target.illnessSeverity = 'severe';
+                        target.illnessSource = 'poisoned';
+                        target.sick = true;
+                    }
+                    if (target.health > 50) target.health = 50;
+                }
+                logEvent('☠️ ' + (target.firstName || '') + ' ' + (target.lastName || '') + ' has fallen mysteriously ill in ' + town.name + '...',
+                    { type: 'em_scheme_poison_success', townId: town.id });
+            }
+            return true;
+        }
+
+
         // expose helpers to outer eliteCrimeAI body
         em._schemeFns = em._schemeFns || {
             rumors: _spreadRumorsScheme,
             frame: _frameCompetitorScheme,
             bribe: _bribeGuardsScheme,
             forge: _forgeDocumentsScheme,
-            arson: _arsonScheme
+            arson: _arsonScheme,
+            poison: _poisonScheme
         };
         // ── end scheme palette ──
 
@@ -4210,6 +4263,8 @@
             if (personality.greed > 55 && rng.chance(0.18)) em._schemeFns.forge(em, town, rng, personality);
             // Arson — arsonist_skill + risk_tolerance>75
             if (personality.risk_tolerance > 75 && rng.chance(0.06)) em._schemeFns.arson(em, town, rng, personality);
+            // v9p33river211: Poison — poisoner skill + selfishness>60 + risk_tolerance>50
+            if (personality.selfishness > 60 && personality.risk_tolerance > 50 && rng.chance(0.05)) em._schemeFns.poison(em, town, rng, personality);
         }
     }
 

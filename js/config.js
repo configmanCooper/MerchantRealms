@@ -4012,6 +4012,11 @@ const NPC_HEALTH_CONFIG = {
         pneumonia:      { name: 'Pneumonia',           severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
         typhus:         { name: 'Typhus',              severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
         plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.036, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
+        // v9p33river211: dedicated 'poisoned' illness — only inflicted by
+        // poisoning schemes (player or NPC). NOT contagious. Slightly worse
+        // healthDrain than plague + lower natural recovery, so treatment
+        // matters. Same antidote pathway via TREATMENT_SUPPLIES_ILLNESS[severe].
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 4.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 18, naturalRecoveryChance: 0.015, recoveryChance: 0.10 },
     },
 
     // --- Health thresholds ---

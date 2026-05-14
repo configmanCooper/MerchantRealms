@@ -1024,6 +1024,12 @@
           debuffs: { workEfficiency: -0.20, travelSpeed: -0.20, hungerRate: 1.3, xpMult: 0.75 }, debuffDesc: '−20% work pay, −20% travel speed, +30% hunger, −25% XP gain' },
         { id: 'plague', name: 'Plague', severity: 'severe', healDays: 20, product: 'antidote', productCost: 40, deathRisk: 0.02,
           debuffs: { workEfficiency: -0.50, travelSpeed: -0.40, hungerRate: 1.5, goldDrain: 3, blocksPhysical: true }, debuffDesc: '−50% work pay, −40% travel speed, +50% hunger, 3g/day medicine cost, blocks physical jobs, 2% daily death risk' },
+        // v9p33river211: dedicated 'poisoned' illness for poisoning schemes.
+        // Slightly faster killer than plague (no contagion since it's
+        // intentional), same antidote pathway. Heavier daily death risk
+        // makes treatment time-sensitive.
+        { id: 'poisoned', name: 'Poisoned', severity: 'severe', healDays: 18, product: 'antidote', productCost: 50, deathRisk: 0.025,
+          debuffs: { workEfficiency: -0.55, travelSpeed: -0.45, hungerRate: 1.6, goldDrain: 4, blocksPhysical: true }, debuffDesc: '−55% work pay, −45% travel speed, +60% hunger, 4g/day antidote cost, blocks physical jobs, 2.5% daily death risk' },
         { id: 'food_poisoning', name: 'Food Poisoning', severity: 'minor', healDays: 3, product: 'antidote', productCost: 10,
           debuffs: { workEfficiency: -0.10, hungerRate: 1.4, travelSpeed: -0.10 }, debuffDesc: '−10% work pay, +40% hunger drain, −10% travel speed' },
         { id: 'waterlogged_fever', name: 'Waterlogged Fever', severity: 'severe', healDays: 15, product: 'fever_tonic', productCost: 25, deathRisk: 0.015,
