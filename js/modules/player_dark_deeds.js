@@ -489,6 +489,9 @@
         // High-risk situations (in-kingdom, no skills) still bite hard, but
         // ordinary day-to-day exposure is more forgiving.
         chance *= 0.70;
+        // v9p33river232: god-mode crime stealth also reduces manhunt daily roll
+        // by 95%, matching its effect on calculateCorruptDetection.
+        if (typeof window !== 'undefined' && window._godCrimeStealth) chance *= 0.05;
         return Math.max(0.001, Math.min(0.99, chance));
     }
 
