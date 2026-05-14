@@ -221,22 +221,21 @@
     }
     Player._nobleTargetCostMult = _nobleTargetCostMult;
 
-    // v9p33river224: target wealth multiplier — wealthier targets cost more
+    // v9p33river225: target wealth multiplier — wealthier targets cost more
     // because they have better-paid guards, more bribed witnesses, harder
     // access. Stacks with _nobleTargetCostMult. Net worth = gold + ~2k per
-    // building. EMs especially get scaled up since they often hold the most
-    // wealth in the world.
+    // building. Capped at 1.5x — rank multiplier does the heavy lifting.
     function _targetWealthCostMult(targetPersonId) {
         if (!targetPersonId) return 1.0;
         var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
         if (!t) return 1.0;
         var nw = (t.gold || 0);
         if (t.buildings) nw += (t.buildings.length || 0) * 2000;
-        // Tiers: <5k → 1.0x; 5–20k → 1.4x; 20–50k → 1.8x; 50–100k → 2.5x; 100k+ → 3.5x
-        if (nw >= 100000) return 3.5;
-        if (nw >= 50000) return 2.5;
-        if (nw >= 20000) return 1.8;
-        if (nw >= 5000) return 1.4;
+        // Tiers: <5k → 1.0x; 5–20k → 1.10x; 20–50k → 1.20x; 50–100k → 1.35x; 100k+ → 1.50x
+        if (nw >= 100000) return 1.50;
+        if (nw >= 50000) return 1.35;
+        if (nw >= 20000) return 1.20;
+        if (nw >= 5000) return 1.10;
         return 1.0;
     }
     Player._targetWealthCostMult = _targetWealthCostMult;
