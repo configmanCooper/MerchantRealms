@@ -2911,9 +2911,41 @@
             player.notoriety = Math.min(100, (player.notoriety || 0) + 10);
             town.crime = Math.min(100, (town.crime || 0) + 3);
             recordCorruptAction('jailbreak', false);
-            Engine.logEvent('🔓 ' + player.fullName + ' broke ' + target.firstName + ' ' + (target.lastName || '') + ' out of jail in ' + town.name + '! (+10 notoriety)');
-            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔓 Jailbreak successful! ' + target.firstName + ' is free. (+10 notoriety)', 'success', 'my_business');
-            return { success: true, message: 'Jailbreak successful — ' + target.firstName + ' is free.' };
+
+            // v9p33river199: massive relationship boost + reset all favor
+            // cooldowns with the rescued NPC (you literally saved them).
+            player.relationships = player.relationships || {};
+            var existing = player.relationships[targetNpcId] || { level: 0, type: 'acquaintance' };
+            var oldRel = existing.level || 0;
+            var newRel;
+            if (oldRel >= 50) {
+                newRel = Math.min(100, oldRel + 20);
+            } else {
+                newRel = Math.max(60, oldRel);
+            }
+            existing.level = newRel;
+            existing.lastInteraction = day;
+            player.relationships[targetNpcId] = existing;
+            // Reset every per-NPC cooldown so the rescued NPC is immediately
+            // available for asks/favors/intros/etc.
+            try {
+                if (player._npcInteractions) delete player._npcInteractions[targetNpcId];
+                if (player._npcGossipCooldowns) delete player._npcGossipCooldowns[targetNpcId];
+                if (player._nobleFavorRequests) delete player._nobleFavorRequests[targetNpcId];
+                if (player.introductionCooldowns) delete player.introductionCooldowns[targetNpcId];
+                if (player._npcJobCooldowns) {
+                    var prefix = targetNpcId + '_';
+                    for (var ck in player._npcJobCooldowns) {
+                        if (ck === targetNpcId || ck.indexOf(prefix) === 0) delete player._npcJobCooldowns[ck];
+                    }
+                }
+                if (player._lastInteractionDay) delete player._lastInteractionDay[targetNpcId];
+                if (player._nobleVoteSupport) delete player._nobleVoteSupport[targetNpcId];
+            } catch(_e) {}
+
+            Engine.logEvent('🔓 ' + player.fullName + ' broke ' + target.firstName + ' ' + (target.lastName || '') + ' out of jail in ' + town.name + '! Relationship: ' + Math.round(oldRel) + ' → ' + Math.round(newRel) + '. (+10 notoriety)');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔓 Jailbreak successful! ' + target.firstName + ' is free. Relationship → ' + Math.round(newRel) + '. (+10 notoriety)', 'success', 'my_business');
+            return { success: true, message: 'Jailbreak successful — ' + target.firstName + ' is free. Relationship +' + Math.round(newRel - oldRel) + '.' };
         } else {
             // Caught: roll detection (separate from success)
             var detected = rng.chance(calculateCorruptDetection(0.55, town));
