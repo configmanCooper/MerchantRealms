@@ -691,6 +691,14 @@
             // Underworld for dishonest
             if (p2.honesty < 35) candidateSkills.push('discrete', 'bribe_expert');
             if (p2.honesty < 25 && p2.risk_tolerance > 60) candidateSkills.push('master_smuggler', 'black_market_contacts');
+            // v9p33river197: more underworld skill leanings — gives EMs the
+            // tools to actually run the new scheme types (frame, forge,
+            // bribe officials, etc.) and the social/disguise skills they
+            // need to do them quietly.
+            if (p2.honesty < 30 && p2.risk_tolerance > 50) candidateSkills.push('shadow_dealings');
+            if (p2.honesty < 30 && p2.greed > 55) candidateSkills.push('master_forger', 'silver_tongue_dark');
+            if (p2.honesty < 35 && p2.risk_tolerance > 60) candidateSkills.push('arsonist_skill', 'jail_break');
+            if (p2.honesty < 25 && p2.risk_tolerance > 70) candidateSkills.push('master_disguise', 'ghost', 'untouchable');
 
             // Survival for military types
             if (p2.militarism > 50) candidateSkills.push('combat_trained', 'street_smart');
@@ -3907,6 +3915,124 @@
     }
 
     function eliteCrimeAI(em, town, rng, personality) {
+
+        // ── v9p33river197 — extended EM scheme palette (player-parity) ──
+
+        function _spreadRumorsScheme(em, town, rng, personality) {
+            // Skill: silver_tongue_dark required (player parity)
+            if (!emHasSkill(em, 'silver_tongue_dark')) return false;
+            var rivals = world.people.filter(function(p) { return p.alive && p.isEliteMerchant && p.id !== em.id && p.townId === town.id; });
+            if (rivals.length === 0) return false;
+            var target = rivals[Math.floor(rng.random() * rivals.length)];
+            var detection = _calcActorDetection(em, town, 0.10);
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            var kingdom = findKingdom(town.kingdomId);
+            if (rng.chance(detection)) {
+                var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 0.4);
+                logEvent('⚖️ ' + em.firstName + ' caught spreading malicious rumors about ' + target.firstName + ' in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_rumors_caught', townId: town.id });
+            } else {
+                var repLoss = 4 + Math.floor(rng.random() * 5);
+                if (target.reputation && kingdom) target.reputation[kingdom.id] = Math.max(0, (target.reputation[kingdom.id] || 50) - repLoss);
+                logEvent('🤫 Whispers about ' + target.firstName + ' ' + (target.lastName || '') + ' damage their reputation in ' + town.name + ' (-' + repLoss + ').', { type: 'em_scheme_rumors_success', townId: town.id });
+            }
+            return true;
+        }
+
+        function _frameCompetitorScheme(em, town, rng, personality) {
+            // Skill: master_forger required (player parity)
+            if (!emHasSkill(em, 'master_forger')) return false;
+            var rivals = world.people.filter(function(p) { return p.alive && p.isEliteMerchant && p.id !== em.id && p.townId === town.id; });
+            if (rivals.length === 0) return false;
+            // Target the richest rival
+            rivals.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+            var target = rivals[0];
+            var detection = _calcActorDetection(em, town, 0.25);
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            var kingdom = findKingdom(town.kingdomId);
+            if (rng.chance(detection)) {
+                var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 1.5);
+                logEvent('⚖️ ' + em.firstName + ' caught framing ' + target.firstName + ' for a crime in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_frame_caught', townId: town.id });
+            } else {
+                // Apply forgery penalty to the framed target (charged with the planted crime)
+                _applyActorCrimePenalty(target, town, kingdom, 'forgery', 1.0);
+                logEvent('📝 ' + target.firstName + ' ' + (target.lastName || '') + ' was framed for forgery in ' + town.name + ' — record blemished.', { type: 'em_scheme_frame_success', townId: town.id });
+            }
+            return true;
+        }
+
+        function _bribeGuardsScheme(em, town, rng, personality) {
+            // Skill: bribe_expert required (player parity)
+            if (!emHasSkill(em, 'bribe_expert')) return false;
+            var bribeCost = 100 + Math.floor(rng.random() * 200);
+            if ((em.gold || 0) < bribeCost) return false;
+            var detection = _calcActorDetection(em, town, 0.08);
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            var kingdom = findKingdom(town.kingdomId);
+            em.gold -= bribeCost;
+            if (rng.chance(detection)) {
+                var fine = _applyActorCrimePenalty(em, town, kingdom, 'bribery', 1.0);
+                logEvent('⚖️ ' + em.firstName + ' caught bribing town guards in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_bribe_caught', townId: town.id });
+            } else {
+                if (!em._bribedGuards) em._bribedGuards = {};
+                em._bribedGuards[town.id] = { expiresDay: world.day + 30, reductionPct: 35 };
+                logEvent('💸 ' + em.firstName + ' ' + (em.lastName || '') + ' bribes guards in ' + town.name + ' (covert).', { type: 'em_scheme_bribe_success', townId: town.id });
+            }
+            return true;
+        }
+
+        function _forgeDocumentsScheme(em, town, rng, personality) {
+            // Skill: master_forger required (player parity)
+            if (!emHasSkill(em, 'master_forger')) return false;
+            var revenue = 300 + Math.floor(rng.random() * 500);
+            var detection = _calcActorDetection(em, town, 0.15);
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            var kingdom = findKingdom(town.kingdomId);
+            if (rng.chance(detection)) {
+                var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 2.0);
+                logEvent('⚖️ ' + em.firstName + ' caught forging documents in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_forge_caught', townId: town.id });
+            } else {
+                em.gold = (em.gold || 0) + revenue;
+                logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' profits ' + revenue + 'g from forged documents in ' + town.name + ' (covert).', { type: 'em_scheme_forge_success', townId: town.id });
+            }
+            return true;
+        }
+
+        function _arsonScheme(em, town, rng, personality) {
+            // Skill: arsonist_skill required (player parity)
+            if (!emHasSkill(em, 'arsonist_skill')) return false;
+            var rivals = world.people.filter(function(p) { return p.alive && p.isEliteMerchant && p.id !== em.id && p.townId === town.id && (p.buildings || []).length > 0; });
+            if (rivals.length === 0) return false;
+            var target = rivals[Math.floor(rng.random() * rivals.length)];
+            var bldEntry = target.buildings[Math.floor(rng.random() * target.buildings.length)];
+            if (!bldEntry) return false;
+            var tt = findTown(bldEntry.townId || town.id);
+            var realBld = tt && tt.buildings ? tt.buildings.find(function(b) { return b.ownerId === target.id && b.type === bldEntry.type; }) : null;
+            if (!realBld) return false;
+            var detection = _calcActorDetection(em, town, 0.40);
+            em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+            var kingdom = findKingdom(town.kingdomId);
+            if (rng.chance(detection)) {
+                var fine = _applyActorCrimePenalty(em, town, kingdom, 'arson', 1.0);
+                logEvent('⚖️ ' + em.firstName + ' caught attempting arson in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_arson_caught', townId: town.id });
+            } else {
+                realBld.condition = 'destroyed';
+                realBld._destroyedDay = world.day;
+                logEvent('🔥 A fire of suspicious origin destroyed ' + target.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '.', { type: 'em_scheme_arson_success', townId: town.id });
+            }
+            return true;
+        }
+
+        // expose helpers to outer eliteCrimeAI body
+        em._schemeFns = em._schemeFns || {
+            rumors: _spreadRumorsScheme,
+            frame: _frameCompetitorScheme,
+            bribe: _bribeGuardsScheme,
+            forge: _forgeDocumentsScheme,
+            arson: _arsonScheme
+        };
+        // ── end scheme palette ──
+
+
         // Removed honesty >= 40 early return — tick gate already checks honesty < 40
         if ((em.gold || 0) < 100) return; // too poor to risk
         var kingdom = findKingdom(em.kingdomId);
@@ -4013,6 +4139,20 @@
         // THEFT: lower stakes — quick gold from a rich rival
         if (personality.honesty < 35 && personality.greed > 55 && rng.chance(0.22)) {
             _eliteStealFromRival(em, town, rng, personality);
+        }
+        // v9p33river197: extended player-parity schemes — gated by skill +
+        // personality so EMs use exactly the toolkit they invested in.
+        if (em._schemeFns) {
+            // Spread rumors — silver_tongue_dark + greed
+            if (personality.greed > 55 && rng.chance(0.20)) em._schemeFns.rumors(em, town, rng, personality);
+            // Frame competitor — master_forger + selfishness
+            if (personality.selfishness > 55 && rng.chance(0.12)) em._schemeFns.frame(em, town, rng, personality);
+            // Bribe guards — bribe_expert + honesty<30
+            if (personality.honesty < 30 && rng.chance(0.15)) em._schemeFns.bribe(em, town, rng, personality);
+            // Forge documents — master_forger + greed
+            if (personality.greed > 55 && rng.chance(0.18)) em._schemeFns.forge(em, town, rng, personality);
+            // Arson — arsonist_skill + risk_tolerance>75
+            if (personality.risk_tolerance > 75 && rng.chance(0.06)) em._schemeFns.arson(em, town, rng, personality);
         }
     }
 

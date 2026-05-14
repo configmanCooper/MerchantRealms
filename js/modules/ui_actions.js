@@ -236,7 +236,33 @@ function showTownDetail(town) {
         <div class="detail-row"><span class="label">Walls</span>
             <span class="value">${walls > 0 ? '🏰 ' + wallName + ' (+' + wallDefBonus + '% defense)' + wallCondStr : 'None'}</span></div>
         <div class="detail-row"><span class="label">Garrison</span>
-            <span class="value">⚔ ${garrison} soldiers</span></div>`;
+            <span class="value">⚔ ${garrison} soldiers</span></div>
+        ${(function(){
+            // v9p33river197: town jail panel — list NPCs + EMs + player
+            // currently jailed in this town. Player jailbreak scheme acts on
+            // these targets.
+            try {
+                var people = (Engine && Engine.getPeople) ? Engine.getPeople() : [];
+                var day = (Engine && Engine.getDay) ? Engine.getDay() : 0;
+                var jailed = people.filter(function(p) {
+                    return p.alive && p.townId === town.id && p._jailedUntilDay && p._jailedUntilDay > day;
+                });
+                if (jailed.length === 0) return '<div class="detail-row"><span class="label">⛓️ Jail</span><span class="value" style="color:#888;">Empty</span></div>';
+                var rows = jailed.slice(0, 10).map(function(p) {
+                    var d = p._jailedUntilDay - day;
+                    var crime = '';
+                    if (p.criminalRecord && town.kingdomId && p.criminalRecord[town.kingdomId]) {
+                        crime = ' (record: ' + p.criminalRecord[town.kingdomId] + ')';
+                    }
+                    var emTag = p.isEliteMerchant ? ' 🏛️' : '';
+                    var jbBtn = (typeof Player !== 'undefined' && Player.canJailbreak && Player.canJailbreak()) ?
+                        ' <button class="btn-medieval" data-action="attemptJailbreak" data-id="' + p.id + '" data-val="' + town.id + '" style="font-size:0.62rem;padding:2px 6px;margin-left:4px;">🔓 Break Out</button>' : '';
+                    return '<div style="font-size:0.72rem;padding:2px 0;color:#cba;">⛓️ ' + (p.firstName || '?') + ' ' + (p.lastName || '') + emTag + ' — ' + d + ' days' + crime + jbBtn + '</div>';
+                }).join('');
+                var more = jailed.length > 10 ? '<div style="font-size:0.65rem;color:#888;">…and ' + (jailed.length - 10) + ' more</div>' : '';
+                return '<div class="detail-row"><span class="label">⛓️ Jail (' + jailed.length + ')</span><span class="value">' + rows + more + '</span></div>';
+            } catch(e) { return ''; }
+        })()}`;
     // Blockade warning
     if (town.isPort && typeof Engine !== 'undefined' && Engine.isPortBlockaded && Engine.isPortBlockaded(town.id)) {
         html += `<div class="detail-row" style="color:#c44e52"><span class="label">⚠ BLOCKADED</span>
@@ -4655,6 +4681,16 @@ function clickTown(townId) {
     UI.registerAction('proposeTo', function(_t, d) { UI.proposeTo(d.id); });
     UI.registerAction('hirePerson', function(_t, d) { UI.hirePerson(d.id); });
     UI.registerAction('stealFromPerson', function(_t, d) { UI.stealFromPerson(d.id); });
+    // v9p33river197: jailbreak action — d.id = target NPC id, d.val = town id
+    UI.registerAction('attemptJailbreak', function(_t, d) {
+        if (!d.id || !d.val) return;
+        if (typeof Player !== 'undefined' && Player.attemptJailbreak) {
+            var r = Player.attemptJailbreak(d.id, d.val);
+            if (r && r.message && typeof UI !== 'undefined' && UI.toast) UI.toast(r.message, r.success ? 'success' : 'warning');
+            // Refresh town panel if open
+            try { if (UI.refreshTownPanel) UI.refreshTownPanel(); } catch(e) {}
+        }
+    });
     UI.registerAction('spreadRumorsAbout', function(_t, d) { UI.spreadRumorsAbout(d.id); });
     UI.registerAction('blackmailPerson', function(_t, d) { UI.blackmailPerson(d.id); });
     UI.registerAction('hireAssassinFor', function(_t, d) { UI.hireAssassinFor(d.id); });

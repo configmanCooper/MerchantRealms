@@ -2805,6 +2805,82 @@
         return { success: true, message: '🕶️ Laying low for ' + duration + ' days. Notoriety will drop by ~' + Math.floor(totalReduction) + '. Cost: ' + cost + 'g.' };
     }
 
+    // v9p33river197: JAILBREAK SCHEME
+    // Break a target NPC out of a town's jail. Base 5% success.
+    // Modifiers (player skills): jail_break +20%, shadow_dealings +15%,
+    // discrete +10%, master_disguise +10%, ghost +20%, lockpick +15%
+    // Town security reduces success by (security/100 * 0.50).
+    // Notoriety > 50 reduces success by 0.10. Caught = arson-tier penalty
+    // (jail + fine in current town), success = freed NPC + +10 player notoriety.
+    function canJailbreak() {
+        _sync();
+        if (isJailed()) return false;
+        return hasSkill('jail_break') || hasSkill('shadow_dealings') || hasSkill('master_forger') || hasSkill('ghost');
+    }
+    function attemptJailbreak(targetNpcId, townId) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail yourself.' };
+        if (!canJailbreak()) return { success: false, message: 'Requires Jail Break, Shadow Dealings, Master Forger, or Ghost skill.' };
+        if (!isInTown(townId)) return { success: false, message: 'You must be in the town to attempt a jailbreak there.' };
+
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Town not found.' };
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+        var target = Engine.findPerson ? Engine.findPerson(targetNpcId) : null;
+        if (!target || !target.alive) return { success: false, message: 'Target not found.' };
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (!target._jailedUntilDay || target._jailedUntilDay <= day) return { success: false, message: target.firstName + ' is not currently jailed.' };
+        if (target.townId !== townId) return { success: false, message: target.firstName + ' is not jailed in this town.' };
+
+        var rng = Engine.getRng();
+        if (!rng) return { success: false, message: 'No RNG.' };
+
+        // Base success 5%
+        var success = 0.05;
+        if (hasSkill('jail_break')) success += 0.20;
+        if (hasSkill('shadow_dealings')) success += 0.15;
+        if (hasSkill('discrete')) success += 0.10;
+        if (hasSkill('master_disguise')) success += 0.10;
+        if (hasSkill('ghost')) success += 0.20;
+        if (hasSkill('master_forger')) success += 0.10;
+        if (hasSkill('untouchable')) success += 0.10;
+        // Town security drag: 0% sec → +0, 100% sec → -50%
+        success -= ((town.security || 50) / 100) * 0.50;
+        // Notoriety drag
+        if ((player.notoriety || 0) >= 50) success -= 0.10;
+        // Nighttime bonus
+        var w = Engine.getWorld ? Engine.getWorld() : null;
+        var hr = w ? (w.hour || 12) : 12;
+        if (hr >= 20 || hr <= 5) success += 0.10;
+        success = Math.max(0.02, Math.min(0.90, success));
+
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(8);
+
+        if (rng.random() < success) {
+            // Success: free the NPC, bump player notoriety + town crime
+            target._jailedUntilDay = 0;
+            player.notoriety = Math.min(100, (player.notoriety || 0) + 10);
+            town.crime = Math.min(100, (town.crime || 0) + 3);
+            recordCorruptAction('jailbreak', false);
+            Engine.logEvent('🔓 ' + player.fullName + ' broke ' + target.firstName + ' ' + (target.lastName || '') + ' out of jail in ' + town.name + '! (+10 notoriety)');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🔓 Jailbreak successful! ' + target.firstName + ' is free. (+10 notoriety)', 'success', 'my_business');
+            return { success: true, message: 'Jailbreak successful — ' + target.firstName + ' is free.' };
+        } else {
+            // Caught: roll detection (separate from success)
+            var detected = rng.chance(calculateCorruptDetection(0.55, town));
+            recordCorruptAction('jailbreak', detected);
+            if (detected) {
+                var actualFine = applyCorruptPenalty(town, kingdom, 800, 25, 14, false, 'sabotage');
+                Engine.logEvent('⛓️ ' + player.fullName + ' caught attempting jailbreak in ' + town.name + ' — fined ' + actualFine + 'g, jailed 14 days.');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⛓️ Jailbreak failed and you were caught! Fined ' + actualFine + 'g, jailed.', 'danger', 'my_business');
+                return { success: false, message: 'Jailbreak failed — you were caught and jailed.' };
+            }
+            Engine.logEvent('🚪 ' + player.fullName + '\'s jailbreak attempt failed but they slipped away unnoticed.');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚪 Jailbreak failed but you escaped detection.', 'warning', 'my_business');
+            return { success: false, message: 'Jailbreak failed — you escaped without being caught.' };
+        }
+    }
+
     function cleanseIdentity() {
         _sync();
         if (isJailed()) return { success: false, message: 'You are in jail.' };
@@ -3800,6 +3876,8 @@
     Player.activateDoubleAgent = activateDoubleAgent;
     Player.startProtectionRacket = startProtectionRacket;
     Player.layLow = layLow;
+    Player.canJailbreak = canJailbreak;
+    Player.attemptJailbreak = attemptJailbreak;
     Player.cleanseIdentity = cleanseIdentity;
     Player.pitNoblesAgainstEachOther = pitNoblesAgainstEachOther;
     Player.turnNobleAgainstKing = turnNobleAgainstKing;
