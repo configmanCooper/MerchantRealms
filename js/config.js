@@ -4012,18 +4012,21 @@ const NPC_HEALTH_CONFIG = {
         pneumonia:      { name: 'Pneumonia',           severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
         typhus:         { name: 'Typhus',              severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
         plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.036, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
-        // v9p33river234: poison rebalance — even treated kings rarely survive.
-        // Old (v9p33river233): treated drain 10*0.3 - 0.9 = 2.1/d, recovery
-        // window 0.6*28 = ~17 days. From 75hp, king lost ~17hp by recovery
-        // window and survived after a few recovery rolls (~22-25 days).
-        //   - healthDrain 10 → 14
-        //   - daysToRecover 28 → 40 (treated → 24 days minimum)
-        //   - recoveryChance 0.18 → 0.10
-        // New treated drain: 14*0.3 - 0.9 = 3.3/d. From 75hp at day 3:
-        //   30hp by day 17, 0 by day 22 — DEAD before recovery window opens.
-        // Untreated: 14/d → dead in ~5-6 days.
-        // King survival now genuinely difficult even with full treatment.
-        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 14.0, daysToRecover: 40, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 20, naturalRecoveryChance: 0.03, recoveryChance: 0.10 },
+        // v9p33river235: poison rebalance — give the king a real chance to
+        // survive with treatment, but also a real chance to die.
+        //   - healthDrain 14 → 9
+        //   - daysToRecover 40 → 30 (treated → 18 days)
+        //   - recoveryChance 0.10 → 0.15
+        //   - naturalRecoveryDay 20 → 15
+        //   - naturalRecoveryChance 0.03 → 0.05
+        // From 75hp, treated:
+        //   Day 1-3 untreated: 9*3 = 27 lost → 48hp
+        //   Day 3-18 treated (net 1.8/d): 15*1.8 = 27 lost → 21hp at recovery window
+        //   Day 18+: 15%/d recovery roll, expected ~7 days, loses 12hp → ~9hp left, RECOVERS
+        // Some kings still die (slow treatment, no antidote, bad rolls); maybe
+        // 40-55% survival rate. Untreated: 9/d → dead in ~8 days, 5%/d natural
+        // recovery starting day 15 (most untreated still die — ~70% mortality).
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 9.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
     },
 
     // --- Health thresholds ---
