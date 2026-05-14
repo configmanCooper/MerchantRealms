@@ -23656,6 +23656,109 @@
     }
 
     // ========================================================
+    // §19D-2  NPC GENERAL CRIME (broad simulation)
+    // ========================================================
+    // v9p33river196: NPCs occasionally commit crimes against other NPCs in
+    // their town (pickpocket / vandalism / assault). Detection chance is
+    // tied to town.security and the actor's notoriety; consequences pull
+    // from CONFIG.CRIME_TYPES (same source as player) so kingdom law applies.
+    // Runs once per in-game day, samples ~0.2% of alive adults across all
+    // towns — gives a low-frequency crime undertone without performance hit.
+    function tickNPCGeneralCrime() {
+        if (!world || !world.people || !world.towns) return;
+        // Throttle: only run once per day
+        if (world._lastNPCCrimeDay === world.day) return;
+        world._lastNPCCrimeDay = world.day;
+        var rng = world.rng;
+        if (!rng) return;
+
+        // Sample actors: alive adults with low honesty
+        var pool = [];
+        for (var i = 0; i < world.people.length; i++) {
+            var p = world.people[i];
+            if (!p.alive || p.age < 18) continue;
+            if (p.isEliteMerchant) continue; // EMs use eliteCrimeAI
+            if (p._jailedUntilDay && p._jailedUntilDay > world.day) continue;
+            var hon = (p.personality && p.personality.honesty != null) ? p.personality.honesty : 50;
+            if (hon >= 40) continue; // honest folk skip
+            pool.push(p);
+        }
+        // Sample ~0.5% of pool per day
+        var sampleSize = Math.max(1, Math.floor(pool.length * 0.005));
+        for (var s = 0; s < sampleSize; s++) {
+            var actor = pool[Math.floor(rng.random() * pool.length)];
+            if (!actor) continue;
+            var town = findTown(actor.townId);
+            if (!town) continue;
+            var kingdom = findKingdom(town.kingdomId);
+            if (!kingdom) continue;
+
+            // Pick crime by personality
+            var sel = (actor.personality && actor.personality.selfishness != null) ? actor.personality.selfishness : 50;
+            var risk = (actor.personality && actor.personality.risk_tolerance != null) ? actor.personality.risk_tolerance : 50;
+            var roll = rng.random();
+            var crimeId, baseDetect;
+            if (roll < 0.65) {
+                crimeId = 'theft'; baseDetect = 0.18;          // pickpocket common
+            } else if (roll < 0.85 && risk > 50) {
+                crimeId = 'assault'; baseDetect = 0.35;        // brawl
+            } else if (sel > 60 && risk > 60) {
+                crimeId = 'arson'; baseDetect = 0.45;          // rare, severe
+            } else {
+                crimeId = 'theft'; baseDetect = 0.18;
+            }
+
+            // Detection — same formula EMs use
+            var detection = baseDetect;
+            detection += ((town.security || 50) * 0.005);
+            var hr = world.hour || 12;
+            if (hr >= 20 || hr <= 5) detection *= 0.7;
+            var notor = actor.notoriety || 0;
+            if (notor >= 50) detection *= 1.3;
+            else if (notor >= 25) detection *= 1.15;
+            detection = Math.max(0.03, Math.min(0.95, detection));
+            actor.crimesCommitted = (actor.crimesCommitted || 0) + 1;
+
+            if (rng.chance(detection)) {
+                // Caught — apply penalty
+                var crimeType = (CONFIG.CRIME_TYPES || []).find(function(c) { return c.id === crimeId; });
+                var fine = crimeType ? crimeType.defaultFine : 100;
+                var jailDays = crimeType ? crimeType.defaultJailDays : 5;
+                if (kingdom.crimePunishments && kingdom.crimePunishments[crimeId]) {
+                    var ov = kingdom.crimePunishments[crimeId];
+                    fine = ov.fine || fine; jailDays = ov.jailDays || jailDays;
+                }
+                actor.gold = Math.max(0, (actor.gold || 0) - fine);
+                if (!actor.criminalRecord) actor.criminalRecord = {};
+                actor.criminalRecord[kingdom.id] = (actor.criminalRecord[kingdom.id] || 0) + 1;
+                actor.notoriety = Math.min(100, (actor.notoriety || 0) + 3);
+                if ((crimeType && crimeType.defaultPunishment === 'execution') || jailDays >= 180) {
+                    actor.alive = false;
+                    actor.deathCause = 'executed for ' + (crimeType ? crimeType.name : crimeId);
+                } else if (jailDays > 0) {
+                    actor._jailedUntilDay = world.day + jailDays;
+                }
+                // Town crime/security feedback
+                town.crime = Math.min(100, (town.crime || 0) + 0.8);
+            } else {
+                // Got away — bump town crime more, actor notoriety up a hair
+                actor.notoriety = Math.min(100, (actor.notoriety || 0) + 1);
+                town.crime = Math.min(100, (town.crime || 0) + 1.5);
+                // Theft: take a small amount of gold from another random NPC
+                if (crimeId === 'theft') {
+                    var townFolk = world.people.filter(function(pp) { return pp.alive && pp.townId === town.id && pp.id !== actor.id && (pp.gold || 0) > 5; });
+                    if (townFolk.length > 0) {
+                        var victim = townFolk[Math.floor(rng.random() * townFolk.length)];
+                        var stolen = Math.min(victim.gold, 1 + Math.floor(rng.random() * 20));
+                        victim.gold -= stolen;
+                        actor.gold = (actor.gold || 0) + stolen;
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================
     // §19D  NATURAL DISASTERS
     // ========================================================
     function tickDisasters() {
@@ -30956,6 +31059,7 @@
 
             tickEconomy();
             tickPeople();
+            try { tickNPCGeneralCrime(); } catch(e) { /* defensive */ }
 
             // ── Regency fast-forward throttling ──
             // During regency FF, run expensive subsystems less frequently.

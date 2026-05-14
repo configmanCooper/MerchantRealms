@@ -1944,8 +1944,10 @@
                 }
             }
 
-            // ---- 6. CRIME DECISIONS (rare) ----
-            if (day % 30 === 0 && personality.honesty < 40 && personality.risk_tolerance > 60) {
+            // ---- 6. CRIME DECISIONS (every 14 days, gated by personality) ----
+            // v9p33river196: was 30-day gate. Tightened to 14 days so the new
+            // EM-on-EM sabotage / theft layers actually surface in the world.
+            if (day % 14 === 0 && personality.honesty < 50 && personality.risk_tolerance > 50) {
                 eliteCrimeAI(em, town, rng, personality);
             }
 
@@ -3744,6 +3746,166 @@
         }
     }
 
+    // v9p33river196: shared detection-chance calculator for EMs/NPCs.
+    // Mirrors player calculateCorruptDetection: town security + actor
+    // notoriety + skills + crime base.
+    function _calcActorDetection(actor, town, baseDetection) {
+        var detection = baseDetection;
+        detection += ((town && town.security) || 50) * 0.005;
+        var hour = world ? (world.hour || 12) : 12;
+        if (hour >= 20 || hour <= 5) detection *= 0.7; // night cover
+        // EM skill reductions
+        if (actor.skills) {
+            if (emHasSkill(actor, 'discrete')) detection *= 0.85;
+            if (emHasSkill(actor, 'master_smuggler')) detection *= 0.65;
+            if (emHasSkill(actor, 'shadow_dealings')) detection *= 0.85;
+            if (emHasSkill(actor, 'ghost')) detection *= 0.55;
+        }
+        // Notoriety raises detection (uses crimesCommitted as proxy)
+        var notor = actor.notoriety != null ? actor.notoriety : Math.min(80, (actor.crimesCommitted || 0) * 4);
+        if (notor >= 80) detection *= 1.5;
+        else if (notor >= 50) detection *= 1.3;
+        else if (notor >= 25) detection *= 1.15;
+        detection += notor * 0.002;
+        // Personality: honest people aren't smooth criminals
+        if (actor.personality && actor.personality.honesty != null) {
+            if (actor.personality.honesty > 60) detection *= 1.20;
+        }
+        return Math.max(0.02, Math.min(0.95, detection));
+    }
+
+    // v9p33river196: apply player-style penalty to an EM/NPC actor — uses
+    // CONFIG.CRIME_TYPES to resolve real fines/jail per kingdom law. Mirrors
+    // Player.applyCorruptPenalty.
+    function _applyActorCrimePenalty(actor, town, kingdom, crimeId, fineMult) {
+        if (!actor || !kingdom) return 0;
+        var crimeType = (CONFIG.CRIME_TYPES || []).find(function(c) { return c.id === crimeId; });
+        if (!crimeType) return 0;
+        var fine = crimeType.defaultFine || 100;
+        var jailDays = crimeType.defaultJailDays || 0;
+        var ptype = crimeType.defaultPunishment || 'fine';
+        // Kingdom-level overrides
+        if (kingdom.crimePunishments && kingdom.crimePunishments[crimeId]) {
+            var ov = kingdom.crimePunishments[crimeId];
+            if (ov.fine) fine = ov.fine;
+            if (ov.jailDays) jailDays = ov.jailDays;
+            if (ov.type) ptype = ov.type;
+        }
+        if (fineMult) fine = Math.round(fine * fineMult);
+        // Apply
+        actor.gold = Math.max(0, (actor.gold || 0) - fine);
+        if (!actor.criminalRecord) actor.criminalRecord = {};
+        actor.criminalRecord[kingdom.id] = (actor.criminalRecord[kingdom.id] || 0) + 1;
+        actor.notoriety = Math.min(100, (actor.notoriety || 0) + 5);
+        if (actor.reputation) actor.reputation[kingdom.id] = Math.max(0, (actor.reputation[kingdom.id] || 50) - 8);
+        // Execution / heavy jail: kill the actor for severe crimes
+        if (ptype === 'execution') {
+            actor.alive = false;
+            actor.deathCause = 'executed for ' + crimeType.name;
+            logEvent('☠️ ' + (actor.firstName || 'A merchant') + ' ' + (actor.lastName || '') + ' was executed in ' + (town ? town.name : 'a town') + ' for ' + crimeType.name + '.', {
+                type: 'npc_executed', cause: crimeType.name + ' (capital crime).', townId: town && town.id, kingdomId: kingdom.id
+            });
+        } else if (jailDays > 0) {
+            actor._jailedUntilDay = (world.day || 0) + jailDays;
+        }
+        return fine;
+    }
+
+    // v9p33river196: EM-on-EM sabotage. Pick a rival EM in same town and
+    // disable one of their buildings for N days. Strategic — favors targets
+    // with high competitor overlap (same product) or higher gold than the
+    // attacker's. Uses sabotage crime category.
+    function _eliteSabotageRival(em, town, rng, personality) {
+        if (!town || !world) return false;
+        var rivals = world.people.filter(function(p) {
+            return p.alive && p.isEliteMerchant && p.id !== em.id && p.townId === town.id && (p.buildings || []).length > 0;
+        });
+        if (rivals.length === 0) return false;
+        // Score rivals: prefer richer + same-product producers
+        var emProducts = {};
+        for (var b = 0; b < (em.buildings || []).length; b++) {
+            var bt0 = findBuildingType(em.buildings[b].type);
+            if (bt0 && bt0.produces) emProducts[bt0.produces] = true;
+        }
+        var bestRival = null, bestScore = -Infinity;
+        for (var ri = 0; ri < rivals.length; ri++) {
+            var rv = rivals[ri];
+            var sc = (rv.gold || 0) * 0.001;
+            for (var rb = 0; rb < rv.buildings.length; rb++) {
+                var bt = findBuildingType(rv.buildings[rb].type);
+                if (bt && bt.produces && emProducts[bt.produces]) sc += 5;
+            }
+            // Don't sabotage your own kingdom's allies as readily — risk-tolerance gates
+            if (rv.kingdomId !== em.kingdomId && (personality.risk_tolerance || 50) > 60) sc += 3;
+            if (sc > bestScore) { bestScore = sc; bestRival = rv; }
+        }
+        if (!bestRival || bestScore <= 0) return false;
+        var targetBldEntry = bestRival.buildings[Math.floor(rng.random() * bestRival.buildings.length)];
+        if (!targetBldEntry) return false;
+        // Find the actual town building (rival.buildings is owned-list with townId+type)
+        var tt = findTown(targetBldEntry.townId || town.id);
+        if (!tt || !tt.buildings) return false;
+        var realBld = tt.buildings.find(function(b) { return b.ownerId === bestRival.id && b.type === targetBldEntry.type && !b._disabledUntil; });
+        if (!realBld) return false;
+
+        var detection = _calcActorDetection(em, town, 0.30);
+        var caught = rng.chance(detection);
+        em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+        var kingdom = findKingdom(town.kingdomId);
+
+        if (caught) {
+            var fine = _applyActorCrimePenalty(em, town, kingdom, 'sabotage', 1.0);
+            logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught sabotaging ' + bestRival.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '! Fined ' + fine + 'g.', {
+                type: 'em_crime_sabotage_caught', cause: 'EM-vs-EM sabotage attempt failed.',
+                effects: [fine + 'g fine', 'Notoriety +5', 'Reputation damaged'], townId: town.id, kingdomId: kingdom && kingdom.id
+            });
+            return true;
+        }
+        // Success — disable target building 10–25 days
+        var disableDays = 10 + Math.floor(rng.random() * 16);
+        realBld._disabledUntil = (world.day || 0) + disableDays;
+        logEvent('💣 ' + bestRival.firstName + ' ' + (bestRival.lastName || '') + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + ' was sabotaged by an unknown rival! Disabled ' + disableDays + ' days.', {
+            type: 'em_crime_sabotage_success', townId: town.id, kingdomId: kingdom && kingdom.id,
+            cause: 'Rival merchant sabotage (perpetrator unknown to authorities).'
+        });
+        return true;
+    }
+
+    // v9p33river196: EM-on-EM theft. Steal gold from a rival EM in same town.
+    // Smaller stakes than sabotage; classified as 'theft'.
+    function _eliteStealFromRival(em, town, rng, personality) {
+        if (!town || !world) return false;
+        var rivals = world.people.filter(function(p) {
+            return p.alive && p.isEliteMerchant && p.id !== em.id && p.townId === town.id && (p.gold || 0) > 200;
+        });
+        if (rivals.length === 0) return false;
+        // Pick the richest rival the attacker is willing to risk
+        rivals.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
+        var target = rivals[0];
+
+        var detection = _calcActorDetection(em, town, 0.20);
+        var caught = rng.chance(detection);
+        em.crimesCommitted = (em.crimesCommitted || 0) + 1;
+        var kingdom = findKingdom(town.kingdomId);
+        var stolen = Math.min(target.gold, 50 + Math.floor(rng.random() * Math.min(500, target.gold * 0.05)));
+
+        if (caught) {
+            var fine = _applyActorCrimePenalty(em, town, kingdom, 'theft', 1.0);
+            logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught attempting to rob ' + target.firstName + ' in ' + town.name + '! Fined ' + fine + 'g.', {
+                type: 'em_crime_theft_caught', cause: 'EM-vs-EM theft attempt failed.',
+                effects: [fine + 'g fine', 'Notoriety +5'], townId: town.id, kingdomId: kingdom && kingdom.id
+            });
+            return true;
+        }
+        target.gold -= stolen;
+        em.gold = (em.gold || 0) + stolen;
+        logEvent('💰 ' + target.firstName + ' ' + (target.lastName || '') + ' was robbed of ' + stolen + 'g in ' + town.name + ' (perpetrator unknown).', {
+            type: 'em_crime_theft_success', townId: town.id, kingdomId: kingdom && kingdom.id,
+            cause: 'Robbery in the merchant district.'
+        });
+        return true;
+    }
+
     function eliteCrimeAI(em, town, rng, personality) {
         // Removed honesty >= 40 early return — tick gate already checks honesty < 40
         if ((em.gold || 0) < 100) return; // too poor to risk
@@ -3841,6 +4003,16 @@
                     em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 5);
                 }
             }
+        }
+
+        // v9p33river196: EM-on-EM crimes — strategic targeting of rivals
+        // SABOTAGE: high-risk, high-reward — disable rival's competing building
+        if (personality.honesty < 30 && personality.risk_tolerance > 65 && rng.chance(0.18)) {
+            _eliteSabotageRival(em, town, rng, personality);
+        }
+        // THEFT: lower stakes — quick gold from a rich rival
+        if (personality.honesty < 35 && personality.greed > 55 && rng.chance(0.22)) {
+            _eliteStealFromRival(em, town, rng, personality);
         }
     }
 
