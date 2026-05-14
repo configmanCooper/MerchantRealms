@@ -17545,7 +17545,33 @@ window.UI = (function () {
             if (md) { md.style.maxWidth = '95vw'; md.style.width = '95vw'; }
         }, 50);
 
-        // Auto-refresh if enabled
+        // v9p33river230: refresh once per in-game day automatically while
+        // the modal is open. Replaces the old 3-second auto-refresh toggle
+        // (which still works as an opt-in for tighter polling).
+        var _waLastRefreshDay = (Engine && Engine.getDay) ? Engine.getDay() : 0;
+        if (window._waPerDayTimer) { clearInterval(window._waPerDayTimer); window._waPerDayTimer = null; }
+        window._waPerDayTimer = setInterval(function() {
+            var mo = document.getElementById('modalOverlay');
+            if (!mo || mo.classList.contains('hidden')) {
+                clearInterval(window._waPerDayTimer);
+                window._waPerDayTimer = null;
+                return;
+            }
+            var nowDay = (Engine && Engine.getDay) ? Engine.getDay() : 0;
+            if (nowDay === _waLastRefreshDay) return;
+            _waLastRefreshDay = nowDay;
+            var newSnap = _waSnapshot();
+            var prevSnap = window._worldAnalyticsHistory.length > 0 ? window._worldAnalyticsHistory[window._worldAnalyticsHistory.length - 1] : null;
+            if (!prevSnap || prevSnap.day !== newSnap.day) {
+                window._worldAnalyticsHistory.push(newSnap);
+            }
+            var mb = document.getElementById('modalBody');
+            if (mb) {
+                try { mb.innerHTML = _waBuildContent(); } catch(e) {}
+            }
+        }, 1000);
+
+        // Auto-refresh if enabled (legacy 3-sec toggle, kept for tighter polling)
         if (window._waAutoRefresh) {
             window._waAutoRefreshTimer = setInterval(function() {
                 var mo = document.getElementById('modalOverlay');
