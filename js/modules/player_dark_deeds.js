@@ -500,6 +500,19 @@
         return { word: 'NEGLIGIBLE', color: '#8db4d8' };
     }
 
+    // v9p33river228: success-chance verbal label (inverted color scale —
+    // high success is green, low is red, since success is desirable).
+    function _successChanceLabel(chance) {
+        if (chance >= 0.85) return { word: 'CERTAIN', color: '#3aa869' };
+        if (chance >= 0.65) return { word: 'VERY HIGH', color: '#7fc24c' };
+        if (chance >= 0.45) return { word: 'HIGH', color: '#a8d860' };
+        if (chance >= 0.25) return { word: 'MODERATE', color: '#e0c020' };
+        if (chance >= 0.10) return { word: 'LOW', color: '#ff8c2a' };
+        if (chance >= 0.03) return { word: 'VERY LOW', color: '#ff6644' };
+        return { word: 'NEGLIGIBLE', color: '#ff3030' };
+    }
+    Player._successChanceLabel = _successChanceLabel;
+
     // Called once daily from Player.tick(). Rolls catch for each open manhunt,
     // expires manhunts that have run their duration.
     function tickManhunts() {

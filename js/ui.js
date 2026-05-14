@@ -4601,6 +4601,11 @@ window.UI = (function () {
         var label = (Player._manhuntCatchLabel ? Player._manhuntCatchLabel(spec.catchChance) : null);
         var catchWord = label ? label.word : 'UNKNOWN';
         var catchColor = label ? label.color : '#ddd';
+        // v9p33river228: success-chance verbal label too
+        var successChance = (typeof spec.successChance === 'number') ? spec.successChance : Math.max(0.02, Math.min(0.98, 1 - spec.catchChance));
+        var sLabel = (Player._successChanceLabel ? Player._successChanceLabel(successChance) : null);
+        var successWord = sLabel ? sLabel.word : 'UNKNOWN';
+        var successColor = sLabel ? sLabel.color : '#ddd';
 
         var reqHtml = '';
         if (spec.reqs && spec.reqs.length) {
@@ -4622,12 +4627,17 @@ window.UI = (function () {
                 var altLabel = (Player._manhuntCatchLabel ? Player._manhuntCatchLabel(alt.catchChance) : null);
                 var altWord = altLabel ? altLabel.word : '?';
                 var altColor = altLabel ? altLabel.color : '#ddd';
+                // v9p33river228: success label per alternative
+                var altSuccChance = (typeof alt.successChance === 'number') ? alt.successChance : Math.max(0.02, Math.min(0.98, 1 - alt.catchChance));
+                var altSLabel = (Player._successChanceLabel ? Player._successChanceLabel(altSuccChance) : null);
+                var altSWord = altSLabel ? altSLabel.word : '?';
+                var altSColor = altSLabel ? altSLabel.color : '#ddd';
                 var disabled = alt.allReqsMet ? '' : 'disabled';
                 var disabledStyle = alt.allReqsMet ? '' : 'opacity:0.4;cursor:not-allowed;';
                 altHtml += '<div style="margin:8px 0;padding:8px;background:rgba(0,0,0,0.3);border-radius:4px;">' +
                     '<div style="font-weight:bold;color:#ffd86a;">' + alt.title + '</div>' +
                     '<div style="font-size:0.85rem;color:#cdb999;">' + alt.desc + '</div>' +
-                    '<div style="font-size:0.82rem;margin-top:4px;color:#aaa;">Catch risk: <span style="color:' + altColor + ';font-weight:bold;">' + altWord + '</span></div>' +
+                    '<div style="font-size:0.82rem;margin-top:4px;color:#aaa;">Success chance: <span style="color:' + altSColor + ';font-weight:bold;">' + altSWord + '</span> · Catch risk: <span style="color:' + altColor + ';font-weight:bold;">' + altWord + '</span></div>' +
                     (alt.notMetReason ? '<div style="font-size:0.78rem;color:#ff8080;margin-top:2px;">' + alt.notMetReason + '</div>' : '') +
                     '<button class="btn-medieval" data-action="confirmSchemeRun" data-id="' + alt.runId + ':' + personId + '" ' + disabled + ' style="margin-top:6px;font-size:0.85rem;padding:6px 14px;background:rgba(170,40,40,0.6);' + disabledStyle + '">⚡ ' + alt.confirmLabel + '</button>' +
                     '</div>';
@@ -4644,7 +4654,7 @@ window.UI = (function () {
             (spec.cost ? '<div style="color:#ffd070;">💰 Cost: <b>' + spec.cost + 'g</b></div>' : '') +
             reqHtml +
             (spec.alternatives && spec.alternatives.length ? '' :
-                '<div style="margin-top:10px;font-size:0.92rem;">Catch risk: <span style="color:' + catchColor + ';font-weight:bold;">' + catchWord + '</span></div>') +
+                '<div style="margin-top:10px;font-size:0.92rem;">Success chance: <span style="color:' + successColor + ';font-weight:bold;">' + successWord + '</span> · Catch risk: <span style="color:' + catchColor + ';font-weight:bold;">' + catchWord + '</span></div>') +
             '<div style="margin-top:8px;"><b style="color:#a8d8a8;">If successful:</b> ' + spec.successEffect + '</div>' +
             '<div style="margin-top:6px;"><b style="color:#ff8080;">If caught:</b> ' + spec.caughtPenalty + '</div>' +
             altHtml +
@@ -4691,7 +4701,7 @@ window.UI = (function () {
                 cost: 0, runId: 'steal',
                 confirmLabel: 'Steal', allReqsMet: canSteal,
                 reqs: [{ text: 'Discrete skill', met: canSteal }],
-                catchChance: detect,
+                catchChance: detect, successChance: Math.max(0.02, Math.min(0.98, (1 - detect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                 successEffect: 'Gain a portion of their gold or a random inventory item. Relationship with target hidden, town learns of crime.',
                 caughtPenalty: 'Theft fine + 5d jail + town rep -5 + relationship -20. 30-day cooldown per target.'
             };
@@ -4709,7 +4719,7 @@ window.UI = (function () {
                     { text: 'Silver Tongue (Dark) OR Discrete', met: canR },
                     { text: '50g', met: canPay }
                 ],
-                catchChance: rDetect,
+                catchChance: rDetect, successChance: Math.max(0.02, Math.min(0.98, (1 - rDetect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                 successEffect: 'Target reputation damaged for 60 days. They lose business.',
                 caughtPenalty: 'Forgery fine + 10 town rep loss. Relationship with target → 0.'
             };
@@ -4727,7 +4737,7 @@ window.UI = (function () {
                     { text: 'Shadow Dealings OR Silver Tongue (Dark)', met: canB },
                     { text: 'Not already blackmailing this person', met: !alreadyB }
                 ],
-                catchChance: bDetect,
+                catchChance: bDetect, successChance: Math.max(0.02, Math.min(0.98, (1 - bDetect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                 successEffect: 'Target pays 50–200g per season. Continues until they die or escape.',
                 caughtPenalty: 'Blackmail fine + 20 town rep loss. Relationship → 0. Target may retaliate.'
             };
@@ -4745,7 +4755,7 @@ window.UI = (function () {
                     { text: 'Shadow Dealings OR Master Forger', met: canF },
                     { text: '200g', met: canPayF }
                 ],
-                catchChance: fDetect,
+                catchChance: fDetect, successChance: Math.max(0.02, Math.min(0.98, (1 - fDetect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                 successEffect: 'Target arrested + reputation hit. Their assets may be seized.',
                 caughtPenalty: '500g forgery fine + 10d jail + town rep -25.'
             };
@@ -4770,7 +4780,7 @@ window.UI = (function () {
                     { text: '1× poison vial in inventory', met: hasVial },
                     { text: poMin.toLocaleString() + 'g (minimum)', met: canPayP }
                 ],
-                catchChance: poDetect,
+                catchChance: poDetect, successChance: Math.max(0.02, Math.min(0.98, (1 - poDetect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                 successEffect: 'Target sickened with severe poison. Survivable if treated quickly; fatal otherwise.',
                 caughtPenalty: '500g fine + agent fee lost + 10d jail + 25 town rep + huge notoriety.'
             };
@@ -4798,7 +4808,7 @@ window.UI = (function () {
                     {
                         runId: 'assassin_hire', title: '👤 Hire an Assassin (' + hireRange + ')',
                         desc: 'Pay an underworld contact ' + hireRange + ' to do the job from the shadows.',
-                        catchChance: hireDetect,
+                        catchChance: hireDetect, successChance: Math.max(0.02, Math.min(0.98, (1 - hireDetect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                         allReqsMet: canHire && canHirePay,
                         notMetReason: !canHire ? 'Need Dark Connections OR Assassin skill' : (!canHirePay ? 'Need ' + hireMin.toLocaleString() + 'g minimum' : ''),
                         confirmLabel: 'Hire Assassin'
@@ -4808,7 +4818,7 @@ window.UI = (function () {
                         desc: 'Murder the target with your equipped weapon. ' + (rankCostMult > 1
                             ? 'Costs 10% of the hire-assassin price to bribe guards/witnesses for noble targets. Much higher catch chance than hiring.'
                             : 'No gold cost — but much higher catch chance than hiring.'),
-                        catchChance: killDetect,
+                        catchChance: killDetect, successChance: Math.max(0.02, Math.min(0.98, (1 - killDetect) * (P._nobleSuccessMult ? P._nobleSuccessMult(personId) : 1.0))),
                         allReqsMet: canKill && hasWeap && (rankCostMult <= 1 || (pState.gold || 0) >= Math.floor(10000 * aCostMult * 0.10)),
                         notMetReason: !canKill ? 'Need Combat Trained + (Assassin OR Shadow Dealings)' : (!hasWeap ? 'No equipped weapon' : (rankCostMult > 1 && (pState.gold || 0) < Math.floor(10000 * aCostMult * 0.10) ? 'Need ' + Math.floor(10000 * aCostMult * 0.10).toLocaleString() + 'g for guard bribes' : '')),
                         confirmLabel: 'Do It Yourself'
