@@ -2085,37 +2085,43 @@
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(0.20, town);
-        const caught = rng && rng.chance(detection);
+        var _o = _rollSchemeOutcome(detection, rng);
+        var caught = _o.caught;
+        var successful = _o.successful;
 
+        var infoMsg = '';
+        var profitTip = '';
+        if (successful) {
+            const infoTypes = ['tax_change', 'ban_good', 'unban_good', 'new_law'];
+            const infoType = infoTypes[rng ? rng.randInt(0, infoTypes.length - 1) : 0];
+            const info = { kingdomId, type: infoType, revealDay: Engine.getDay(), effectDay: Engine.getDay() + 30 };
+            player.insiderInfo.push(info);
+            grantXP(10, 'Insider trading');
+            if (infoType === 'ban_good') profitTip = 'Buy up stock before the ban — prices will skyrocket on the black market!';
+            else if (infoType === 'unban_good') profitTip = 'Stock up now while black market prices are low — legal demand will spike!';
+            else if (infoType === 'tax_change') profitTip = 'Tax changes affect trade margins — consider adjusting your trade routes.';
+            else if (infoType === 'new_law') profitTip = 'New laws may restrict or enable industries — check your buildings.';
+            infoMsg = `Upcoming ${infoType.replace(/_/g, ' ')} in ${kingdom.name} in ~30 days.`;
+        }
+
+        var caughtMsg = '';
         if (caught) {
             const actualFine = applyCorruptPenalty(town, kingdom, 500, 10, 0, false, 'forgery');
             recordCorruptAction('insider_trading', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
-            return { success: false, caught: true, message: `🚨 CAUGHT! Fined ${actualFine}g, reputation -10.` };
+            caughtMsg = `🚨 CAUGHT! Fined ${actualFine}g, rep -10.`;
+        } else {
+            recordCorruptAction('insider_trading', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         }
 
-        // Generate insider info
-        const infoTypes = ['tax_change', 'ban_good', 'unban_good', 'new_law'];
-        const infoType = infoTypes[rng ? rng.randInt(0, infoTypes.length - 1) : 0];
-        const info = { kingdomId, type: infoType, revealDay: Engine.getDay(), effectDay: Engine.getDay() + 30 };
-        player.insiderInfo.push(info);
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
-        recordCorruptAction('insider_trading', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
-        grantXP(10, 'Insider trading');
-
-        // L4: Generate profit tip based on insider info type
-        var _profitTip = '';
-        if (infoType === 'ban_good') {
-            _profitTip = 'Buy up stock before the ban — prices will skyrocket on the black market!';
-        } else if (infoType === 'unban_good') {
-            _profitTip = 'Stock up now while black market prices are low — legal demand will spike!';
-        } else if (infoType === 'tax_change') {
-            _profitTip = 'Tax changes affect trade margins — consider adjusting your trade routes.';
-        } else if (infoType === 'new_law') {
-            _profitTip = 'New laws may restrict or enable industries — check your buildings.';
-        }
-
-        return { success: true, message: `✅ Insider info: Upcoming ${infoType.replace(/_/g, ' ')} in ${kingdom.name} in ~30 days.` + (_profitTip ? ' 💡 ' + _profitTip : '') };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '✅ Insider info: ' + infoMsg + (profitTip ? ' 💡 ' + profitTip : ''),
+            caughtMsg: caughtMsg,
+            partialMsg: 'Got insider info (' + infoMsg + ') but the official reported you! ' + caughtMsg,
+            failMsg: '❌ The official refused (300g lost) but didn\'t report you.'
+        });
     }
 
     // ── Dark Deeds Tick (called from playerTick) ──
@@ -3290,22 +3296,36 @@
 
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.20, town);
-        if (rng && rng.chance(detection)) {
+        var _o = _rollSchemeOutcome(detection, rng);
+        var caught = _o.caught;
+        var successful = _o.successful;
+        player.gold -= 500;
+
+        if (successful) {
+            player.spyNetworks[townId] = { expiresDay: Engine.getDay() + 180, kingdomId: town.kingdomId };
+            grantXP(20, 'Established spy network');
+            Engine.logEvent(player.fullName + ' established intelligence contacts in ' + town.name + '.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             applyCorruptPenalty(town, kingdom, 300, 15, 5, false, 'forgery');
             recordCorruptAction('spy_network', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
-            player.gold -= 500;
-            return { success: false, caught: true, message: '🚨 CAUGHT establishing spy network! Fined 300g, jailed 5 days.' };
+            caughtMsg = '🚨 CAUGHT! Fined 300g, jailed 5d.';
+        } else {
+            recordCorruptAction('spy_network', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         }
 
-        player.gold -= 500;
-        player.spyNetworks[townId] = { expiresDay: Engine.getDay() + 180, kingdomId: town.kingdomId };
-        recordCorruptAction('spy_network', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
-        grantXP(20, 'Established spy network');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
-        Engine.logEvent(player.fullName + ' established intelligence contacts in ' + town.name + '.');
-        return { success: true, message: '🕵️ Spy network established in ' + town.name + '! You\'ll receive advance warnings for 180 days.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🕵️ Spy network established in ' + town.name + '! Advance warnings for 180 days.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Spy network established but a contact betrayed you! ' + caughtMsg,
+            failMsg: '❌ The contacts didn\'t pan out (500g lost) but no one suspects you.'
+        });
     }
 
     // ── (p2) Smuggling Route ──
@@ -3328,22 +3348,36 @@
 
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.25, fromTown);
-        if (rng && rng.chance(detection)) {
+        var _o = _rollSchemeOutcome(detection, rng);
+        var caught = _o.caught;
+        var successful = _o.successful;
+        player.gold -= 1000;
+
+        if (successful) {
+            player.smugglingRoutes.push({ fromTownId: fromTownId, toTownId: toTownId, expiresDay: Engine.getDay() + CONFIG.DAYS_PER_SEASON, goldEarned: 0 });
+            grantXP(25, 'Established smuggling route');
+            Engine.logEvent('A new smuggling route has been established between ' + fromTown.name + ' and ' + toTown.name + '.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(fromTown.kingdomId) : null;
             applyCorruptPenalty(fromTown, kingdom, 500, 20, 10, false, 'smuggling');
             recordCorruptAction('smuggling_route', true, fromTown && fromTown.kingdomId, 'smuggling');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
-            player.gold -= 1000;
-            return { success: false, caught: true, message: '🚨 CAUGHT setting up smuggling route! Fined 500g, jailed 10 days.' };
+            caughtMsg = '🚨 CAUGHT! Fined 500g, jailed 10d.';
+        } else {
+            recordCorruptAction('smuggling_route', false, fromTown && fromTown.kingdomId, 'smuggling');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         }
 
-        player.gold -= 1000;
-        player.smugglingRoutes.push({ fromTownId: fromTownId, toTownId: toTownId, expiresDay: Engine.getDay() + CONFIG.DAYS_PER_SEASON, goldEarned: 0 });
-        recordCorruptAction('smuggling_route', false, fromTown && fromTown.kingdomId, 'smuggling');
-        grantXP(25, 'Established smuggling route');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
-        Engine.logEvent('A new smuggling route has been established between ' + fromTown.name + ' and ' + toTown.name + '.');
-        return { success: true, message: '🥷 Smuggling route established: ' + fromTown.name + ' ↔ ' + toTown.name + '! Generates passive income for 1 year.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🥷 Smuggling route established: ' + fromTown.name + ' ↔ ' + toTown.name + '! Generates passive income for 1 year.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Smuggling route established but customs caught wind of it! ' + caughtMsg,
+            failMsg: '❌ The route fell through (1000g lost) but you weren\'t identified.'
+        });
     }
 
     // ── (p3) Forge Documents ──
@@ -3377,20 +3411,35 @@
             var existing = player.forgedKingdomDocs[targetKingdomId][docType === 'temp_citizenship' ? 'citizenship' : 'license'];
             if (existing && existing > day) return { success: false, message: 'Already have an active forged ' + actualSubject + ' in ' + targetK.name + '.' };
             var detectChanceK = calculateCorruptDetection(detection, town);
-            if (rng && rng.chance(detectChanceK)) {
+            var _ofk = _rollSchemeOutcome(detectChanceK, rng);
+            var caughtK = _ofk.caught;
+            var successfulK = _ofk.successful;
+            player.gold -= cost;
+
+            if (successfulK) {
+                player.forgedKingdomDocs[targetKingdomId][docType === 'temp_citizenship' ? 'citizenship' : 'license'] = day + duration;
+                grantXP(15, 'Forged ' + actualSubject);
+            }
+
+            var caughtMsgK = '';
+            if (caughtK) {
                 var kingdomCaught = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
                 var fineK = applyCorruptPenalty(town, kingdomCaught, cost * 3, 20, 7, false, 'forgery');
                 recordCorruptAction('forge_documents', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
                 player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
-                player.gold -= cost;
-                return { success: false, caught: true, message: '🚨 CAUGHT forging ' + actualSubject + '! Fined ' + fineK + 'g, jailed 7 days.' };
+                caughtMsgK = '🚨 CAUGHT forging ' + actualSubject + '! Fined ' + fineK + 'g, jailed 7d.';
+            } else {
+                recordCorruptAction('forge_documents', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+                player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             }
-            player.gold -= cost;
-            player.forgedKingdomDocs[targetKingdomId][docType === 'temp_citizenship' ? 'citizenship' : 'license'] = day + duration;
-            recordCorruptAction('forge_documents', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
-            grantXP(15, 'Forged ' + actualSubject);
-            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
-            return { success: true, message: '📝 ' + reward + '!' };
+
+            return _schemeResult({
+                successful: successfulK, caught: caughtK,
+                successMsg: '📝 ' + reward + '!',
+                caughtMsg: caughtMsgK,
+                partialMsg: 'Got the forged ' + actualSubject + ' but the forger turned you in! ' + caughtMsgK,
+                failMsg: '❌ Forgery botched (' + cost + 'g + materials lost) but no one suspects you.'
+            });
         }
 
         if (docType === 'trade_permit') {
@@ -3418,21 +3467,35 @@
         }
 
         var detectChance = calculateCorruptDetection(detection, town);
-        if (rng && rng.chance(detectChance)) {
+        var _ofd = _rollSchemeOutcome(detectChance, rng);
+        var caught = _ofd.caught;
+        var successful = _ofd.successful;
+        player.gold -= cost;
+
+        if (successful) {
+            player.forgedDocuments[docType] = day + duration;
+            grantXP(15, 'Forged documents');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             var fine = applyCorruptPenalty(town, kingdom, cost * 3, 20, 7, false, 'forgery');
             recordCorruptAction('forge_documents', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
-            player.gold -= cost;
-            return { success: false, caught: true, message: '🚨 CAUGHT forging documents! Fined ' + fine + 'g, jailed 7 days.' };
+            caughtMsg = '🚨 CAUGHT forging documents! Fined ' + fine + 'g, jailed 7d.';
+        } else {
+            recordCorruptAction('forge_documents', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         }
 
-        player.gold -= cost;
-        player.forgedDocuments[docType] = day + duration;
-        recordCorruptAction('forge_documents', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
-        grantXP(15, 'Forged documents');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
-        return { success: true, message: '📝 Forged ' + docType.replace(/_/g, ' ') + ' created! ' + reward + '.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '📝 Forged ' + docType.replace(/_/g, ' ') + ' created! ' + reward + '.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Got the forged ' + docType.replace(/_/g, ' ') + ' but were exposed! ' + caughtMsg,
+            failMsg: '❌ Forgery botched (' + cost + 'g lost) but no one suspects you.'
+        });
     }
 
     // v9p33river198: helper queries for forged kingdom-scoped docs
@@ -3472,26 +3535,40 @@
 
         var target = rng.pick(targets);
         var detection = calculateCorruptDetection(0.30, town);
-        if (rng && rng.chance(detection)) {
+        var _osc = _rollSchemeOutcome(detection, rng);
+        var caught = _osc.caught;
+        var successful = _osc.successful;
+        player.gold -= 300;
+
+        var loot = 0;
+        if (successful) {
+            loot = rng.randInt(50, 300);
+            player.gold += loot;
+            player.stats.totalGoldEarned += loot;
+            if (target.gold != null) target.gold = Math.max(0, target.gold - loot * 2);
+            grantXP(20, 'Sabotaged caravan');
+            Engine.logEvent('A caravan belonging to ' + (target.firstName || 'a merchant') + ' was raided by bandits near ' + town.name + '.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
             var fine = applyCorruptPenalty(town, kingdom, 800, 25, 10, false, 'blackmail');
             recordCorruptAction('sabotage_caravan', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'sabotage');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
-            player.gold -= 300;
-            return { success: false, caught: true, message: '🚨 CAUGHT sabotaging ' + (target.firstName || 'a merchant') + '\'s caravan! Fined ' + fine + 'g, jailed 10 days.' };
+            caughtMsg = '🚨 CAUGHT sabotaging ' + (target.firstName || 'a merchant') + '\'s caravan! Fined ' + fine + 'g, jailed 10d.';
+        } else {
+            recordCorruptAction('sabotage_caravan', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'sabotage');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
         }
 
-        player.gold -= 300;
-        // Damage the caravan
-        var loot = rng.randInt(50, 300);
-        player.gold += loot;
-        player.stats.totalGoldEarned += loot;
-        if (target.gold != null) target.gold = Math.max(0, target.gold - loot * 2);
-        recordCorruptAction('sabotage_caravan', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'sabotage');
-        grantXP(20, 'Sabotaged caravan');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(12);
-        Engine.logEvent('A caravan belonging to ' + (target.firstName || 'a merchant') + ' was raided by bandits near ' + town.name + '.');
-        return { success: true, message: '⚔️ Caravan sabotaged! Looted ' + loot + 'g from ' + (target.firstName || 'the merchant') + '\'s goods.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '⚔️ Caravan sabotaged! Looted ' + loot + 'g from ' + (target.firstName || 'the merchant') + '\'s goods.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Caravan sabotaged (' + loot + 'g looted) but you were SEEN! ' + caughtMsg,
+            failMsg: '❌ The bandits failed to find the caravan (300g lost).'
+        });
     }
 
     // ── (p5) Plant Evidence ──
@@ -3507,37 +3584,46 @@
         var town = Engine.findTown(player.townId);
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.25, town);
+        var _ope = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(npcId));
+        var caught = _ope.caught;
+        var successful = _ope.successful;
+        player.gold -= 150;
 
-        if (rng && rng.chance(detection)) {
+        var npcFine = 0;
+        if (successful) {
+            npcFine = rng.randInt(100, 500);
+            if (npc.gold != null) npc.gold = Math.max(0, npc.gold - npcFine);
+            npc._jailedUntilDay = Engine.getDay() + rng.randInt(10, 30);
+            if (npc.isEliteMerchant && npc.caravans) {
+                for (var ci = 0; ci < npc.caravans.length; ci++) npc.caravans[ci].paused = true;
+            }
+            grantXP(20, 'Planted evidence');
+            if (player.doubleNobleAgent && npc && (npc.occupation === 'noble' || npc.isNoble)) {
+                if (town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('plant_evidence_noble');
+            }
+            Engine.logEvent((npc.firstName || 'A merchant') + ' was arrested after contraband was found in their possession!');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             var fine = applyCorruptPenalty(town, kingdom, 400, 20, 8, false, 'sabotage');
             recordCorruptAction('plant_evidence', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
-            player.gold -= 150;
             if (player.relationships[npcId]) player.relationships[npcId].level = 0;
-            return { success: false, caught: true, message: '🚨 CAUGHT planting evidence on ' + (npc.firstName || 'them') + '! Fined ' + fine + 'g, jailed 8 days.' };
+            caughtMsg = '🚨 CAUGHT planting evidence on ' + (npc.firstName || 'them') + '! Fined ' + fine + 'g, jailed 8d.';
+        } else {
+            recordCorruptAction('plant_evidence', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
         }
 
-        player.gold -= 150;
-        // NPC gets arrested — loses gold, reputation, and is jailed
-        var npcFine = rng.randInt(100, 500);
-        if (npc.gold != null) npc.gold = Math.max(0, npc.gold - npcFine);
-        npc._jailedUntilDay = Engine.getDay() + rng.randInt(10, 30);
-        // If elite merchant, disrupt their operations
-        if (npc.isEliteMerchant && npc.caravans) {
-            for (var ci = 0; ci < npc.caravans.length; ci++) {
-                npc.caravans[ci].paused = true;
-            }
-        }
-        recordCorruptAction('plant_evidence', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
-        grantXP(20, 'Planted evidence');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(8);
-        // DNA: check if target is a noble
-        if (player.doubleNobleAgent && npc && (npc.occupation === 'noble' || npc.isNoble)) {
-            if (town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('plant_evidence_noble');
-        }
-        Engine.logEvent((npc.firstName || 'A merchant') + ' was arrested after contraband was found in their possession!');
-        return { success: true, message: '🎭 ' + (npc.firstName || 'Target') + ' arrested! Fined ' + npcFine + 'g and jailed. Their operations are disrupted.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🎭 ' + (npc.firstName || 'Target') + ' arrested! Fined ' + npcFine + 'g and jailed. Their operations are disrupted.',
+            caughtMsg: caughtMsg,
+            partialMsg: (npc.firstName || 'Target') + ' arrested but you were SEEN planting the evidence! ' + caughtMsg,
+            failMsg: '❌ The contraband was discovered before you could plant it (150g lost) but no one suspects you.'
+        });
     }
 
     // ── (p6) Incite Revolt ──
@@ -3552,26 +3638,38 @@
         var town = Engine.findTown(player.townId);
         var rng = Engine.getRng();
         var detection = calculateCorruptDetection(0.40, town);
+        var _oir = _rollSchemeOutcome(detection, rng);
+        var caught = _oir.caught;
+        var successful = _oir.successful;
+        player.gold -= 2000;
 
-        if (rng && rng.chance(detection)) {
+        if (successful) {
+            kingdom.stability = Math.max(0, (kingdom.stability || 50) - rng.randInt(10, 25));
+            kingdom.prosperity = Math.max(0, (kingdom.prosperity || 50) - rng.randInt(5, 15));
+            kingdom.unrest = (kingdom.unrest || 0) + rng.randInt(15, 30);
+            grantXP(40, 'Incited revolt');
+            if (player.doubleNobleAgent && kingdom.id === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('incite_unrest');
+            Engine.logEvent('Unrest is brewing in ' + kingdom.name + '! Agitators are spreading dissent.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
             var fine = applyCorruptPenalty(town, kingdom, 3000, 40, 20, true, 'treason', { isNobleTarget: true });
             recordCorruptAction('incite_revolt', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'treason');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(30);
-            player.gold -= 2000;
-            return { success: false, caught: true, message: '🚨 CAUGHT inciting revolt! Fined ' + fine + 'g, jailed 20 days, EXILED!' };
+            caughtMsg = '🚨 CAUGHT inciting revolt! Fined ' + fine + 'g, jailed 20d, EXILED!';
+        } else {
+            recordCorruptAction('incite_revolt', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'treason');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
         }
 
-        player.gold -= 2000;
-        // Reduce kingdom stability and prosperity
-        kingdom.stability = Math.max(0, (kingdom.stability || 50) - rng.randInt(10, 25));
-        kingdom.prosperity = Math.max(0, (kingdom.prosperity || 50) - rng.randInt(5, 15));
-        kingdom.unrest = (kingdom.unrest || 0) + rng.randInt(15, 30);
-        recordCorruptAction('incite_revolt', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'treason');
-        grantXP(40, 'Incited revolt');
-        player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
-        if (player.doubleNobleAgent && kingdom.id === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('incite_unrest');
-        Engine.logEvent('Unrest is brewing in ' + kingdom.name + '! Agitators are spreading dissent.');
-        return { success: true, message: '🔥 Revolt incited in ' + kingdom.name + '! Stability and prosperity reduced, unrest rising.' };
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🔥 Revolt incited in ' + kingdom.name + '! Stability and prosperity reduced, unrest rising.',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Revolt incited but you were exposed as the agitator! ' + caughtMsg,
+            failMsg: '❌ The agitators failed to gain traction (2000g lost) but no one suspects you.'
+        });
     }
 
     // ── (p7) Double Agent ──
