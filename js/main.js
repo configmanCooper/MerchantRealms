@@ -1775,6 +1775,14 @@ window.Game = (function () {
             // At high speed, still update the day/year display every frame so it stays current
             if (_skipRender || _freezeMap) {
                 try { if (UI.updateDateDisplay) UI.updateDateDisplay(); } catch (_e) { /* no-op */ }
+                // v9p33river207: keep jail / manhunt / trial banners refreshing
+                // during fast-forward so the day-remaining countdown stays
+                // accurate (these are cheap DOM updates).
+                if (_loopFrameCount % 3 === 0) {
+                    try { if (UI.updateJailPanel) UI.updateJailPanel(); } catch (_e) { /* no-op */ }
+                    try { if (UI.updateManhuntBanner) UI.updateManhuntBanner(); } catch (_e) { /* no-op */ }
+                    try { if (UI.updateTrialBanner) UI.updateTrialBanner(); } catch (_e) { /* no-op */ }
+                }
             }
         }
     }
