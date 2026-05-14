@@ -4012,12 +4012,18 @@ const NPC_HEALTH_CONFIG = {
         pneumonia:      { name: 'Pneumonia',           severity: 'serious',  healthDrain: 2.0, daysToRecover: 30,  seasons: ['winter'] },
         typhus:         { name: 'Typhus',              severity: 'serious',  healthDrain: 2.5, daysToRecover: 30,  seasons: ['spring', 'summer', 'autumn', 'winter'] },
         plague:         { name: 'Plague',              severity: 'severe',   healthDrain: 3.5, daysToRecover: 35,  seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: true, spreadChance: 0.036, naturalRecoveryDay: 14, naturalRecoveryChance: 0.025, recoveryChance: 0.10 },
-        // v9p33river233: healthDrain 5 → 10 — poison is now genuinely lethal
-        // even for nobles with full treatment access. Treated NPCs net-decay
-        // at 2.1/d; treatment slows but no longer saves most victims.
-        // Treated drain: 10 × 0.3 = 3/d, minus 0.9/d natural heal = net 2.1/d
-        // Untreated: 10/d → ~7 days from 75hp
-        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 10.0, daysToRecover: 28, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 14, naturalRecoveryChance: 0.04, recoveryChance: 0.18 },
+        // v9p33river234: poison rebalance — even treated kings rarely survive.
+        // Old (v9p33river233): treated drain 10*0.3 - 0.9 = 2.1/d, recovery
+        // window 0.6*28 = ~17 days. From 75hp, king lost ~17hp by recovery
+        // window and survived after a few recovery rolls (~22-25 days).
+        //   - healthDrain 10 → 14
+        //   - daysToRecover 28 → 40 (treated → 24 days minimum)
+        //   - recoveryChance 0.18 → 0.10
+        // New treated drain: 14*0.3 - 0.9 = 3.3/d. From 75hp at day 3:
+        //   30hp by day 17, 0 by day 22 — DEAD before recovery window opens.
+        // Untreated: 14/d → dead in ~5-6 days.
+        // King survival now genuinely difficult even with full treatment.
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 14.0, daysToRecover: 40, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 20, naturalRecoveryChance: 0.03, recoveryChance: 0.10 },
     },
 
     // --- Health thresholds ---
