@@ -4752,7 +4752,7 @@ CONFIG.CRIME_TYPES = [
     { id: 'theft', name: 'Theft', icon: '🤚', defaultPunishment: 'jail', defaultJailDays: 7, defaultFine: 150, description: 'Stealing goods or gold from others' },
     { id: 'assault', name: 'Assault', icon: '👊', defaultPunishment: 'jail', defaultJailDays: 14, defaultFine: 300, description: 'Attacking another person' },
     { id: 'murder', name: 'Murder', icon: '💀', defaultPunishment: 'execution', defaultJailDays: 360, defaultFine: 5000, description: 'Killing another person' },
-    { id: 'arson', name: 'Arson', icon: '🔥', defaultPunishment: 'jail', defaultJailDays: 30, defaultFine: 500, description: 'Setting fire to buildings or property' },
+    { id: 'arson', name: 'Arson', icon: '🔥', defaultPunishment: 'jail', defaultJailDays: 45, defaultFine: 900, description: 'Setting fire to buildings or property' },
     { id: 'sabotage', name: 'Sabotage', icon: '💣', defaultPunishment: 'jail', defaultJailDays: 30, defaultFine: 2000, description: 'Deliberately damaging infrastructure such as bridges or roads' },
     { id: 'tax_evasion', name: 'Tax Evasion', icon: '💸', defaultPunishment: 'fine', defaultJailDays: 3, defaultFine: 200, description: 'Evading kingdom taxes' },
     { id: 'bribery', name: 'Bribery', icon: '🤫', defaultPunishment: 'fine', defaultJailDays: 5, defaultFine: 300, description: 'Bribing officials or guards' },

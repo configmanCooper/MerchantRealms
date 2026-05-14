@@ -1270,11 +1270,21 @@
                     var pFine = baseFine;
                     var pJail = baseJail;
 
-                    // Murder/treason: justice → execution, otherwise long jail
+                    // Murder/treason: justice → execution, otherwise long jail.
+                    // v9p33river204: treason gets a wider, softer lenient range.
                     if (crime.id === 'murder' || crime.id === 'treason') {
                         if (!justiceLenient) {
                             pType = 'execution'; pJail = 0; pFine = 0;
+                        } else if (crime.id === 'treason') {
+                            // Lenient treason: 25-65% of base jail, 25-50% of base fine.
+                            // Adds real range (vs. flat 1.2× before) so reformist/
+                            // generous kings can feel meaningfully softer for political
+                            // crimes. With base 360d/10000g → ~90-234 days + 2500-5000g.
+                            pType = 'jail';
+                            pJail = Math.max(30, Math.floor(baseJail * (0.25 + rng.random() * 0.40)));
+                            pFine = Math.max(500, Math.floor(baseFine * (0.25 + rng.random() * 0.25)));
                         } else {
+                            // Lenient murder still firm (60-90% of base, no random softening)
                             pType = 'jail'; pJail = Math.floor(baseJail * 1.2); pFine = baseFine;
                         }
                     } else if (justiceHarsh) {
