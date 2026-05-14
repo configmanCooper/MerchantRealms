@@ -564,6 +564,60 @@
         if (!townForPenalty && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
             townForPenalty = Engine.findTown(huntKingdom.towns[0]);
         }
+
+        // v9p33river240: extradition warp.
+        // If the player is caught for a manhunt while NOT inside the hunting
+        // kingdom, the guards extradite them to the closest town within the
+        // hunting kingdom and imprison them there. This makes "running across
+        // the border" still result in real jail time at the offended kingdom's
+        // own jail (rather than being magically locked up in some foreign town
+        // they happened to be standing in).
+        var _wasExtradited = false;
+        var _extraditionTown = null;
+        var _origLocLabel = currentTown ? currentTown.name : 'the wilderness';
+        var _playerInHuntKingdom = !!(currentTown && currentTown.kingdomId === kId);
+        if (!_playerInHuntKingdom && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
+            // Find player's current world position
+            var _pPos = null;
+            try { if (Player.getPlayerWorldPosition) _pPos = Player.getPlayerWorldPosition(); } catch (_e) {}
+            if (!_pPos && currentTown) _pPos = { x: currentTown.x, y: currentTown.y };
+            // Find closest town in hunting kingdom
+            var _bestTown = null;
+            var _bestDist = Infinity;
+            for (var _hi = 0; _hi < huntKingdom.towns.length; _hi++) {
+                var _ht = Engine.findTown(huntKingdom.towns[_hi]);
+                if (!_ht) continue;
+                var _d;
+                if (_pPos) _d = Math.hypot(_ht.x - _pPos.x, _ht.y - _pPos.y);
+                else _d = 0;
+                if (_d < _bestDist) { _bestDist = _d; _bestTown = _ht; }
+            }
+            if (_bestTown) {
+                // Warp player there + clear travel state
+                player.townId = _bestTown.id;
+                player.traveling = false;
+                player.travelProgress = 0;
+                player.travelDestination = null;
+                player.travelDestCoords = null;
+                player.travelWaypoints = null;
+                player.travelRoute = null;
+                player.travelTotalDist = 0;
+                player.travelBySea = false;
+                player.travelOffroad = false;
+                player.travelOffSea = false;
+                player.offSeaShipId = null;
+                player.travelPaid = false;
+                player.travelMode = null;
+                player.travelSeaMode = null;
+                player._campPromptNeeded = false;
+                player.worldX = null;
+                player.worldY = null;
+                townForPenalty = _bestTown;
+                currentTown = _bestTown;
+                _wasExtradited = true;
+                _extraditionTown = _bestTown;
+            }
+        }
         var fine = 0;
         var jailDays = 0;
         var exile = false;
@@ -581,9 +635,15 @@
         var msg = howCaught + (huntKingdom ? huntKingdom.name : 'the kingdom') +
             (viaJail ? '\'s warrant arrived for ' : '\'s manhunt for ') +
             hunt.crimeId + '! Penalty applied.';
+        if (_wasExtradited && _extraditionTown) {
+            msg += ' You were dragged from ' + _origLocLabel + ' and locked up in ' + _extraditionTown.name + '.';
+        }
         Engine.logEvent(msg, null, 'my_actions');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('⛓️ MANHUNT CAUGHT! ' + (huntKingdom ? huntKingdom.name : 'kingdom') + ' / ' + hunt.crimeId, 'error', 'critical');
+            if (_wasExtradited && _extraditionTown) {
+                UI.toast('🚔 Extradited to ' + _extraditionTown.name + ' for trial.', 'warning');
+            }
         }
         delete player.activeManhunts[kId];
     }
