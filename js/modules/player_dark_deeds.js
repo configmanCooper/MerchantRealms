@@ -2528,7 +2528,7 @@
     }
 
     // ── (p3) Forge Documents ──
-    function forgeDocuments(docType) {
+    function forgeDocuments(docType, targetKingdomId) {
         _sync();
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!hasSkill('master_forger')) return { success: false, message: 'Requires Master Forger skill.' };
@@ -2538,6 +2538,41 @@
         var town = Engine.findTown(player.townId);
         var day = Engine.getDay();
         var cost, duration, detection, reward;
+
+        // v9p33river198: temp_license & temp_citizenship docs target a specific
+        // kingdom for 30 days. Stored under player.forgedKingdomDocs[kingdomId]
+        // = { license: expDay, citizenship: expDay } so they can stack across
+        // multiple kingdoms independently.
+        if (docType === 'temp_license' || docType === 'temp_citizenship') {
+            if (!targetKingdomId) return { success: false, message: 'Choose a target kingdom.' };
+            var targetK = Engine.findKingdom(targetKingdomId);
+            if (!targetK) return { success: false, message: 'Unknown kingdom.' };
+            cost = (docType === 'temp_citizenship') ? 600 : 250;
+            duration = 30;
+            detection = (docType === 'temp_citizenship') ? 0.30 : 0.18;
+            var actualSubject = (docType === 'temp_citizenship') ? 'citizenship' : 'trade license';
+            reward = 'Forged ' + actualSubject + ' in ' + targetK.name + ' for 30 days';
+            if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g.' };
+            player.forgedKingdomDocs = player.forgedKingdomDocs || {};
+            if (!player.forgedKingdomDocs[targetKingdomId]) player.forgedKingdomDocs[targetKingdomId] = {};
+            var existing = player.forgedKingdomDocs[targetKingdomId][docType === 'temp_citizenship' ? 'citizenship' : 'license'];
+            if (existing && existing > day) return { success: false, message: 'Already have an active forged ' + actualSubject + ' in ' + targetK.name + '.' };
+            var detectChanceK = calculateCorruptDetection(detection, town);
+            if (rng && rng.chance(detectChanceK)) {
+                var kingdomCaught = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
+                var fineK = applyCorruptPenalty(town, kingdomCaught, cost * 3, 20, 7, false, 'forgery');
+                recordCorruptAction('forge_documents', true);
+                player.notoriety += 12;
+                player.gold -= cost;
+                return { success: false, caught: true, message: '🚨 CAUGHT forging ' + actualSubject + '! Fined ' + fineK + 'g, jailed 7 days.' };
+            }
+            player.gold -= cost;
+            player.forgedKingdomDocs[targetKingdomId][docType === 'temp_citizenship' ? 'citizenship' : 'license'] = day + duration;
+            recordCorruptAction('forge_documents', false);
+            grantXP(15, 'Forged ' + actualSubject);
+            player.notoriety += 5;
+            return { success: true, message: '📝 ' + reward + '!' };
+        }
 
         if (docType === 'trade_permit') {
             cost = 200;
@@ -2566,7 +2601,7 @@
         var detectChance = calculateCorruptDetection(detection, town);
         if (rng && rng.chance(detectChance)) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
-            var fine = applyCorruptPenalty(town, kingdom, cost * 3, 20, 7, false);
+            var fine = applyCorruptPenalty(town, kingdom, cost * 3, 20, 7, false, 'forgery');
             recordCorruptAction('forge_documents', true);
             player.notoriety += 12;
             player.gold -= cost;
@@ -2579,6 +2614,20 @@
         grantXP(15, 'Forged documents');
         player.notoriety += 5;
         return { success: true, message: '📝 Forged ' + docType.replace(/_/g, ' ') + ' created! ' + reward + '.' };
+    }
+
+    // v9p33river198: helper queries for forged kingdom-scoped docs
+    function hasForgedLicense(kingdomId) {
+        _sync();
+        if (!kingdomId || !player.forgedKingdomDocs || !player.forgedKingdomDocs[kingdomId]) return false;
+        var exp = player.forgedKingdomDocs[kingdomId].license;
+        return exp && exp > (Engine.getDay ? Engine.getDay() : 0);
+    }
+    function hasForgedCitizenship(kingdomId) {
+        _sync();
+        if (!kingdomId || !player.forgedKingdomDocs || !player.forgedKingdomDocs[kingdomId]) return false;
+        var exp = player.forgedKingdomDocs[kingdomId].citizenship;
+        return exp && exp > (Engine.getDay ? Engine.getDay() : 0);
     }
 
     // ── (p4) Sabotage Competitor Caravan ──
@@ -3878,6 +3927,8 @@
     Player.layLow = layLow;
     Player.canJailbreak = canJailbreak;
     Player.attemptJailbreak = attemptJailbreak;
+    Player.hasForgedLicense = hasForgedLicense;
+    Player.hasForgedCitizenship = hasForgedCitizenship;
     Player.cleanseIdentity = cleanseIdentity;
     Player.pitNoblesAgainstEachOther = pitNoblesAgainstEachOther;
     Player.turnNobleAgainstKing = turnNobleAgainstKing;

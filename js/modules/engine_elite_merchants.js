@@ -3983,16 +3983,53 @@
         function _forgeDocumentsScheme(em, town, rng, personality) {
             // Skill: master_forger required (player parity)
             if (!emHasSkill(em, 'master_forger')) return false;
-            var revenue = 300 + Math.floor(rng.random() * 500);
-            var detection = _calcActorDetection(em, town, 0.15);
+            var detection = _calcActorDetection(em, town, 0.18);
             em.crimesCommitted = (em.crimesCommitted || 0) + 1;
             var kingdom = findKingdom(town.kingdomId);
+            // v9p33river198: strategically choose citizenship vs license vs cash
+            // - Pick a kingdom OTHER than the EM's home where they don't already
+            //   have rank, biased toward kingdoms whose laws block non-citizens
+            //   (closed_borders) OR where the EM has a building / sees high rep.
+            var emKId = em.kingdomId;
+            var candidates = world.kingdoms.filter(function(k) {
+                if (k.id === emKId) return false;
+                if ((em.socialRank && em.socialRank[k.id]) || 0) return false; // already has real rank
+                return true;
+            });
+            var bestK = null, bestScore = -Infinity;
+            for (var ki = 0; ki < candidates.length; ki++) {
+                var k = candidates[ki];
+                var sc = (em.reputation && em.reputation[k.id] ? em.reputation[k.id] : 50) * 0.05;
+                if (k.laws && (k.laws.closedBorders || (k.laws.specialLaws || []).some(function(sl){return sl.effect==='closed_borders';}))) sc += 5;
+                // EM owns building in this kingdom -> wants license
+                if ((em.buildings || []).some(function(b){var t=findTown(b.townId);return t && t.kingdomId===k.id;})) sc += 4;
+                if (sc > bestScore) { bestScore = sc; bestK = k; }
+            }
+            // Decision tree
+            var docKind = 'cash'; // default fallback if no good kingdom
+            if (bestK) {
+                docKind = (personality.greed > 60 ? 'temp_citizenship' : 'temp_license');
+            }
+            // Cost gate
+            var docCost = (docKind === 'temp_citizenship') ? 600 : (docKind === 'temp_license' ? 250 : 0);
+            if (docCost > 0 && (em.gold || 0) < docCost) docKind = 'cash';
+
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 2.0);
                 logEvent('⚖️ ' + em.firstName + ' caught forging documents in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_forge_caught', townId: town.id });
-            } else {
+                return true;
+            }
+            if (docKind === 'cash') {
+                var revenue = 300 + Math.floor(rng.random() * 500);
                 em.gold = (em.gold || 0) + revenue;
                 logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' profits ' + revenue + 'g from forged documents in ' + town.name + ' (covert).', { type: 'em_scheme_forge_success', townId: town.id });
+            } else {
+                em.gold -= docCost;
+                em._forgedKingdomDocs = em._forgedKingdomDocs || {};
+                if (!em._forgedKingdomDocs[bestK.id]) em._forgedKingdomDocs[bestK.id] = {};
+                var docKey = (docKind === 'temp_citizenship') ? 'citizenship' : 'license';
+                em._forgedKingdomDocs[bestK.id][docKey] = (world.day || 0) + 30;
+                logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' forges 30-day ' + (docKind === 'temp_citizenship' ? 'citizenship' : 'trade license') + ' for ' + bestK.name + ' (covert).', { type: 'em_scheme_forge_success', townId: town.id, kingdomId: bestK.id });
             }
             return true;
         }

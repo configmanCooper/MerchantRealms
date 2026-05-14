@@ -23017,7 +23017,12 @@
 
     function isPlayerCitizenOf(kingdomId) {
         if (!kingdomId) return false;
-        return (player.socialRank[kingdomId] || 0) >= 1;
+        if ((player.socialRank[kingdomId] || 0) >= 1) return true;
+        // v9p33river198: forged temporary citizenship counts (until expiry)
+        try {
+            if (Player.hasForgedCitizenship && Player.hasForgedCitizenship(kingdomId)) return true;
+        } catch(e) {}
+        return false;
     }
 
     function setActiveCitizenship(kingdomId) {
