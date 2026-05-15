@@ -4026,7 +4026,15 @@ const NPC_HEALTH_CONFIG = {
         // Some kings still die (slow treatment, no antidote, bad rolls); maybe
         // 40-55% survival rate. Untreated: 9/d → dead in ~8 days, 5%/d natural
         // recovery starting day 15 (most untreated still die — ~70% mortality).
-        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 9.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
+        // v9p33river251: poison balance — drain 9 → 5 (less brutal). With
+        // treatment kings should survive ~70%. Math:
+        //   Untreated: 5*3 = 15/tick, dead by day ~15 from 75hp
+        //   Treated hospital: 15 * 0.40 = 6/tick = 2/d net loss; from 75hp
+        //   over 12-day cure window, lose ~24hp → 51hp at cure → +20 = 71hp survives.
+        //   Treated old king (age 41+): 15 * 1.25 * 0.40 = 7.5/tick = 2.5/d net,
+        //   loses 30hp over 12d → 45hp + 20 = 65hp survives.
+        //   Untreated kings (no hospital, broke kingdom, etc.) still die ~75%.
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 5.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
     },
 
     // --- Health thresholds ---

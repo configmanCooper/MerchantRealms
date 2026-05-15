@@ -1734,6 +1734,17 @@
         }
 
         var _treatAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
+        // v9p33river251: trace which poisoned NPCs are skipped at top of seek
+        try {
+            if (typeof window === 'undefined' || window._POISON_DEBUG !== false) {
+                for (var _ti = 0; _ti < _treatAlive.length; _ti++) {
+                    var _tp = _treatAlive[_ti];
+                    if (_tp && _tp.alive && _tp.illness === 'poisoned') {
+                        console.log('[POISON|d' + world.day + '] SEEK ENTER ' + (_tp.firstName||'?') + ' alive=' + _tp.alive + ' townId=' + _tp.townId + ' sick=' + _tp.sick + ' treatPaid=' + !!_tp._illnessTreatPaid + ' storyBlock=' + !!_tp._storyBlockTreatment + ' isKing=' + !!_tp.isKing);
+                    }
+                }
+            }
+        } catch(_e){}
         for (var i = 0; i < _treatAlive.length; i++) {
             var p = _treatAlive[i];
             if (!p.alive || !p.townId) continue;
@@ -1769,11 +1780,21 @@
             var seekChance = 0.30;
             if (isEM) seekChance = 0.80;
             if (isKing || isRoyal) seekChance = 0.95;
-            if (!rng.chance(seekChance)) continue;
+            var _seekRoll = rng.random();
+            if (_seekRoll >= seekChance) {
+                if (p.illness === 'poisoned') _dbgPoison('🎲 SEEK ROLL FAIL (' + _seekRoll.toFixed(2) + ' >= ' + seekChance.toFixed(2) + ')', p, { isKing: isKing, isRoyal: isRoyal, isEM: isEM });
+                continue;
+            }
 
             var town = findTown(p.townId);
-            if (!town) continue;
+            if (!town) {
+                if (p.illness === 'poisoned') _dbgPoison('⛔ SEEK no town found', p, { townId: p.townId });
+                continue;
+            }
             var hasFacility = townMedFacilities[p.townId];
+            if (!hasFacility && p.illness === 'poisoned') {
+                _dbgPoison('⛔ SEEK town has no hospital/clinic', p, { town: town.name });
+            }
 
             // If facility exists locally, try to join queue
             if (hasFacility) {
@@ -1788,7 +1809,10 @@
                     for (var qi = 0; qi < fBld._treatmentQueue.length; qi++) {
                         if (fBld._treatmentQueue[qi].personId === p.id) { alreadyQueued = true; break; }
                     }
-                    if (alreadyQueued) break;
+                    if (alreadyQueued) {
+                        if (p.illness === 'poisoned') _dbgPoison('SEEK already in ' + fBld.type + ' queue', p, {});
+                        break;
+                    }
 
                     var _admit2IsIll = !!p.sick;
                     var sev = _admit2IsIll ? (p.illnessSeverity || 'minor') : (p.injurySeverity || p.illnessSeverity || 'minor');
@@ -1796,7 +1820,10 @@
 
                     // Check supplies available BEFORE payment
                     var _isIllness2pre = !!p.sick;
-                    if (!_checkSuppliesAvailable(fBld, town, sev, _isIllness2pre)) continue;
+                    if (!_checkSuppliesAvailable(fBld, town, sev, _isIllness2pre)) {
+                        if (p.illness === 'poisoned') _dbgPoison('⛔ SEEK ' + fBld.type + ' has no supplies for sev=' + sev, p, { town: town.name, fee: fee });
+                        continue;
+                    }
 
                     // Payment: kings/royals can use kingdom funds, then own gold,
                     // and finally fall back to FREE royal-physician care if both
