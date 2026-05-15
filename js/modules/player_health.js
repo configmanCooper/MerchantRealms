@@ -241,13 +241,15 @@
         var _oddWorkerBonus = (_wCount % 2 === 1) ? 0.9 : 1.0;
         treatTicks = Math.max(1, Math.floor(treatTicks * _oddWorkerBonus));
         var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
+        // v9p33river245: player owns this hospital → skip queue (own house, own rules)
+        var _playerOwnsHosp = (hospBld.ownerId === 'player');
         var _queueWaitTicks = 0;
-        if (!_playerIsNoble) {
+        if (!_playerIsNoble && !_playerOwnsHosp) {
             // Non-nobles wait behind everyone in queue
             var _patientsAhead = _queue.length;
             _queueWaitTicks = Math.max(0, Math.ceil((_patientsAhead / _maxH) * 30)); // ~30 ticks per batch ahead
         }
-        // else: nobles skip to front, no wait
+        // else: nobles or owners skip to front, no wait
 
         var totalTicks = treatTicks + _queueWaitTicks;
 
@@ -278,8 +280,8 @@
 
         var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
         var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + (_playerIsNoble ? ' Noble priority — skipped the queue.' : ''));
-        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' + waitDesc + (_playerIsNoble ? ' 👑 Noble priority.' : '') };
+        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + (_playerOwnsHosp ? ' 🏥 Owner priority — skipped the queue.' : (_playerIsNoble ? ' Noble priority — skipped the queue.' : '')));
+        return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' + waitDesc + (_playerOwnsHosp ? ' 🏥 Owner priority.' : (_playerIsNoble ? ' 👑 Noble priority.' : '')) };
     }
 
     function visitClinic(conditionIndex, isIllness) {
@@ -328,8 +330,10 @@
         var _oddWorkerBonus = (_wCount % 2 === 1) ? 0.9 : 1.0;
         treatTicks = Math.max(1, Math.floor(treatTicks * _oddWorkerBonus));
         var _playerIsNoble = player.isNoble || (player.socialRank && player.socialRank[town.kingdomId] >= 4);
+        // v9p33river245: player owns this clinic → skip queue
+        var _playerOwnsClinic = (clinicBld.ownerId === 'player');
         var _queueWaitTicks = 0;
-        if (!_playerIsNoble) {
+        if (!_playerIsNoble && !_playerOwnsClinic) {
             var _patientsAhead = _queue.length;
             _queueWaitTicks = Math.max(0, Math.ceil((_patientsAhead / _maxH) * 30));
         }
@@ -351,7 +355,7 @@
         clinicBld._treatmentStats.feeEarned += cost;
 
         var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
-        var nobleNote = _playerIsNoble ? ' 👑 Noble priority.' : '';
+        var nobleNote = _playerOwnsClinic ? ' 🏥 Owner priority.' : (_playerIsNoble ? ' 👑 Noble priority.' : '');
 
         // 20% chance treatment didn't work
         var rng = Engine.getRng();
