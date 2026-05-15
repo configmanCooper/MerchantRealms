@@ -4026,15 +4026,19 @@ const NPC_HEALTH_CONFIG = {
         // Some kings still die (slow treatment, no antidote, bad rolls); maybe
         // 40-55% survival rate. Untreated: 9/d → dead in ~8 days, 5%/d natural
         // recovery starting day 15 (most untreated still die — ~70% mortality).
-        // v9p33river251: poison balance — drain 9 → 5 (less brutal). With
-        // treatment kings should survive ~70%. Math:
-        //   Untreated: 5*3 = 15/tick, dead by day ~15 from 75hp
-        //   Treated hospital: 15 * 0.40 = 6/tick = 2/d net loss; from 75hp
-        //   over 12-day cure window, lose ~24hp → 51hp at cure → +20 = 71hp survives.
-        //   Treated old king (age 41+): 15 * 1.25 * 0.40 = 7.5/tick = 2.5/d net,
-        //   loses 30hp over 12d → 45hp + 20 = 65hp survives.
-        //   Untreated kings (no hospital, broke kingdom, etc.) still die ~75%.
-        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 5.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
+        // v9p33river252: poison softened further per user feedback —
+        // treated within 3 days = nearly guaranteed survival
+        // treated within 6 days = very good chance
+        // treated within 9 days = decent chance
+        // healthDrain 5 → 4
+        // Math (untreated, age 18-30): 4 × 3 = 12/tick = 4/d
+        //   d3: 78hp, d6: 66hp, d9: 54hp, d12: 42hp, d15: 30hp, d24: dead
+        // Math (treated, hospital × 0.40, no natural heal): 4.8/tick = 1.6/d net
+        //   Treated d3 (78hp) → 12d cure window loses 19 → 59hp + 20 = 79hp survives
+        //   Treated d6 (66hp) → -19 = 47 + 20 = 67hp survives
+        //   Treated d9 (54hp) → -19 = 35 + 20 = 55hp survives
+        //   Untreated kings still die ~80% (no hospital / no supplies / never seek)
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 4.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
     },
 
     // --- Health thresholds ---
