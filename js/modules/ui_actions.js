@@ -2177,6 +2177,39 @@ function showPersonDetail(person) {
     }
 
     showRightPanel(`👤 ${person.firstName || 'Person'}`, html);
+
+    // v9p33river246: refresh NPC detail panel once per in-game day so values
+    // (health, gold, poisoning state, illness, mood, etc.) stay current while
+    // viewing. Re-renders by calling showPersonDetail recursively, but only
+    // when the day actually advances and the panel is still open & showing
+    // this same person. Prevents stale "He looks healthy" while he's actively
+    // dying.
+    try {
+        if (window._personDetailDayTimer) {
+            clearInterval(window._personDetailDayTimer);
+            window._personDetailDayTimer = null;
+        }
+        var _pdLastRefreshDay = (Engine && Engine.getDay) ? Engine.getDay() : 0;
+        var _pdPersonId = person.id;
+        window._personDetailDayTimer = setInterval(function() {
+            var rp = document.getElementById('rightPanel');
+            // Stop if panel closed, or panel is showing something else now
+            if (!rp || rp.classList.contains('hidden') || UI._selectedPersonId !== _pdPersonId) {
+                clearInterval(window._personDetailDayTimer);
+                window._personDetailDayTimer = null;
+                return;
+            }
+            var nowDay = (Engine && Engine.getDay) ? Engine.getDay() : 0;
+            if (nowDay === _pdLastRefreshDay) return;
+            _pdLastRefreshDay = nowDay;
+            try {
+                var _live = Engine.findPerson ? Engine.findPerson(_pdPersonId) : null;
+                if (_live) {
+                    showPersonDetail(_live);
+                }
+            } catch(_e) {}
+        }, 1000);
+    } catch(_e) {}
 }
 
 function showRoadDetail(road) {

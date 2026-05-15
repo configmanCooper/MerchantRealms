@@ -1784,8 +1784,12 @@
                     var _isIllness2pre = !!p.sick;
                     if (!_checkSuppliesAvailable(fBld, town, sev, _isIllness2pre)) continue;
 
-                    // Payment: kings/royals can use kingdom funds
+                    // Payment: kings/royals can use kingdom funds, then own gold,
+                    // and finally fall back to FREE royal-physician care if both
+                    // are dry (kings always have access to court physicians as a
+                    // perk of office — no broke teenage king should die untreated)
                     var canPay = false;
+                    var _royalFreeCare = false;
                     if (isKing || isRoyal) {
                         var pKingdom = findKingdom(town.kingdomId);
                         if (pKingdom && (pKingdom.gold || 0) >= fee) {
@@ -1794,12 +1798,21 @@
                         } else if ((p.gold || 0) >= fee) {
                             p.gold -= fee;
                             canPay = true;
+                        } else {
+                            // v9p33river246: royal-physician fallback — free care
+                            canPay = true;
+                            _royalFreeCare = true;
                         }
                     } else if ((p.gold || 0) >= fee) {
                         p.gold -= fee;
                         canPay = true;
                     }
-                    if (!canPay) continue;
+                    if (!canPay) {
+                        if (p.illness === 'poisoned') {
+                            _dbgPoison('⛔ COULD NOT PAY for ' + fBld.type + ' (fee=' + fee + ', gold=' + (p.gold||0) + ')', p, { townId: town.id });
+                        }
+                        continue;
+                    }
 
                     p._illnessTreatPaid = true;
                     var bt = findBuildingType(fBld.type);
@@ -1809,9 +1822,9 @@
                     // Clinics treat severe but take twice as long
                     if (fBld.type === 'clinic' && sev === 'severe') treatTicks = treatTicks * 2;
                     if (p.illness === 'poisoned') {
-                        _dbgPoison('🏥 SOUGHT treatment at ' + fBld.type, p, {
+                        _dbgPoison('🏥 SOUGHT treatment at ' + fBld.type + (_royalFreeCare ? ' (👑 free royal-physician care)' : ''), p, {
                             townId: town.id,
-                            fee: fee,
+                            fee: _royalFreeCare ? 0 : fee,
                             treatTicks: treatTicks,
                             cureDay: (world && world.day != null) ? (world.day + treatTicks) : '?'
                         });
