@@ -8738,6 +8738,9 @@
             }
         }
         kingdom.king = newKing.id;
+        newKing.isKing = true;
+        // v9p33river250: clear isKing on the old king so it doesn't linger
+        if (oldKing && oldKing.id !== newKing.id) oldKing.isKing = false;
         newKing.occupation = newKing.sex === 'F' ? 'reigning_queen' : 'king';
         if (!newKing.socialRank) newKing.socialRank = {};
         newKing.socialRank[kingdom.id] = 7;
@@ -10634,6 +10637,7 @@
         // Enforce king socialRank = 7, proper occupation, and location in own kingdom
         var _tkKing = findPerson(k.king);
         if (_tkKing && _tkKing.alive) {
+            if (!_tkKing.isKing) _tkKing.isKing = true; // v9p33river250: enforce flag for legacy saves
             if (!_tkKing.socialRank) _tkKing.socialRank = {};
             if (_tkKing.socialRank[k.id] !== 7) _tkKing.socialRank[k.id] = 7;
             if (_tkKing.occupation !== 'king' && _tkKing.occupation !== 'reigning_queen') {

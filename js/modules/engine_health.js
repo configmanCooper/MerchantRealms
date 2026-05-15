@@ -1742,7 +1742,21 @@
             if (p._storyBlockTreatment) continue; // story mode blocks auto-treatment
 
             var isEM = p.isEliteMerchant;
-            var isKing = p.isKing;
+            // v9p33river250: don't trust just p.isKing flag — also check whether
+            // any kingdom has this person as its king (succession sometimes
+            // failed to set the flag, e.g., 17yo Bartholomew was a kingdom.king
+            // but had isKing=false → fell into common-NPC seek path → never
+            // sought treatment despite having gold and a hospital in town).
+            var isKing = !!p.isKing;
+            if (!isKing && world && world.kingdoms) {
+                for (var _kki = 0; _kki < world.kingdoms.length; _kki++) {
+                    if (world.kingdoms[_kki].king === p.id) {
+                        isKing = true;
+                        p.isKing = true; // backfill
+                        break;
+                    }
+                }
+            }
             var isRoyal = false;
             if (!isKing && !isEM && p.socialRank) {
                 for (var kId in p.socialRank) {
