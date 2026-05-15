@@ -4131,8 +4131,10 @@
         }
 
 
-        // expose helpers to outer eliteCrimeAI body
-        em._schemeFns = em._schemeFns || {
+        // v9p33river255: always rebuild — functions don't serialize, so after
+        // save/load em._schemeFns exists as `{}` (truthy) but .forge etc are
+        // undefined. Old `||` guard skipped rebuild → TypeError on .forge().
+        em._schemeFns = {
             rumors: _spreadRumorsScheme,
             frame: _frameCompetitorScheme,
             bribe: _bribeGuardsScheme,
