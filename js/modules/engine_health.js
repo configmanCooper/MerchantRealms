@@ -172,7 +172,7 @@
         // v9p33river242: scan for poisoned NPCs at top of tick so we can see
         // how many exist and which town/illness state they're in
         try {
-            if (typeof window === 'undefined' || window._POISON_DEBUG !== false) {
+            if (typeof window !== 'undefined' && window._POISON_DEBUG === true) {
                 var _poisonedNow = [];
                 for (var _pi = 0; _pi < world.people.length; _pi++) {
                     var _pp = world.people[_pi];
@@ -1737,7 +1737,7 @@
         var _treatAlive = (typeof Engine !== 'undefined' && Engine.getTickCache) ? (Engine.getTickCache().alivePeople || world.people) : world.people;
         // v9p33river251: trace which poisoned NPCs are skipped at top of seek
         try {
-            if (typeof window === 'undefined' || window._POISON_DEBUG !== false) {
+            if (typeof window !== 'undefined' && window._POISON_DEBUG === true) {
                 for (var _ti = 0; _ti < _treatAlive.length; _ti++) {
                     var _tp = _treatAlive[_ti];
                     if (_tp && _tp.alive && _tp.illness === 'poisoned') {
