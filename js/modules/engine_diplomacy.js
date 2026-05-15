@@ -1780,6 +1780,10 @@
             // ---- Noble Council vote processing (daily) ----
             tickCouncilVotes(k);
 
+            // ---- King personal-treasury withdrawal (weekly, runs daily but gated %7) ----
+            // v9p33river249: was previously buried inside tickKingMood (season-only) → never fired
+            if (Engine.tickKingPersonalWithdrawal) Engine.tickKingPersonalWithdrawal(k);
+
             // ---- King decisions & rebellion (once per season) ----
             if (world.day % CONFIG.DAYS_PER_SEASON === 0 && world.day > 0) {
                 // Recovery: if kingdom has no king or king person is missing/dead, attempt emergency succession
