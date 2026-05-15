@@ -415,17 +415,17 @@
         // Treatment: check if person is being treated via hospital queue system
         var treated = person._illnessTreatPaid || false;
 
-        // v9p33river239: poison resists treatment's drain reduction
-        // Hospital × 0.3 → × 0.75 for poisoned (treatment slows but doesn't stop)
-        // Clinic × 0.6 → × 0.85
+        // v9p33river244: poison treatment is now MUCH more effective (kings survive ~70%)
+        // Hospital × 0.40 (was 0.75) — treatment substantially neutralizes the toxin
+        // Clinic × 0.65 (was 0.85)
         var _isPoison = person.illness === 'poisoned';
         if (treated) {
-            if (hasHospital) healthDrain *= (_isPoison ? 0.75 : 0.3);
-            else if (hasClinic) healthDrain *= (_isPoison ? 0.85 : 0.6);
+            if (hasHospital) healthDrain *= (_isPoison ? 0.40 : 0.3);
+            else if (hasClinic) healthDrain *= (_isPoison ? 0.65 : 0.6);
         }
         // NPC medical self-treatment
         if (person.medicalKnowledge && person.medicalKnowledge !== 'none') {
-            healthDrain *= (_isPoison ? 0.9 : 0.7);
+            healthDrain *= (_isPoison ? 0.75 : 0.7);
             treated = true;
         }
         person.illnessTreated = treated;
@@ -456,13 +456,19 @@
         else if (_pSev === 'moderate') recovChance *= 1.6;
         recovChance *= _ageRecovMult;
         if (daysSick >= recoveryDays && rng.chance(recovChance)) {
-            if (_isPoison) _dbgPoison('RECOVERED (illness recoveryChance roll)', person, { recoveryDays: recoveryDays, recovChance: recovChance.toFixed(3), daysSick: daysSick });
-            person.sick = false;
-            person.illness = null;
-            person.asymptomatic = false;
-            person._illnessTreatPaid = false;
-            person.health = Math.min(100, person.health + 10);
-            return;
+            // v9p33river244: don't allow recovery when already at 0 hp (would
+            // resurrect a dying NPC that killPerson failed to actually finish)
+            if (person.health <= 0) {
+                if (_isPoison) _dbgPoison('SUPPRESSED illness-recovery (hp<=0)', person, {});
+            } else {
+                if (_isPoison) _dbgPoison('RECOVERED (illness recoveryChance roll)', person, { recoveryDays: recoveryDays, recovChance: recovChance.toFixed(3), daysSick: daysSick });
+                person.sick = false;
+                person.illness = null;
+                person.asymptomatic = false;
+                person._illnessTreatPaid = false;
+                person.health = Math.min(100, person.health + 10);
+                return;
+            }
         }
 
         // Natural health recovery (slow, even while sick if treated)
@@ -480,20 +486,44 @@
             else if (_pSev === 'moderate') { _natDay = Math.floor(_natDay * 0.7); _natChance *= 1.8; }
             _natChance *= _ageRecovMult;
             if (daysSick >= _natDay && rng.chance(_natChance)) {
-                if (_isPoison) _dbgPoison('RECOVERED (naturalRecovery roll)', person, { natDay: _natDay, natChance: _natChance.toFixed(3), daysSick: daysSick });
-                person.sick = false;
-                person.illness = null;
-                person.asymptomatic = false;
-                person._illnessTreatPaid = false;
-                person.health = Math.min(100, Math.max(5, person.health) + 5);
-                return;
+                // v9p33river244: don't allow natural recovery when at 0 hp
+                if (person.health <= 0) {
+                    if (_isPoison) _dbgPoison('SUPPRESSED nat-recovery (hp<=0)', person, {});
+                } else {
+                    if (_isPoison) _dbgPoison('RECOVERED (naturalRecovery roll)', person, { natDay: _natDay, natChance: _natChance.toFixed(3), daysSick: daysSick });
+                    person.sick = false;
+                    person.illness = null;
+                    person.asymptomatic = false;
+                    person._illnessTreatPaid = false;
+                    person.health = Math.min(100, Math.max(5, person.health) + 5);
+                    return;
+                }
             }
         }
 
         // Death check
         if (person.health <= 0) {
-            if (_isPoison) _dbgPoison('💀 DIED of poison', person, { daysSick: daysSick, treated: treated });
-            killPerson(person, 'illness');
+            // v9p33river244: pass 'poisoned' as cause so killPerson can bypass
+            // child-protection (poisoning is deliberate murder, not accidental
+            // illness — and our previous trace showed an age-17 king getting
+            // saved 95% of the time by the generic 'illness' child-protect roll)
+            var _deathCause = (_isPoison ? 'poisoned' : 'illness');
+            if (_isPoison) _dbgPoison('💀 DIED of poison — calling killPerson(' + _deathCause + ')', person, { daysSick: daysSick, treated: treated, age: person.age, isKing: !!person.isKing });
+            killPerson(person, _deathCause);
+            // v9p33river244: if poison-kill was somehow blocked but the NPC is
+            // at 0 hp and poisoned, there's no realistic recovery — clean up
+            // the corpse-state so they don't keep ticking
+            if (_isPoison && person.alive && person.health <= 0) {
+                if (_dbgPoison) _dbgPoison('⚠️ killPerson DID NOT actually kill — forcing dead', person, {});
+                person.alive = false;
+                person.causeOfDeath = 'poisoned';
+                person.sick = false;
+                person.illness = null;
+                person._illnessTreatPaid = false;
+                var _ftown = findTown(person.townId);
+                if (_ftown) _ftown.population = Math.max(0, _ftown.population - 1);
+                if (world && world._alivePopCount != null) world._alivePopCount--;
+            }
             var _dTown = findTown(person.townId);
             var _dIllName = (illDef.name || person.illness || 'illness');
             // Notable deaths get individual notifications
