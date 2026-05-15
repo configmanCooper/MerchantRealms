@@ -78,10 +78,11 @@
     }
 
     // v9p33river241: poison debug logging.
-    // Toggle via window._POISON_DEBUG = false to silence. Default ON.
+    // Toggle via window._POISON_DEBUG = true to enable. Default OFF (was on
+    // during diagnostic phase v241-v251; root causes resolved in v250-v252).
     function _dbgPoison(tag, person, extra) {
         try {
-            if (typeof window !== 'undefined' && window._POISON_DEBUG === false) return;
+            if (typeof window === 'undefined' || window._POISON_DEBUG !== true) return;
             if (!person) return;
             var d = (world && typeof world.day === 'number') ? world.day : '?';
             var who = person.firstName ? (person.firstName + (person.lastName ? ' ' + person.lastName : '')) : ('person#' + person.id);
