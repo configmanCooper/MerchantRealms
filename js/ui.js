@@ -14099,17 +14099,33 @@ window.UI = (function () {
 
         var playerGold = Player.gold || 0;
         var stressed = noble._financiallyStressed;
-        var stressLabel = stressed ? '<span style="color:#c44e52;">💸 Financially Stressed</span>' : '<span style="color:#55a868;">💰 Financially Stable</span>';
+        var desperate = noble._desperateForLoan;
+        var stressLabel = desperate ? '<span style="color:#ff6b6b;font-weight:bold;">🩸 DESPERATE — ' + escapeHtml(noble._desperateReason || 'medical emergency') + '</span>'
+            : stressed ? '<span style="color:#c44e52;">💸 Financially Stressed</span>'
+            : '<span style="color:#55a868;">💰 Financially Stable</span>';
 
         var existingLoans = Player.getNobleLoans ? Player.getNobleLoans() : [];
         var hasLoan = existingLoans.find(function(l) { return l.nobleId === nobleId; });
+
+        // v9p33river248: predatory rate preview when desperate
+        var previewInterest = 0.15;
+        if (stressed) previewInterest += 0.25;
+        if (desperate) previewInterest += 0.25;
+        var maxLoan = desperate ? 5000 : 2000;
 
         var html = '';
         html += '<div style="font-size:0.82rem;color:#ccc;margin-bottom:10px;">';
         html += 'Offer a loan to <strong>' + escapeHtml(noble.firstName) + ' ' + escapeHtml(noble.lastName) + '</strong>.<br>';
         html += 'Status: ' + stressLabel + '<br>';
-        html += 'Loans come with 15% interest. Indebted nobles are easier to influence in council votes.';
+        html += 'Interest: <strong style="color:' + (previewInterest >= 0.40 ? '#ff8b3d' : '#f0c040') + ';">' + Math.round(previewInterest * 100) + '%</strong>'
+              + (desperate ? ' (predatory — they have no choice)' : '')
+              + '. Indebted nobles are easier to influence in council votes.';
         html += '</div>';
+        if (desperate) {
+            html += '<div style="background:rgba(180,40,40,0.18);border:1px solid rgba(220,80,80,0.4);border-radius:6px;padding:8px;margin-bottom:10px;font-size:0.78rem;color:#ffb0b0;">';
+            html += '🩺 They will accept almost any terms to save themselves or their family. You can extend up to <strong>' + maxLoan + 'g</strong>.';
+            html += '</div>';
+        }
 
         if (hasLoan) {
             html += '<div style="background:rgba(200,150,50,0.15);border:1px solid rgba(200,150,50,0.3);border-radius:6px;padding:8px;margin-bottom:8px;">';
@@ -14117,8 +14133,8 @@ window.UI = (function () {
             html += '</div>';
         } else {
             html += '<div style="margin-bottom:10px;">';
-            html += '<label style="font-size:0.78rem;color:#aaa;">Loan Amount (50-2000g):</label><br>';
-            html += '<input type="number" id="loanAmountInput" min="50" max="2000" value="200" style="width:120px;padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#eee;font-size:0.85rem;margin-top:4px;">';
+            html += '<label style="font-size:0.78rem;color:#aaa;">Loan Amount (50-' + maxLoan + 'g):</label><br>';
+            html += '<input type="number" id="loanAmountInput" min="50" max="' + maxLoan + '" value="' + (desperate ? Math.min(maxLoan, 1000) : 200) + '" style="width:120px;padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#eee;font-size:0.85rem;margin-top:4px;">';
             html += '<span style="font-size:0.72rem;color:#888;margin-left:8px;">Your gold: ' + Math.floor(playerGold) + 'g</span>';
             html += '</div>';
             html += '<button class="btn-medieval" data-action="offerNobleLoan" data-id="' + nobleId + '" data-id2="' + nobleId + '" style="font-size:0.8rem;padding:6px 16px;">💰 Offer Loan</button>';

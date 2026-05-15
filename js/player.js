@@ -24472,11 +24472,13 @@
         var relLevel = rel ? rel.level : 0;
         var acceptChance = 0.1; // base 10%
         if (noble._financiallyStressed) acceptChance += 0.60; // stressed nobles really need it
+        // v9p33river248: medical desperation — they'll take ANY loan
+        if (noble._desperateForLoan) acceptChance += 0.85;
         if (relLevel >= 50) acceptChance += 0.15;
         if (relLevel >= 70) acceptChance += 0.10;
         if (noble.personality && noble.personality.frugality < 40) acceptChance += 0.10; // spendthrift
         if (noble.personality && noble.personality.honesty > 60) acceptChance += 0.05; // honest = will repay
-        acceptChance = Math.min(0.95, acceptChance);
+        acceptChance = Math.min(0.99, acceptChance);
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(3);
 
@@ -24492,23 +24494,34 @@
         var day = 0;
         try { day = Engine.getDay(); } catch (e) {}
 
+        // v9p33river248: predatory interest rate when noble is desperate.
+        // Base 15%, +25% if financially stressed, +25% if medically desperate
+        // (stacks → up to 65% interest on a noble whose dying child needs treatment)
+        var interestPct = 0.15;
+        if (noble._financiallyStressed) interestPct += 0.25;
+        if (noble._desperateForLoan) interestPct += 0.25;
         var loan = {
             id: 'loan_' + day + '_' + Math.random().toString(36).substr(2, 6),
             nobleId: nobleId,
             nobleName: noble.firstName + ' ' + noble.lastName,
             amount: amount,
-            remainingAmount: Math.floor(amount * 1.15), // 15% interest
+            interestPct: interestPct,
+            remainingAmount: Math.floor(amount * (1 + interestPct)),
             issuedDay: day,
             lastPaymentDay: day,
+            predatory: !!(noble._desperateForLoan && interestPct >= 0.40),
+            takenWhenDesperate: !!noble._desperateForLoan,
+            desperateReason: noble._desperateReason || null,
             status: 'active' // active, repaid, defaulted
         };
         player._nobleLoans.push(loan);
 
-        // Relationship boost from lending
+        // Relationship boost from lending — but predatory loans hurt later
         modifyRelationship(nobleId, 8);
 
-        Engine.logEvent('🤝 You loaned ' + amount + 'g to ' + noble.firstName + ' ' + noble.lastName + '. They owe ' + loan.remainingAmount + 'g (15% interest).');
-        return { success: true, message: noble.firstName + ' accepted your loan of ' + amount + 'g! They owe ' + loan.remainingAmount + 'g. Indebted nobles are easier to influence in council votes.' };
+        var _intLabel = Math.round(interestPct * 100) + '%';
+        Engine.logEvent('🤝 You loaned ' + amount + 'g to ' + noble.firstName + ' ' + noble.lastName + (loan.predatory ? ' (PREDATORY ' + _intLabel + ' interest — they were desperate!)' : ' at ' + _intLabel + ' interest') + '. They owe ' + loan.remainingAmount + 'g.');
+        return { success: true, message: noble.firstName + ' accepted your loan of ' + amount + 'g at ' + _intLabel + ' interest. They owe ' + loan.remainingAmount + 'g.' + (loan.predatory ? ' 🩸 Predatory terms — they had no choice.' : ' Indebted nobles are easier to influence in council votes.') };
     }
 
     function getNobleLoans() {

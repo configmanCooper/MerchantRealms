@@ -14561,6 +14561,39 @@
                 if (rank === 5) stressThreshold = 300;
                 else if (rank >= 6) stressThreshold = 600;
                 noble._financiallyStressed = noble.gold < stressThreshold;
+
+                // v9p33river248: detect medical desperation — noble is sick or
+                // has a sick close family member AND can't afford treatment.
+                // Player can exploit this with high-interest loans.
+                noble._desperateForLoan = false;
+                noble._desperateReason = null;
+                var _medThresh = stressThreshold * 2; // need ~2x normal cushion to comfortably treat
+                if ((noble.gold || 0) < _medThresh) {
+                    if (noble.sick && noble.illness && !noble.asymptomatic) {
+                        noble._desperateForLoan = true;
+                        noble._desperateReason = 'sick (' + noble.illness + ')';
+                    } else if (noble.spouseId || (noble.childrenIds && noble.childrenIds.length) || (noble.parentIds && noble.parentIds.length)) {
+                        // Check spouse + children + parents for serious illness
+                        var _famIds = [];
+                        if (noble.spouseId) _famIds.push(noble.spouseId);
+                        if (noble.childrenIds) for (var _ci = 0; _ci < noble.childrenIds.length; _ci++) _famIds.push(noble.childrenIds[_ci]);
+                        if (noble.parentIds) for (var _pi2 = 0; _pi2 < noble.parentIds.length; _pi2++) _famIds.push(noble.parentIds[_pi2]);
+                        for (var _fi = 0; _fi < _famIds.length; _fi++) {
+                            var _fp = findPerson(_famIds[_fi]);
+                            if (!_fp || !_fp.alive) continue;
+                            if (_fp.sick && _fp.illness && !_fp.asymptomatic && (_fp.illnessSeverity === 'severe' || _fp.illnessSeverity === 'moderate' || _fp.illness === 'poisoned')) {
+                                noble._desperateForLoan = true;
+                                noble._desperateReason = (_fp.firstName || 'family') + ' is gravely ill (' + _fp.illness + ')';
+                                break;
+                            }
+                            if (_fp.injured && (_fp.injurySeverity === 'severe')) {
+                                noble._desperateForLoan = true;
+                                noble._desperateReason = (_fp.firstName || 'family') + ' is severely injured';
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
