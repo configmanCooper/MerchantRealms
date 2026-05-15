@@ -10599,6 +10599,37 @@
         if (!CONFIG.KING_MOOD) return;
         if (!k.king) return; // Guard: skip kingless kingdoms
 
+        // v9p33river247: King personal-treasury withdrawal.
+        // Once a week, king transfers gold from kingdom treasury to personal
+        // purse. Generous kings take a small upkeep stipend; greedy and corrupt
+        // kings skim much more even when already wealthy. Lets a king with
+        // gold=0 actually pay for medical treatment, food, etc.
+        if (world.day % 7 === 0) {
+            var _wKing = findPerson(k.king);
+            if (_wKing && _wKing.alive && (k.gold || 0) > 0) {
+                var _wPers = k.kingPersonality || {};
+                var _wGreed = _wPers.greed || 'fair';
+                var _wRate, _wCap, _wAlways, _wThresh;
+                if (_wGreed === 'generous')   { _wRate = 0.0005; _wCap = 100;  _wAlways = false; _wThresh = 500;   }
+                else if (_wGreed === 'fair')  { _wRate = 0.0015; _wCap = 300;  _wAlways = false; _wThresh = 2000;  }
+                else if (_wGreed === 'greedy'){ _wRate = 0.006;  _wCap = 1800; _wAlways = true;  _wThresh = 10000; }
+                else                          { _wRate = 0.018;  _wCap = 6000; _wAlways = true;  _wThresh = 25000; } // corrupt
+                var _wPGold = _wKing.gold || 0;
+                if (_wAlways || _wPGold < _wThresh) {
+                    var _wAmt = Math.min(Math.floor((k.gold || 0) * _wRate), _wCap, k.gold || 0);
+                    if (_wAmt >= 5) {
+                        k.gold -= _wAmt;
+                        _wKing.gold = (_wKing.gold || 0) + _wAmt;
+                        k.kingPersonalWithdrawals = (k.kingPersonalWithdrawals || 0) + _wAmt;
+                        // Corrupt large skims hurt kingdom happiness slightly
+                        if (_wGreed === 'corrupt' && _wAmt > 2000) {
+                            k.happiness = Math.max(0, (k.happiness || 50) - 1);
+                        }
+                    }
+                }
+            }
+        }
+
         // Enforce king socialRank = 7, proper occupation, and location in own kingdom
         var _tkKing = findPerson(k.king);
         if (_tkKing && _tkKing.alive) {
