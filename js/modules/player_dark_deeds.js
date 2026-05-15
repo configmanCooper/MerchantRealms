@@ -298,6 +298,71 @@
         return player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay;
     }
 
+    // v9p33river258: centralized "imprison player" helper. Whenever the player
+    // gets jailed (manhunt catch, scheme jailing, etc.), guarantee that
+    // (a) travel state is fully cleared so the travel UI goes away, and
+    // (b) if jailKingdomId is provided and the player isn't already there,
+    //     warp to the closest town inside that kingdom — guards aren't going
+    //     to drag them across the world map; closest jail makes sense.
+    function _imprisonPlayer(days, jailKingdomId, opts) {
+        if (!days || days <= 0) return null;
+        opts = opts || {};
+        var dayNow = Engine.getDay ? Engine.getDay() : 0;
+        // Apply jail-break reduction if not opted out
+        if (!opts.skipJailBreakReduction && hasSkill('jail_break')) {
+            days = Math.max(1, Math.floor(days * 0.5));
+        }
+        player.jailedUntilDay = dayNow + days;
+
+        // Warp to closest hunting-kingdom town if needed
+        var huntKingdom = (jailKingdomId && Engine.findKingdom) ? Engine.findKingdom(jailKingdomId) : null;
+        var currentTown = player.townId ? Engine.findTown(player.townId) : null;
+        var inHuntKingdom = !!(currentTown && jailKingdomId && currentTown.kingdomId === jailKingdomId);
+        var jailTown = currentTown;
+        var warpedFrom = null;
+        if (!inHuntKingdom && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
+            var pPos = null;
+            try { if (Player.getPlayerWorldPosition) pPos = Player.getPlayerWorldPosition(); } catch(_e) {}
+            if (!pPos && currentTown) pPos = { x: currentTown.x, y: currentTown.y };
+            var bestTown = null, bestDist = Infinity;
+            for (var hi = 0; hi < huntKingdom.towns.length; hi++) {
+                var ht = Engine.findTown(huntKingdom.towns[hi]);
+                if (!ht) continue;
+                var d = pPos ? Math.hypot(ht.x - pPos.x, ht.y - pPos.y) : 0;
+                if (d < bestDist) { bestDist = d; bestTown = ht; }
+            }
+            if (bestTown) {
+                warpedFrom = currentTown ? currentTown.name : 'the wilderness';
+                player.townId = bestTown.id;
+                jailTown = bestTown;
+            }
+        }
+
+        // Always clear travel state when imprisoned — UI must reflect jail
+        player.traveling = false;
+        player.travelProgress = 0;
+        player.travelDestination = null;
+        player.travelDestCoords = null;
+        player.travelWaypoints = null;
+        player.travelRoute = null;
+        player.travelTotalDist = 0;
+        player.travelBySea = false;
+        player.travelOffroad = false;
+        player.travelOffSea = false;
+        player.offSeaShipId = null;
+        player.travelPaid = false;
+        player.travelMode = null;
+        player.travelSeaMode = null;
+        player.travelOrigin = null;
+        player.travelCompanions = [];
+        player._campPromptNeeded = false;
+        player.worldX = null;
+        player.worldY = null;
+
+        return { jailTown: jailTown, warpedFrom: warpedFrom, days: days };
+    }
+    Player._imprisonPlayer = _imprisonPlayer;
+
     function recordCorruptAction(actionId, caught, kingdomId, crimeId) {
         player.corruptActions = (player.corruptActions || 0) + 1;
         player.crimesCommitted[actionId] = (player.crimesCommitted[actionId] || 0) + 1;
@@ -827,9 +892,13 @@
             player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - _kRepLoss);
         }
         if (jailDays > 0) {
-            let days = jailDays;
-            if (hasSkill('jail_break')) days = Math.max(1, Math.floor(days * 0.5));
-            player.jailedUntilDay = Engine.getDay() + days;
+            // v9p33river258: route through centralized helper — clears travel
+            // state and warps to closest hunting-kingdom town if we're outside
+            var _jailRes = _imprisonPlayer(jailDays, kId, {});
+            if (_jailRes && _jailRes.warpedFrom) {
+                Engine.logEvent('🚔 You were dragged from ' + _jailRes.warpedFrom + ' and locked up in ' + (_jailRes.jailTown ? _jailRes.jailTown.name : 'the kingdom') + '.', null, 'my_actions');
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Extradited to ' + (_jailRes.jailTown ? _jailRes.jailTown.name : 'kingdom') + '.', 'warning');
+            }
         }
         if (exile && kId) {
             // Exile: reputation to 0, lose all buildings in kingdom
