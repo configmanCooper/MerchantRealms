@@ -4026,19 +4026,16 @@ const NPC_HEALTH_CONFIG = {
         // Some kings still die (slow treatment, no antidote, bad rolls); maybe
         // 40-55% survival rate. Untreated: 9/d → dead in ~8 days, 5%/d natural
         // recovery starting day 15 (most untreated still die — ~70% mortality).
-        // v9p33river252: poison softened further per user feedback —
-        // treated within 3 days = nearly guaranteed survival
-        // treated within 6 days = very good chance
-        // treated within 9 days = decent chance
-        // healthDrain 5 → 4
-        // Math (untreated, age 18-30): 4 × 3 = 12/tick = 4/d
-        //   d3: 78hp, d6: 66hp, d9: 54hp, d12: 42hp, d15: 30hp, d24: dead
-        // Math (treated, hospital × 0.40, no natural heal): 4.8/tick = 1.6/d net
-        //   Treated d3 (78hp) → 12d cure window loses 19 → 59hp + 20 = 79hp survives
-        //   Treated d6 (66hp) → -19 = 47 + 20 = 67hp survives
-        //   Treated d9 (54hp) → -19 = 35 + 20 = 55hp survives
-        //   Untreated kings still die ~80% (no hospital / no supplies / never seek)
-        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 4.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
+        // v9p33river256: poison slightly worse — drain 4 → 5, initial cap 90 → 85.
+        // Untreated (age 18-30): 5 × 3 = 15/tick = 5/d
+        //   d3: 70hp, d6: 55hp, d9: 40hp, d12: 25hp, d15: 10hp, d17: dead
+        // Treated hospital (× 0.40 mult, no natural heal, 12-day cure +20):
+        //   Treated d3 (70hp): drain 6/tick = 2/d net, loses 24 over 12d → 46 + 20 = 66hp survives
+        //   Treated d6 (55hp): -24 = 31 + 20 = 51hp survives
+        //   Treated d9 (40hp): -24 = 16 + 20 = 36hp survives (close but lives)
+        //   Treated d12 (25hp): -24 = 1 + 20 = 21hp barely survives
+        // Untreated kings still die ~85% (faster than v252; rewards getting to a hospital quickly)
+        poisoned:       { name: 'Poisoned',             severity: 'severe',   healthDrain: 5.0, daysToRecover: 30, seasons: ['spring', 'summer', 'autumn', 'winter'], contagious: false, naturalRecoveryDay: 15, naturalRecoveryChance: 0.05, recoveryChance: 0.15 },
     },
 
     // --- Health thresholds ---

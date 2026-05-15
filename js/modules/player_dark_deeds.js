@@ -2010,18 +2010,17 @@
         var _ptarget2 = Engine.findPerson ? Engine.findPerson(targetId) : null;
         if (successful && _ptarget2 && _ptarget2.alive && typeof Engine.infectNPC === 'function') {
             try { Engine.infectNPC(_ptarget2, 'poisoned', 'poisoned_by_player'); } catch(e) {}
-            // v9p33river252: softer initial HP shock (90, was 75) — gives
-            // victims a real window to seek treatment before drain kills them
+            // v9p33river256: initial HP shock 90 → 85
             if (_ptarget2.illnesses && _ptarget2.illnesses.length > 0) {
                 var lastIll = _ptarget2.illnesses[_ptarget2.illnesses.length - 1];
                 if (lastIll) {
                     lastIll.severity = 'severe'; lastIll.source = 'poisoned';
-                    if (_ptarget2.health > 90) _ptarget2.health = 90;
+                    if (_ptarget2.health > 85) _ptarget2.health = 85;
                 }
             } else {
                 _ptarget2.illness = 'poisoned'; _ptarget2.illnessSeverity = 'severe';
                 _ptarget2.illnessSource = 'poisoned'; _ptarget2.sick = true;
-                if (_ptarget2.health > 90) _ptarget2.health = 90;
+                if (_ptarget2.health > 85) _ptarget2.health = 85;
             }
             player.poisonTargets.push({ targetId, startDay: Engine.getDay(), duration: 30, illness: 'poisoned' });
             grantXP(20, 'Poisoned target');
