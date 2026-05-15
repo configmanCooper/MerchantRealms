@@ -164,6 +164,25 @@
         if (day % 3 !== 0) return;
         var tickScale = 3;
 
+        // v9p33river242: scan for poisoned NPCs at top of tick so we can see
+        // how many exist and which town/illness state they're in
+        try {
+            if (typeof window === 'undefined' || window._POISON_DEBUG !== false) {
+                var _poisonedNow = [];
+                for (var _pi = 0; _pi < world.people.length; _pi++) {
+                    var _pp = world.people[_pi];
+                    if (_pp && _pp.alive && _pp.illness === 'poisoned') _poisonedNow.push(_pp);
+                }
+                if (_poisonedNow.length > 0) {
+                    console.log('[POISON|d' + day + '] tickNPCHealth start — ' + _poisonedNow.length + ' poisoned NPC(s):',
+                        _poisonedNow.map(function(p){
+                            return (p.isKing?'👑':'') + (p.firstName||'?') + ' hp=' + (p.health!=null?p.health.toFixed(1):'?') + ' sick=' + p.sick + ' tid=' + p.townId + ' treat=' + !!p._illnessTreatPaid;
+                        })
+                    );
+                }
+            }
+        } catch(_e){}
+
         var daysPerYear = (CONFIG.DAYS_PER_SEASON || 90) * 4;
         var season = getSeason(day);
         var seasonLower = season.toLowerCase();
@@ -357,6 +376,10 @@
     function _tickPersonIllness(person, rng, day, tickScale, hasHospital, hasClinic) {
         var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
         var illDef = ills[person.illness];
+        // v9p33river242: log entry for poisoned NPCs so we can see if this is even being called
+        if (person.illness === 'poisoned') {
+            _dbgPoison('TICK ENTER', person, { hasIllDef: !!illDef, sick: person.sick, asymp: person.asymptomatic, illness: person.illness, illnessSeverity: person.illnessSeverity, _illnessTreatPaid: person._illnessTreatPaid });
+        }
         if (!illDef) { person.sick = false; person.illness = null; return; }
 
         var daysSick = day - (person.illnessDay || day);
@@ -2069,6 +2092,52 @@
     Engine.tickNPCTreatmentSeeking = tickNPCTreatmentSeeking;
     Engine.tickKingHealthPolicy = tickKingHealthPolicy;
     Engine.tickHospitalTreatment = tickHospitalTreatment;
+
+    // v9p33river242: console helper — call window.dbgPoison() in F12 to dump
+    // current state of all poisoned NPCs (or just the king if you pass true).
+    if (typeof window !== 'undefined') {
+        window.dbgPoison = function(kingsOnly) {
+            try {
+                _syncState();
+                if (!world || !world.people) { console.log('[dbgPoison] no world.people'); return; }
+                var found = [];
+                for (var i = 0; i < world.people.length; i++) {
+                    var p = world.people[i];
+                    if (!p || !p.alive) continue;
+                    if (kingsOnly && !p.isKing) continue;
+                    var hasPoisonArr = false;
+                    if (p.illnesses && p.illnesses.length) {
+                        for (var j = 0; j < p.illnesses.length; j++) {
+                            if (p.illnesses[j] && (p.illnesses[j].id === 'poisoned' || p.illnesses[j].source === 'poisoned' || (p.illnesses[j].source && p.illnesses[j].source.indexOf('poison') >= 0))) hasPoisonArr = true;
+                        }
+                    }
+                    if (p.illness !== 'poisoned' && !hasPoisonArr && !kingsOnly) continue;
+                    var t = findTown(p.townId);
+                    found.push({
+                        name: (p.firstName||'?') + ' ' + (p.lastName||''),
+                        isKing: !!p.isKing,
+                        isNoble: !!p.isNoble,
+                        sick: p.sick,
+                        illness: p.illness,
+                        illnessSeverity: p.illnessSeverity,
+                        illnessSource: p.illnessSource,
+                        illnessDay: p.illnessDay,
+                        illnesses: p.illnesses,
+                        health: p.health,
+                        townId: p.townId,
+                        town: t ? t.name : '?',
+                        kingdomId: p.kingdomId,
+                        _illnessTreatPaid: p._illnessTreatPaid,
+                        gold: p.gold,
+                        worldDay: world.day
+                    });
+                }
+                console.log('[dbgPoison] day=' + world.day + ' tickNPCHealthRunsOn=multipleOf3 (' + (world.day % 3) + ' away) — ' + found.length + ' match:', found);
+                return found;
+            } catch(e) { console.error('[dbgPoison] err', e); }
+        };
+    }
+
     Engine.getHospitalTreatmentFee = getHospitalTreatmentFee;
     Engine.getHospitalFees = getHospitalFees;
     Engine.toggleMedicalAutobuy = toggleMedicalAutobuy;
