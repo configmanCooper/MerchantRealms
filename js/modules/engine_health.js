@@ -138,6 +138,10 @@
         person.illnessSeverity = _sev;
 
         person.asymptomatic = _isAsymptomatic(person.id, illnessId);
+        // v9p33river243: poison is a deliberate toxin attack — never asymptomatic.
+        // Without this fix, ~20% of poison victims (including kings) silently
+        // shrugged off the entire poisoning with zero health drain.
+        if (illnessId === 'poisoned') person.asymptomatic = false;
         person.illnessSource = source || 'random';
         person.illnessTreated = false;
         if (illnessId === 'poisoned') {
@@ -376,6 +380,9 @@
     function _tickPersonIllness(person, rng, day, tickScale, hasHospital, hasClinic) {
         var ills = (typeof NPC_HEALTH_CONFIG !== 'undefined' && NPC_HEALTH_CONFIG.ILLNESSES) ? NPC_HEALTH_CONFIG.ILLNESSES : {};
         var illDef = ills[person.illness];
+        // v9p33river243: poison should never be asymptomatic — clear stale flag
+        // on already-infected NPCs from older saves
+        if (person.illness === 'poisoned' && person.asymptomatic) person.asymptomatic = false;
         // v9p33river242: log entry for poisoned NPCs so we can see if this is even being called
         if (person.illness === 'poisoned') {
             _dbgPoison('TICK ENTER', person, { hasIllDef: !!illDef, sick: person.sick, asymp: person.asymptomatic, illness: person.illness, illnessSeverity: person.illnessSeverity, _illnessTreatPaid: person._illnessTreatPaid });
