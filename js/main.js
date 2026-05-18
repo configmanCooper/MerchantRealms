@@ -3197,6 +3197,7 @@ window.Game = (function () {
             engine: engineData,
             player: playerData,
             aiMerchants: Player.serializeAI ? Player.serializeAI() : null,
+            tutorial: (typeof Tutorial !== 'undefined' && Tutorial.serialize) ? Tutorial.serialize() : null,
         };
     }
 
@@ -3791,6 +3792,11 @@ window.Game = (function () {
 
                 lastUsedSlot = slotNum;
                 localStorage.setItem('merchantRealms_lastSlot', String(slotNum));
+
+                // v9p33river281: resume tutorial panel if save was taken during tutorial
+                if (data.tutorial && data.tutorial.active && typeof Tutorial !== 'undefined' && Tutorial.resume) {
+                    try { Tutorial.resume(data.tutorial); } catch(e) { console.error('Tutorial resume failed:', e); }
+                }
 
                 UI.toast('Loaded Slot ' + slotNum + '!', 'success');
             } catch (e) {

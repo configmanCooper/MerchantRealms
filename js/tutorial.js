@@ -2353,6 +2353,42 @@ window.Tutorial = (function () {
     }
 
     // ═══════════════════════════════════════════════════════════
+    //  SAVE / RESUME — v9p33river281
+    // ═══════════════════════════════════════════════════════════
+
+    function serialize() {
+        if (!active) return null;
+        return {
+            active: true,
+            currentChapter: currentChapter,
+            currentStep: currentStep,
+            completedSteps: completedSteps || {}
+        };
+    }
+
+    // Re-attach the tutorial panel and resume on the saved step after a load.
+    // The world / player are already restored by the time this is called;
+    // we don't regenerate anything — just restore module state and re-enter
+    // the current step so the panel, onEnter, waitFor, and highlight all
+    // come back into play.
+    function resume(state) {
+        if (!state || !state.active) return;
+        active = true;
+        currentChapter = typeof state.currentChapter === 'number' ? state.currentChapter : 0;
+        currentStep = typeof state.currentStep === 'number' ? state.currentStep : 0;
+        completedSteps = state.completedSteps || {};
+        snapshotState = {};
+
+        // Make sure we don't double-mount the panel
+        var existing = document.getElementById('tutorialPanel');
+        if (existing) existing.remove();
+        panelEl = null;
+
+        createPanel();
+        try { enterStep(); } catch (e) { console.error('Tutorial resume enterStep failed:', e); }
+    }
+
+    // ═══════════════════════════════════════════════════════════
     //  PUBLIC API
     // ═══════════════════════════════════════════════════════════
 
@@ -2365,6 +2401,8 @@ window.Tutorial = (function () {
         cleanup: cleanup,
         getCurrentChapter: function () { return currentChapter; },
         getCurrentStep: function () { return currentStep; },
-        getHighlightLabel: function () { return _currentHighlightInfo; }
+        getHighlightLabel: function () { return _currentHighlightInfo; },
+        serialize: serialize,
+        resume: resume
     };
 })();
