@@ -16583,6 +16583,75 @@ window.UI = (function () {
             html += '</div>';
             html += '</div>';
         }
+
+        // v9p33river275: Procurement Orders & Commissions panel
+        // Shows what each kingdom is actively trying to procure (orders for
+        // hired procurers to fulfill) and what they've commissioned for
+        // production. God-mode visibility into the AI's economic priorities.
+        html += '<h4 style="color:#FFD700;margin:14px 0 6px;">📦 Kingdom Procurement Orders & Commissions</h4>';
+        html += '<div style="font-size:0.74rem;color:#888;margin-bottom:6px;">What each kingdom is paying procurers to acquire, plus active production commissions.</div>';
+        for (var pki = 0; pki < kingdoms.length; pki++) {
+            var pk = kingdoms[pki];
+            var _pOrders = (pk._procurementOrders || []).filter(function(o) { return (o.remaining || 0) > 0; });
+            var _pComms = (pk._commissions || []).filter(function(c) { return (c.filled || 0) < (c.qty || 0); });
+            var _pProcCount = (pk._employees && pk._employees.procurers) ? pk._employees.procurers.length : 0;
+            var _pProcPosted = (pk._employeePostings || []).filter(function(p) { return p.type === 'procurer'; }).reduce(function(s, p) { return s + (p.slotsTotal - p.slotsFilled); }, 0);
+            html += '<div style="margin-bottom:10px;padding:8px;background:#1a1a2e;border-left:4px solid ' + (pk.color || '#666') + ';border-radius:4px;">';
+            html += '<div style="font-weight:bold;color:' + (pk.color || '#ccc') + ';margin-bottom:4px;">' + (pk.name || '?') +
+                ' <span style="font-weight:normal;color:#888;font-size:0.74rem;">— 🛒 ' + _pProcCount + ' procurer' + (_pProcCount === 1 ? '' : 's') +
+                (_pProcPosted > 0 ? ' (+' + _pProcPosted + ' hiring)' : '') + '</span></div>';
+
+            // Procurement orders (procurer-fulfilled buy orders)
+            html += '<div style="font-size:0.76rem;color:#aaa;margin-bottom:4px;"><b style="color:#7bb;">Procurement Orders</b> (' + _pOrders.length + '):</div>';
+            if (_pOrders.length === 0) {
+                html += '<div style="font-size:0.72rem;color:#666;padding-left:8px;margin-bottom:4px;">None active. Kingdom has no buy-orders for procurers to fulfill.</div>';
+            } else {
+                var _todayD = (Engine.getDay ? Engine.getDay() : 0);
+                html += '<div style="overflow-x:auto;padding-left:8px;margin-bottom:6px;"><table style="width:100%;border-collapse:collapse;font-size:0.72rem;">';
+                html += '<thead><tr style="color:#aaa;border-bottom:1px solid #333;"><th style="text-align:left;padding:2px 4px;">Good</th><th style="text-align:right;padding:2px 4px;">Remaining</th><th style="text-align:right;padding:2px 4px;">Filled</th><th style="text-align:right;padding:2px 4px;">Max Price</th><th style="text-align:right;padding:2px 4px;">Age</th></tr></thead><tbody>';
+                _pOrders.sort(function(a, b) { return (b.remaining || 0) - (a.remaining || 0); });
+                for (var poi = 0; poi < _pOrders.length; poi++) {
+                    var po = _pOrders[poi];
+                    var poRes = RESOURCE_TYPES[po.goodId];
+                    var poAge = _todayD - (po.createdDay || _todayD);
+                    var poTotal = (po.remaining || 0) + (po.filled || 0);
+                    var poPct = poTotal > 0 ? Math.round(((po.filled || 0) / poTotal) * 100) : 0;
+                    html += '<tr style="border-bottom:1px solid #222;">';
+                    html += '<td style="padding:2px 4px;">' + (poRes ? (poRes.icon || '') + ' ' + poRes.name : po.goodId) + '</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;color:#ffd86a;">' + (po.remaining || 0) + '</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;color:#55a868;">' + (po.filled || 0) + ' (' + poPct + '%)</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;">' + (po.maxPrice || 0) + 'g</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;color:' + (poAge > 30 ? '#e67e22' : '#888') + ';">' + poAge + 'd</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div>';
+            }
+
+            // Commissions (production contracts for craftsmen/EMs)
+            html += '<div style="font-size:0.76rem;color:#aaa;margin-bottom:4px;"><b style="color:#dca;">Production Commissions</b> (' + _pComms.length + '):</div>';
+            if (_pComms.length === 0) {
+                html += '<div style="font-size:0.72rem;color:#666;padding-left:8px;">None active.</div>';
+            } else {
+                html += '<div style="overflow-x:auto;padding-left:8px;"><table style="width:100%;border-collapse:collapse;font-size:0.72rem;">';
+                html += '<thead><tr style="color:#aaa;border-bottom:1px solid #333;"><th style="text-align:left;padding:2px 4px;">Good</th><th style="text-align:right;padding:2px 4px;">Progress</th><th style="text-align:right;padding:2px 4px;">Cost</th><th style="text-align:right;padding:2px 4px;">Age</th></tr></thead><tbody>';
+                var _todayC = (Engine.getDay ? Engine.getDay() : 0);
+                _pComms.sort(function(a, b) { return (b.qty - (b.filled || 0)) - (a.qty - (a.filled || 0)); });
+                for (var pci = 0; pci < _pComms.length; pci++) {
+                    var cm = _pComms[pci];
+                    var cmRes = RESOURCE_TYPES[cm.good];
+                    var cmAge = _todayC - (cm.day || _todayC);
+                    var cmPct = (cm.qty || 0) > 0 ? Math.round(((cm.filled || 0) / cm.qty) * 100) : 0;
+                    html += '<tr style="border-bottom:1px solid #222;">';
+                    html += '<td style="padding:2px 4px;">' + (cmRes ? (cmRes.icon || '') + ' ' + cmRes.name : cm.good) + '</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;">' + (cm.filled || 0) + ' / ' + (cm.qty || 0) + ' (<span style="color:' + (cmPct >= 80 ? '#55a868' : cmPct >= 40 ? '#e0c020' : '#e67e22') + ';">' + cmPct + '%</span>)</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;">' + (cm.cost || 0) + 'g</td>';
+                    html += '<td style="padding:2px 4px;text-align:right;color:' + (cmAge > 30 ? '#e67e22' : '#888') + ';">' + cmAge + 'd</td>';
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div>';
+            }
+            html += '</div>';
+        }
         return html;
     }
 
