@@ -4801,8 +4801,18 @@ function clickTown(townId) {
                 var d = p._jailedUntilDay - day;
                 var name = ((p.firstName || '') + ' ' + (p.lastName || '')).trim() || '?';
                 var statusBits = [];
-                if (p.isKing) statusBits.push('<span style="color:#ffd86a;">👑 King</span>');
-                else if (p.isNoble || p.occupation === 'noble') statusBits.push('<span style="color:#cc99ff;">🏰 Noble</span>');
+                // v9p33river267: use actual socialRank, not the occupation string.
+                // Bug: NPCs with occupation='noble' but socialRank<4 (e.g. a
+                // Guildmaster who happens to label as 'noble' for flavor) were
+                // showing the 🏰 Noble badge — true nobility requires rank 4+.
+                var _maxRank = 0;
+                if (p.socialRank) {
+                    for (var _srK in p.socialRank) {
+                        if ((p.socialRank[_srK] || 0) > _maxRank) _maxRank = p.socialRank[_srK];
+                    }
+                }
+                if (p.isKing || _maxRank >= 7) statusBits.push('<span style="color:#ffd86a;">👑 King</span>');
+                else if (p.isNoble || _maxRank >= 4) statusBits.push('<span style="color:#cc99ff;">🏰 Noble</span>');
                 else if (p.isEliteMerchant) statusBits.push('<span style="color:#ffd86a;">🏛️ Elite Merchant</span>');
                 else statusBits.push('<span style="color:#aaa;">' + (p.occupation || 'commoner') + '</span>');
                 var rec = (p.criminalRecord && town.kingdomId && p.criminalRecord[town.kingdomId])
