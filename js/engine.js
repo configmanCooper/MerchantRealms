@@ -29779,7 +29779,11 @@
                 plotters: plotterIds,
                 type: plotType,
                 startDay: world.day,
-                strength: 0,
+                // v9p33river271: seed initial strength so the World Analytics
+                // doesn't show "Strength 0/80" right at conspiracy formation.
+                // Each plotter brings some inherent loyalty/network strength
+                // (~6/plotter, half of the monthly tick gain).
+                strength: plotterIds.length * 6,
                 detected: false,
                 revoltTargetTownId: plotType === 'revolt_support' ? revoltSupportTarget.id : null,
                 revoltTargetTownName: plotType === 'revolt_support' ? revoltSupportTarget.name : null
