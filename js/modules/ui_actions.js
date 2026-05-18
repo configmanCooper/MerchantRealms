@@ -4791,7 +4791,7 @@ function clickTown(townId) {
                     ? '<button class="btn-medieval" data-action="attemptJailbreak" data-id="' + p.id + '" data-val="' + town.id + '" style="font-size:0.78rem;padding:4px 10px;background:rgba(170,40,40,0.5);">🔓 Break Out</button>'
                     : '<span style="color:#666;font-size:0.75rem;">—</span>';
                 html += '<tr style="border-bottom:1px solid #333;">' +
-                    '<td style="padding:6px 8px;"><a href="#" data-action="showPersonDetailAndCloseModal" data-id="' + p.id + '" style="color:#ffd86a;text-decoration:underline;cursor:pointer;">' + name + '</a></td>' +
+                    '<td style="padding:6px 8px;"><a href="#" data-action="showPersonDetail" data-id="' + p.id + '" style="color:#ffd86a;text-decoration:underline;cursor:pointer;">' + name + '</a></td>' +
                     '<td style="padding:6px 8px;">' + statusBits.join(' ') + '</td>' +
                     '<td style="padding:6px 8px;color:#ffd86a;">' + d + 'd</td>' +
                     '<td style="padding:6px 8px;color:#aaa;font-size:0.78rem;">' + rec + '</td>' +
