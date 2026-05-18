@@ -1749,6 +1749,31 @@
         for (var i = 0; i < _treatAlive.length; i++) {
             var p = _treatAlive[i];
             if (!p.alive || !p.townId) continue;
+
+            // v9p33river259: arrival handler — NPCs en route to a hospital town
+            // now actually take days to get there (horse-or-better speed). When
+            // the arrival day is reached, snap them to the destination so the
+            // seek logic below picks them up at the new location next tick.
+            if (p._treatmentTravelArrivalDay != null) {
+                if (world.day >= p._treatmentTravelArrivalDay) {
+                    if (p._treatmentTravelTargetTownId) {
+                        // Sanity: target still has medical facility & player still alive
+                        var _arrTown = findTown(p._treatmentTravelTargetTownId);
+                        if (_arrTown) {
+                            p.townId = _arrTown.id;
+                            p.kingdomId = _arrTown.kingdomId;
+                        }
+                    }
+                    delete p._treatmentTravelArrivalDay;
+                    delete p._treatmentTravelTargetTownId;
+                    delete p._treatmentTravelOriginTownId;
+                    p._travelingForTreatment = false;
+                    // Fall through to attempt admission this tick
+                } else {
+                    continue; // still on the road
+                }
+            }
+
             if (!p.sick && !p.injured) continue;
             if (p._illnessTreatPaid) continue; // already being treated
             if (p._storyBlockTreatment) continue; // story mode blocks auto-treatment
@@ -1913,8 +1938,12 @@
                     break; // admitted to one facility
                 }
             } else if (isEM || isKing || isRoyal) {
-                // Travel to nearest town with medical facility
-                if (p._travelingForTreatment) continue; // already traveling
+                // v9p33river259: travel to nearest connected town with medical
+                // facility — but no longer an instant warp. EM/noble/king
+                // travels at horse-or-better speed (CARAVAN_BASE_SPEED × 1.5 ×
+                // 1.3 horse bonus = ~234 units/day). Arrival handled at top
+                // of next eligible tick.
+                if (p._travelingForTreatment || p._treatmentTravelArrivalDay != null) continue; // already traveling
                 if (!town.connectedTowns) continue;
                 var bestMedTown = null;
                 var bestDist = Infinity;
@@ -1929,9 +1958,17 @@
                     if (dist < bestDist) { bestDist = dist; bestMedTown = connTown; }
                 }
                 if (bestMedTown) {
-                    p.townId = bestMedTown.id;
+                    // Horse-or-better speed: base 180/day × 1.3 horse bonus = 234
+                    var _baseSpd = (typeof CONFIG !== 'undefined' && CONFIG.CARAVAN_BASE_SPEED ? CONFIG.CARAVAN_BASE_SPEED : 120) * 1.5;
+                    var _horseSpd = _baseSpd * (1 + (typeof CONFIG !== 'undefined' && CONFIG.HORSE_TRAVEL_SPEED_BONUS ? CONFIG.HORSE_TRAVEL_SPEED_BONUS : 0.3));
+                    var _travelDays = Math.max(1, Math.ceil(bestDist / _horseSpd));
                     p._travelingForTreatment = true;
-                    p._treatmentOriginTown = town.id;
+                    p._treatmentTravelArrivalDay = world.day + _travelDays;
+                    p._treatmentTravelTargetTownId = bestMedTown.id;
+                    p._treatmentTravelOriginTownId = town.id;
+                    if (p.illness === 'poisoned') {
+                        _dbgPoison('🐎 EN ROUTE to ' + bestMedTown.name + ' (' + _travelDays + 'd by horse)', p, { from: town.name, dist: Math.round(bestDist) });
+                    }
                 }
             }
         }
