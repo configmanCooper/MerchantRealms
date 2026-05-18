@@ -471,7 +471,10 @@ window.UI = (function () {
         registerAction('openNobilityDialog', function() { UI.openNobilityDialog(); });
         registerAction('openSpousePanel', function() { UI.openSpousePanel(); });
         registerAction('showPersonDetail', function(_t, d) { if (d.id) UI.showPersonDetail(d.id); });
-        registerAction('specialAction', function(_t, d) { if (d.id) UI.specialAction(d.id); });
+        // v9p33river296: removed broken stub `registerAction('specialAction', ...)`
+        // that required d.id, overwriting the proper handler in
+        // ui_kingdom.js (reads d.type). Buttons only set data-type, so
+        // all pilgrim/scholar/etc special-start actions were dead.
         // v9p33river76: removed broken stub `registerAction('familyAction', ...)`
         // that was overwriting the proper handler in ui_kingdom.js (which loads
         // earlier but bindEvents runs after, last-write-wins). The stub passed
@@ -491,8 +494,20 @@ window.UI = (function () {
         registerAction('confirmKingFlee', function() { if (UI._confirmKingFlee) UI._confirmKingFlee(); });
         registerAction('resolveRevolt', function(_t, d) { if (d.kingdom && d.choice && UI._resolveRevolt) UI._resolveRevolt(d.kingdom, d.choice); });
         registerAction('buyFreedomUI', function() { UI.buyFreedomUI(); });
-        registerAction('racketResponse', function(_t, d) { if (d.id && d.response) UI.racketResponse(d.id, d.response); });
-        registerAction('respondToMarriageProposal', function(_t, d) { if (d.id && d.response) respondToMarriageProposal(d.id, d.response); });
+        // v9p33river296: removed three broken stubs that were overwriting
+        // the proper module-side handlers (modules register first, but
+        // bindEvents runs AFTER load, so last-write-wins replaced the
+        // working handlers with these dead ones — same class of bug
+        // already noted for `familyAction` above):
+        //   - racketResponse — ui_buildings.js:2213 reads d.val; the
+        //     stub here required d.id && d.response, killing Pay/Refuse/
+        //     Intimidate (buttons only set data-val).
+        //   - respondToMarriageProposal — ui_kingdom.js:2115 reads d.val
+        //     ('true'/'false'); the stub required d.id && d.response,
+        //     killing Accept/Reject (buttons only set data-val).
+        //   - specialAction — ui_kingdom.js:2111 reads d.type; the stub
+        //     required d.id, killing every special-start action button
+        //     (sermon, visit site, convert, bless, etc.).
         registerAction('openGodModePanel', function() { openGodModePanel(); });
         registerAction('openRestDialog', function() { openRestDialog(); });
         registerAction('restAtInnUI', function() { restAtInnUI(); });

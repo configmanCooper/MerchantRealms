@@ -1738,13 +1738,31 @@
         const _autoActions = [];
         if (_gap > 0 && resourceId === 'horses' && _mountedAvail > 0) {
             const _toDismount = Math.min(_gap, _mountedAvail);
-            for (let _di = 0; _di < _toDismount; _di++) {
-                if (player.horses.length === 0) break;
-                player.horses.pop();
+            // v9p33river296: previously used player.horses.pop() which
+            // grabbed the LAST mounted horse(s), losing their id, name,
+            // stamina, AND any saddle (saddle would vanish from the
+            // world). Mirror dismountHorse semantics: prefer unsaddled
+            // horses first, and if a saddled one must be removed return
+            // its saddle to player inventory.
+            let _dismountedCount = 0;
+            // Pass 1: dismount unsaddled horses first
+            for (let _di = player.horses.length - 1; _di >= 0 && _dismountedCount < _toDismount; _di--) {
+                if (player.horses[_di].saddled) continue;
+                player.horses.splice(_di, 1);
+                _dismountedCount++;
             }
-            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + _toDismount;
-            _gap -= _toDismount;
-            _autoActions.push('🐎 dismounted ' + _toDismount + ' horse' + (_toDismount === 1 ? '' : 's'));
+            // Pass 2: if we still need more, dismount saddled ones (return saddle)
+            for (let _di2 = player.horses.length - 1; _di2 >= 0 && _dismountedCount < _toDismount; _di2--) {
+                const _h = player.horses[_di2];
+                if (_h.saddled) {
+                    player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+                }
+                player.horses.splice(_di2, 1);
+                _dismountedCount++;
+            }
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + _dismountedCount;
+            _gap -= _dismountedCount;
+            _autoActions.push('🐎 dismounted ' + _dismountedCount + ' horse' + (_dismountedCount === 1 ? '' : 's'));
             if (player.horses.length === 0) player.travelMode = 'walk';
         }
         if (_gap > 0 && _equipWeaponAvail) {
@@ -1797,8 +1815,8 @@
                 if (kingdom) {
                     player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
                 }
-                Engine.logEvent(`${player.fullName} caught smuggling ${resourceId} past the embargo! Fined ${actualFine}g.`, null, 'my_actions');
-                return { success: false, message: `🚫 Caught smuggling past the embargo! Goods seized, fined ${actualFine}g.`, caught: true };
+                Engine.logEvent(`${player.fullName} caught smuggling ${resourceId} past the embargo! Fined ${fine}g.`, null, 'my_actions');
+                return { success: false, message: `🚫 Caught smuggling past the embargo! Goods seized, fined ${fine}g.`, caught: true };
             }
             // Successful embargo smuggling — get premium price
             price *= CONFIG.EMBARGO_SMUGGLE_PREMIUM;
