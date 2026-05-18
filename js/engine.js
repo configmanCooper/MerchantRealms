@@ -33519,6 +33519,20 @@
                     for (const f of foods) p.foodPreferences[f] = 0.7 + Math.random() * 0.8;
                 }
                 if (!p.recentFoods) p.recentFoods = [];
+                // v9p33river268: noble occupation requires rank ≥ 4. Migrate
+                // any NPC whose occupation === 'noble' but max socialRank < 4
+                // back to 'commoner' so the badge/title isn't lying.
+                if (p.occupation === 'noble') {
+                    var _maxSR = 0;
+                    if (p.socialRank) {
+                        for (var _srMk in p.socialRank) {
+                            if ((p.socialRank[_srMk] || 0) > _maxSR) _maxSR = p.socialRank[_srMk];
+                        }
+                    }
+                    if (_maxSR < 4 && !p.isKing && !p.isNoble) {
+                        p.occupation = 'commoner';
+                    }
+                }
                 // Medical knowledge backward compat
                 if (p.medicalKnowledge === undefined) {
                     // Assign retroactively with same distribution as new games
