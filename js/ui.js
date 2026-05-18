@@ -2243,17 +2243,39 @@ window.UI = (function () {
             </div>`;
         }
 
-        // Sell side: what the player has (carried + town storage)
+        // Sell side: what the player has (carried + town storage + mounted horses + equipped gear)
         const townStorageItems = (Player.townStorage && Player.townStorage[town.id]) || {};
-        // Merge carried and stored resource IDs
+
+        // v9p33river266: include mounted horses and equipped weapon/armor in
+        // the sell list (just with a "(mounted)" or "(equipped)" suffix).
+        // Map weapon/armor id → underlying resource id.
+        const _mountedHorses = (Player.horses && Player.horses.length) || 0;
+        let _equippedWeaponRes = null;
+        if (Player.weapon && typeof Player.weapon === 'object' && Player.weapon.id) {
+            const _wDef = EQUIPMENT_TYPES && EQUIPMENT_TYPES.weapons ? EQUIPMENT_TYPES.weapons.find(e => e.id === Player.weapon.id) : null;
+            if (_wDef) _equippedWeaponRes = _wDef.resource;
+        }
+        let _equippedArmorRes = null;
+        if (Player.armor && typeof Player.armor === 'object' && Player.armor.id) {
+            const _aDef = EQUIPMENT_TYPES && EQUIPMENT_TYPES.armor ? EQUIPMENT_TYPES.armor.find(e => e.id === Player.armor.id) : null;
+            if (_aDef) _equippedArmorRes = _aDef.resource;
+        }
+
+        // Merge carried and stored resource IDs (plus mounted/equipped extras)
         const allSellResIds = new Set([
             ...Object.keys(Player.inventory || {}).filter(id => (Player.inventory[id] || 0) > 0),
             ...Object.keys(townStorageItems).filter(id => (townStorageItems[id] || 0) > 0),
         ]);
+        if (_mountedHorses > 0) allSellResIds.add('horses');
+        if (_equippedWeaponRes) allSellResIds.add(_equippedWeaponRes);
+        if (_equippedArmorRes) allSellResIds.add(_equippedArmorRes);
+
         for (const resId of allSellResIds) {
             const carriedQty = (Player.inventory || {})[resId] || 0;
             const storedQty = townStorageItems[resId] || 0;
-            const qty = carriedQty + storedQty;
+            const _mountedQty = (resId === 'horses') ? _mountedHorses : 0;
+            const _equippedQty = ((resId === _equippedWeaponRes ? 1 : 0) + (resId === _equippedArmorRes ? 1 : 0));
+            const qty = carriedQty + storedQty + _mountedQty + _equippedQty;
             if (qty <= 0) continue;
             const res = findResource(resId);
             if (!res) continue;
@@ -2317,10 +2339,15 @@ window.UI = (function () {
             else if (isRestricted && !hasLicense) statusBadge = '<span style="color:var(--gold);font-size:0.7rem;cursor:help;" title="Legal to buy. Illegal to sell or produce without a license. Purchase a license from the Kingdom menu.">🔒 NO LICENSE</span>';
             else if (isRestricted && hasLicense) statusBadge = '<span style="color:#55a868;font-size:0.7rem;cursor:help;" title="You have a valid license to trade this restricted good.">📜 LICENSED</span>';
 
-            // Show carried/stored breakdown
+            // Show carried/stored breakdown + mounted/equipped suffix
             let qtyLabel = `(${qty})`;
-            if (carriedQty > 0 && storedQty > 0) {
-                qtyLabel = `(${qty}) <span style="font-size:0.7rem;color:var(--text-muted);">🎒${carriedQty} 📦${storedQty}</span>`;
+            const _extras = [];
+            if (carriedQty > 0) _extras.push('🎒' + carriedQty);
+            if (storedQty > 0) _extras.push('📦' + storedQty);
+            if (_mountedQty > 0) _extras.push('🐎 ' + _mountedQty + ' mounted');
+            if (_equippedQty > 0) _extras.push('🛡️ equipped');
+            if (_extras.length > 1 || _mountedQty > 0 || _equippedQty > 0) {
+                qtyLabel = `(${qty}) <span style="font-size:0.7rem;color:var(--text-muted);">${_extras.join(' ')}</span>`;
             } else if (storedQty > 0 && carriedQty <= 0) {
                 qtyLabel = `(${qty}) <span style="font-size:0.7rem;color:var(--text-muted);">📦 stored</span>`;
             }

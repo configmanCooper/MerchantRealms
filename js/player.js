@@ -1716,8 +1716,51 @@
 
         const held = player.inventory[resourceId] || 0;
         const storedQty = (player.townStorage[player.townId] || {})[resourceId] || 0;
-        const totalAvailable = held + storedQty;
+        // v9p33river266: include mounted horses and equipped weapon/armor in
+        // the available pool so they can be sold (player auto-dismounts /
+        // auto-unequips to fulfill the order).
+        let _mountedAvail = 0;
+        if (resourceId === 'horses') _mountedAvail = (player.horses && player.horses.length) || 0;
+        let _equipWeaponAvail = 0, _equipArmorAvail = 0;
+        if (player.weapon && typeof player.weapon === 'object' && player.weapon.id) {
+            const _wDefS = (typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.weapons) ? EQUIPMENT_TYPES.weapons.find(function(e){return e.id === player.weapon.id;}) : null;
+            if (_wDefS && _wDefS.resource === resourceId) _equipWeaponAvail = 1;
+        }
+        if (player.armor && typeof player.armor === 'object' && player.armor.id) {
+            const _aDefS = (typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.armor) ? EQUIPMENT_TYPES.armor.find(function(e){return e.id === player.armor.id;}) : null;
+            if (_aDefS && _aDefS.resource === resourceId) _equipArmorAvail = 1;
+        }
+        const totalAvailable = held + storedQty + _mountedAvail + _equipWeaponAvail + _equipArmorAvail;
         if (totalAvailable < qty) return { success: false, message: `Not enough in inventory. Have: ${totalAvailable}` };
+
+        // If carried + stored alone can't cover, dismount/unequip into inventory first
+        let _gap = qty - (held + storedQty);
+        const _autoActions = [];
+        if (_gap > 0 && resourceId === 'horses' && _mountedAvail > 0) {
+            const _toDismount = Math.min(_gap, _mountedAvail);
+            for (let _di = 0; _di < _toDismount; _di++) {
+                if (player.horses.length === 0) break;
+                player.horses.pop();
+            }
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + _toDismount;
+            _gap -= _toDismount;
+            _autoActions.push('🐎 dismounted ' + _toDismount + ' horse' + (_toDismount === 1 ? '' : 's'));
+            if (player.horses.length === 0) player.travelMode = 'walk';
+        }
+        if (_gap > 0 && _equipWeaponAvail) {
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+            player.weapon = null;
+            _gap -= 1;
+            _autoActions.push('🗡️ unequipped weapon');
+        }
+        if (_gap > 0 && _equipArmorAvail) {
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+            player.armor = null;
+            _gap -= 1;
+            _autoActions.push('🛡️ unequipped armor');
+        }
+        // Recompute held after possible auto-actions
+        const _heldNow = player.inventory[resourceId] || 0;
 
         let price = town.market.prices[resourceId] || 1;
         // Apply market spread — sell price is less than buy price
@@ -1952,8 +1995,9 @@
         }
 
         player.stats.totalGoldEarned += totalRevenue;
-        // Sell from carried first, then from town storage
-        var sellFromCarried = Math.min(qty, held);
+        // Sell from carried first (after any auto-dismount/unequip into inventory),
+        // then from town storage
+        var sellFromCarried = Math.min(qty, _heldNow);
         var sellFromStorage = qty - sellFromCarried;
         player.inventory[resourceId] -= sellFromCarried;
         if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
@@ -2073,7 +2117,7 @@
         }
         return {
             success: true,
-            message: `Sold ${qty} ${resourceId} for ${totalRevenue} gold.`,
+            message: `Sold ${qty} ${resourceId} for ${totalRevenue} gold.` + (_autoActions.length > 0 ? ' (' + _autoActions.join(', ') + ')' : ''),
             totalRevenue,
             priceBreakdown: { basePrice: town.market.prices[resourceId] || 1, taxRate, goodsTax: effectiveGoodsTax, tariff, foreignSurcharge, citizenBonus, finalPrice: effectivePrice },
         };
