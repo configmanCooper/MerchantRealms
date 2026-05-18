@@ -137,7 +137,7 @@ window.Tutorial = (function () {
         '#btnKingdoms': 'world', '#btnMap': 'world', '#btnLocate': 'world',
         '#btnLog': 'world', '#btnAchievements': 'world', '#btnRankings': 'world',
         '#btnTownspeople': 'world', '#btnTownView': 'world', '#btnBuildingsList': 'world',
-        '#btnHelp': 'system', '#btnSchemes': 'system', '#btnKing': 'system'
+        '#btnHelp': 'system', '#btnSchemes': 'actions', '#btnKing': 'system'
     };
     var _btnToLabel = {
         '#btnTrade': 'Trade', '#btnBuild': 'Build', '#btnHire': 'Hire',
@@ -1523,7 +1523,7 @@ window.Tutorial = (function () {
             steps: [
                 {
                     title: 'Dark Deeds & Schemes',
-                    text: '\uD83D\uDEA8 The <strong>\uD83D\uDD75\uFE0F Schemes</strong> panel lets you plot sabotage, political schemes, assassinations, tax evasion, and market manipulation. High risk, high reward! Click the <strong>\u2699\uFE0F System</strong> tab, then <strong>\uD83D\uDD75\uFE0F Schemes</strong> to take a look!',
+                    text: '\uD83D\uDEA8 The <strong>\uD83D\uDD75\uFE0F Schemes</strong> panel lets you plot sabotage, political schemes, assassinations, tax evasion, and market manipulation. High risk, high reward! Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDD75\uFE0F Schemes</strong> to take a look!',
                     highlight: '#btnSchemes',
                     onEnter: function () {
                         closeModal();
