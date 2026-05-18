@@ -33254,6 +33254,21 @@
         var npcOccupation = npc ? (npc.occupation || 'commoner') : 'commoner';
         var npcGender = npc ? (npc.sex === 'F' ? 'she' : 'he') : 'they';
 
+        // v9p33river279: per-NPC daily relationship gain from small talk.
+        // +2 relationship with the specific NPC, but only once per real game day
+        // per NPC (no farming the same person all day).
+        if (npc) {
+            var _today = 0;
+            try { _today = Engine.getDay ? Engine.getDay() : 0; } catch(e) {}
+            if (!player._dailyTalkRep) player._dailyTalkRep = {};
+            if (player._dailyTalkRep[npc.id] !== _today) {
+                player._dailyTalkRep[npc.id] = _today;
+                if (typeof modifyRelationship === 'function') {
+                    modifyRelationship(npc.id, 2);
+                }
+            }
+        }
+
         // Tiny rep gain from socializing (reduced to prevent passive accumulation)
         if (kingdom) {
             player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + 0.01);

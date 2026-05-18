@@ -136,6 +136,7 @@ window.Tutorial = (function () {
         '#btnHousing': 'character', '#btnGuilds': 'character',
         '#btnKingdoms': 'world', '#btnMap': 'world', '#btnLocate': 'world',
         '#btnLog': 'world', '#btnAchievements': 'world', '#btnRankings': 'world',
+        '#btnTownspeople': 'world', '#btnTownView': 'world', '#btnBuildingsList': 'world',
         '#btnHelp': 'system', '#btnSchemes': 'system', '#btnKing': 'system'
     };
     var _btnToLabel = {
@@ -148,6 +149,7 @@ window.Tutorial = (function () {
         '#btnHousing': 'Housing', '#btnGuilds': 'Guilds',
         '#btnKingdoms': 'Kingdoms', '#btnMap': 'Map', '#btnLocate': 'Find Me',
         '#btnLog': 'Log', '#btnAchievements': 'Feats', '#btnRankings': 'Rankings',
+        '#btnTownspeople': 'Townspeople', '#btnTownView': 'Town View', '#btnBuildingsList': 'Buildings',
         '#btnHelp': 'Help', '#btnSchemes': 'Schemes', '#btnKing': 'King'
     };
 
@@ -1032,11 +1034,13 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Meeting & Courtship',
-                    text: '\uD83E\uDD1D Click the <strong>View Townspeople</strong> button in a town view, or click on NPCs to see them. Build relationships through <strong>gifts</strong> and <strong>dates</strong>. At high relationship, begin courtship and eventually propose!'
+                    text: '\uD83E\uDD1D Open the <strong>\uD83C\uDF0D World</strong> tab, then click <strong>\uD83D\uDC65 Townspeople</strong> to browse everyone in town \u2014 or click NPCs directly on the map. Build relationships through <strong>gifts</strong> and <strong>dates</strong>. At high relationship, begin courtship and eventually propose!',
+                    highlight: '#btnTownspeople'
                 },
                 {
                     title: 'Interactive Marriage',
                     text: '\uD83D\uDC8D Finding you a match...',
+                    highlight: '#btnTownspeople',
                     onEnter: function () {
                         var townId = Player.state.townId;
                         var npcs = [];
@@ -1074,7 +1078,7 @@ window.Tutorial = (function () {
                         }
                         var step = chapters[currentChapter].steps[currentStep];
                         var name = snapshotState.marriageCandidate || 'a townsperson';
-                        step.text = '\uD83D\uDC8D We\u2019ve arranged things so <strong>' + name + '</strong> is very interested in you (relationship 95)! Find them in town \u2014 click on NPCs or use <strong>\uD83D\uDC65 View Townspeople</strong> in the town panel. Once you find them, click <strong>\uD83D\uDC8D Propose Marriage</strong>!';
+                        step.text = '\uD83D\uDC8D We\u2019ve arranged things so <strong>' + name + '</strong> is very interested in you (relationship 95)! Open the <strong>\uD83C\uDF0D World</strong> tab \u2192 <strong>\uD83D\uDC65 Townspeople</strong> to find them (or click them directly on the map). Once you find them, click <strong>\uD83D\uDC8D Propose Marriage</strong>!';
                         // Periodically highlight the Propose button when it appears
                         snapshotState._proposeGlowTimer = setInterval(function () {
                             var btn = document.getElementById('btnPropose');
@@ -1363,7 +1367,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Arm Yourself',
-                    text: '\u2694\uFE0F We\u2019ve <strong>equipped you with a sword and armor</strong>. Click the <strong>\uD83E\uDDD1 Character</strong> tab, then <strong>\uD83D\uDC64 Character</strong> to see your gear! Equipment improves your <strong>combat rating</strong> for bandit encounters, military service, and self-defense.',
+                    text: '\u2694\uFE0F We\u2019ve <strong>equipped you with a sword and armor</strong>. Open the <strong>\uD83E\uDDD1 Character</strong> tab \u2192 <strong>\uD83D\uDC64 Character</strong>, then click the <strong>\u2694\uFE0F Equipment</strong> tab inside the panel to see your gear! Equipment improves your <strong>combat rating</strong> for bandit encounters, military service, and self-defense.',
                     highlight: '#btnCharacter',
                     onEnter: function () {
                         try {
