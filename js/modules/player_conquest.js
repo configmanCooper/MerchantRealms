@@ -695,7 +695,10 @@
             level: 1,
             ownerId: 'player',
             builtDay: Engine.getDay(),
-            condition: 100,
+            // v9p33river294: condition is a state string per
+            // CONFIG.CONDITION_LEVELS — numeric 100 fell through every
+            // string check (degradation tick, efficiency, repair UI).
+            condition: 'new',
             lastRepairDay: Engine.getDay()
         });
         
@@ -1277,7 +1280,8 @@
                     level: 1,
                     ownerId: 'player',
                     builtDay: Engine.getDay(),
-                    condition: 100,
+                    // v9p33river294: condition is a state string, not numeric.
+                    condition: 'new',
                     lastRepairDay: Engine.getDay()
                 });
             }

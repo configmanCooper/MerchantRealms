@@ -31818,6 +31818,14 @@
 
         getTown(id) { return world ? findTown(id) : null; },
 
+        // v9p33river294: a previous `getKingdom(id)` definition returning a
+        // shallow copy lived here. It was shadowed by the canonical
+        // `getKingdom(id) { return findKingdom(id); }` later in the same
+        // object literal, so it had no effect — but it was a latent bug:
+        // any reorder/removal of the canonical entry would have silently
+        // re-broken every mutator (donateToKingdom treasury, etc.) that
+        // expects the raw object. Removed.
+
         getKingdoms() {
             if (!world) return [];
             // Filter out destroyed kingdoms, serialize Sets for safe consumption
@@ -31829,10 +31837,16 @@
         },
 
         getKingdom(id) {
-            if (!world) return null;
-            const k = findKingdom(id);
-            if (!k) return null;
-            return { ...k, atWar: [...k.atWar], territories: [...k.territories] };
+            // v9p33river294: this previously returned a shallow copy with
+            // serialized Sets — but `getKingdom` is also defined later
+            // in the same object literal (line ~32088) returning the RAW
+            // kingdom via findKingdom. The later key wins in object
+            // literals, so this copy-returning variant was dead code AND
+            // a footgun (if the order ever changed, callers like
+            // donateToKingdom that mutate kingdom.gold would silently
+            // start losing their writes). Aligned this entry with the
+            // canonical raw-object behaviour.
+            return world ? findKingdom(id) : null;
         },
 
         getPeople(townId) {
