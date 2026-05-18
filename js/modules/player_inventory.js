@@ -263,8 +263,17 @@
         if (hasSkill('horse_mastery')) horseCarry = Math.floor(horseCarry * 1.25);
         var horseBonus = player.horses.length * horseCarry;
         if (player.storageContainer && CONFIG.STORAGE_CONTAINERS[player.storageContainer]) {
-            return base * CONFIG.STORAGE_CONTAINERS[player.storageContainer].capacityMult + horseBonus;
+            var _capCont = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
+            var _cap = base * _capCont.capacityMult + horseBonus;
+            // v9p33river260: backpack is worn ON the player and persists when
+            // they switch to a vehicle. It adds extra capacity on top of the
+            // cart/wagon (base × 1 = +20 by default) instead of being replaced.
+            if (player._backpack && player.storageContainer !== 'backpack') {
+                _cap += base;
+            }
+            return _cap;
         }
+        // No vehicle, but backpack still counted via storageContainer === 'backpack' path above
         return base + horseBonus;
     }
 
