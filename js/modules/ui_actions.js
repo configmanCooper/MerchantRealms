@@ -4769,6 +4769,7 @@ function clickTown(townId) {
                 '<thead><tr style="background:rgba(192,160,96,0.15);text-align:left;">' +
                     '<th style="padding:6px 8px;">Inmate</th>' +
                     '<th style="padding:6px 8px;">Status</th>' +
+                    '<th style="padding:6px 8px;">Crime</th>' +
                     '<th style="padding:6px 8px;">Days Left</th>' +
                     '<th style="padding:6px 8px;">Record</th>' +
                     '<th style="padding:6px 8px;text-align:center;">Action</th>' +
@@ -4787,12 +4788,22 @@ function clickTown(townId) {
                         ? Object.keys(p.criminalRecord[town.kingdomId]).join(', ')
                         : ('×' + p.criminalRecord[town.kingdomId]))
                     : '<span style="color:#666;">—</span>';
+                // v9p33river264: crime label — pretty-print crimeId, fall back to "unknown"
+                var crimeLabel = '<span style="color:#888;">unknown</span>';
+                if (p._jailedCrimeId) {
+                    var _crId = String(p._jailedCrimeId);
+                    var _crPretty = _crId.charAt(0).toUpperCase() + _crId.slice(1).replace(/_/g, ' ');
+                    crimeLabel = '<span style="color:#e8a878;">' + _crPretty + '</span>';
+                } else if (p._jailedBy === 'king') {
+                    crimeLabel = '<span style="color:#cc99ff;">Royal displeasure</span>';
+                }
                 var btn = canJB
                     ? '<button class="btn-medieval" data-action="attemptJailbreak" data-id="' + p.id + '" data-val="' + town.id + '" style="font-size:0.78rem;padding:4px 10px;background:rgba(170,40,40,0.5);">🔓 Break Out</button>'
                     : '<span style="color:#666;font-size:0.75rem;">—</span>';
                 html += '<tr style="border-bottom:1px solid #333;">' +
                     '<td style="padding:6px 8px;"><a href="#" data-action="showPersonDetail" data-id="' + p.id + '" style="color:#ffd86a;text-decoration:underline;cursor:pointer;">' + name + '</a></td>' +
                     '<td style="padding:6px 8px;">' + statusBits.join(' ') + '</td>' +
+                    '<td style="padding:6px 8px;font-size:0.8rem;">' + crimeLabel + '</td>' +
                     '<td style="padding:6px 8px;color:#ffd86a;">' + d + 'd</td>' +
                     '<td style="padding:6px 8px;color:#aaa;font-size:0.78rem;">' + rec + '</td>' +
                     '<td style="padding:6px 8px;text-align:center;">' + btn + '</td>' +

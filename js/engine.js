@@ -14839,6 +14839,7 @@
                         case 'jail':
                             _pn._jailedUntilDay = world.day + 15;
                             _pn._jailedBy = 'king';
+                            _pn._jailedCrimeId = 'royal_displeasure'; // v9p33river264
                             _pn.kingLoyalty = Math.max(0, (_pn.kingLoyalty || 50) - 18);
                             _pn.perceivedKingLoyalty = Math.max(0, (_pn.perceivedKingLoyalty || 50) - 12);
                             logEvent('⚖️ ' + k.name + ' imprisons ' + _pnName + ' for disloyalty.');
@@ -24130,6 +24131,7 @@
                     actor.deathCause = 'executed for ' + (crimeType ? crimeType.name : crimeId);
                 } else if (jailDays > 0) {
                     actor._jailedUntilDay = world.day + jailDays;
+                    actor._jailedCrimeId = crimeId || null; // v9p33river264
                 }
                 // Town crime/security feedback
                 town.crime = Math.min(100, (town.crime || 0) + 0.8);

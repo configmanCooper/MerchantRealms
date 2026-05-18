@@ -3837,6 +3837,7 @@
             });
         } else if (jailDays > 0) {
             actor._jailedUntilDay = (world.day || 0) + jailDays;
+            actor._jailedCrimeId = crimeId || null; // v9p33river264
         }
         return fine;
     }

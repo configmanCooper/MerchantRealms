@@ -3837,6 +3837,7 @@
             npcFine = rng.randInt(100, 500);
             if (npc.gold != null) npc.gold = Math.max(0, npc.gold - npcFine);
             npc._jailedUntilDay = Engine.getDay() + rng.randInt(10, 30);
+            npc._jailedCrimeId = 'framed_evidence'; // v9p33river264
             if (npc.isEliteMerchant && npc.caravans) {
                 for (var ci = 0; ci < npc.caravans.length; ci++) npc.caravans[ci].paused = true;
             }
@@ -4097,6 +4098,7 @@
         if (rng.random() < success) {
             // Success: free the NPC, bump player notoriety + town crime
             target._jailedUntilDay = 0;
+            target._jailedCrimeId = null; // v9p33river264
             player.notoriety = Math.min(100, (player.notoriety || 0) + 10);
             town.crime = Math.min(100, (town.crime || 0) + 3);
             recordCorruptAction('jailbreak', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'sabotage');

@@ -9198,6 +9198,7 @@
             case 'jail':
                 noble._jailedUntilDay = (Engine.getDay ? Engine.getDay() : 0) + 15;
                 noble._jailedBy = 'king';
+                noble._jailedCrimeId = 'royal_displeasure'; // v9p33river264
                 targetLoyHit = -18;
                 otherLoyHit = -5;
                 relHit = -12;
