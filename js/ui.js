@@ -1844,7 +1844,16 @@ window.UI = (function () {
     let tradeBatch = [];
     let tradeDialogOpen = false;
 
+    // v9p33river262: remember the last quantity preset clicked per resource per
+    // type, so the trade dialog re-renders with that selection sticky after each
+    // buy/sell instead of snapping back to 1.
+    if (!window._tradeQtySelections) window._tradeQtySelections = { buy: {}, sell: {} };
+
     function setTradeQty(type, resId, qty, unitPrice) {
+        // Persist selection for re-renders
+        if (window._tradeQtySelections && window._tradeQtySelections[type]) {
+            window._tradeQtySelections[type][resId] = qty;
+        }
         const input = document.getElementById(type + 'Qty_' + resId);
         if (input) input.value = qty;
         // Highlight selected button
@@ -2214,9 +2223,12 @@ window.UI = (function () {
                 }
             }
             const buyMaxQty = Math.max(0, Math.min(maxByGold, maxByCapacity, qty));
+            // v9p33river262: sticky qty selection — restore last-clicked preset
+            const _stickyBuyQty = (window._tradeQtySelections && window._tradeQtySelections.buy && window._tradeQtySelections.buy[resId]) || 1;
+            const _stickyBuyMaxSelected = (_stickyBuyQty === buyMaxQty && [1,5,10,25].indexOf(_stickyBuyQty) < 0);
             const buyQtyBtns = [1, 5, 10, 25].map(q =>
-                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${q}" data-price="${finalUnitPrice.toFixed(4)}">${q}</button>`
-            ).join('') + `<button class="qty-btn" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${buyMaxQty}" data-price="${finalUnitPrice.toFixed(4)}">⬆Max (${buyMaxQty})</button>`;
+                `<button class="qty-btn${q === _stickyBuyQty ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${q}" data-price="${finalUnitPrice.toFixed(4)}">${q}</button>`
+            ).join('') + `<button class="qty-btn${_stickyBuyMaxSelected ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="buy" data-id="${resId}" data-qty="${buyMaxQty}" data-price="${finalUnitPrice.toFixed(4)}">⬆Max (${buyMaxQty})</button>`;
 
             const _filterCat = _getTradeFilterCat(resId, res);
             buyHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''}" data-filter-cat="${_filterCat}">
@@ -2224,8 +2236,8 @@ window.UI = (function () {
                 <div class="trade-controls">
                     <span class="price ${priceClass}" title="${breakdownTooltip}" style="cursor:help;">${finalUnitPrice.toFixed(1)}g</span>
                     <div class="trade-qty-selector" id="buyQtyBtns_${resId}">${buyQtyBtns}</div>
-                    <span class="trade-preview" id="buyPreview_${resId}">Buy 1: ${finalUnitPrice.toFixed(1)}g</span>
-                    <input type="hidden" id="buyQty_${resId}" value="1">
+                    <span class="trade-preview" id="buyPreview_${resId}">Buy ${_stickyBuyQty}: ${(finalUnitPrice * _stickyBuyQty).toFixed(1)}g</span>
+                    <input type="hidden" id="buyQty_${resId}" value="${_stickyBuyQty}">
                     <button class="btn-trade buy" data-action="executeBuy" data-id="${resId}" data-town="${town.id}">Buy</button>
                 </div>
             </div>`;
@@ -2318,9 +2330,12 @@ window.UI = (function () {
             else if (isRestricted && !hasLicense) sellBtnLabel = '⚠️ Sell (risky)';
 
             const sellMaxQty = qty;
+            // v9p33river262: sticky qty selection on sell side too
+            const _stickySellQty = (window._tradeQtySelections && window._tradeQtySelections.sell && window._tradeQtySelections.sell[resId]) || 1;
+            const _stickySellMaxSelected = (_stickySellQty === sellMaxQty && [1,5,10,25].indexOf(_stickySellQty) < 0);
             const sellQtyBtns = [1, 5, 10, 25].map(q =>
-                `<button class="qty-btn${q === 1 ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${q}" data-price="${finalSellPrice.toFixed(4)}">${q}</button>`
-            ).join('') + `<button class="qty-btn" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${sellMaxQty}" data-price="${finalSellPrice.toFixed(4)}">⬆Max (${sellMaxQty})</button>`;
+                `<button class="qty-btn${q === _stickySellQty ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${q}" data-price="${finalSellPrice.toFixed(4)}">${q}</button>`
+            ).join('') + `<button class="qty-btn${_stickySellMaxSelected ? ' qty-selected' : ''}" data-action="setTradeQty" data-type="sell" data-id="${resId}" data-qty="${sellMaxQty}" data-price="${finalSellPrice.toFixed(4)}">⬆Max (${sellMaxQty})</button>`;
 
             const _filterCatS = _getTradeFilterCat(resId, res);
             sellHtml += `<div class="trade-item ${isMilitary ? 'military-item' : ''} ${isBanned ? 'banned-item' : ''} ${isRestricted && !hasLicense ? 'restricted-item' : ''}" data-filter-cat="${_filterCatS}">
@@ -2328,8 +2343,8 @@ window.UI = (function () {
                 <div class="trade-controls">
                     <span class="price ${priceClass}" title="${breakdownTooltip}" style="cursor:help;">${finalSellPrice.toFixed(1)}g</span>
                     <div class="trade-qty-selector" id="sellQtyBtns_${resId}">${sellQtyBtns}</div>
-                    <span class="trade-preview" id="sellPreview_${resId}">Sell 1: ${finalSellPrice.toFixed(1)}g</span>
-                    <input type="hidden" id="sellQty_${resId}" value="1">
+                    <span class="trade-preview" id="sellPreview_${resId}">Sell ${_stickySellQty}: ${(finalSellPrice * _stickySellQty).toFixed(1)}g</span>
+                    <input type="hidden" id="sellQty_${resId}" value="${_stickySellQty}">
                     <button class="btn-trade sell" data-action="executeSell" data-id="${resId}" data-town="${town.id}">${sellBtnLabel}</button>
                 </div>
             </div>`;
