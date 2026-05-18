@@ -24661,6 +24661,12 @@
             return { canTalk: false, lockReason: 'jailed', reason: '⛓️ You are in jail and cannot interact with anyone right now.' };
         }
 
+        // v9p33river265: target NPC is jailed — locked away, no contact
+        if (person._jailedUntilDay && person._jailedUntilDay > _today) {
+            var _daysLeft = person._jailedUntilDay - _today;
+            return { canTalk: false, lockReason: 'target_jailed', reason: '⛓️ ' + (person.firstName || 'They') + ' is locked in jail for ' + _daysLeft + ' more day' + (_daysLeft === 1 ? '' : 's') + '. No social contact, courtship, or schemes are possible. (Jail Break skill can attempt rescue.)' };
+        }
+
         if (person.age < 10) return { canTalk: false, lockReason: 'too_young', reason: 'This person is too young to interact with.' };
 
         // Check if this person is a king

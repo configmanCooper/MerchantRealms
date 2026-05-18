@@ -1330,6 +1330,15 @@ function showPersonDetail(person) {
         if (townObj) townName = townObj.name;
     } catch (e) { /* no-op */ }
 
+    // v9p33river265: detect if target is currently jailed
+    let _curDay = 0;
+    try { _curDay = Engine.getDay ? Engine.getDay() : 0; } catch(e) {}
+    const _isTargetJailed = !!(person._jailedUntilDay && person._jailedUntilDay > _curDay);
+    const _jailDaysLeft = _isTargetJailed ? (person._jailedUntilDay - _curDay) : 0;
+    if (_isTargetJailed) {
+        townName += ' <span style="color:#c85050;font-size:0.78rem;">(⛓️ in jail — ' + _jailDaysLeft + 'd left)</span>';
+    }
+
     const isInSameTown = typeof Player !== 'undefined' && Player.townId === person.townId && !Player.traveling;
     const isPlayer = typeof Player !== 'undefined';
     const isAlive = person.alive !== false;
@@ -2071,8 +2080,9 @@ function showPersonDetail(person) {
             } catch (_e) {}
             // v9p33river100: don't offer courtship for NPCs the player can't directly
             // interact with (e.g., minor noble without an introduction).
+            // v9p33river265: no courtship for jailed NPCs
             var _canTalkForCourtship = (typeof _talkCheck !== 'undefined') ? _talkCheck.canTalk : true;
-            const canDate = person.age >= 16 && !isChild && !_isKingNPC && !_isFamilyNPC && _canTalkForCourtship;
+            const canDate = person.age >= 16 && !isChild && !_isKingNPC && !_isFamilyNPC && _canTalkForCourtship && !_isTargetJailed;
             if (canDate && typeof DATING_ACTIVITIES !== 'undefined') {
                 html += `<div class="detail-section"><h3>💕 Courtship</h3>
                     <div style="display:flex;flex-direction:column;gap:3px;">`;
@@ -2141,7 +2151,19 @@ function showPersonDetail(person) {
             if (typeof Player !== 'undefined' && Player.hasSkill) {
                 _hasAnySchemeSkill = Player.hasSkill('discrete') || Player.hasSkill('shadow_dealings') || Player.hasSkill('silver_tongue_dark') || Player.hasSkill('dark_connections') || Player.hasSkill('assassin') || Player.hasSkill('poisoner') || Player.hasSkill('master_forger');
             }
-            if (_hasAnySchemeSkill) {
+            // v9p33river265: target is jailed — replace the schemes palette
+            // with only the jailbreak action (when player has the skill).
+            if (_isTargetJailed) {
+                var _canJBHere = (typeof Player !== 'undefined' && Player.canJailbreak && Player.canJailbreak());
+                html += `<div class="detail-section"><h3>🏴 Schemes</h3>`;
+                if (_canJBHere) {
+                    html += '<button class="btn-medieval" data-action="attemptJailbreak" data-id="' + person.id + '" data-val="' + (person.townId || '') + '" style="font-size:0.9rem;padding:6px 12px;background:rgba(170,40,40,0.5);border-color:rgba(220,80,80,0.7);color:#f0d0a0;">🔓 Attempt Jail Break</button>';
+                    html += '<div class="text-dim" style="font-size:0.78rem;margin-top:6px;">⚠️ A failed jail break risks your own imprisonment.</div>';
+                } else {
+                    html += '<div class="text-dim" style="font-size:0.78rem;">⛓️ ' + (person.firstName || 'They') + ' is locked away. No schemes possible. Acquire the <b>Jail Break</b> skill to attempt rescue.</div>';
+                }
+                html += `</div>`;
+            } else if (_hasAnySchemeSkill) {
             html += `<div class="detail-section"><h3>🏴 Schemes</h3>
                 <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
 
