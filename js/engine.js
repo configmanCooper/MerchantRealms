@@ -32587,23 +32587,33 @@
             const soldiers = world.people.filter(p =>
                 p.alive && p.kingdomId === k.id && (p.occupation === 'soldier' || p.occupation === 'guard')
             );
-            let totalInf = 0, totalArch = 0, totalCav = 0, totalGarrison = 0;
-            for (const townId of k.territories) {
+            // v9p33river270: derive unit counts from the kingdom's actual
+            // militaryStockpile (their armed reserve) rather than goods currently
+            // sitting on town market shelves. The market-supply formula made
+            // Infantry/Archers/Cavalry read as 0 even when stockpiles were full
+            // and Strength was positive — confusing the World Analytics UI.
+            const ms = k.militaryStockpile || {};
+            const allSwords = (ms.swords || 0) + (ms.swords_good || 0) + (ms.swords_excellent || 0);
+            const allArmor = (ms.armor || 0) + (ms.armor_good || 0) + (ms.armor_excellent || 0);
+            const allBows = (ms.bows || 0) + (ms.bows_good || 0) + (ms.bows_excellent || 0);
+            const arrows = ms.arrows || 0;
+            const horses = ms.horses || 0;
+            const saddles = ms.saddles || 0;
+            // Cavalry needs sword + armor + horse + saddle each
+            const cavalry = Math.min(horses, saddles, allSwords, allArmor);
+            const remainingSwords = Math.max(0, allSwords - cavalry);
+            const remainingArmor = Math.max(0, allArmor - cavalry);
+            // Archers need bow + 5 arrows each (no armor/sword required)
+            const archers = Math.min(allBows, Math.floor(arrows / 5));
+            // Infantry need sword + armor each (no bow)
+            const infantry = Math.min(remainingSwords, remainingArmor);
+            // Garrison summed across territories
+            let totalGarrison = 0;
+            for (const townId of (k.territories || [])) {
                 const town = findTown(townId);
-                if (!town) continue;
-                const swords = town.market.supply.swords || 0;
-                const armor = town.market.supply.armor || 0;
-                const bows = town.market.supply.bows || 0;
-                const arrows = town.market.supply.arrows || 0;
-                const horses = town.market.supply.horses || 0;
-                const saddles = town.market.supply.saddles || 0;
-                var cavCount = Math.min(horses, saddles, Math.floor(swords * 0.3));
-                totalCav += cavCount;
-                totalArch += Math.min(bows, Math.floor(arrows / 5));
-                totalInf += Math.max(0, Math.min(swords - cavCount, armor));
-                totalGarrison += (town.garrison || 0);
+                if (town) totalGarrison += (town.garrison || 0);
             }
-            return { strength: computeMilitaryStrength(k), infantry: totalInf, archers: totalArch, cavalry: totalCav, soldiers: soldiers.length, garrison: totalGarrison, total: soldiers.length };
+            return { strength: computeMilitaryStrength(k), infantry: infantry, archers: archers, cavalry: cavalry, soldiers: soldiers.length, garrison: totalGarrison, total: soldiers.length };
         },
 
         // Town category system

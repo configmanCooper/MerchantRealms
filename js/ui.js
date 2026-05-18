@@ -16756,11 +16756,15 @@ window.UI = (function () {
         for (var i = 0; i < kingdoms.length; i++) {
             var k = kingdoms[i];
             var ms = k.militaryStockpile || {};
+            // v9p33river270: sum all weapon/armor tiers (base + good + excellent)
+            var _swTotal = (ms.swords || 0) + (ms.swords_good || 0) + (ms.swords_excellent || 0);
+            var _arTotal = (ms.armor || 0) + (ms.armor_good || 0) + (ms.armor_excellent || 0);
+            var _bwTotal = (ms.bows || 0) + (ms.bows_good || 0) + (ms.bows_excellent || 0);
             html += '<tr style="border-bottom:1px solid #333;">';
             html += '<td style="padding:5px;border-left:4px solid ' + (k.color || '#666') + ';font-weight:bold;">' + (k.name || '?') + '</td>';
-            html += '<td style="padding:5px;">' + _waNum(ms.swords || 0) + '</td>';
-            html += '<td style="padding:5px;">' + _waNum(ms.armor || 0) + '</td>';
-            html += '<td style="padding:5px;">' + _waNum(ms.bows || 0) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(_swTotal) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(_arTotal) + '</td>';
+            html += '<td style="padding:5px;">' + _waNum(_bwTotal) + '</td>';
             html += '<td style="padding:5px;">' + _waNum(ms.arrows || 0) + '</td>';
             html += '<td style="padding:5px;">' + _waNum(ms.horses || 0) + '</td>';
             html += '</tr>';
