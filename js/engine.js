@@ -14209,12 +14209,19 @@
             if (parentK.relations) parentK.relations[newKingdomId] = -80;
 
             // Track war metadata
+            // v9p33river293: use the canonical kingdomA/kingdomB schema from
+            // engine_diplomacy.js declareWar so that every consumer (warzone
+            // detection, frontline towns, eliminateKingdom cleanup, world-
+            // overview HUD, ambush/encounter risk, gossip, etc.) actually
+            // sees this war. The old aggressorId/defenderId fields were
+            // invisible to all of those readers.
             if (world.activeWars) {
                 var warId = uid('war');
                 world.activeWars[warId] = {
                     id: warId,
-                    aggressorId: newKingdomId,
-                    defenderId: parentK.id,
+                    kingdomA: newKingdomId,
+                    kingdomB: parentK.id,
+                    aggressor: newKingdomId,
                     startDay: world.day,
                     cause: 'revolt',
                     battles: 0,
@@ -14318,12 +14325,18 @@
         }, 'sensitive_intel');
 
         // Check if parent kingdom has 0 towns — eliminate if so
+        // v9p33river293: previously this only LOGGED the loss but never
+        // invoked eliminateKingdom(), leaving the parent kingdom with
+        // active wars, alliances, armies and employees that no longer
+        // had a state behind them. Call the same cleanup path used by
+        // conquest at engine.js:16886-16888.
         if (parentK && parentK.territories && parentK.territories.size === 0) {
             logEvent('💀 ' + parentK.name + ' has lost all territories and ceases to exist!', {
                 type: 'kingdom_eliminated',
                 kingdom: parentK.name,
                 cause: 'Lost last town to revolt'
             }, 'sensitive_intel');
+            try { eliminateKingdom(parentK, newKingdom); } catch (_eEK) { /* defensive — never crash a revolt */ }
         }
 
         // D: Revolt EM promotion — top 1-2 wealthiest revolt participants become elite merchants
