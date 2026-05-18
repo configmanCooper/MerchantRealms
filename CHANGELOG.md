@@ -4,7 +4,81 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [TestingAlpha1] - v9p33river169 → v9p33river282 — phantom-road fix, poison/king AI, crime & jail overhaul, tutorial polish
+
+### Fixed — Critical Rendering
+- **Phantom road segments eliminated** — bridge stub low-zoom render path (`render.js` ~L1389/1395) was manually subtracting `camera.x/y` from waypoints while the canvas transform already applied that translation, so bridge stubs rendered at `(world − 2×camera)` and panned at double speed. Duplicate offset removed. Also added orphan-sea-route cleanup in `Engine.reconcilePortStatus()` and `Renderer.invalidateSceneCache()` post-`_setupStoryWorld` to scrub stale low-zoom scene-cache pixels.
+- **Phantom road dedup + sparse repair** — repeated route-segment dedup pass; sparse waypoint repair for sea routes redirected by tutorial setup.
+
+### Added — Poison & King-AI Death Pipeline
+- **Poison rebalanced and made lethal** — drain raised, initial cap, ±25% RNG jitter on damage; `_isAsymptomatic()` now forced false for poison so the victim doesn't sit at full HP forever. `killPerson()` child-protect now bypassed for cause `'poisoned'`. Recovery suppressed at hp≤0; force-kill fallback prevents stuck-alive corpses.
+- **`isKing` flag now always set** — `attemptEmergencySuccession` previously didn't set it; succession + `tickKingMood` backfill + `seek-treatment` runtime check (`kingdom.king === p.id`) all now ensure inherited kings count as kings.
+- **King weekly personal withdrawal** — `tickKingPersonalWithdrawal` extracted to its own function, hooked into the daily kingdom loop; greed-scaled draw from treasury.
+- **Desperate-noble predatory loans** — nobles who are sick (or have sick family) and low on gold now get offered loans with predatory terms.
+- **Royal physician free-care fallback** — when both the kingdom and the king's personal gold can't cover hospital fees, the king and royal NPCs get treated anyway.
+- **Treatment-seeking actually travels** — EM / noble / king skip queue at owned hospitals and travel at horse-or-better speed instead of warping.
+- **NPC detail panel auto-refreshes** for treatment status.
+- **`window._POISON_DEBUG` diagnostics** — gated by flag, off by default; `window.dbgPoison()` helper, top-of-tick poison scan, `_dbgPoison` tag.
+
+### Added — Crime, Jail & Manhunt
+- **Centralized `Player._imprisonPlayer(days, jailKingdomId, opts)`** — clears all travel state, closes travel UI, fires extradition warp when caught while traveling so the player lands at the closest hunting-kingdom town.
+- **Manhunt extradition warp** — caught-while-traveling no longer leaves a stale travel modal.
+- **NPC jail tracking** — `p._jailedCrimeId` set at all 5+ jail sites (judge, schemes, plant-evidence, jailbreak, etc.).
+- **Jail UI overhaul** — modal stays open when clicking inmate names; new **Crime** column shows the offence each NPC was jailed for.
+- **NPC detail panel** — visible jailed marker; all social/courtship/scheme actions blocked except **Attempt Jail Break**.
+- **Attempt Jail Break** routed through the standard scheme confirm dialog (chance of success / chance of getting caught) instead of an instant button.
+- **Can't hire jailed NPCs** — `Player.hireWorker` blocks jailed candidates.
+- **Jailed workers don't produce** — `countWorkersForBuilding` filters out `_jailedUntilDay` workers so player buildings stop output while their staff is locked up.
+
+### Added — Trade UI & Inventory
+- **Sticky trade quantity** — last-picked qty persists across consecutive buys.
+- **Mounted horses + equipped weapon/armor sellable** — appear in the sell list tagged `(mounted)` / `(equipped)`; selling auto-dismounts or unequips.
+- **Backpack stacks with cart** — base extra capacity applies on top of vehicle cap.
+
+### Added — World Analytics
+- **New Procurement Orders & Commissions panel** under Economy & Trade — shows what each kingdom is trying to procure via orders, commissions, and hired procurers.
+- **Military Breakdown rewritten** — now reads `kingdom.militaryStockpile` (sums all tiers: `swords`/`swords_good`/`swords_excellent`) instead of town market shelves, so the column actually reflects the kingdom's armed reserve.
+- **Stockpiles sum across all tiers** so swords/armor numbers stop showing 0 when good/excellent tiers exist.
+- **Conspiracy strength seeded** at `plotters.length * 6` so freshly-formed coups don't display 0/80.
+
+### Added — Tutorial Overhaul
+- **Tutorial state persists across save/load** — `Tutorial.serialize()` / `Tutorial.resume()`, hooked into `_buildSavePayload` and `loadFromSlot` so saving mid-tutorial no longer drops the tutorial panel.
+- **No more auto-opening submenus** — guidance arrow points to the parent tab; a 250ms poller live-highlights the matching sub-button if the player opens the submenu themselves.
+- **Marriage chapter** — both `Meeting & Courtship` and `Interactive Marriage` steps now direct the player to **🌍 World → 👥 Townspeople** with `highlight: '#btnTownspeople'`.
+- **Schemes guidance** moved from System tab → **Actions tab** to match the actual sub-menu location.
+- **Chapter reorder** — Work & Jobs now precedes Getting Help in Part 1 Basics.
+- **Take a Job step** adds a Rest hint for low-energy players (Actions → 💤 Rest) and replaces `(shown in ticks)` with `(shown in hours)`.
+- **Arm Yourself step** now directs the player to Character → Character → **Equipment tab**.
+- **Meeting Townsfolk** copy changed from "colored dots" to "people".
+- `_btnToTab` / `_btnToLabel` extended with `#btnTownspeople`, `#btnTownView`, `#btnBuildingsList`.
+
+### Added — Small Talk Relationships
+- **Small Talk grants +2 relationship** with the chosen NPC the first time you talk to them each day (`player._dailyTalkRep[npc.id]` gate prevents farming).
+
+### Changed — Hospital & Treatment Capabilities UI
+- **Hospital treatment supplies list** no longer early-returns on first missing supply — `_buildInjList` now iterates fully so splints, poultices, and tonics actually display.
+- Injury supply config reverted to the simpler ladder (Minor: 1 bandage / Moderate: 2 bandages / Serious: 2 bandages + 1 splint / Severe: 2 bandages + 1 splint + 1 poultice + 1 tonic) after several iterations.
+
+### Changed — Owned-Hospital Skip & Royalty
+- **Owned-hospital owner skips the queue**; royal physician free-care kicks in for king / royal NPCs when both treasury and personal gold are dry.
+
+### Fixed — NPC Noble Badge
+- Noble badge now respects `socialRank ≥ 4` instead of the `occupation === 'noble'` string (Guildmaster + 'noble' occupation flavor label was leaking through). Deserialize migration strips the `noble` occupation from NPCs whose max `socialRank < 4`.
+
+### Fixed — Save/Load Function-Loss Hardening
+- `em._schemeFns` was being skipped by `||` guards after save/load because JSON drops functions but leaves the empty `{}` shell as truthy. Now always rebuilt on deserialize.
+
+### Fixed — Story Mode Polish
+- Road dedup + sparse repair, sea-route cache fixes, post-`_setupStoryWorld` scene cache invalidation.
+
+### Fixed — Outpost UI
+- Outpost dialog fixes including a buy-max bug.
+
+### Removed
+- Diagnostic console spam from poison debugging gated behind `window._POISON_DEBUG`.
+
 ## [TestingMilestone1] - graphic-milestone-5 polish: docks, funerals, courtship, building UI, kingdom rep, plantation balance
+
 
 ### Added
 - **Sail / Off-Sea travel** — render docked ship sprite, hit-test, auto-board on offroad arrival; port-to-port sailing with sea-route empty-market refusal; rowboats / fishing boats restricted to within 3 tiles of land (`COASTAL_MAX_TILES_FROM_LAND`)
