@@ -476,7 +476,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Meeting Townsfolk',
-                    text: '\uD83D\uDC65 The <strong>colored dots</strong> moving around a town are <strong>NPCs</strong> \u2014 real people living and working there! <strong>Zoom in</strong> past 1.5x to see them clearly. Click an NPC and say <strong>Small Talk</strong> to them! <strong>Tip:</strong> If an NPC is in the center of town, hold <strong>Shift + Click</strong> to select the person instead of the town.',
+                    text: '\uD83D\uDC65 The <strong>people</strong> moving around a town are <strong>NPCs</strong> \u2014 real people living and working there! <strong>Zoom in</strong> past 1.5x to see them clearly. Click an NPC and say <strong>Small Talk</strong> to them! <strong>Tip:</strong> If an NPC is in the center of town, hold <strong>Shift + Click</strong> to select the person instead of the town.',
                     highlight: '#gameCanvas',
                     waitFor: function () {
                         var modal = document.getElementById('modalOverlay');
