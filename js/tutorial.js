@@ -11,6 +11,7 @@ window.Tutorial = (function () {
     var panelEl = null;
     var highlightedEls = [];
     var _currentHighlightInfo = null; // { tab, label } for re-application on sub-menu rebuild
+    var _tabHighlightPoller = null;   // v9p33river278: live highlight inside submenu when user opens it
     var completedSteps = {}; // Track completed interactive steps: "chapter:step" → true
 
     // Polling / waitFor state
@@ -1806,6 +1807,8 @@ window.Tutorial = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function clearHighlights() {
+        // v9p33river278: stop the submenu-watch poller
+        if (_tabHighlightPoller) { clearInterval(_tabHighlightPoller); _tabHighlightPoller = null; }
         for (var i = 0; i < highlightedEls.length; i++) {
             highlightedEls[i].classList.remove('tutorial-highlight');
             // Remove click-to-clear handler if attached
@@ -1835,19 +1838,30 @@ window.Tutorial = (function () {
         _currentHighlightInfo = null;
         if (!selector) return;
         try {
-            // Check if this is an old bottom bar button that's now in the tab system
+            // v9p33river278: don't auto-pop the submenu/Actions overlay anymore.
+            // Highlight the parent tab button so the guidance arrow points to it,
+            // and ALSO start a poller that highlights the matching sub-menu button
+            // if/when the user opens the submenu themselves. No auto-open.
             if (_btnToTab[selector]) {
                 var cat = _btnToTab[selector];
                 var label = _btnToLabel[selector];
                 _currentHighlightInfo = { tab: cat, label: label };
-                // Open the tab category and highlight the matching sub-menu button
-                openTabCategory(cat, label);
-                // Also highlight the tab button itself
                 var tabBtn = document.querySelector('.tab-btn[data-category="' + cat + '"]');
                 if (tabBtn) {
                     tabBtn.classList.add('tutorial-highlight');
                     highlightedEls.push(tabBtn);
                 }
+                // Live re-highlight inside submenu if user opens it themselves
+                if (_tabHighlightPoller) { clearInterval(_tabHighlightPoller); _tabHighlightPoller = null; }
+                _tabHighlightPoller = setInterval(function() {
+                    var btns = document.querySelectorAll('.sub-menu-btn');
+                    for (var i = 0; i < btns.length; i++) {
+                        if (btns[i].textContent.indexOf(label) >= 0 && !btns[i].classList.contains('tutorial-highlight')) {
+                            btns[i].classList.add('tutorial-highlight');
+                            highlightedEls.push(btns[i]);
+                        }
+                    }
+                }, 250);
                 return;
             }
 
