@@ -2157,7 +2157,8 @@ function showPersonDetail(person) {
                 var _canJBHere = (typeof Player !== 'undefined' && Player.canJailbreak && Player.canJailbreak());
                 html += `<div class="detail-section"><h3>🏴 Schemes</h3>`;
                 if (_canJBHere) {
-                    html += '<button class="btn-medieval" data-action="attemptJailbreak" data-id="' + person.id + '" data-val="' + (person.townId || '') + '" style="font-size:0.9rem;padding:6px 12px;background:rgba(170,40,40,0.5);border-color:rgba(220,80,80,0.7);color:#f0d0a0;">🔓 Attempt Jail Break</button>';
+                    // v9p33river269: route through openSchemeConfirm so the chances UI shows
+                    html += '<button class="btn-medieval" data-action="jailbreakPerson" data-id="' + person.id + '" style="font-size:0.9rem;padding:6px 12px;background:rgba(170,40,40,0.5);border-color:rgba(220,80,80,0.7);color:#f0d0a0;">🔓 Attempt Jail Break</button>';
                     html += '<div class="text-dim" style="font-size:0.78rem;margin-top:6px;">⚠️ A failed jail break risks your own imprisonment.</div>';
                 } else {
                     html += '<div class="text-dim" style="font-size:0.78rem;">⛓️ ' + (person.firstName || 'They') + ' is locked away. No schemes possible. Acquire the <b>Jail Break</b> skill to attempt rescue.</div>';
@@ -4858,6 +4859,7 @@ function clickTown(townId) {
     UI.registerAction('hireAssassinFor', function(_t, d) { UI.hireAssassinFor(d.id); });
     UI.registerAction('poisonPerson', function(_t, d) { UI.poisonPerson(d.id); });
     UI.registerAction('framePerson', function(_t, d) { UI.framePerson(d.id); });
+    UI.registerAction('jailbreakPerson', function(_t, d) { if (UI.jailbreakPerson) UI.jailbreakPerson(d.id); });
     // v9p33river209: confirmSchemeRun takes 'runId:personId' as data-id
     UI.registerAction('confirmSchemeRun', function(_t, d) { if (UI.confirmSchemeRun) UI.confirmSchemeRun(d.id); });
     UI.registerAction('godRelPlus', function(_t, d) {

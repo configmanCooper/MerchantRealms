@@ -4868,6 +4868,42 @@ window.UI = (function () {
                 ]
             };
         }
+        if (schemeId === 'jailbreak') {
+            // Mirror Player.attemptJailbreak's math so the UI shows real chances.
+            var jbTown = town || (person.townId ? Engine.findTown(person.townId) : null);
+            var jbW = Engine.getWorld ? Engine.getWorld() : null;
+            var jbHr = jbW ? (jbW.hour || 12) : 12;
+            var jbSuccess = 0.05;
+            if (hasSkill('jail_break'))      jbSuccess += 0.20;
+            if (hasSkill('shadow_dealings')) jbSuccess += 0.15;
+            if (hasSkill('discrete'))        jbSuccess += 0.10;
+            if (hasSkill('master_disguise')) jbSuccess += 0.10;
+            if (hasSkill('ghost'))           jbSuccess += 0.20;
+            if (hasSkill('master_forger'))   jbSuccess += 0.10;
+            if (hasSkill('untouchable'))     jbSuccess += 0.10;
+            jbSuccess -= ((jbTown && jbTown.security || 50) / 100) * 0.50;
+            if ((pState.notoriety || 0) >= 50) jbSuccess -= 0.10;
+            if (jbHr >= 20 || jbHr <= 5) jbSuccess += 0.10;
+            jbSuccess = Math.max(0.02, Math.min(0.90, jbSuccess));
+            // Catch only on failure: failureProb × townDetect
+            var jbDetectOnFail = Math.min(0.95, calcDetect(0.55, jbTown));
+            var jbCatch = (1 - jbSuccess) * jbDetectOnFail;
+            var canJB = hasSkill('jail_break') || hasSkill('shadow_dealings') || hasSkill('master_forger') || hasSkill('ghost');
+            var inTownJB = (Player.townId === (person.townId || (jbTown && jbTown.id)));
+            return {
+                icon: '🔓', title: 'Attempt Jail Break', color: '#ff8866',
+                desc: 'Break ' + (person.firstName || 'them') + ' out of ' + (jbTown ? jbTown.name : 'the town') + ' jail. Huge relationship boost on success. Risk of your own imprisonment if caught.',
+                cost: 0, runId: 'jailbreak', confirmLabel: 'Attempt Break Out',
+                allReqsMet: canJB && inTownJB,
+                reqs: [
+                    { text: 'Jail Break, Shadow Dealings, Master Forger, or Ghost skill', met: canJB },
+                    { text: 'You are in ' + (jbTown ? jbTown.name : 'the jail town'), met: inTownJB }
+                ],
+                catchChance: jbCatch, successChance: jbSuccess,
+                successEffect: 'Free the inmate. Relationship → 60 minimum, all cooldowns reset. +10 notoriety, +3 town crime.',
+                caughtPenalty: '800g fine + 14d jail + town rep -25. (A failure goes undetected if detection roll fails.)'
+            };
+        }
         return null;
     }
 
@@ -4887,6 +4923,12 @@ window.UI = (function () {
             case 'poison': result = Player.poisonTarget && Player.poisonTarget(personId); break;
             case 'assassin_hire': result = Player.hireAssassin && Player.hireAssassin(personId, 'competitor'); break;
             case 'assassin_direct': result = Player.directKillNpc && Player.directKillNpc(personId); break;
+            case 'jailbreak': {
+                var _jbPerson = Engine.findPerson ? Engine.findPerson(personId) : null;
+                var _jbTownId = _jbPerson ? _jbPerson.townId : null;
+                result = Player.attemptJailbreak && Player.attemptJailbreak(personId, _jbTownId);
+                break;
+            }
         }
         if (result) {
             var tone = result.success ? 'success' : (result.caught ? 'danger' : 'warning');
@@ -4901,6 +4943,7 @@ window.UI = (function () {
     function hireAssassinFor(personId) { openSchemeConfirm('assassin', personId); }
     function poisonPerson(personId) { openSchemeConfirm('poison', personId); }
     function framePerson(personId) { openSchemeConfirm('frame', personId); }
+    function jailbreakPerson(personId) { openSchemeConfirm('jailbreak', personId); }
 
     function showTownPeople(townId) {
         let people;
@@ -17910,6 +17953,7 @@ window.UI = (function () {
         hireAssassinFor,
         poisonPerson,
         framePerson,
+        jailbreakPerson,
         openSchemeConfirm,
         confirmSchemeRun,
         showTownPeople,
