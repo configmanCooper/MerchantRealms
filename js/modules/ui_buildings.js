@@ -812,6 +812,7 @@
             var _readyInj = true, _readyIll = true;
             var _buildInjList = function(supplies) {
                 var list = [];
+                var allOk = true;
                 for (var _supRes in supplies) {
                     var _supQty = supplies[_supRes];
                     var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0) + (_bldInv[_supRes] || 0);
@@ -829,9 +830,11 @@
                     var _supRe = findResource(_supRes);
                     var _supName = _supRe ? _supRe.name : _supRes;
                     list.push('<span style="color:' + (_supOk ? '#55a868' : 'var(--danger)') + ';">' + _supQty + ' ' + _supName + (_supOk ? ' ✓' : ' ✗') + '</span>');
-                    if (!_supOk) return { list: list, ready: false };
+                    // v9p33river274: keep iterating so ALL required supplies appear in the list,
+                    // not just the first one (early return was hiding splints/poultices/tonics).
+                    if (!_supOk) allOk = false;
                 }
-                return { list: list, ready: true };
+                return { list: list, ready: allOk };
             };
             var _injResult = _buildInjList(_injSupplies);
             var _illResult = _buildInjList(_illSupplies);

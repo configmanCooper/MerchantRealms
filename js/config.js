@@ -4056,15 +4056,12 @@ const NPC_HEALTH_CONFIG = {
     TRADE_ROUTE_SPREAD_MULT: 1.35,      // towns connected by active trade routes spread faster
 
     // --- Treatment supplies consumed per severity ---
-    // Injuries use bandages + splints; illnesses use medicines
-    // v9p33river273: severe injuries also require 1 herbal_poultice (deep
-    // wound dressing). Bandages stop bleeding, splints stabilize fractures,
-    // poultices prevent infection on the worst trauma.
+    // Injuries use bandages + splints + poultices; illnesses use medicines
     TREATMENT_SUPPLIES_INJURY: {
         minor:    { bandages: 1 },
-        moderate: { bandages: 2 },
-        serious:  { bandages: 2, splint: 1 },
-        severe:   { bandages: 2, splint: 2, herbal_poultice: 1 },
+        moderate: { bandages: 1, splint: 1 },
+        serious:  { bandages: 2, splint: 1, herbal_poultice: 1 },
+        severe:   { bandages: 2, splint: 1, herbal_poultice: 1, healing_tonic: 1 },
     },
     TREATMENT_SUPPLIES_ILLNESS: {
         minor:    { herbal_remedy: 1 },
