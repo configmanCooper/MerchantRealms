@@ -16917,11 +16917,14 @@
         }
 
         // Remove any active wars from the war registry
-        if (world.wars) {
-            for (var wId in world.wars) {
-                var war = world.wars[wId];
-                if (war.kingdomA === deadK.id || war.kingdomB === deadK.id) {
-                    delete world.wars[wId];
+        // v9p33river288: wars live in world.activeWars (object map), not
+        // world.wars (which never existed). Without this, destroyed kingdoms
+        // left orphan war entries that confused diplomatic AI.
+        if (world.activeWars) {
+            for (var wId in world.activeWars) {
+                var war = world.activeWars[wId];
+                if (war && (war.kingdomA === deadK.id || war.kingdomB === deadK.id)) {
+                    delete world.activeWars[wId];
                 }
             }
         }
@@ -16932,14 +16935,31 @@
         }
 
         // Remove all alliances
+        // v9p33river288: deadK.alliances is a Set, not an array (engine.js:1193).
+        // The old .length / index / .filter operations were no-ops, so allies
+        // were never unlinked when a kingdom was destroyed.
         if (deadK.alliances) {
-            for (var ai = 0; ai < deadK.alliances.length; ai++) {
-                var allyK = findKingdom(deadK.alliances[ai]);
+            var _deadAllies = (typeof deadK.alliances.forEach === 'function' && typeof deadK.alliances.size === 'number')
+                ? Array.from(deadK.alliances)
+                : (Array.isArray(deadK.alliances) ? deadK.alliances : []);
+            for (var ai = 0; ai < _deadAllies.length; ai++) {
+                var allyK = findKingdom(_deadAllies[ai]);
                 if (allyK && allyK.alliances) {
-                    allyK.alliances = allyK.alliances.filter(function(id) { return id !== deadK.id; });
+                    if (allyK.alliances instanceof Set || (typeof allyK.alliances.delete === 'function' && typeof allyK.alliances.has === 'function')) {
+                        allyK.alliances.delete(deadK.id);
+                    } else if (Array.isArray(allyK.alliances)) {
+                        allyK.alliances = allyK.alliances.filter(function(id) { return id !== deadK.id; });
+                    }
+                }
+                if (allyK && allyK.allianceMeta) {
+                    delete allyK.allianceMeta[deadK.id];
                 }
             }
-            deadK.alliances = [];
+            if (deadK.alliances instanceof Set || typeof deadK.alliances.clear === 'function') {
+                deadK.alliances.clear();
+            } else {
+                deadK.alliances = [];
+            }
         }
 
         // Fire all kingdom employees

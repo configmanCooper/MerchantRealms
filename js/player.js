@@ -13770,7 +13770,11 @@
             case 'political_gossip': {
                 var gKingdom = Engine.findKingdom(person.kingdomId);
                 var atWar = gKingdom && gKingdom.atWar ? Array.from(gKingdom.atWar) : [];
-                var allies = gKingdom && gKingdom.alliances ? [].concat(gKingdom.alliances) : [];
+                // v9p33river288: alliances is a Set — `[].concat(set)` pushes
+                // the Set object itself as a single element instead of
+                // iterating its members, which made Engine.findKingdom fail
+                // and produce '?' ally names. Use Array.from for true iteration.
+                var allies = gKingdom && gKingdom.alliances ? Array.from(gKingdom.alliances) : [];
                 var gossip = '';
                 if (atWar.length > 0) {
                     var enemyNames = atWar.map(function(id) { var k = Engine.findKingdom(id); return k ? k.name : '?'; });
@@ -25362,7 +25366,12 @@
             var kingdoms = world.kingdoms || [];
             var atWar = [];
             for (var i = 0; i < kingdoms.length; i++) {
-                if (kingdoms[i].alive !== false && kingdoms[i].atWar) atWar.push(kingdoms[i]);
+                // v9p33river288: kingdom.atWar is a Set — an empty Set is still
+                // truthy, so the old `kingdoms[i].atWar` check selected peaceful
+                // kingdoms for the at-war military-goods tip. Check size > 0.
+                var _kAtWar = kingdoms[i].atWar;
+                var _hasWar = _kAtWar && ((typeof _kAtWar.size === 'number' && _kAtWar.size > 0) || (Array.isArray(_kAtWar) && _kAtWar.length > 0));
+                if (kingdoms[i].alive !== false && _hasWar) atWar.push(kingdoms[i]);
             }
             if (atWar.length === 0) return null;
             var k = atWar[Math.floor(rng() * atWar.length)];
