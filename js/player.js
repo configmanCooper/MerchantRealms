@@ -8883,8 +8883,14 @@
             // Pick a town for location-based requests
             var kingdom = Engine.findKingdom(ks.kingdomId);
             var townName = 'the capital';
-            if (kingdom && kingdom.towns && kingdom.towns.length > 0) {
-                var tId = kingdom.towns[Math.floor(rng.random() * kingdom.towns.length)];
+            // v9p33river291: kingdom (raw) stores towns under `territories`
+            // (a Set), not `towns`. The old check always failed → audience
+            // text always fell back to 'the capital'.
+            var _kTerr = kingdom && kingdom.territories
+                ? (Array.isArray(kingdom.territories) ? kingdom.territories : Array.from(kingdom.territories))
+                : [];
+            if (_kTerr.length > 0) {
+                var tId = _kTerr[Math.floor(rng.random() * _kTerr.length)];
                 var tObj = null;
                 var wObj = Engine.getWorld();
                 if (wObj && wObj.towns) {
@@ -20285,10 +20291,19 @@
         if (Engine.getKingdoms) {
             var kingdoms = Engine.getKingdoms();
             for (var i = 0; i < kingdoms.length; i++) {
-                if (kingdoms[i].towns && kingdoms[i].towns.indexOf(destTownId) >= 0) {
-                    destKingdom = kingdoms[i];
-                    break;
+                // v9p33river291: kingdoms store towns under `territories`
+                // (a Set in the raw object, an array as serialized by
+                // Engine.getKingdoms()). The old `.towns` field never
+                // existed — destKingdom always stayed null, so closed
+                // borders and exile re-entry were silently never enforced.
+                var _ks = kingdoms[i];
+                var _ter = _ks.territories;
+                var _hasTown = false;
+                if (_ter) {
+                    if (Array.isArray(_ter)) _hasTown = _ter.indexOf(destTownId) >= 0;
+                    else if (typeof _ter.has === 'function') _hasTown = _ter.has(destTownId);
                 }
+                if (_hasTown) { destKingdom = _ks; break; }
             }
         }
         if (!destKingdom) return { allowed: true };

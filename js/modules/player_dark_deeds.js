@@ -320,13 +320,19 @@
         var inHuntKingdom = !!(currentTown && jailKingdomId && currentTown.kingdomId === jailKingdomId);
         var jailTown = currentTown;
         var warpedFrom = null;
-        if (!inHuntKingdom && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
+        // v9p33river291: huntKingdom is a raw kingdom object — towns are in
+        // `territories` (a Set), not `towns`. The old `.towns` field never
+        // existed, so cross-kingdom jail warping never happened.
+        var _hkTerr = huntKingdom && huntKingdom.territories
+            ? (Array.isArray(huntKingdom.territories) ? huntKingdom.territories : Array.from(huntKingdom.territories))
+            : [];
+        if (!inHuntKingdom && huntKingdom && _hkTerr.length) {
             var pPos = null;
             try { if (Player.getPlayerWorldPosition) pPos = Player.getPlayerWorldPosition(); } catch(_e) {}
             if (!pPos && currentTown) pPos = { x: currentTown.x, y: currentTown.y };
             var bestTown = null, bestDist = Infinity;
-            for (var hi = 0; hi < huntKingdom.towns.length; hi++) {
-                var ht = Engine.findTown(huntKingdom.towns[hi]);
+            for (var hi = 0; hi < _hkTerr.length; hi++) {
+                var ht = Engine.findTown(_hkTerr[hi]);
                 if (!ht) continue;
                 var d = pPos ? Math.hypot(ht.x - pPos.x, ht.y - pPos.y) : 0;
                 if (d < bestDist) { bestDist = d; bestTown = ht; }
@@ -641,7 +647,13 @@
         var _extraditionTown = null;
         var _origLocLabel = currentTown ? currentTown.name : 'the wilderness';
         var _playerInHuntKingdom = !!(currentTown && currentTown.kingdomId === kId);
-        if (!_playerInHuntKingdom && huntKingdom && huntKingdom.towns && huntKingdom.towns.length) {
+        // v9p33river291: huntKingdom comes from Engine.findKingdom (raw),
+        // so towns are in `territories` (a Set). The old `.towns` field was
+        // undefined → manhunt extradition never warped the player.
+        var _hkTerr2 = huntKingdom && huntKingdom.territories
+            ? (Array.isArray(huntKingdom.territories) ? huntKingdom.territories : Array.from(huntKingdom.territories))
+            : [];
+        if (!_playerInHuntKingdom && huntKingdom && _hkTerr2.length) {
             // Find player's current world position
             var _pPos = null;
             try { if (Player.getPlayerWorldPosition) _pPos = Player.getPlayerWorldPosition(); } catch (_e) {}
@@ -649,8 +661,8 @@
             // Find closest town in hunting kingdom
             var _bestTown = null;
             var _bestDist = Infinity;
-            for (var _hi = 0; _hi < huntKingdom.towns.length; _hi++) {
-                var _ht = Engine.findTown(huntKingdom.towns[_hi]);
+            for (var _hi = 0; _hi < _hkTerr2.length; _hi++) {
+                var _ht = Engine.findTown(_hkTerr2[_hi]);
                 if (!_ht) continue;
                 var _d;
                 if (_pPos) _d = Math.hypot(_ht.x - _pPos.x, _ht.y - _pPos.y);

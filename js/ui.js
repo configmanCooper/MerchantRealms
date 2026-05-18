@@ -15922,7 +15922,15 @@ window.UI = (function () {
                         totalTroops += (kTowns[ti].troops || 0);
                         totalGarrison += (kTowns[ti].garrison || 0);
                     }
-                    var atWar = kk.atWar && kk.atWar.size > 0;
+                    // v9p33river291: Engine.getKingdoms() serializes Sets to
+                    // arrays (engine.js:31811 `atWar: [...k.atWar]`), so
+                    // `kk.atWar.size` was undefined — the god-mode military
+                    // panel always rendered every kingdom as not-at-war.
+                    var _kkAtWar = kk.atWar;
+                    var atWar = !!(_kkAtWar && (
+                        (Array.isArray(_kkAtWar) && _kkAtWar.length > 0) ||
+                        (typeof _kkAtWar.size === 'number' && _kkAtWar.size > 0)
+                    ));
                     var warText = atWar ? ' ⚔️ AT WAR' : '';
                     var barWidth = Math.min(100, totalTroops / 5);
                     html += '<div style="margin:3px 0; padding:3px; background:#1e1e2e; border-radius:3px; border-left:2px solid ' + (atWar ? '#f44' : '#4a4') + ';">';
