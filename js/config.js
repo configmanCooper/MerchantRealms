@@ -4057,13 +4057,14 @@ const NPC_HEALTH_CONFIG = {
 
     // --- Treatment supplies consumed per severity ---
     // Injuries use bandages + splints; illnesses use medicines
-    // v9p33river272: simpler injury supplies — bandages cover wounds, splints
-    // stabilize fractures. No more herbal_poultice/healing_tonic gating.
+    // v9p33river273: severe injuries also require 1 herbal_poultice (deep
+    // wound dressing). Bandages stop bleeding, splints stabilize fractures,
+    // poultices prevent infection on the worst trauma.
     TREATMENT_SUPPLIES_INJURY: {
         minor:    { bandages: 1 },
         moderate: { bandages: 2 },
         serious:  { bandages: 2, splint: 1 },
-        severe:   { bandages: 2, splint: 2 },
+        severe:   { bandages: 2, splint: 2, herbal_poultice: 1 },
     },
     TREATMENT_SUPPLIES_ILLNESS: {
         minor:    { herbal_remedy: 1 },
