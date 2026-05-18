@@ -1004,6 +1004,12 @@
         player.musician.songsComposed.push({ theme: theme, day: day, quality: player.musician.musicSkill });
         
         // Theme-specific fame bonuses
+        // v9p33river295: fameBonus starts as a small fraction (0.25 at skill <50)
+        // and theme multipliers were wrapped in Math.floor(), which collapsed
+        // every themed bonus to 0 (floor(0.25*2)=0, floor(0.25*1.5)=0, etc.).
+        // So war/love/comedy/epic songs added 0 fame while nature/tragedy
+        // (no multiplier) added the fractional base. Drop Math.floor on the
+        // intermediate multiplies; final fame is naturally clamped to 100.
         var kingdoms = Engine.getKingdoms();
         var fameBonus = 0.25 + Math.floor(player.musician.musicSkill / 50) * 0.1;
         for (var ki = 0; ki < kingdoms.length; ki++) {
@@ -1011,16 +1017,16 @@
             var bonus = fameBonus;
             // War songs boost more in kingdoms at war
             if (theme === 'war' && k.atWar && (Array.isArray(k.atWar) ? k.atWar.length > 0 : k.atWar.size > 0)) {
-                bonus = Math.floor(bonus * 2);
+                bonus = bonus * 2;
             }
             // Love songs popular in peaceful kingdoms
             if (theme === 'love' && (!k.atWar || (k.atWar instanceof Set ? k.atWar.size === 0 : (Array.isArray(k.atWar) ? k.atWar.length === 0 : true)))) {
-                bonus = Math.floor(bonus * 1.5);
+                bonus = bonus * 1.5;
             }
             // Comedy popular everywhere (slight universal bonus)
-            if (theme === 'comedy') bonus = Math.floor(bonus * 1.3);
+            if (theme === 'comedy') bonus = bonus * 1.3;
             // Epic songs boost in large kingdoms
-            if (theme === 'epic') bonus = Math.floor(bonus * 1.4);
+            if (theme === 'epic') bonus = bonus * 1.4;
             player.musician.fame[k.id] = Math.min(100, (player.musician.fame[k.id] || 0) + bonus);
         }
         

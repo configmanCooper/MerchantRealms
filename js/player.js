@@ -26160,6 +26160,38 @@
         if (player.inventory[deal.resourceId] <= 0) delete player.inventory[deal.resourceId];
 
         var payment = deliverQty * deal.pricePerUnit;
+
+        // v9p33river295: previously this minted gold (no kingdom deduction),
+        // delivered nothing to the kingdom's stockpiles, and left the
+        // kingdom-side deal record (created via Engine.addKingdomSupplyDeal)
+        // untouched. Mirror the procurer/EM pattern at
+        // engine_diplomacy.js:470-484 and engine_elite_merchants.js:1983-1990.
+        var _rawKingdom = Engine.findKingdom ? Engine.findKingdom(deal.kingdomId) : null;
+        if (_rawKingdom) {
+            _rawKingdom.gold = (_rawKingdom.gold || 0) - payment;
+            var _milItems = ['swords', 'armor', 'bows', 'arrows', 'horses', 'saddles', 'shields'];
+            if (_milItems.indexOf(deal.resourceId) >= 0) {
+                if (!_rawKingdom.militaryStockpile) _rawKingdom.militaryStockpile = {};
+                _rawKingdom.militaryStockpile[deal.resourceId] = (_rawKingdom.militaryStockpile[deal.resourceId] || 0) + deliverQty;
+            } else {
+                if (!_rawKingdom.goodsStockpile) _rawKingdom.goodsStockpile = {};
+                _rawKingdom.goodsStockpile[deal.resourceId] = (_rawKingdom.goodsStockpile[deal.resourceId] || 0) + deliverQty;
+            }
+            // Update the matching kingdom-side procurement deal record so
+            // its totalDelivered/lastDeliveryDay reflect reality (used by
+            // UI and by missed-month/reliability tracking).
+            if (_rawKingdom.procurement && _rawKingdom.procurement.deals) {
+                for (var _kdi = 0; _kdi < _rawKingdom.procurement.deals.length; _kdi++) {
+                    var _kdeal = _rawKingdom.procurement.deals[_kdi];
+                    if (_kdeal && _kdeal.id === deal.id) {
+                        _kdeal.totalDelivered = (_kdeal.totalDelivered || 0) + deliverQty;
+                        _kdeal.lastDeliveryDay = Engine.getDay();
+                        break;
+                    }
+                }
+            }
+        }
+
         player.gold += payment;
         player.stats.totalGoldEarned += payment;
         deal.totalDelivered += deliverQty;
@@ -36005,7 +36037,17 @@
             for (var pki = 0; pki < playerKIds.length && !hasWar; pki++) {
                 if (!playerKIds[pki]) continue;
                 for (var bki = 0; bki < bkKingdoms.length; bki++) {
-                    if (bkKingdoms[bki].id === playerKIds[pki] && bkKingdoms[bki].atWar && bkKingdoms[bki].atWar.size > 0) {
+                    if (bkKingdoms[bki].id !== playerKIds[pki]) continue;
+                    // v9p33river295: bkKingdoms came from Engine.getKingdoms()
+                    // which serializes atWar to an array. `.size > 0` was
+                    // always false on arrays — fall back path never detected
+                    // a war. Accept either form.
+                    var _bkAtWar = bkKingdoms[bki].atWar;
+                    var _bkHasWar = _bkAtWar && (
+                        (Array.isArray(_bkAtWar) && _bkAtWar.length > 0) ||
+                        (typeof _bkAtWar.size === 'number' && _bkAtWar.size > 0)
+                    );
+                    if (_bkHasWar) {
                         hasWar = true;
                         warKingdomId = playerKIds[pki];
                         break;

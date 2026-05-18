@@ -521,7 +521,16 @@
             else if (player.traveling) category = 'trading';
             var kingdoms = Engine.getKingdoms();
             var playerK = kingdoms.find(function(k) { return k.id === player.citizenshipKingdomId; });
-            if (playerK && playerK.atWar && playerK.atWar.size > 0) category = 'war';
+            // v9p33river295: Engine.getKingdoms() serializes atWar to an
+            // array (engine.js:31826 `atWar: [...k.atWar]`), so `.size > 0`
+            // was always false and the 'war' dialogue category was
+            // unreachable. Check both Array.length and Set.size to be safe.
+            var _famAtWar = playerK && playerK.atWar;
+            var _famAtWarOn = _famAtWar && (
+                (Array.isArray(_famAtWar) && _famAtWar.length > 0) ||
+                (typeof _famAtWar.size === 'number' && _famAtWar.size > 0)
+            );
+            if (_famAtWarOn) category = 'war';
             else if (player.gold > 2000) category = 'building';
 
             var lines = plans[category] || plans.saving || ['We should plan carefully.'];

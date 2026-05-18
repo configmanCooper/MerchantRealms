@@ -32561,6 +32561,15 @@
             }
             k.gold -= payment;
             const completed = order.qtyDelivered >= order.qty;
+            // v9p33river295: completion bonus was returned to the caller
+            // (player.js:26035 / engine_elite_merchants.js:2020) and added
+            // to the merchant's gold, but never deducted from kingdom
+            // treasury — it was effectively minted. Charge it here so the
+            // bonus is paid out of kingdom gold.
+            const completionBonus = completed ? (order.bonusOnCompletion || 0) : 0;
+            if (completionBonus > 0) {
+                k.gold -= completionBonus;
+            }
             if (completed) {
                 order.status = 'completed';
                 const pref = k.procurement.preferredMerchants[merchantId] || { reliability: 50, completedOrders: 0, failedOrders: 0 };
@@ -32573,7 +32582,7 @@
                     merchant.ordersCompleted = (merchant.ordersCompleted || 0) + 1;
                 }
             }
-            return { success: true, payment: payment, completed: completed, bonus: completed ? order.bonusOnCompletion : 0, qtyDelivered: deliverQty };
+            return { success: true, payment: payment, completed: completed, bonus: completionBonus, qtyDelivered: deliverQty };
         },
         addKingdomSupplyDeal(kingdomId, deal) {
             if (!world) return false;

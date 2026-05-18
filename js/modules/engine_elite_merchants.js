@@ -2017,7 +2017,12 @@
                             pref.reliability = Math.min(100, pref.reliability + 10);
                             pref.completedOrders = (pref.completedOrders || 0) + 1;
                             k.procurement.preferredMerchants[em.id] = pref;
-                            em.gold = (em.gold || 0) + (order.bonusOnCompletion || 0);
+                            // v9p33river295: also deduct the completion bonus
+                            // from kingdom treasury (was previously minted —
+                            // EM gained the bonus but kingdom didn't pay).
+                            var _emBonus = order.bonusOnCompletion || 0;
+                            em.gold = (em.gold || 0) + _emBonus;
+                            if (_emBonus > 0) k.gold = (k.gold || 0) - _emBonus;
                             em.ordersCompleted = (em.ordersCompleted || 0) + 1;
                             grantEmXp(em, Math.max(5, Math.floor(order.qty / 10)), 'order');
                         }
