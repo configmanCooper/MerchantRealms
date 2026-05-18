@@ -471,16 +471,20 @@ window.UI = (function () {
         registerAction('openNobilityDialog', function() { UI.openNobilityDialog(); });
         registerAction('openSpousePanel', function() { UI.openSpousePanel(); });
         registerAction('showPersonDetail', function(_t, d) { if (d.id) UI.showPersonDetail(d.id); });
+        // v9p33river296/297: removed broken stubs that overwrote module handlers.
         // v9p33river296: removed broken stub `registerAction('specialAction', ...)`
         // that required d.id, overwriting the proper handler in
         // ui_kingdom.js (reads d.type). Buttons only set data-type, so
         // all pilgrim/scholar/etc special-start actions were dead.
+        // v9p33river297: removed broken stub `registerAction('spouseInteraction',...)`
+        // that required d.id. Spouse buttons set data-type — the proper
+        // handler (ui_kingdom.js, now fixed to read d.type) is the only
+        // one needed.
         // v9p33river76: removed broken stub `registerAction('familyAction', ...)`
         // that was overwriting the proper handler in ui_kingdom.js (which loads
         // earlier but bindEvents runs after, last-write-wins). The stub passed
         // only one arg so dinner/celebration/advice/caretake never fired and
         // per-family-member buttons routed the wrong values to the handler.
-        registerAction('spouseInteraction', function(_t, d) { if (d.id) UI.spouseInteraction(d.id); });
         registerAction('treatCompanionUI', function(_t, d) { if (d.type) treatCompanionUI(d.type, d.id, d.val); });
         registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val) setNotifFilter(d.key, d.val); });
         registerAction('setTradeQty', function(_t, d) { if (d.type && d.id) setTradeQty(d.type, d.id, parseInt(d.qty)||1, parseFloat(d.price)||0); });
@@ -489,7 +493,11 @@ window.UI = (function () {
         registerAction('_bldWithdraw', function(_t, d) { if (d.id) UI._bldWithdraw(d.id, d.val, parseInt(d.qty)); });
         registerAction('switchOrdersTab', function(_t, d) { if (d.tab) UI.switchOrdersTab(d.tab); });
         registerAction('_switchKQTab', function(_t, d) { if (d.tab && d.kingdom) UI._switchKQTab(d.tab, d.kingdom); });
-        registerAction('executeAdvice', function(_t, d) { if (d.kingdom && d.type && d.val) UI.executeAdvice(d.kingdom, d.type, d.val); });
+        // v9p33river297: removed dead `executeAdvice` stub here that required
+        // d.val. Lower/raise taxes & build_walls advice rows (ui_guide.js:
+        // 612-620) only set data-kingdom + data-type — they don't need val.
+        // The canonical handler at ui_guide.js:1507-1509 is permissive and
+        // forwards (kingdom, type, val) correctly.
         registerAction('openCaravanManagement', function(_t, d) { UI.openCaravanManagement(d.id); });
         registerAction('confirmKingFlee', function() { if (UI._confirmKingFlee) UI._confirmKingFlee(); });
         registerAction('resolveRevolt', function(_t, d) { if (d.kingdom && d.choice && UI._resolveRevolt) UI._resolveRevolt(d.kingdom, d.choice); });
@@ -698,7 +706,11 @@ window.UI = (function () {
         registerAction('enlistAsSoldier', function(_t, d) { if (d.id) UI.enlistAsSoldier(d.id); });
         registerAction('quitMilitary', function() { UI.quitMilitary(); });
         registerAction('buyInfoBrokerTip', function() { UI.buyInfoBrokerTip(); });
-        registerAction('openAchievementsDialog', function(_t, d) { if (d.id) UI.openAchievementsDialog(d.id, d.val || undefined); });
+        // v9p33river297: was `if (d.id) UI.openAchievementsDialog(d.id, ...)`,
+        // which killed the no-argument Achievements button on the end-of-life
+        // screen (ui.js:8617 sets no data-id). openAchievementsDialog() handles
+        // no-arg invocation fine — remove the guard.
+        registerAction('openAchievementsDialog', function(_t, d) { UI.openAchievementsDialog(d.id || undefined, d.val || undefined); });
         registerAction('_achPopupClick', function(_t, d) { if (d.id) UI._achPopupClick(d.id); });
         registerAction('restUI', function(_t, d) { if (d.id) UI.restUI(d.id); });
         registerAction('_buyLandFull', function() { UI._buyLandFull(); });
@@ -731,7 +743,10 @@ window.UI = (function () {
         registerAction('stableHorseUI', function(_t, d) { if (d.id) UI.stableHorseUI(d.id); });
         registerAction('openHomeStorageUI', function(_t, d) { if (d.id) UI.openHomeStorageUI(d.id); });
         registerAction('unstableHorseUI', function(_t, d) { if (d.id && d.val) UI.unstableHorseUI(d.id, d.val); });
-        registerAction('_toggleVisibility', function(_t, d) { var id = d.param1 || 'otherShipsSection'; var el = document.getElementById(id); if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; if (d.param2) UI._expandedNotifCategory = (el.style.display === 'none') ? null : d.param2; } });
+        // v9p33river297: also accept d.id (event-log grouped entries at ui.js:7032
+        // set data-id, not data-param1). Without this, grouped event-log rows
+        // expanded the wrong element (otherShipsSection fallback).
+        registerAction('_toggleVisibility', function(_t, d) { var id = d.param1 || d.id || 'otherShipsSection'; var el = document.getElementById(id); if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; if (d.param2) UI._expandedNotifCategory = (el.style.display === 'none') ? null : d.param2; } });
         registerAction('buyShipAndOpenShipsDialog', function(_t, d) { UI.buyShip(d.id); UI.openShipsDialog(); });
         registerAction('showShipAddons', function(_t, d) { if (d.id) UI.showShipAddons(d.id); });
         registerAction('repairShipAndOpenShipsDialog', function(_t, d) { Player.repairShip(d.id); UI.openShipsDialog(); });

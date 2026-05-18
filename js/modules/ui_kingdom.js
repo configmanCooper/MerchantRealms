@@ -2104,7 +2104,12 @@
     UI.registerAction('giveFamilyItemDialog', function(_t, d) { giveFamilyItemDialog(d.id, d.val); });
     UI.registerAction('openSpousePanel', function() { openSpousePanel(); });
     UI.registerAction('tryForBaby', function() { tryForBaby(); });
-    UI.registerAction('spouseInteraction', function(_t, d) { spouseInteraction(d.id); });
+    // v9p33river297: spouse buttons set data-type=spend_time/give_gold/
+    // ask_work/etc and spouseInteraction(action) expects that string.
+    // Old handler read d.id (undefined → always called spouseInteraction(undefined))
+    // and was further killed by ui.js:480's `if (d.id) ...` guard. Fix both:
+    // read d.type here (the canonical handler) and the ui.js stub is removed.
+    UI.registerAction('spouseInteraction', function(_t, d) { spouseInteraction(d.type); });
 
     // --- Special start & journal actions ---
     UI.registerAction('openStartJournal', function() { openStartJournal(); });

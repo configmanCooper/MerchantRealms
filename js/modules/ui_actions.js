@@ -4746,7 +4746,7 @@ function clickTown(townId) {
     UI.registerAction('hireInvestigator', function(_t, d) { UI.hireInvestigator(d.id); });
     UI.registerAction('requestSameRankIntro', function(_t, d) { UI.requestSameRankIntro(d.id); });
     UI.registerAction('openNobleLoanDialog', function(_t, d) { UI.openNobleLoanDialog(d.id); });
-    UI.registerAction('openRecruitToOutpostDialog', function(_t, d) { UI.openRecruitToOutpostDialog(d.id); });
+    UI.registerAction('openRecruitToOutpostDialog', function(_t, d) { UI.openRecruitToOutpostDialog(d.id, d.val); });
     UI.registerAction('proposeTo', function(_t, d) { UI.proposeTo(d.id); });
     UI.registerAction('hirePerson', function(_t, d) { UI.hirePerson(d.id); });
     UI.registerAction('stealFromPerson', function(_t, d) { UI.stealFromPerson(d.id); });
