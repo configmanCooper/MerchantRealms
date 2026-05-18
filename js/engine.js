@@ -3151,7 +3151,7 @@
             'smokehouse': { preserved_food: 15 },
             'apothecary': { herbal_remedy: 10, healing_tonic: 5, fever_tonic: 5, antidote: 3, herbal_poultice: 5 },
             'advanced_apothecary': { herbal_remedy: 15, healing_tonic: 10, fever_tonic: 10, antidote: 8, herbal_poultice: 10, splint: 10 },
-            'bandage_workshop': { bandages: 15, splint: 8, herbal_poultice: 8 },
+            'bandage_workshop': { bandages: 20, splint: 12, herbal_poultice: 8 },
             'herb_garden': { herbs: 20 },
             'herbalist_hut': { herbal_tea: 10 },
             'wheelwright': { cart: 5, small_wagon: 2, wagon: 1 },
