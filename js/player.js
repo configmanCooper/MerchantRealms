@@ -5298,7 +5298,16 @@
 
         // Add horse to player
         if (!player.horses) player.horses = [];
-        player.horses.push({ name: 'Horse', stamina: 100, maxStamina: 100, speed: 1.0 });
+        // v9p33river285: give the horse a stable id so sellHorse / mountSaddle /
+        // dismountHorse (which look up by horse.id) can manage it later.
+        var _bhRng = Engine.getRng ? Engine.getRng() : null;
+        player.horses.push({
+            id: 'horse_' + Engine.getDay() + '_' + (_bhRng ? _bhRng.randInt(0, 99999) : Math.floor(Math.random() * 100000)),
+            name: 'Horse',
+            stamina: 100,
+            maxStamina: 100,
+            speed: 1.0
+        });
 
         Engine.logEvent('🐴 Bought a horse for ' + cost + 'g!', { type: 'purchase' }, 'my_actions');
 
@@ -9949,7 +9958,10 @@
         if (!kingdom || !target) return { success: false, message: 'Kingdom not found.' };
 
         // Check not at war
-        if (kingdom.wars && kingdom.wars.indexOf(targetKingdomId) >= 0) {
+        // v9p33river285: kingdoms expose active wars via `atWar` (a Set), not
+        // a `wars` array — the old check was a no-op so the player king could
+        // propose trade with active war enemies.
+        if (kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(targetKingdomId)) {
             return { success: false, message: 'Cannot propose trade with a kingdom you are at war with.' };
         }
 

@@ -722,6 +722,7 @@ window.UI = (function () {
         registerAction('repairShipAndOpenShipsDialog', function(_t, d) { Player.repairShip(d.id); UI.openShipsDialog(); });
         // v9p33river74
         registerAction('openShipCargo', function(_t, d) { if (d.id) UI.openShipCargoDialog(d.id); });
+        registerAction('openShipsDialog', function() { if (UI.openShipsDialog) UI.openShipsDialog(); });
         registerAction('shipCargoLoad', function(_t, d) { UI._shipCargoTransfer(d.id, d.res, parseInt(d.qty), 'load'); });
         registerAction('shipCargoUnload', function(_t, d) { UI._shipCargoTransfer(d.id, d.res, parseInt(d.qty), 'unload'); });
         registerAction('openGuildsPanel', function() { UI.openGuildsPanel(); });

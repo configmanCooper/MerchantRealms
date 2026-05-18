@@ -108,7 +108,10 @@
             player.travelBySea = true;
             player.travelPaid = true;
             player.travelOrigin = townId;
-            player.travelMode = 'npc_sea';
+            // v9p33river285: use 'npc_vessel' (the canonical paid-sea mode) so
+            // the energy drain code in player.js recognises it as paid transport
+            // (was 'npc_sea', which fell through to the walking-drain branch).
+            player.travelMode = 'npc_vessel';
             player.travelTotalDist = (seaRoute.distance || 500);
             // NPC ships are reasonably fast
             player.travelTotalDist *= 0.7;
@@ -135,6 +138,13 @@
             player.travelProgress = 0;
             player.travelDestination = service.destinationTownId;
             player.travelRoute = route;
+            // v9p33river285: mark paid land transport so energy drain treats it
+            // as 'npc_carriage' (passive drain only) instead of walking, and so
+            // the player cannot turn back mid-route.
+            player.travelOrigin = townId;
+            player.travelPaid = true;
+            player.travelMode = 'npc_carriage';
+            player.travelBySea = false;
             player.travelTotalDist = totalDist;
         }
 
