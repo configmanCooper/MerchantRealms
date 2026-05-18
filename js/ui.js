@@ -1599,6 +1599,11 @@ window.UI = (function () {
         if (typeof Guidance !== 'undefined' && Guidance.update) {
             try { Guidance.update(); } catch (e) { /* no-op */ }
         }
+
+        // v9p33river283: keep story/tutorial tab highlights in sync every UI cycle
+        // (otherwise stale highlights persist when paused / at normal speed because
+        // updateDateDisplay — which previously hosted this call — only runs at FF speeds)
+        try { _updateTabGlows(); } catch (_e) { /* no-op */ }
     }
 
     function updateReputationBars() {
@@ -10222,17 +10227,22 @@ window.UI = (function () {
         // Apply story mode objective highlights to freshly rendered sub-menu buttons AND tab buttons
         if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && StoryMode.getButtonHints) {
             var stHints = StoryMode.getButtonHints();
+            // v9p33river283: even with no hints (or hints not on this tab), clear stale
+            // highlights from non-hint tabs so a freshly-opened tab doesn't appear
+            // co-highlighted alongside the real hint tab.
+            var hintTabs = {};
+            for (var hi = 0; hi < stHints.length; hi++) { hintTabs[stHints[hi].tab] = true; }
+            for (var ti = 0; ti < tabs.length; ti++) {
+                var tc = tabs[ti].dataset.category;
+                if (!tc) continue;
+                if (hintTabs[tc]) {
+                    tabs[ti].classList.add('tutorial-highlight');
+                } else {
+                    tabs[ti].classList.remove('tutorial-highlight');
+                }
+            }
             if (stHints.length) {
                 _applyStorySubMenuHighlights(stHints);
-                // Also apply tab-level highlights immediately
-                var hintTabs = {};
-                for (var hi = 0; hi < stHints.length; hi++) { hintTabs[stHints[hi].tab] = true; }
-                for (var ti = 0; ti < tabs.length; ti++) {
-                    var tc = tabs[ti].dataset.category;
-                    if (tc && hintTabs[tc]) {
-                        tabs[ti].classList.add('tutorial-highlight');
-                    }
-                }
             }
         }
         // Re-apply tutorial highlights if the tutorial system has an active highlight for this tab
