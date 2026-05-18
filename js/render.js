@@ -5105,9 +5105,11 @@ window.Renderer = (function () {
         }
 
         var activeWars = 0;
-        if (world && world.wars) {
-            for (var wi = 0; wi < world.wars.length; wi++) {
-                if (world.wars[wi].active !== false) activeWars++;
+        // v9p33river287: active wars live in world.activeWars (an object map
+        // keyed by warId), not world.wars (which is an undefined/legacy field).
+        if (world && world.activeWars) {
+            for (var wId in world.activeWars) {
+                if (world.activeWars[wId] && world.activeWars[wId].active !== false) activeWars++;
             }
         }
 

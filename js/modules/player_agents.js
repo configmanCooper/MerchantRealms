@@ -886,15 +886,17 @@
             // Use same caught penalty logic as hostile (own/foreign/at-war tiers)
             var isForeignAtWar = false;
             if (isForeignKingdom) {
-                var w = Engine.getWorldState ? Engine.getWorldState() : null;
-                if (w && w.wars) {
-                    for (var wi = 0; wi < w.wars.length; wi++) {
-                        var war = w.wars[wi];
-                        if ((war.attackerId === player.citizenshipKingdomId && war.defenderId === agentKingdomId) ||
-                            (war.defenderId === player.citizenshipKingdomId && war.attackerId === agentKingdomId)) {
-                            isForeignAtWar = true;
-                            break;
-                        }
+                // v9p33river287: wars live in world.activeWars (object map),
+                // not world.wars (which never existed). Each war uses
+                // kingdomA/kingdomB, not attackerId/defenderId.
+                var _agActiveWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+                for (var _agWid in _agActiveWars) {
+                    var war = _agActiveWars[_agWid];
+                    if (!war) continue;
+                    if ((war.kingdomA === player.citizenshipKingdomId && war.kingdomB === agentKingdomId) ||
+                        (war.kingdomB === player.citizenshipKingdomId && war.kingdomA === agentKingdomId)) {
+                        isForeignAtWar = true;
+                        break;
                     }
                 }
             }

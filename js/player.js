@@ -7943,15 +7943,15 @@
 
         switch (directive.directiveType) {
             case 'supply_warfront':
-                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.intBetween(5, 12));
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(5, 12));
                 Engine.logEvent('📜 ' + nobleName + ' has delivered military supplies to the front lines. Military strength increased.');
                 break;
             case 'recruit_soldiers':
-                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.intBetween(3, 8));
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(3, 8));
                 Engine.logEvent('📜 ' + nobleName + ' has recruited new soldiers for the army.');
                 break;
             case 'fortify_border':
-                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.intBetween(4, 10));
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(4, 10));
                 Engine.logEvent('📜 ' + nobleName + ' has fortified border defenses.');
                 break;
             case 'scout_enemy':
@@ -7962,7 +7962,7 @@
                 try {
                     var _pTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && t.plagueActive; });
                     if (_pTowns.length > 0) {
-                        var _pt = _pTowns[rng.intBetween(0, _pTowns.length - 1)];
+                        var _pt = _pTowns[rng.randInt(0, _pTowns.length - 1)];
                         _pt.plagueActive = false;
                         Engine.logEvent('📜 ' + nobleName + ' delivered medical aid to ' + _pt.name + '. The plague has been contained!');
                     } else {
@@ -7974,48 +7974,48 @@
                 Engine.logEvent('📜 ' + nobleName + ' has enforced quarantine measures. Plague spread slowed.');
                 break;
             case 'food_relief':
-                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.intBetween(3, 8));
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.randInt(3, 8));
                 Engine.logEvent('📜 ' + nobleName + ' distributed food to starving towns. Happiness improved.');
                 break;
             case 'quell_unrest':
-                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.intBetween(5, 12));
-                kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.intBetween(5, 15));
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.randInt(5, 12));
+                kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.randInt(5, 15));
                 Engine.logEvent('📜 ' + nobleName + ' has restored order. Happiness increased, unrest decreased.');
                 break;
             case 'distribute_gold':
                 var _cost = Math.min(kingdom.gold || 0, 500);
                 kingdom.gold = Math.max(0, (kingdom.gold || 0) - _cost);
-                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.intBetween(5, 10));
+                kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.randInt(5, 10));
                 Engine.logEvent('📜 ' + nobleName + ' distributed ' + _cost + 'g of royal aid. The people are grateful.');
                 break;
             case 'collect_taxes':
-                var _taxRevenue = rng.intBetween(500, 1500);
+                var _taxRevenue = rng.randInt(500, 1500);
                 kingdom.gold = (kingdom.gold || 0) + _taxRevenue;
-                kingdom.happiness = Math.max(0, (kingdom.happiness || 50) - rng.intBetween(2, 5));
+                kingdom.happiness = Math.max(0, (kingdom.happiness || 50) - rng.randInt(2, 5));
                 Engine.logEvent('📜 ' + nobleName + ' collected ' + _taxRevenue + 'g in special taxes. Treasury boosted, but people are displeased.');
                 break;
             case 'trade_expedition':
-                var _tradeProfit = rng.intBetween(300, 1200);
+                var _tradeProfit = rng.randInt(300, 1200);
                 kingdom.gold = (kingdom.gold || 0) + _tradeProfit;
                 Engine.logEvent('📜 ' + nobleName + '\'s trade expedition returned with ' + _tradeProfit + 'g profit for the crown.');
                 break;
             case 'build_roads':
-                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.intBetween(2, 5));
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.randInt(2, 5));
                 Engine.logEvent('📜 ' + nobleName + ' has improved road infrastructure. Trade flows more freely.');
                 break;
             case 'build_buildings':
-                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.intBetween(3, 7));
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.randInt(3, 7));
                 Engine.logEvent('📜 ' + nobleName + ' oversaw construction of new buildings in the kingdom.');
                 break;
             case 'diplomatic_mission':
                 Engine.logEvent('📜 ' + nobleName + ' completed a diplomatic mission to a neighboring kingdom.');
                 break;
             case 'trade_agreement':
-                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.intBetween(2, 5));
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.randInt(2, 5));
                 Engine.logEvent('📜 ' + nobleName + ' negotiated favorable trade terms.');
                 break;
             case 'suppress_smuggling':
-                kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.intBetween(3, 8));
+                kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.randInt(3, 8));
                 Engine.logEvent('📜 ' + nobleName + ' broke up a smuggling ring. Order restored.');
                 break;
             case 'capture_criminal':
@@ -34390,8 +34390,12 @@
             for (var warId in activeWars) {
                 var war = activeWars[warId];
                 if (!war) continue;
-                var sides = war.sides || [war.attackerId, war.defenderId];
-                if (sides.length < 2) continue;
+                // v9p33river287: war objects use kingdomA/kingdomB (per
+                // engine_diplomacy.js declareWar). The old defensive fallback
+                // [war.attackerId, war.defenderId] was always [undefined, undefined],
+                // so warzone detection never triggered.
+                var sides = war.sides || [war.kingdomA, war.kingdomB];
+                if (sides.length < 2 || !sides[0] || !sides[1]) continue;
                 var fromSide = sides.indexOf(fromTown.kingdomId);
                 var toSide = sides.indexOf(toTown.kingdomId);
                 if (fromSide >= 0 && toSide >= 0 && fromSide !== toSide) { inWarzone = true; break; }
@@ -34416,9 +34420,10 @@
         // Enemy citizen bonus
         for (var wid in activeWars) {
             var w = activeWars[wid];
-            var wSides = w.sides || [w.attackerId, w.defenderId];
+            // v9p33river287: war objects use kingdomA/kingdomB, not attackerId/defenderId.
+            var wSides = w.sides || [w.kingdomA, w.kingdomB];
             for (var s = 0; s < wSides.length; s++) {
-                if (wSides[s] !== player.citizenshipKingdomId) {
+                if (wSides[s] && wSides[s] !== player.citizenshipKingdomId) {
                     var enemySide = wSides[s];
                     var routeTowns = route.map(r => Engine.findTown(r.toTownId)).filter(Boolean);
                     if (routeTowns.some(t => t.kingdomId === enemySide)) {
