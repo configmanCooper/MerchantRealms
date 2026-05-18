@@ -16032,11 +16032,22 @@ window.UI = (function () {
             html += ' <span style="font-size:0.7rem;color:#8ba;margin-left:6px;" title="As a noble, the kingdom provides up to ' + (CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4) + ' guards at no cost to you. You may hire up to ' + (maxGuards - (CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4)) + ' additional guards.">(👑 ' + kingdomGuards + ' kingdom + ' + (guards.length - kingdomGuards) + ' personal)</span>';
         }
         if (guards.length < maxGuards) {
-            var canAfford = (Player.gold || 0) >= cost;
+            // v9p33river284: first story guard is free — show 0g and enabled-looking button
+            var _isFirstStoryGuard = !!(Player.storyMode && Player.storyMode.active && guards.length === 0 && !Player.storyMode._firstGuardHired);
+            var effectiveCost = _isFirstStoryGuard ? 0 : cost;
+            var canAfford = (Player.gold || 0) >= effectiveCost;
             var inTown = !!Player.townId && !Player.traveling;
             var btnStyle = (canAfford && inTown) ? 'background:#2a5a2a;border-color:#4a8a4a;' : 'opacity:0.5;cursor:not-allowed;';
-            var btnTitle = !inTown ? 'Must be in a town' : (!canAfford ? 'Need ' + cost + 'g' : 'Hire a guard for ' + cost + 'g');
-            html += ' <button class="btn-medieval" data-action="hireGuardUI" style="font-size:0.75rem;padding:4px 10px;' + btnStyle + '" title="' + btnTitle + '">\uD83D\uDEE1\uFE0F Hire Guard (' + cost + 'g)</button>';
+            var btnTitle;
+            if (_isFirstStoryGuard) {
+                btnTitle = !inTown ? 'Must be in a town' : 'Hire your first guard — FREE (Edmund\'s old friend)';
+            } else {
+                btnTitle = !inTown ? 'Must be in a town' : (!canAfford ? 'Need ' + cost + 'g' : 'Hire a guard for ' + cost + 'g');
+            }
+            var btnLabel = _isFirstStoryGuard
+                ? '\uD83D\uDEE1\uFE0F Hire Guard (0g \u2014 First Guard FREE)'
+                : '\uD83D\uDEE1\uFE0F Hire Guard (' + cost + 'g)';
+            html += ' <button class="btn-medieval" data-action="hireGuardUI" style="font-size:0.75rem;padding:4px 10px;' + btnStyle + '" title="' + btnTitle + '">' + btnLabel + '</button>';
         }
         html += '</div>';
         html += '</div>';
