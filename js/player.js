@@ -20733,8 +20733,23 @@
                     player.gold -= maintCost;
                     player.stats.totalGoldSpent += maintCost;
                 } else {
-                    // Can't afford maintenance — building condition worsens
-                    bld.condition = Math.max(0, (bld.condition || 100) - 5);
+                    // Can't afford maintenance — building condition worsens.
+                    // v9p33river286: bld.condition is a string state
+                    // ('new'|'used'|'breaking'|'destroyed'), not a number.
+                    // The old `(bld.condition || 100) - 5` produced NaN. Use a
+                    // small probabilistic downgrade through the state machine.
+                    if (!bld.condition) bld.condition = 'new';
+                    if (bld.condition === 'destroyed') continue;
+                    if (Math.random() < 0.15) {
+                        var _prevCond = bld.condition;
+                        if (bld.condition === 'new')           bld.condition = 'used';
+                        else if (bld.condition === 'used')      bld.condition = 'breaking';
+                        else if (bld.condition === 'breaking')  bld.condition = 'destroyed';
+                        if (bld.condition === 'destroyed') bld.active = false;
+                        if (bld.condition !== _prevCond) {
+                            Engine.logEvent('🪙 Could not afford maintenance on your ' + (bt.name || bld.type) + ' — condition worsened to ' + bld.condition + '.');
+                        }
+                    }
                 }
             }
         }
@@ -39629,8 +39644,11 @@
             case 'military_enlist': {
                 var kingdoms = Engine.getKingdoms();
                 var atWar = [];
+                // v9p33river286: kingdoms store active wars on `atWar` (a Set),
+                // not on a `wars` array — the old check never matched, so
+                // enlistment falsely reported "No kingdoms are at war".
                 for (var ki = 0; ki < kingdoms.length; ki++) {
-                    if (kingdoms[ki].wars && kingdoms[ki].wars.length > 0) atWar.push(kingdoms[ki]);
+                    if (kingdoms[ki].atWar && kingdoms[ki].atWar.size > 0) atWar.push(kingdoms[ki]);
                 }
                 if (atWar.length === 0) {
                     return { success: false, message: 'No kingdoms are at war. You need an active war to enlist.' };

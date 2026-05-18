@@ -1124,12 +1124,17 @@
         var goodKeys = Object.keys(lc.goods).filter(function(k) { return (lc.goods[k] || 0) > 0; });
         if (goodKeys.length === 0) return;
         // High theft chance per day for unattended goods (~15% per day)
-        var rng = Engine.getRng ? Engine.getRng() : Math.random();
-        if (rng < 0.15) {
-            var targetRes = goodKeys[Math.floor((Engine.getRng ? Engine.getRng() : Math.random()) * goodKeys.length)];
+        // v9p33river286: Engine.getRng() returns the RNG OBJECT (not a number),
+        // so the previous `rng < 0.15` and `rng * length` operations were always
+        // false / NaN — theft never triggered, and would have picked an
+        // undefined resource if it had. Use rng.random() consistently.
+        var _rngObj = Engine.getRng ? Engine.getRng() : null;
+        var _rand = function() { return (_rngObj && typeof _rngObj.random === 'function') ? _rngObj.random() : Math.random(); };
+        if (_rand() < 0.15) {
+            var targetRes = goodKeys[Math.floor(_rand() * goodKeys.length)];
             var qty = lc.goods[targetRes];
             // Lose 20-50% of one resource type
-            var stolen = Math.max(1, Math.floor(qty * (0.2 + (Engine.getRng ? Engine.getRng() : Math.random()) * 0.3)));
+            var stolen = Math.max(1, Math.floor(qty * (0.2 + _rand() * 0.3)));
             stolen = Math.min(stolen, qty);
             lc.goods[targetRes] -= stolen;
             if (lc.goods[targetRes] <= 0) delete lc.goods[targetRes];

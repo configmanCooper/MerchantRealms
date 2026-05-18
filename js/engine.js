@@ -13015,7 +13015,21 @@
                     town.garrison = Math.max(0, (town.garrison || 0) - rng.randInt(1, 3));
                     if (town.buildings && town.buildings.length > 0) {
                         var damaged = town.buildings[rng.randInt(0, town.buildings.length - 1)];
-                        damaged.condition = Math.max(0, (damaged.condition || 100) - rng.randInt(15, 30));
+                        // v9p33river286: building conditions are state strings
+                        // ('new'|'used'|'breaking'|'destroyed'), not numbers.
+                        // The old `Math.max(0, (cond || 100) - rng.randInt(15,30))`
+                        // produced NaN when condition was a string. Use the
+                        // string state machine: high damage roll = downgrade one
+                        // step (mirrors the fire-damage logic in engine_military).
+                        if (!damaged.condition) damaged.condition = 'new';
+                        var _dmgRoll = rng.randInt(15, 30); // 15..30 "damage"
+                        if (damaged.condition === 'new') {
+                            if (_dmgRoll > 20) damaged.condition = 'used';
+                        } else if (damaged.condition === 'used') {
+                            if (_dmgRoll > 18) damaged.condition = 'breaking';
+                        } else if (damaged.condition === 'breaking') {
+                            if (_dmgRoll > 25) damaged.condition = 'destroyed';
+                        }
                     }
                     logEvent('🔥 Riots in ' + town.name + '! Buildings damaged, garrison overwhelmed. (Happiness: ' + Math.round(h) + '%)', {
                         type: 'riot', cause: 'Town happiness in crisis (' + Math.round(h) + '%)',
