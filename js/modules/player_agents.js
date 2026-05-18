@@ -560,11 +560,14 @@
         if (town && town.prosperity) {
             town.prosperity = Math.max(0, town.prosperity - 1);
         }
-        // Direct reputation damage to target NPC
-        if (target._reputation !== undefined) {
-            target._reputation = Math.max(0, (target._reputation || 50) - repDamage);
-        } else {
-            target._reputation = 50 - repDamage;
+        // v9p33river292: NPC reputation lives in target.reputation[kingdomId]
+        // (per-kingdom map), matching how the noble-intrigue path applies it
+        // at player_agents.js:1023-1028. target._reputation is only used for
+        // BUILDINGS (bld._reputation) and was a dead write on persons.
+        if (target.reputation === undefined) target.reputation = {};
+        var _rumorKId = town ? town.kingdomId : '';
+        if (_rumorKId) {
+            target.reputation[_rumorKId] = Math.max(0, (target.reputation[_rumorKId] || 50) - repDamage);
         }
         agent.reports.push({ day: day, msg: '🗣️ Spread damaging rumors about ' + (target.firstName || 'target') + '. Rep -' + repDamage + ', gold -' + goldLoss + 'g.' });
     }
@@ -591,10 +594,17 @@
             if (target._playerRelationship !== undefined) {
                 target._playerRelationship = (target._playerRelationship || 0) - 10;
             }
-            if (target._reputation !== undefined) {
-                target._reputation = Math.max(0, (target._reputation || 50) - 5);
-            } else {
-                target._reputation = 45;
+            // v9p33river292: NPC reputation lives in target.reputation[kingdomId]
+            // (per-kingdom map). target._reputation was a dead write — only
+            // buildings use the underscore-prefixed field.
+            if (target.reputation === undefined) target.reputation = {};
+            var _intimKId = '';
+            try {
+                var _intimTown = target.townId && Engine.findTown ? Engine.findTown(target.townId) : null;
+                if (_intimTown) _intimKId = _intimTown.kingdomId || '';
+            } catch (_e) {}
+            if (_intimKId) {
+                target.reputation[_intimKId] = Math.max(0, (target.reputation[_intimKId] || 50) - 5);
             }
             agent.reports.push({ day: day, msg: '💀 Successfully intimidated ' + (target.firstName || 'target') + '. They\'re shaken.' });
         } else {

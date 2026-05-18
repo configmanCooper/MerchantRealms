@@ -14507,7 +14507,15 @@
             // Check for war context
             var kingdoms = Engine.getKingdoms();
             var playerK = kingdoms.find(function(k) { return k.id === player.citizenshipKingdomId; });
-            if (playerK && playerK.atWar && playerK.atWar.size > 0) category = 'war';
+            // v9p33river292: Engine.getKingdoms() serializes atWar to an
+            // array, so `.size > 0` was always false → spouse/family war-
+            // plan dialogue (config.js:986-989 'war' category) was unreachable.
+            var _pkAtWar = playerK && playerK.atWar;
+            var _pkAtWarOn = _pkAtWar && (
+                (Array.isArray(_pkAtWar) && _pkAtWar.length > 0) ||
+                (typeof _pkAtWar.size === 'number' && _pkAtWar.size > 0)
+            );
+            if (_pkAtWarOn) category = 'war';
             else if (player.gold > 2000) category = 'building';
 
             var lines = plans[category] || plans.saving || ['We should plan carefully.'];
@@ -33955,8 +33963,14 @@
             for (var warId in activeWars) {
                 var war = activeWars[warId];
                 if (!war) continue;
-                var sides = war.sides || [war.attackerId, war.defenderId];
-                if (sides.length < 2) continue;
+                // v9p33river292: war objects use kingdomA/kingdomB (per
+                // engine_diplomacy.js declareWar). The old fallback was
+                // [war.attackerId, war.defenderId] which is [undefined,
+                // undefined], so isInWarzone() never returned true and
+                // getEncounterChance never multiplied by the wartime
+                // route-risk factor.
+                var sides = war.sides || [war.kingdomA, war.kingdomB];
+                if (sides.length < 2 || !sides[0] || !sides[1]) continue;
                 var fromSide = sides.indexOf(fromTown.kingdomId);
                 var toSide = sides.indexOf(toTown.kingdomId);
                 if (fromSide >= 0 && toSide >= 0 && fromSide !== toSide) return true;
@@ -39694,11 +39708,18 @@
             case 'military_enlist': {
                 var kingdoms = Engine.getKingdoms();
                 var atWar = [];
-                // v9p33river286: kingdoms store active wars on `atWar` (a Set),
-                // not on a `wars` array — the old check never matched, so
-                // enlistment falsely reported "No kingdoms are at war".
+                // v9p33river292: Engine.getKingdoms() serializes atWar as
+                // an ARRAY (engine.js:31813 `atWar: [...k.atWar]`), so the
+                // previous `.size > 0` check (added in v286) was always
+                // false on the serialized form. Check both array length
+                // and Set size to be safe with either form.
                 for (var ki = 0; ki < kingdoms.length; ki++) {
-                    if (kingdoms[ki].atWar && kingdoms[ki].atWar.size > 0) atWar.push(kingdoms[ki]);
+                    var _kAtWar = kingdoms[ki].atWar;
+                    var _hasWar = _kAtWar && (
+                        (Array.isArray(_kAtWar) && _kAtWar.length > 0) ||
+                        (typeof _kAtWar.size === 'number' && _kAtWar.size > 0)
+                    );
+                    if (_hasWar) atWar.push(kingdoms[ki]);
                 }
                 if (atWar.length === 0) {
                     return { success: false, message: 'No kingdoms are at war. You need an active war to enlist.' };
