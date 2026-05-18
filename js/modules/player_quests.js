@@ -1944,8 +1944,13 @@
                             id: 'bld_' + _bbWorld.day + '_' + Math.floor(Math.random() * 1000),
                             type: _bbType,
                             ownerId: kingdomId,
-                            condition: 100,
-                            built: _bbWorld.day
+                            // v9p33river290: condition is a state string per
+                            // CONFIG.CONDITION_LEVELS, and the age field is
+                            // `builtDay` (degradation tick keys off it) — the
+                            // old numeric `condition: 100` and `built:` field
+                            // were silently ignored.
+                            condition: 'new',
+                            builtDay: _bbWorld.day
                         });
                         _bbTown.prosperity = Math.min(100, (_bbTown.prosperity || 50) + 5);
                         successConsequences.push('🏗️ Built a new ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '!');

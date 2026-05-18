@@ -10533,7 +10533,11 @@
             active: true,
             workers: [],
             storage: bt.storage || 0,
-            _builtDay: Engine.getDay()
+            // v9p33river290: the degradation tick keys off `builtDay` (the
+            // underscore-prefixed field was being ignored and the retrofit
+            // path then injected a random age). Also set a string condition.
+            builtDay: Engine.getDay(),
+            condition: 'new'
         });
         town.prosperity = Math.min(100, (town.prosperity || 50) + 3);
 
@@ -12544,7 +12548,12 @@
         }
     }
 
-    var KINGDOM_BUILDING_TYPES = ['walls', 'barracks', 'watchtower', 'castle', 'granary', 'marketplace', 'temple', 'library', 'stables', 'armory', 'harbor_fortification'];
+    // v9p33river290: previously a stale hard-coded list with invalid ids
+    // (marketplace, temple, library, walls, harbor_fortification). Defer to
+    // CONFIG.KINGDOM_BUILDING_TYPES which is the single source of truth.
+    function _getKingdomBuildableIds() {
+        return (CONFIG && CONFIG.KINGDOM_BUILDING_TYPES) ? CONFIG.KINGDOM_BUILDING_TYPES : [];
+    }
 
     function getKingdomBuildableTypes(townId) {
         var town = Engine.findTown(townId || player.townId);
@@ -12556,12 +12565,14 @@
             }
         }
         var available = [];
-        for (var bi = 0; bi < KINGDOM_BUILDING_TYPES.length; bi++) {
-            var bType = KINGDOM_BUILDING_TYPES[bi];
+        var BLD_IDS = _getKingdomBuildableIds();
+        for (var bi = 0; bi < BLD_IDS.length; bi++) {
+            var bType = BLD_IDS[bi];
             if (existing[bType]) continue;
             var bt = Engine.findBuildingType ? Engine.findBuildingType(bType) : null;
             if (!bt) continue;
-            if (bType === 'harbor_fortification' && !town.isPort) continue;
+            // Port-only buildings require a port town
+            if ((bType === 'port_fortress' || bType === 'harbor_fortification') && !town.isPort) continue;
             available.push({ id: bType, name: bt.name || bType, cost: bt.cost || 500, description: bt.description || '' });
         }
         return available;
@@ -12657,7 +12668,9 @@
                 level: 1,
                 ownerId: kingdom.id,
                 builtDay: Engine.getDay(),
-                condition: 100,
+                // v9p33river290: condition is a state string per
+                // CONFIG.CONDITION_LEVELS; numeric 100 bypassed degradation.
+                condition: 'new',
                 lastRepairDay: 0,
                 _requestedByPlayer: true
             });
@@ -31648,7 +31661,11 @@
                     var town = Engine.findTown(td.townId);
                     if (town) {
                         if (!town.buildings) town.buildings = [];
-                        town.buildings.push({ type: 'marketplace', level: 1, ownerId: petition.kingdomId, active: true, workers: [] });
+                        // v9p33river290: the defined building id is
+                        // 'marketplace_royal' (config.js:1992). The old type
+                        // 'marketplace' wasn't a valid BUILDING_TYPES entry,
+                        // so Engine.findBuildingType returned null for it.
+                        town.buildings.push({ type: 'marketplace_royal', level: 1, ownerId: petition.kingdomId, active: true, workers: [], builtDay: Engine.getDay(), condition: 'new' });
                         town.prosperity = Math.min(100, (town.prosperity || 50) + 5);
                         Engine.logEvent('🏪 A new market was built in ' + town.name + '!');
                     }
