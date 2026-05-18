@@ -6829,6 +6829,19 @@
     }
 
     function countWorkersForBuilding(town, bld) {
+        // v9p33river276: helper — filter out jailed workers from an explicit array
+        function _activeCount(workerIds) {
+            if (!Array.isArray(workerIds) || workerIds.length === 0) return 0;
+            var dayNow = (world && typeof world.day === 'number') ? world.day : 0;
+            var alive = 0;
+            for (var _wi = 0; _wi < workerIds.length; _wi++) {
+                var _wp = findPerson(workerIds[_wi]);
+                if (!_wp || !_wp.alive) continue;
+                if (_wp._jailedUntilDay && _wp._jailedUntilDay > dayNow) continue;
+                alive++;
+            }
+            return alive;
+        }
         // Town-owned buildings auto-staff from townsfolk
         if (bld.ownerId === null) {
             const bt = findBuildingType(bld.type);
@@ -6838,11 +6851,11 @@
         // (the slim {id,type,level,ownerId,...} entry) doesn't carry the workers
         // array. Look up the canonical Player.buildings entry by id.
         if (bld.ownerId === 'player') {
-            if (Array.isArray(bld.workers)) return bld.workers.length;
+            if (Array.isArray(bld.workers)) return _activeCount(bld.workers);
             if (typeof Player !== 'undefined' && Player.buildings) {
                 for (var _pwi = 0; _pwi < Player.buildings.length; _pwi++) {
                     if (Player.buildings[_pwi].id === bld.id) {
-                        return Array.isArray(Player.buildings[_pwi].workers) ? Player.buildings[_pwi].workers.length : 0;
+                        return Array.isArray(Player.buildings[_pwi].workers) ? _activeCount(Player.buildings[_pwi].workers) : 0;
                     }
                 }
             }
@@ -6851,7 +6864,7 @@
         // Bug 3/4 fix: Kingdom-owned and NPC-owned buildings use explicit
         // workers if assigned, otherwise auto-staff from community
         if (Array.isArray(bld.workers) && bld.workers.length > 0) {
-            return bld.workers.length;
+            return _activeCount(bld.workers);
         }
         const bt = findBuildingType(bld.type);
         return bt ? bt.workers : 0;

@@ -2826,6 +2826,13 @@
         if (!person) return { success: false, message: 'Person not found.' };
         if (!person.alive) return { success: false, message: 'Person is not alive.' };
         if (person.townId !== player.townId) return { success: false, message: 'Person is not in your town.' };
+        // v9p33river276: cannot hire someone behind bars
+        var _hireDay = 0;
+        try { _hireDay = Engine.getDay ? Engine.getDay() : 0; } catch(e) {}
+        if (person._jailedUntilDay && person._jailedUntilDay > _hireDay) {
+            var _hjDays = person._jailedUntilDay - _hireDay;
+            return { success: false, message: person.firstName + ' is in jail for ' + _hjDays + ' more day' + (_hjDays === 1 ? '' : 's') + '. They cannot work until released.' };
+        }
         if (person.employerId) return { success: false, message: 'Person is already employed.' };
         // Prevent duplicate hire (belt-and-suspenders with employerId check)
         if (player.employees.includes(personId)) return { success: false, message: 'Person is already your employee.' };
