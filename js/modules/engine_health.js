@@ -402,6 +402,15 @@
         else if (_pAge >= 31) { _ageDrainMult = 1.1; _ageRecovMult = 0.85; }
         var healthDrain = (illDef.healthDrain || 0.5) * _sevMult * _ageDrainMult * tickScale;
 
+        // v9p33river261: per-tick RNG variance for poison only (±25%).
+        // Some bodies fight the toxin better than others, and some days are
+        // worse — adds unpredictability to kingslaying / assassinations so
+        // outcomes aren't perfectly calculable from base stats.
+        if (person.illness === 'poisoned') {
+            var _poisonJitter = 0.75 + rng.random() * 0.5; // [0.75, 1.25)
+            healthDrain *= _poisonJitter;
+        }
+
         // Asymptomatic carriers: no health drain, but still contagious
         if (person.asymptomatic) {
             if (daysSick >= (illDef.daysToRecover || 14)) {
