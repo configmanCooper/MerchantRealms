@@ -1109,7 +1109,45 @@ window.Tutorial = (function () {
             ]
         },
 
-        // ── Chapter 8: Getting Help ───────────────────────────
+        // ── Chapter 8: Work & Jobs ────────────────────────────
+        {
+            title: 'Work & Jobs',
+            part: 'basic',
+            steps: [
+                {
+                    title: 'Finding Work',
+                    text: '\uD83D\uDCBC <strong>Jobs</strong> are the best early-game income! Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDCBC Work</strong> to see available jobs in your current town. Jobs pay gold, give XP, and some unlock new skills!',
+                    highlight: '#btnWork',
+                    onEnter: function () { closeModal(); },
+                    waitFor: function () { return isModalOpen(); },
+                    skipAfter: 8000
+                },
+                {
+                    title: 'Take a Job',
+                    text: '\uD83D\uDCBC Pick any job from the list and click it to start working! Jobs take time (shown in hours) \u2014 <strong>speed up the game</strong> while working to finish faster. You\u2019ll earn gold and XP when the work is done.<br><br>\u26A1 <strong>Low on energy?</strong> Open the <strong>\u2694\uFE0F Actions</strong> tab \u2192 <strong>\uD83D\uDCA4 Rest</strong> to recover before working.',
+                    onEnter: function () {
+                        snapshotState.workDaysBefore = 0;
+                        try { snapshotState.workDaysBefore = Player.state.workDaysCompleted || 0; } catch (e) {}
+                    },
+                    waitFor: function () {
+                        try {
+                            return (Player.state.workDaysCompleted || 0) > (snapshotState.workDaysBefore || 0);
+                        } catch (e) { return false; }
+                    },
+                    onComplete: function () {
+                        closeModal();
+                        nextStep();
+                    },
+                    skipAfter: 20000
+                },
+                {
+                    title: 'Job Types',
+                    text: '\uD83D\uDD28 Different towns offer different jobs based on their industry:<br><br>\u2022 \uD83E\uDE93 <strong>Woodcutting / Mining</strong> \u2014 Physical labor, decent pay<br>\u2022 \uD83C\uDF3E <strong>Farm Work</strong> \u2014 Available at farming towns<br>\u2022 \uD83D\uDEE1\uFE0F <strong>Guard Duty</strong> \u2014 Protects the town, bonus reputation<br>\u2022 \uD83C\uDFB5 <strong>Entertainment</strong> \u2014 Play music at taverns (needs instrument)<br>\u2022 \uD83C\uDFE5 <strong>Plague Nurse</strong> \u2014 Dangerous but high pay during outbreaks<br><br>\uD83D\uDCA1 <strong>Tip:</strong> Working builds <strong>kingdom reputation</strong> and unlocks building rights!'
+                }
+            ]
+        },
+
+        // ── Chapter 9: Getting Help ───────────────────────────
         {
             title: 'Getting Help',
             part: 'basic',
@@ -1165,44 +1203,6 @@ window.Tutorial = (function () {
                 {
                     title: 'You\u2019re Ready!',
                     text: '\uD83C\uDF89 <strong>That\u2019s the basics!</strong> You know how to control the game, trade, travel, manage skills, eat, build a home, start a family, and find help. Now choose: start playing, or continue to advanced systems.'
-                }
-            ]
-        },
-
-        // ── Chapter 9: Work & Jobs ────────────────────────────
-        {
-            title: 'Work & Jobs',
-            part: 'basic',
-            steps: [
-                {
-                    title: 'Finding Work',
-                    text: '\uD83D\uDCBC <strong>Jobs</strong> are the best early-game income! Click the <strong>\u2694\uFE0F Actions</strong> tab, then <strong>\uD83D\uDCBC Work</strong> to see available jobs in your current town. Jobs pay gold, give XP, and some unlock new skills!',
-                    highlight: '#btnWork',
-                    onEnter: function () { closeModal(); },
-                    waitFor: function () { return isModalOpen(); },
-                    skipAfter: 8000
-                },
-                {
-                    title: 'Take a Job',
-                    text: '\uD83D\uDCBC Pick any job from the list and click it to start working! Jobs take time (shown in ticks) \u2014 <strong>speed up the game</strong> while working to finish faster. You\u2019ll earn gold and XP when the work is done.',
-                    onEnter: function () {
-                        snapshotState.workDaysBefore = 0;
-                        try { snapshotState.workDaysBefore = Player.state.workDaysCompleted || 0; } catch (e) {}
-                    },
-                    waitFor: function () {
-                        try {
-                            return (Player.state.workDaysCompleted || 0) > (snapshotState.workDaysBefore || 0);
-                        } catch (e) { return false; }
-                    },
-                    onComplete: function () {
-                        closeModal();
-                        nextStep();
-                    },
-                    skipAfter: 20000
-                },
-                {
-                    title: 'Job Types',
-                    text: '\uD83D\uDD28 Different towns offer different jobs based on their industry:<br><br>\u2022 \uD83E\uDE93 <strong>Woodcutting / Mining</strong> \u2014 Physical labor, decent pay<br>\u2022 \uD83C\uDF3E <strong>Farm Work</strong> \u2014 Available at farming towns<br>\u2022 \uD83D\uDEE1\uFE0F <strong>Guard Duty</strong> \u2014 Protects the town, bonus reputation<br>\u2022 \uD83C\uDFB5 <strong>Entertainment</strong> \u2014 Play music at taverns (needs instrument)<br>\u2022 \uD83C\uDFE5 <strong>Plague Nurse</strong> \u2014 Dangerous but high pay during outbreaks<br><br>\uD83D\uDCA1 <strong>Tip:</strong> Working builds <strong>kingdom reputation</strong> and unlocks building rights!'
                 }
             ]
         },
