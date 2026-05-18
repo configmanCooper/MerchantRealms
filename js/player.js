@@ -31063,9 +31063,13 @@
         chance += rankBonus;
 
         const worldData = Engine.getWorld ? Engine.getWorld() : {};
-        const atWar = worldData.activeWars && Object.values(worldData.activeWars).some(w =>
-            w.active && (w.attackerId === kingdom.id || w.defenderId === kingdom.id)
-        );
+        // v9p33river289: war objects use kingdomA/kingdomB (engine_diplomacy
+        // declareWar) and don't set `active: true` — they're implicitly active
+        // while present in world.activeWars. The old check matched neither
+        // condition, so the wartime road-build influence penalty never applied.
+        const atWar = worldData.activeWars && Object.values(worldData.activeWars).some(function(w) {
+            return w && (w.kingdomA === kingdom.id || w.kingdomB === kingdom.id);
+        });
         if (atWar) chance -= 0.20;
 
         if (kingdom.gold < kingdomCost * 2) chance -= 0.15;

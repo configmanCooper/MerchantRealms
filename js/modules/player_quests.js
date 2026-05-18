@@ -779,7 +779,11 @@
         var foodShortage = false;
         for (var ti = 0; ti < towns.length; ti++) {
             if (towns[ti].plagueActive) plagueCount++;
-            if (towns[ti].foodShortage || (towns[ti].marketSupply && towns[ti].marketSupply.wheat < 10 && towns[ti].marketSupply.bread < 10)) foodShortage = true;
+            // v9p33river289: towns store goods under town.market.supply, not
+            // town.marketSupply (which never existed). Old check never matched
+            // a real shortage, so food-shortage royal directives never fired.
+            var _mSup = towns[ti].market && towns[ti].market.supply;
+            if (towns[ti].foodShortage || (_mSup && (_mSup.wheat || 0) < 10 && (_mSup.bread || 0) < 10)) foodShortage = true;
         }
         triggers.plague_active = plagueCount > 0;
         triggers.food_shortage = foodShortage;

@@ -2830,7 +2830,13 @@
                                 ownerId: kingdom.id,
                                 workers: [],
                                 builtDay: -rng.randInt(30, 180),
-                                condition: rng.randInt(70, 100),
+                                // v9p33river289: building condition is a state
+                                // string ('new'|'used'|'breaking'|'destroyed'),
+                                // not a number. The age-based degradation tick
+                                // in player.js / engine.js elsewhere assumes a
+                                // string. Use 'new' for kingdom-spawned producers;
+                                // natural degradation will progress them.
+                                condition: 'new',
                                 bannedGoodsProducer: true
                             });
                         }
@@ -3039,7 +3045,9 @@
                 buildings[abi].tentUpfrontCost = (tcBt && tcBt.tentUpfrontCost) || 20;
                 buildings[abi].tentMonthlyCost = (tcBt && tcBt.tentMonthlyCost) || 5;
                 buildings[abi].ownerId = kingdom ? kingdom.id : null;
-                buildings[abi].condition = 0.6 + rng.randFloat(0, 0.2); // tents start in fair condition
+                // v9p33river289: condition is a state string, not a number.
+                // Tent camps start in "fair" condition — use 'used'.
+                buildings[abi].condition = 'used';
             }
         }
 
@@ -21528,8 +21536,12 @@
     function getFrontlineTowns(war) {
         var frontline = new Set();
         if (!world || !war) return frontline;
-        var sides = war.sides || [war.attackerId, war.defenderId];
-        if (!sides || sides.length < 2) return frontline;
+        // v9p33river289: war objects use kingdomA/kingdomB (declareWar in
+        // engine_diplomacy.js), not attackerId/defenderId. With the old
+        // fallback this always returned [undefined, undefined] for standard
+        // wars and the frontline set was empty.
+        var sides = war.sides || [war.kingdomA, war.kingdomB];
+        if (!sides || sides.length < 2 || !sides[0] || !sides[1]) return frontline;
         var side0Towns = world.towns.filter(t => t.kingdomId === sides[0]);
         var side1Towns = world.towns.filter(t => t.kingdomId === sides[1]);
         for (var i = 0; i < side0Towns.length; i++) {

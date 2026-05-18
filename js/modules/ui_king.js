@@ -2362,7 +2362,11 @@
         var lowHappinessTowns = [];
         for (var _ti = 0; _ti < towns.length; _ti++) {
             if (towns[_ti].plagueActive) plagueCount++;
-            if (towns[_ti].foodShortage || (towns[_ti].marketSupply && (towns[_ti].marketSupply.wheat || 0) < 10 && (towns[_ti].marketSupply.bread || 0) < 10)) foodShortage = true;
+            // v9p33river289: towns store goods under town.market.supply (the
+            // marketSupply alias never existed), so this never detected real
+            // shortages for royal-mission UI.
+            var _mSup = towns[_ti].market && towns[_ti].market.supply;
+            if (towns[_ti].foodShortage || (_mSup && (_mSup.wheat || 0) < 10 && (_mSup.bread || 0) < 10)) foodShortage = true;
             if ((towns[_ti].happiness || 50) < 35) lowHappinessTowns.push(towns[_ti]);
         }
 
