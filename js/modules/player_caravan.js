@@ -8,7 +8,11 @@
     if (!Player) throw new Error("Player must be loaded before player_caravan.js");
 
     var player;
-    function _sync() { player = Player.state; }
+    function _sync() {
+        player = Player.state;
+        // v9p33river333: legacy saves may lack horses; caravan travel assumes an array.
+        if (player && !player.horses) player.horses = [];
+    }
 
     // ── Player helpers (defined in player.js, accessed via Player) ──
     var logFinance = function(amount, category, description) { return Player.logFinance(amount, category, description); };
@@ -1045,16 +1049,8 @@
             return Player.travelBySea(townId, _seaOpts);
         }
 
-        // Handle paid sea passage for mixed routes (check gold before committing)
-        if (isSea && options.seaMode === 'sea_passage') {
-            var seaPassageCost = CONFIG.SEA_PASSAGE_COST || 50;
-            if (player.gold < seaPassageCost) {
-                return { success: false, message: 'Not enough gold for sea passage (' + seaPassageCost + 'g needed).' };
-            }
-            player.gold -= seaPassageCost;
-            logFinance(-seaPassageCost, 'travel', 'Sea passage');
-            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + seaPassageCost;
-        }
+        // v9p33river333: mixed land+sea paths are paced here, not by Player.travelBySea(),
+        // so don't charge sea-passage fees unless the dedicated pure-sea flow owns the trip.
 
         player.traveling = true;
         player.travelProgress = 0;
@@ -1062,7 +1058,8 @@
         player.travelRoute = route;
         player.travelTotalDist = totalDist;
         player.travelOffroad = isOffroad;
-        player.travelBySea = isSea;
+        // v9p33river333: only all-sea routes should enter global sea-travel state.
+        player.travelBySea = isSea && route.every(function(s) { return s.type === 'sea'; });
         player.travelOrigin = player.townId || originTownId;
         player.travelPaid = false;
         // Set travel mode based on route type
@@ -1072,9 +1069,9 @@
             player.travelMode = (player.ships && player.ships.length > 0) ? 'sail_own' : 'sea_passage';
             player.travelSeaMode = player.travelMode;
         } else if (isSea) {
-            // Mixed route (land + sea segments) — land mode for energy, sea mode stored separately
+            // v9p33river333: mixed routes stay in land/offroad travel mode; no sea-passage state.
             player.travelMode = requestedMode;
-            player.travelSeaMode = options.seaMode || (player.ships && player.ships.length > 0 ? 'sail_own' : 'sea_passage');
+            player.travelSeaMode = null;
         } else {
             // Pure land/offroad route
             player.travelMode = requestedMode;

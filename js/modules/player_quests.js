@@ -202,11 +202,14 @@
             var supply = town.market.supply || {};
             var prices = town.market.prices || {};
             for (var rid in RESOURCE_TYPES) {
+                if (!RESOURCE_TYPES.hasOwnProperty(rid)) continue;
                 var res = RESOURCE_TYPES[rid];
-                var resId = res.id;
+                // v9p33river333: tolerate malformed resource entries in modded/partial configs.
+                if (!res || typeof res !== 'object' || !res.id) continue;
+                var resId = String(res.id);
                 if (res.category === 'livestock' || res.category === 'contraband' || res.category === 'quest' || res.category === 'supplies') continue;
                 var s = supply[resId] || 0;
-                var bp = res.basePrice || 1;
+                var bp = Number(res.basePrice) || 1;
                 var mp = prices[resId] || bp;
                 if (s <= 0 && (town.market.demand || {})[resId] > 0) shortages.push(resId);
                 if (mp > bp * 2.5) priceSpikes.push(resId);
@@ -220,7 +223,9 @@
         // Also exclude types from active quests
         var activeQuests = player.activeQuests || [];
         for (var ai = 0; ai < activeQuests.length; ai++) {
-            if (activeQuests[ai].townId === townId) existingTypes[activeQuests[ai].typeId] = true;
+            var _aq = activeQuests[ai];
+            // v9p33river333: malformed active quests with missing townId should not allow same-type duplicates.
+            if (_aq && _aq.typeId && (_aq.townId === townId || _aq.townId == null)) existingTypes[_aq.typeId] = true;
         }
 
         for (var qi = 0; qi < TOWN_QUEST_TYPES.length; qi++) {
@@ -330,10 +335,12 @@
 
         var resId = resPool[rng.randInt(0, resPool.length - 1)];
         var resObj = null;
+        var _resKey = String(resId).toUpperCase();
+        if (RESOURCE_TYPES[_resKey] && RESOURCE_TYPES[_resKey].id === resId) resObj = RESOURCE_TYPES[_resKey];
         for (var rk in RESOURCE_TYPES) {
-            if (RESOURCE_TYPES[rk].id === resId) { resObj = RESOURCE_TYPES[rk]; break; }
+            if (!resObj && RESOURCE_TYPES[rk] && RESOURCE_TYPES[rk].id === resId) { resObj = RESOURCE_TYPES[rk]; break; }
         }
-        if (!resObj) return null;
+        if (!resObj) return null; // v9p33river333: prefer canonical key when duplicate resource IDs exist.
 
         // Determine quantity (scale with town pop)
         var popScale = Math.max(0.5, Math.min(2.0, (town.population || 100) / 200));
@@ -455,7 +462,8 @@
         }
         if (!found) {
             console.warn('[QuestBug] acceptTownQuest failed for', questId, 'townQuests keys:', Object.keys(player.townQuests), 'activeQuests:', player.activeQuests.map(function(q) { return q.id; }));
-            return { success: false, message: 'Quest not found — it may have expired. Try refreshing the quest panel.' };
+            // v9p33river333: not-found can also mean another handler accepted/removed it.
+            return { success: false, message: 'Quest not found — it may have expired, been accepted, or been removed. Try refreshing the quest panel.' };
         }
 
         var day = Engine.getDay();
@@ -485,11 +493,18 @@
         if (idx === -1) return { success: false, message: 'Quest not found in active quests.' };
 
         var quest = player.activeQuests[idx];
-        var town = Engine.findTown(quest.townId);
+        var town = null;
+        try { town = Engine.findTown(quest.townId); } catch(e) { town = null; }
+        if (!town) return { success: false, message: 'Quest town no longer exists; cannot complete this quest.' }; // v9p33river333: missing towns made rewards inconsistent.
         var rng = Engine.getRng();
         var day = Engine.getDay();
+        if (!player.inventory) player.inventory = {}; // v9p33river333: old saves may lack inventory/townStorage containers.
+        if (!player.townStorage) player.townStorage = {};
 
         // Force donate if quest is donate-only (item was in market when posted)
+        if (quest.donateOnly && (!town.market || !town.market.supply || (town.market.supply[quest.resource] || 0) < quest.quantity)) {
+            quest.donateOnly = false; // v9p33river333: market supply can change after posting; don't keep stale donate-only state.
+        }
         if (quest.donateOnly) donate = true;
 
         // Check if expired
@@ -533,28 +548,33 @@
             if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
         } else {
             // Resource quest: check inventory + town storage
-            var invQty = player.inventory[quest.resource] || 0;
-            var tsQty = (player.townStorage[quest.townId] || {})[quest.resource] || 0;
+            var questQty = Math.max(0, Math.floor(Number(quest.quantity) || 0));
+            var questRes = quest.resource != null ? String(quest.resource) : '';
+            if (!questRes || questQty <= 0) return { success: false, message: 'Quest requirements are malformed.' };
+            var townStore = player.townStorage[quest.townId] || {};
+            var invQty = Math.max(0, Number(player.inventory[questRes]) || 0);
+            var tsQty = Math.max(0, Number(townStore[questRes]) || 0);
             var totalAvail = invQty + tsQty;
 
-            if (totalAvail < quest.quantity) {
-                return { success: false, message: 'You need ' + quest.quantity + ' ' + quest.resource + ' but only have ' + totalAvail + '. Check your inventory and town storage.' };
+            if (totalAvail < questQty) {
+                return { success: false, message: 'You need ' + questQty + ' ' + questRes + ' but only have ' + totalAvail + '. Check your inventory and town storage.' };
             }
 
             // Remove resources: prioritize town storage, then inventory
-            var remaining = quest.quantity;
+            var remaining = questQty;
             if (tsQty > 0 && remaining > 0) {
                 var fromTs = Math.min(tsQty, remaining);
                 if (!player.townStorage[quest.townId]) player.townStorage[quest.townId] = {};
-                player.townStorage[quest.townId][quest.resource] = (player.townStorage[quest.townId][quest.resource] || 0) - fromTs;
-                if (player.townStorage[quest.townId][quest.resource] <= 0) delete player.townStorage[quest.townId][quest.resource];
+                var curTs = Math.max(0, Number(player.townStorage[quest.townId][questRes]) || 0);
+                player.townStorage[quest.townId][questRes] = Math.max(0, curTs - fromTs);
+                if (player.townStorage[quest.townId][questRes] <= 0) delete player.townStorage[quest.townId][questRes];
                 remaining -= fromTs;
             }
             if (remaining > 0) {
-                // v9p33river305: was assigning 0 instead of deleting, leaving
-                // stale zero-value keys in inventory.
-                player.inventory[quest.resource] = (player.inventory[quest.resource] || 0) - remaining;
-                if (player.inventory[quest.resource] <= 0) delete player.inventory[quest.resource];
+                // v9p33river333: sanitize quantity/resource so mutated quests cannot underflow/delete a wrong key.
+                var curInv = Math.max(0, Number(player.inventory[questRes]) || 0);
+                player.inventory[questRes] = Math.max(0, curInv - remaining);
+                if (player.inventory[questRes] <= 0) delete player.inventory[questRes];
             }
         }
 
@@ -570,7 +590,7 @@
             if (town && town.market && town.market.prices && town.market.prices[quest.resource]) {
                 marketPrice = town.market.prices[quest.resource];
             }
-            goldReward = Math.floor(quest.quantity * marketPrice);
+            goldReward = Math.floor((Number(quest.quantity) || 0) * marketPrice);
             player.gold += goldReward;
         }
 
@@ -578,13 +598,16 @@
         Player.modifyTownReputation(quest.townId, repBoost);
 
         // Apply 1/8 kingdom reputation boost (town quests primarily boost town standing)
-        if (town && town.kingdomId && player.reputation) {
+        if (town && town.kingdomId) {
+            if (!player.reputation) player.reputation = {}; // v9p33river333: don't silently skip kingdom rep on old saves.
             var kingdomRepBoost = repBoost / 8;
             player.reputation[town.kingdomId] = Math.max(0, Math.min(100, (player.reputation[town.kingdomId] || 50) + kingdomRepBoost));
         }
 
         // Boost relationships with random NPCs in town
-        var relCount = rng.randInt(quest.relGainMin, quest.relGainMax);
+        var _relMin = Math.max(0, Math.floor(Number(quest.relGainMin) || 0));
+        var _relMax = Math.max(_relMin, Math.floor(Number(quest.relGainMax) || _relMin));
+        var relCount = rng.randInt(_relMin, _relMax); // v9p33river333: malformed ranges should not produce NaN.
         var townPeople = [];
         try {
             var w = Engine.getWorld();
@@ -636,8 +659,9 @@
     }
 
     function _applyQuestFailurePenalty(quest, reason) {
-        // Lose half the rep you would've gained by donating
-        var repPenalty = Math.ceil((quest.bigRepBoost || 2) / 2);
+        // Lose half the expected rep for this quest path.
+        var _penaltyBase = quest && quest.donateOnly ? (quest.bigRepBoost || quest.smallRepBoost || 2) : (quest.smallRepBoost || quest.bigRepBoost || 2);
+        var repPenalty = Math.ceil((Number(_penaltyBase) || 2) / 2); // v9p33river333: balance donate/non-donate penalties from actual reward path.
         Player.modifyTownReputation(quest.townId, -repPenalty);
 
         // Lose 1/4 kingdom reputation (mirrors the 1/4 kingdom rep bonus from completing)
@@ -649,7 +673,9 @@
 
         // Negative relationship with NPCs you would've helped
         var rng = Engine.getRng();
-        var relCount = rng.randInt(quest.relGainMin || 2, quest.relGainMax || 5);
+        var _failRelMin = Math.max(0, Math.floor(Number(quest.relGainMin) || 2));
+        var _failRelMax = Math.max(_failRelMin, Math.floor(Number(quest.relGainMax) || 5));
+        var relCount = rng.randInt(_failRelMin, _failRelMax);
         var townPeople = [];
         try {
             var w = Engine.getWorld();
@@ -692,17 +718,24 @@
         if (!player.activeQuests) player.activeQuests = [];
 
         // Check for expired active quests
+        var expiredQuests = [];
         for (var i = player.activeQuests.length - 1; i >= 0; i--) {
             var q = player.activeQuests[i];
-            if (q.expiresDay && day > q.expiresDay) {
-                var town = Engine.findTown(q.townId);
-                var townName = town ? town.name : 'the town';
-                _applyQuestFailurePenalty(q, 'expired');
-                var _expRepLoss = Math.ceil((q.bigRepBoost || 2) / 2);
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + q.title + ' in ' + townName + ' (-' + _expRepLoss + ' rep)', 'warning');
-                Engine.logEvent('⏰ Quest expired: ' + q.title + ' in ' + townName);
+            if (q && q.expiresDay && day > q.expiresDay) {
+                expiredQuests.push(q);
                 player.activeQuests.splice(i, 1);
             }
+        }
+        // v9p33river333: remove all expired quests first so failure side effects cannot disturb iteration.
+        for (var _eqi = 0; _eqi < expiredQuests.length; _eqi++) {
+            var _eq = expiredQuests[_eqi];
+            var town = Engine.findTown(_eq.townId);
+            var townName = town ? town.name : 'the town';
+            _applyQuestFailurePenalty(_eq, 'expired');
+            var _expBase = _eq.donateOnly ? (_eq.bigRepBoost || _eq.smallRepBoost || 2) : (_eq.smallRepBoost || _eq.bigRepBoost || 2);
+            var _expRepLoss = Math.ceil((Number(_expBase) || 2) / 2);
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + _eq.title + ' in ' + townName + ' (-' + _expRepLoss + ' rep)', 'warning');
+            Engine.logEvent('⏰ Quest expired: ' + _eq.title + ' in ' + townName);
         }
 
         // Generate quests for current town
@@ -742,17 +775,21 @@
     }
 
     function _getPlayerKingdomId() {
+        // v9p33river333: prefer explicit current allegiance over stale highest-rank data.
+        if (player.isKing && player.kingState && player.kingState.kingdomId) return player.kingState.kingdomId;
         var citizenKingdomId = player.citizenshipKingdomId || '';
+        if (citizenKingdomId) return citizenKingdomId;
         var maxRank = 0;
+        var rankedKingdomId = '';
         if (player.socialRank) {
             for (var k in player.socialRank) {
                 if ((player.socialRank[k] || 0) > maxRank) {
                     maxRank = player.socialRank[k];
-                    citizenKingdomId = k;
+                    rankedKingdomId = k;
                 }
             }
         }
-        return citizenKingdomId;
+        return rankedKingdomId;
     }
 
     function _evaluateKingdomTriggers(kingdom) {
@@ -926,8 +963,17 @@
     }
 
     function _kqRandRange(rng, arr) {
-        if (!arr || !Array.isArray(arr) || arr.length < 2) return arr;
-        return rng.randInt(arr[0], arr[1]);
+        if (!arr || !Array.isArray(arr) || arr.length < 2) {
+            var n = Number(arr);
+            return isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+        }
+        var min = Number(arr[0]);
+        var max = Number(arr[1]);
+        if (!isFinite(min) || !isFinite(max)) return 0;
+        min = Math.max(0, Math.floor(min));
+        max = Math.max(0, Math.floor(max));
+        if (max < min) { var tmp = min; min = max; max = tmp; }
+        return (rng && rng.randInt) ? rng.randInt(min, max) : min; // v9p33river333: malformed ranges should not create impossible quest requirements.
     }
 
     function generateKingdomQuests(kingdomId) {
@@ -942,7 +988,12 @@
         }
         var kqData = player.kingdomQuests[kingdomId];
         var playerRank = _getPlayerNobleRank();
-        if (playerRank < 4) return;
+        if (playerRank < 4) {
+            // v9p33river333: demoted players should not keep stale visible royal directives.
+            kqData.available = [];
+            kqData.personalAssignment = null;
+            return;
+        }
 
         // Generate every 15 days in war, 30 days in peace
         var kingdom = null;
@@ -1116,9 +1167,13 @@
             } else if (typeof qt.req.deliver === 'object' && qt.req.deliver !== null) {
                 deliverReq = {};
                 for (var resId in qt.req.deliver) {
+                    if (!qt.req.deliver.hasOwnProperty(resId) || !resId) continue;
                     var range = qt.req.deliver[resId];
-                    deliverReq[resId] = Array.isArray(range) ? _kqRandRange(rng, range) : range;
+                    var qty = Array.isArray(range) ? _kqRandRange(rng, range) : _kqRandRange(rng, range);
+                    // v9p33river333: ignore malformed delivery shapes and non-positive quantities.
+                    if (qty > 0) deliverReq[String(resId)] = qty;
                 }
+                if (Object.keys(deliverReq).length === 0) deliverReq = null;
             }
         }
 
@@ -1130,10 +1185,10 @@
         var actionReq = null;
         if (qt.req && qt.req.action) {
             actionReq = {
-                type: qt.req.action,
-                count: qt.req.count ? _kqRandRange(rng, qt.req.count) : 1,
-                goldTarget: qt.req.gold_target ? _kqRandRange(rng, qt.req.gold_target) : 0
-            };
+                type: String(qt.req.action),
+                count: qt.req.count ? Math.max(1, _kqRandRange(rng, qt.req.count)) : 1,
+                goldTarget: qt.req.gold_target ? Math.max(0, _kqRandRange(rng, qt.req.gold_target)) : 0
+            }; // v9p33river333: progress code expects normalized action/count/goldTarget fields.
         }
 
         // Build rewards — mood affects gold generosity
@@ -1224,6 +1279,8 @@
             return { success: false, message: 'No kingdom quests available.' };
         }
         var kqData = player.kingdomQuests[kingdomId];
+        if (!Array.isArray(kqData.available)) kqData.available = [];
+        if (!Array.isArray(kqData.active)) kqData.active = [];
         var playerRank = _getPlayerNobleRank();
         var day = Engine.getDay();
 
@@ -1231,6 +1288,11 @@
         var maxActive = playerRank >= 6 ? 4 : playerRank >= 5 ? 3 : 2;
         if (kqData.active.length >= maxActive) {
             return { success: false, message: 'You already have ' + maxActive + ' active kingdom quests (max for your rank).' };
+        }
+        for (var _dupi = 0; _dupi < kqData.active.length; _dupi++) {
+            if (kqData.active[_dupi] && kqData.active[_dupi].id === questId) {
+                return { success: false, message: 'This kingdom quest is already active.' };
+            }
         }
 
         // Find quest in available or personal assignment
@@ -1251,6 +1313,15 @@
 
         if (!quest) {
             return { success: false, message: 'Quest not found.' };
+        }
+        for (var _ati = 0; _ati < kqData.active.length; _ati++) {
+            if (kqData.active[_ati] && (kqData.active[_ati].id === quest.id || kqData.active[_ati].typeId === quest.typeId)) {
+                if (fromPersonal) kqData.personalAssignment = null;
+                return { success: false, message: 'A matching kingdom quest is already active.' };
+            }
+        }
+        if (!fromPersonal && kqData.personalAssignment && (kqData.personalAssignment.id === quest.id || kqData.personalAssignment.typeId === quest.typeId)) {
+            kqData.personalAssignment = null; // v9p33river333: accepting available copy clears duplicate personal assignment.
         }
 
         quest.status = 'active';
@@ -1370,12 +1441,12 @@
         if (kingdom && kingdom.king) Player.modifyRelationship(kingdom.king, -relLoss);
 
         // Clean up tracking
-        delete player._kqVisitedTowns[questId];
-        delete player._kqGoldSpent[questId];
-        delete player._kqActionDone[questId];
+        if (player._kqVisitedTowns) delete player._kqVisitedTowns[questId];
+        if (player._kqGoldSpent) delete player._kqGoldSpent[questId];
+        if (player._kqActionDone) delete player._kqActionDone[questId];
         if (player._kqInteractiveData) delete player._kqInteractiveData[questId];
         if (player._kqStepProgress) delete player._kqStepProgress[questId];
-        if (player._kqActionAttempts) delete player._kqActionAttempts[questId];
+        if (player._kqActionAttempts) delete player._kqActionAttempts[questId]; // v9p33river333: tracking containers may be absent on old saves.
 
         Engine.logEvent('❌ Abandoned kingdom quest: ' + quest.title);
         return { success: true, message: 'Quest abandoned. (-' + repLoss + ' rep, -' + relLoss + ' king rel)' };
@@ -1485,9 +1556,9 @@
         if (kqData.completed.length > 50) kqData.completed = kqData.completed.slice(-50);
 
         // Clean up tracking
-        delete player._kqVisitedTowns[questId];
-        delete player._kqGoldSpent[questId];
-        delete player._kqActionDone[questId];
+        if (player._kqVisitedTowns) delete player._kqVisitedTowns[questId];
+        if (player._kqGoldSpent) delete player._kqGoldSpent[questId];
+        if (player._kqActionDone) delete player._kqActionDone[questId];
         if (player._kqInteractiveData) delete player._kqInteractiveData[questId];
         if (player._kqStepProgress) delete player._kqStepProgress[questId];
         if (player._kqActionAttempts) delete player._kqActionAttempts[questId];
@@ -1589,23 +1660,41 @@
 
     function _buildQuestRequirements(questDef, rng) {
         var reqs = {};
-        if (questDef.action) {
-            reqs.action = { type: questDef.action };
-            if (questDef.action.indexOf('visit') >= 0) {
-                reqs.action.count = questDef.visitCount || 3;
+        var srcReq = questDef.req || {};
+        var actionType = questDef.action || srcReq.action;
+        if (actionType) {
+            reqs.action = {
+                type: String(actionType),
+                count: srcReq.count ? Math.max(1, _kqRandRange(rng, srcReq.count)) : (questDef.visitCount || 1),
+                goldTarget: srcReq.gold_target ? Math.max(0, _kqRandRange(rng, srcReq.gold_target)) : 0
+            };
+            if (String(actionType).indexOf('visit') >= 0) {
+                reqs.action.count = reqs.action.count || 3;
                 reqs.action.townType = questDef.townType || 'any';
             }
         }
-        if (questDef.deliverGoods) {
+        var deliverSrc = srcReq.deliver || null;
+        if (deliverSrc && typeof deliverSrc === 'object') {
             reqs.deliver = {};
+            for (var resId in deliverSrc) {
+                if (!deliverSrc.hasOwnProperty(resId) || !resId) continue;
+                var qty = _kqRandRange(rng, deliverSrc[resId]);
+                if (qty > 0) reqs.deliver[String(resId)] = qty;
+            }
+            if (Object.keys(reqs.deliver).length === 0) delete reqs.deliver;
+        }
+        if (questDef.deliverGoods) {
+            if (!reqs.deliver) reqs.deliver = {};
             for (var di = 0; di < questDef.deliverGoods.length; di++) {
                 var dg = questDef.deliverGoods[di];
-                reqs.deliver[dg.id] = dg.qty || (rng ? rng.randInt(dg.min || 5, dg.max || 20) : 10);
+                if (!dg || !dg.id) continue;
+                var dgQty = dg.qty || (rng ? rng.randInt(dg.min || 5, dg.max || 20) : 10);
+                if (dgQty > 0) reqs.deliver[dg.id] = dgQty;
             }
         }
-        if (questDef.goldReq) {
-            reqs.gold = questDef.goldReq;
-        }
+        var goldReq = srcReq.gold || questDef.goldReq || 0;
+        reqs.gold = Array.isArray(goldReq) ? _kqRandRange(rng, goldReq) : (Number(goldReq) || 0);
+        // v9p33river333: chain quests must use the same requirement shape checkKingdomQuestProgress understands.
         return reqs;
     }
 
@@ -1667,22 +1756,37 @@
     function checkKingdomQuestProgress(questId, kingdomId) {
         _sync();
         if (!kingdomId) kingdomId = _getPlayerKingdomId();
-        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) return { complete: false };
+        if (!player.kingdomQuests || !player.kingdomQuests[kingdomId]) return { complete: false, remaining: 'No quest data.' };
         var kqData = player.kingdomQuests[kingdomId];
         var quest = null;
         for (var i = 0; i < kqData.active.length; i++) {
             if (kqData.active[i].id === questId) { quest = kqData.active[i]; break; }
         }
-        if (!quest) return { complete: false };
+        if (!quest) return { complete: false, remaining: 'Quest not found.' };
+        if (!quest.requirements || typeof quest.requirements !== 'object') {
+            return { complete: false, remaining: 'Quest requirements are missing.', details: ['Quest requirements are missing.'] };
+        }
 
         var allMet = true;
         var remaining = [];
+        var hasRequirement = false;
+        if (!player.inventory) player.inventory = {};
+        if (!player.townStorage) player.townStorage = {};
 
         // Check delivery requirements
         if (quest.requirements.deliver) {
-            for (var resId in quest.requirements.deliver) {
-                var needed = quest.requirements.deliver[resId];
-                var have = player.inventory[resId] || 0;
+            var deliverKeys = Object.keys(quest.requirements.deliver);
+            for (var dk = 0; dk < deliverKeys.length; dk++) {
+                var resId = deliverKeys[dk];
+                var needed = Math.max(0, Math.floor(Number(quest.requirements.deliver[resId]) || 0));
+                if (!resId || needed <= 0) {
+                    allMet = false;
+                    remaining.push('Malformed delivery requirement');
+                    continue;
+                }
+                hasRequirement = true;
+                var townStore = (player.townStorage && player.townStorage[player.townId]) || {};
+                var have = (Number(player.inventory[resId]) || 0) + (Number(townStore[resId]) || 0);
                 if (have < needed) {
                     allMet = false;
                     remaining.push((needed - have) + ' more ' + resId);
@@ -1691,27 +1795,37 @@
         }
 
         // Check gold requirement
-        if (quest.requirements.gold > 0) {
-            if (player.gold < quest.requirements.gold) {
+        var goldReq = Math.max(0, Math.floor(Number(quest.requirements.gold) || 0));
+        if (goldReq > 0) {
+            hasRequirement = true;
+            if (player.gold < goldReq) {
                 allMet = false;
-                remaining.push('Need ' + (quest.requirements.gold - Math.floor(player.gold)) + ' more gold');
+                remaining.push('Need ' + (goldReq - Math.floor(player.gold)) + ' more gold');
             }
         }
 
         // Check action requirements
         if (quest.requirements.action) {
+            hasRequirement = true;
             var action = quest.requirements.action;
-            if (action.type === 'visit_towns' || action.type === 'visit_foreign' || action.type === 'visit_enemy_towns') {
+            var actionType = action && action.type ? String(action.type) : '';
+            var actionCount = Math.max(1, Math.floor(Number(action.count) || 1));
+            var goldTarget = Math.max(0, Math.floor(Number(action.goldTarget) || 0));
+            if (!actionType) {
+                allMet = false;
+                remaining.push('Malformed action requirement');
+            } else if (actionType === 'visit_towns' || actionType === 'visit_foreign' || actionType === 'visit_enemy_towns') {
                 var visited = player._kqVisitedTowns ? (player._kqVisitedTowns[questId] || []) : [];
-                if (visited.length < action.count) {
+                var visitedCount = Array.isArray(visited) ? visited.length : 0;
+                if (visitedCount < actionCount) {
                     allMet = false;
-                    remaining.push('Visit ' + (action.count - visited.length) + ' more towns');
+                    remaining.push('Visit ' + (actionCount - visitedCount) + ' more towns');
                 }
-            } else if (action.goldTarget > 0) {
+            } else if (goldTarget > 0) {
                 var spent = player._kqGoldSpent ? (player._kqGoldSpent[questId] || 0) : 0;
-                if (spent < action.goldTarget) {
+                if (spent < goldTarget) {
                     allMet = false;
-                    remaining.push('Raise ' + (action.goldTarget - spent) + ' more gold');
+                    remaining.push('Raise ' + (goldTarget - spent) + ' more gold');
                 }
             } else {
                 // One-off action quests
@@ -1723,6 +1837,11 @@
             }
         }
 
+        if (!hasRequirement) {
+            allMet = false;
+            remaining.push('Quest requirements are empty.');
+        }
+        // v9p33river333: never report complete without validated requirements/remaining text.
         return { complete: allMet, remaining: remaining.join(', '), details: remaining };
     }
 
@@ -1821,6 +1940,9 @@
                 return { success: true, actionSuccess: true, message: 'All steps already completed!', isMultiStep: true, stepCompleted: multiStep.totalSteps, totalSteps: multiStep.totalSteps };
             }
             currentStep = multiStep.steps[currentStepIdx];
+            if (!currentStep) {
+                return { success: false, message: '⚠️ Quest step configuration is incomplete.' }; // v9p33river333: corrupt multistep configs should fail safely.
+            }
         }
 
         // Check gold — use step cost if multi-step, otherwise base mechanic
@@ -1906,10 +2028,12 @@
                     trackKQActionDone(questId);
                     Engine.logEvent('✅ ' + (mech.label || 'Action') + ' — all steps completed! (Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ')');
                 } else {
-                    var nextStep = multiStep.steps[currentStepIdx + 1];
-                    Engine.logEvent('✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ' complete: ' + currentStep.label + '. Next: ' + nextStep.label);
+                    var nextStep = multiStep.steps[currentStepIdx + 1] || null;
+                    var nextStepLabel = nextStep && nextStep.label ? nextStep.label : 'Continue';
+                    // v9p33river333: corrupt multistep configs may omit the next step payload.
+                    Engine.logEvent('✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ' complete: ' + currentStep.label + '. Next: ' + nextStepLabel);
                     // Generate interactive data for next step if applicable
-                    if (nextStep.interactive) {
+                    if (nextStep && nextStep.interactive) {
                         _generateInteractiveData(quest, currentStepIdx + 1);
                     }
                 }
@@ -2037,8 +2161,8 @@
                 if (_isFinal) {
                     successMsg = '🏆 Final step complete! ' + (currentStep.label || '') + ' — ' + (mech.successText || 'Mission accomplished!');
                 } else {
-                    var _nextS = multiStep.steps[currentStepIdx + 1];
-                    successMsg = '✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ' — Success! Next: ' + (_nextS ? _nextS.label : 'Continue');
+                    var _nextS = multiStep.steps[currentStepIdx + 1] || null;
+                    successMsg = '✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ' — Success! Next: ' + (_nextS && _nextS.label ? _nextS.label : 'Continue');
                 }
                 successNarr = currentStep.narrative || mech.narrative || '';
             }
@@ -2057,7 +2181,7 @@
                 isMultiStep: isMultiStep,
                 stepCompleted: isMultiStep ? (currentStepIdx + 1) : null,
                 totalSteps: isMultiStep ? multiStep.totalSteps : null,
-                nextStepLabel: (isMultiStep && (currentStepIdx + 1) < multiStep.totalSteps) ? multiStep.steps[currentStepIdx + 1].label : null
+                nextStepLabel: (isMultiStep && (currentStepIdx + 1) < multiStep.totalSteps && multiStep.steps[currentStepIdx + 1]) ? (multiStep.steps[currentStepIdx + 1].label || 'Continue') : null
             };
         } else {
             // Failure — gold and time are lost, but can retry
@@ -2141,7 +2265,17 @@
         _sync();
         var day = Engine.getDay();
         var playerRank = _getPlayerNobleRank();
-        if (playerRank < 4) return;
+        if (playerRank < 4) {
+            if (player.kingdomQuests) {
+                for (var _staleKid in player.kingdomQuests) {
+                    if (player.kingdomQuests[_staleKid]) {
+                        player.kingdomQuests[_staleKid].available = [];
+                        player.kingdomQuests[_staleKid].personalAssignment = null;
+                    }
+                }
+            }
+            return; // v9p33river333: keep stale royal directives hidden after demotion.
+        }
 
         var kingdomId = _getPlayerKingdomId();
         if (!kingdomId) return;
@@ -2172,9 +2306,9 @@
                 Engine.logEvent('⏰ Kingdom quest expired: ' + q.title);
 
                 // Clean up tracking
-                delete player._kqVisitedTowns[q.id];
-                delete player._kqGoldSpent[q.id];
-                delete player._kqActionDone[q.id];
+                if (player._kqVisitedTowns) delete player._kqVisitedTowns[q.id];
+                if (player._kqGoldSpent) delete player._kqGoldSpent[q.id];
+                if (player._kqActionDone) delete player._kqActionDone[q.id];
 
                 kqData.active.splice(i, 1);
 
@@ -3784,11 +3918,11 @@
             Engine.logEvent('✅ All steps completed for quest: ' + quest.title);
         } else {
             // Generate interactive data for next step if needed
-            var nextStep = msConfig.steps[currentStep + 1];
+            var nextStep = msConfig.steps[currentStep + 1] || null;
             if (nextStep && nextStep.interactive) {
                 _generateInteractiveData(quest, currentStep + 1);
             }
-            Engine.logEvent('✅ Step ' + (currentStep + 1) + '/' + msConfig.totalSteps + ' complete. Next: ' + nextStep.label);
+            Engine.logEvent('✅ Step ' + (currentStep + 1) + '/' + msConfig.totalSteps + ' complete. Next: ' + (nextStep && nextStep.label ? nextStep.label : 'Continue'));
         }
     }
 

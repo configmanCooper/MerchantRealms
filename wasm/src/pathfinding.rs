@@ -156,11 +156,9 @@ pub extern "C" fn pathfinding_dijkstra(
             let to_idx = edges[base + 1] as u32;
             let cost = edges[base + 2];
 
-            // Check both directions (edges are bidirectional)
+            // v9p33river333: respect directed edge records; callers that need bidirectional travel must pass both edges.
             let neighbor = if from_idx == node_id {
                 to_idx
-            } else if to_idx == node_id {
-                from_idx
             } else {
                 continue;
             };

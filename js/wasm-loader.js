@@ -239,7 +239,7 @@ window.WASM = (function () {
         // exceeded, returns u32::MAX as a sentinel. We chunk the input
         // here so any caravan count works.
         api.caravanSubtick = function (caravanData, numCaravans, ticksPerDay) {
-            if (!caravanData || !isFinite(numCaravans) || numCaravans < 0 || caravanData.length < numCaravans * 9) return null; // v9p33river329: validate flat batch shape before WASM.
+            if (!caravanData || !isFinite(numCaravans) || Math.floor(numCaravans) !== numCaravans || numCaravans < 0 || caravanData.length < numCaravans * 9) return null; // v9p33river333: validate integer flat batch shape before WASM.
             var WASM_MAX = 256;
             var result = new Float64Array(numCaravans);
             var totalArrived = 0;

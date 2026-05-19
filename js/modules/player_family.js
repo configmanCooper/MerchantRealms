@@ -49,7 +49,23 @@
         try { people = Engine.getPeople(tid); } catch (e) { return []; }
         if (!people) return [];
 
+        var _forbiddenFamily = {};
+        if (player.spouseId) _forbiddenFamily[player.spouseId] = true;
+        if (player.childrenIds) {
+            for (var _cfi = 0; _cfi < player.childrenIds.length; _cfi++) _forbiddenFamily[player.childrenIds[_cfi]] = true;
+        }
+        if (player.familyMembers) {
+            for (var _ffi = 0; _ffi < player.familyMembers.length; _ffi++) {
+                var _fm = player.familyMembers[_ffi];
+                var _fid = (typeof _fm === 'string') ? _fm : (_fm && (_fm.npcId || _fm.id || _fm.personId));
+                if (_fid) _forbiddenFamily[_fid] = true;
+            }
+        }
+
         return people.filter(function(p) {
+            // v9p33river333: exclude close family/legacy family-member shapes from marriage pool.
+            if (!p || _forbiddenFamily[p.id]) return false;
+            if (p.parentIds && p.parentIds.indexOf('player') >= 0) return false;
             return p.alive &&
                 !p.spouseId &&
                 p.sex === oppositeSex &&
@@ -91,7 +107,11 @@
         var _kcKingdomId = null;
         for (var _kci2 = 0; _kci2 < kingdoms.length; _kci2++) {
             var _kcKing = Engine.findPerson ? Engine.findPerson(kingdoms[_kci2].king) : null;
-            if (_kcKing && _kcKing.childrenIds && _kcKing.childrenIds.indexOf(personId) >= 0) {
+            var _kcIsRoyalChild = false;
+            if (_kcKing && _kcKing.childrenIds && _kcKing.childrenIds.indexOf(personId) >= 0) _kcIsRoyalChild = true;
+            // v9p33river333: adopted/step royal children may only link back through parentIds.
+            if (!_kcIsRoyalChild && _kcKing && person.parentIds && person.parentIds.indexOf(_kcKing.id) >= 0) _kcIsRoyalChild = true;
+            if (_kcIsRoyalChild) {
                 _isKingChild = true;
                 _kcKingdomId = kingdoms[_kci2].id;
                 break;
@@ -195,6 +215,9 @@
 
     function finalizeWedding() {
         var player = ps();
+        // v9p33river333: legacy saves may lack these rank maps during wedding finalization.
+        if (!player.socialRank) player.socialRank = {};
+        if (!player.rankSince) player.rankSince = {};
         var plan = player.weddingPlan;
         if (!plan) return { success: false, message: 'No wedding planned.' };
         var person = Engine.findPerson(plan.fianceId);
@@ -208,16 +231,20 @@
         if (!plan.feast) plan.feast = 'simple';
         if (!plan.vows) plan.vows = 'practical';
 
-        var venue = (CONFIG.WEDDING_VENUES || []).find(function(v) { return v.id === plan.venue; }) || CONFIG.WEDDING_VENUES[0];
-        var feast = (CONFIG.WEDDING_FEASTS || []).find(function(f) { return f.id === plan.feast; }) || CONFIG.WEDDING_FEASTS[0];
-        var vow = (CONFIG.WEDDING_VOWS || []).find(function(v) { return v.id === plan.vows; }) || CONFIG.WEDDING_VOWS[0];
+        var _venues = CONFIG.WEDDING_VENUES || [];
+        var _feasts = CONFIG.WEDDING_FEASTS || [];
+        var _vows = CONFIG.WEDDING_VOWS || [];
+        // v9p33river333: tolerate missing/empty wedding option arrays.
+        var venue = _venues.find(function(v) { return v.id === plan.venue; }) || _venues[0] || { id: 'town_square', name: 'Town Square', icon: '💍', cost: 0 };
+        var feast = _feasts.find(function(f) { return f.id === plan.feast; }) || _feasts[0] || { id: 'simple', name: 'simple feast', icon: '🍞', cost: 0, guests: 5 };
+        var vow = _vows.find(function(v) { return v.id === plan.vows; }) || _vows[0] || { id: 'practical', name: 'Practical vows', description: 'We promised to build a steady life together.' };
 
         // v9p33river317: re-validate venue rank at finalization, not just
         // at selection. Player could pick a high-rank venue while noble
         // and then renounce/lose rank before the wedding fires. Fall
         // back to the default venue if no longer eligible.
         if (venue && venue.minRank && typeof getPlayerRankIndex === 'function' && getPlayerRankIndex() < venue.minRank) {
-            var _defaultVenue = (CONFIG.WEDDING_VENUES || []).find(function(v) { return v.id === 'town_square'; }) || CONFIG.WEDDING_VENUES[0];
+            var _defaultVenue = _venues.find(function(v) { return v.id === 'town_square'; }) || _venues[0] || venue;
             if (_defaultVenue) {
                 Engine.logEvent('💍 Your rank has fallen since planning the wedding; the ' + venue.name + ' is no longer available. Using ' + _defaultVenue.name + ' instead.');
                 venue = _defaultVenue;
@@ -295,7 +322,10 @@
         if (!player.familyMembers) player.familyMembers = [];
         var alreadyInFamily = false;
         for (var fi = 0; fi < player.familyMembers.length; fi++) {
-            if (player.familyMembers[fi].npcId === plan.fianceId) { alreadyInFamily = true; break; }
+            var _famEntry = player.familyMembers[fi];
+            var _famId = (typeof _famEntry === 'string') ? _famEntry : (_famEntry && (_famEntry.npcId || _famEntry.id || _famEntry.personId));
+            // v9p33river333: legacy familyMembers used multiple shapes; don't duplicate spouse.
+            if (_famId === plan.fianceId) { alreadyInFamily = true; break; }
         }
         if (!alreadyInFamily) {
             player.familyMembers.push({ npcId: plan.fianceId, role: 'spouse', name: person.firstName + ' ' + person.lastName });
@@ -341,7 +371,10 @@
             var _mkKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
             for (var _mki = 0; _mki < _mkKingdoms.length; _mki++) {
                 var _mkKing = Engine.findPerson ? Engine.findPerson(_mkKingdoms[_mki].king) : null;
-                if (_mkKing && _mkKing.childrenIds && _mkKing.childrenIds.indexOf(plan.fianceId) >= 0) {
+                var _mkIsRoyalChild = false;
+                if (_mkKing && _mkKing.childrenIds && _mkKing.childrenIds.indexOf(plan.fianceId) >= 0) _mkIsRoyalChild = true;
+                if (!_mkIsRoyalChild && _mkKing && person.parentIds && person.parentIds.indexOf(_mkKing.id) >= 0) _mkIsRoyalChild = true;
+                if (_mkIsRoyalChild) {
                     _marriedKingChild = true;
                     _mkKingdomId = _mkKingdoms[_mki].id;
                     break;

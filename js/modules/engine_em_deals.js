@@ -51,14 +51,21 @@
     function _getEMBuildings(em) {
         var results = [];
         if (!em || !em.buildings) return results;
+        var seenTowns = {};
+        var seenBuildings = {};
         for (var bi = 0; bi < em.buildings.length; bi++) {
             var bRef = em.buildings[bi];
-            var townId = bRef.townId || em.townId;
+            var townId = (bRef && bRef.townId) || em.townId;
+            if (!townId || seenTowns[townId]) continue;
+            seenTowns[townId] = true;
             var town = findTown(townId);
             if (!town || !town.buildings) continue;
             for (var ti = 0; ti < town.buildings.length; ti++) {
                 var bld = town.buildings[ti];
-                if (bld.ownerId === em.id) {
+                var bKey = (bld.id || (townId + ':' + ti));
+                // v9p33river333: don't duplicate owned buildings once per stale em.buildings ref.
+                if (bld.ownerId === em.id && !seenBuildings[bKey]) {
+                    seenBuildings[bKey] = true;
                     results.push({ building: bld, townId: townId, town: town });
                 }
             }
@@ -385,13 +392,17 @@
             );
         } else {
             // Caravan delivery
+            // v9p33river333: confirm the caravan can route before consuming inventory/marking delivered.
+            var _dealRoute = Engine.findPath ? Engine.findPath(emTown, deliverTown) : null;
+            if (!_dealRoute || _dealRoute.length === 0) return;
             _deductEMInventory(em, goodId, qty);
             deal.emDelivered = true;
             deal.emDeliveryMethod = 'caravan';
 
             if (!world.npcCaravans) world.npcCaravans = [];
+            world._dealCaravanSeq = (world._dealCaravanSeq || 0) + 1;
             world.npcCaravans.push({
-                id: 'deal_caravan_' + world.day + '_' + deal.id,
+                id: 'deal_caravan_' + world.day + '_' + deal.id + '_' + world._dealCaravanSeq,
                 ownerId: em.id,
                 ownerType: 'em',
                 fromTownId: emTown,

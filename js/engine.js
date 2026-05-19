@@ -15996,9 +15996,11 @@
                     var _toPost = Math.min(_maxNewRecruits, _canReserve);
                     if (_toPost > 0) {
                         var _aiTowns = [];
-                        for (var _rti = 0; _rti < (k.territories || []).length; _rti++) {
-                            var _rtTown = findTown(k.territories[_rti]);
-                            if (_rtTown && !_rtTown.isWilderness) _aiTowns.push(k.territories[_rti]);
+                        var _territoryIds = k.territories ? (Array.isArray(k.territories) ? k.territories : Array.from(k.territories)) : [];
+                        // v9p33river333: kingdoms store territories as Sets on raw kingdom objects.
+                        for (var _rti = 0; _rti < _territoryIds.length; _rti++) {
+                            var _rtTown = findTown(_territoryIds[_rti]);
+                            if (_rtTown && !_rtTown.isWilderness) _aiTowns.push(_territoryIds[_rti]);
                         }
                         var _reserveGold = _toPost * _costPer;
                         k.gold -= _reserveGold;

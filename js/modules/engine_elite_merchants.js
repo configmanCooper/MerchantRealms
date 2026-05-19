@@ -88,7 +88,8 @@
             var usedHeraldry = world.eliteMerchants.map(function(m) { return m.heraldry; }).filter(Boolean);
             var available = ELITE_MERCHANT_HERALDRY.filter(function(h) { return usedHeraldry.indexOf(h) === -1; });
             if (available.length > 0) {
-                npc.heraldry = available[Math.floor(world.rng.random() * available.length)];
+                // v9p33river333: heraldry generation can run before world.rng is hydrated.
+                npc.heraldry = available[Math.floor((world.rng ? world.rng.random() : Math.random()) * available.length)];
             } else {
                 var hIdx = 0;
                 for (var ci = 0; ci < (npc.id || '').length; ci++) hIdx = (hIdx * 31 + (npc.id || '').charCodeAt(ci)) | 0;
@@ -184,9 +185,10 @@
             var usedHeraldry = world.eliteMerchants.map(function(m) { return m.heraldry; }).filter(Boolean);
             var available = ELITE_MERCHANT_HERALDRY.filter(function(h) { return usedHeraldry.indexOf(h) === -1; });
             if (available.length > 0) {
-                person.heraldry = available[Math.floor(rng.random() * available.length)];
+                // v9p33river333: guard missing RNG during heraldry generation.
+                person.heraldry = available[Math.floor((rng && rng.random ? rng.random() : Math.random()) * available.length)];
             } else {
-                person.heraldry = ELITE_MERCHANT_HERALDRY[Math.floor(rng.random() * ELITE_MERCHANT_HERALDRY.length)];
+                person.heraldry = ELITE_MERCHANT_HERALDRY[Math.floor((rng && rng.random ? rng.random() : Math.random()) * ELITE_MERCHANT_HERALDRY.length)];
             }
         }
         person._eliteFieldsInit = false;
@@ -253,8 +255,11 @@
                         var connTowns = [];
                         for (var cri = 0; cri < world.roads.length; cri++) {
                             var cr = world.roads[cri];
-                            if (cr.fromTownId === candidateTown.id) connTowns.push(cr.toTownId);
-                            else if (cr.toTownId === candidateTown.id) connTowns.push(cr.fromTownId);
+                            var _ctId = null;
+                            if (cr.fromTownId === candidateTown.id) _ctId = cr.toTownId;
+                            else if (cr.toTownId === candidateTown.id) _ctId = cr.fromTownId;
+                            // v9p33river333: ignore stale road endpoints so null/deleted towns don't qualify merchants.
+                            if (_ctId && findTown(_ctId) && connTowns.indexOf(_ctId) < 0) connTowns.push(_ctId);
                         }
                         candidates = world.people.filter(function(p) {
                             return p.alive && (p.occupation === 'merchant' || p.occupation === 'noble') && !p.isEliteMerchant 
@@ -454,8 +459,9 @@
 
             // Also add guilds matching any buildings the EM owns
             var emTown = em.townId ? world.towns.find(function(t) { return t.id === em.townId; }) : null;
-            if (emTown) {
-                var emBuildings = emTown.buildings.filter(function(b) { return b.ownerId === em.id; });
+            if (emTown && Array.isArray(emTown.buildings)) {
+                // v9p33river333: some legacy towns have no buildings array.
+                var emBuildings = emTown.buildings.filter(function(b) { return b && b.ownerId === em.id; });
                 for (var ebi = 0; ebi < emBuildings.length; ebi++) {
                     var ebType = findBuildingType(emBuildings[ebi].type);
                     if (ebType && ebType.category) {
@@ -503,7 +509,9 @@
                 };
 
                 // Small reputation boost for joining
-                if (em.kingdomId && em.reputation) {
+                if (em.kingdomId) {
+                    // v9p33river333: initialize missing reputation map before applying guild bonus.
+                    if (!em.reputation) em.reputation = {};
                     em.reputation[em.kingdomId] = Math.min(100, (em.reputation[em.kingdomId] || 50) + 3);
                 }
 

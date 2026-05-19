@@ -115,7 +115,8 @@
             detection *= 1 + (_nobleNot * 0.004);
         }
         // Bribed guards reduction
-        if (town && player.bribedGuards[town.id]) {
+        if (town && player.bribedGuards && player.bribedGuards[town.id]) {
+            // v9p33river333: legacy players may not have bribedGuards yet.
             const bg = player.bribedGuards[town.id];
             const day = Engine.getDay();
             if (bg.expiresDay > day) {
@@ -123,7 +124,8 @@
             }
         }
         // Alibi reduces detection
-        if (player.alibi && Engine.getDay() <= player.alibi.expiresDay) {
+        if (player.alibi && player.alibi.expiresDay && Engine.getDay() <= player.alibi.expiresDay) {
+            // v9p33river333: ignore malformed legacy alibi records without expiry.
             detection *= 0.8;
         }
         // v9p33river205: global ~15% reduction across the board so every
@@ -338,6 +340,8 @@
         var _hkTerr = huntKingdom && huntKingdom.territories
             ? (Array.isArray(huntKingdom.territories) ? huntKingdom.territories : Array.from(huntKingdom.territories))
             : [];
+        // v9p33river333: stale town.kingdomId is not enough; territory must still belong to the hunt kingdom.
+        if (inHuntKingdom && _hkTerr.indexOf(currentTown.id) < 0) inHuntKingdom = false;
         if (!inHuntKingdom && huntKingdom && _hkTerr.length) {
             var pPos = null;
             try { if (Player.getPlayerWorldPosition) pPos = Player.getPlayerWorldPosition(); } catch(_e) {}
@@ -665,6 +669,8 @@
         var _hkTerr2 = huntKingdom && huntKingdom.territories
             ? (Array.isArray(huntKingdom.territories) ? huntKingdom.territories : Array.from(huntKingdom.territories))
             : [];
+        // v9p33river333: stale town.kingdomId should not block extradition.
+        if (_playerInHuntKingdom && _hkTerr2.indexOf(currentTown.id) < 0) _playerInHuntKingdom = false;
         if (!_playerInHuntKingdom && huntKingdom && _hkTerr2.length) {
             // Find player's current world position
             var _pPos = null;
@@ -1888,19 +1894,26 @@
         }
 
         var caughtMsg = '';
+        // v9p33river333: validate rumor jurisdiction before reputation/criminal writes.
+        var _rumorKingdomId = null;
+        if (town && town.kingdomId && Engine.findKingdom) {
+            var _rumorKingdom = Engine.findKingdom(town.kingdomId);
+            var _rumorTerr = (_rumorKingdom && _rumorKingdom.territories) ? (Array.isArray(_rumorKingdom.territories) ? _rumorKingdom.territories : Array.from(_rumorKingdom.territories)) : [];
+            if (_rumorKingdom && _rumorTerr.indexOf(town.id) >= 0) _rumorKingdomId = _rumorKingdom.id;
+        }
         if (caught) {
-            const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
+            const kingdom = _rumorKingdomId && Engine.findKingdom ? Engine.findKingdom(_rumorKingdomId) : null;
             // v9p33river323: caught rumor-spreading was being recorded
             // and punished as 'forgery' / 'blackmail' crime profiles.
             // Now uses the canonical 'spread_rumors' crime id (or
             // 'fraud' fallback) for both penalty + record.
             applyCorruptPenalty(town, kingdom, 0, 10, 0, false, 'fraud');
             if (player.relationships[targetMerchantId]) player.relationships[targetMerchantId].level = 0;
-            recordCorruptAction('spread_rumors', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'fraud');
+            recordCorruptAction('spread_rumors', true, _rumorKingdomId, 'fraud');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             caughtMsg = '🚨 CAUGHT! Reputation -10. Target knows you spread rumors.';
         } else {
-            recordCorruptAction('spread_rumors', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+            recordCorruptAction('spread_rumors', false, _rumorKingdomId, 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
         }
 
@@ -3853,6 +3866,23 @@
             player.gold += loot;
             player.stats.totalGoldEarned += loot;
             if (target.gold != null) target.gold = Math.max(0, target.gold - loot * 2);
+            // v9p33river333: remove linked caravan goods too, not only abstract target gold.
+            if (target.caravans && target.caravans.length > 0) {
+                var _raidCar = target.caravans[0];
+                var _raidGoods = _raidCar.goods || _raidCar.inventory || {};
+                var _lootLeft = loot;
+                for (var _rg in _raidGoods) {
+                    if (_lootLeft <= 0) break;
+                    var _rgQty = Math.max(0, Math.floor(_raidGoods[_rg] || 0));
+                    if (_rgQty <= 0) continue;
+                    var _rgRes = findResource(_rg);
+                    var _rgValue = Math.max(1, (_rgRes && _rgRes.basePrice) || 5);
+                    var _take = Math.min(_rgQty, Math.ceil(_lootLeft / _rgValue));
+                    _raidGoods[_rg] -= _take;
+                    if (_raidGoods[_rg] <= 0) delete _raidGoods[_rg];
+                    _lootLeft -= _take * _rgValue;
+                }
+            }
             grantXP(20, 'Sabotaged caravan');
             Engine.logEvent('A caravan belonging to ' + (target.firstName || 'a merchant') + ' was raided by bandits near ' + town.name + '.');
         }

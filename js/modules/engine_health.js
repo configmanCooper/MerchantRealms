@@ -214,7 +214,9 @@
             // Medical infrastructure reduces illness incidence (capped at -55%)
             var infraReduction = 0;
             for (var bi = 0; bi < blds.length; bi++) {
-                var btId = typeof blds[bi] === 'string' ? blds[bi] : (blds[bi].type || blds[bi].id || '');
+                var _bldEntry = blds[bi];
+                // v9p33river333: tolerate null/malformed building entries in legacy towns.
+                var btId = typeof _bldEntry === 'string' ? _bldEntry : (_bldEntry ? (_bldEntry.type || _bldEntry.id || '') : '');
                 if (btId === 'hospital') { infraReduction += 0.20; hasHosp = true; }
                 else if (btId === 'clinic') { infraReduction += 0.10; hasClin = true; }
                 else if (btId === 'well' || btId === 'cistern') infraReduction += 0.05;
@@ -235,7 +237,7 @@
                     if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
                     if (pol.type === 'public_hygiene' && (!pol.townId || pol.townId === t.id)) mod *= 0.70;
                     if (pol.type === 'medical_funding' && (!pol.townId || pol.townId === t.id)) mod *= 0.85;
-                    if (pol.type === 'martial_quarantine' && pol.townId === t.id) mod *= 0.40;
+                    if (pol.type === 'martial_quarantine' && (!pol.townId || pol.townId === t.id)) mod *= 0.40; // v9p33river333: town-wide quarantine policies may omit townId.
                 }
             }
             mod = Math.max(0.30, mod);
@@ -340,7 +342,11 @@
             // Soldiers in warring kingdoms get extra risk
             if ((ip.occupation === 'soldier' || ip.occupation === 'guard') && ip.kingdomId) {
                 var ipKingdom = findKingdom(ip.kingdomId);
-                if (ipKingdom && ipKingdom.atWar && ipKingdom.atWar.size > 0) injMult *= 1.5;
+                if (ipKingdom && ipKingdom.atWar) {
+                    var _warCount = Array.isArray(ipKingdom.atWar) ? ipKingdom.atWar.length : ipKingdom.atWar.size;
+                    // v9p33river333: atWar may be a legacy array or a Set.
+                    if (_warCount > 0) injMult *= 1.5;
+                }
             }
 
             var injRoll = rng.random();
@@ -521,11 +527,13 @@
             // saved 95% of the time by the generic 'illness' child-protect roll)
             var _deathCause = (_isPoison ? 'poisoned' : 'illness');
             if (_isPoison) _dbgPoison('💀 DIED of poison — calling killPerson(' + _deathCause + ')', person, { daysSick: daysSick, treated: treated, age: person.age, isKing: !!person.isKing });
+            var _wasAliveBeforeKill = person.alive;
             killPerson(person, _deathCause);
+            // v9p33river333: only force fallback death if killPerson left the original live NPC alive.
             // v9p33river244: if poison-kill was somehow blocked but the NPC is
             // at 0 hp and poisoned, there's no realistic recovery — clean up
             // the corpse-state so they don't keep ticking
-            if (_isPoison && person.alive && person.health <= 0) {
+            if (_isPoison && _wasAliveBeforeKill && person.alive && person.health <= 0) {
                 if (_dbgPoison) _dbgPoison('⚠️ killPerson DID NOT actually kill — forcing dead', person, {});
                 person.alive = false;
                 person.causeOfDeath = 'poisoned';
@@ -547,7 +555,10 @@
                     var _pState = Player.state || Player;
                     if (_pState.familyMembers) {
                         for (var _fi = 0; _fi < _pState.familyMembers.length; _fi++) {
-                            if (_pState.familyMembers[_fi] === person.id || (_pState.familyMembers[_fi].id && _pState.familyMembers[_fi].id === person.id)) { _isNotable = true; break; }
+                            var _pfm = _pState.familyMembers[_fi];
+                            var _pfmId = (typeof _pfm === 'string') ? _pfm : (_pfm && (_pfm.npcId || _pfm.id || _pfm.personId));
+                            // v9p33river333: mixed familyMembers shapes should all notify once.
+                            if (_pfmId === person.id) { _isNotable = true; break; }
                         }
                     }
                     if (!_isNotable && _pState.spouseId === person.id) _isNotable = true;
@@ -682,6 +693,8 @@
                 contagiousCounts[sp.illness]++;
             }
 
+            var _alreadyRolledHealthy = {}; // v9p33river333: one pathogen roll per healthy NPC per town tick.
+
             for (var illId in contagiousCounts) {
                 var sickCount = contagiousCounts[illId];
                 var illDef = ills[illId];
@@ -715,8 +728,8 @@
                     for (var hp = 0; hp < kingdom.healthPolicies.length; hp++) {
                         var pol = kingdom.healthPolicies[hp];
                         if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
-                        if (pol.type === 'martial_quarantine' && pol.townId === tid) baseRate *= 0.05;
-                        else if (pol.type === 'quarantine_town' && pol.townId === tid) baseRate *= 0.20;
+                        if (pol.type === 'martial_quarantine' && (!pol.townId || pol.townId === tid)) baseRate *= 0.05;
+                        else if (pol.type === 'quarantine_town' && (!pol.townId || pol.townId === tid)) baseRate *= 0.20; // v9p33river333: town-wide policies may omit townId.
                     }
                 }
 
@@ -727,17 +740,19 @@
 
                 if (newCases > 0) {
                     // Shuffle healthy list and infect first N
-                    var shuffled = healthyList.slice();
+                    var shuffled = healthyList.filter(function(hp) { return hp && !_alreadyRolledHealthy[hp.id]; });
                     for (var shi = shuffled.length - 1; shi > 0; shi--) {
                         var shj = rng.randInt(0, shi);
                         var tmp = shuffled[shi]; shuffled[shi] = shuffled[shj]; shuffled[shj] = tmp;
                     }
                     var infected = 0;
                     for (var ni = 0; ni < Math.min(newCases, shuffled.length); ni++) {
-                        if (infectNPC(shuffled[ni], illId, rng, day, 'contagion')) {
+                        var _rollTarget = shuffled[ni];
+                        if (_rollTarget && _rollTarget.id) _alreadyRolledHealthy[_rollTarget.id] = true;
+                        if (infectNPC(_rollTarget, illId, rng, day, 'contagion')) {
                             infected++;
                             // Remove from healthy pool
-                            var hIdx = healthyList.indexOf(shuffled[ni]);
+                            var hIdx = healthyList.indexOf(_rollTarget);
                             if (hIdx >= 0) healthyList.splice(hIdx, 1);
                         }
                     }
@@ -777,8 +792,8 @@
                 for (var hp = 0; hp < kingdom.healthPolicies.length; hp++) {
                     var pol = kingdom.healthPolicies[hp];
                     if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
-                    if ((pol.type === 'quarantine_town' || pol.type === 'martial_quarantine') && pol.townId === tid) isQuarantined = true;
-                    if (pol.type === 'close_port' && pol.townId === tid) portClosed = true;
+                    if ((pol.type === 'quarantine_town' || pol.type === 'martial_quarantine') && (!pol.townId || pol.townId === tid)) isQuarantined = true;
+                    if (pol.type === 'close_port' && (!pol.townId || pol.townId === tid)) portClosed = true; // v9p33river333: town-wide policies may omit townId.
                 }
             }
 
@@ -919,8 +934,8 @@
         for (var i = 0; i < kd.healthPolicies.length; i++) {
             var pol = kd.healthPolicies[i];
             if (!pol.active || (pol.expiresDay && day > pol.expiresDay)) continue;
-            if ((pol.type === 'quarantine_town' || pol.type === 'martial_quarantine') && pol.townId === town.id) return true;
-            if (pol.type === 'close_roads' && pol.townId === town.id) return true;
+            if ((pol.type === 'quarantine_town' || pol.type === 'martial_quarantine') && (!pol.townId || pol.townId === town.id)) return true;
+            if (pol.type === 'close_roads' && (!pol.townId || pol.townId === town.id)) return true; // v9p33river333: town-wide policies may omit townId.
         }
         return false;
     }

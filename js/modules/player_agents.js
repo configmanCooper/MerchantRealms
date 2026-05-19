@@ -238,6 +238,10 @@
         agent.travelingTo = null;
         agent.travelProgress = 0;
         agent.travelRoute = null;
+        agent.travelTotalDist = 0;
+        // v9p33river333: clear stale travel/UI labels when a task is cancelled mid-route.
+        agent.travelStatus = null;
+        agent.currentAction = null;
         return { success: true, message: '✅ ' + agent.name + ' task cancelled. Now idle in ' + ((Engine.findTown(agent.townId) || {}).name || 'unknown') + '.' };
     }
 
@@ -246,13 +250,16 @@
         var agent = findAgent(agentId);
         if (!agent) return { success: false, message: 'Agent not found.' };
         agent.task = null;
-        agent.status = 'idle';
         if (agent.townId !== player.townId) {
+            // v9p33river333: _startAgentTravel owns status='traveling'; don't mark idle first.
             _startAgentTravel(agent, player.townId);
             return { success: true, message: '✅ ' + agent.name + ' recalled, traveling back to you.' };
         }
+        agent.status = 'idle';
         agent.travelingTo = null;
         agent.travelProgress = 0;
+        agent.travelRoute = null;
+        agent.travelTotalDist = 0;
         return { success: true, message: '✅ ' + agent.name + ' recalled and idle.' };
     }
 
@@ -299,7 +306,9 @@
                     player.gold -= _partialCost;
                     if (Player.logFinance && _partialCost > 0) Player.logFinance(-_partialCost, 'agents', 'Agent wages partial (' + agent.name + ')');
                     else if (player.stats && _partialCost > 0) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + _partialCost;
-                    agent.lastPaidDay += daysPaid;
+                    // v9p33river333: partial wages pay the oldest days but unpaid skipped days remain owed.
+                    if (daysPaid > 0) agent.lastPaidDay = Math.min(day, agent.lastPaidDay + daysPaid);
+                    if (daysPaid < daysMissed) agent._unpaidWageDays = (agent._unpaidWageDays || 0) + (daysMissed - daysPaid);
                     agent.loyalty = Math.max(0, agent.loyalty - (daysMissed - daysPaid) * 3);
                 } else {
                     agent.loyalty = Math.max(0, agent.loyalty - daysMissed * 5);
@@ -456,7 +465,13 @@
                     Engine.logEvent('☠️ Agent ' + agent.name + ' was executed as a spy in a hostile kingdom!', null, 'my_actions');
                     agent.status = 'dead';
                     agent.task = null;
+                    agent.travelingTo = null;
+                    agent.travelProgress = 0;
+                    agent.travelRoute = null;
                     agent._dead = true;
+                    // v9p33river333: clear stale selection/task references for removed hostile agents.
+                    if (player.selectedAgentId === agent.id) player.selectedAgentId = null;
+                    if (player.activeAgentId === agent.id) player.activeAgentId = null;
                     // Remove agent from roster
                     if (player.agents) {
                         for (var _ari = player.agents.length - 1; _ari >= 0; _ari--) {
@@ -602,8 +617,13 @@
         var lootGold = 50 + (rng ? rng.randInt(0, 150) : 75);
         player.gold += lootGold;
         agent.earnings += lootGold;
+        // v9p33river333: fully deactivate raided caravans, not just status-label them.
         caravan.active = false;
         caravan.status = 'destroyed';
+        caravan.traveling = false;
+        caravan.progress = 1;
+        caravan.route = null;
+        caravan.toTownId = null;
         agent.reports.push({ day: day, msg: '⚔️ Raided caravan! Looted ' + lootGold + 'g from ' + (target.firstName || 'target') + '\'s caravan.' });
     }
 
@@ -655,6 +675,27 @@
             return;
         }
         target.gold = (target.gold || 0) - actuallyStolen;
+        // v9p33river333: remove linked warehouse/retail stock so victim wealth doesn't desync.
+        var _stockValueLeft = actuallyStolen;
+        for (var _tbi = 0; _tbi < targetBuildings.length && _stockValueLeft > 0; _tbi++) {
+            var _tb = targetBuildings[_tbi];
+            var _stocks = [_tb.storage, _tb.retailStock, _tb.inventory];
+            for (var _si = 0; _si < _stocks.length && _stockValueLeft > 0; _si++) {
+                var _stock = _stocks[_si];
+                if (!_stock) continue;
+                for (var _gid in _stock) {
+                    if (_stockValueLeft <= 0) break;
+                    var _qty = Math.max(0, Math.floor(_stock[_gid] || 0));
+                    if (_qty <= 0) continue;
+                    var _res = findResource(_gid);
+                    var _unitValue = Math.max(1, (_res && _res.basePrice) || 5);
+                    var _takeQty = Math.min(_qty, Math.ceil(_stockValueLeft / _unitValue));
+                    _stock[_gid] -= _takeQty;
+                    if (_stock[_gid] <= 0) delete _stock[_gid];
+                    _stockValueLeft -= _takeQty * _unitValue;
+                }
+            }
+        }
         player.gold += actuallyStolen;
         agent.earnings += actuallyStolen;
         agent.reports.push({ day: day, msg: '🥷 Stole ' + actuallyStolen + 'g worth of goods from ' + (target.firstName || 'target') + '\'s warehouse.' });

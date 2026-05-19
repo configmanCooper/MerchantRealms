@@ -35,9 +35,16 @@
 // ═══════════════════════════════════════════════════════════
 
 function showRightPanel(title, html) {
-    _rpTitleEl().textContent = title;
-    _rpBodyEl().innerHTML = html;
-    _rpEl().classList.remove('hidden');
+    var titleEl = _rpTitleEl();
+    var bodyEl = _rpBodyEl();
+    var panelEl = _rpEl();
+    if (!titleEl || !bodyEl || !panelEl) {
+        // v9p33river333: early UI calls can arrive before the right-panel DOM exists.
+        return;
+    }
+    titleEl.textContent = title;
+    bodyEl.innerHTML = html;
+    panelEl.classList.remove('hidden');
 }
 
 function closeRightPanel() {
@@ -46,7 +53,9 @@ function closeRightPanel() {
 }
 
 function _toggleCollapse(h3El) {
+    if (!h3El) return;
     var body = h3El.nextElementSibling;
+    if (!body || !body.style) return; // v9p33river333: tolerate malformed/collapsed headers.
     var id = h3El.getAttribute('data-collapse-id');
     var isNowHidden = body.style.display !== 'none';
     body.style.display = isNowHidden ? 'none' : '';
@@ -64,10 +73,13 @@ function showTownDetail(town) {
     let kingdom;
     try { kingdom = Engine.getKingdom(town.kingdomId); } catch (e) { /* no-op */ }
     const kName = kingdom ? kingdom.name : 'Unknown';
-    const kColor = kingdom ? (kingdom.color || CONFIG.KINGDOM_COLORS[kingdom.id % CONFIG.KINGDOM_COLORS.length]) : '#888';
+    const _kColors = (typeof CONFIG !== 'undefined' && CONFIG.KINGDOM_COLORS) ? CONFIG.KINGDOM_COLORS : [];
+    const _kIdxRaw = kingdom ? Number(kingdom.id) : NaN;
+    // v9p33river333: non-numeric kingdom IDs cannot be used directly as color indexes.
+    const kColor = kingdom ? (kingdom.color || (_kColors.length ? _kColors[isFinite(_kIdxRaw) ? Math.abs(Math.floor(_kIdxRaw)) % _kColors.length : 0] : '#888')) : '#888';
     const pop = town.population || 0;
-    const prosperity = town.prosperity || 50;
-    const happiness = town.happiness || 50;
+    const prosperity = Math.max(0, Math.min(100, Number(town.prosperity != null ? town.prosperity : 50) || 0));
+    const happiness = Math.max(0, Math.min(100, Number(town.happiness != null ? town.happiness : 50) || 0));
     const walls = town.walls || 0;
     const garrison = town.garrison || 0;
     const isPlayerHere = (typeof Player !== 'undefined' && Player.townId === town.id && !Player.traveling);
@@ -84,8 +96,9 @@ function showTownDetail(town) {
     const wallConfig = CONFIG.WALL_LEVELS ? CONFIG.WALL_LEVELS[walls] : null;
     const wallName = wallConfig ? wallConfig.name : (walls > 0 ? 'Level ' + walls : 'None');
     const wallDefBonus = wallConfig ? Math.round(wallConfig.defenseBonus * 100) : 0;
-    const wallCondCfg = (walls > 0 && CONFIG.CONDITION_LEVELS) ? CONFIG.CONDITION_LEVELS[town.wallCondition || 'new'] : null;
-    const wallCondStr = wallCondCfg ? ' ' + wallCondCfg.icon + ' ' + wallCondCfg.name : '';
+    const _wallCondKey = (walls > 0 && CONFIG.CONDITION_LEVELS && CONFIG.CONDITION_LEVELS[town.wallCondition]) ? town.wallCondition : 'new';
+    const wallCondCfg = (walls > 0 && CONFIG.CONDITION_LEVELS) ? CONFIG.CONDITION_LEVELS[_wallCondKey] : null;
+    const wallCondStr = wallCondCfg ? ' ' + wallCondCfg.icon + ' ' + wallCondCfg.name : ''; // v9p33river333: unknown wall states fall back safely.
 
     // Header
     html += `<div class="detail-section">
@@ -197,8 +210,9 @@ function showTownDetail(town) {
 
     // Port / Island indicators
     if (town.isPort) {
+        var _isConfirmedIsland = town.isIsland === true && !town.isOutpost;
         html += `<div class="detail-row"><span class="label">Port</span>
-            <span class="value" style="color:#00b4c8">⚓ Port Town${town.isIsland ? ' (Island)' : ''}</span></div>`;
+            <span class="value" style="color:#00b4c8">⚓ Port Town${_isConfirmedIsland ? ' (Island)' : ''}</span></div>`;
     }
 
     // Town happiness with tier indicator
@@ -251,8 +265,9 @@ function showTownDetail(town) {
                     // v9p33river312: NPCs use _jailedUntilDay (underscore)
                     // but elite merchants use jailedUntilDay (no underscore,
                     // engine_elite_merchants.js:627,1486). Match either.
+                    if (!p) return false;
                     var _j = p._jailedUntilDay || p.jailedUntilDay || 0;
-                    return p.alive && p.townId === town.id && _j > day;
+                    return p.alive === true && p.townId === town.id && _j > day;
                 });
                 if (jailed.length === 0) {
                     return '<div class="detail-row"><span class="label">⛓️ Jail</span><span class="value" style="color:#888;">Empty</span></div>';
@@ -289,8 +304,10 @@ function showTownDetail(town) {
         }
     }
     // Town reputation
-    if (typeof Player !== 'undefined' && Player.townReputation) {
-        const rep = Player.getTownReputation ? Player.getTownReputation(town.id) : (Player.townReputation[town.id] || 50);
+    if (typeof Player !== 'undefined' && (Player.getTownReputation || Player.townReputation)) {
+        const repRaw = Player.getTownReputation ? Player.getTownReputation(town.id) : ((Player.townReputation && Player.townReputation[town.id]) || 50);
+        const rep = Math.max(0, Math.min(100, Number(repRaw) || 50));
+        // v9p33river333: old saves may not have Player.townReputation when the getter is absent.
         const repColor = rep >= 70 ? '#55a868' : rep >= 40 ? '#ccb974' : '#c44e52';
         html += `<div class="detail-row"><span class="label">Your Reputation</span>
             <span class="value"><div class="bar-small"><div class="bar-small-fill" style="width:${rep}%;background:${repColor}"></div></div> ${rep}</span></div>`;
@@ -1109,7 +1126,7 @@ function showKingdomDetail(kingdom) {
     }
 
     // Active embargoes
-    if (kingdom.embargoes && kingdom.embargoes.length > 0) {
+    if (Array.isArray(kingdom.embargoes) && kingdom.embargoes.length > 0) {
         const embargoNames = kingdom.embargoes.map(eId => {
             try { const ek = Engine.getKingdom(eId); return ek ? ek.name : eId; } catch (e) { return eId; }
         }).join(', ');
@@ -1119,13 +1136,14 @@ function showKingdomDetail(kingdom) {
     }
 
     // Royal Advisors
-    if (kingdom.royalAdvisors && kingdom.royalAdvisors.length > 0) {
+    if (Array.isArray(kingdom.royalAdvisors) && kingdom.royalAdvisors.length > 0) {
         html += `<div class="detail-section"><h3>📜 Royal Advisors</h3>`;
         for (const advisorId of kingdom.royalAdvisors) {
             let advName = 'Unknown';
             try {
                 const adv = Engine.getPerson(advisorId);
-                if (adv) advName = adv.firstName + ' ' + adv.lastName;
+                // v9p33river333: stale advisor IDs may not resolve to a valid person object.
+                if (adv && typeof adv === 'object') advName = ((adv.firstName || '') + ' ' + (adv.lastName || '')).trim() || 'Unknown';
             } catch (e) { /* no-op */ }
             html += `<div class="detail-row">
                 <span class="label">${advName}</span>
@@ -1168,7 +1186,8 @@ function showKingdomDetail(kingdom) {
         for (const [kId, val] of Object.entries(kingdom.relations)) {
             const other = kingdoms.find(k => k.id == kId);
             if (!other) continue;
-            const isWar = kingdom.atWar && (kingdom.atWar.has ? kingdom.atWar.has(kId) : kingdom.atWar.includes(kId));
+            const _warCollection = kingdom.atWar;
+            const isWar = _warCollection instanceof Set ? _warCollection.has(kId) : (Array.isArray(_warCollection) ? _warCollection.indexOf(kId) >= 0 : false); // v9p33river333: ignore stale non-Set/non-array war data.
             html += `<div class="detail-row">
                 <span class="label">${other.name}</span>
                 <span class="value ${isWar ? 'text-danger' : val > 50 ? 'text-success' : val < -30 ? 'text-warning' : ''}">${isWar ? '⚔ AT WAR' : val}</span>
@@ -1275,7 +1294,9 @@ function showKingdomDetail(kingdom) {
             html += '<div style="font-size:0.78rem;font-weight:bold;margin-bottom:4px;">📦 Commissions (' + _openComms.length + ')</div>';
             for (var _cci = 0; _cci < Math.min(_openComms.length, 3); _cci++) {
                 var _cc = _openComms[_cci];
-                var _ccDaysLeft = _cc.expiresDay - (Engine.getDay ? Engine.getDay() : 0);
+                var _ccEndDay = Number(_cc.expiresDay);
+                var _ccDaysLeft = isFinite(_ccEndDay) ? Math.max(0, _ccEndDay - (Engine.getDay ? Engine.getDay() : 0)) : '?';
+                // v9p33river333: incomplete commission records should not render NaN days.
                 html += '<div style="font-size:0.75rem;padding:4px 6px;background:rgba(255,215,0,0.06);border-radius:4px;margin-bottom:3px;">';
                 html += '📜 ' + _cc.description;
                 html += ' <span style="color:#ffd700;">💰' + _cc.reward + 'g</span>';

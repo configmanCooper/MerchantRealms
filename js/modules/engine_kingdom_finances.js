@@ -378,7 +378,10 @@
                         var _bsSellPct = _monthsOfReserve < 1 ? 0.6 : 0.3;
                         var _bsSurplus = Math.floor(_bsQty * _bsSellPct);
                         if (_bsSurplus > 0) {
-                            var _bsKTowns = world.towns.filter(function(t) { return k.territories.has(t.id); });
+                            var _bsKTowns = world.towns.filter(function(t) {
+                                // v9p33river333: liquidate only into useful live market towns.
+                                return k.territories.has(t.id) && !t.abandoned && !t.destroyed && !t.isOutpost && !t.isJunction && t.market && t.market.supply && t.market.prices;
+                            });
                             if (_bsKTowns.length > 0) {
                                 var _bsTown = rng.pick(_bsKTowns);
                                 // v9p33river310: guard malformed/partial
@@ -619,8 +622,17 @@
                         const bld = town.buildings[idx];
                         const bt = findBuildingType(bld.type);
                         const salePrice = Math.floor((bt ? bt.cost : 300) * 0.5);
+                        if (bld.workers && bld.workers.length) {
+                            for (var _sbwi = 0; _sbwi < bld.workers.length; _sbwi++) {
+                                var _sbw = findPerson(bld.workers[_sbwi]);
+                                if (_sbw) { _sbw.employerId = null; _sbw.occupation = _sbw.previousOccupation || _sbw.occupation; }
+                            }
+                            bld.workers = [];
+                        }
                         town.buildings.splice(idx, 1);
                         k.gold += salePrice;
+                        // v9p33river333: record salvage income and clean owner state before removing building.
+                        recordKingdomTransaction(k, 'income', salePrice, 'Emergency sale of ' + (bt ? bt.name : bld.type) + ' in ' + town.name, 'building_sale');
                         logEvent(`🏚️ ${k.name} sells a ${bt ? bt.name : bld.type} in ${town.name} for ${salePrice}g.`, {
                             type: 'building_sale', kingdomId: k.id, cause: 'Desperate for gold', effects: ['Town loses building benefits']
                         });
@@ -1293,6 +1305,21 @@
             if (world.day % 90 === 0) {
                 k.gold -= transportCost;
                 recordKingdomTransaction(k, 'expense', transportCost, 'Public transport upkeep (' + numTowns + ' towns)', 'transport');
+                // v9p33river333: book same-season fare revenue before insolvency cancellation.
+                if (k._transportRevenueDay !== world.day) {
+                    var _trRate = k.laws.transportRate || 15;
+                    var _trTowns = world.towns.filter(function(t) { return t.kingdomId === k.id; });
+                    var _trPassengers = 0;
+                    for (var _tri = 0; _tri < _trTowns.length; _tri++) {
+                        var _trPop = _trTowns[_tri].population || 50;
+                        _trPassengers += Math.floor(_trPop * 0.05 * rng.randFloat(0.5, 1.5));
+                    }
+                    var _trRevenue = _trPassengers * _trRate;
+                    k.gold += _trRevenue;
+                    k.transportRevenue = (k.transportRevenue || 0) + _trRevenue;
+                    k._transportRevenueDay = world.day;
+                    if (_trRevenue > 0) recordKingdomTransaction(k, 'income', _trRevenue, 'Public transport fares (' + _trPassengers + ' passengers)', 'transport');
+                }
                 // If kingdom can't afford, they cancel it
                 if (k.gold < 0) {
                     k.laws.kingdomTransport = false;
@@ -1302,7 +1329,7 @@
         }
 
         // ---- Kingdom Transport Revenue (seasonal) ----
-        if (k.laws && k.laws.kingdomTransport && world.day % 90 === 0) {
+        if (k.laws && k.laws.kingdomTransport && world.day % 90 === 0 && k._transportRevenueDay !== world.day) {
             var rate = k.laws.transportRate || 15;
             var kTowns = world.towns.filter(function(t) { return t.kingdomId === k.id; });
 
@@ -1496,7 +1523,8 @@
             if (!town) continue;
             const foodTypes = ['bread', 'meat', 'wheat', 'fish', 'eggs', 'poultry'];
             for (const food of foodTypes) {
-                if (town.market.prices[food]) {
+                if (town.market && town.market.prices && town.market.prices[food]) {
+                    // v9p33river333: famine can hit towns without markets.
                     town.market.prices[food] = Math.ceil(town.market.prices[food] * 3.0);
                 }
             }

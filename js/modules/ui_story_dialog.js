@@ -43,6 +43,20 @@
     var _savedSpeed = null;      // speed before dialog opened (for auto-slowdown)
     var _currentAudio = null;    // currently playing Audio element (pre-gen MP3)
 
+    function _hasDialogContent(dialogData) {
+        // v9p33river333: choice-only/onComplete-only dialogs are valid work.
+        return !!(dialogData && ((Array.isArray(dialogData.lines) && dialogData.lines.length > 0) ||
+            (Array.isArray(dialogData.choices) && dialogData.choices.length > 0) ||
+            typeof dialogData.onComplete === 'function'));
+    }
+
+    function _isDirectEmoji(value) {
+        // v9p33river333: only render actual emoji literals, not arbitrary non-ASCII keys/names.
+        if (typeof value !== 'string') return false;
+        var emojiPart = '(?:[\\u2600-\\u27BF]\\uFE0F?|[\\u{1F300}-\\u{1FAFF}][\\u{1F3FB}-\\u{1F3FF}]?)';
+        return new RegExp('^' + emojiPart + '(?:\\u200D' + emojiPart + ')*$', 'u').test(value);
+    }
+
     // ── TTS Voice System ──────────────────────────────────────
     var _ttsVolume = parseFloat(localStorage.getItem('storyTtsVolume')) || 0.9;
     var _ttsEnabled = true;      // on by default
@@ -385,22 +399,26 @@
         for (var i = 0; i < choices.length; i++) {
             var btn = document.createElement('button');
             btn.className = 'sd-choice-btn';
-            btn.textContent = choices[i].label;
+            btn.textContent = choices[i] && choices[i].label != null ? String(choices[i].label) : 'Continue';
             btn.setAttribute('data-choice-idx', i);
             btn.addEventListener('click', (function(choice) {
                 return function(e) {
                     e.stopPropagation();
-                    var cb = choice.action;
-                    _closeAndDequeue();
-                    if (typeof cb === 'function') {
-                        cb();
-                    } else if (typeof cb === 'string') {
-                        // Map string actions to story mode functions
-                        if (cb === 'path_diplomacy' && typeof StoryMode !== 'undefined' && StoryMode.setWarPath) {
-                            StoryMode.setWarPath('diplomatic');
-                        } else if (cb === 'path_military' && typeof StoryMode !== 'undefined' && StoryMode.setWarPath) {
-                            StoryMode.setWarPath('military');
+                    var cb = choice ? choice.action : null;
+                    try {
+                        // v9p33river333: run choice actions while the dialog is still active.
+                        if (typeof cb === 'function') {
+                            cb();
+                        } else if (typeof cb === 'string') {
+                            // Map string actions to story mode functions
+                            if (cb === 'path_diplomacy' && typeof StoryMode !== 'undefined' && StoryMode.setWarPath) {
+                                StoryMode.setWarPath('diplomatic');
+                            } else if (cb === 'path_military' && typeof StoryMode !== 'undefined' && StoryMode.setWarPath) {
+                                StoryMode.setWarPath('military');
+                            }
                         }
+                    } finally {
+                        _closeAndDequeue();
                     }
                 };
             })(choices[i]));
@@ -417,6 +435,9 @@
         _lineIndex++;
         if (_lineIndex < _currentDialog.lines.length) {
             _playLine(_lineIndex);
+        } else if (_currentDialog.choices && _currentDialog.choices.length > 0) {
+            // v9p33river333: never close a dialog before its choice set is shown.
+            _showChoices();
         } else {
             // Last line exhausted
             _closeAndDequeue();
@@ -445,8 +466,17 @@
 
     function _beginDialog(dialogData, startLine) {
         _ensureOverlay();
+        if (_keyHandler) {
+            // v9p33river333: avoid stacked key handlers if a previous teardown was interrupted.
+            document.removeEventListener('keydown', _keyHandler);
+            _keyHandler = null;
+        }
+        dialogData.lines = Array.isArray(dialogData.lines) ? dialogData.lines : [];
+        dialogData.choices = Array.isArray(dialogData.choices) ? dialogData.choices : [];
         _currentDialog = dialogData;
-        _lineIndex = (typeof startLine === 'number' && startLine > 0) ? startLine : 0;
+        var _lineCount = dialogData.lines.length;
+        var _requestedLine = (typeof startLine === 'number' && isFinite(startLine)) ? Math.floor(startLine) : 0;
+        _lineIndex = _lineCount > 0 ? Math.max(0, Math.min(_requestedLine, _lineCount - 1)) : 0;
 
         // Auto-slow to 1× when a conversation opens (leave paused alone)
         // Only save on first dialog in a chain — don't overwrite with already-slowed speed
@@ -463,7 +493,7 @@
         var emoji = STORY_PORTRAITS[portraitKey] || null;
         // If portrait is already an emoji (not a lookup key), use it directly
         if (!emoji) {
-            emoji = (portraitKey && /[^\x00-\x7F]/.test(portraitKey)) ? portraitKey : '\u{1F464}';
+            emoji = _isDirectEmoji(portraitKey) ? portraitKey : '\u{1F464}';
         }
         // For father/mother, look up live NPC portrait (may have dynamic skin tone)
         if (portraitKey === 'father' || portraitKey === 'mother' || portraitKey === 'father_edmund' || portraitKey === 'mother_margret') {
@@ -480,7 +510,9 @@
 
         // Speaker name
         var speakerEl = document.getElementById('sdSpeaker');
-        var displayName = (dialogData.speaker || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+        // v9p33river333: speaker IDs may be missing or non-string in dynamic dialogs.
+        var _speakerKey = dialogData.speaker == null ? 'Unknown' : String(dialogData.speaker);
+        var displayName = _speakerKey.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
         // For mother/father, append their actual first name
         if (dialogData.speaker === 'mother' || dialogData.speaker === 'father') {
             var _parentName = null;
@@ -499,10 +531,12 @@
             if (!_parentName) {
                 try {
                     var _w = (typeof Engine !== 'undefined' && Engine.getWorld) ? Engine.getWorld() : null;
-                    if (_w && _w.people) {
+                    if (_w && Array.isArray(_w.people)) {
                         for (var _pi = 0; _pi < _w.people.length; _pi++) {
-                            if (_w.people[_pi].familyRole === dialogData.speaker && _w.people[_pi].isStoryNPC) {
-                                _parentName = _w.people[_pi].firstName;
+                            var _person = _w.people[_pi];
+                            // v9p33river333: tolerate malformed world.people entries.
+                            if (_person && _person.familyRole === dialogData.speaker && _person.isStoryNPC) {
+                                _parentName = _person.firstName;
                                 break;
                             }
                         }
@@ -536,6 +570,13 @@
         // Play starting line
         if (dialogData.lines && _lineIndex < dialogData.lines.length) {
             _playLine(_lineIndex);
+        } else if (dialogData.choices && dialogData.choices.length > 0) {
+            // v9p33river333: support dialogs that are only a choice prompt.
+            document.getElementById('sdText').textContent = '';
+            _showChoices();
+        } else {
+            // v9p33river333: onComplete-only dialogs should still fire instead of being dropped.
+            _closeAndDequeue();
         }
     }
 
@@ -569,7 +610,7 @@
     // ── Public API ─────────────────────────────────────────────
 
     function showStoryDialog(dialogData, startLine) {
-        if (!dialogData || !dialogData.lines || dialogData.lines.length === 0) return;
+        if (!_hasDialogContent(dialogData)) return;
         // If a dialog is active, queue this one
         if (_currentDialog) {
             _dialogQueue.push(dialogData);
@@ -596,7 +637,7 @@
     }
 
     function queueStoryDialog(dialogData) {
-        if (!dialogData || !dialogData.lines || dialogData.lines.length === 0) return;
+        if (!_hasDialogContent(dialogData)) return;
         if (_currentDialog) {
             _dialogQueue.push(dialogData);
         } else {

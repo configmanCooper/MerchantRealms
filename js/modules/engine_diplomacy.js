@@ -507,7 +507,13 @@
                 }
             } else {
                 // No supply here — procurer "travels" to a different town next tick
-                var kTowns = world.towns.filter(function(t) { return k.territories.has(t.id) && t.id !== proc.townId; });
+                var kTowns = world.towns.filter(function(t) {
+                    // v9p33river333: relocate procurers only to live, useful market towns with a chance to fill this order.
+                    return k.territories.has(t.id) && t.id !== proc.townId && !t.abandoned && !t.destroyed && !t.isOutpost && !t.isJunction && t.market && t.market.supply && (t.market.supply[order.goodId] || 0) > 0;
+                });
+                if (kTowns.length === 0) {
+                    kTowns = world.towns.filter(function(t) { return k.territories.has(t.id) && t.id !== proc.townId && !t.abandoned && !t.destroyed && t.market && t.market.supply; });
+                }
                 if (kTowns.length > 0) {
                     proc.townId = kTowns[Math.floor(rng.random() * kTowns.length)].id;
                 }
@@ -1709,7 +1715,9 @@
                 for (var _txTid of k.territories) {
                     var _txTown = findTown(_txTid);
                     if (_txTown) {
-                        var _tradeBonus = Object.values(_txTown.market.supply).reduce(function(a, b) { return a + b; }, 0) * 0.05;
+                        var _txSupply = (_txTown.market && _txTown.market.supply) ? _txTown.market.supply : {};
+                        // v9p33river333: daily tax must tolerate towns without markets/supply.
+                        var _tradeBonus = Object.values(_txSupply).reduce(function(a, b) { return a + b; }, 0) * 0.05;
                         // Same formula as before but divided by 90 (days per season) for daily collection
                         dailyBaseTax += (_txTown.population * k.taxRate * 5 + _tradeBonus) / CONFIG.DAYS_PER_SEASON;
                     }

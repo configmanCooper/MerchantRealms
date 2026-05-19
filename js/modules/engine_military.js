@@ -68,7 +68,8 @@
             var nearest = null, nearDist = Infinity;
             for (var ti = 0; ti < world.towns.length; ti++) {
                 var t = world.towns[ti];
-                if (t.abandoned || t.destroyed) continue;
+                // v9p33river333: jurisdiction must come from real settlements, not other outposts/junctions.
+                if (t.abandoned || t.destroyed || t.isOutpost || t.isJunction || t.category === 'outpost') continue;
                 var dx = (opts.x || 0) - t.x;
                 var dy = (opts.y || 0) - t.y;
                 var d = Math.sqrt(dx * dx + dy * dy);
@@ -175,9 +176,13 @@
             var roadTarget = opts.roadTargetTownId ? findTown(opts.roadTargetTownId) : nearestSettlement;
             if (roadTarget) {
                 var _roadWp = findTerrainPath(roadTarget.x, roadTarget.y, outpost.x, outpost.y, 'land');
-                var _rpWaypoints = (_roadWp && _roadWp.waypoints) ? _roadWp.waypoints : [];
-                var _rpBridges = createBridgeObjects(_rpWaypoints);
-                world.roads.push({
+                // v9p33river333: don't create empty/impossible road records when terrain routing fails.
+                if (!_roadWp || !_roadWp.waypoints || _roadWp.waypoints.length < 2) {
+                    logEvent('⚠️ Could not build a road from ' + roadTarget.name + ' to outpost \"' + outpost.name + '\" — no valid land path.');
+                } else {
+                    var _rpWaypoints = _roadWp.waypoints;
+                    var _rpBridges = createBridgeObjects(_rpWaypoints);
+                    world.roads.push({
                     fromTownId: roadTarget.id,
                     toTownId: outpost.id,
                     quality: 1,
@@ -192,8 +197,9 @@
                     lastRepairDay: 0,
                     banditThreat: 15,
                     isDirtTrack: true,
-                });
-                logEvent('🛤️ A road has been built from ' + roadTarget.name + ' to outpost "' + outpost.name + '".');
+                    });
+                    logEvent('🛤️ A road has been built from ' + roadTarget.name + ' to outpost "' + outpost.name + '".');
+                }
             }
         }
 

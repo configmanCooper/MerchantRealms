@@ -33,7 +33,11 @@
         return TOTAL_CHAPTERS;
     }
     function _parseChapterRef(chapterId) {
-        if (typeof chapterId !== 'string') return { num: chapterId || 0, suffix: '' };
+        // v9p33river333: normalize malformed/string chapter refs before numeric comparisons.
+        if (typeof chapterId !== 'string') {
+            var n = Number(chapterId);
+            return { num: isFinite(n) ? n : 0, suffix: '' };
+        }
         var m = chapterId.match(/(\d+)([a-zA-Z]*)/);
         if (!m) return { num: 0, suffix: '' };
         return { num: parseInt(m[1], 10) || 0, suffix: m[2] || '' };
@@ -311,8 +315,10 @@
     // ── Helpers ──────────────────────────────────────────────
 
     function _getActLabel(chapterId) {
+        var parsed = _parseChapterRef(chapterId);
+        var chNum = parsed.num;
         for (var i = 0; i < ACT_RANGES.length; i++) {
-            if (chapterId >= ACT_RANGES[i].min && chapterId <= ACT_RANGES[i].max) {
+            if (chNum >= ACT_RANGES[i].min && chNum <= ACT_RANGES[i].max) {
                 return ACT_RANGES[i].label;
             }
         }
@@ -439,12 +445,18 @@
         var list = _container.querySelector('.st-objectives');
         if (!list) return;
         list.innerHTML = '';
+        objectives = Array.isArray(objectives) ? objectives : [];
+        var seenIds = {};
 
         for (var i = 0; i < objectives.length; i++) {
-            var obj = objectives[i];
+            var obj = objectives[i] && typeof objectives[i] === 'object' ? objectives[i] : {};
             var li = document.createElement('li');
             li.className = 'st-objective';
-            li.setAttribute('data-obj-id', obj.id);
+            var objId = (obj.id != null && obj.id !== '') ? String(obj.id) : 'objective-' + i;
+            if (seenIds[objId]) objId = objId + '-' + i;
+            seenIds[objId] = true;
+            // v9p33river333: setAttribute is safe, but IDs must be non-empty and unique for flashing.
+            li.setAttribute('data-obj-id', objId);
 
             if (obj.done) {
                 li.classList.add('st-objective-done');
@@ -460,14 +472,14 @@
 
             var desc = document.createElement('span');
             desc.className = 'st-objective-desc';
-            desc.textContent = obj.desc;
+            desc.textContent = obj.desc != null ? String(obj.desc) : 'Objective';
             li.appendChild(desc);
 
             if (obj.hint && !obj.done) {
                 var hint = document.createElement('span');
                 hint.className = 'st-objective-hint';
                 hint.style.cssText = 'display:block;font-size:0.65rem;color:#b0a080;font-style:italic;margin-top:1px;margin-left:4px;';
-                hint.textContent = '\u{1F4A1} ' + obj.hint;
+                hint.textContent = '\u{1F4A1} ' + String(obj.hint);
                 li.appendChild(hint);
             }
 
@@ -491,9 +503,9 @@
         // chapter total so ch10b/ch17a render correctly and progress
         // bars don't underreport completion.
         var parsed = _parseChapterRef(chapterId);
-        var chNum = parsed.num;
+        var total = Math.max(1, _getTotalChapters());
+        var chNum = Math.max(0, Math.min(total - 1, Number(parsed.num) || 0));
         var chLabel = String(chNum + 1) + (parsed.suffix || '');
-        var total = _getTotalChapters();
 
         if (progressText) {
             progressText.textContent = 'Chapter ' + chLabel + ' of ' + total;
@@ -502,7 +514,8 @@
             actLabel.textContent = _getActLabel(chNum);
         }
         if (barFill) {
-            var pct = Math.round(((chNum + 1) / total) * 100);
+            var pct = Math.max(0, Math.min(100, Math.round(((chNum + 1) / total) * 100)));
+            // v9p33river333: clamp chapter progress so unusual IDs cannot overflow the bar.
             barFill.style.width = pct + '%';
         }
     }
@@ -512,7 +525,7 @@
     function updateStoryTracker(chapter, objectives) {
         _ensureContainer();
         _currentChapter = chapter;
-        _currentObjectives = objectives || [];
+        _currentObjectives = Array.isArray(objectives) ? objectives : [];
 
         // Update header title
         var titleEl = _container.querySelector('.st-header-title');
@@ -523,21 +536,19 @@
         _renderObjectives(_currentObjectives);
 
         // Render chapter note/subnote if present
-        var noteEl = _container.querySelector('.st-chapter-note');
+        var oldNotes = _container.querySelectorAll('.st-chapter-note');
+        for (var _ni = 0; _ni < oldNotes.length; _ni++) oldNotes[_ni].remove();
         if (chapter && chapter.note) {
-            if (!noteEl) {
-                noteEl = document.createElement('div');
-                noteEl.className = 'st-chapter-note';
-                noteEl.style.cssText = 'font-size:0.75rem;color:#b0a080;font-style:italic;padding:4px 8px 0;margin-top:2px;';
-                var list = _container.querySelector('.st-objectives');
-                if (list && list.parentNode) list.parentNode.insertBefore(noteEl, list.nextSibling);
-            }
-            noteEl.textContent = '\u{1F4AC} ' + chapter.note;
-        } else if (noteEl) {
-            noteEl.remove();
+            var noteEl = document.createElement('div');
+            noteEl.className = 'st-chapter-note';
+            noteEl.style.cssText = 'font-size:0.75rem;color:#b0a080;font-style:italic;padding:4px 8px 0;margin-top:2px;';
+            noteEl.textContent = '\u{1F4AC} ' + String(chapter.note);
+            var list = _container.querySelector('.st-objectives');
+            if (list && list.parentNode) list.parentNode.insertBefore(noteEl, list.nextSibling);
         }
 
-        _renderFooter(chapter ? chapter.id : 1);
+        // v9p33river333: missing chapter.id should not fall back to chapter 2/progress for the wrong chapter.
+        _renderFooter(chapter && chapter.id != null ? chapter.id : 0);
     }
 
     function showStoryTracker() {
@@ -556,7 +567,7 @@
 
         var items = _container.querySelectorAll('.st-objective');
         for (var i = 0; i < items.length; i++) {
-            if (items[i].getAttribute('data-obj-id') === objectiveId) {
+            if (String(items[i].getAttribute('data-obj-id')) === String(objectiveId)) {
                 var el = items[i];
 
                 // Update visual state to done
@@ -602,14 +613,19 @@
 
         // Add gold glow to the matching objective row if it exists
         if (desc) {
+            var matchId = (typeof desc === 'object' && desc.id != null) ? String(desc.id) : null;
+            var matchDesc = (typeof desc === 'object' && desc.desc != null) ? String(desc.desc) : String(desc);
             var items = _container.querySelectorAll('.st-objective');
+            var glowTarget = null;
             for (var i = 0; i < items.length; i++) {
                 var descEl = items[i].querySelector('.st-objective-desc');
-                if (descEl && descEl.textContent === desc) {
-                    items[i].classList.add('st-objective-glow');
-                    break;
+                if ((matchId && String(items[i].getAttribute('data-obj-id')) === matchId) || (!matchId && descEl && descEl.textContent === matchDesc)) {
+                    // v9p33river333: duplicate descriptions should prefer an unfinished row instead of an arbitrary completed one.
+                    glowTarget = items[i];
+                    if (!items[i].classList.contains('st-objective-done')) break;
                 }
             }
+            if (glowTarget) glowTarget.classList.add('st-objective-glow');
         }
     }
 

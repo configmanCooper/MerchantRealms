@@ -64,7 +64,9 @@ pub extern "C" fn caravan_subtick(
                 caravan_speed *= 1.20;
             }
             if ship_cond_eff > 0.0 {
-                caravan_speed *= if ship_cond_eff < 0.1 { 0.1 } else { ship_cond_eff };
+                // v9p33river333: malformed condition efficiency may be >1; never speed ships up.
+                let safe_ship_cond_eff = if ship_cond_eff > 1.0 { 1.0 } else if ship_cond_eff < 0.1 { 0.1 } else { ship_cond_eff };
+                caravan_speed *= safe_ship_cond_eff;
             }
         } else {
             // Land
