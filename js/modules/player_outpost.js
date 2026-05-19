@@ -322,6 +322,13 @@
                 if (town.outpostResidents.length === 0) return { success: false, message: 'No residents to hire. Recruit NPCs first.' };
                 // Find eligible NPC
                 var npc = npcId ? Engine.findPerson(npcId) : null;
+                // v9p33river312: explicit-id path was skipping alive +
+                // employerId checks, allowing dead NPCs or already-employed
+                // NPCs to be hired as workers.
+                if (npc && !npc.alive) return { success: false, message: (npc.firstName || 'That NPC') + ' is dead.' };
+                if (npc && npc.employerId && npc.employerId !== (player.id || 'player')) {
+                    return { success: false, message: (npc.firstName || 'NPC') + ' is already employed elsewhere.' };
+                }
                 if (npc && town.outpostResidents.indexOf(npc.id) < 0) {
                     return { success: false, message: (npc.firstName || 'NPC') + ' is not a resident of this outpost.' };
                 }
@@ -361,6 +368,12 @@
                 if (town.outpostGuards.length >= (cfg.maxOutpostGuards || 4)) return { success: false, message: 'Maximum guards reached (' + (cfg.maxOutpostGuards || 4) + ').' };
                 if (town.outpostResidents.length === 0) return { success: false, message: 'No residents to hire. Recruit NPCs first.' };
                 var guardNpc = npcId ? Engine.findPerson(npcId) : null;
+                // v9p33river312: same alive+employerId guards for the
+                // explicit-id guard hire path.
+                if (guardNpc && !guardNpc.alive) return { success: false, message: (guardNpc.firstName || 'That NPC') + ' is dead.' };
+                if (guardNpc && guardNpc.employerId && guardNpc.employerId !== (player.id || 'player')) {
+                    return { success: false, message: (guardNpc.firstName || 'NPC') + ' is already employed elsewhere.' };
+                }
                 if (guardNpc && town.outpostResidents.indexOf(guardNpc.id) < 0) {
                     return { success: false, message: (guardNpc.firstName || 'NPC') + ' is not a resident of this outpost.' };
                 }

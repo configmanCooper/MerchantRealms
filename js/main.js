@@ -830,8 +830,14 @@ window.Game = (function () {
         // land-based mainland settlements, not floating port-villages).
         var valdrenTowns = towns.filter(function(t) { return t.kingdomId === valdren.id && !t.isIsland; });
         if (valdrenTowns.length < 3) {
-            // Fallback: just use first 3 towns
-            valdrenTowns = towns.slice(0, 3);
+            // v9p33river312: prior fallback used `towns.slice(0, 3)` which
+            // would rename towns belonging to OTHER kingdoms into story
+            // towns, corrupting world layout. Bail out with a logged
+            // warning instead — Valdren just doesn't get story towns
+            // assigned (story mode shouldn't have triggered with fewer
+            // than 3 Valdren mainland towns anyway).
+            console.warn('[StoryMode] Not enough Valdren mainland towns (' + valdrenTowns.length + '); skipping story-town rename to avoid corrupting other kingdoms.');
+            return;
         }
 
         // Rename first 3 Valdren towns to story towns

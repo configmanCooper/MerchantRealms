@@ -248,7 +248,11 @@ function showTownDetail(town) {
                 var people = (Engine && Engine.getPeople) ? Engine.getPeople() : [];
                 var day = (Engine && Engine.getDay) ? Engine.getDay() : 0;
                 var jailed = people.filter(function(p) {
-                    return p.alive && p.townId === town.id && p._jailedUntilDay && p._jailedUntilDay > day;
+                    // v9p33river312: NPCs use _jailedUntilDay (underscore)
+                    // but elite merchants use jailedUntilDay (no underscore,
+                    // engine_elite_merchants.js:627,1486). Match either.
+                    var _j = p._jailedUntilDay || p.jailedUntilDay || 0;
+                    return p.alive && p.townId === town.id && _j > day;
                 });
                 if (jailed.length === 0) {
                     return '<div class="detail-row"><span class="label">⛓️ Jail</span><span class="value" style="color:#888;">Empty</span></div>';

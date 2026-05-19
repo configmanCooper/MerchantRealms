@@ -88,16 +88,16 @@
         _sync();
         if (!player.alive) return;
 
-        // v9p33river208: jail rations — fed to a comfortable 70 (was 50).
-        // The kingdom feeds prisoners a basic diet to keep them alive.
-        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
-            if ((player.hunger || 0) < 70) player.hunger = 70;
-        }
-
         // Decay hunger (spouseHungerMod reduces decay if good_cook, injuries increase it)
         const injDebuffs = Player.getInjuryDebuffs();
         const hungerDecay = HUNGER_CONFIG.DECAY_PER_DAY * (player.spouseHungerMod || 1.0) * injDebuffs.hungerRate;
         player.hunger = Math.max(0, player.hunger - hungerDecay);
+
+        // v9p33river312: jail rations apply AFTER decay so the player
+        // ends each tick at the fed level (was 70 - decay each tick).
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
+            if ((player.hunger || 0) < 70) player.hunger = 70;
+        }
 
         // Injury gold drain (bandage/medicine costs for severe wounds)
         if (injDebuffs.goldDrain > 0 && player.gold > 0) {
@@ -1104,14 +1104,15 @@
         _sync();
         if (!player.alive) return;
 
-        // v9p33river208: jail water rations — kept to a comfortable 70 (was 50).
-        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
-            if ((player.thirst || 0) < 70) player.thirst = 70;
-        }
-
         var injDebuffs = Player.getInjuryDebuffs();
         var thirstDecay = THIRST_CONFIG.DECAY_PER_DAY * (injDebuffs.thirstRate || 1.0);
         player.thirst = Math.max(0, (player.thirst != null ? player.thirst : THIRST_CONFIG.START) - thirstDecay);
+
+        // v9p33river312: jail water ration applied AFTER decay (was
+        // before, so prisoners ended each tick at 70 - decay).
+        if (player.jailedUntilDay > 0 && Engine.getDay() < player.jailedUntilDay) {
+            if ((player.thirst || 0) < 70) player.thirst = 70;
+        }
 
         if (player.townId && !player.traveling) {
             // Military soldiers get water from the kingdom — skip auto-buy

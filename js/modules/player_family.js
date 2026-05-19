@@ -233,13 +233,16 @@
                 if (person.quirks[_kmi] === 'keeps_maiden_name') { _keepsMaidenName = true; break; }
             }
         }
-        if (!_keepsMaidenName && person.sex === 'F' && player.lastName) {
+        // v9p33river312: spouse surname adoption was gated to female
+        // spouses only. Comment said the rule is generic — now any
+        // spouse without keeps_maiden_name adopts the player's surname.
+        if (!_keepsMaidenName && player.lastName && person.lastName !== player.lastName) {
             person._maidenName = person.lastName;
             person.lastName = player.lastName;
             person.fullName = person.firstName + ' ' + player.lastName;
         } else if (_keepsMaidenName) {
             person._maidenName = person.lastName;
-            Engine.logEvent('💁 ' + person.firstName + ' has chosen to keep her maiden name.');
+            Engine.logEvent('💁 ' + person.firstName + ' has chosen to keep their maiden name.');
         }
 
         // Relationship bonuses from choices
@@ -753,7 +756,10 @@
                     if (player._marriageProposals.some(function(pr) { return pr.playerChildId === pc.id && pr.eliteChildId === ec.id; })) continue;
 
                     player._marriageProposals.push({
-                        id: 'mp_' + day + '_' + em.id,
+                        // v9p33river312: include child IDs so multiple
+                        // same-day proposals from the same EM (for
+                        // different children) don't collide on id.
+                        id: 'mp_' + day + '_' + em.id + '_' + pc.id + '_' + ec.id,
                         eliteMerchantId: em.id,
                         eliteMerchantName: em.firstName + ' ' + (em.lastName || ''),
                         familyName: em.familyName || em.lastName,

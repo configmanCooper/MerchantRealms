@@ -50,11 +50,15 @@
             return { success: false, message: 'You must be in the same town as this building.' };
         }
 
-        // v9p33river308: validate building type BEFORE deducting ticks/energy
-        // so corrupt/unknown building records don't silently burn a work
-        // action with no payoff.
+        // v9p33river312: validate building type AND that it's a producer
+        // before deducting ticks/energy. Was checking only bt below,
+        // burning a full work action on civic/storage/retail-non-
+        // production buildings that hit the early-return at the
+        // bt.produces check (line ~92).
         var bt = findBuildingType(bld.type);
         if (!bt) return { success: false, message: 'Unknown building type.' };
+        var _isWorkable = !!(bt.retailConfig || bt.produces);
+        if (!_isWorkable) return { success: false, message: 'This building does not produce goods or support a retail shift.' };
 
         // Deduct ticks if available (but don't block — owner can always work their building)
         if ((player.ticksRemaining || 0) >= 15) {
@@ -123,11 +127,20 @@
 
         var levelBonus = 1 + ((bld.level || 1) - 1) * 0.10;
 
+        // v9p33river312: apply condition penalty so working at a 'used'/
+        // 'breaking' building doesn't pretend everything's fine. Matches
+        // the multiplier used by the daily production loop.
+        var condPenalty = 1.0;
+        var _cond = bld.condition || 'new';
+        if (_cond === 'used') condPenalty = 0.85;
+        else if (_cond === 'breaking') condPenalty = 0.55;
+        else if (_cond === 'destroyed') return { success: false, message: 'This building is destroyed.' };
+
         // Player counts as 1 worker worth of production (fraction = 1/baseWorkers)
         var baseWorkers = Math.max(bt.workers, 1);
         var playerWorkerFraction = 1 / baseWorkers;
 
-        var rawOutput = activeRate * playerWorkerFraction * seasonMod * levelBonus * playerSkillMult;
+        var rawOutput = activeRate * playerWorkerFraction * seasonMod * levelBonus * playerSkillMult * condPenalty;
         var output = Math.max(1, Math.round(rawOutput));
 
         // Consume inputs
@@ -307,8 +320,13 @@
         var manager = candidates[0];
 
         // Calculate salary (3-4x normal worker wage)
+        // v9p33river312: bt.wage doesn't exist on BUILDING_TYPES configs
+        // (config.js:1839+ has cost/workers/produces/etc but no wage).
+        // Was always falling back to the same flat 8g base wage. Scale
+        // by category instead so capital/skilled buildings cost more.
         var bt = findBuildingType(bld.type);
-        var baseWage = (bt && bt.wage) || 8;
+        var _wageByCat = { mine: 14, mining: 14, military: 14, processing: 11, finished: 11, farm: 8, harvest: 8, storage: 6, retail: 7, port: 9, medical: 12 };
+        var baseWage = (bt && (bt.wage || _wageByCat[bt.category])) || 8;
         var localWageMod = (town.prosperity || 50) / 50;
         var managerSalary = Math.round(baseWage * localWageMod * 3.5);
 

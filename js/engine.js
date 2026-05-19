@@ -1213,7 +1213,9 @@
                     transportRate: rng.randInt(10, 25), // Rate charged to travelers
                     licenseFees: {},  // goodId → custom fee; empty = use CONFIG defaults
                 },
-                taxRate: rng.randFloat(0.08, 0.12), // base income/trade tax rate (read by finance AI)
+                // v9p33river312: removed duplicate `taxRate` assignment
+                // that was here — the wider random range above (0.05-0.20)
+                // was being overwritten by a flat 0.08-0.12 range.
                 flavorText: '',     // filled below
                 crimePunishments: {},  // filled below
                 procurement: {
@@ -1261,12 +1263,19 @@
         }
         for (const kingdom of kingdoms) {
             if (CONFIG.CRIME_TYPES) {
+                // v9p33river312: kingPersonality fields are STRINGS in
+                // this codebase ('just'/'fair'/'corrupt' for justice;
+                // 'aggressive'/'volatile'/'calm' for temperament; etc.).
+                // Were comparing them to 0.6 / 0.7 numbers — `"just" > 0.6`
+                // is NaN/false so every personality branch silently never
+                // applied. Now uses string-aware checks per the canonical
+                // kingPersonality schema (engine.js:1156-1167).
                 var kp = kingdom.kingPersonality || {};
-                var justiceHarsh = (kp.justice || 0) > 0.6;
-                var justiceLenient = (kp.justice || 0) < 0.4;
-                var temperamentVolatile = (kp.temperament || 0) > 0.7;
-                var greedyKing = (kp.greed || 0) > 0.6;
-                var generousKing = (kp.generosity || 0) > 0.6;
+                var justiceHarsh = (kp.justice === 'strict' || kp.justice === 'harsh');
+                var justiceLenient = (kp.justice === 'lenient' || kp.justice === 'corrupt');
+                var temperamentVolatile = (kp.temperament === 'volatile' || kp.temperament === 'cruel');
+                var greedyKing = (kp.greed === 'greedy' || kp.greed === 'rapacious');
+                var generousKing = (kp.generosity === 'generous' || kp.generosity === 'lavish');
 
                 for (const crime of CONFIG.CRIME_TYPES) {
                     var baseFine = crime.defaultFine || 100;
@@ -18338,6 +18347,10 @@
             for (const person of townPeople) {
                 if (migrated >= maxMigrants) break;
                 if (person.status === 'indentured') continue;
+                // v9p33river312: also exclude jailed/prisoner NPCs so they
+                // don't migrate while their sentence is active.
+                if (person._jailedUntilDay && person._jailedUntilDay > world.day) continue;
+                if (person.status === 'prisoner') continue;
 
                 const migScore = calculateMigrationDesire(person, town);
                 if (migScore <= CONFIG.MIGRATION_SCORE_THRESHOLD) continue;
@@ -27253,7 +27266,12 @@
         var _isPlayerKingForFeast = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
         if (!_isPlayerKingForFeast && !k._activeFeast && !k._pendingFeast && !k._pendingCourt && !(k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) && world.day >= k._nextFeastDay) {
             var feastTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
-            if (!feastTownId) return;
+            // v9p33river312: was `return;` which bailed out of the whole
+            // tickKingdomCourt-style function, wedging ALL downstream
+            // kingdom processing if no feast town was findable. Just
+            // skip the feast block so the rest of the per-kingdom tick
+            // continues.
+            if (feastTownId) {
             var feastTown = findTown(feastTownId);
             var feastTownName = feastTown ? feastTown.name : 'the capital';
 
@@ -27452,6 +27470,7 @@
             _feastBaseMin = Math.max(30, _feastBaseMin); // 30-day cooldown per user request
             _feastBaseMax = Math.max(_feastBaseMin + 10, _feastBaseMax);
             k._nextFeastDay = world.day + rng.randInt(_feastBaseMin, _feastBaseMax);
+            } // close v9p33river312 `if (feastTownId)` block
         }
 
         // Dynamic feast events (30% chance per day during active feast)
@@ -32741,11 +32760,16 @@
             if (deliverQty <= 0) return { success: false, reason: 'Nothing to deliver' };
             order.qtyDelivered += deliverQty;
             const payment = deliverQty * order.assignedPrice;
+            // v9p33river312: previously subtracted payment unconditionally,
+            // letting kingdom gold go negative when treasury was empty.
+            // Now short-pay (capped at available treasury) so the delivery
+            // resolves but doesn't mint gold.
+            const actualPayment = Math.min(payment, Math.max(0, k.gold || 0));
             // Add to military stockpile if applicable
             if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                 k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + deliverQty;
             }
-            k.gold -= payment;
+            k.gold -= actualPayment;
             const completed = order.qtyDelivered >= order.qty;
             // v9p33river295: completion bonus was returned to the caller
             // (player.js:26035 / engine_elite_merchants.js:2020) and added
@@ -32753,8 +32777,9 @@
             // treasury — it was effectively minted. Charge it here so the
             // bonus is paid out of kingdom gold.
             const completionBonus = completed ? (order.bonusOnCompletion || 0) : 0;
-            if (completionBonus > 0) {
-                k.gold -= completionBonus;
+            const actualBonus = Math.min(completionBonus, Math.max(0, k.gold || 0));
+            if (actualBonus > 0) {
+                k.gold -= actualBonus;
             }
             if (completed) {
                 order.status = 'completed';
@@ -32768,7 +32793,7 @@
                     merchant.ordersCompleted = (merchant.ordersCompleted || 0) + 1;
                 }
             }
-            return { success: true, payment: payment, completed: completed, bonus: completionBonus, qtyDelivered: deliverQty };
+            return { success: true, payment: actualPayment, completed: completed, bonus: actualBonus, qtyDelivered: deliverQty };
         },
         addKingdomSupplyDeal(kingdomId, deal) {
             if (!world) return false;
@@ -32815,6 +32840,14 @@
             if (!k || !k.successionCrisis || !k.successionCrisis.active) return { success: false, reason: 'No active crisis' };
             var pretender = k.successionCrisis.pretenders.find(function(p) { return p.id === pretenderId; });
             if (!pretender) return { success: false, reason: 'Pretender not found' };
+            // v9p33river312: was crediting support + tracking playerInvested
+            // but never deducting the gold from Player.state.gold. Now
+            // requires the player can afford it and charges them.
+            if (typeof Player === 'undefined' || (Player.state.gold || 0) < goldAmount) {
+                return { success: false, reason: 'Not enough gold' };
+            }
+            Player.state.gold -= goldAmount;
+            if (Player.state.stats) Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + goldAmount;
             pretender.support += Math.floor(goldAmount / 100);
             k.successionCrisis.playerBacking = pretenderId;
             k.successionCrisis.playerInvested = (k.successionCrisis.playerInvested || 0) + goldAmount;

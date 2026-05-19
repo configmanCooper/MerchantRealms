@@ -18,7 +18,26 @@
 
     // ── Constants ────────────────────────────────────────────
 
+    // v9p33river312: was a static 28 that overstated total chapters and
+    // mis-rendered branch chapters. We now derive both from the live
+    // chapter list when StoryMode is available, and preserve branch
+    // suffixes (e.g. ch10b, ch17a) in the displayed chapter label.
     var TOTAL_CHAPTERS = 28;
+    function _getTotalChapters() {
+        try {
+            if (typeof StoryMode !== 'undefined' && StoryMode.getChapters) {
+                var chs = StoryMode.getChapters();
+                if (chs && chs.length) return chs.length;
+            }
+        } catch (_e) {}
+        return TOTAL_CHAPTERS;
+    }
+    function _parseChapterRef(chapterId) {
+        if (typeof chapterId !== 'string') return { num: chapterId || 0, suffix: '' };
+        var m = chapterId.match(/(\d+)([a-zA-Z]*)/);
+        if (!m) return { num: 0, suffix: '' };
+        return { num: parseInt(m[1], 10) || 0, suffix: m[2] || '' };
+    }
     var PANEL_ID = 'storyTrackerPanel';
 
     var ACT_RANGES = [
@@ -463,18 +482,22 @@
         var actLabel = _container.querySelector('.st-act-label');
         var barFill = _container.querySelector('.st-progress-bar-fill');
 
-        // Extract numeric chapter index from id like 'ch0', 'ch7', etc.
-        var chNum = typeof chapterId === 'string' ? parseInt(chapterId.replace(/\D/g, ''), 10) : (chapterId || 0);
-        if (isNaN(chNum)) chNum = 0;
+        // v9p33river312: preserve branch suffix (a/b) and use dynamic
+        // chapter total so ch10b/ch17a render correctly and progress
+        // bars don't underreport completion.
+        var parsed = _parseChapterRef(chapterId);
+        var chNum = parsed.num;
+        var chLabel = String(chNum + 1) + (parsed.suffix || '');
+        var total = _getTotalChapters();
 
         if (progressText) {
-            progressText.textContent = 'Chapter ' + (chNum + 1) + ' of ' + TOTAL_CHAPTERS;
+            progressText.textContent = 'Chapter ' + chLabel + ' of ' + total;
         }
         if (actLabel) {
             actLabel.textContent = _getActLabel(chNum);
         }
         if (barFill) {
-            var pct = Math.round(((chNum + 1) / TOTAL_CHAPTERS) * 100);
+            var pct = Math.round(((chNum + 1) / total) * 100);
             barFill.style.width = pct + '%';
         }
     }

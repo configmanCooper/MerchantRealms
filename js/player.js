@@ -2696,6 +2696,14 @@
             }
         }
 
+        // v9p33river312: validate the conversion is allowed BEFORE
+        // deducting gold/materials. Previously deducted upfront, then
+        // returned the engine's failure leaving the player out of
+        // resources for no reason. Now call the engine first; on
+        // success deduct, on failure return immediately.
+        var result = Engine.convertFarmBuilding(town, buildingIndex, newTypeId, 'player', 'player');
+        if (!result.success) return result;
+
         // Deduct player costs
         player.gold -= costInfo.gold;
         for (var mat2 in costInfo.materials) {
@@ -2704,10 +2712,6 @@
                 if (player.inventory[mat2] <= 0) delete player.inventory[mat2];
             }
         }
-
-        // Perform conversion via Engine
-        var result = Engine.convertFarmBuilding(town, buildingIndex, newTypeId, 'player', 'player');
-        if (!result.success) return result;
 
         // Update player buildings record
         var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type !== newTypeId && (pb.type === bld.type || !bld.type); });
@@ -4455,6 +4459,11 @@
         player.travelRestBonus = false;
         player.travelOrigin = null;
         player.travelCompanions = [];
+        // v9p33river312: also clear mountain-travel + embarked-ship state
+        // so a finished journey doesn't leak mid-mountain day counts or
+        // leave the player flagged as boarded on a ship they've left.
+        player.travelMountainDaysRemaining = 0;
+        player.embarkedShipId = null;
     }
 
     // Move all personal guards to the player's current town
@@ -4721,6 +4730,13 @@
         var ship = null;
         if (shipId) {
             ship = player.ships.find(function(s) { return s.id === shipId; });
+            // v9p33river312: validate the requested ship is actually at
+            // the player's current port (or that player is mid off-sea
+            // travel returning to it) — previously a remote shipId could
+            // start off-sea travel from any town.
+            if (ship && !player.travelOffSea && ship.townId !== player.townId) {
+                return { success: false, message: 'That ship is not at this port.' };
+            }
         } else {
             // Find first available ship at this port
             for (var i = 0; i < player.ships.length; i++) {
@@ -7513,22 +7529,28 @@
         player.horses = [];
         player.storageContainer = null;
         player.jailedUntilDay = 0;
-        // Debts are subtracted from inheritance gold — heir does NOT inherit debts
+        // v9p33river312: previously only paid kingdom creditors then
+        // wiped ALL debts — NPC lenders got nothing. Now pay every
+        // creditor up to estate value, proportionally if short.
         if (player.debts && player.debts.length > 0) {
             var totalDebtAmount = getTotalDebt();
             if (totalDebtAmount > 0) {
-                // Pay creditors from inheritance
+                var _estate = Math.max(0, player.gold);
+                var _payoutRatio = _estate >= totalDebtAmount ? 1 : (_estate / totalDebtAmount);
                 for (var di = 0; di < player.debts.length; di++) {
                     var d = player.debts[di];
+                    var owed = Math.floor((d.amount || 0) * _payoutRatio);
+                    if (owed <= 0) continue;
                     if (d.creditorType === 'kingdom') {
                         var ck = Engine.findKingdom ? Engine.findKingdom(d.creditorId) : null;
-                        if (ck) ck.gold = (ck.gold || 0) + Math.floor(Math.min(d.amount, player.gold));
+                        if (ck) ck.gold = (ck.gold || 0) + owed;
+                    } else if (d.creditorId) {
+                        var _creditor = Engine.findPerson ? Engine.findPerson(d.creditorId) : null;
+                        if (_creditor && _creditor.alive) _creditor.gold = (_creditor.gold || 0) + owed;
                     }
                 }
                 player.gold = Math.max(0, player.gold - totalDebtAmount);
-                if (totalDebtAmount > 0) {
-                    Engine.logEvent('💀 ' + oldName + '\'s outstanding debts of ' + Math.floor(totalDebtAmount) + 'g were settled from the estate.' + (player.gold <= 0 ? ' The heir receives no inheritance.' : ''), null, 'finance');
-                }
+                Engine.logEvent('💀 ' + oldName + '\'s outstanding debts of ' + Math.floor(totalDebtAmount) + 'g were settled from the estate.' + (player.gold <= 0 ? ' The heir receives no inheritance.' : ''), null, 'finance');
             }
             player.debts = [];
             player._lastDebtEnforcementDay = 0;
@@ -8092,7 +8114,13 @@
         player.hunger = Math.max(player.hunger || 0, 80);
         player.thirst = Math.max(player.thirst || 0, 80);
         player.energy = Math.max(player.energy || 0, 80);
-        player.health = Math.min(100, Math.max(player.health || 100, player.health + 1));
+        // v9p33river312: previously `Math.min(100, Math.max(player.health
+        // || 100, player.health + 1))` — if player.health was undefined,
+        // `player.health + 1` = NaN and Math.max/.min propagated NaN,
+        // permanently setting player.health = NaN. Default health BEFORE
+        // arithmetic.
+        var _curHp = (typeof player.health === 'number' && !isNaN(player.health)) ? player.health : 100;
+        player.health = Math.min(100, Math.max(_curHp, _curHp + 1));
 
         // Calculate assassination risk
         var assassinRisk = 0;
@@ -19267,6 +19295,11 @@
             _warFrozenAssets: structuredClone(player._warFrozenAssets || []),
             _warSavedRanks: structuredClone(player._warSavedRanks || {}),
             _jailEscapeCooldownUntil: player._jailEscapeCooldownUntil || 0,
+            // v9p33river312: persist daily trade-rep cap and platinum
+            // achievement tracker so reloading mid-day doesn't reset
+            // the cap nor wipe platinum progress counters.
+            _dailyTradeRep: player._dailyTradeRep ? structuredClone(player._dailyTradeRep) : null,
+            _platinumTracking: structuredClone(player._platinumTracking || {}),
             // Kingdom quest data
             kingdomQuests: structuredClone(player.kingdomQuests || {}),
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
@@ -19367,6 +19400,9 @@
         // doesn't reset it. Previously a player could escape, save, load,
         // and immediately attempt another jailbreak.
         player._jailEscapeCooldownUntil = data._jailEscapeCooldownUntil || 0;
+        // v9p33river312: restore daily trade-rep cap + platinum tracker.
+        player._dailyTradeRep = data._dailyTradeRep ? structuredClone(data._dailyTradeRep) : null;
+        player._platinumTracking = data._platinumTracking ? structuredClone(data._platinumTracking) : {};
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;
@@ -19777,6 +19813,17 @@
         // Housing & Rest
         player.houses = data.houses || [];
         player.primaryHouseId = data.primaryHouseId || null;
+        // v9p33river312: validate primaryHouseId still points to an
+        // owned, non-rental house after load. Stale ids (e.g. house
+        // sold then save loaded) cause getHouseInTown to never return
+        // a valid primary fallback.
+        if (player.primaryHouseId) {
+            var _phValid = (player.houses || []).some(function(h) { return h.id === player.primaryHouseId && !h.isRental; });
+            if (!_phValid) {
+                var _phNext = (player.houses || []).find(function(h) { return !h.isRental; });
+                player.primaryHouseId = _phNext ? _phNext.id : null;
+            }
+        }
         player.fatigue = data.fatigue || 0;
         // Energy system — migrate from old fatigue
         player.energy = data.energy != null ? data.energy : (ENERGY_CONFIG.BASE_MAX - (data.fatigue || 0));
@@ -32945,6 +32992,13 @@
 
     function getHouseInTown(townId) {
         if (!player.houses) return null;
+        // v9p33river312: prefer primaryHouseId when it lives in this town
+        // so home/rest detection respects the player's chosen primary
+        // home; was always picking the first non-rental.
+        if (player.primaryHouseId) {
+            var primary = player.houses.find(function(h) { return h.id === player.primaryHouseId && h.townId === townId && !h.isRental; });
+            if (primary) return primary;
+        }
         return player.houses.find(h => h.townId === townId && !h.isRental) || null;
     }
 

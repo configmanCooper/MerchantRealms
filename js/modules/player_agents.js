@@ -72,6 +72,11 @@
 
         var rng = Engine.getRng();
         player.gold -= hireFee;
+        // v9p33river312: missing finance ledger entry — agent hire fees
+        // were deducted from gold but never logged, leaving them
+        // invisible in the player's finance report.
+        if (Player.logFinance) Player.logFinance(-hireFee, 'agents', 'Hire agent');
+        else if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + hireFee;
         var firstName = _agentFirstNames[rng ? rng.randInt(0, _agentFirstNames.length - 1) : Math.floor(Math.random() * _agentFirstNames.length)];
         var lastName = _agentLastNames[rng ? rng.randInt(0, _agentLastNames.length - 1) : Math.floor(Math.random() * _agentLastNames.length)];
 
@@ -281,11 +286,19 @@
                 var totalCost = agent.dailyCost * daysMissed;
                 if (player.gold >= totalCost) {
                     player.gold -= totalCost;
+                    // v9p33river312: log agent wage payments to finance
+                    // ledger. Previously vanished from the player's
+                    // expense report despite draining gold daily.
+                    if (Player.logFinance) Player.logFinance(-totalCost, 'agents', 'Agent wages (' + agent.name + ')');
+                    else if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
                     agent.lastPaidDay = day;
                 } else if (player.gold > 0) {
                     // Pay partial
                     var daysPaid = Math.floor(player.gold / agent.dailyCost);
-                    player.gold -= daysPaid * agent.dailyCost;
+                    var _partialCost = daysPaid * agent.dailyCost;
+                    player.gold -= _partialCost;
+                    if (Player.logFinance && _partialCost > 0) Player.logFinance(-_partialCost, 'agents', 'Agent wages partial (' + agent.name + ')');
+                    else if (player.stats && _partialCost > 0) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + _partialCost;
                     agent.lastPaidDay += daysPaid;
                     agent.loyalty = Math.max(0, agent.loyalty - (daysMissed - daysPaid) * 3);
                 } else {

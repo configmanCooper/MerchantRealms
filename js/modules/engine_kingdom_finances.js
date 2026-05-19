@@ -1090,7 +1090,22 @@
                         var rg = restrictedGoods[_ri];
                         if ((playerInv[rg] || 0) >= 3) {
                             // Check license
-                            var hasLicense = pState && pState.licenses && pState.licenses[k.id] && pState.licenses[k.id].includes(rg);
+                            // v9p33river312: licenses are stored as
+                            // { resourceId, expiresDay, ... } objects
+                            // (player.js:26683), not strings. .includes(rg)
+                            // on the object array always returned false,
+                            // making the inspector treat every valid
+                            // license as missing.
+                            var _kLics = pState && pState.licenses && pState.licenses[k.id] ? pState.licenses[k.id] : null;
+                            var hasLicense = false;
+                            if (_kLics) {
+                                for (var _lci = 0; _lci < _kLics.length; _lci++) {
+                                    var _lic = _kLics[_lci];
+                                    if (_lic && _lic.resourceId === rg && (!_lic.expiresDay || _lic.expiresDay > world.day)) {
+                                        hasLicense = true; break;
+                                    }
+                                }
+                            }
                             if (!hasLicense) {
                                 caughtItem = rg;
                                 caughtQty = playerInv[rg];

@@ -1243,6 +1243,17 @@
             if (Player.travelOffSea) return s.id === Player.offSeaShipId;
             // v9p33river60: if the player just boarded a docked ship, only that one is selectable.
             if (Player.embarkedShipId) return s.id === Player.embarkedShipId;
+            // v9p33river312: a coastal-docked ship (one moored at a
+            // landed wilderness coordinate rather than a town port) has
+            // townId === null. Don't filter it out — show it if the
+            // player is standing at its docked coordinate.
+            if (s.townId == null && s.dockX != null && s.dockY != null) {
+                var _px = Player.worldX, _py = Player.worldY;
+                if (_px != null && _py != null) {
+                    var _dx = (_px - s.dockX), _dy = (_py - s.dockY);
+                    if ((_dx*_dx + _dy*_dy) < 25) return true; // within ~5 tile radius
+                }
+            }
             return s.townId === Player.townId;
         });
 
