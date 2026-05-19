@@ -1058,9 +1058,12 @@
             if (isCurrent) style += 'border-color:rgba(100,200,100,0.4);background:rgba(100,200,100,0.1);';
             html += '<button class="btn-medieval" data-action="_spouseTownConfirm" data-id="' + mode + '" data-val="' + t.id + '" style="' + style + '">';
             html += (isCurrent ? '📍 ' : '') + t.name + '<span style="color:#888;margin-left:6px;">' + distLabel + '</span>';
-            if (t.kingdom) {
+            // v9p33river300: town objects use kingdomId, not kingdom. The
+            // old check never matched so the kingdom label tag was never
+            // appended to picker rows.
+            if (t.kingdomId) {
                 var kn = '';
-                try { var k = Engine.findKingdom(t.kingdom); kn = k ? k.name : ''; } catch(e) {}
+                try { var k = Engine.findKingdom(t.kingdomId); kn = k ? k.name : ''; } catch(e) {}
                 if (kn) html += '<span style="color:#a88;margin-left:6px;font-size:11px;">(' + kn + ')</span>';
             }
             html += '</button>';

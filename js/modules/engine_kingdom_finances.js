@@ -138,8 +138,13 @@
                 const prosperityMult = 1 + (town.prosperity || 50) / 200;
                 const tax = Math.floor(buildingValue * rate * prosperityMult);
                 if (tax > 0) {
-                    totalPropertyTax += tax;
-                    // Deduct from NPC owner if possible
+                    // v9p33river300: previously the full `tax` was added to
+                    // totalPropertyTax UNCONDITIONALLY, then the system tried
+                    // to deduct it from the owner. If the owner was broke,
+                    // kingdom revenue was minted; AND the Property Magnate
+                    // 10% discount path was discrepant (player paid 90%,
+                    // kingdom credited 100%, 10% minted). Now: credit kingdom
+                    // ONLY what was actually paid.
                     if (bld.ownerId === 'player') {
                         // Property Magnate: -10% property tax
                         var playerTax = tax;
@@ -149,11 +154,13 @@
                         if (typeof Player !== 'undefined' && Player.gold >= playerTax) {
                             Player.state.gold -= playerTax;
                             if (typeof Player.state.stats !== 'undefined') Player.state.stats.totalGoldSpent += playerTax;
+                            totalPropertyTax += playerTax;
                         }
                     } else if (bld.ownerId && bld.ownerId !== 'player') {
                         const owner = findPerson(bld.ownerId);
                         if (owner && owner.gold >= tax) {
                             owner.gold -= tax;
+                            totalPropertyTax += tax;
                         }
                     }
                 }

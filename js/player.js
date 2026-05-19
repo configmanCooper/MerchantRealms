@@ -40188,6 +40188,15 @@
         get dynastySPBank() { return player.dynastySPBank || 0; },
         get id() { return player.id || 'player'; },
         get personId() { return player.personId || player.id || 'player'; },
+        // v9p33river300: defensive getter for `resting` — never set anywhere
+        // currently, but ui_petition.js camp prompt + tutorial expected a
+        // public field. If the resting flag ever gets wired up, both will
+        // start seeing it.
+        get resting() { return !!player.resting; },
+        // v9p33river300: expose the internal bridgeDestruction record so
+        // ui_actions.js destroyBridge() can detect an active sabotage
+        // instead of always seeing undefined.
+        get bridgeDestruction() { return player.bridgeDestruction || null; },
         get hunger() { return player.hunger; },
         get marketIntel() { return player.marketIntel; },
         get tradeTipLog() { return player.tradeTipLog || []; },
@@ -40665,6 +40674,11 @@
         generateMerchantGuildReport,
         generateJournalDocument,
         recordJournalEntry,
+        // v9p33river300: expose checkLevelUp so player_family.js inheritance
+        // path can recompute level after dynasty SP bank application. The
+        // alias at player_family.js:33 previously captured undefined and
+        // threw "checkLevelUp is not a function" mid-inheritance.
+        checkLevelUp,
         get guildMemberships() { return player.guildMemberships || {}; },
 
         // Spouse personality / dating / regency

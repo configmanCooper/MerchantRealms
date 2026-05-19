@@ -3088,8 +3088,9 @@ function _switchProposeActionTab(tabId, kingdomId) {
         }
         toast('✅ You are now a ' + deal.offeredRankName + ' of ' + deal.kingdomName + '! +' + deal.offeredGold + 'g', 'success');
 
-        if (typeof Player !== 'undefined' && Player.addJournalEntry) {
-            Player.addJournalEntry('Accepted an offer from ' + deal.kingdomName + '. Granted ' + deal.offeredRankName + ' status and ' + deal.offeredGold + ' gold.');
+        if (typeof Player !== 'undefined' && Player.recordJournalEntry) {
+            // v9p33river300: was Player.addJournalEntry (nonexistent).
+            Player.recordJournalEntry('politics', 'Accepted an offer from ' + deal.kingdomName + '. Granted ' + deal.offeredRankName + ' status and ' + deal.offeredGold + ' gold.', { mood: 'pleased' });
         }
 
         UI.closeModal();

@@ -3707,8 +3707,10 @@ function _revoltJoinSide(townId, optionId, side, winChance) {
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Victory! You helped ' + alliedName + '!' + injuryMsg, 'success');
 
         // Add journal entry
-        if (typeof Player !== 'undefined' && Player.addJournalEntry) {
-            Player.addJournalEntry('Fought in revolt at ' + town.name + ' alongside ' + alliedName + ' — victorious!' + injuryMsg);
+        // v9p33river300: addJournalEntry doesn't exist — the exported API is
+        // recordJournalEntry(type, text, opts) at player.js:40667.
+        if (typeof Player !== 'undefined' && Player.recordJournalEntry) {
+            Player.recordJournalEntry('combat', 'Fought in revolt at ' + town.name + ' alongside ' + alliedName + ' — victorious!' + injuryMsg, { mood: 'triumphant' });
         }
     } else {
         if (side === 'rebels') {
@@ -3720,8 +3722,8 @@ function _revoltJoinSide(townId, optionId, side, winChance) {
         if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt but lost the skirmish.' + injuryMsg);
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Defeat. ' + alliedName + ' lost ground.' + injuryMsg, 'warning');
 
-        if (typeof Player !== 'undefined' && Player.addJournalEntry) {
-            Player.addJournalEntry('Fought in revolt at ' + town.name + ' alongside ' + alliedName + ' — defeated.' + injuryMsg);
+        if (typeof Player !== 'undefined' && Player.recordJournalEntry) {
+            Player.recordJournalEntry('combat', 'Fought in revolt at ' + town.name + ' alongside ' + alliedName + ' — defeated.' + injuryMsg, { mood: 'somber' });
         }
     }
 
@@ -4316,10 +4318,12 @@ function repairBridgeUI(roadIdx, bridgeId) {
 }
 
 function destroyBridge(roadIdx) {
-    // Check if already destroying a bridge
-    if (Player.bridgeDestruction) {
-        var status = Player.getBridgeDestructionStatus();
-        if (status) {
+    // v9p33river300: previously gated on Player.bridgeDestruction which had
+    // no public getter — modal never opened when sabotage was active.
+    // getBridgeDestructionStatus() returns null when there's no active
+    // sabotage, so we can use it directly as both the check and the data.
+    var status = (typeof Player !== 'undefined' && Player.getBridgeDestructionStatus) ? Player.getBridgeDestructionStatus() : null;
+    if (status) {
             var html = '<div style="text-align:center;margin-bottom:12px;">';
             html += '<div style="font-size:1.2rem;">💣 Bridge Sabotage In Progress</div>';
             html += '<div style="font-size:0.85rem;color:#ccc;margin-top:8px;">';
@@ -4339,7 +4343,6 @@ function destroyBridge(roadIdx) {
             html += '</div>';
             openModal('💣 Bridge Sabotage', html);
             return;
-        }
     }
 
     var roads = Engine.getRoads();

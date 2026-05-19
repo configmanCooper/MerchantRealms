@@ -56,7 +56,13 @@
         for (var ri = 0; ri < roads.length; ri++) {
             var r = roads[ri];
             if (r.condition === 'destroyed') continue;
-            var d = Math.hypot(townMap[r.fromTownId].x - townMap[r.toTownId].x, townMap[r.fromTownId].y - townMap[r.toTownId].y);
+            // v9p33river300: defend against stale roads referencing
+            // missing/removed towns — was previously dereferencing
+            // .x/.y on undefined and throwing.
+            var fromT = townMap[r.fromTownId];
+            var toT = townMap[r.toTownId];
+            if (!fromT || !toT) continue;
+            var d = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
             if (!adj[r.fromTownId]) adj[r.fromTownId] = [];
             if (!adj[r.toTownId]) adj[r.toTownId] = [];
             adj[r.fromTownId].push({ id: r.toTownId, d });
@@ -93,7 +99,11 @@
         for (var ri = 0; ri < routes.length; ri++) {
             var r = routes[ri];
             if (r.condition === 'destroyed') continue;
-            var d = Math.hypot(townMap[r.fromTownId].x - townMap[r.toTownId].x, townMap[r.fromTownId].y - townMap[r.toTownId].y);
+            // v9p33river300: same stale-route crash as land path above.
+            var fromT = townMap[r.fromTownId];
+            var toT = townMap[r.toTownId];
+            if (!fromT || !toT) continue;
+            var d = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
             if (!adj[r.fromTownId]) adj[r.fromTownId] = [];
             if (!adj[r.toTownId]) adj[r.toTownId] = [];
             adj[r.fromTownId].push({ id: r.toTownId, d });
