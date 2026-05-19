@@ -2345,15 +2345,18 @@
                 if (Player.state.townId === Player.state._plagueSelfRiskTown) {
                     // ~2.1% per 3-day tick ≈ 5% per week.
                     if (rng.chance(0.021)) {
-                        if (Player.inflictRandomInjury || Player.addIllness) {
-                            // Use the player's illness path if present, fall back to a notification.
-                            if (typeof Player.addIllness === 'function') {
-                                Player.addIllness('plague');
-                            } else if (typeof Player.contractIllness === 'function') {
-                                Player.contractIllness('plague');
-                            }
+                        // v9p33river348: previously tried Player.addIllness /
+                        // Player.contractIllness — neither exists in the
+                        // codebase, so the karma was cosmetic only. The
+                        // real API is Player.inflictSpecificIllness(id, source).
+                        var _karmaApplied = false;
+                        if (typeof Player.inflictSpecificIllness === 'function') {
+                            Player.inflictSpecificIllness('plague', 'self_inflicted_plague');
+                            _karmaApplied = true;
+                        }
+                        if (_karmaApplied) {
                             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🦠 Karma — you\'ve caught the plague you spread!', 'danger', 'health');
-                            logEvent('🦠 ' + (Player.fullName || 'The player') + ' has fallen ill — possibly the very plague they spread.');
+                            logEvent('🦠 ' + (Player.fullName || 'The player') + ' has fallen ill with plague — possibly the very plague they spread.');
                             // Don't keep rolling — one karma hit is enough.
                             Player.state._plagueSelfRiskUntil = 0;
                         }

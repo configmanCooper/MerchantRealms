@@ -14701,6 +14701,40 @@ window.UI = (function () {
         } catch(e) {}
 
         openModal('🗡️ Dark Deeds — Schemes', html);
+        // v9p33river348: inline <script>setTimeout(...)</script> tags
+        // appended by the four configurator builders do NOT execute when
+        // inserted via innerHTML (modern browsers block this for XSS
+        // safety). Instead, walk the rendered DOM and trigger the
+        // refresh helper for each configurator that's currently mounted.
+        // Runs after a microtask so openModal's innerHTML write completes.
+        setTimeout(function() {
+            try {
+                if (UI._froRefresh) {
+                    document.querySelectorAll('[id^="froKingdom_"]').forEach(function(el) {
+                        var idx = parseInt(el.id.replace('froKingdom_', ''), 10);
+                        if (!isNaN(idx)) UI._froRefresh(idx);
+                    });
+                }
+                if (UI._ptRefresh) {
+                    document.querySelectorAll('[id^="ptTarget_"]').forEach(function(el) {
+                        var idx = parseInt(el.id.replace('ptTarget_', ''), 10);
+                        if (!isNaN(idx)) UI._ptRefresh(idx);
+                    });
+                }
+                if (UI._isRefresh) {
+                    document.querySelectorAll('[id^="isTown_"]').forEach(function(el) {
+                        var idx = parseInt(el.id.replace('isTown_', ''), 10);
+                        if (!isNaN(idx)) UI._isRefresh(idx);
+                    });
+                }
+                if (UI._spRefresh) {
+                    document.querySelectorAll('[id^="spVariant_"]').forEach(function(el) {
+                        var idx = parseInt(el.id.replace('spVariant_', ''), 10);
+                        if (!isNaN(idx)) UI._spRefresh(idx);
+                    });
+                }
+            } catch (_e) { /* no-op */ }
+        }, 30);
     }
 
     function hasSkillForAction(action) {
@@ -14904,8 +14938,9 @@ window.UI = (function () {
               + 'data-action="forgeRoyalOrderSubmit" data-idx="' + idx + '">⚡ Forge & Deliver Royal Order</button>';
         html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Detection ≈ 2× ordinary forgery. Massive notoriety hit on success. Devastating if caught (heavy fines, 14–30 day jail).</div>';
         html += '</div>';
-        // Auto-populate sub-target on first render.
-        html += '<script>setTimeout(function(){ if(UI._froRefresh) UI._froRefresh(' + idx + '); }, 30);<\/script>';
+        // v9p33river348: inline <script> tags don't execute when inserted
+        // via innerHTML; the auto-populate refresh is triggered from
+        // openSchemesDialog() instead, which walks the DOM after openModal.
         return html;
     }
 
@@ -15076,8 +15111,7 @@ window.UI = (function () {
               + 'data-action="plantTreasonSubmit" data-idx="' + idx + '">⚡ Plant Evidence</button>';
         html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Detection ~70% baseline (nobles in either kingdom: −15%). If caught: 5× cost fine, 60-day jail, reputation devastated.</div>';
         html += '</div>';
-        // Auto-populate enemy + noble selects on first render.
-        html += '<script>setTimeout(function(){ if(UI._ptRefresh) UI._ptRefresh(' + idx + '); }, 30);<\/script>';
+        // v9p33river348: refresh is triggered from openSchemesDialog().
         return html;
     }
 
@@ -15210,8 +15244,7 @@ window.UI = (function () {
               + 'data-action="inciteStrikesSubmit" data-idx="' + idx + '">⚡ Pay Bribes & Incite Strike</button>';
         html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Halts ALL non-player buildings in the town for 14 days. Costs 1000–10000g. If caught: 3× cost fine + 20-day jail.</div>';
         html += '</div>';
-        // Auto-populate preview on first render.
-        html += '<script>setTimeout(function(){ if(UI._isRefresh) UI._isRefresh(' + idx + '); }, 30);<\/script>';
+        // v9p33river348: refresh is triggered from openSchemesDialog().
         return html;
     }
 
@@ -15301,7 +15334,7 @@ window.UI = (function () {
               + 'data-action="spreadPlagueSubmit" data-idx="' + idx + '">⚡ Plant Contagion</button>';
         html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Treason-tier if caught: 10× cost fine + 90-day jail + huge notoriety. Karma: 5% per week chance you catch it yourself while in town for the next 14 days.</div>';
         html += '</div>';
-        html += '<script>setTimeout(function(){ if(UI._spRefresh) UI._spRefresh(' + idx + '); }, 30);<\/script>';
+        // v9p33river348: refresh is triggered from openSchemesDialog().
         return html;
     }
 
