@@ -792,7 +792,10 @@ var StoryMode = (function () {
         if (!key) { if (typeof onComplete === 'function') onComplete(); return; }
         if (typeof STORY_DIALOGS !== 'undefined' && STORY_DIALOGS[key]) {
             if (typeof UI !== 'undefined' && UI.showStoryDialog) {
-                var dialogData = STORY_DIALOGS[key];
+                // v9p33river316: was mutating the shared STORY_DIALOGS
+                // entry (attaching _dialogKey and onComplete), which
+                // could leak callbacks across plays. Clone first.
+                var dialogData = JSON.parse(JSON.stringify(STORY_DIALOGS[key]));
                 dialogData._dialogKey = key;
                 // If this dialog has a 'next' key, chain to the next dialog on completion
                 var nextKey = dialogData.next || null;
@@ -1781,13 +1784,22 @@ var StoryMode = (function () {
         // Find or assign the enemy kingdom (Korvath)
         var enemyKingdomId = _storyState.flags._enemyKingdomId;
         if (!enemyKingdomId) {
-            // Pick a different kingdom to be Korvath
-            for (var ki = 0; ki < w.kingdoms.length; ki++) {
-                if (w.kingdoms[ki].id !== playerKingdomId) {
-                    enemyKingdomId = w.kingdoms[ki].id;
-                    _storyState.flags._enemyKingdomId = enemyKingdomId;
-                    break;
+            // v9p33river316: deterministic pick from world.seed so a
+            // re-rolled world gives the same Korvath assignment. Was
+            // picking the first non-player kingdom, which depended on
+            // generation order (kingdoms can shuffle across worlds).
+            var _candidates = w.kingdoms.filter(function(k) { return k.id !== playerKingdomId; });
+            if (_candidates.length > 0) {
+                // Prefer one already named 'Korvath'; else seed-based pick.
+                var _named = _candidates.find(function(k) { return k.name === 'Korvath'; });
+                if (_named) {
+                    enemyKingdomId = _named.id;
+                } else {
+                    var _sd = (w.seed || 0) | 0;
+                    var _idx = ((_sd ^ 0x5A5A5A5A) >>> 0) % _candidates.length;
+                    enemyKingdomId = _candidates[_idx].id;
                 }
+                _storyState.flags._enemyKingdomId = enemyKingdomId;
             }
         }
 

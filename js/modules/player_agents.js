@@ -463,7 +463,11 @@
                     }
                 } else {
                     agent.status = 'jailed';
-                    agent._jailUntil = day + 14;
+                    // v9p33river316: normalize agent jail flag to
+                    // _jailedUntilDay so it matches the canonical NPC
+                    // jail field used by ui_actions / engine checks.
+                    agent._jailedUntilDay = day + 14;
+                    agent._jailUntil = agent._jailedUntilDay; // legacy alias
                     agent.task = null;
                     agent.reports.push({ day: day, msg: '🔒 ' + agent.name + ' was jailed for 14 days in a hostile kingdom.' });
                 }
@@ -472,7 +476,8 @@
                 player.nobleNotoriety = Math.min(CONFIG.NOBLE_NOTORIETY_MAX || 100,
                     (player.nobleNotoriety || 0) + 15);
                 agent.status = 'jailed';
-                agent._jailUntil = day + 7;
+                agent._jailedUntilDay = day + 7;
+                agent._jailUntil = agent._jailedUntilDay; // legacy alias
                 agent.task = null;
                 agent.reports.push({ day: day, msg: '🔒 ' + agent.name + ' was jailed for 7 days in a foreign kingdom.' });
             } else {

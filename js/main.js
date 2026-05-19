@@ -1134,9 +1134,20 @@ window.Game = (function () {
         function _ensureSeaRoute(townA, townB) {
             if (!world || !townA || !townB || townA.id === townB.id) return false;
             var aId = townA.id, bId = townB.id;
-            if (world.seaRoutes && world.seaRoutes.some(function(sr) {
+            // v9p33river316: was accepting any existing sea route between
+            // these towns without revalidating that both endpoints are
+            // still ports. If either town stopped being a port (lost
+            // dock, conquered, demoted), the route was kept. Force
+            // endpoint check; if invalid, rebuild.
+            var _existing = world.seaRoutes && world.seaRoutes.findIndex(function(sr) {
                 return (sr.fromTownId === aId && sr.toTownId === bId) || (sr.fromTownId === bId && sr.toTownId === aId);
-            })) return true;
+            });
+            if (_existing != null && _existing >= 0) {
+                if (townA.isPort && townB.isPort) return true;
+                // Stale route — remove and rebuild
+                world.seaRoutes.splice(_existing, 1);
+                console.warn('[StoryMode] _ensureSeaRoute removed stale route ' + (townA.name || aId) + '<->' + (townB.name || bId) + ' (endpoint no longer port)');
+            }
             if (typeof Engine !== 'undefined' && Engine.buildNewSeaRoute) {
                 var res = Engine.buildNewSeaRoute(aId, bId, 'story', {});
                 if (res && res.success) return true;

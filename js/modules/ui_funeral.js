@@ -389,7 +389,17 @@
         var relLabel = _getRelationshipLabel(relationship);
         var playerTownId = Player.state ? Player.state.townId : (Player.townId || null);
         var hasChurch = _hasChurchInTown(playerTownId);
-        var playerRank = _getPlayerNobleRank(null);
+        // v9p33river316: state funeral eligibility now uses the deceased's
+        // home kingdom rank (or current-town kingdom rank as a fallback)
+        // instead of the player's highest rank in any kingdom. A noble
+        // dying in their own realm should get a state funeral; a noble
+        // dying abroad shouldn't qualify based on a foreign rank.
+        var _deceasedKingdomId = (p && p.kingdomId) || null;
+        if (!_deceasedKingdomId && playerTownId) {
+            var _pt = Engine.findTown ? Engine.findTown(playerTownId) : null;
+            _deceasedKingdomId = _pt ? _pt.kingdomId : null;
+        }
+        var playerRank = _getPlayerNobleRank(_deceasedKingdomId);
 
         var html = '<div style="padding:12px;">';
         html += '<h3 style="color:#9b59b6;margin:0 0 10px;">🪦 Funeral Planning for ' + escapeHtml(name) + '</h3>';

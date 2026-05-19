@@ -650,8 +650,16 @@
 
         // Payment based on skill level
         var basePay = hasSkill('doctor') ? 25 : 15;
-        // Nurse military rank bonus
-        if (NURSE_RANKS && NURSE_RANKS.indexOf(player.militaryRank) !== -1) basePay = Math.floor(basePay * 1.5);
+        // v9p33river316: nurse pay bonus now reads the actual nurse rank
+        // (when player is enlisted as a nurse) instead of using military
+        // rank — those two career tracks don't share rank values. Falls
+        // back to legacy militaryRank check for backward compatibility.
+        var _nurseRank = (player.militaryRole === 'nurse') ? player.militaryRank : null;
+        if (_nurseRank && NURSE_RANKS && NURSE_RANKS.indexOf(_nurseRank) !== -1) {
+            basePay = Math.floor(basePay * 1.5);
+        } else if (NURSE_RANKS && NURSE_RANKS.indexOf(player.militaryRank) !== -1) {
+            basePay = Math.floor(basePay * 1.5);
+        }
         player.gold += basePay;
         player.stats.totalGoldEarned += basePay;
         grantXP(5, 'medical');

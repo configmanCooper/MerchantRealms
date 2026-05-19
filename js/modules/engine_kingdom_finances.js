@@ -606,21 +606,32 @@
                 }
             }
 
-            // 9. Demand loans from wealthy NPCs
-            if (rng.chance(p.temperament === 'cruel' || p.temperament === 'stern' ? 0.5 : 0.2)) {
-                const wealthyNPCs = world.people.filter(c =>
-                    c.alive && c.kingdomId === k.id && c.gold > 200 && !c.isEliteMerchant
-                ).sort((a, b) => b.gold - a.gold);
-                if (wealthyNPCs.length > 0) {
-                    const target = wealthyNPCs[0];
-                    const loan = Math.min(Math.floor(target.gold * 0.3), 500);
-                    target.gold -= loan;
-                    k.gold += loan;
-                    logEvent(`👑 ${k.name}'s king demands a ${loan}g "loan" from ${target.firstName} ${target.lastName}.`, {
-                        type: 'forced_loan', kingdomId: k.id, cause: 'Royal decree to raise emergency funds', effects: ['Target loses gold', 'Relations strained']
-                    });
-                }
+        // v9p33river316: forced loan now creates a kingdom debt so the
+        // NPC is owed back. Was permanently taking gold with no repayment
+        // record. Kingdom finance tick should later see and (try to)
+        // repay; if treasury can't, the debt persists as a relationship
+        // penalty.
+        if (rng.chance(p.temperament === 'cruel' || p.temperament === 'stern' ? 0.5 : 0.2)) {
+            const wealthyNPCs = world.people.filter(c =>
+                c.alive && c.kingdomId === k.id && c.gold > 200 && !c.isEliteMerchant
+            ).sort((a, b) => b.gold - a.gold);
+            if (wealthyNPCs.length > 0) {
+                const target = wealthyNPCs[0];
+                const loan = Math.min(Math.floor(target.gold * 0.3), 500);
+                target.gold -= loan;
+                k.gold += loan;
+                if (!k._forcedLoanDebts) k._forcedLoanDebts = [];
+                k._forcedLoanDebts.push({
+                    creditorId: target.id,
+                    amount: loan,
+                    issuedDay: world.day,
+                    dueDay: world.day + 180,
+                });
+                logEvent(`👑 ${k.name}'s king demands a ${loan}g "loan" from ${target.firstName} ${target.lastName}.`, {
+                    type: 'forced_loan', kingdomId: k.id, cause: 'Royal decree to raise emergency funds', effects: ['Target loses gold', 'Relations strained', 'Kingdom owes ' + loan + 'g back within 180 days']
+                });
             }
+        }
 
             // 10. Reduce soldier pay (morale drops)
             if (soldiers.length > 3 && rng.chance(0.3)) {

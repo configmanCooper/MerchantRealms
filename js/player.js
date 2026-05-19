@@ -1445,8 +1445,12 @@
         }
 
         // Check trade embargo — any citizenship kingdom with embargo against this town's kingdom
+        // v9p33river316: removed `!isPlayerCitizenOf(town.kingdomId)`
+        // gate. Was letting dual citizens of an embargo source AND the
+        // destination dodge the law entirely. Embargo applies regardless
+        // of dest citizenship; only the embargo-source kingdom matters.
         var _embargoFromK = null;
-        if (kingdom && !isPlayerCitizenOf(town.kingdomId) && Engine.hasEmbargo) {
+        if (kingdom && Engine.hasEmbargo) {
             for (var _ekId in player.socialRank) {
                 if ((player.socialRank[_ekId] || 0) >= 1 && _ekId !== town.kingdomId && Engine.hasEmbargo(_ekId, town.kingdomId)) {
                     _embargoFromK = _ekId;
@@ -1786,8 +1790,9 @@
         const kingdom = Engine.findKingdom(town.kingdomId);
 
         // Trade embargo check — any citizenship kingdom with embargo against this town's kingdom
+        // v9p33river316: same dual-citizen-bypass fix as the buy path.
         var _sellEmbargoFromK = null;
-        if (kingdom && !isPlayerCitizenOf(town.kingdomId) && Engine.hasEmbargo) {
+        if (kingdom && Engine.hasEmbargo) {
             for (var _sekId in player.socialRank) {
                 if ((player.socialRank[_sekId] || 0) >= 1 && _sekId !== town.kingdomId && Engine.hasEmbargo(_sekId, town.kingdomId)) {
                     _sellEmbargoFromK = _sekId;
@@ -5361,6 +5366,15 @@
         cost = Math.floor(cost);
         var currentTown = Engine.findTown(player.townId);
         if (!currentTown) return { success: false, message: 'Cannot find current town.' };
+
+        // v9p33river316: respect horse caps so the travel-shortcut UI
+        // can't bypass MAX_HORSES + horse_mastery. Was just push()ing
+        // without checking total horses (mounted + inventory).
+        var _maxHorses = (CONFIG.MAX_HORSES || (hasSkill('horse_mastery') ? 4 : 2));
+        var _currentHorses = (player.horses ? player.horses.length : 0) + ((player.inventory && player.inventory.horses) || 0);
+        if (_currentHorses >= _maxHorses) {
+            return { success: false, message: 'You already have ' + _currentHorses + '/' + _maxHorses + ' horses. Stable or sell one first.' };
+        }
 
         // Buy the horse
         if (player.gold < cost) return { success: false, message: 'Not enough gold.' };
@@ -34682,6 +34696,14 @@
                 }
                 Engine.logEvent('💀 You lost the fight against ' + enemyName + '! You washed ashore ill and with nothing.');
                 autoJournalCapture('encounter', 'Defeated by ' + enemyName + ' at sea. Washed ashore half-drowned with a terrible fever.', { mood: 'desperate' });
+                // v9p33river316: was leaving travel state intact despite
+                // the 'washed ashore' outcome. Clear sea travel so the
+                // player isn't stuck mid-voyage.
+                if (typeof cleanupTravelState === 'function') {
+                    cleanupTravelState();
+                    player.traveling = false;
+                    player.travelProgress = 0;
+                }
             } else {
                 // Land loss: moderate or severe injury + lose all goods
                 for (var key2 in player.inventory) {
