@@ -7685,12 +7685,22 @@ window.UI = (function () {
 
     function updateNotifCount() {
         // Show count of unread events since last time log was opened
+        // v9p33river306: was only counting Engine events — toast-only alerts
+        // (notifications array, stored locally by toast()) never incremented
+        // the bell. Combine both sources.
         var totalEvents = 0;
         try {
             var evts = Engine.getEvents();
             totalEvents = evts ? evts.length : 0;
         } catch (e) { totalEvents = 0; }
-        var unread = Math.max(0, totalEvents - _lastSeenEventCount);
+        var localUnread = 0;
+        if (Array.isArray(notifications)) {
+            // Count toasts newer than the engine-event cutoff
+            for (var _ni = 0; _ni < notifications.length; _ni++) {
+                if (!notifications[_ni]._seen) localUnread++;
+            }
+        }
+        var unread = Math.max(0, totalEvents - _lastSeenEventCount) + localUnread;
         if (el.notifCount) {
             if (unread > 0) {
                 el.notifCount.textContent = unread > 99 ? '99+' : unread;
@@ -12626,8 +12636,13 @@ window.UI = (function () {
             var aUnlocked = playerAch[a.id] ? 0 : 1;
             var bUnlocked = playerAch[b.id] ? 0 : 1;
             if (aUnlocked !== bUnlocked) return aUnlocked - bUnlocked;
-            var aTier = _tierOrder[a.tier || 'bronze'] || 3;
-            var bTier = _tierOrder[b.tier || 'bronze'] || 3;
+            // v9p33river306: was `_tierOrder[x] || 3` — but _tierOrder.platinum
+            // is 0, which is falsy, so `0 || 3` collapsed to 3 and platinum
+            // sorted like bronze. Use explicit undefined check.
+            var aT = _tierOrder[a.tier || 'bronze'];
+            var bT = _tierOrder[b.tier || 'bronze'];
+            var aTier = (aT == null) ? 3 : aT;
+            var bTier = (bT == null) ? 3 : bT;
             return aTier - bTier;
         });
 

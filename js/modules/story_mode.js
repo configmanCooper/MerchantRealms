@@ -3216,13 +3216,12 @@ var StoryMode = (function () {
         _storyState.chapterStartDay = data.chapterStartDay || 0;
 
         // Restore flags
-        if (data.flags) {
-            for (var k in data.flags) {
-                if (data.flags.hasOwnProperty(k)) {
-                    _storyState.flags[k] = data.flags[k];
-                }
-            }
-        }
+        // v9p33river306: previously merged saved flags INTO the existing
+        // _storyState.flags map without clearing absent ones — stale story
+        // flags (like suppressDisease, warDeclared, ashfordCaptured) could
+        // persist across reloads even if the saved game had cleared them.
+        // Replace the flag map wholesale.
+        _storyState.flags = data.flags ? JSON.parse(JSON.stringify(data.flags)) : {};
 
         // If story is already complete, hide the tracker
         if (_storyState.complete) {

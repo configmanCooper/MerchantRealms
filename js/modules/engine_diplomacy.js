@@ -220,7 +220,11 @@
             if (!p.alive || !p.socialRank) return false;
             var rank = p.socialRank[kingdom.id] || 0;
             if (rank < 4 || rank > 5) return false; // Only minor nobles and lords
-            if (p._jailed) return false; // Already jailed
+            // v9p33river306: canonical jail flag is _jailedUntilDay (a day
+            // number). The legacy `_jailed` boolean is never set anywhere,
+            // so jailed nobles could still be picked as army leaders.
+            var _todayD = (typeof world !== 'undefined' && world.day) || 0;
+            if (p._jailedUntilDay && p._jailedUntilDay > _todayD) return false;
             if (p.occupation === 'prisoner') return false;
             // Not already leading an army
             for (var _ai = 0; _ai < world.armies.length; _ai++) {

@@ -1213,7 +1213,10 @@
                 income: { baseTax: k.taxRevenue || 0, tradeTax: k.tradeTaxRevenue || 0,
                           propertyTax: k.propertyTaxRevenue || 0, incomeTax: k.incomeTaxRevenue || 0 },
                 expenses: { soldiers: soldierCost * 30, buildings: buildingCost * 30,
-                            warSupply: k.atWar.size > 0 ? soldiers.length * (CONFIG.WARTIME_SUPPLY_COST_PER_SOLDIER || 2) * 90 : 0 }
+                            // v9p33river306: defensive — k.atWar may be a Set
+                            // (raw) or an array (after a Engine.getKingdoms
+                            // round-trip). Both forms covered.
+                            warSupply: (k.atWar && ((k.atWar.size && k.atWar.size > 0) || (Array.isArray(k.atWar) && k.atWar.length > 0))) ? soldiers.length * (CONFIG.WARTIME_SUPPLY_COST_PER_SOLDIER || 2) * 90 : 0 }
             };
         }
 

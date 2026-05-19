@@ -77,6 +77,11 @@
         _sync();
         if (!player.townId || player.traveling) return;
         if (player.illnesses && player.illnesses.length > 0) return; // already sick
+        // v9p33river306: Story mode flags.suppressDisease was honored by
+        // inflictRandomIllness but NOT by the exposure tick — the player
+        // could still pick up illness from sick townsfolk during scripted
+        // story sequences. Honor the flag here too.
+        if (player.storyMode && player.storyMode.active && player.storyMode.flags && player.storyMode.flags.suppressDisease) return;
         var rng = Engine.getRng();
         if (!rng) return;
         var day = Engine.getDay();
@@ -306,7 +311,24 @@
         const typeDef = isIllness
             ? ILLNESS_TYPES.find(t => t.id === condition.type)
             : INJURY_TYPES.find(t => t.id === condition.type);
-        var effectiveTypeDef = typeDef || { id: condition.type, name: condition.name || 'Unknown', severity: condition.severity || 'minor', healDays: condition.severity === 'moderate' ? 7 : 3, product: 'antidote', productCost: condition.severity === 'moderate' ? 15 : 8 };
+        var effectiveTypeDef = typeDef || {
+            id: condition.type,
+            name: condition.name || 'Unknown',
+            severity: condition.severity || 'minor',
+            // v9p33river306: was hard-coded `condition.severity === 'moderate' ? 7 : 3`
+            // — anything other than 'moderate' (serious, severe, major)
+            // fell back to a minor 3-day case with low product cost,
+            // undertreating real conditions. Scale by actual severity.
+            healDays: condition.severity === 'severe' ? 21
+                    : condition.severity === 'major' ? 15
+                    : condition.severity === 'serious' ? 14
+                    : condition.severity === 'moderate' ? 7 : 3,
+            product: 'antidote',
+            productCost: condition.severity === 'severe' ? 60
+                       : condition.severity === 'major' ? 40
+                       : condition.severity === 'serious' ? 30
+                       : condition.severity === 'moderate' ? 15 : 8
+        };
 
         // Get AI-driven fee from the clinic
         var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;

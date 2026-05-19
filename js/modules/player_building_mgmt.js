@@ -171,7 +171,9 @@
     function _workRetailShift(bld, bt, day) {
         _sync();
         bld._playerWorkedDay = day;
-        player.ticksRemaining = (player.ticksRemaining || 0) - 15;
+        // v9p33river306: previously deducted 15 more ticks here AFTER the
+        // entry path already deducted 15 (line ~54). Total = 30 ticks for
+        // retail work, half a day spent. Removed the double-deduction.
 
         // Bonus: extra customers attracted by player presence
         var bonusCustomers = 2 + Math.floor((player.fame || 0) / 25);
@@ -496,15 +498,19 @@
             // === Auto-sell output (if stored > threshold) ===
             if (bt.produces && day % 3 === 0) {
                 var outputId = bld.currentProduct || bt.produces;
-                var stored = (player.townStorage && player.townStorage[bld.townId] && player.townStorage[bld.townId][outputId]) || 0;
+                // v9p33river306: production output is written to bld.inventory
+                // (see line ~138). Reading player.townStorage missed the
+                // manager's actual output, so auto-sell never fired.
+                if (!bld.inventory) bld.inventory = {};
+                var stored = bld.inventory[outputId] || 0;
                 var sellThreshold = bld._managerSkill >= 50 ? 30 : 20;
 
                 if (stored > sellThreshold && town.market) {
                     var toSell = Math.floor(stored * 0.5);
                     var sellPrice = (town.market.prices && town.market.prices[outputId]) || 5;
                     var totalRevenue = toSell * sellPrice;
-                    player.townStorage[bld.townId][outputId] -= toSell;
-                    if (player.townStorage[bld.townId][outputId] <= 0) delete player.townStorage[bld.townId][outputId];
+                    bld.inventory[outputId] -= toSell;
+                    if (bld.inventory[outputId] <= 0) delete bld.inventory[outputId];
                     // Add to market supply
                     if (!town.market.supply) town.market.supply = {};
                     town.market.supply[outputId] = (town.market.supply[outputId] || 0) + toSell;

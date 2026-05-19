@@ -623,7 +623,11 @@
         html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
         html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🏡 Land Subsidy <span style="font-size:0.62rem;color:#888;">(Reduce building costs 25%)</span> <span style="font-size:0.62rem;color:#e0c58a;">(' + formatGold(200) + '/season)</span></div>';
         var _landSubTowns = (kingdom.laws && kingdom.laws.landSubsidyTowns) || [];
-        var _landSubBuildings = ['farm', 'bakery', 'blacksmith', 'armorer', 'fletcher', 'clinic', 'hospital', 'marketplace', 'inn', 'tavern', 'mill', 'lumber_mill', 'mine', 'quarry', 'dock', 'warehouse', 'guild_hall'];
+        // v9p33river306: replaced legacy/invalid building ids ('marketplace',
+        // 'mill', 'lumber_mill', 'mine', 'dock') with the canonical config
+        // ids from config.js (marketplace_royal, flour_mill, coal_mine/
+        // sulfur_mine, no 'dock' — use port_fortress or omit).
+        var _landSubBuildings = ['farm', 'bakery', 'blacksmith', 'armorer', 'fletcher', 'clinic', 'hospital', 'marketplace_royal', 'inn', 'tavern', 'flour_mill', 'coal_mine', 'sulfur_mine', 'quarry', 'warehouse', 'guild_hall'];
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
         html += '<select id="_roLandSubTown" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
         html += '<option value="">Select town...</option>';

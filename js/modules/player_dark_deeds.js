@@ -144,6 +144,10 @@
     //   - Royal Advisor (rank 6):  2.00x catch
     //   - King:                    2.50x catch
     //   - Generic .isNoble flag (no rank info): 1.30x
+    // v9p33river306: numeric (legacy) socialRank — fall back to the bare
+    // number so old-style NPCs are correctly classified as nobles instead
+    // of treated as commoners (which gave the scheme a too-easy success/
+    // detection profile).
     function _nobleTargetMult(targetPersonId) {
         if (!targetPersonId) return 1.0;
         var t = Engine.findPerson ? Engine.findPerson(targetPersonId) : null;
@@ -152,8 +156,12 @@
         // Look up max social rank across kingdoms for this NPC
         var maxRank = 0;
         if (t.socialRank) {
-            for (var _kk in t.socialRank) {
-                if ((t.socialRank[_kk] || 0) > maxRank) maxRank = t.socialRank[_kk];
+            if (typeof t.socialRank === 'object') {
+                for (var _kk in t.socialRank) {
+                    if ((t.socialRank[_kk] || 0) > maxRank) maxRank = t.socialRank[_kk];
+                }
+            } else if (typeof t.socialRank === 'number') {
+                maxRank = t.socialRank;
             }
         }
         if (maxRank >= 6) return 2.00;  // Royal Advisor

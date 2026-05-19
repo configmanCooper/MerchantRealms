@@ -2949,6 +2949,12 @@
             if (wIdx !== -1) bld.workers.splice(wIdx, 1);
         }
 
+        // v9p33river306: clear cached satisfaction for this worker so a
+        // re-hire starts fresh instead of inheriting stale dissatisfaction.
+        if (player._workerSatisfaction && player._workerSatisfaction[personId] != null) {
+            delete player._workerSatisfaction[personId];
+        }
+
         return { success: true, message: `Fired ${person ? person.firstName : 'worker'}.` };
     }
 
@@ -4841,7 +4847,11 @@
         player.travelOffSea = true;
         player.offSeaShipId = ship.id;
         player.travelPaid = false;
-        player.travelMode = 'ship';
+        // v9p33river306: 'ship' isn't recognized by the energy-drain switch
+        // (player.js ~5384) which expects 'sail_own' for own-ship sailing —
+        // so off-sea travel drained energy like walking. Use the canonical
+        // mode name.
+        player.travelMode = 'sail_own';
         player.townId = null;
         // v9p33river60: clear embarked flag — the ship is now actively sailing
         player.embarkedShipId = null;
@@ -8275,7 +8285,11 @@
             var _hasWell = false;
             var _ptBlds = petTown.buildings || [];
             for (var _bmi = 0; _bmi < _ptBlds.length; _bmi++) {
-                if (_ptBlds[_bmi].type === 'marketplace') _hasMarket = true;
+                // v9p33river306: market petitions create 'marketplace_royal'
+                // (the canonical id, see player.js:31845). Checking only
+                // 'marketplace' meant towns kept getting offered the same
+                // 'Build Market' petition even after one was built.
+                if (_ptBlds[_bmi].type === 'marketplace_royal' || _ptBlds[_bmi].type === 'marketplace') _hasMarket = true;
                 if (_ptBlds[_bmi].type === 'well') _hasWell = true;
             }
             if (!_hasMarket && (petTown.population || 0) > 30) {
@@ -39209,6 +39223,16 @@
         var eliteMerchants = people.filter(function(p) { return p.isEliteMerchant && p.alive; });
         var masterId = eliteMerchants.length > 0 ? rng.pick(eliteMerchants).id : null;
 
+        // v9p33river306: bail out cleanly if no master is available rather
+        // than leaving servitude half-initialized (no master = no task
+        // generation, no early-release dialog, broken pay-debt UI). The
+        // generated world should always have EMs, but defensively fall
+        // back to a non-indentured normal start.
+        if (!masterId) {
+            Engine.logEvent('⚠️ No master available — starting as a free citizen instead.');
+            return;
+        }
+
         // Select 8-10 random escape methods from pool of 15
         var pool = CONFIG.INDENTURED_ESCAPE_POOL.slice();
         var numEscapes = rng.randInt(8, 10);
@@ -39243,15 +39267,13 @@
         };
 
         // Move player to master's town (servant goes where master lives)
-        if (masterId) {
-            var master = Engine.findPerson(masterId);
-            if (master && master.townId) {
-                player.townId = master.townId;
-                var masterTown = Engine.findTown(master.townId);
-                if (masterTown) {
-                    player.startingKingdomId = masterTown.kingdomId;
-                    Engine.logEvent('⛓️ Your master ' + master.firstName + ' ' + master.lastName + ' has brought you to ' + masterTown.name + ' to begin your servitude.');
-                }
+        var master = Engine.findPerson(masterId);
+        if (master && master.townId) {
+            player.townId = master.townId;
+            var masterTown = Engine.findTown(master.townId);
+            if (masterTown) {
+                player.startingKingdomId = masterTown.kingdomId;
+                Engine.logEvent('⛓️ Your master ' + master.firstName + ' ' + master.lastName + ' has brought you to ' + masterTown.name + ' to begin your servitude.');
             }
         }
     }

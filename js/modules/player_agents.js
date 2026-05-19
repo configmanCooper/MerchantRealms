@@ -853,7 +853,18 @@
             agent.reports.push({ day: day, msg: '🏠 No player buildings in ' + town.name + ' to manage.' });
             return;
         }
-        var bonus = Math.floor(playerBuildings.length * (3 + agent.skills.trade));
+        // v9p33river306: previously minted gold from building count * skill
+        // with no link to actual building output. Now only credit a small
+        // efficiency bonus capped by daily wage to avoid free gold —
+        // representing the agent improving margins rather than producing
+        // value from thin air.
+        var rawBonus = Math.floor(playerBuildings.length * (3 + agent.skills.trade));
+        var dailyCap = (agent.dailyCost || 0) * 3;
+        var bonus = Math.min(rawBonus, dailyCap > 0 ? dailyCap : rawBonus);
+        if (bonus <= 0) {
+            agent.reports.push({ day: day, msg: '🏠 Managed ' + playerBuildings.length + ' building(s) in ' + town.name + '; nothing to optimize today.' });
+            return;
+        }
         player.gold += bonus;
         agent.earnings += bonus;
         agent.reports.push({ day: day, msg: '🏠 Managed ' + playerBuildings.length + ' building(s) in ' + town.name + '. Earned ' + bonus + 'g in optimized revenue.' });
