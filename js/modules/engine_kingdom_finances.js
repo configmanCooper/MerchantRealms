@@ -149,14 +149,17 @@
         if (!k || !k.territories) return;
         const rate = k.propertyTaxRate || CONFIG.KINGDOM_DEFAULT_PROPERTY_TAX_RATE || 0.02;
         let totalPropertyTax = 0;
+        // v9p33river334: tolerate legacy territory shapes and towns without iterable building lists.
+        const territoryIds = (k.territories && typeof k.territories[Symbol.iterator] === 'function') ? Array.from(k.territories) : Object.keys(k.territories || {}).filter(id => k.territories[id]);
 
-        for (const townId of k.territories) {
+        for (const townId of territoryIds) {
             const town = findTown(townId);
             if (!town) continue;
-            for (const bld of town.buildings) {
+            const townBuildings = Array.isArray(town.buildings) ? town.buildings : [];
+            for (const bld of townBuildings) {
                 if (bld.ownerId === k.id || bld.ownerId === null) continue; // skip kingdom-owned & town-owned
                 // Tax holiday: skip buildings in towns with active tax holidays (built after holiday started)
-                if (k.taxHolidays && k.taxHolidays.some(h => h.townId === townId && h.expiresDay > world.day && bld.builtDay >= (h.expiresDay - (CONFIG.KING_TAX_HOLIDAY_DURATION || 180)))) {
+                if (k.taxHolidays && k.taxHolidays.some(h => h.townId === townId && h.expiresDay > world.day && bld.builtDay > (h.expiresDay - (CONFIG.KING_TAX_HOLIDAY_DURATION || 180)))) { // v9p33river334: edge-day buildings predate the holiday.
                     continue;
                 }
                 const bt = findBuildingType(bld.type);
@@ -165,12 +168,9 @@
                 const tax = Math.floor(buildingValue * rate * prosperityMult);
                 if (tax > 0) {
                     // v9p33river300: previously the full `tax` was added to
-                    // totalPropertyTax UNCONDITIONALLY, then the system tried
-                    // to deduct it from the owner. If the owner was broke,
-                    // kingdom revenue was minted; AND the Property Magnate
-                    // 10% discount path was discrepant (player paid 90%,
-                    // kingdom credited 100%, 10% minted). Now: credit kingdom
-                    // ONLY what was actually paid.
+                    // totalPropertyTax before discounts. Keep the discounted
+                    // amount; v9p33river334 also records assessed arrears so
+                    // kingdom revenue/debt ledgers do not silently go stale.
                     if (bld.ownerId === 'player') {
                         // Property Magnate: -10% property tax
                         var playerTax = tax;
@@ -188,18 +188,25 @@
                             // and recorded as a debt to the kingdom.
                             if (!Player.state._propertyTaxArrears) Player.state._propertyTaxArrears = {};
                             Player.state._propertyTaxArrears[k.id] = (Player.state._propertyTaxArrears[k.id] || 0) + playerTax;
+                            totalPropertyTax += playerTax; // v9p33river334: credit assessed arrears immediately so kingdom revenue is not stale.
                         }
                     } else if (bld.ownerId && bld.ownerId !== 'player') {
                         const owner = findPerson(bld.ownerId);
-                        if (owner && owner.gold >= tax) {
+                        if (owner && owner.alive && owner.gold >= tax) {
                             owner.gold -= tax;
                             totalPropertyTax += tax;
-                        } else if (owner && tax > 0) {
+                        } else if (owner && owner.alive && tax > 0) {
                             // v9p33river320: NPC owner arrears tracked on
                             // the person record so kingdom can collect
                             // later or seize the building.
                             if (!owner._propertyTaxArrears) owner._propertyTaxArrears = {};
                             owner._propertyTaxArrears[k.id] = (owner._propertyTaxArrears[k.id] || 0) + tax;
+                            totalPropertyTax += tax; // v9p33river334: assessed arrears count as kingdom revenue immediately.
+                        } else if (tax > 0) {
+                            // v9p33river334: dead/removed owner debt stays with the building instead of disappearing.
+                            if (!bld._propertyTaxArrears) bld._propertyTaxArrears = {};
+                            bld._propertyTaxArrears[k.id] = (bld._propertyTaxArrears[k.id] || 0) + tax;
+                            totalPropertyTax += tax;
                         }
                     }
                 }
@@ -213,14 +220,17 @@
         // contributes — keeps existing behaviour when only treasury_vault
         // has the property.
         let vaultBonus = 0;
-        for (const townId of k.territories) {
+        for (const townId of territoryIds) {
             const town = findTown(townId);
             if (!town) continue;
-            for (const _vb of town.buildings) {
-                if (_vb.condition === 'destroyed') continue;
+            const _vaultBuildings = Array.isArray(town.buildings) ? town.buildings : [];
+            let _bestTownVaultBonus = 0;
+            for (const _vb of _vaultBuildings) {
+                if (!_vb || _vb.condition === 'destroyed') continue;
                 const _vbt = findBuildingType(_vb.type);
-                if (_vbt && _vbt.taxEfficiency) vaultBonus += _vbt.taxEfficiency;
+                if (_vbt && _vbt.taxEfficiency) _bestTownVaultBonus = Math.max(_bestTownVaultBonus, _vbt.taxEfficiency);
             }
+            vaultBonus += _bestTownVaultBonus; // v9p33river334: cap duplicate vault effects to one/best bonus per town.
         }
         totalPropertyTax = Math.floor(totalPropertyTax * (1 + vaultBonus));
 

@@ -477,6 +477,7 @@
         for (var bi = 0; bi < player.buildings.length; bi++) {
             var bld = player.buildings[bi];
             if (!bld._managerId) continue;
+            if (!Array.isArray(bld.workers)) bld.workers = []; // v9p33river334: legacy buildings may lack workers arrays after sync.
 
             var manager = ENGINE_REF ? ENGINE_REF.findPerson(bld._managerId) : null;
             // Manager died or left the town
@@ -488,7 +489,8 @@
             }
 
             // Pay salary
-            if (day % 1 === 0) { // daily
+            if (bld._managerLastPaidDay !== day) { // v9p33river334: tick can run more than once per day; charge salary once daily.
+                bld._managerLastPaidDay = day;
                 var salary = bld._managerSalary || 0;
                 if (player.gold >= salary) {
                     player.gold -= salary;
@@ -537,6 +539,25 @@
                         var mktAvail = town.market.supply[resId] || 0;
                         var mktPrice = (town.market.prices && town.market.prices[resId]) || 5;
                         var toBuy = Math.min(mktAvail, targetStock - current);
+                        var _mgrCap = Player._bldStorageCap ? Player._bldStorageCap(bt.storage || 50, bld.level) : Math.floor((bt.storage || 50) * (1 + (((bld.level || 1) - 1) * 0.50)));
+                        if (_mgrCap > 0) {
+                            // v9p33river334: manager auto-buy must respect input storage capacity.
+                            var _outSet = {};
+                            if (bt.produces) _outSet[bt.produces] = true;
+                            if (bt.canProduce) { for (var _mpi = 0; _mpi < bt.canProduce.length; _mpi++) _outSet[bt.canProduce[_mpi]] = true; }
+                            if (bt.availableProducts) { for (var _mpk in bt.availableProducts) { var _mpr = bt.availableProducts[_mpk]; if (_mpr && _mpr.produces) _outSet[_mpr.produces] = true; } }
+                            var _inputWeight = 0;
+                            if (bld.inventory) {
+                                for (var _mik in bld.inventory) {
+                                    if (_outSet[_mik]) continue;
+                                    var _miRes = findResource(_mik);
+                                    _inputWeight += (bld.inventory[_mik] || 0) * (_miRes ? (_miRes.weight || 1) : 1);
+                                }
+                            }
+                            var _buyRes = findResource(resId);
+                            var _unitWeight = _buyRes ? (_buyRes.weight || 1) : 1;
+                            toBuy = Math.min(toBuy, Math.floor(Math.max(0, _mgrCap - _inputWeight) / _unitWeight));
+                        }
                         var cost = toBuy * mktPrice;
                         if (toBuy > 0 && player.gold >= cost) {
                             player.gold -= cost;
@@ -563,7 +584,7 @@
                 var stored = bld.inventory[outputId] || 0;
                 var sellThreshold = bld._managerSkill >= 50 ? 30 : 20;
 
-                if (stored > sellThreshold && town.market) {
+                if (stored >= sellThreshold && town.market) { // v9p33river334: sell at the threshold too to avoid exact-threshold stalls.
                     var toSell = Math.floor(stored * 0.5);
                     var sellPrice = (town.market.prices && town.market.prices[outputId]) || 5;
                     var totalRevenue = toSell * sellPrice;
@@ -627,8 +648,9 @@
             }
 
             // === Check for EM promotion (manager becomes elite merchant) ===
-            if (manager.gold > 3000 && !bld._managerProtectedUntil && !bld._managerRaiseRequest && rng.chance(0.01)) {
+            if (manager.gold > 3000 && !bld._managerProtectedUntil && !bld._managerRaiseRequest && bld._managerLastRaiseRequestDay !== day && rng.chance(0.01)) { // v9p33river334: prevent same-day raise prompt stacking.
                 var raisePercent = 10 + Math.floor(rng.random() * 40); // 10-50%
+                bld._managerLastRaiseRequestDay = day;
                 bld._managerRaiseRequest = {
                     raisePercent: raisePercent,
                     requestDay: day,
@@ -649,10 +671,24 @@
         if (!ENGINE_REF) return;
         // Find connected towns
         var connections = [];
+        var _seenConn = {};
+        var _queue = [];
         if (town.connections) {
-            for (var ci = 0; ci < town.connections.length; ci++) {
-                var ct = ENGINE_REF.findTown(town.connections[ci]);
-                if (ct && !ct.abandoned && !ct.destroyed) connections.push(ct);
+            for (var ci = 0; ci < town.connections.length; ci++) _queue.push({ id: town.connections[ci], depth: 1 });
+        }
+        _seenConn[town.id] = true;
+        while (_queue.length > 0) {
+            var _nextConn = _queue.shift();
+            if (_seenConn[_nextConn.id] || _nextConn.depth > 3) continue;
+            _seenConn[_nextConn.id] = true;
+            var ct = ENGINE_REF.findTown(_nextConn.id);
+            if (ct && !ct.abandoned && !ct.destroyed) {
+                connections.push(ct);
+                // v9p33river334: managers can use valid indirect trade routes, not just direct neighbors.
+                var _ctConns = ct.connections || [];
+                for (var _cci = 0; _cci < _ctConns.length; _cci++) {
+                    if (!_seenConn[_ctConns[_cci]]) _queue.push({ id: _ctConns[_cci], depth: _nextConn.depth + 1 });
+                }
             }
         }
         if (connections.length === 0) return;

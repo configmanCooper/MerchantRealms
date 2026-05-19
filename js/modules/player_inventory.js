@@ -304,8 +304,9 @@
         var _capTown = Engine.findTown(tid);
         if (_capTown && _capTown.isOutpost) total += _capTown.outpostStorage || 200;
         // Warehouses (category: 'storage') always count, other buildings only if inputOnly is OFF
-        for (var i = 0; i < player.buildings.length; i++) {
-            var b = player.buildings[i];
+        var storageBuildings = player.buildings || []; // v9p33river334: legacy/inherited saves may omit player.buildings.
+        for (var i = 0; i < storageBuildings.length; i++) {
+            var b = storageBuildings[i];
             if (b.townId !== tid) continue;
             var bt = null;
             for (var key in BUILDING_TYPES) {
@@ -331,10 +332,11 @@
             // inputOnly ON (default for production buildings) = excluded
         }
         // Housing storage (cottages, townhouses, etc.)
+        var storageHousingTypes = (typeof CONFIG !== 'undefined' && Array.isArray(CONFIG.HOUSING_TYPES)) ? CONFIG.HOUSING_TYPES : []; // v9p33river334: guard missing housing config.
         for (var hi = 0; hi < (player.houses || []).length; hi++) {
             var h = player.houses[hi];
             if (h.townId !== tid) continue;
-            var ht = CONFIG.HOUSING_TYPES.find(function(x) { return x.id === h.type; });
+            var ht = storageHousingTypes.find(function(x) { return x.id === h.type; });
             if (ht && ht.storage) {
                 total += ht.storage;
             }
@@ -351,7 +353,7 @@
     function getTownStorageUsed(townId) {
         _sync();
         var tid = townId || player.townId;
-        var stored = player.townStorage[tid];
+        var stored = player.townStorage && player.townStorage[tid]; // v9p33river334: townStorage may be absent on legacy saves.
         if (!stored) return 0;
         var total = 0;
         for (var resId in stored) {
@@ -401,6 +403,7 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.deposit || 2);
         player.inventory[resId] -= qty;
         if (player.inventory[resId] <= 0) player.inventory[resId] = 0;
+        if (!player.townStorage) player.townStorage = {}; // v9p33river334: initialize missing town storage map before writing.
         if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
         player.townStorage[player.townId][resId] = (player.townStorage[player.townId][resId] || 0) + qty;
         return { success: true, message: 'Deposited ' + qty + ' ' + (res ? res.name : resId) + '.' };
@@ -412,7 +415,8 @@
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
         if (!player.townId) return { success: false, message: 'Must be in a town to withdraw.' };
-        var stored = (player.townStorage[player.townId] || {})[resId] || 0;
+        var townStore = player.townStorage && player.townStorage[player.townId]; // v9p33river334: townStorage may be absent on legacy saves.
+        var stored = (townStore || {})[resId] || 0;
         if (stored < qty) return { success: false, message: 'Not enough in storage.' };
         var res = findResource(resId);
         // Horses use slot system, not weight
@@ -429,8 +433,8 @@
             if (currentWeight + qty * weight > maxCarry) return { success: false, message: 'Too heavy to carry. Upgrade your storage container.' };
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.withdraw || 2);
-        player.townStorage[player.townId][resId] -= qty;
-        if (player.townStorage[player.townId][resId] <= 0) delete player.townStorage[player.townId][resId];
+        townStore[resId] -= qty;
+        if (townStore[resId] <= 0) delete townStore[resId];
         player.inventory[resId] = (player.inventory[resId] || 0) + qty;
         return { success: true, message: 'Withdrew ' + qty + ' ' + (res ? res.name : resId) + '.' };
     }

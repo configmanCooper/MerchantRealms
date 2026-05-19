@@ -12,8 +12,83 @@
     var toast = UI.toast;
     var formatGold = UI.formatGold;
     var escapeHtml = UI.escapeHtml;
+    if (typeof escapeHtml !== 'function') {
+        escapeHtml = function(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+            });
+        };
+    }
     var findResource = UI.findResource;
     var findBuildingType = UI.findBuildingType;
+
+    function _findPlayerTownBuildingIndex(town, bld) {
+        var blds = town && Array.isArray(town.buildings) ? town.buildings : [];
+        if (!bld) return -1;
+        var bid = bld.id || bld._id;
+        if (bid) {
+            for (var i = 0; i < blds.length; i++) {
+                if (blds[i] && (blds[i].id === bid || blds[i]._id === bid)) return i;
+            }
+        }
+        for (var j = 0; j < blds.length; j++) {
+            if (blds[j] && blds[j].ownerId === 'player' && blds[j].type === bld.type) return j;
+        }
+        return -1;
+    }
+
+    function _isPlayerGuildMemberForUI(guildId) {
+        if (!guildId || typeof Player === 'undefined') return false;
+        if (Player.isGuildMember && Player.isGuildMember(guildId)) return true;
+        var memberships = Player.guildMemberships || (Player.state && Player.state.guildMemberships) || {};
+        var rec = memberships[guildId];
+        if (!rec) return false;
+        if (rec.rank === 'guildmaster' || rec.type === 'guildmaster') return true;
+        var day = 0;
+        try { day = Engine.getDay ? Engine.getDay() : 0; } catch(e) {}
+        return rec.expiresDay == null || rec.expiresDay >= day;
+    }
+
+    function _townAllowsLandPurchase(town) {
+        if (!town) return false;
+        if (town.sellsLand === false || town.landSalesOpen === false || town.landForSale === false) return false;
+        if (town.isOutpost) {
+            if ((town.population || 0) < 10) return false;
+            if (town.founderId === ((Player.state && Player.state.id) || 'player')) return false;
+        }
+        return true;
+    }
+
+    function _playerHasActiveTent() {
+        var houses = (Player.state && Player.state.houses) || [];
+        var playerId = (Player.state && Player.state.id) || 'player';
+        for (var i = 0; i < houses.length; i++) {
+            var h = houses[i];
+            if (!h || h.type !== 'tent') continue;
+            var town = Engine.findTown ? Engine.findTown(h.townId) : null;
+            var camps = town && Array.isArray(town.buildings) ? town.buildings : [];
+            for (var ci = 0; ci < camps.length; ci++) {
+                var camp = camps[ci];
+                if (!camp || camp.type !== 'tent_camp' || (camp._id !== h.fromTentCamp && camp.id !== h.fromTentCamp)) continue;
+                var tents = camp.tents || [];
+                for (var ti = 0; ti < tents.length; ti++) {
+                    if (tents[ti] && tents[ti].tentIndex === h.tentIndex && (tents[ti].occupantId === playerId || tents[ti].occupantId === 'player')) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function _isTownBuildingUnderConstruction(bld) {
+        if (!bld) return false;
+        if (bld.condition === 'under_construction' || bld.underConstruction || bld.isUnderConstruction || bld.isConstructing) return true;
+        if (bld.constructionComplete) {
+            var day = 0;
+            try { day = Engine.getDay ? Engine.getDay() : 0; } catch(e) {}
+            return day < bld.constructionComplete;
+        }
+        return false;
+    }
 
     // ── BUILD DIALOG ──
 
@@ -40,7 +115,9 @@
         }
 
         let gridHtml = '';
-        for (const [key, bt] of Object.entries(BUILDING_TYPES)) {
+        for (const key in BUILDING_TYPES) {
+            const bt = BUILDING_TYPES[key];
+            if (!bt) continue;
             // Calculate dynamic material cost from local market
             var matCost = 0;
             var matsOk = true;
@@ -49,7 +126,7 @@
                 for (var matId in bt.materials) {
                     var qty = bt.materials[matId];
                     var pHas = (Player.inventory && Player.inventory[matId]) || 0;
-                    var mHas = (town.market && town.market.supply[matId]) || 0;
+                    var mHas = (town.market && town.market.supply && town.market.supply[matId]) || 0;
                     if (pHas + mHas < qty) matsOk = false;
                     var needBuy = Math.max(0, qty - pHas);
                     var mp = 0;
@@ -92,14 +169,8 @@
             if (bt.id === 'tree_plantation') {
                 producesStr = '🌲 Trees (Wood Deposit)';
             } else {
-                var _hasConsumes = bt.consumes && Object.keys(bt.consumes).length > 0;
                 var _storageAmt = bt.storage;
-                var _storageLabel = 'storage';
-                if (_storageAmt && !_hasConsumes && bt.category !== 'storage') {
-                    _storageAmt = Math.floor(_storageAmt / 2);
-                    _storageLabel = 'building extra storage';
-                }
-                producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (_storageAmt ? `📦 +${_storageAmt} ${_storageLabel}` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
+                producesStr = producesRes ? `${producesRes.icon} ${producesRes.name}` : (_storageAmt ? `📦 +${_storageAmt} storage` : bt.salesBonus ? `📈 +${Math.round(bt.salesBonus * 100)}% sales` : bt.livestockCapacity ? `🐄 Holds ${bt.livestockCapacity} livestock` : bt.archerBonus ? `🏹 Archer +${Math.round(bt.archerBonus * 100)}%` : '—');
             }
 
             // Material requirements string with auto-buy details
@@ -125,6 +196,7 @@
 
             // Guild monopoly warning
             var guildWarning = '';
+            var guildOk = true;
             if (town && (bt.category === 'processing' || bt.category === 'finished' || bt.category === 'military')) {
                 var _gmKingdom = null;
                 try { _gmKingdom = Engine.findKingdom(town.kingdomId); } catch(e) {}
@@ -138,19 +210,20 @@
                                 if (CONFIG.GUILDS[_gk].categories && CONFIG.GUILDS[_gk].categories.indexOf(bt.category) >= 0) { _gmGuild = CONFIG.GUILDS[_gk]; break; }
                             }
                         }
-                        var _gmInGuild = _gmGuild && Player.isGuildMember && Player.isGuildMember(_gmGuild.id);
+                        var _gmInGuild = _gmGuild && _isPlayerGuildMemberForUI(_gmGuild.id);
                         if (_gmRank >= 3) {
                             guildWarning = '<br><span style="font-size:0.68rem;color:#55a868;">✅ Guildmaster rank exempts you from guild requirement</span>';
                         } else if (_gmInGuild) {
                             guildWarning = '<br><span style="font-size:0.68rem;color:#55a868;">✅ ' + _gmGuild.icon + ' ' + _gmGuild.name + ' member</span>';
                         } else {
+                            guildOk = false;
                             guildWarning = '<br><span style="font-size:0.68rem;color:#ff9f43;">⚠️ Requires ' + (_gmGuild ? _gmGuild.icon + ' ' + _gmGuild.name + ' membership' : 'guild membership') + ' or Guildmaster rank</span>';
                         }
                     }
                 }
             }
 
-            gridHtml += `<div class="build-card ${canAfford && hasDeposit ? '' : 'cant-afford'}" data-category="${bt.category}" data-action="executeBuild" data-id="${bt.id}" data-val="${town ? town.id : ''}">
+            gridHtml += `<div class="build-card ${canAfford && hasDeposit && guildOk ? '' : 'cant-afford'}" data-category="${bt.category}" data-action="executeBuild" data-id="${bt.id}" data-val="${town ? town.id : ''}">
                 <div class="build-name">${bt.name}</div>
                 <div class="build-cost">🪙 ${Math.ceil(totalBuildCost)}g (labor: ${Math.ceil(laborCost)}g${matCost > 0 ? ' + materials: ' + Math.ceil(matCost) + 'g' : ''}) | 👥 ${bt.workers} workers</div>
                 <div class="build-info">Produces: ${producesStr}<br>Consumes: ${consumesStr}<br>Rate: ${bt.rate}/day${materialsStr ? '<br>🔨 Materials: ' + materialsStr : ''}${!matsOk ? '<br><span style="color:#c44e52;">⚠ Not enough materials in inventory + market!</span>' : (matCost > 0 ? '<br><span style="font-size:0.68rem;color:#ffd700;">🛒 Will auto-buy missing materials from market (' + Math.ceil(matCost) + 'g)</span>' : '')}${depositWarning}${guildWarning}</div>
@@ -182,7 +255,7 @@
                     var fBld = farmBlds[fi];
                     var fBt = Engine.findBuildingType(fBld.type);
                     var fBldName = fBt ? fBt.name : fBld.type;
-                    var fBldIdx = Array.isArray(town.buildings) ? town.buildings.findIndex(function(tb) { return tb.ownerId === 'player' && tb.type === fBld.type; }) : -1; // v9p33river329: guard towns without building arrays.
+                    var fBldIdx = _findPlayerTownBuildingIndex(town, fBld); // v9p33river334: match the specific farm by stable id before type fallback.
                     if (fBldIdx < 0) continue;
                     saleHtml += '<div class="build-card" style="display:flex;flex-direction:column;gap:4px;">';
                     saleHtml += '<div class="build-name">' + fBldName + '</div>';
@@ -214,8 +287,10 @@
             landHtml += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;background:rgba(60,50,30,0.15);flex:1;">';
             landHtml += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">🏞️ Land Plots</div>';
             landHtml += '<div style="font-size:0.8rem;color:#ccc;margin-bottom:6px;">Owned: ' + ownedLand + ' (' + freeLand + ' free, ' + usedLand + ' used) | Max: ' + maxPlots + '</div>';
-            if (ownedLand < maxPlots) {
+            if (ownedLand < maxPlots && _townAllowsLandPurchase(town)) {
                 landHtml += '<button class="btn-medieval" data-action="buyLandUI" style="font-size:0.8rem;padding:4px 12px;">🏗️ Buy Land (' + landCost + 'g)</button>';
+            } else if (ownedLand < maxPlots) {
+                landHtml += '<div style="font-size:0.75rem;color:#888;">Land is not currently for sale here.</div>';
             } else {
                 landHtml += '<div style="font-size:0.75rem;color:#888;">Maximum land plots reached.</div>';
             }
@@ -229,8 +304,7 @@
             <div class="build-grid" id="buildGrid">${gridHtml}</div>${saleHtml}`;
 
         openModal(`🏗️ Build — ${town ? town.name : ''}`, html);
-        // Auto-select first category
-        setTimeout(() => filterBuildings('farm'), 0);
+        // v9p33river334: leave all categories visible initially instead of hiding everything except farms.
     }
 
     function filterBuildings(category) {
@@ -381,7 +455,7 @@
                 }
 
                 // Workers
-                const wCount = info ? info.workerCount : bld.workers.length;
+                const wCount = info ? info.workerCount : (Array.isArray(bld.workers) ? bld.workers.length : 0); // v9p33river334: missing workers arrays should not crash panel.
                 const wMax = info ? info.workerMax : (bt ? bt.workers : '?');
 
                 html += `<div class="building-mgmt-card" style="border:1px solid var(--border);padding:8px;margin-bottom:6px;border-radius:4px;cursor:pointer;" data-action="showBuildingDetail" data-id="${bld.id}">
@@ -457,16 +531,28 @@
         } else {
             for (var i = 0; i < offers.length; i++) {
                 var offer = offers[i];
-                var bldIdx = town.buildings.indexOf(offer.building);
+                if (!offer || !offer.building) continue;
+                var _townOfferBuildings = Array.isArray(town.buildings) ? town.buildings : [];
+                var bldIdx = _townOfferBuildings.indexOf(offer.building);
+                if (bldIdx < 0 && offer.building) {
+                    // v9p33river334: sale offers may contain cloned building records; match by stable id fields.
+                    var _offerBid = offer.building.id || offer.building._id;
+                    for (var _obi = 0; _obi < _townOfferBuildings.length; _obi++) {
+                        var _tbOffer = _townOfferBuildings[_obi];
+                        if (_offerBid && _tbOffer && (_tbOffer.id === _offerBid || _tbOffer._id === _offerBid)) { bldIdx = _obi; break; }
+                    }
+                }
                 var obt = Engine.findBuildingType(offer.building.type);
-                var bldName = obt ? obt.name : offer.building.type;
-                var condLabel = offer.building.condition || 'new';
-                var canAffordOffer = (Player.gold || 0) >= offer.price;
+                var bldName = escapeHtml(obt ? obt.name : offer.building.type);
+                var condLabel = escapeHtml(offer.building.condition || 'new');
+                var offerReason = escapeHtml(offer.reason || 'For sale');
+                var offerPrice = Number(offer.price) || 0;
+                var canAffordOffer = (Player.gold || 0) >= offerPrice;
                 html += '<div style="border:1px solid #444;padding:6px;margin:3px 0;border-radius:4px;opacity:' + (canAffordOffer ? '1' : '0.6') + ';">';
-                html += '<div><strong>' + bldName + '</strong> (Lv.' + (offer.building.level || 1) + ') — <span style="color:#ffd700;">' + Math.ceil(+offer.price) + 'g</span> | ' + condLabel + '</div>';
-                html += '<div style="font-size:0.75rem;color:#aaa;">' + offer.reason + '</div>';
+                html += '<div><strong>' + bldName + '</strong> (Lv.' + (offer.building.level || 1) + ') — <span style="color:#ffd700;">' + Math.ceil(offerPrice) + 'g</span> | ' + condLabel + '</div>';
+                html += '<div style="font-size:0.75rem;color:#aaa;">' + offerReason + '</div>';
                 html += '<div style="display:flex;gap:4px;margin-top:4px;">';
-                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordOffer ? '' : 'disabled') + ' data-action="purchaseNPCBuildingUI" data-idx="' + bldIdx + '" data-id="' + town.id + '">🏠 Buy</button>';
+                html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;" ' + (canAffordOffer && bldIdx >= 0 ? '' : 'disabled') + ' data-action="purchaseNPCBuildingUI" data-idx="' + bldIdx + '" data-id="' + town.id + '">🏠 Buy</button>';
                 html += '</div></div>';
             }
         }
@@ -503,7 +589,7 @@
                 html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(weeklyFee) + 'g</span></div>';
                 if (availableUnits.length > 0 && aptBld.ownerId !== 'player') {
                     var canAffordApt = (Player.gold || 0) >= unitPrice;
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' data-action="buyApartmentUnit" data-id="' + aptBld._id + '">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' data-action="buyApartmentUnit" data-id="' + (aptBld._id || aptBld.id) + '">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>'; // v9p33river334: support id-only apartment records.
                 }
                 html += '</div>';
             }
@@ -535,7 +621,7 @@
                     html += '<div style="font-size:0.72rem;color:#888;margin-top:2px;">⚠️ Barely better than sleeping on the ground. Disease risk is high.</div>';
                     if (tcAvailable.length > 0) {
                         var canAffordTent = (Player.gold || 0) >= tcUpfront;
-                        var alreadyHasTent = Player.state && Player.state.houses && Player.state.houses.some(function(h) { return h.type === 'tent'; });
+                        var alreadyHasTent = _playerHasActiveTent();
                         if (alreadyHasTent) {
                             html += '<div style="font-size:0.72rem;color:#cc8800;margin-top:3px;">You already rent a tent.</div>';
                         } else {
@@ -560,7 +646,7 @@
                 if (!bldCounts[tbType]) bldCounts[tbType] = { count: 0, forSale: 0, underConstruction: 0 };
                 bldCounts[tbType].count++;
                 if (tb.forSale) bldCounts[tbType].forSale++;
-                if (tb.condition === 'under_construction') bldCounts[tbType].underConstruction++;
+                if (_isTownBuildingUnderConstruction(tb)) bldCounts[tbType].underConstruction++;
             }
             html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
             for (var bType in bldCounts) {
@@ -610,7 +696,7 @@
         // Find the apartment building in the current town
         var town = Engine.findTown(Player.townId);
         if (!town) { toast('Not in a town.', 'warning'); return; }
-        var aptBld = (town.buildings || []).find(function(b) { return b._id === aptBuildingId && b.type === 'apartment_building'; });
+        var aptBld = (town.buildings || []).find(function(b) { return (b._id === aptBuildingId || b.id === aptBuildingId) && b.type === 'apartment_building'; }); // v9p33river334: support id-only apartment records.
         if (!aptBld) { toast('Apartment building not found.', 'warning'); return; }
         var availableUnits = (aptBld.units || []).filter(function(u) { return !u.occupantId; });
         if (availableUnits.length === 0) { toast('No available apartments.', 'warning'); return; }
@@ -626,6 +712,7 @@
 
         // Deduct gold
         Player.state.gold -= price;
+        Player.state.stats = Player.state.stats || {}; // v9p33river334: apartment purchases must tolerate legacy players without stats.
         Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + price;
 
         // Pay owner
@@ -675,9 +762,10 @@
         var town = Engine.getTown ? Engine.getTown(Player.townId) : null;
         if (!town) { toast('Not in a town.', 'warning'); return; }
         var tcBld = null;
-        for (var i = 0; i < town.buildings.length; i++) {
-            if (town.buildings[i]._id === tcBuildingId && town.buildings[i].type === 'tent_camp') {
-                tcBld = town.buildings[i];
+        var _tcTownBuildings = Array.isArray(town.buildings) ? town.buildings : [];
+        for (var i = 0; i < _tcTownBuildings.length; i++) {
+            if ((_tcTownBuildings[i]._id === tcBuildingId || _tcTownBuildings[i].id === tcBuildingId) && _tcTownBuildings[i].type === 'tent_camp') {
+                tcBld = _tcTownBuildings[i];
                 break;
             }
         }
@@ -685,7 +773,7 @@
         var upfront = tcBld.tentUpfrontCost || 20;
         if ((Player.gold || 0) < upfront) { toast('Not enough gold (' + upfront + 'g required).', 'warning'); return; }
         // Check if player already has a tent
-        if (Player.state && Player.state.houses && Player.state.houses.some(function(h) { return h.type === 'tent'; })) {
+        if (_playerHasActiveTent()) {
             toast('You already rent a tent.', 'warning');
             return;
         }
@@ -830,13 +918,13 @@
                 for (var _supRes in supplies) {
                     var _supQty = supplies[_supRes];
                     var _supHave = (_medStock[_supRes] || 0) + (_retStock[_supRes] || 0) + (_bldInv[_supRes] || 0);
-                    var _supMkt = (town && town.market && town.market.supply[_supRes]) || 0;
+                    var _supMkt = (town && town.market && town.market.supply && town.market.supply[_supRes]) || 0;
                     var _supAvail = _supHave + _supMkt;
                     var _rIdx = _medRank.indexOf(_supRes);
                     if (!(_supAvail >= _supQty) && _rIdx >= 0) {
                         for (var _ssi = _rIdx + 1; _ssi < _medRank.length; _ssi++) {
                             var _altHave = (_medStock[_medRank[_ssi]] || 0) + (_retStock[_medRank[_ssi]] || 0) + (_bldInv[_medRank[_ssi]] || 0);
-                            var _altMkt = (town && town.market && town.market.supply[_medRank[_ssi]]) || 0;
+                            var _altMkt = (town && town.market && town.market.supply && town.market.supply[_medRank[_ssi]]) || 0;
                             if (_altHave + _altMkt >= _supQty) { _supAvail = _supQty; break; }
                         }
                     }
@@ -887,28 +975,33 @@
             var _cIsClinicSevere = _isClinc && _cond.sev === 'severe';
             var _cSupRes = findResource(_cond.supply);
             var _cSupName = _cSupRes ? _cSupRes.name : _cond.supply;
-            var _cHaveSupply = ((_medStock[_cond.supply] || 0) + (_retStock[_cond.supply] || 0) + ((town && town.market && town.market.supply[_cond.supply]) || 0)) > 0;
+            var _cMarketSupply = (town && town.market && town.market.supply) || {};
+            var _cHaveSupply = ((_medStock[_cond.supply] || 0) + (_retStock[_cond.supply] || 0) + (_bldInv[_cond.supply] || 0) + (_cMarketSupply[_cond.supply] || 0)) > 0;
             var _cFee = _tFees[_cond.sev] || 0;
             var _cSupCost = 0;
+            var _cSupCostKnown = true;
             var _cSupDef = _cond.type === 'Illness' ? (_tSupIllness[_cond.sev] || {}) : (_tSupInjury[_cond.sev] || {});
             for (var _csk in _cSupDef) {
-                var _cPrice = (Engine.getMarketPrice ? Engine.getMarketPrice(town.id, _csk) : 5) || 5;
-                _cSupCost += _cPrice * _cSupDef[_csk];
+                var _cNeed = _cSupDef[_csk] || 0;
+                var _cLocal = (_medStock[_csk] || 0) + (_retStock[_csk] || 0) + (_bldInv[_csk] || 0) + (_cMarketSupply[_csk] || 0);
+                if (_cLocal < _cNeed) { _cSupCostKnown = false; continue; }
+                var _cPrice = (Engine.getMarketPrice && town ? Engine.getMarketPrice(town.id, _csk) : 5) || 5;
+                _cSupCost += _cPrice * _cNeed;
             }
-            var _cProfit = _cFee - _cSupCost;
-            var _cProfitColor = _cProfit > 0 ? '#55a868' : _cProfit < 0 ? 'var(--danger)' : '#888';
+            var _cProfit = _cSupCostKnown ? (_cFee - _cSupCost) : 0;
+            var _cProfitColor = !_cSupCostKnown ? '#888' : (_cProfit > 0 ? '#55a868' : _cProfit < 0 ? 'var(--danger)' : '#888');
             html += '<tr style="border-bottom:1px solid #222;' + (_cBlocked ? 'color:#555;' : '') + '">';
             html += '<td style="padding:2px;">' + _cond.name + '</td>';
             html += '<td style="padding:2px;">' + (_cond.type === 'Illness' ? '🤒' : '🩹') + ' ' + _cond.type + '</td>';
             html += '<td style="text-align:center;padding:2px;color:' + (_sevColors[_cond.sev] || '#aaa') + ';">' + _cond.sev + (_cIsClinicSevere ? ' (2x)' : '') + '</td>';
             html += '<td style="padding:2px;">' + (_cBlocked ? '🚫' : (_cHaveSupply ? '✅ ' : '❌ ') + _cSupName) + '</td>';
             html += '<td style="text-align:right;padding:2px;color:var(--gold);">' + _cFee + 'g</td>';
-            html += '<td style="text-align:right;padding:2px;color:' + _cProfitColor + ';">' + Math.round(_cSupCost * 100) / 100 + 'g</td>';
+            html += '<td style="text-align:right;padding:2px;color:' + _cProfitColor + ';">' + (_cSupCostKnown ? (Math.round(_cSupCost * 100) / 100 + 'g') : '—') + '</td>';
             html += '</tr>';
         }
         html += '</table>';
         var _queue = _medBld._treatmentQueue || [];
-        var _maxH = (bt && bt.maxHealers) || 2;
+        var _maxH = (bt && bt.maxHealers != null) ? bt.maxHealers : 2;
         html += '<div style="font-size:0.75rem;margin-top:8px;">📋 Treatment Queue: <strong>' + _queue.length + '</strong> patients | Capacity: ' + _maxH + ' simultaneous</div>';
         if (_queue.length > 0) {
             html += '<div style="margin-top:4px;max-height:160px;overflow-y:auto;font-size:0.72rem;">';
@@ -964,6 +1057,14 @@
     function _showBuildingDetailInner(buildingId) {
         const info = Player.getBuildingStatus(buildingId);
         if (!info) { toast('Building not found.', 'warning'); return; }
+        // v9p33river334: normalize optional status fields once so malformed building status cannot crash detail rendering.
+        info.missingInputs = Array.isArray(info.missingInputs) ? info.missingInputs : [];
+        info.consumes = info.consumes || {};
+        info.storedByTier = info.storedByTier || {};
+        info.storedAllTiers = info.storedAllTiers || 0;
+        info.workerFraction = isFinite(info.workerFraction) ? info.workerFraction : 0;
+        info.prodBonus = isFinite(info.prodBonus) ? info.prodBonus : 1;
+        info.seasonMod = info.seasonMod == null ? 1 : info.seasonMod;
         const bld = info.building;
         const bt = info.type;
         const town = info.town;
@@ -1027,6 +1128,7 @@
                 html += `<div style="margin-bottom:6px;font-size:0.78rem;">
                     <span>Producing: </span>
                     <select id="productSelect" style="font-size:0.75rem;padding:2px 4px;background:#2a2520;color:#e8dcc8;border:1px solid #555;border-radius:4px;">`;
+                var _lockedProductNotes = [];
                 for (const pId of productOptions) {
                     const pRes = findResource(pId);
                     var _recipe = bt.availableProducts && bt.availableProducts[pId];
@@ -1036,18 +1138,24 @@
                     var _locked = _recipe && _recipe.minLevel && _bldLevel < _recipe.minLevel;
                     // Quality chance label for tiered products
                     var _qLabel = '';
-                    if (pRes && (pRes.tier === 'good' || pRes.tier === 'excellent') && pRes.baseItem && Player.qualityCraftChance) {
-                        var _dropChance = Math.round(Player.qualityCraftChance(pRes.tier, pRes.baseItem, info.avgWorkerSkill || 10) * 100);
-                        _qLabel = ' (' + _dropChance + '% chance)';
+                    if (pRes && (pRes.tier === 'good' || pRes.tier === 'excellent') && pRes.baseItem) {
+                        if (Player.qualityCraftChance) {
+                            var _dropChance = Math.round(Player.qualityCraftChance(pRes.tier, pRes.baseItem, info.avgWorkerSkill || 10) * 100);
+                            _qLabel = ' (' + _dropChance + '% chance)';
+                        } else {
+                            _qLabel = ' (quality output)';
+                        }
                     }
                     if (_locked) {
-                        html += `<option value="${pId}" disabled ${selected}>${pName} (Lv${_recipe.minLevel}+)</option>`;
-                    } else {
-                        html += `<option value="${pId}" ${selected}>${pName}${_qLabel}</option>`;
+                        _lockedProductNotes.push(escapeHtml(pName) + ' (Lv' + _recipe.minLevel + '+)');
+                        continue;
                     }
+                    html += `<option value="${pId}" ${selected}>${escapeHtml(pName)}${_qLabel}</option>`;
                 }
                 html += `</select>
-                    <button class="btn-trade buy" style="font-size:0.7rem;margin-left:4px;" data-action="setBuildingProductUI" data-id="${bld.id}">Set</button>
+                    <button class="btn-trade buy" style="font-size:0.7rem;margin-left:4px;" data-action="setBuildingProductUI" data-id="${bld.id}">Set</button>`;
+                if (_lockedProductNotes.length > 0) html += '<div style="font-size:0.68rem;color:#888;margin-top:3px;">Locked: ' + _lockedProductNotes.join(', ') + '</div>';
+                html += `
                 </div>`;
             }
 
@@ -1057,7 +1165,7 @@
                     const r = findResource(resId);
                     const rName = r ? r.name : resId;
                     const bldSupply = (bld.inventory && bld.inventory[resId]) || 0;
-                    const townSupply = (town && town.market && town.market.supply[resId]) || 0;
+                    const townSupply = (town && town.market && town.market.supply && town.market.supply[resId]) || 0;
                     const supplyColor = bldSupply >= qty ? '#55a868' : '#c44e52';
                     const daysLeft = qty > 0 ? Math.floor(bldSupply / qty) : 0;
                     html += `<div style="font-size:0.78rem;">⚙️ Consumes: ${qty} ${rName}/day <span style="color:${supplyColor};">— 📥 ${bldSupply} in storage</span>`;
@@ -1074,18 +1182,28 @@
             if (info.qualityChance) {
                 var _qcHtml = '<div style="font-size:0.75rem;margin-top:4px;padding:4px 6px;background:rgba(100,60,200,0.15);border:1px solid rgba(120,80,220,0.3);border-radius:4px;">';
                 _qcHtml += '🎲 <b>Quality Chance:</b> ';
-                if (info.qualityChance.excellent != null) {
-                    var _excColor = info.qualityChance.excellent >= 40 ? '#a855f7' : info.qualityChance.excellent >= 20 ? '#c084fc' : '#9ca3af';
-                    _qcHtml += '<span style="color:' + _excColor + ';">🟣 Excellent: ' + info.qualityChance.excellent + '%</span>';
-                    _qcHtml += ' · ';
-                    var _goodColor = info.qualityChance.good >= 60 ? '#3b82f6' : info.qualityChance.good >= 40 ? '#60a5fa' : '#9ca3af';
-                    _qcHtml += '<span style="color:' + _goodColor + ';">🔵 Good: ' + info.qualityChance.good + '% (if exc. fails)</span>';
-                } else if (info.qualityChance.good != null) {
-                    var _goodColor2 = info.qualityChance.good >= 60 ? '#3b82f6' : info.qualityChance.good >= 40 ? '#60a5fa' : '#9ca3af';
-                    _qcHtml += '<span style="color:' + _goodColor2 + ';">🔵 Good: ' + info.qualityChance.good + '%</span>';
+                var _qcExc = Number(info.qualityChance.excellent);
+                var _qcGood = Number(info.qualityChance.good);
+                var _hasExc = isFinite(_qcExc);
+                var _hasGood = isFinite(_qcGood);
+                if (_hasExc) {
+                    var _excColor = _qcExc >= 40 ? '#a855f7' : _qcExc >= 20 ? '#c084fc' : '#9ca3af';
+                    _qcHtml += '<span style="color:' + _excColor + ';">🟣 Excellent: ' + _qcExc + '%</span>';
+                    if (_hasGood) {
+                        _qcHtml += ' · ';
+                        var _goodColor = _qcGood >= 60 ? '#3b82f6' : _qcGood >= 40 ? '#60a5fa' : '#9ca3af';
+                        _qcHtml += '<span style="color:' + _goodColor + ';">🔵 Good: ' + _qcGood + '% (if exc. fails)</span>';
+                    }
+                } else if (_hasGood) {
+                    var _goodColor2 = _qcGood >= 60 ? '#3b82f6' : _qcGood >= 40 ? '#60a5fa' : '#9ca3af';
+                    _qcHtml += '<span style="color:' + _goodColor2 + ';">🔵 Good: ' + _qcGood + '%</span>';
+                } else {
+                    _qcHtml += '<span style="color:#9ca3af;">data unavailable</span>';
                 }
                 _qcHtml += '</div>';
                 html += _qcHtml;
+            } else if (prodRes && (prodRes.tier === 'good' || prodRes.tier === 'excellent') && prodRes.baseItem) {
+                html += '<div style="font-size:0.75rem;margin-top:4px;padding:4px 6px;background:rgba(100,60,200,0.15);border:1px solid rgba(120,80,220,0.3);border-radius:4px;">🎲 <b>Quality Chance:</b> <span style="color:#9ca3af;">quality output supported; chance unavailable</span></div>';
             }
 
             // Output rate breakdown
@@ -1189,7 +1307,7 @@
 
             // Stock/Unstock controls — only when player is in same town
             if (bld.townId === Player.townId) {
-                var acceptsGoods = rc.acceptsGoods || [];
+                var acceptsGoods = Array.isArray(rc.acceptsGoods) ? rc.acceptsGoods : []; // v9p33river334: malformed retail config should not crash filter/map paths.
                 html += '<div style="margin-top:4px;"><strong style="font-size:0.75rem;">Stock Items:</strong></div>';
                 html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">';
                 for (var gi = 0; gi < acceptsGoods.length; gi++) {
@@ -1203,7 +1321,8 @@
                         html += '<div style="border:1px solid #444;border-radius:4px;padding:3px 6px;font-size:0.72rem;background:rgba(0,0,0,0.2);">';
                         html += goodIcon + ' ' + goodName + ' (inv:' + playerHas + ' stock:' + inStock + ') ';
                         if (playerHas > 0) {
-                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="stockRetailUI" data-id="' + bld.id + '" data-val="' + goodId + '" data-qty="5">+5</button> ';
+                            var _stockFiveQty = Math.min(5, playerHas);
+                            html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="stockRetailUI" data-id="' + bld.id + '" data-val="' + goodId + '" data-qty="' + _stockFiveQty + '">+' + _stockFiveQty + '</button> ';
                             html += '<button class="btn-trade buy" style="font-size:0.65rem;padding:1px 6px;" data-action="stockRetailUI" data-id="' + bld.id + '" data-val="' + goodId + '" data-qty="' + playerHas + '">All</button> ';
                         }
                         if (inStock > 0) {
@@ -1250,14 +1369,31 @@
         if (bld.townId === Player.townId) {
             var _bldCap = Math.floor((bt.storage || 0) * (1 + (((bld.level || 1) - 1) * 0.50)));
             // Build output goods set — but exclude anything the active recipe consumes
-            var _producesId = bt.produces || null;
+            var _activeProduct2 = bld.currentProduct || bld.productionChoice || bt.produces || null;
+            var _activeRecipe2 = bt.availableProducts && _activeProduct2 ? bt.availableProducts[_activeProduct2] : null;
+            var _producesId = (_activeRecipe2 && _activeRecipe2.produces) ? _activeRecipe2.produces : (bt.produces || _activeProduct2 || null);
             var _outputSet2 = {};
-            if (_producesId) _outputSet2[_producesId] = true;
-            if (bt.canProduce) { for (var _ci0 = 0; _ci0 < bt.canProduce.length; _ci0++) _outputSet2[bt.canProduce[_ci0]] = true; }
-            // Gather consumed goods set for this building's active recipe
-            var _consumedSet = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {};
-            // Consumed goods are INPUTS, not outputs — remove from output set
-            for (var _ck in _consumedSet) { delete _outputSet2[_ck]; }
+            var _addOutput2 = function(id) {
+                if (!id) return;
+                _outputSet2[id] = true;
+                _outputSet2[id + '_good'] = true;
+                _outputSet2[id + '_excellent'] = true;
+            };
+            _addOutput2(bt.produces);
+            if (bt.canProduce) {
+                for (var _ci0 = 0; _ci0 < bt.canProduce.length; _ci0++) {
+                    var _cp0 = bt.canProduce[_ci0];
+                    var _cpRecipe0 = bt.availableProducts && bt.availableProducts[_cp0];
+                    _addOutput2((_cpRecipe0 && _cpRecipe0.produces) ? _cpRecipe0.produces : _cp0);
+                }
+            }
+            if (bt.availableProducts) {
+                for (var _ap0 in bt.availableProducts) _addOutput2(bt.availableProducts[_ap0].produces || _ap0);
+            }
+            var _activeConsumedSet = (_activeRecipe2 && _activeRecipe2.consumes) ? _activeRecipe2.consumes : (bt.consumes || {});
+            var _consumedSet = (Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : {}) || {}; // v9p33river334: null consumed-good maps should not crash input filters.
+            // v9p33river334: only active-recipe consumed goods are inputs for weight accounting.
+            for (var _ck in _activeConsumedSet) { if (_ck !== _producesId) delete _outputSet2[_ck]; }
             // Calculate output and input weights separately
             var _outputWeight = 0;
             var _inputWeight = 0;
@@ -1278,6 +1414,7 @@
                 _outputWeight += _xferBuffer * (_xRes ? (_xRes.weight || 1) : 1);
             }
             var _inputOnly = bld.inputOnly !== false;
+            if (_bldCap <= 0 && (_outputWeight > 0 || _inputWeight > 0)) _bldCap = Math.ceil(Math.max(_outputWeight, _inputWeight)); // v9p33river334: show existing inventories even on low/no-storage configs.
             if (_bldCap > 0) {
                 html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;margin-bottom:8px;">';
                 html += '<div style="font-weight:bold;font-size:0.85rem;margin-bottom:4px;">📦 BUILDING STORAGE</div>';
@@ -1493,8 +1630,8 @@
             for (const [resId, qty] of Object.entries(info.consumes)) {
                 const r = findResource(resId);
                 const rName = r ? r.name : resId;
-                const townSupply = (town && town.market && town.market.supply[resId]) || 0;
-                const playerHas = Player.inventory[resId] || 0;
+                const townSupply = (town && town.market && town.market.supply && town.market.supply[resId]) || 0;
+                const playerHas = (Player.inventory && Player.inventory[resId]) || 0;
 
                 html += `<div style="font-size:0.78rem;margin-bottom:4px;">${rName}: Town has ${Math.floor(townSupply)} | You carry ${playerHas}</div>`;
                 if (playerHas > 0 && bld.townId === Player.townId) {
@@ -1648,7 +1785,7 @@
 
         // Farm/livestock conversion button
         if (bt && (Engine.isCropFarm(bld.type) || Engine.isLivestockFarm(bld.type)) && town && bld.townId === Player.townId) {
-            var _convBldIdx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === bld.type; });
+            var _convBldIdx = _findPlayerTownBuildingIndex(town, bld);
             if (_convBldIdx >= 0) {
                 var _isCrop = Engine.isCropFarm(bld.type);
                 var _curYear = Math.floor((Engine.getDay ? Engine.getDay() : 0) / (CONFIG.DAYS_PER_SEASON || 90));
@@ -1917,6 +2054,13 @@
     function setBuildingProductUI(buildingId) {
         const select = document.getElementById('productSelect');
         if (!select || !select.value) { toast('Select a product first.', 'warning'); return; }
+        var _prodBld = (Player.buildings || []).find(function(b) { return b.id === buildingId; });
+        var _prodBt = _prodBld && Engine.findBuildingType ? Engine.findBuildingType(_prodBld.type) : null;
+        var _prodRecipe = _prodBt && _prodBt.availableProducts && _prodBt.availableProducts[select.value];
+        if (_prodRecipe && _prodRecipe.minLevel && ((_prodBld && _prodBld.level) || 1) < _prodRecipe.minLevel) {
+            toast('That product unlocks at building level ' + _prodRecipe.minLevel + '.', 'warning');
+            return;
+        }
         const result = Player.setBuildingProduct(buildingId, select.value);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) showBuildingDetail(buildingId);

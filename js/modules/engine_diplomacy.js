@@ -570,6 +570,17 @@
         }
 
         // Guard crime reduction: each guard reduces theft/crime chance in their town
+        // v9p33river334: reset this kingdom's per-tick guard bonus before recounting so crime reduction does not stack forever.
+        var _guardTownIds = [];
+        if (k.territories) {
+            if (typeof k.territories.forEach === 'function') k.territories.forEach(function(id) { _guardTownIds.push(id); });
+            else if (Array.isArray(k.territories)) _guardTownIds = k.territories.slice();
+            else if (typeof k.territories === 'object') { for (var _gti in k.territories) if (k.territories[_gti]) _guardTownIds.push(_gti); }
+        }
+        for (var _gtri = 0; _gtri < _guardTownIds.length; _gtri++) {
+            var _gtown = findTown(_guardTownIds[_gtri]);
+            if (_gtown) _gtown._guardBonus = 0;
+        }
         if (k._employees.guards) {
             for (var gi = 0; gi < k._employees.guards.length; gi++) {
                 var guard = k._employees.guards[gi];
@@ -589,7 +600,16 @@
         var treasury = k.gold || 0;
         if (treasury < 1000) return; // don't hire if poor
 
-        var kTowns = world.towns.filter(function(t) { return k.territories.has(t.id); });
+        // v9p33river334: tolerate legacy territory shapes (Set/array/object/null) when hiring employees.
+        var _territoryIds = [];
+        if (k.territories) {
+            if (typeof k.territories.forEach === 'function') k.territories.forEach(function(id) { _territoryIds.push(id); });
+            else if (Array.isArray(k.territories)) _territoryIds = k.territories.slice();
+            else if (typeof k.territories === 'object') { for (var _tid in k.territories) if (k.territories[_tid]) _territoryIds.push(_tid); }
+        }
+        var _territoryMap = {};
+        for (var _tmi = 0; _tmi < _territoryIds.length; _tmi++) _territoryMap[_territoryIds[_tmi]] = true;
+        var kTowns = world.towns.filter(function(t) { return _territoryMap[t.id]; });
         var totalPop = 0;
         for (var i = 0; i < kTowns.length; i++) totalPop += kTowns[i].population || 0;
 
@@ -743,7 +763,9 @@
         var rng = world.rng;
         var happiness = k.happiness || 50;
         var gold = k.gold || 0;
-        var atWar = k.atWar && k.atWar.size > 0;
+        // v9p33river334: advisor suggestions must handle Set/array/object legacy war state.
+        var _suggWarCount = k.atWar ? (typeof k.atWar.size === 'number' ? k.atWar.size : (Array.isArray(k.atWar) ? k.atWar.length : (typeof k.atWar === 'object' ? Object.keys(k.atWar).filter(function(id) { return k.atWar[id]; }).length : 0))) : 0;
+        var atWar = _suggWarCount > 0;
         var pers = k.kingPersonality || {};
 
         // Wartime suggestions
@@ -862,6 +884,17 @@
         const rng = world.rng;
 
         for (const k of world.kingdoms) {
+            // v9p33river334: normalize per-kingdom maps/war ids locally for legacy saves without mutating shape.
+            if (!k.relations) k.relations = {};
+            var _kWarIds = [];
+            if (k.atWar) {
+                if (typeof k.atWar.forEach === 'function') k.atWar.forEach(function(id) { _kWarIds.push(id); });
+                else if (Array.isArray(k.atWar)) _kWarIds = k.atWar.slice();
+                else if (typeof k.atWar === 'object') { for (var _kwid in k.atWar) if (k.atWar[_kwid]) _kWarIds.push(_kwid); }
+            }
+            var _kWarMap = {};
+            for (var _kwmi = 0; _kwmi < _kWarIds.length; _kwmi++) _kWarMap[_kWarIds[_kwmi]] = true;
+            var _kWarCount = _kWarIds.length;
             // ---- War exhaustion tick ----
             tickWarExhaustion(k);
             applyWarExhaustionEffects(k, rng);
@@ -874,13 +907,20 @@
             }
 
             // ---- C5: Shared-enemy bonus (+2 relations/month with kingdoms fighting same enemy) ----
-            if (k.atWar && k.atWar.size > 0 && world.day % 30 === 0) {
+            if (_kWarCount > 0 && world.day % 30 === 0) {
                 for (const other of world.kingdoms) {
-                    if (other.id === k.id || k.atWar.has(other.id)) continue;
+                    if (!other.relations) other.relations = {};
+                    var _otherWarMapSE = {};
+                    if (other.atWar) {
+                        if (typeof other.atWar.forEach === 'function') other.atWar.forEach(function(id) { _otherWarMapSE[id] = true; });
+                        else if (Array.isArray(other.atWar)) { for (var _owsi = 0; _owsi < other.atWar.length; _owsi++) _otherWarMapSE[other.atWar[_owsi]] = true; }
+                        else if (typeof other.atWar === 'object') { for (var _owk in other.atWar) if (other.atWar[_owk]) _otherWarMapSE[_owk] = true; }
+                    }
+                    if (other.id === k.id || _kWarMap[other.id]) continue;
                     // Check if other kingdom is at war with any of our enemies
                     var _sharedEnemies = 0;
-                    for (var _seId of k.atWar) {
-                        if (other.atWar && other.atWar.has(_seId)) _sharedEnemies++;
+                    for (var _sei = 0; _sei < _kWarIds.length; _sei++) {
+                        if (_otherWarMapSE[_kWarIds[_sei]]) _sharedEnemies++;
                     }
                     if (_sharedEnemies > 0) {
                         var _seBonus = (CONFIG.SHARED_ENEMY_RELATION_BONUS || 2) * _sharedEnemies;
@@ -893,7 +933,13 @@
             // ---- C5: Proactive diplomatic AI — Non-Aggression Pacts ----
             if (world.day % 30 === 0 && rng.chance(0.08)) {
                 var _napCandidates = world.kingdoms.filter(function(o) {
-                    return o.id !== k.id && !k.atWar.has(o.id) &&
+                    var _activeWar = false;
+                    for (var _awid in (world.activeWars || {})) {
+                        var _aw = world.activeWars[_awid];
+                        if ((_aw.kingdomA === k.id && _aw.kingdomB === o.id) || (_aw.kingdomA === o.id && _aw.kingdomB === k.id)) { _activeWar = true; break; }
+                    }
+                    // v9p33river334: never create a NAP over an active/malformed war or existing active pact.
+                    return o.id !== k.id && !_kWarMap[o.id] && !_activeWar &&
                            (k.relations[o.id] || 0) > -10 && (k.relations[o.id] || 0) < 40 &&
                            !(k.peaceTreaties && k.peaceTreaties[o.id] && world.day < k.peaceTreaties[o.id]);
                 });
@@ -1018,7 +1064,8 @@
             if (!k._casusBelli) k._casusBelli = {};
             // Border raids (random event that creates war justification)
             if (rng.chance(0.01)) {
-                var _cbTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !k.atWar.has(o.id); });
+                // v9p33river334: stale non-Set atWar must not crash casus-belli target selection.
+                var _cbTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !_kWarMap[o.id]; });
                 if (_cbTargets.length > 0) {
                     var _cbTarget = rng.pick(_cbTargets);
                     var _cbAmt = rng.randInt(10, 25);
@@ -1033,7 +1080,7 @@
             }
             // Trade disputes create casus belli
             if (rng.chance(0.008)) {
-                var _tdTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !k.atWar.has(o.id) && (k.relations[o.id] || 0) < 0; });
+                var _tdTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !_kWarMap[o.id] && (k.relations[o.id] || 0) < 0; });
                 if (_tdTargets.length > 0) {
                     var _tdTarget = rng.pick(_tdTargets);
                     k._casusBelli[_tdTarget.id] = Math.min(100, (k._casusBelli[_tdTarget.id] || 0) + 15);
@@ -1044,7 +1091,7 @@
             }
             // Insults between kings (personality-driven)
             if (rng.chance(0.005) && (k.kingPersonality || {}).temperament === 'aggressive') {
-                var _insTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !k.atWar.has(o.id); });
+                var _insTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !_kWarMap[o.id]; });
                 if (_insTargets.length > 0) {
                     var _insTarget = rng.pick(_insTargets);
                     k._casusBelli[_insTarget.id] = Math.min(100, (k._casusBelli[_insTarget.id] || 0) + 20);
@@ -1142,14 +1189,17 @@
                 // Prosperity jealousy: ambitious kings may attack much more prosperous neighbors
                 if (k.kingPersonality && k.kingPersonality.ambition === 'ambitious') {
                     var ourAvgProsp = 0, ourTownCount = 0;
-                    for (var oti = 0; oti < (k.territories ? k.territories.size : 0); oti++) {
-                        var ot = findTown(Array.from(k.territories)[oti]);
+                    // v9p33river334: materialize territories once; Array.from inside the loop made this O(n²).
+                    var _ourTerritories = k.territories ? (Array.isArray(k.territories) ? k.territories : Array.from(k.territories)) : [];
+                    for (var oti = 0; oti < _ourTerritories.length; oti++) {
+                        var ot = findTown(_ourTerritories[oti]);
                         if (ot) { ourAvgProsp += (ot.prosperity || 50); ourTownCount++; }
                     }
                     ourAvgProsp = ourTownCount > 0 ? ourAvgProsp / ourTownCount : 50;
                     var theirAvgProsp = 0, theirTownCount = 0;
-                    for (var tti = 0; tti < (other.territories ? other.territories.size : 0); tti++) {
-                        var tt = findTown(Array.from(other.territories)[tti]);
+                    var _theirTerritories = other.territories ? (Array.isArray(other.territories) ? other.territories : Array.from(other.territories)) : [];
+                    for (var tti = 0; tti < _theirTerritories.length; tti++) {
+                        var tt = findTown(_theirTerritories[tti]);
                         if (tt) { theirAvgProsp += (tt.prosperity || 50); theirTownCount++; }
                     }
                     theirAvgProsp = theirTownCount > 0 ? theirAvgProsp / theirTownCount : 50;
@@ -1232,7 +1282,7 @@
                 for (const ally of world.kingdoms) {
                     if (ally.id === k.id || ally.id === threat.id) continue;
                     if (k.alliances.has(ally.id)) continue; // already allied
-                    if (k.atWar.has(ally.id)) continue; // at war
+                    if (_kWarMap[ally.id]) continue; // v9p33river334: tolerate missing/non-Set atWar.
                     var allyRel = k.relations[ally.id] || 0;
                     // Lower threshold for threat-based alliances (rel >= 15 instead of 50)
                     if (allyRel < 15) continue;
@@ -1270,11 +1320,19 @@
                 if (_aMood.warMod < 0.8) allianceRelThresh -= 10; // fearful/grieving — more eager for allies
                 else if (_aMood.warMod > 1.5) allianceRelThresh += 5; // wrathful/ambitious — picky about allies
                 // H3: Shared enemy bonus — kingdoms fighting the same enemy get relation boost
-                if (k.atWar && k.atWar.size > 0 && other.atWar && other.atWar.size > 0) {
+                var _otherWarIds = [];
+                if (other.atWar) {
+                    if (typeof other.atWar.forEach === 'function') other.atWar.forEach(function(id) { _otherWarIds.push(id); });
+                    else if (Array.isArray(other.atWar)) _otherWarIds = other.atWar.slice();
+                    else if (typeof other.atWar === 'object') { for (var _owid2 in other.atWar) if (other.atWar[_owid2]) _otherWarIds.push(_owid2); }
+                }
+                var _otherWarMap = {};
+                for (var _owmi = 0; _owmi < _otherWarIds.length; _owmi++) _otherWarMap[_otherWarIds[_owmi]] = true;
+                if (_kWarCount > 0 && _otherWarIds.length > 0) {
                     var _sharedEnemy = false;
-                    k.atWar.forEach(function(warTarget) {
-                        if (other.atWar.has(warTarget)) _sharedEnemy = true;
-                    });
+                    for (var _shwi = 0; _shwi < _kWarIds.length; _shwi++) {
+                        if (_otherWarMap[_kWarIds[_shwi]]) _sharedEnemy = true;
+                    }
                     if (_sharedEnemy) {
                         allianceRelThresh -= 15; // Much easier to ally when fighting same enemy
                         // Modest daily relation boost for co-belligerents
@@ -1282,9 +1340,10 @@
                         // diplomatic relations should be symmetric, so update
                         // both sides each tick.
                         var _shBonus = rng.randFloat(0.05, 0.2);
-                        k.relations[other.id] = (k.relations[other.id] || 0) + _shBonus;
+                        // v9p33river334: bound relation boosts immediately so later consumers never see >100.
+                        k.relations[other.id] = Math.min(100, (k.relations[other.id] || 0) + _shBonus);
                         if (!other.relations) other.relations = {};
-                        other.relations[k.id] = (other.relations[k.id] || 0) + _shBonus;
+                        other.relations[k.id] = Math.min(100, (other.relations[k.id] || 0) + _shBonus);
                     }
                 }
                 // H3: Diplomatic kings form alliances easier
@@ -1294,7 +1353,7 @@
                 if (_kDip.militarism === 'passive' || _kDip.temperament === 'kind' || _kDip.temperament === 'fair') {
                     allianceRelThresh -= 5;
                 }
-                if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
+                if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !_kWarMap[other.id]) { // v9p33river334: tolerate malformed atWar.
                     // Daily roll gate — only 3% chance per day to actually form (prevents constant forming/dissolving)
                     if (!rng.chance(0.03)) continue;
                     // Form alliance — most alliances are defensive by default
@@ -1377,8 +1436,8 @@
                 if (k.alliances.has(other.id) && rel < (CONFIG.ALLIANCE_BREAK_THRESHOLD || 40)) {
                     k.alliances.delete(other.id);
                     other.alliances.delete(k.id);
-                    delete k.allianceMeta[other.id];
-                    delete other.allianceMeta[k.id];
+                    if (k.allianceMeta) delete k.allianceMeta[other.id];
+                    if (other.allianceMeta) delete other.allianceMeta[k.id]; // v9p33river334: legacy allies may lack allianceMeta.
                     logEvent(`💔 The alliance between ${k.name} and ${other.name} has been dissolved!`, {
                         type: 'alliance_dissolved',
                         cause: 'Relations between ' + k.name + ' and ' + other.name + ' dropped to ' + Math.round(rel) + ', below the alliance maintenance threshold.',
@@ -1402,8 +1461,8 @@
                             // Ancient, fatigued alliance may dissolve on its own
                             k.alliances.delete(other.id);
                             other.alliances.delete(k.id);
-                            delete k.allianceMeta[other.id];
-                            delete other.allianceMeta[k.id];
+                            if (k.allianceMeta) delete k.allianceMeta[other.id];
+                            if (other.allianceMeta) delete other.allianceMeta[k.id]; // v9p33river334: legacy allies may lack allianceMeta.
                             logEvent(`💔 The ancient alliance between ${k.name} and ${other.name} has withered away.`, {
                                 type: 'alliance_decayed',
                                 cause: 'The ' + allianceAge + '-day old alliance has succumbed to fatigue and neglect.',
@@ -1416,7 +1475,7 @@
                         }
                     }
                     // Slow natural fatigue recovery during peaceful times
-                    if (k.atWar.size === 0 && meta.fatigue > 0) {
+                    if (_kWarCount === 0 && meta.fatigue > 0) { // v9p33river334: guard non-Set atWar.
                         meta.fatigue = Math.max(0, meta.fatigue - 0.1);
                     }
                 }
@@ -1432,7 +1491,7 @@
                         continue;
                     }
                     // Cancel treaties with kingdoms we're at war with
-                    if (k.atWar && k.atWar.has(_tr.partnerId)) {
+                    if (_kWarMap[_tr.partnerId]) { // v9p33river334: guard non-Set atWar.
                         k._activeTreaties.splice(_ati, 1);
                         continue;
                     }
@@ -1451,9 +1510,16 @@
             for (const allyId of k.alliances) {
                 const ally = findKingdom(allyId);
                 if (!ally) continue;
-                for (const enemyId of ally.atWar) {
+                var _allyWarIds = [];
+                if (ally.atWar) {
+                    if (typeof ally.atWar.forEach === 'function') ally.atWar.forEach(function(id) { _allyWarIds.push(id); });
+                    else if (Array.isArray(ally.atWar)) _allyWarIds = ally.atWar.slice();
+                    else if (typeof ally.atWar === 'object') { for (var _awki in ally.atWar) if (ally.atWar[_awki]) _allyWarIds.push(_awki); }
+                }
+                for (var _awii = 0; _awii < _allyWarIds.length; _awii++) {
+                    const enemyId = _allyWarIds[_awii];
                     if (enemyId === k.id) continue;
-                    if (k.atWar.has(enemyId)) continue;
+                    if (_kWarMap[enemyId]) continue;
                     if (k.alliances.has(enemyId)) continue;
                     if (k.peaceTreaties && k.peaceTreaties[enemyId] && world.day < k.peaceTreaties[enemyId]) continue;
                     const enemy = findKingdom(enemyId);
@@ -1486,7 +1552,8 @@
             // Player-king decides peace manually via King UI
             if (_isPlayerKingOf(k)) {
                 // Generate advisor suggestion if peace conditions are met
-                for (const _ptId of k.atWar) {
+                for (var _ptwi = 0; _ptwi < _kWarIds.length; _ptwi++) {
+                    const _ptId = _kWarIds[_ptwi];
                     const _ptOther = findKingdom(_ptId);
                     if (!_ptOther) continue;
                     const _ptMyStr = computeMilitaryStrength(k);
@@ -1503,7 +1570,8 @@
                     }
                 }
             } else {
-            for (const warTargetId of k.atWar) {
+            for (var _pwi = 0; _pwi < _kWarIds.length; _pwi++) {
+                const warTargetId = _kWarIds[_pwi];
                 const other = findKingdom(warTargetId);
                 if (!other) continue;
                 // Minimum war duration: no peace for first 90 days
@@ -1513,7 +1581,9 @@
                            (w.kingdomA === other.id && w.kingdomB === k.id);
                 });
                 const warData = warKey ? world.activeWars[warKey] : null;
-                const warAge = warData ? world.day - warData.startDay : 999;
+                // v9p33river334: missing war metadata should not make a brand-new war eligible for instant peace.
+                if (!warData) continue;
+                const warAge = world.day - warData.startDay;
                 if (warAge < 90) continue; // wars must last at least 90 days
                 // Higher chance of peace if losing
                 const myStrength = computeMilitaryStrength(k);

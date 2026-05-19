@@ -13,9 +13,19 @@
     var initSpouseAI = Player.initSpouseAI;
     var recordJournalEntry = Player.recordJournalEntry;
     var getHousingDiseaseReduction = Player.getHousingDiseaseReduction;
-    var INJURY_TYPES = Player.getInjuryTypes();
-    var ILLNESS_TYPES = Player.getIllnessTypes();
-    var NURSE_RANKS = Player.getNurseRanks();
+    // v9p33river334: tolerate older Player builds that do not expose health helper lists yet.
+    var INJURY_TYPES = Player.getInjuryTypes ? Player.getInjuryTypes() : [];
+    var ILLNESS_TYPES = Player.getIllnessTypes ? Player.getIllnessTypes() : [];
+    var NURSE_RANKS = Player.getNurseRanks ? Player.getNurseRanks() : [];
+    if (!Array.isArray(INJURY_TYPES)) INJURY_TYPES = [];
+    if (!Array.isArray(ILLNESS_TYPES)) ILLNESS_TYPES = [];
+    if (!Array.isArray(NURSE_RANKS)) NURSE_RANKS = [];
+
+    function _ensureConditionLists() {
+        // v9p33river334: legacy/inherited saves may omit health condition arrays.
+        if (!Array.isArray(player.injuries)) player.injuries = [];
+        if (!Array.isArray(player.illnesses)) player.illnesses = [];
+    }
     // ========================================================
     // §11.10 INJURY & ILLNESS SYSTEM
     // ========================================================
@@ -41,9 +51,11 @@
 
     function inflictRandomInjury(source) {
         _sync();
+        _ensureConditionLists();
         const rng = Engine.getRng();
-        if (!rng) return;
+        if (!rng || INJURY_TYPES.length === 0) return;
         const type = INJURY_TYPES[rng.randInt(0, INJURY_TYPES.length - 1)];
+        if (!type) return;
         let severity = type.severity;
         // Existing injuries increase chance of getting a worse injury
         const existingCount = player.injuries.length;
@@ -144,6 +156,7 @@
 
     function inflictRandomIllness(source) {
         _sync();
+        _ensureConditionLists();
         // Story Mode: suppress random diseases
         if (player.storyMode && player.storyMode.active && player.storyMode.flags && player.storyMode.flags.suppressDisease) return;
         const rng = Engine.getRng();
@@ -156,6 +169,7 @@
         }
         // Filter out specialty illnesses from random pool (waterlogged_fever is sea-only, infection is combat-only)
         var randomPool = ILLNESS_TYPES.filter(function(t) { return t.id !== 'waterlogged_fever' && t.id !== 'infection'; });
+        if (randomPool.length === 0) return; // v9p33river334: malformed/empty illness data leaves no safe random pick.
         const type = randomPool[rng.randInt(0, randomPool.length - 1)];
         const illness = {
             type: type.id,
@@ -176,6 +190,7 @@
 
     function inflictSpecificIllness(illnessId, source) {
         _sync();
+        _ensureConditionLists();
         const type = ILLNESS_TYPES.find(t => t.id === illnessId);
         if (!type) return;
         // Housing disease resistance
@@ -204,6 +219,7 @@
 
     function visitHospital(conditionIndex, isIllness) {
         _sync();
+        _ensureConditionLists();
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Not in a town.' };
 
@@ -291,6 +307,7 @@
 
     function visitClinic(conditionIndex, isIllness) {
         _sync();
+        _ensureConditionLists();
         const town = Engine.findTown(player.townId);
         if (!town) return { success: false, message: 'Not in a town.' };
 
@@ -548,6 +565,7 @@
 
     function selfTreat(conditionIndex, isIllness) {
         _sync();
+        _ensureConditionLists();
         if (!hasSkill('doctor') && !hasSkill('first_aid') && !hasSkill('field_medic')) return { success: false, message: 'You need First Aid, Field Medic, or Doctor skill to self-treat.' };
 
         const list = isIllness ? player.illnesses : player.injuries;
@@ -1213,6 +1231,7 @@
 
     function tickInjuriesAndIllnesses() {
         _sync();
+        _ensureConditionLists();
         const day = Engine.getDay();
         const rng = Engine.getRng();
 
@@ -1378,6 +1397,7 @@
 
     function getWorstConditionSeverity() {
         _sync();
+        _ensureConditionLists();
         let worst = null;
         const severities = { minor: 1, moderate: 2, severe: 3 };
         for (const inj of player.injuries) {
@@ -1391,6 +1411,7 @@
 
     function getWorkEfficiencyModifier() {
         _sync();
+        _ensureConditionLists();
         let modifier = 1.0;
         for (const inj of player.injuries) {
             const typeDef = INJURY_TYPES.find(t => t.id === inj.type);
@@ -1415,6 +1436,7 @@
 
     function canDoPhysicalWork() {
         _sync();
+        _ensureConditionLists();
         const sev = getWorstConditionSeverity();
         if (sev === 'severe') return false;
         // Injuries that block physical work
@@ -1439,6 +1461,7 @@
     // Get combined injury + illness debuff effects for use by other systems
     function getInjuryDebuffs() {
         _sync();
+        _ensureConditionLists();
         const result = { hungerRate: 1.0, travelSpeed: 0, xpMult: 1.0, tradePenalty: 0, goldDrain: 0 };
         for (const inj of player.injuries) {
             const typeDef = INJURY_TYPES.find(t => t.id === inj.type);

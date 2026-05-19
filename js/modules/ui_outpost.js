@@ -268,11 +268,13 @@
             var hTypes = CONFIG.OUTPOST_HOUSING || {};
             for (var hk in hTypes) {
                 var ht = hTypes[hk];
+                if (!ht) continue;
+                var hMats = ht.materials || {}; // v9p33river334: tolerate housing configs with no materials block.
                 var canH = gold >= ht.cost && freePlots >= (ht.landSlots || 1);
-                for (var hmk in ht.materials) { if ((inv[hmk] || 0) < ht.materials[hmk]) canH = false; }
+                for (var hmk in hMats) { if ((inv[hmk] || 0) < hMats[hmk]) canH = false; }
                 body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
                 body += '<button data-action="_opBuildHousing" data-id="' + townId + '" data-val="' + hk + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canH ? '' : ';opacity:0.5') + '"' + (canH ? '' : ' disabled') + '>Build</button>';
-                body += '<span style="font-size:11px">' + ht.icon + ' ' + ht.name + ' <span style="color:#888">(' + ht.capacity + ' cap, comfort ' + ht.comfort + ' — ' + ht.cost + 'g + ' + _formatMats(ht.materials) + ')</span></span>';
+                body += '<span style="font-size:11px">' + ht.icon + ' ' + ht.name + ' <span style="color:#888">(' + ht.capacity + ' cap, comfort ' + ht.comfort + ' — ' + ht.cost + 'g + ' + _formatMats(hMats) + ')</span></span>';
                 body += '</div>';
             }
         }
@@ -396,10 +398,12 @@
         var hasAvail = false;
         for (var auk in availUpgrades) {
             if ((op.outpostUpgrades || []).indexOf(auk) >= 0) continue;
-            hasAvail = true;
             var au = availUpgrades[auk];
+            if (!au) continue;
+            hasAvail = true;
+            var auMats = au.materials || {}; // v9p33river334: tolerate upgrades with no materials block.
             var canU = gold >= au.cost;
-            for (var aumk in au.materials) { if ((inv[aumk] || 0) < au.materials[aumk]) canU = false; }
+            for (var aumk in auMats) { if ((inv[aumk] || 0) < auMats[aumk]) canU = false; }
             var meetsReqs = true;
             if (au.requires) {
                 for (var auri = 0; auri < au.requires.length; auri++) {
@@ -409,7 +413,7 @@
             body += '<div style="display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap">';
             body += '<button data-action="_opBuildUpgrade" data-id="' + townId + '" data-val="' + auk + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (canU && meetsReqs ? '' : ';opacity:0.5') + '"' + (canU && meetsReqs ? '' : ' disabled') + '>Build</button>';
             body += '<span style="font-size:11px">' + au.icon + ' ' + au.name;
-            body += ' <span style="color:#888">(' + au.cost + 'g + ' + _formatMats(au.materials) + ')</span>';
+            body += ' <span style="color:#888">(' + au.cost + 'g + ' + _formatMats(auMats) + ')</span>';
             if (au.recruitBonus) body += ' <span style="color:#55a868">+' + Math.round(au.recruitBonus * 100) + '% recruit</span>';
             if (!meetsReqs) body += ' <span style="color:#c44e52">[requires ' + (au.requires || []).join(', ') + ']</span>';
             body += '</span></div>';
@@ -452,10 +456,10 @@
         // === INFRASTRUCTURE (Roads & Sea Routes) ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">🛤️ Infrastructure</h5>';
-        // v9p33river305: defensive — connectedRoads / connectedSeaRoutes
-        // may be undefined on partial outpost data.
-        var _opRoads = op.connectedRoads || [];
-        var _opSeaRoutes = op.connectedSeaRoutes || [];
+        // v9p33river305/334: defensive — connectedRoads / connectedSeaRoutes
+        // may be undefined or malformed on partial outpost data.
+        var _opRoads = Array.isArray(op.connectedRoads) ? op.connectedRoads : [];
+        var _opSeaRoutes = Array.isArray(op.connectedSeaRoutes) ? op.connectedSeaRoutes : [];
         if (_opRoads.length > 0) {
             for (var ri = 0; ri < _opRoads.length; ri++) {
                 var cr = _opRoads[ri];
@@ -492,7 +496,7 @@
             body += '</div>';
         }
         // Connect to nearby road (junction shortcut - cheaper if road passes close)
-        if (op.connectedRoads.length === 0) {
+        if (_opRoads.length === 0) {
             var roadConn = Player.getNearestRoadConnection ? Player.getNearestRoadConnection(op.x, op.y, townId) : null;
             if (roadConn) {
                 var jGold = Math.floor(100 + roadConn.perpDist * 0.5);

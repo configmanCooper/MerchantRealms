@@ -622,6 +622,8 @@
             else if (wallLevel === 1) stolenPct = risks.stolenPctPalisade;
             else stolenPct = risks.stolenPctNoWalls;
 
+            // v9p33river334: tolerate malformed stolenPct config; raids should never produce NaN losses.
+            if (!Array.isArray(stolenPct) || stolenPct.length < 2 || !isFinite(stolenPct[0]) || !isFinite(stolenPct[1])) stolenPct = [0.10, 0.25];
             var pctRoll = stolenPct[0] + rng.random() * (stolenPct[1] - stolenPct[0]);
 
             // Steal from outpost storage

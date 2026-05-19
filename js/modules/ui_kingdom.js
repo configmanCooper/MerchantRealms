@@ -44,7 +44,10 @@
                 if (ok.id === k.id) continue;
                 const relVal = _ksRelations[ok.id] || 0;
                 let relIcon = '✓', relLabel = 'Peace', relClass = 'rel-peace';
-                if (k.atWar && (k.atWar.has ? k.atWar.has(ok.id) : k.atWar.includes(ok.id))) { relIcon = '⚔️'; relLabel = 'War'; relClass = 'rel-war'; }
+                // v9p33river334: render war state for Set/array/object legacy shapes.
+                var _ksWar = k.atWar;
+                var _ksAtWar = !!(_ksWar && (typeof _ksWar.has === 'function' ? _ksWar.has(ok.id) : (Array.isArray(_ksWar) ? _ksWar.indexOf(ok.id) >= 0 : (typeof _ksWar === 'object' && !!_ksWar[ok.id]))));
+                if (_ksAtWar) { relIcon = '⚔️'; relLabel = 'War'; relClass = 'rel-war'; }
                 else if (relVal >= CONFIG.RELATION_ALLIANCE_THRESHOLD) { relIcon = '🤝'; relLabel = 'Alliance'; relClass = 'rel-alliance'; }
                 else if (relVal < -30) { relIcon = '⚠️'; relLabel = 'Tense'; relClass = 'rel-tense'; }
                 relHtml += '<span class="kingdom-rel ' + relClass + '">' + relIcon + ' ' + ok.name + ' (' + relLabel + ')</span> ';
@@ -196,9 +199,10 @@
 
             // Nearby resources (buildings)
             const buildingNames = (town.buildings || []).map(b => {
+                if (!b || !b.type) return null;
                 const bt = Engine.findBuildingType(b.type);
                 return bt ? bt.name : b.type;
-            }).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
+            }).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
 
             html += '<div class="town-card">';
             html += '<div class="town-card-header">';
@@ -225,14 +229,22 @@
 
     function selectTown(townId) {
         window._selectedTownId = townId;
+        var _selTown = Engine.findTown(townId);
+        if (_selTown) window._selectedTownKingdomId = _selTown.kingdomId; // v9p33river334: preserve original kingdom for Back after military picker.
         // If origin was already chosen on the mode selection screen, skip scenario picker
         if (window._selectedStartConfig) {
             window._selectedStartId = window._selectedStartConfig.id;
             // Still need to show military kingdom picker for military leader
             if (window._selectedStartConfig.special === 'military_leader') {
                 showStartScenarioSelection(townId);
-                // Auto-select the military card
-                setTimeout(function() { selectStartScenario('military'); }, 100);
+                // Auto-select the military card only if the pending selection is still current.
+                var _autoTownId = townId;
+                var _autoConfigId = window._selectedStartConfig && window._selectedStartConfig.id;
+                setTimeout(function() {
+                    if (window._selectedTownId !== _autoTownId) return;
+                    if (!window._selectedStartConfig || window._selectedStartConfig.id !== _autoConfigId) return;
+                    selectStartScenario('military');
+                }, 100);
                 return;
             }
             confirmStartScenario();
@@ -307,10 +319,15 @@
             if (milPicker) {
                 milPicker.style.display = 'block';
                 var kingdoms = Engine.getKingdoms();
-                var warKingdoms = kingdoms.filter(function(k) { return k.atWar && (k.atWar instanceof Set ? k.atWar.size > 0 : k.atWar.length > 0); });
+                var warKingdoms = kingdoms.filter(function(k) {
+                    var _war = k.atWar;
+                    var _count = _war ? (typeof _war.size === 'number' ? _war.size : (Array.isArray(_war) ? _war.length : (typeof _war === 'object' ? Object.keys(_war).filter(function(id) { return _war[id]; }).length : 0))) : 0;
+                    return _count > 0;
+                });
                 var optHtml = '';
                 if (warKingdoms.length === 0) {
-                    optHtml = '<p style="color:#ff8888;">No kingdoms are currently at war. The world will be regenerated with conflict.</p>';
+                    // v9p33river334: do not promise invisible auto-regeneration; provide the existing explicit action.
+                    optHtml = '<p style="color:#ff8888;">No kingdoms are currently at war. Regenerate the world to roll a conflict.</p><button class="btn-medieval" data-action="regenerateWorld">🔄 Regenerate World</button>';
                 }
                 for (var ki = 0; ki < warKingdoms.length; ki++) {
                     var k = warKingdoms[ki];
@@ -367,11 +384,14 @@
         var startConfig = CONFIG.GAME_STARTS.find(function(s) { return s.id === startId; });
         if (!startConfig) return;
 
-        // For Military Leader, might need to override town to a kingdom at war
+        // For Military Leader, keep the selected town when it belongs to the chosen war kingdom.
         if (startId === 'military' && window._selectedMilitaryKingdomId) {
-            var towns = Engine.getTowns().filter(function(t) { return t.kingdomId === window._selectedMilitaryKingdomId; });
-            if (towns.length > 0) {
-                townId = towns[0].id;
+            var selectedTown = Engine.findTown(townId);
+            if (!selectedTown || selectedTown.kingdomId !== window._selectedMilitaryKingdomId) {
+                // v9p33river334: only fall back when the prior town is outside the chosen war kingdom.
+                var towns = Engine.getTowns().filter(function(t) { return t.kingdomId === window._selectedMilitaryKingdomId; });
+                if (towns.length > 0) townId = towns[0].id;
+                else { UI.toast('Chosen war kingdom has no starting towns.', 'error'); return; }
             }
         }
 
@@ -393,6 +413,7 @@
 
         // Clean up
         delete window._selectedTownId;
+        delete window._selectedTownKingdomId;
         delete window._selectedStartId;
         delete window._selectedMilitaryKingdomId;
     }
@@ -400,12 +421,14 @@
     function backToTownSelection() {
         // Need to go back to town selection for the previously selected kingdom
         var townId = window._selectedTownId;
-        if (townId) {
+        var kingdomId = window._selectedTownKingdomId;
+        if (!kingdomId && townId) {
             var town = Engine.findTown(townId);
-            if (town) {
-                showTownSelection(town.kingdomId, window._kingdomSelectCallback);
-                return;
-            }
+            if (town) kingdomId = town.kingdomId;
+        }
+        if (kingdomId) {
+            showTownSelection(kingdomId, window._kingdomSelectCallback); // v9p33river334: restore original kingdom even if military flow later changes town.
+            return;
         }
         showKingdomSelection(window._kingdomSelectCallback);
     }
@@ -467,6 +490,7 @@
         // Separate living and deceased family members
         var livingMembers = [];
         var deceasedMembers = [];
+        var missingMembers = []; // v9p33river334: missing records are unknown/migrated, not automatically deceased.
         for (var i = 0; i < fm.length; i++) {
             var m = fm[i];
             var person = Engine.findPerson(m.npcId);
@@ -477,8 +501,8 @@
             } else if (person && person.alive) {
                 livingMembers.push(m);
             } else {
-                // Person not found — treat as deceased
-                deceasedMembers.push(m);
+                // v9p33river334: Person not found — do not mislabel migrated/cross-kingdom family as deceased.
+                missingMembers.push(m);
             }
         }
 
@@ -505,9 +529,10 @@
                 html += '<span class="family-role-badge">' + roleLabel + '</span>';
                 html += '</div>';
                 html += '<div class="family-member-body">';
-                var displayAge = (person.age != null && person.age >= 0) ? person.age : '?';
+                var _ageNum = (typeof person.age === 'number' && isFinite(person.age) && person.age >= 0) ? person.age : null;
+                var displayAge = _ageNum != null ? _ageNum : '?';
                 var displayOcc = person.occupation || 'unemployed';
-                if (person.age < (CONFIG.COMING_OF_AGE || 18)) displayOcc = 'child';
+                if (_ageNum != null && _ageNum < (CONFIG.COMING_OF_AGE || 18)) displayOcc = 'child'; // v9p33river334: malformed age must not force child category.
                 html += '<div>Age: ' + displayAge + ' | ' + displayOcc + '</div>';
                 html += '<div>💰 ' + formatGold(person.gold || 0) + 'g | 📍 ' + locationName + (sameLocation ? ' <span style="color:#5f5;font-size:0.7rem;">(Here)</span>' : '') + '</div>';
                 html += '<div>❤️ Relationship: ' + Math.round(rel) + '/100</div>';
@@ -569,6 +594,17 @@
             }
         }
 
+        // === FAMILY WITH MISSING PERSON RECORDS ===
+        if (missingMembers.length > 0) {
+            html += '<h4 style="color:#c4a35a;margin:12px 0 8px 0;font-family:var(--font-display,serif);font-size:0.85rem;border-top:1px solid #444;padding-top:10px;">📜 Family Away / Records Missing</h4>';
+            for (var mi = 0; mi < missingMembers.length; mi++) {
+                var mm = missingMembers[mi];
+                html += '<div class="family-member-card" style="opacity:0.75;border-left:3px solid #8B6914;">';
+                html += '<div class="family-member-header"><span style="color:#c4a35a;">' + _getFamilyRoleIcon(mm.role) + ' ' + mm.name + '</span><span class="family-role-badge">' + _formatRoleLabel(mm.role) + '</span></div>';
+                html += '<div class="family-member-body"><div style="color:#c4a35a;">Records unavailable — they may have migrated or be outside the current kingdom records.</div></div></div>';
+            }
+        }
+
         // === DECEASED FAMILY MEMBERS ===
         if (deceasedMembers.length > 0) {
             html += '<h4 style="color:#888;margin:12px 0 8px 0;font-family:var(--font-display,serif);font-size:0.85rem;border-top:1px solid #444;padding-top:10px;">⚰️ Deceased Family</h4>';
@@ -591,8 +627,9 @@
                 html += '<div class="family-member-body">';
                 if (dperson && !isSynthetic) {
                     html += '<div style="color:#999;">Died at age ' + (dperson.age || '?') + ' | Was: ' + (dperson.occupation || 'unknown') + '</div>';
-                    var dtownObj = Engine.findTown(dperson.townId);
-                    html += '<div style="color:#999;">Last known location: ' + (dtownObj ? dtownObj.name : 'Unknown') + '</div>';
+                    var dtownObj = dperson.townId ? Engine.findTown(dperson.townId) : null;
+                    var dloc = (dtownObj && !dtownObj.destroyed && !dtownObj.abandoned) ? dtownObj.name : 'Unknown';
+                    html += '<div style="color:#999;">Last known location: ' + dloc + '</div>'; // v9p33river334: stale/deleted town records should not look authoritative.
                 } else {
                     html += '<div style="color:#999;">Passed away | ' + dm.role + ' of the family</div>';
                 }

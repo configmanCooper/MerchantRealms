@@ -1242,7 +1242,7 @@
 
         // Capacity utilization — more patients waiting = higher price
         var queue = bld._treatmentQueue || [];
-        var baseHealers2 = (bt && bt.maxHealers) || (bt && bt.workers) || 2;
+        var baseHealers2 = (bt && bt.maxHealers != null) ? bt.maxHealers : ((bt && bt.workers != null) ? bt.workers : 2);
         var workerCount2 = _resolveWorkerCount(bld);
         var maxHealers = baseHealers2 + Math.floor(workerCount2 / 2);
         var utilization = queue.length / Math.max(maxHealers, 1);
@@ -1453,7 +1453,7 @@
                 if (!bld._lastPriceUpdateDay) bld._lastPriceUpdateDay = 0;
 
                 var bt = findBuildingType(bld.type);
-                var baseHealers = (bt && bt.maxHealers) || 2;
+                var baseHealers = (bt && bt.maxHealers != null) ? bt.maxHealers : 2;
                 var workerCount = _resolveWorkerCount(bld);
                 var maxHealers = baseHealers + Math.floor(workerCount / 2);
                 var kingdom = findKingdom(town.kingdomId);
@@ -2205,7 +2205,7 @@
                 var kingdom = findKingdom(town.kingdomId);
                 var taxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
                 var queueLen = bld._treatmentQueue ? bld._treatmentQueue.length : 0;
-                var _fBaseHealers = (bt && bt.maxHealers) || 2;
+                var _fBaseHealers = (bt && bt.maxHealers != null) ? bt.maxHealers : 2;
                 var _fWorkerCount = _resolveWorkerCount(bld);
                 var maxHealers = _fBaseHealers + Math.floor(_fWorkerCount / 2);
                 result[bld.type] = {

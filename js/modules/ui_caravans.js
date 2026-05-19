@@ -52,8 +52,9 @@
 
     function _getAllResourceList() {
         var list = [];
-        for (var key in RESOURCE_TYPES) {
-            var r = RESOURCE_TYPES[key];
+        var resSrc = (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES) ? RESOURCE_TYPES : ((typeof CONFIG !== 'undefined' && CONFIG.ITEMS) ? CONFIG.ITEMS : {}); // v9p33river334: tolerate missing top-level resource data.
+        for (var key in resSrc) {
+            var r = resSrc[key];
             if (r && r.id) list.push(r);
         }
         list.sort(function(a, b) { return a.name.localeCompare(b.name); });
@@ -72,7 +73,7 @@
             locLabel = '📍 ' + (wpTown ? wpTown.name : wpTownId);
         } else if (order.location === 'source') {
             var srcTown = _caravanEditFromTownId ? Engine.findTown(_caravanEditFromTownId) : null;
-            if (!srcTown) { try { srcTown = Engine.findTown(Player.townId); } catch(e) {} }
+            if (!srcTown && typeof Player !== 'undefined' && Player.townId != null) { try { srcTown = Engine.findTown(Player.townId); } catch(e) {} } // v9p33river334: guard invalid player town state.
             locLabel = '📍 ' + (srcTown ? srcTown.name : 'Source');
         } else {
             // destination
@@ -413,8 +414,9 @@
 
         // Ship capacity info
         let shipInfo = '';
-        if (Player.ships && Player.ships.length > 0) {
-            const bestShip = Player.getBestShip ? Player.getBestShip() : Player.ships.reduce((a, b) => (a.capacity || 0) > (b.capacity || 0) ? a : b);
+        var _playerShips = Array.isArray(Player.ships) ? Player.ships : []; // v9p33river334: malformed ship state should not crash caravan UI.
+        if (_playerShips.length > 0) {
+            const bestShip = Player.getBestShip ? Player.getBestShip() : _playerShips.reduce((a, b) => (a.capacity || 0) > (b.capacity || 0) ? a : b);
             if (bestShip) {
                 const effCap = Player.getShipEffectiveCapacity ? Player.getShipEffectiveCapacity(bestShip) : bestShip.capacity;
                 const shipDef = Player.getShipDefense ? Player.getShipDefense(bestShip) : 0;
@@ -457,7 +459,7 @@
         orderBuilderHtml += '<option value="buy">🛒 Buy</option><option value="sell">💰 Sell</option><option value="store">📥 Store</option><option value="pickup">📦 Pickup</option>';
         orderBuilderHtml += '</select>';
         orderBuilderHtml += '<select id="orderLocation" style="padding:4px 6px;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#fff;">';
-        var _srcTown = Engine.findTown(Player.townId);
+        var _srcTown = (typeof Player !== 'undefined' && Player.townId != null) ? Engine.findTown(Player.townId) : null; // v9p33river334: guard missing Player.townId.
         var _srcName = _srcTown ? _srcTown.name : 'Source';
         orderBuilderHtml += '<option value="destination">🏁 Destination</option><option value="source">📍 ' + _srcName + '</option>';
         orderBuilderHtml += '</select>';
@@ -497,7 +499,10 @@
 
         // Get dynamic hire rates for current town
         var hireRates = { carrierWage: 4, guardWage: 6 };
-        try { hireRates = Player.getCaravanHireRates(Player.townId); } catch(e) {}
+        try { hireRates = Player.getCaravanHireRates ? Player.getCaravanHireRates(Player.townId) : hireRates; } catch(e) {}
+        if (!hireRates) hireRates = {};
+        hireRates.carrierWage = isFinite(Number(hireRates.carrierWage)) ? Number(hireRates.carrierWage) : 4; // v9p33river334: malformed hire-rate data falls back safely.
+        hireRates.guardWage = isFinite(Number(hireRates.guardWage)) ? Number(hireRates.guardWage) : 6;
         var horsesOwned = (Player.inventory || {})['horses'] || 0;
         var swordsOwned = (Player.inventory || {})['swords'] || 0;
         var armorOwned = (Player.inventory || {})['armor'] || 0;

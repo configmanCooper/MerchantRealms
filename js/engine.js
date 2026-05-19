@@ -26488,7 +26488,8 @@
             return { success: false, message: 'This building cannot be purchased.' };
         }
         const offers = getNPCBuildingSaleOffers(townId);
-        const offer = offers.find(o => o.building === bld);
+        const _bldStableId = bld && (bld.id || bld._id);
+        const offer = offers.find(o => o.building === bld || (_bldStableId && o.building && (o.building.id === _bldStableId || o.building._id === _bldStableId))); // v9p33river334: cloned offer records should still resolve by stable id.
         if (!offer) return { success: false, message: 'This building is not for sale.' };
         return { success: true, price: offer.price, building: bld, reason: offer.reason };
     }
