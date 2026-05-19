@@ -1604,39 +1604,64 @@ window.UI = (function () {
                 }
             }
             if (_activeQ) {
-                var _qDef = (typeof CONFIG !== 'undefined' && CONFIG.KINGDOM_QUESTS) ? CONFIG.KINGDOM_QUESTS[_activeQ.type] : null;
-                var _qTitle = _qDef ? _qDef.title : (_activeQ.type || 'Directive');
+                // v9p33river343: previously looked up CONFIG.KINGDOM_QUESTS[_activeQ.type]
+                // — but the live config is named KINGDOM_QUEST_POOL and the
+                // active quest stores `typeId` (not `type`). Title and category
+                // are already projected onto the active quest itself
+                // (player_quests.js:1246), so use those directly.
+                var _qDef = (typeof KINGDOM_QUEST_POOL !== 'undefined') ? KINGDOM_QUEST_POOL[_activeQ.typeId] : null;
+                var _qTitle = _activeQ.title || (_qDef && _qDef.title) || _activeQ.typeId || 'Directive';
+                var _qCat = _activeQ.category || (_qDef && _qDef.cat) || null;
                 var _qCatIcon = '';
-                if (_qDef) {
+                if (_qCat) {
                     var _cats = { economic: '💰', military: '⚔️', diplomatic: '🕊️', espionage: '🕵️', justice: '⚖️', social: '👥', corrupt: '🏴' };
-                    _qCatIcon = _cats[_qDef.cat] || '📜';
+                    _qCatIcon = _cats[_qCat] || '📜';
                 }
                 // Calculate progress
                 var _qProg = '';
                 var _qPct = 0;
                 var _req = _activeQ.requirements || {};
-                if (_req.deliver && _req.deliver.length > 0) {
-                    var _delDone = 0, _delTotal = _req.deliver.length;
-                    for (var _di = 0; _di < _req.deliver.length; _di++) {
-                        var _dItem = _req.deliver[_di];
-                        var _have = (Player.state.inventory && Player.state.inventory[_dItem.item]) || 0;
-                        if (_have >= _dItem.qty) _delDone++;
+                // v9p33river343: requirements.deliver is an OBJECT MAP keyed
+                // by resource id (player_quests.js:1174 builds it as
+                // deliverReq[String(resId)] = qty), NOT an array. Previously
+                // _req.deliver.length was undefined and delivery progress
+                // never rendered. Walk the object's keys instead.
+                var _delKeys = _req.deliver ? Object.keys(_req.deliver) : [];
+                if (_delKeys.length > 0) {
+                    var _delDone = 0, _delTotal = _delKeys.length;
+                    for (var _di = 0; _di < _delKeys.length; _di++) {
+                        var _dItem = _delKeys[_di];
+                        var _dNeed = _req.deliver[_dItem];
+                        var _have = (Player.state.inventory && Player.state.inventory[_dItem]) || 0;
+                        if (_have >= _dNeed) _delDone++;
                     }
                     _qPct = Math.round((_delDone / _delTotal) * 100);
                     _qProg = _delDone + '/' + _delTotal + ' items';
                 } else if (_req.gold) {
-                    var _gSpent = Player.state._kqGoldSpent || 0;
+                    // v9p33river343: _kqGoldSpent is keyed by quest id (per
+                    // player_quests.js:1874 trackKQGoldSpent stores
+                    // _kqGoldSpent[questId]), not a single scalar. Look up
+                    // the active quest's progress, not the whole map.
+                    var _gSpent = (Player.state._kqGoldSpent && Player.state._kqGoldSpent[_activeQ.id]) || 0;
                     _qPct = Math.min(100, Math.round((_gSpent / _req.gold) * 100));
                     _qProg = _gSpent + '/' + _req.gold + 'g';
                 } else if (_req.visitTowns) {
-                    var _vDone = (Player.state._kqVisitedTowns || []).length;
+                    // Same per-quest keying for _kqVisitedTowns (player_quests.js:1865).
+                    var _vList = (Player.state._kqVisitedTowns && Player.state._kqVisitedTowns[_activeQ.id]) || [];
+                    var _vDone = Array.isArray(_vList) ? _vList.length : 0;
                     _qPct = Math.min(100, Math.round((_vDone / _req.visitTowns) * 100));
                     _qProg = _vDone + '/' + _req.visitTowns + ' towns';
                 } else if (_req.action) {
-                    _qProg = Player.state._kqActionDone ? '✅ Done' : '⏳ Attempt action';
-                    _qPct = Player.state._kqActionDone ? 100 : 0;
+                    var _aDone = !!(Player.state._kqActionDone && Player.state._kqActionDone[_activeQ.id]);
+                    _qProg = _aDone ? '✅ Done' : '⏳ Attempt action';
+                    _qPct = _aDone ? 100 : 0;
                 }
-                var _daysLeft = _activeQ.deadlineDay ? (_activeQ.deadlineDay - (Engine.getDay ? Engine.getDay() : 0)) : 0;
+                // v9p33river343: kingdom quests store expiresDay (not
+                // deadlineDay) — see player_quests.js:1266. Previously
+                // deadlineDay was undefined and the days-left footer never
+                // showed.
+                var _deadline = _activeQ.expiresDay || _activeQ.deadlineDay || 0;
+                var _daysLeft = _deadline ? (_deadline - (Engine.getDay ? Engine.getDay() : 0)) : 0;
                 var _dlColor = _daysLeft <= 5 ? '#c44e52' : _daysLeft <= 15 ? '#ccb974' : '#88aa77';
                 var _barColor = _qPct >= 100 ? '#55a868' : '#6688aa';
                 _qtContent.innerHTML = '<div style="font-weight:600;margin-bottom:3px;">' + _qCatIcon + ' ' + _qTitle + '</div>' +

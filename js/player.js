@@ -19195,6 +19195,11 @@
             _xpAccumulator: player._xpAccumulator,
             licenses: structuredClone(player.licenses),
             productionPermits: structuredClone(player.productionPermits || {}),
+            // v9p33river343: quest-rewarded wildcard production permits track
+            // expiry separately on _productionPermitExpiry. Previously not
+            // serialized, so after save/load the expiry was 0 and the wildcard
+            // permit immediately stopped working.
+            _productionPermitExpiry: structuredClone(player._productionPermitExpiry || {}),
             offenseCount: { ...player.offenseCount },
             protectionRacket: { ...player.protectionRacket },
             restrictedTradesWithoutLicense: player.restrictedTradesWithoutLicense || 0,
@@ -19771,6 +19776,8 @@
         player._xpAccumulator = data._xpAccumulator || 0;
         player.licenses = data.licenses || {};
         player.productionPermits = data.productionPermits || {};
+        // v9p33river343: restore the quest-wildcard permit expiry map.
+        player._productionPermitExpiry = data._productionPermitExpiry || {};
         player.offenseCount = data.offenseCount || {};
         player.protectionRacket = data.protectionRacket || {
             active: false, paying: false, intimidated: false,

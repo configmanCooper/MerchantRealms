@@ -1720,8 +1720,19 @@
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏭 Granted: Production Permit (any banned good, 90 days)', 'success');
                 break;
             case 'tax_exemption_30d':
+                // v9p33river343: previously only pushed into _kqSpecialRewards
+                // (read by nothing). Property tax at engine_kingdom_finances.js:194
+                // reads Player.state.taxExemption[kingdomId], so the canonical
+                // path must be written too. Track in _kqSpecialRewards for UI
+                // surfacing, AND set the live exemption expiry.
                 if (!player._kqSpecialRewards) player._kqSpecialRewards = [];
                 player._kqSpecialRewards.push({ type: 'tax_exemption', kingdomId: kingdomId, expiresDay: day + 30 });
+                if (!player.taxExemption) player.taxExemption = {};
+                // Don't shorten an existing longer exemption (e.g. from king's
+                // favor which grants a full year).
+                if (!player.taxExemption[kingdomId] || player.taxExemption[kingdomId] < day + 30) {
+                    player.taxExemption[kingdomId] = day + 30;
+                }
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💰 Granted: Tax Exemption (30 days)', 'success');
                 break;
             case 'title_boost':
