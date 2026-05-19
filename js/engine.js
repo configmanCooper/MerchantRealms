@@ -6603,20 +6603,27 @@
             }
 
             // Player warehouse prosperity boost
-            if (typeof Player !== 'undefined' && Player.warehouses) {
+            // v9p33river299: Player has no `warehouses` field — warehouses are
+            // just buildings with type==='warehouse' in Player.buildings, and
+            // their stored goods live in Player.townStorage[townId]. The old
+            // check found nothing so the boost never applied.
+            if (typeof Player !== 'undefined' && Player.buildings) {
                 try {
-                    var warehouses = Player.warehouses;
-                    if (Array.isArray(warehouses)) {
-                        for (var wi = 0; wi < warehouses.length; wi++) {
-                            var wh = warehouses[wi];
-                            if (wh.townId === town.id && wh.inventory) {
-                                var totalGoods = 0;
-                                for (var gid in wh.inventory) {
-                                    totalGoods += (wh.inventory[gid] || 0);
-                                }
-                                if (totalGoods > 10) {
-                                    town.prosperity = Math.min(100, town.prosperity + 0.15);
-                                }
+                    var playerBldsForWh = Player.buildings;
+                    var playerTownStorage = Player.townStorage || {};
+                    if (Array.isArray(playerBldsForWh)) {
+                        for (var wi = 0; wi < playerBldsForWh.length; wi++) {
+                            var wh = playerBldsForWh[wi];
+                            if (!wh || wh.type !== 'warehouse') continue;
+                            if (wh.townId !== town.id) continue;
+                            var whStored = playerTownStorage[town.id];
+                            if (!whStored) continue;
+                            var totalGoods = 0;
+                            for (var gid in whStored) {
+                                totalGoods += (whStored[gid] || 0);
+                            }
+                            if (totalGoods > 10) {
+                                town.prosperity = Math.min(100, town.prosperity + 0.15);
                             }
                         }
                     }
@@ -11925,6 +11932,11 @@
             if (rank < 4 || rank > 7) continue;
 
             var isKing = (person.id === kingdom.king);
+            // v9p33river299: this comparison never matched — the player is
+            // not in world.people, and the old `Player.id` reference was
+            // undefined anyway. Player.id is now a public getter returning
+            // 'player', but the player still needs to be added as a SEPARATE
+            // voter entry (mirroring the trial path at engine.js:12337-12342).
             var isPlayer = (typeof Player !== 'undefined' && person.id === Player.id);
 
             voters.push({
@@ -11933,6 +11945,20 @@
                 vote: isKing ? 'yes' : 'undecided',
                 isPlayer: isPlayer
             });
+        }
+
+        // v9p33river299: add the player as a council voter if they hold rank
+        // 4+ in this kingdom (mirrors trial voter assembly at line 12337-12342).
+        if (typeof Player !== 'undefined' && Player.state) {
+            var _pCouncilRank = (Player.state.socialRank || {})[kId] || 0;
+            if (_pCouncilRank >= 4) {
+                voters.push({
+                    id: 'player',
+                    rank: _pCouncilRank,
+                    vote: 'undecided',
+                    isPlayer: true
+                });
+            }
         }
 
         // If somehow there are no voters, fall back to direct execution
@@ -27460,8 +27486,10 @@
             var traitRevealed = false;
             if (rng.chance(0.30)) {
                 try {
-                    if (typeof Player !== 'undefined' && Player.revealPersonalityTrait) {
-                        Player.revealPersonalityTrait(chatTarget);
+                    // v9p33river299: method is Player.revealTrait
+                    // (player_family.js:3348), not revealPersonalityTrait.
+                    if (typeof Player !== 'undefined' && Player.revealTrait) {
+                        Player.revealTrait(chatTarget, 'vague');
                         traitRevealed = true;
                     }
                 } catch (e) { /* Player not loaded */ }
@@ -30017,8 +30045,13 @@
             }, 'my_kingdom');
         }
         // Lose kingdom rep
-        if (Player.kingdomRep && Player.kingdomRep[kId] != null) {
-            Player.kingdomRep[kId] = Math.max(0, (Player.kingdomRep[kId] || 0) - 40);
+        // v9p33river299: Player has no `kingdomRep` field — reputation lives
+        // in Player.reputation (per-kingdom map). The old write was silently
+        // discarded. Use the canonical Player.modifyReputation API.
+        if (typeof Player !== 'undefined' && Player.modifyReputation) {
+            Player.modifyReputation(kId, -40);
+        } else if (Player.reputation && Player.reputation[kId] != null) {
+            Player.reputation[kId] = Math.max(0, (Player.reputation[kId] || 0) - 40);
         }
         // Gold seizure — lose 30-50% of gold
         if (Player.gold && Player.gold > 0) {

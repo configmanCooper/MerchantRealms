@@ -2118,9 +2118,17 @@
 
     // --- Actions that need Player functions ---
     UI.registerAction('respondToMarriageProposal', function(_t, d) { if (Player.respondToMarriageProposal) { var r = Player.respondToMarriageProposal(d.id, d.val === 'true'); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openFamilyPanel(); } });
-    UI.registerAction('payDebt', function(_t, d) { if (Player.payDebt) { var r = Player.payDebt(parseInt(d.val)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openSpecialStartPanel(); } });
-    UI.registerAction('completeMasterTask', function() { if (Player.completeMasterTask) { var r = Player.completeMasterTask(); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openSpecialStartPanel(); } });
-    UI.registerAction('dismissMasterTask', function() { if (Player.dismissMasterTask) { var r = Player.dismissMasterTask(); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openSpecialStartPanel(); } });
+    // v9p33river299: indentured debt/task buttons in ui_kingdom.js:1443-1480
+    // need the correct Player API. Old handlers checked Player.payDebt
+    // (which exists but expects (debtId, amount) for the general debt
+    // system, not indenture), Player.completeMasterTask (doesn't exist),
+    // and Player.dismissMasterTask (doesn't exist). The proper wrappers
+    // live on UI in ui_petition.js (UI.payDebt -> Player.makeDebtPayment,
+    // UI.completeMasterTask -> Player.completeCurrentTask, UI.dismissMasterTask
+    // -> Player.dismissCurrentTask) and already handle toasts + refresh.
+    UI.registerAction('payDebt', function(_t, d) { if (UI.payDebt) UI.payDebt(parseInt(d.val)); });
+    UI.registerAction('completeMasterTask', function() { if (UI.completeMasterTask) UI.completeMasterTask(); });
+    UI.registerAction('dismissMasterTask', function() { if (UI.dismissMasterTask) UI.dismissMasterTask(); });
     UI.registerAction('attemptIndenturedEscape', function(_t, d) { if (Player.attemptEscape) { Player.attemptEscape(d.id); } });
     UI.registerAction('treatCompanionUI', function(_t, d) { if (UI.treatCompanionUI) UI.treatCompanionUI(d.type, d.id, d.val); });
     UI.registerAction('openWeddingPlanner', function() { if (UI.openWeddingPlanner) UI.openWeddingPlanner(); });

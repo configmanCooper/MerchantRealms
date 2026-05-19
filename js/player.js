@@ -40180,6 +40180,14 @@
         get skillPoints() { return player.skillPoints; },
         get skills() { return player.skills; },
         get achievements() { return player.achievements; },
+        // v9p33river299: exposed previously-internal fields used by UI/engine
+        // (dynasty bank display in ui_outpost; engine reads `id` / `personId`
+        // when matching the player against persons). The player's canonical
+        // person id throughout the codebase is the literal 'player' (see
+        // engine.js:12340, 27131, etc), so both getters resolve to that.
+        get dynastySPBank() { return player.dynastySPBank || 0; },
+        get id() { return player.id || 'player'; },
+        get personId() { return player.personId || player.id || 'player'; },
         get hunger() { return player.hunger; },
         get marketIntel() { return player.marketIntel; },
         get tradeTipLog() { return player.tradeTipLog || []; },
