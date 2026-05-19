@@ -26560,6 +26560,12 @@
             // Player gold/powder deducted by caller (Player module)
         } else if (buyerType === 'kingdom' && buyerEntity) {
             buyerEntity.gold -= totalGoldNeeded;
+            // v9p33river331: missing finance ledger — kingdom demolition
+            // cost (sale price + 500g) was deducted silently. Record it
+            // so kingdom finance reports reflect the spend.
+            if (typeof Engine !== 'undefined' && Engine.recordKingdomTransaction) {
+                Engine.recordKingdomTransaction(buyerEntity, 'expense', totalGoldNeeded, 'Demolished ' + (bld.type || 'building') + ' in ' + (town.name || '?'), 'construction');
+            }
         } else if (buyerEntity) {
             buyerEntity.gold = (buyerEntity.gold || 0) - totalGoldNeeded;
             if (buyerEntity.npcMerchantInventory && (buyerEntity.npcMerchantInventory.blasting_powder || 0) >= 1) {
@@ -26799,6 +26805,12 @@
             // Player gold/powder deducted by caller (Player module)
         } else if (buyerType === 'kingdom' && buyerEntity) {
             buyerEntity.gold -= totalGoldNeeded;
+            // v9p33river331: missing finance ledger — kingdom conversion
+            // cost (sale price + 500g) was deducted silently. Record it
+            // so kingdom finance reports reflect the spend.
+            if (typeof Engine !== 'undefined' && Engine.recordKingdomTransaction) {
+                Engine.recordKingdomTransaction(buyerEntity, 'expense', totalGoldNeeded, 'Converted ' + (bld.type || 'building') + ' → ' + newBuildingTypeId + ' in ' + (town.name || '?'), 'construction');
+            }
         } else if (buyerEntity) {
             buyerEntity.gold = (buyerEntity.gold || 0) - totalGoldNeeded;
             if (buyerEntity.npcMerchantInventory && (buyerEntity.npcMerchantInventory.blasting_powder || 0) >= 1) {

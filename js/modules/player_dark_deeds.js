@@ -951,6 +951,10 @@
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
+        // v9p33river331: defensive — outposts/junctions may lack
+        // town.buildings; also guard player.inventory.
+        if (!town.buildings) return { success: false, message: 'No buildings here.' };
+        if (!player.inventory) player.inventory = {};
         const bld = town.buildings[buildingIndex];
         if (!bld) return { success: false, message: 'Building not found.' };
         const toolQty = player.inventory.tools || 0;
@@ -1010,6 +1014,8 @@
         _sync();
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!hasSkill('shadow_dealings') && !hasSkill('arsonist_skill')) return { success: false, message: 'Requires Shadow Dealings or Arsonist skill.' };
+        // v9p33river331: defensive — guard player.inventory.
+        if (!player.inventory) player.inventory = {};
         const toolQty = player.inventory.tools || 0;
         if (toolQty < 5) return { success: false, message: 'Need 5 tools in inventory.' };
         const roads = Engine.getRoads ? Engine.getRoads() : [];
@@ -1075,6 +1081,9 @@
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
+        // v9p33river331: defensive — guard town.buildings + player.inventory.
+        if (!town.buildings) return { success: false, message: 'No buildings here.' };
+        if (!player.inventory) player.inventory = {};
         const bld = town.buildings[buildingIndex];
         if (!bld) return { success: false, message: 'Building not found.' };
         const woodQty = player.inventory.wood || 0;
@@ -1093,7 +1102,7 @@
         var successful = _o.successful;
 
         if (successful) {
-            town.buildings.splice(buildingIndex, 1);
+            if (town.buildings) town.buildings.splice(buildingIndex, 1);
             player.arsonCount = (player.arsonCount || 0) + 1;
             grantXP(25, 'Arson');
             if (player.arsonCount >= 5) unlockAchievement('arsonist_ach');
@@ -1355,6 +1364,8 @@
         if (isJailed()) return { success: false, message: 'You are in jail.' };
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         if (!hasSkill('shadow_dealings') && !hasSkill('discrete')) return { success: false, message: 'Requires Shadow Dealings or Discrete skill.' };
+        // v9p33river331: defensive — guard player.inventory.
+        if (!player.inventory) player.inventory = {};
         if ((player.inventory.tools || 0) < 1) return { success: false, message: 'Need 1 tools to break in.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
@@ -2630,7 +2641,8 @@
             const sb = player.sabotagedBuildings[i];
             if (day >= sb.expiresDay) {
                 const town = Engine.findTown(sb.townId);
-                if (town && town.buildings[sb.buildingIdx]) {
+                // v9p33river331: defensive — guard town.buildings array too.
+                if (town && town.buildings && town.buildings[sb.buildingIdx]) {
                     delete town.buildings[sb.buildingIdx]._disabledUntil;
                 }
                 player.sabotagedBuildings.splice(i, 1);
