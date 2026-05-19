@@ -2009,9 +2009,13 @@
                             order.qtyDelivered += deliverQty;
                             inv[order.resourceId] -= deliverQty;
                             var payment = deliverQty * order.assignedPrice;
-                            em.gold = (em.gold || 0) + payment;
-                            k.gold -= payment;
-                            collectTradeTax(k.id, payment, order.resourceId);
+                            // v9p33river335: cap payment to available treasury
+                            // so EM deliveries can't drive kingdom gold negative
+                            // (matches Engine.deliverKingdomOrder cap from v312).
+                            var _emActualPay = Math.min(payment, Math.max(0, k.gold || 0));
+                            em.gold = (em.gold || 0) + _emActualPay;
+                            k.gold -= _emActualPay;
+                            collectTradeTax(k.id, _emActualPay, order.resourceId);
                             if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                                 k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + deliverQty;
                             }
@@ -2030,8 +2034,10 @@
                                 // Deliver immediately
                                 order.qtyDelivered += buyQty;
                                 var pay2 = buyQty * order.assignedPrice;
-                                em.gold = (em.gold || 0) + pay2;
-                                k.gold -= pay2;
+                                // v9p33river335: same treasury cap as above.
+                                var _emActualPay2 = Math.min(pay2, Math.max(0, k.gold || 0));
+                                em.gold = (em.gold || 0) + _emActualPay2;
+                                k.gold -= _emActualPay2;
                                 if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                                     k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + buyQty;
                                 }
@@ -2048,9 +2054,13 @@
                             // v9p33river295: also deduct the completion bonus
                             // from kingdom treasury (was previously minted —
                             // EM gained the bonus but kingdom didn't pay).
+                            // v9p33river335: cap bonus to available treasury so
+                            // empty-treasury kingdoms don't fund EM bonuses
+                            // from negative gold (matches Engine.deliverKingdomOrder).
                             var _emBonus = order.bonusOnCompletion || 0;
-                            em.gold = (em.gold || 0) + _emBonus;
-                            if (_emBonus > 0) k.gold = (k.gold || 0) - _emBonus;
+                            var _emActualBonus = Math.min(_emBonus, Math.max(0, k.gold || 0));
+                            em.gold = (em.gold || 0) + _emActualBonus;
+                            if (_emActualBonus > 0) k.gold = (k.gold || 0) - _emActualBonus;
                             em.ordersCompleted = (em.ordersCompleted || 0) + 1;
                             grantEmXp(em, Math.max(5, Math.floor(order.qty / 10)), 'order');
                         }

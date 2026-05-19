@@ -22604,6 +22604,18 @@
             if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
         }
 
+        // v9p33river335: goods were vanishing — kingdom paid but the
+        // sold items were never added to militaryStockpile/goodsStockpile,
+        // so procurement needs were never actually fulfilled. Mirror the
+        // pattern used by deliverSupplyDeal and Engine.deliverKingdomOrder.
+        if (res && res.category === 'military') {
+            if (!kingdom.militaryStockpile) kingdom.militaryStockpile = {};
+            kingdom.militaryStockpile[resourceId] = (kingdom.militaryStockpile[resourceId] || 0) + qty;
+        } else {
+            if (!kingdom.goodsStockpile) kingdom.goodsStockpile = {};
+            kingdom.goodsStockpile[resourceId] = (kingdom.goodsStockpile[resourceId] || 0) + qty;
+        }
+
         // Track sales
         if (!player.kingdomSalesLedger) player.kingdomSalesLedger = [];
         player.kingdomSalesLedger.push({ day: Engine.getDay(), kingdomId: kingdomId, resourceId: resourceId, qty: qty, totalPrice: totalPrice });
@@ -26184,6 +26196,11 @@
                 }
             }
             // Replace qty with quality breakdown
+            // v9p33river335: preserve original requested qty for downstream
+            // consumers (time cost, XP, story progress, success message).
+            // Previously qty was overwritten with just the dominant tier
+            // count, undercounting the actual craft batch.
+            var _totalCrafted = _excCount + _goodCount + _baseCount;
             qty = 0; // we'll add each tier separately below
             var _craftBase = _craftQRes.baseItem;
             var _craftGood = _craftBase + '_good';
@@ -26199,7 +26216,8 @@
             _qualityMsg = ' Quality results: ' + _qParts.join(', ') + '.';
             // Store each quality tier (handle mixed results)
             outputRes = findResource(_craftProduces);
-            outputWeight = (outputRes ? outputRes.weight : 1) * qty;
+            // v9p33river335: weight reflects total batch, not dominant tier.
+            outputWeight = (outputRes ? outputRes.weight : 1) * _totalCrafted;
             // For mixed results, add the other tiers to storage
             var _mixedExtras = [];
             if (_excCount > 0 && (_goodCount > 0 || _baseCount > 0)) {
@@ -26225,7 +26243,11 @@
         }
 
         // Advance time
-        var timeHours = Math.max(1, Math.ceil(qty / (recipe.rate || 1)));
+        // v9p33river335: use _totalCrafted (the full batch) for time cost,
+        // not just the dominant-tier qty. Falls back to qty for non-quality
+        // crafts where _totalCrafted is undefined.
+        var _batchQty = (typeof _totalCrafted !== 'undefined') ? _totalCrafted : qty;
+        var timeHours = Math.max(1, Math.ceil(_batchQty / (recipe.rate || 1)));
         if (typeof Game !== 'undefined' && Game.advanceTicks) {
             Game.advanceTicks(Math.max(1, Math.ceil(timeHours * 2.5)));
         }
@@ -26234,14 +26256,19 @@
         var storageMsg = addedToInventory ? 'Added to inventory.' : 'Stored in warehouse.';
         var feeDetail = entryFee + 'g entry';
         if (perItemFee > 0) feeDetail += ' + ' + perItemFee + 'g crafting';
-        var msg = '🔨 Crafted ' + qty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg + _qualityMsg;
+        // v9p33river335: success message shows the full batch count + tier
+        // breakdown (was showing only the dominant tier qty).
+        var msg = '🔨 Crafted ' + _batchQty + ' ' + productName + ' at ' + bType.name + '. Fees: ' + feeDetail + '. ' + storageMsg + _qualityMsg;
 
         try { Engine.logEvent(msg, null, 'my_actions'); } catch(e) {}
         if (player.stats) player.stats.guildCrafts = (player.stats.guildCrafts || 0) + 1;
-        grantXP(3 * qty, 'guild_crafting');
+        // v9p33river335: XP is per item crafted across the whole batch,
+        // not just the dominant tier.
+        grantXP(3 * _batchQty, 'guild_crafting');
 
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
-            StoryMode.onPlayerAction('guild_craft', { item: _craftProduces, qty: qty });
+            // v9p33river335: story progress sees the full batch qty too.
+            StoryMode.onPlayerAction('guild_craft', { item: _craftProduces, qty: _batchQty });
         }
 
         return { success: true, message: msg };
@@ -26635,9 +26662,14 @@
         // kingdom-side deal record (created via Engine.addKingdomSupplyDeal)
         // untouched. Mirror the procurer/EM pattern at
         // engine_diplomacy.js:470-484 and engine_elite_merchants.js:1983-1990.
+        // v9p33river335: also cap payment to available treasury so supply
+        // deals can't drive kingdom gold negative (matches deliverKingdomOrder
+        // behavior added in v9p33river312).
         var _rawKingdom = Engine.findKingdom ? Engine.findKingdom(deal.kingdomId) : null;
+        var actualPayment = payment;
         if (_rawKingdom) {
-            _rawKingdom.gold = (_rawKingdom.gold || 0) - payment;
+            actualPayment = Math.min(payment, Math.max(0, _rawKingdom.gold || 0));
+            _rawKingdom.gold = (_rawKingdom.gold || 0) - actualPayment;
             var _milItems = ['swords', 'armor', 'bows', 'arrows', 'horses', 'saddles', 'shields'];
             if (_milItems.indexOf(deal.resourceId) >= 0) {
                 if (!_rawKingdom.militaryStockpile) _rawKingdom.militaryStockpile = {};
@@ -26661,15 +26693,18 @@
             }
         }
 
-        player.gold += payment;
-        player.stats.totalGoldEarned += payment;
+        player.gold += actualPayment;
+        player.stats.totalGoldEarned += actualPayment;
         deal.totalDelivered += deliverQty;
         deal.lastDeliveryDay = Engine.getDay();
 
         if (typeof UI !== 'undefined' && UI.toast) {
-            UI.toast('Delivered ' + deliverQty + ' ' + deal.resourceId + '. Earned ' + payment + 'g.', 'success');
+            var _shortPaid = actualPayment < payment;
+            var _msg = 'Delivered ' + deliverQty + ' ' + deal.resourceId + '. Earned ' + actualPayment + 'g.';
+            if (_shortPaid) _msg += ' (Treasury short — owed ' + (payment - actualPayment) + 'g)';
+            UI.toast(_msg, _shortPaid ? 'warning' : 'success');
         }
-        return { success: true, payment: payment, qtyDelivered: deliverQty };
+        return { success: true, payment: actualPayment, qtyDelivered: deliverQty };
     }
 
     function cancelSupplyDeal(dealId) {
