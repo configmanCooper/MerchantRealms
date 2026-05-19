@@ -623,6 +623,23 @@ window.Game = (function () {
                     console.log('[map-pool] Story mode start -> swapped to Map2');
                 }
             } catch (e) { console.warn('[map-pool] story-mode swap failed:', e); }
+        } else {
+            // v9p33river308: non-story modes — re-randomize the map for each
+            // new game. _loadTestworld1 only picks once at boot and caches the
+            // result on window._testworld1.mapName, so without this re-pick
+            // every Start Adventure in the same session used the same map.
+            // Kicked off here (game-mode selection) so the fetch/image-load
+            // completes during character creation, before Engine.generate runs.
+            try {
+                var _mapPool = ['Map1','Map2','Map3','Map4','Map5','Map6','Map7','Map8','Map9','Map10','Map11','Map12','Map13','Map14'];
+                var _newMap = _mapPool[Math.floor(Math.random() * _mapPool.length)];
+                window._mapDirOverride = 'images/' + _newMap;
+                window._testworld1 = { loaded: false, mapName: _newMap };
+                if (typeof Renderer !== 'undefined' && Renderer._reloadTestworld1) {
+                    Renderer._reloadTestworld1();
+                    console.log('[map-pool] ' + startConfig.id + ' start -> random map: ' + _newMap);
+                }
+            } catch (e) { console.warn('[map-pool] random-map swap failed:', e); }
         }
 
         // Hide mode selection, show char creation
