@@ -3156,6 +3156,24 @@
             town.market.supply.large_wagon = Math.max(town.market.supply.large_wagon || 0, 1);
         }
 
+        // v9p33river314: GRANARY foodStorage was dead config — no consumer
+        // read it. Now grain-store buildings add their foodStorage to the
+        // town's wheat + bread floors so capitals/cities with granaries
+        // have a meaningful food reserve and don't starve as quickly.
+        var _granaryFood = 0;
+        for (var _gri = 0; _gri < town.buildings.length; _gri++) {
+            var _grb = town.buildings[_gri];
+            if (_grb.condition === 'destroyed') continue;
+            var _grbt = findBuildingType(_grb.type);
+            if (_grbt && _grbt.foodStorage) _granaryFood += _grbt.foodStorage;
+        }
+        if (_granaryFood > 0) {
+            // Split between wheat (70%) and bread (30%) — granaries hold
+            // mostly raw grain.
+            town.market.supply.wheat = Math.max(town.market.supply.wheat || 0, (town.market.supply.wheat || 0) + Math.floor(_granaryFood * 0.7));
+            town.market.supply.bread = Math.max(town.market.supply.bread || 0, (town.market.supply.bread || 0) + Math.floor(_granaryFood * 0.3));
+        }
+
         // Boost supply for towns with production chain buildings
         const buildingSupplyBoost = {
             'sawmill': { planks: 30 },
@@ -12793,6 +12811,24 @@
 
                 // Mild crime reduction
                 town.crime = Math.max(0, (town.crime || 0) - 0.2 * contentIntensity);
+            }
+
+            // v9p33river314: COURTHOUSE.crimeReduction was dead config.
+            // Now scan town buildings and reduce town.crime daily by the
+            // summed crimeReduction value (typically 0.30 per courthouse).
+            // Applies regardless of happiness so courthouses fight crime
+            // even in unhappy towns.
+            if (town.buildings && town.buildings.length > 0) {
+                var _crSum = 0;
+                for (var _crbi = 0; _crbi < town.buildings.length; _crbi++) {
+                    var _crb = town.buildings[_crbi];
+                    if (_crb.condition === 'destroyed') continue;
+                    var _crbt = findBuildingType(_crb.type);
+                    if (_crbt && _crbt.crimeReduction) _crSum += _crbt.crimeReduction;
+                }
+                if (_crSum > 0) {
+                    town.crime = Math.max(0, (town.crime || 0) - _crSum);
+                }
             }
 
             // ── NATURAL POPULATION GROWTH (every 3 ticks, non-abandoned towns with pop >= 10) ──

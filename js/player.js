@@ -21415,6 +21415,26 @@
         // Horse permit enforcement (draft_animal_law)
         tickHorsePermitCheck();
 
+        // v9p33river314: UNIVERSITY.knowledgeBonus was dead config — no
+        // knowledge system existed. Grant the player passive XP each day
+        // they're in a town with a university (or any building defining
+        // knowledgeBonus). Scaled to ~1 XP/day per university.
+        if (player.townId && !player.traveling) {
+            try {
+                var _kbTown = Engine.findTown(player.townId);
+                if (_kbTown && _kbTown.buildings) {
+                    var _kbSum = 0;
+                    for (var _kbi = 0; _kbi < _kbTown.buildings.length; _kbi++) {
+                        var _kbb = _kbTown.buildings[_kbi];
+                        if (_kbb.condition === 'destroyed') continue;
+                        var _kbbt = Engine.findBuildingType ? Engine.findBuildingType(_kbb.type) : null;
+                        if (_kbbt && _kbbt.knowledgeBonus) _kbSum += _kbbt.knowledgeBonus;
+                    }
+                    if (_kbSum > 0) grantXP(Math.max(1, Math.round(_kbSum)), 'university');
+                }
+            } catch (_kbe) {}
+        }
+
         // Notoriety decay
         if (player.notoriety > 0) {
             player.notoriety = Math.max(0, player.notoriety - CONFIG.NOTORIETY_DECAY_PER_DAY);
