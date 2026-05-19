@@ -4,6 +4,130 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [BugFixes2] - v9p33river283 → v9p33river312 — sustained bug-triage marathon (~200 fixes across 30 commits)
+
+This release rolls up the post-TestingAlpha1 bug-triage marathon. Hundreds of issues were verified against the live code and fixed in surgical, per-commit batches. Highlights below; per-commit detail lives in `git log` between `v9p33river283..v9p33river312`.
+
+### Added — Content & Audio
+- **Nicole guard audio** — Freya's first-guard dialog regenerated with the `af_nicole` Kokoro TTS voice.
+- **Free first guard button** — guard-hire UI shows "0g — First Guard FREE" with enabled styling during the story-mode first-guard window.
+- **Random map per Start Adventure** (`v9p33river309`) — non-story game-mode selections now pick a fresh random map from Map1–Map14 each time, instead of reusing the page-boot map.
+- **Supply Chain Tycoon victory** (`v9p33river310`) — `CONFIG.WIN_SUPPLY_CHAIN_TYPES` (default 3) now actually triggers a victory + `victory_supply_chain` achievement.
+
+### Added — Civic Building Effects
+- **Royal Marketplace `tradeVolumeBonus`** now boosts the diplomacy analyzer's trade-volume estimate.
+- **Daily civic happiness boost** from buildings with `happinessBonus`/`unrestReduction` (cathedral/courthouse/university/tavern/clinic/hospital).
+- **Hospital/clinic `plagueReduction`** read from config (was hardcoded 0.08/clinic, 0.15/hospital).
+- **Property-tax `taxEfficiency`** read from any building (was hardcoded +0.10 per `treasury_vault`).
+
+### Fixed — Save / Load Persistence
+Many fields were used live but never serialized; reloads silently erased state. Added save+restore for:
+- `militaryIssuedEquipment`, `_medicalRest`, `_pendingOutpostFound`/`Road`/`RoadTarget`, `_pendingCustomsFind`, `_kingdomTravelBan`, `_warFrozenAssets`, `_warSavedRanks`, `_jailEscapeCooldownUntil`, `_dailyTradeRep`, `_platinumTracking`, `encounterPending`, `_deathProcessing`/`_deathContext`, `nobleNotoriety`, `_giftCooldowns`, `militaryRankProgress`/`militaryPendingEvent`/`_militaryProvisionQuality`.
+- **Dark-deeds** persistence: `spyNetworks`, `smugglingRoutes`, `protectionRackets`, `forgedDocuments`, `doubleAgentActive`, `doubleNobleAgent`, `nobleIntrigues`, `_discoveredSecrets`, `_schemeCooldowns`, `_schemeTargetHistory`, `_schemeLog`, `_nobleDossier`, `notorietyReduction`, `npcSchemesAgainstPlayer`, legacy `schemeCooldowns`.
+- **Kingdom** serialize: `peaceTreaties`, `procurement`, `militaryStockpile` (were restored but never saved).
+- **Story-mode** flags: `storyNPCs`, `_acceptedTownQuest`, `_completedTownQuest`, `_firstGuardHired`, plus 14 ch4b/tutorial-discovery flags (`_openedStreetTrading`, `_viewedJournal`, `_talkedToNPC`, `_wentOnDate`, `_requestedIntro`, `_ch4b_robbed/_goldLost`, etc.).
+- **Engine** serialize: `majorEventHistory`, `_backgroundGossip`, dead-spouse/parent NPC retention.
+- RNG restore now advances by `world.hour` too (was day-only).
+- `encounterPending` reload re-opens the dialog so unresolved encounters survive save/load.
+
+### Fixed — Schema & API Mismatches
+- **`kingPersonality` is strings** — many fields (`military/diplomatic/strictness/generosity/greed/militarism`) were compared to numeric thresholds; `"just" > 0.6` is always false. Canonical schema is `{intelligence, temperament, ambition, greed, courage, militarism, justice, tradition, generosity}` with string values. Fixed in conscription, jail-escape punishment, royal guard eligibility, alliance/peace thresholds, demolition support, double-noble payouts, crime punishment tuning, and more.
+- **`town.market` canonical shape is `{supply, demand, prices}`** — many sites wrote `town.market[goodId] = {...}` instead. Fixed king stockpile sell/commission/send, embassy shipwrecked trade.
+- **Town field**: `town.kingdomId` (not `town.kingdom`).
+- **Kingdom Sets vs Arrays** — `Engine.getKingdoms()` serializes `atWar`/`alliances`/`territories` to arrays; `.size` doesn't work on results. Many UI/AI sites fixed.
+- **Wars** use `kingdomA`/`kingdomB` (not `attackerId`/`defenderId`); no `active` flag — presence in `world.activeWars` is activeness.
+- **`kingdom.gold`** is treasury (not `kingdom.treasury`).
+- **`kingdom.king`** is an ID string — resolve via `Engine.findPerson`.
+- **Building condition is a STRING** (`'new'|'used'|'breaking'|'destroyed'`) per `CONFIG.CONDITION_LEVELS`. Numeric `condition: 100` silently bypasses every check.
+- **Engine canonical names**: `findKingdom`, `findResourceById` (not `findResource`), `logEvent` (not `addLogEntry`), `getDay` (not `Engine.world`), `findTerrainPath`, `rollbackRoadJunction`.
+- **`getRng()`** returns an OBJECT with `.random()/.randInt(min,max)/.chance(p)/.pick(arr)/.randFloat(a,b)` — was being treated as a function in many sites.
+- **Top-level vs CONFIG constants** — `RESOURCE_TYPES`, `MERCHANT_LEVELS`, `SKILL_POINTS_PER_LEVEL`, `NPC_HEALTH_CONFIG`, `INSTRUMENT_IDS`, `HUNGER_CONFIG`, `THIRST_CONFIG`, `BUILDING_TYPES` are top-level constants, NOT `CONFIG.*` properties. Fixed in story_mode, ui_caravans, player_quests, engine_elite_merchants, player_health, ui guide, world analytics, and more.
+- **`RESOURCE_TYPES`** is keyed UPPERCASE; values have lowercase `.id`. World Analytics filter rebuilt with lowercase-id → resource map.
+
+### Fixed — Game Logic
+- **`Engine.getKingdom(id)`** returns raw kingdom (not a copy) so mutations stick.
+- **`Player.id` and `Player.personId`** getters return `'player'` (literal string).
+- **`getKingdoms()`** serializes `alliances` to array too (was a Set).
+- **`_expandGoodsToTiers`** uses top-level `RESOURCE_TYPES` (was reading nonexistent `CONFIG.RESOURCE_TYPES`); banned/restricted-goods expansion now actually catches `_good`/`_excellent` tiers.
+- **`trade_subsidy` decree** writes canonical `{good, bonusPerUnit, maxUnits, unitsPaid, expiresDay}` schema (was `{startDay, duration, bonus}` which never matched the payout reader).
+- **King set/remove_bounty/subsidy** writes to canonical `kingdom.productionBounties` / `kingdom.tradeSubsidies` (was writing to `kingdom.laws.*` which the live system never reads).
+- **Closed-borders dialog** matches `immigration_policy` law id + `closed_borders` effect (was only matching legacy `closed_borders` id).
+- **`_recreateVoteExecuteFn`** path verified — council votes survive save/load via spread + function rehydration.
+- **Scholar `royaltiesGeneration` precedence** — added parens so the saved generation isn't overwritten by `player.generation || 1`.
+- **`teachForeignCraft`** now increments `player.shipwrecked.craftsTaught` (was stuck at 0).
+- **Military Leader init** uses `battlePlanReady` (was `battleReady`, never read by battle logic).
+- **Embassy trade** filters market keys to `market.supply` (was iterating `'supply'`/`'prices'`/`'demand'` as resource candidates).
+- **`_payHealthcareRevenue`** takes a `bldType` so the actual hospital/clinic gets paid (not the first found).
+- **Healthcare tax revenue** counts only the tax portion of fees (was double-counting kingdom-owned full fees).
+- **NPC transport** claws back operator pay on route-lookup failure (was minting gold via refund + paid operator).
+- **`workAtBuilding`** validates building type + producer-ness BEFORE deducting ticks/energy; applies condition penalty (was producing at full rate even when 'breaking'); mine category accepts both `'mining'` and `'mine'`; retail accepts both `'retail'` and `'trade'`.
+- **Manager wage** scales by category (`bt.wage` doesn't exist; was flat 8g).
+- **Encounter capacity** for EM caravans now uses the same wealth-aware `maxCapacity` the planner computed (was hardcoded MAX + wagon bonus, letting low-wealth EMs launch oversized caravans).
+- **Equipping a new container** returns the old cart/wagon to inventory instead of silently selling for 50% refund.
+- **Marriage proposals** include child IDs in the id so multiple same-day proposals from one EM don't collide.
+- **Spouse surname adoption** is gender-neutral (was gated to female spouses despite the universal rule).
+- **Inheritance** pays ALL creditors (kingdom AND NPC) proportionally, not just kingdom.
+- **King-mode health recovery** defends against NaN when `player.health` is unset.
+- **Backing a pretender** actually deducts the player's gold (was crediting support + tracking investment without charging).
+- **Kingdom delivery payment+bonus** capped at available treasury (was letting kingdom gold go negative).
+- **Feast scheduling** wraps the start-feast block in `if (feastTownId)` (early `return;` was wedging ALL downstream kingdom processing).
+- **Migration** excludes jailed/prisoner NPCs (was only excluding indentured).
+- **Wartime asset unfreeze** matches by `town.kingdomId === frozen.enemyKingdomId` (was matching nonexistent `frozen.townId`).
+- **License inspection** iterates license objects (was `.includes(rg)` on object array, always false).
+- **Player vitals jail rations** applied AFTER decay so prisoners end each tick at the fed level.
+- **`cleanupTravelState`** also clears `travelMountainDaysRemaining` and `embarkedShipId`.
+- **`spendTimeWithSpouse`** no longer double-charges ticks (defers to `goOnDate`'s own advance).
+- **`playerConvertFarm`** calls engine first, deducts only on success (was deducting upfront).
+- **Off-sea ship selector** includes ships docked at coastal coordinates (`townId === null` with `dockX/dockY`).
+- **`getHouseInTown`** prefers `primaryHouseId` when set in the requested town.
+- **Deserialize** validates `primaryHouseId` still points to an owned non-rental house.
+- **`_payHealthcareRevenue`** and `_consumeMedicalSupplies` guard against missing `NPC_HEALTH_CONFIG` global.
+- **Story-mode** branch chapter ids (`ch10b`, `ch17a`) preserve their letter suffix in the tracker; `TOTAL_CHAPTERS` pulled from `StoryMode.getChapters()`.
+- **Crime punishment tuning** — string-aware `kingPersonality` checks (`'just'`/`'strict'`/`'corrupt'`, `'volatile'`, `'greedy'`, `'generous'`); every personality branch silently never fired before.
+- **Duplicate `taxRate` assignment** removed (the wider 0.05-0.20 random range was being overwritten by 0.08-0.12).
+- **Story-mode** Valdren-shortage fallback no longer renames towns from other kingdoms (was corrupting kingdom layout).
+- **Off-sea travel** `boardDockedShip` with explicit `shipId` validates the ship is at the current port.
+- **Agent hire fees + daily wages** now logged via `Player.logFinance` (were invisible in finance reports).
+- **Jail panel UI** checks both `_jailedUntilDay` (NPCs) and `jailedUntilDay` (elite merchants).
+- **God-mode bandit raid** uses `town.security` (was nonexistent `town.safety`).
+- **Outpost explicit-id hire** rejects dead or already-employed NPCs.
+- **Outpost detail rendering** prefers `townStorage` over legacy `outpostStorageItems` to prevent double-counting.
+- **Destroyed roads** excluded from outpost `connRoads.length` / `hasRoad`.
+
+### Fixed — UI & Action Wiring
+- **Dead action-handler stubs** in `ui.js bindEvents()` removed where the ui.js stub had stricter guards than the module-side handler (last-write-wins pattern). Includes `familyAction`, `specialAction`, `racketResponse`, `respondToMarriageProposal`, `spouseInteraction`.
+- **Toast-only notifications** now increment the unread-bell count (was only counting `Engine.getEvents()`).
+- **Achievement sort** — platinum tier sorts first now (was bucketed as bronze/last via `|| 3` after mapping platinum to 0).
+- **Story tracker pip** + chapter progress dynamic.
+- **Right-panel title click** no longer stacks pan listeners on every town-detail render.
+- **Plague advisor** suggestions land on a valid panel tab.
+- **Royal commission UI** removed `'ships'` from the fallback list (not a market resource).
+
+### Fixed — Engine & World
+- **Map random pick per game** (v309) — clicking Start Adventure on a non-story game mode re-randomizes the map (Map1–Map14) and reloads it during character creation.
+- **Dead NPCs retained** when referenced as spouses/parents (was breaking relationship links).
+- **`majorEventHistory` / `_backgroundGossip`** persisted across saves.
+- **Royal-family backfill** repairs partial old royal families (was only running when king had no parents at all).
+- **EM XP** uses top-level `MERCHANT_LEVELS` / `SKILL_POINTS_PER_LEVEL` (was reading nonexistent `CONFIG.*`).
+- **EM offered-building** prefers `bld.id` over synthetic `type_index` (multiple same-type buildings now bind correctly).
+- **EM caravan capacity** wealth-scaled at spawn.
+- **EM bankruptcy** keeps unsold buildings if no kingdom buyer (was removing them anyway).
+- **Bridge-stub double camera offset** at zoom < 0.8 eliminated (phantom road segments).
+
+### Removed — Diagnostics
+- `window._POISON_DEBUG`, `dbgPoison()`, top-of-tick poison scan, `_dbgPoison` event tag scrubbed.
+
+### Knowledge Base
+- `MerchantRealmsDevelopment/aiassist.md` — added a ~56-line "v9p33river285-303 — Bug Triage Knowledge" section documenting canonical API names, Set/Array gotchas, building condition schema, action-handler last-write-wins pattern, RNG object behavior, etc., for future AI sessions.
+
+### Deferred (verified but needs broader work)
+- `GRANARY.foodStorage`, `COURTHOUSE.crimeReduction`, `UNIVERSITY.knowledgeBonus`, `GUILD_HALL.tradeBonus`, `CONFIG.NPC_DAILY_INCOME` — config defined, no consumer mechanism exists.
+- `collectTradeTax` direction (import vs export) + caravan trade-tax bypass — needs signature refactor across many callers.
+- Finance-ledger entries for build/convert/demolish/transport/auto-buy — needs coordinated `logFinance` rollout.
+- Horse permit expiry — multi-path audit needed.
+
+---
+
 ## [TestingAlpha1] - v9p33river169 → v9p33river282 — phantom-road fix, poison/king AI, crime & jail overhaul, tutorial polish
 
 ### Fixed — Critical Rendering
