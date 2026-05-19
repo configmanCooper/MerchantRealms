@@ -37,9 +37,12 @@
 
             // Relations
             let relHtml = '';
+            // v9p33river302: defensive — kingdoms without a relations map
+            // (legacy save / corrupt state) would crash the whole selector.
+            const _ksRelations = k.relations || {};
             for (const ok of kingdoms) {
                 if (ok.id === k.id) continue;
-                const relVal = k.relations[ok.id] || 0;
+                const relVal = _ksRelations[ok.id] || 0;
                 let relIcon = '✓', relLabel = 'Peace', relClass = 'rel-peace';
                 if (k.atWar && (k.atWar.has ? k.atWar.has(ok.id) : k.atWar.includes(ok.id))) { relIcon = '⚔️'; relLabel = 'War'; relClass = 'rel-war'; }
                 else if (relVal >= CONFIG.RELATION_ALLIANCE_THRESHOLD) { relIcon = '🤝'; relLabel = 'Alliance'; relClass = 'rel-alliance'; }

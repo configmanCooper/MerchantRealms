@@ -219,6 +219,9 @@
         player.spouseId = plan.fianceId;
         person.spouseId = 'player';
         person.employerId = 'player';
+        // v9p33river302: defensive — legacy/inherited states could lack the
+        // employees array and crash on .includes(). Initialize if missing.
+        if (!player.employees) player.employees = [];
         if (!player.employees.includes(plan.fianceId)) {
             player.employees.push(plan.fianceId);
         }
@@ -509,8 +512,11 @@
 
             var town = Engine.findTown(player.townId);
             if (town && rng && rng.chance(0.3)) {
+                // v9p33river302: defensive — towns without a market (e.g.
+                // outposts) lack .market.supply, which crashed the convo.
+                var _aTownSupply = (town.market && town.market.supply) || null;
                 if (town.happiness < 30) response += ' "The people here seem unhappy lately..."';
-                else if ((town.market.supply.bread || 0) < 5) response += ' "Have you noticed the baker has been running low on bread?"';
+                else if (_aTownSupply && (_aTownSupply.bread || 0) < 5) response += ' "Have you noticed the baker has been running low on bread?"';
                 else if (town.prosperity > 80) response += ' "The town is thriving! I feel proud to live here."';
             }
         }
@@ -619,6 +625,10 @@
         }
 
         if (eliteParent) {
+            // v9p33river302: defensive — legacy/inherited states could lack
+            // reputation or relationships maps, crashing the marriage flow.
+            if (!player.reputation) player.reputation = {};
+            if (!player.relationships) player.relationships = {};
             var approvalScore = 0;
             var kId = eliteParent.citizenshipKingdomId || eliteParent.kingdomId;
             approvalScore += ((player.reputation[kId] || 0) - 40) * 0.5;
@@ -644,6 +654,10 @@
         target.spouseId = childId;
 
         if (eliteParent) {
+            // v9p33river302: same defensive init (above maps may be missing
+            // even when the approval branch wasn't entered with an
+            // eliteParent — they're referenced below regardless).
+            if (!player.relationships) player.relationships = {};
             if (!player.relationships[eliteParent.id]) player.relationships[eliteParent.id] = { level: 0, type: 'acquaintance' };
             player.relationships[eliteParent.id].level = Math.min(100, (player.relationships[eliteParent.id].level || 0) + 15);
             if (player.relationships[eliteParent.id].level >= 60) player.relationships[eliteParent.id].type = 'friend';

@@ -178,7 +178,10 @@
             monthlySpent: 0,
             startDay: day,
             duration: def.duration, // 0 = ongoing
-            lastActionDay: 0,
+            // v9p33river302: was 0 — newly assigned tasks executed on
+            // the very next tick (day - 0 >> actionInterval). Initialize
+            // to the assignment day so the interval check actually waits.
+            lastActionDay: day,
             results: [],
             goodsAcquired: {},
             goldEarned: 0
@@ -465,7 +468,22 @@
 
         // Success! Execute the specific action
         var targetTown = Engine.findTown(target.townId || agent.townId);
-        switch (task.type) {
+        // v9p33river302: previously dispatched only on task.type (the first
+        // checked action at assignment time), so picking multiple actions in
+        // the hostile UI had no effect — the remainder of allowedActions
+        // never ran. Pick a random allowed action each tick so all checked
+        // boxes contribute.
+        var _hostileChoice = task.type;
+        if (task.allowedActions && typeof task.allowedActions === 'object') {
+            var _hostileKeys = [];
+            for (var _hak in task.allowedActions) {
+                if (task.allowedActions[_hak]) _hostileKeys.push(_hak);
+            }
+            if (_hostileKeys.length > 0) {
+                _hostileChoice = rng ? _hostileKeys[rng.randInt(0, _hostileKeys.length - 1)] : _hostileKeys[Math.floor(Math.random() * _hostileKeys.length)];
+            }
+        }
+        switch (_hostileChoice) {
             case 'sabotage_buildings':
                 _agentSabotageBuilding(agent, target, targetTown, day, rng);
                 break;
@@ -733,12 +751,45 @@
         _sync();
         var town = Engine.findTown(agent.townId);
         if (!town || !town.market) return;
-        // Buy cheapest, sell to where it's expensive (simplified)
+
+        // v9p33river302: previously only bought into player.inventory with
+        // no sell leg or profit realization. The agent now holds its own
+        // small inventory on the task (heldGood/heldQty/heldCost) and:
+        //   - If holding goods AND current price > avgCost * 1.15, sells
+        //     back to this town's market, realizes profit to player.gold,
+        //     and credits agent.earnings.
+        //   - Otherwise buys the cheapest in-supply good as before, but
+        //     tracks the hold on the task so we can sell later.
+        if (!agent.task.heldQty) { agent.task.heldQty = 0; agent.task.heldGood = null; agent.task.heldCost = 0; }
+
+        // SELL leg — if we're holding goods and price has risen, dump them
+        if (agent.task.heldQty > 0 && agent.task.heldGood) {
+            var sellPrice = (town.market.prices && town.market.prices[agent.task.heldGood]) || 0;
+            var avgCost = agent.task.heldCost / agent.task.heldQty;
+            if (sellPrice > 0 && sellPrice >= avgCost * 1.15) {
+                var sellQty = agent.task.heldQty;
+                var revenue = Math.floor(sellPrice * sellQty);
+                player.gold += revenue;
+                agent.earnings = (agent.earnings || 0) + (revenue - agent.task.heldCost);
+                if (town.market.supply) {
+                    town.market.supply[agent.task.heldGood] = (town.market.supply[agent.task.heldGood] || 0) + sellQty;
+                }
+                agent.reports.push({ day: day, msg: '💰 Sold ' + sellQty + ' ' + agent.task.heldGood + ' at ' + Math.floor(sellPrice) + 'g each in ' + town.name + ' (profit: ' + (revenue - agent.task.heldCost) + 'g).' });
+                agent.task.heldQty = 0;
+                agent.task.heldGood = null;
+                agent.task.heldCost = 0;
+                return;
+            }
+        }
+
+        // BUY leg — only if we're not already holding something
+        if (agent.task.heldQty > 0) return;
+
         var bestBuy = null;
         var bestBuyPrice = Infinity;
         for (var resKey in (town.market.supply || {})) {
             var supply = town.market.supply[resKey] || 0;
-            var price = town.market.prices[resKey] || 999;
+            var price = (town.market.prices && town.market.prices[resKey]) || 999;
             if (supply >= 5 && price < bestBuyPrice) {
                 bestBuyPrice = price;
                 bestBuy = resKey;
@@ -753,9 +804,11 @@
 
         player.gold -= cost;
         agent.task.monthlySpent = (agent.task.monthlySpent || 0) + cost;
-        player.inventory[bestBuy] = (player.inventory[bestBuy] || 0) + qty;
+        agent.task.heldGood = bestBuy;
+        agent.task.heldQty = qty;
+        agent.task.heldCost = cost;
         if (town.market.supply[bestBuy]) town.market.supply[bestBuy] = Math.max(0, town.market.supply[bestBuy] - qty);
-        agent.reports.push({ day: day, msg: '💰 Bought ' + qty + ' ' + bestBuy + ' at ' + Math.floor(bestBuyPrice) + 'g each in ' + town.name + '.' });
+        agent.reports.push({ day: day, msg: '🛒 Bought ' + qty + ' ' + bestBuy + ' at ' + Math.floor(bestBuyPrice) + 'g each in ' + town.name + ' (waiting for price to rise).' });
     }
 
     function _agentManageProperties(agent, day, rng) {
@@ -959,7 +1012,19 @@
 
         // Success — execute specific diplomatic action
         var targetTown = Engine.findTown(target.townId || agent.townId);
-        switch (task.type) {
+        // v9p33river302: same allowedActions-was-ignored fix as hostile —
+        // pick randomly from checked diplomatic actions each tick.
+        var _diploChoice = task.type;
+        if (task.allowedActions && typeof task.allowedActions === 'object') {
+            var _diploKeys = [];
+            for (var _dak in task.allowedActions) {
+                if (task.allowedActions[_dak]) _diploKeys.push(_dak);
+            }
+            if (_diploKeys.length > 0) {
+                _diploChoice = rng ? _diploKeys[rng.randInt(0, _diploKeys.length - 1)] : _diploKeys[Math.floor(Math.random() * _diploKeys.length)];
+            }
+        }
+        switch (_diploChoice) {
             case 'build_noble_relationship':
                 _agentBuildRelationship(agent, target, targetTown, day, rng);
                 break;

@@ -880,12 +880,20 @@
         }
 
         // Pause travel progress while resting (time passes but no distance covered)
+        // v9p33river302: was reading/restoring player.travelData (obsolete
+        // structure). Current travel state is on player.travelProgress and
+        // player.travelTotalDist — resting during travel was therefore
+        // ADVANCING the journey via Game.advanceTicks() instead of freezing
+        // it. Snapshot the live travel fields and restore them after the
+        // tick advance.
         var wasTraveling = player.traveling;
-        var savedTravelProgress = null;
-        if (wasTraveling && player.travelData) {
-            savedTravelProgress = {
-                ticksRemaining: player.travelData.ticksRemaining,
-                progress: player.travelData.progress
+        var savedTravelState = null;
+        if (wasTraveling) {
+            savedTravelState = {
+                progress: player.travelProgress,
+                totalDist: player.travelTotalDist,
+                destination: player.travelDestination,
+                origin: player.travelOrigin
             };
         }
 
@@ -893,9 +901,15 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(actualTicks);
 
         // Restore travel state so resting doesn't advance the journey
-        if (wasTraveling && savedTravelProgress && player.travelData) {
-            player.travelData.ticksRemaining = savedTravelProgress.ticksRemaining;
-            player.travelData.progress = savedTravelProgress.progress;
+        if (wasTraveling && savedTravelState) {
+            // Only restore if we're still traveling (arrival/cancel during the
+            // tick advance should win over restoration).
+            if (player.traveling) {
+                player.travelProgress = savedTravelState.progress;
+                player.travelTotalDist = savedTravelState.totalDist;
+                player.travelDestination = savedTravelState.destination;
+                player.travelOrigin = savedTravelState.origin;
+            }
         }
 
         // Restore energy — clamp to exact max so last tick doesn't overshoot
