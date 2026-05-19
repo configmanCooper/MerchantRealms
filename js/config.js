@@ -2196,7 +2196,7 @@ const BUILDING_TYPES = {
     APARTMENT_BUILDING: { id: 'apartment_building', name: 'Apartment Building', cost: 2500, workers: 2, produces: null, consumes: {}, rate: 0, category: 'housing',
         landSlots: 2, minTownCategory: 'city', units: 10, unitMaxOccupants: 4,
         materials: { stone: 80, bricks: 60, planks: 40, iron: 15, cloth: 5 },
-        icon: '🏢', description: 'A large building with 10 apartment units for rent. Owner collects purchase fees and monthly maintenance from tenants.' },
+        icon: '🏢', description: 'A large building with 10 apartment units for rent. Owner collects purchase fees and weekly maintenance from tenants.' },
     // --- Tent Camp (poor NPC housing, auto-built by kingdoms) ---
     TENT_CAMP: { id: 'tent_camp', name: 'Tent Camp', cost: 50, workers: 0, produces: null, consumes: {}, rate: 0, category: 'housing',
         landSlots: 1, tents: 10, tentMaxOccupants: 2, tentUpfrontCost: 20, tentMonthlyCost: 5,

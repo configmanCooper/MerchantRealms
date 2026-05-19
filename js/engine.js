@@ -3039,7 +3039,12 @@
                 // Dynamic pricing: 10% of construction cost for unit purchase, weekly maintenance (3x old monthly rate)
                 var baseBuildCost = (aptBt && aptBt.cost) || 2500;
                 buildings[abi].unitPrice = Math.floor(baseBuildCost * 0.10);
-                buildings[abi].monthlyFee = Math.max(3, Math.floor(baseBuildCost * 0.0025));
+                // v9p33river322: field renamed monthlyFee → weeklyFee for
+                // clarity (tickApartmentFees runs every 7 days, so the
+                // fee was always being charged WEEKLY despite the name).
+                // baseBuildCost * 0.0025 = ~0.25% of build cost per week.
+                buildings[abi].weeklyFee = Math.max(3, Math.floor(baseBuildCost * 0.0025));
+                buildings[abi].monthlyFee = buildings[abi].weeklyFee; // legacy alias
                 // Assign to kingdom or elite merchant
                 if (!buildings[abi].ownerId) {
                     buildings[abi].ownerId = kingdom ? kingdom.id : null;
@@ -24082,14 +24087,16 @@
             for (var bi = 0; bi < town.buildings.length; bi++) {
                 var bld = town.buildings[bi];
                 if (bld.type !== 'apartment_building' || !bld.units) continue;
-                var monthlyFee = bld.monthlyFee || 2;
+                // v9p33river322: read canonical weeklyFee, fall back to
+                // legacy monthlyFee for old saves.
+                var weeklyFee = bld.weeklyFee || bld.monthlyFee || 2;
                 for (var ui = 0; ui < bld.units.length; ui++) {
                     var unit = bld.units[ui];
                     if (!unit.occupantId) continue;
                     // Player apartment unit
                     if (unit.occupantType === 'player') {
-                        if (typeof Player !== 'undefined' && Player.state && Player.state.gold >= monthlyFee) {
-                            Player.state.gold -= monthlyFee;
+                        if (typeof Player !== 'undefined' && Player.state && Player.state.gold >= weeklyFee) {
+                            Player.state.gold -= weeklyFee;
                         }
                         continue;
                     }
@@ -24103,17 +24110,17 @@
                         unit.purchasePrice = 0;
                         continue;
                     }
-                    if ((person.gold || 0) >= monthlyFee) {
-                        person.gold -= monthlyFee;
+                    if ((person.gold || 0) >= weeklyFee) {
+                        person.gold -= weeklyFee;
                         // Revenue goes to building owner (kingdom or EM)
                         if (bld.ownerId) {
                             var aptOwnerK = findKingdom(bld.ownerId);
                             if (aptOwnerK) {
-                                aptOwnerK.gold = (aptOwnerK.gold || 0) + monthlyFee;
+                                aptOwnerK.gold = (aptOwnerK.gold || 0) + weeklyFee;
                             } else {
                                 var aptOwnerP = findPerson(bld.ownerId);
                                 if (aptOwnerP && aptOwnerP.alive) {
-                                    aptOwnerP.gold = (aptOwnerP.gold || 0) + monthlyFee;
+                                    aptOwnerP.gold = (aptOwnerP.gold || 0) + weeklyFee;
                                 }
                             }
                         }

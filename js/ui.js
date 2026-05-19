@@ -11715,7 +11715,8 @@ window.UI = (function () {
                             }
                         }
                         var _aptUnitPrice = aptBld.unitPrice || 0;
-                        var _aptWeeklyFee = aptBld.monthlyFee || 0;
+                        // v9p33river322: prefer canonical weeklyFee
+                        var _aptWeeklyFee = aptBld.weeklyFee || aptBld.monthlyFee || 0;
                         html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
                         html += '<div><strong>🏢 Apartment Building</strong> — Owner: ' + ownerName + '</div>';
                         html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(_aptUnitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(_aptWeeklyFee) + 'g</span></div>';

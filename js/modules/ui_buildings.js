@@ -491,7 +491,10 @@
                     }
                 }
                 var unitPrice = aptBld.unitPrice || 0;
-                var monthlyFee = aptBld.monthlyFee || 0;
+                // v9p33river322: prefer canonical weeklyFee
+                var weeklyFee = aptBld.weeklyFee || aptBld.monthlyFee || 0;
+                var unitPrice = aptBld.unitPrice || 0;
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(weeklyFee) + 'g</span></div>';
                 html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
                 html += '<div><strong>🏢 Apartment Building</strong> — Owner: ' + ownerName + '</div>';
                 html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(monthlyFee) + 'g</span></div>';
@@ -645,13 +648,15 @@
             purchaseCost: price,
             fromApartmentBuilding: aptBuildingId,
             unitIndex: unit.unitIndex,
-            monthlyMaintenance: aptBld.monthlyFee || 0
+            // v9p33river322: prefer canonical weeklyFee
+            weeklyMaintenance: aptBld.weeklyFee || aptBld.monthlyFee || 0,
+            monthlyMaintenance: aptBld.weeklyFee || aptBld.monthlyFee || 0 // legacy alias
         };
         if (!Player.state.houses) Player.state.houses = [];
         Player.state.houses.push(house);
         if (!Player.state.primaryHouseId) Player.state.primaryHouseId = house.id;
 
-        toast('🏢 Apartment purchased for ' + price + 'g! Weekly maintenance: ' + (aptBld.monthlyFee || 0) + 'g.', 'success');
+        toast('🏢 Apartment purchased for ' + price + 'g! Weekly maintenance: ' + (aptBld.weeklyFee || aptBld.monthlyFee || 0) + 'g.', 'success');
         Engine.logEvent('🏢 ' + Player.state.fullName + ' bought an apartment in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.');
         if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) StoryMode.onPlayerAction('own_building', { building: 'housing' });
         openTownMarket(); // Refresh
