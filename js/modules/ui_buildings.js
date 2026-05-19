@@ -1154,7 +1154,9 @@
             }
 
             // Markup info
-            html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:4px;">📊 Markup: ' + (typeof markup === 'number' ? markup.toFixed(1) : markup) + 'x | Motivation: ' + (rc.motivation || 'need') + ' | Max Customers: ' + (rc.customersPerDay || 5) + '/day</div>';
+            // v9p33river315: configs use maxCustomersPerDay (config.js:2079+),
+            // not customersPerDay. Was always falling back to 5.
+            html += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:4px;">📊 Markup: ' + (typeof markup === 'number' ? markup.toFixed(1) : markup) + 'x | Motivation: ' + (rc.motivation || 'need') + ' | Max Customers: ' + (rc.maxCustomersPerDay || rc.customersPerDay || 5) + '/day</div>';
 
             // Stock level bar
             html += '<div style="font-size:0.78rem;margin-bottom:4px;">📦 Stock: <span style="color:' + stockColor + ';">' + stockTotal + '/' + maxStock + '</span></div>';
@@ -1700,11 +1702,21 @@
             html += '</div>';
         } else if (Player.hireManager) {
             // Show hire manager button if player is guildmaster
+            // v9p33river315: socialRank 5+ in any kingdom is the canonical
+            // guildmaster status; also accept memberships explicitly flagged
+            // 'guildmaster'. Was checking only .rank which doesn't exist on
+            // membership records — hid the button from every valid GM.
             var _isGM = false;
             var _pState = Player.state;
-            if (_pState && _pState.guildMemberships) {
+            if (_pState && _pState.socialRank) {
+                for (var _gsr in _pState.socialRank) {
+                    if ((_pState.socialRank[_gsr] || 0) >= 5) { _isGM = true; break; }
+                }
+            }
+            if (!_isGM && _pState && _pState.guildMemberships) {
                 for (var _gk in _pState.guildMemberships) {
-                    if (_pState.guildMemberships[_gk].rank === 'guildmaster') { _isGM = true; break; }
+                    var _gmRec = _pState.guildMemberships[_gk];
+                    if (_gmRec && (_gmRec.rank === 'guildmaster' || _gmRec.type === 'guildmaster')) { _isGM = true; break; }
                 }
             }
             if (_isGM) {

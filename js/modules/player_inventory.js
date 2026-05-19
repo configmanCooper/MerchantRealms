@@ -607,7 +607,7 @@
         return { success: true, message: 'Took ' + qty + ' ' + (res ? res.name : resId) + ' from home.' };
     }
 
-    function stableHorseAtHome(houseId) {
+    function stableHorseAtHome(houseId, horseId) {
         _sync();
         var house = (player.houses || []).find(function(h) { return h.id === houseId; });
         if (!house) return { success: false, message: 'House not found.' };
@@ -616,7 +616,18 @@
         var maxHorses = hasSkill('horse_mastery') ? 4 : 2;
         if (!house.horses) house.horses = [];
         if (house.horses.length >= maxHorses) return { success: false, message: 'Home can hold ' + maxHorses + ' horses (has ' + house.horses.length + ').' };
-        var horse = player.horses.pop();
+        // v9p33river315: was always pop()ing the last horse, ignoring
+        // any horseId passed by the UI. Now selects the requested horse
+        // when given (by id or name), falling back to pop().
+        var horse;
+        if (horseId) {
+            var _hi = -1;
+            for (var _hii = 0; _hii < player.horses.length; _hii++) {
+                if (player.horses[_hii].id === horseId || player.horses[_hii].name === horseId) { _hi = _hii; break; }
+            }
+            if (_hi >= 0) horse = player.horses.splice(_hi, 1)[0];
+        }
+        if (!horse) horse = player.horses.pop();
         house.horses.push(horse);
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(1);
         return { success: true, message: '🐴 Stabled ' + (horse.name || 'horse') + ' at home.' };

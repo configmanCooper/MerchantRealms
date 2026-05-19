@@ -44,7 +44,12 @@
         { label: 'Act I',   min: 1,  max: 6  },
         { label: 'Act II',  min: 7,  max: 12 },
         { label: 'Act III', min: 13, max: 18 },
-        { label: 'Act IV',  min: 19, max: 19 }
+        // v9p33river315: Act IV originally capped at chapter 19 (single-
+        // chapter act), so anything past chapter 19 rendered without an
+        // act label. Story chapters can extend past 19 (ch17a/b, ch18,
+        // ch19, ch20+). Widen Act IV and add a catch-all Act V.
+        { label: 'Act IV',  min: 19, max: 24 },
+        { label: 'Act V',   min: 25, max: 99 }
     ];
 
     // ── CSS ──────────────────────────────────────────────────

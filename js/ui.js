@@ -526,7 +526,9 @@ window.UI = (function () {
         registerAction('_setEventPage', function(_t, d) { if (d.page) _setEventPage(parseInt(d.page)); });
         registerAction('openOutpostDialog', function() { UI.openOutpostDialog(); });
         registerAction('openOutpostDetail', function(_t, d) { if (d.id) UI.openOutpostDetail(d.id); });
-        registerAction('showConquestDialog', function() { UI.showConquestDialog(); });
+        // v9p33river315: was dropping data attrs. Conquest dialog needs
+        // townId/kingdomId/conquestChoice to know what's being conquered.
+        registerAction('showConquestDialog', function(_t, d) { UI.showConquestDialog(d ? d.id : null, d ? d.kingdom : null, d ? d.val : null); });
         registerAction('closeRightPanel', function() { UI.closeRightPanel(); });
         registerAction('showHeirSelectionUI', function() { UI.showHeirSelectionUI(); });
         registerAction('closeAndOpenNobility', function() { closeModal(); UI.openNobilityDialog(); });

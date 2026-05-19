@@ -6581,7 +6581,10 @@
             }
 
             // Prosperity update
-            const tradeActivity = Object.values(town.market.supply).reduce((a, b) => a + b, 0);
+            // v9p33river315: clamp out negative supply entries before
+            // summing. Was letting negative supplies (legacy edge cases)
+            // depress town prosperity.
+            const tradeActivity = Object.values(town.market.supply).reduce((a, b) => a + Math.max(0, b || 0), 0);
             const buildingCount = town.buildings.length;
             town.prosperity = Math.max(0, Math.min(100,
                 town.prosperity * 0.995 +
@@ -7385,7 +7388,14 @@
             // ---- NPC old-age death (checked every 30 days for rough simulation) ----
             if (day % 30 === 0 && p.age >= CONFIG.DEATH_AGE_MIN) {
                 var ageDeathChance = 0;
-                if (p.age >= 100) {
+                // v9p33river315: respect per-person maxAge when set so
+                // long-lived NPCs (royals, story characters) aren't
+                // killed by the generic schedule before reaching their
+                // intended lifespan.
+                var _pMaxAge = (typeof p.maxAge === 'number' && p.maxAge > 0) ? p.maxAge : 0;
+                if (_pMaxAge > 0 && p.age >= _pMaxAge) {
+                    ageDeathChance = 1.0;
+                } else if (p.age >= 100) {
                     ageDeathChance = 1.0;
                 } else if (p.age >= 75) {
                     ageDeathChance = 0.99;
@@ -8451,9 +8461,15 @@
                 var _pState = Player.state;
                 var _pRank = (_pState.socialRank && _pState.socialRank[kingdom.id]) || 0;
                 if (_pRank >= 4) {
-                    var _playerPP = world.people.find(function(pp) {
-                        return pp.alive && pp.firstName === _pState.firstName && pp.lastName === _pState.lastName;
-                    });
+                    // v9p33river315: find player record by stable id
+                    // (Player.id) before falling back to name match, so
+                    // a same-named NPC can't be picked as the player's
+                    // candidate slot in succession.
+                    var _pId = Player.id || 'player';
+                    var _playerPP = world.people.find(function(pp) { return pp.id === _pId; }) ||
+                        world.people.find(function(pp) {
+                            return pp.alive && pp.firstName === _pState.firstName && pp.lastName === _pState.lastName;
+                        });
                     if (_playerPP) {
                         _playerNobleId = _playerPP.id;
                         // Ensure player is in the candidate list
@@ -33332,6 +33348,14 @@
                 peaceTreaties: k.peaceTreaties ? JSON.parse(JSON.stringify(k.peaceTreaties)) : {},
                 procurement: k.procurement ? JSON.parse(JSON.stringify(k.procurement)) : { orders: [], deals: [], needs: {}, preferredMerchants: {}, lastAssessmentDay: 0 },
                 militaryStockpile: k.militaryStockpile ? JSON.parse(JSON.stringify(k.militaryStockpile)) : { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
+                // v9p33river315: explicit serialize for fields that
+                // were only restored on deserialize, defending against
+                // any future spread-bypass refactor (function refs in
+                // commission queues silently drop via JSON anyway).
+                kingTravel: k.kingTravel ? JSON.parse(JSON.stringify(k.kingTravel)) : null,
+                nationalizedIndustries: (k.nationalizedIndustries || []).slice(),
+                directedPlayerCommission: k.directedPlayerCommission ? JSON.parse(JSON.stringify(k.directedPlayerCommission)) : null,
+                _commissions: k._commissions ? JSON.parse(JSON.stringify(k._commissions)) : [],
                 laws: k.laws ? {
                     ...k.laws,
                     bannedGoods: [...(k.laws.bannedGoods || [])],

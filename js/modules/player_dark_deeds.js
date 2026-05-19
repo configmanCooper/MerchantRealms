@@ -185,7 +185,11 @@
         if (!t) return 1.0;
         if (t.isKing || t.occupation === 'king') return 0.30;
         var maxRank = 0;
-        if (t.socialRank) {
+        // v9p33river315: numeric-socialRank fallback. Old saves can have
+        // socialRank as a single number; iterating it gives nothing.
+        if (typeof t.socialRank === 'number') {
+            maxRank = t.socialRank;
+        } else if (t.socialRank) {
             for (var _kk2 in t.socialRank) {
                 if ((t.socialRank[_kk2] || 0) > maxRank) maxRank = t.socialRank[_kk2];
             }

@@ -48,6 +48,9 @@
         }
 
         player.gold -= cost;
+        // v9p33river315: buying freedom missed totalGoldSpent + ledger.
+        if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost;
+        if (typeof Player !== 'undefined' && Player.logFinance) Player.logFinance(-cost, 'servitude', 'Bought freedom from servitude');
         // Pay the kingdom
         var kingdom = Engine.findKingdom(player.conquestServitude.kingdomId);
         if (kingdom) kingdom.gold += cost;

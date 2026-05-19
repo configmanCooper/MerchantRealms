@@ -279,11 +279,21 @@
         _sync();
         if (!player || !player.alive) return { success: false, message: 'You are not alive.' };
 
-        // Check guildmaster rank
+        // v9p33river315: guildMemberships entries are {expiresDay, type}
+        // — no rank field. The previous check always failed, hiding the
+        // hire-manager option from every player. socialRank 5+ in any
+        // kingdom is the canonical "guildmaster" status; also accept any
+        // membership flagged with type==='guildmaster'.
         var hasGuildmaster = false;
-        if (player.guildMemberships) {
+        if (player.socialRank) {
+            for (var _grkk in player.socialRank) {
+                if ((player.socialRank[_grkk] || 0) >= 5) { hasGuildmaster = true; break; }
+            }
+        }
+        if (!hasGuildmaster && player.guildMemberships) {
             for (var gId in player.guildMemberships) {
-                if (player.guildMemberships[gId].rank === 'guildmaster') { hasGuildmaster = true; break; }
+                var _gm = player.guildMemberships[gId];
+                if (_gm && (_gm.rank === 'guildmaster' || _gm.type === 'guildmaster')) { hasGuildmaster = true; break; }
             }
         }
         if (!hasGuildmaster) return { success: false, message: 'You must be a guildmaster to hire managers.' };
@@ -469,6 +479,10 @@
                 if (player.gold >= salary) {
                     player.gold -= salary;
                     manager.gold = (manager.gold || 0) + salary;
+                    // v9p33river315: missing stats/finance update —
+                    // manager salaries drained gold silently.
+                    if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + salary;
+                    if (Player.logFinance) Player.logFinance(-salary, 'managers', 'Manager salary (' + (manager.firstName || 'manager') + ')');
                 } else {
                     // Can't pay — manager quits after 3 days
                     bld._managerUnpaidDays = (bld._managerUnpaidDays || 0) + 1;
@@ -512,6 +526,11 @@
                         var cost = toBuy * mktPrice;
                         if (toBuy > 0 && player.gold >= cost) {
                             player.gold -= cost;
+                            // v9p33river315: manager auto-buy missed
+                            // stats + ledger updates, so these costs
+                            // were invisible in the finance report.
+                            if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost;
+                            if (Player.logFinance) Player.logFinance(-cost, 'buildings', 'Manager auto-buy: ' + toBuy + ' ' + resId);
                             town.market.supply[resId] -= toBuy;
                             if (!bld.inventory) bld.inventory = {};
                             bld.inventory[resId] = (bld.inventory[resId] || 0) + toBuy;

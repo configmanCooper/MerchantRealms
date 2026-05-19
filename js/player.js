@@ -2357,7 +2357,9 @@
                     remaining -= fromInv;
                 }
                 if (remaining > 0) {
-                    town.market.supply[matId] = (town.market.supply[matId] || 0) - remaining;
+                    // v9p33river315: clamp at 0 so building construction
+                    // can't push town market supply negative.
+                    town.market.supply[matId] = Math.max(0, (town.market.supply[matId] || 0) - remaining);
                 }
             }
         }
@@ -7942,9 +7944,17 @@
         // Install player as king in the world
         var w = Engine.getWorld();
         if (w) {
-            var playerPerson = w.people.find(function(p) {
-                return p.alive && p.firstName === player.firstName && p.lastName === player.lastName;
-            });
+            // v9p33river315: find the world player record by stable id
+            // first (Player.id is the canonical literal 'player' string,
+            // and many person records use 'player' as their own id for
+            // the player character). Fall back to name match for backward
+            // compatibility with older saves. Same-named NPCs no longer
+            // get crowned by accident.
+            var _pId = (typeof Player !== 'undefined' && Player.id) || 'player';
+            var playerPerson = w.people.find(function(p) { return p.id === _pId; }) ||
+                w.people.find(function(p) {
+                    return p.alive && p.firstName === player.firstName && p.lastName === player.lastName;
+                });
             if (playerPerson) {
                 playerPerson.occupation = player.sex === 'F' ? 'reigning_queen' : 'king';
                 if (!playerPerson.socialRank) playerPerson.socialRank = {};
@@ -15026,7 +15036,14 @@
                     skills: { farming: 0, mining: 0, crafting: 0, trading: 0, combat: 0 },
                     spouseId: null,
                     childrenIds: [],
-                    parentIds: ['player', player.spouseId],
+                    // v9p33river315: parentIds used the literal 'player'
+                    // string which Engine.findPerson() can't resolve
+                    // (no person record has that id). Use Player.id (the
+                    // canonical 'player' getter) and filter out the null
+                    // spouse id so the child doesn't reference nonexistent
+                    // parents. Downstream code now handles the 'player'
+                    // marker as a special case via Player.id checks.
+                    parentIds: [(typeof Player !== 'undefined' && Player.id) || 'player', player.spouseId].filter(Boolean),
                     personality: {
                         loyalty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                         ambition:     Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),

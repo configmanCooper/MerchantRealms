@@ -802,7 +802,10 @@
                 type: 'elite_level_up',
                 townId: em.townId,
                 cause: em.name + ' gained enough experience to level up.',
-                effects: [em.name + ' is now level ' + newLevel, 'Gained ' + (levelsGained * CONFIG.SKILL_POINTS_PER_LEVEL) + ' skill points']
+                // v9p33river315: was reading CONFIG.SKILL_POINTS_PER_LEVEL
+                // which doesn't exist (top-level const), producing NaN in
+                // the toast text. Use the _spPerLvl resolved above.
+                effects: [em.name + ' is now level ' + newLevel, 'Gained ' + (levelsGained * _spPerLvl) + ' skill points']
             });
         }
     }
@@ -1483,7 +1486,11 @@
             }
 
             // Skip if jailed
-            if (em.jailedUntilDay && em.jailedUntilDay > day) continue;
+            // v9p33river315: punishment writes _jailedUntilDay (line ~3848)
+            // but this check was reading jailedUntilDay (no underscore),
+            // so EMs sentenced via the crime system kept running caravans
+            // and bidding on deals. Accept either flag name.
+            if ((em._jailedUntilDay || em.jailedUntilDay) && (em._jailedUntilDay || em.jailedUntilDay) > day) continue;
 
             // ---- SYNC em.buildings with town.buildings (catch untracked purchases/transfers) ----
             if (!em.buildings) em.buildings = [];
