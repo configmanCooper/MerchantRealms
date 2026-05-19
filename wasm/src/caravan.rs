@@ -10,7 +10,11 @@
 // shipCondEff: ship condition efficiency (1.0 if no ship)
 
 // Output: updated progress values
-static mut CARAVAN_PROGRESS_OUT: [f64; 100] = [0.0; 100];
+// v9p33river318: bumped from 100 to 256 so realistic late-game caravan
+// counts (player caravans + EM caravans + kingdom caravans) don't hit
+// the silent return-0 ceiling. JS caller chunks anything still over.
+const MAX_CARAVANS: usize = 256;
+static mut CARAVAN_PROGRESS_OUT: [f64; MAX_CARAVANS] = [0.0; MAX_CARAVANS];
 
 /// Batch update caravan progress for one subtick.
 ///
@@ -18,7 +22,9 @@ static mut CARAVAN_PROGRESS_OUT: [f64; 100] = [0.0; 100];
 /// num_caravans: number of caravans
 /// ticks_per_day: CONFIG.TICKS_PER_DAY (usually 60)
 ///
-/// Returns: number of caravans that reached destination (progress >= 1.0)
+/// Returns: u32::MAX when num_caravans exceeds MAX_CARAVANS (sentinel —
+///          caller should chunk and re-call). Otherwise number of
+///          caravans that reached destination (progress >= 1.0).
 ///          Read updated progress via caravan_get_progress_ptr()
 #[unsafe(no_mangle)]
 pub extern "C" fn caravan_subtick(
@@ -27,8 +33,12 @@ pub extern "C" fn caravan_subtick(
     ticks_per_day: f64,
 ) -> u32 {
     let nc = num_caravans as usize;
-    if nc > 100 {
-        return 0;
+    if nc > MAX_CARAVANS {
+        // v9p33river318: was silently returning 0 (no caravans arrived)
+        // and updating nothing. JS caller had no way to detect the
+        // overflow, so >100 caravans silently froze. Now return sentinel
+        // u32::MAX so JS can detect, chunk, and re-call.
+        return u32::MAX;
     }
     let data = unsafe { core::slice::from_raw_parts(data_ptr, nc * 9) };
     let mut arrived: u32 = 0;

@@ -20,15 +20,21 @@ static mut PREV_EDGE_TYPE: [i32; MAX_NODES] = [-1; MAX_NODES];
 static mut VISITED: [bool; MAX_NODES] = [false; MAX_NODES];
 
 // Binary min-heap
-const MAX_HEAP: usize = 4000;
+// v9p33river318: bumped MAX_HEAP from 4000 to 16000 so realistic graphs
+// near MAX_NODES=500 with many edges don't silently drop nodes (each node
+// can be pushed many times during relaxation). Also added an overflow
+// flag so the caller can detect when the heap saturated and fall back.
+const MAX_HEAP: usize = 16000;
 static mut HEAP_IDS: [u32; MAX_HEAP] = [0; MAX_HEAP];
 static mut HEAP_COSTS: [f64; MAX_HEAP] = [0.0; MAX_HEAP];
 static mut HEAP_LEN: usize = 0;
+static mut HEAP_OVERFLOW: bool = false;
 
-fn heap_push(id: u32, cost: f64) {
+fn heap_push(id: u32, cost: f64) -> bool {
     unsafe {
         if HEAP_LEN >= MAX_HEAP {
-            return;
+            HEAP_OVERFLOW = true;
+            return false;
         }
         HEAP_IDS[HEAP_LEN] = id;
         HEAP_COSTS[HEAP_LEN] = cost;
@@ -44,6 +50,7 @@ fn heap_push(id: u32, cost: f64) {
             HEAP_COSTS.swap(parent, idx);
             idx = parent;
         }
+        true
     }
 }
 
@@ -111,6 +118,7 @@ pub extern "C" fn pathfinding_dijkstra(
     // Initialize
     unsafe {
         HEAP_LEN = 0;
+        HEAP_OVERFLOW = false;
         PATH_RESULT_LEN = 0;
         for i in 0..n {
             DIST[i] = f64::INFINITY;
@@ -170,6 +178,16 @@ pub extern "C" fn pathfinding_dijkstra(
         }
     }
 
+    // v9p33river318: if the heap overflowed, the result may be missing
+    // optimal paths. Signal failure so JS falls back to its native
+    // dijkstra implementation rather than trusting a partial result.
+    unsafe {
+        if HEAP_OVERFLOW {
+            PATH_RESULT_LEN = 0;
+            return 0;
+        }
+    }
+
     // Reconstruct path (backwards from to_node)
     unsafe {
         if PREV_FROM[to_node as usize] == -1 && from_node != to_node {
@@ -178,14 +196,29 @@ pub extern "C" fn pathfinding_dijkstra(
         }
 
         // Collect path segments in reverse
+        // v9p33river318: when seg_count would exceed 200 the loop used
+        // to silently truncate AND still report success. Now: if the
+        // path is too long to fit, return 0 (no path) so JS falls back
+        // to its full-resolution pathfinder. This avoids returning a
+        // misleading partial route.
         let mut segments: [(i32, i32); 200] = [(-1, -1); 200];
         let mut seg_count: usize = 0;
         let mut current = to_node as usize;
+        let mut truncated = false;
 
-        while PREV_FROM[current] != -1 && seg_count < 200 {
+        while PREV_FROM[current] != -1 {
+            if seg_count >= 200 {
+                truncated = true;
+                break;
+            }
             segments[seg_count] = (PREV_EDGE_IDX[current], PREV_EDGE_TYPE[current]);
             seg_count += 1;
             current = PREV_FROM[current] as usize;
+        }
+
+        if truncated {
+            PATH_RESULT_LEN = 0;
+            return 0;
         }
 
         // Write in forward order to PATH_RESULT

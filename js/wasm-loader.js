@@ -232,16 +232,30 @@ window.WASM = (function () {
 
         // ── Caravan Subtick ──
         // caravanData: flat Float64Array [progress, totalWeight, totalDist, baseSpeed, routeType, expertNav, roadKnowledge, cartographer, shipCondEff] × N
+        // v9p33river318: wasm caps batch at MAX_CARAVANS (256). When
+        // exceeded, returns u32::MAX as a sentinel. We chunk the input
+        // here so any caravan count works.
         api.caravanSubtick = function (caravanData, numCaravans, ticksPerDay) {
-            _resetAlloc();
-            var dataPtr = _writeF64Array(caravanData);
-            var arrived = exports.caravan_subtick(dataPtr, numCaravans, ticksPerDay);
-            // Read updated progress values
-            var progressPtr = exports.caravan_get_progress_ptr();
-            var progressView = new Float64Array(_memory.buffer, progressPtr, numCaravans);
+            var WASM_MAX = 256;
             var result = new Float64Array(numCaravans);
-            result.set(progressView);
-            return { arrived: arrived, progress: result };
+            var totalArrived = 0;
+            for (var off = 0; off < numCaravans; off += WASM_MAX) {
+                var batchN = Math.min(WASM_MAX, numCaravans - off);
+                var batch = caravanData.subarray(off * 9, (off + batchN) * 9);
+                _resetAlloc();
+                var dataPtr = _writeF64Array(batch);
+                var arrived = exports.caravan_subtick(dataPtr, batchN, ticksPerDay);
+                if (arrived === 0xFFFFFFFF) {
+                    // Overflow sentinel — shouldn't happen since we chunk,
+                    // but fall back gracefully if it does.
+                    return null;
+                }
+                totalArrived += arrived;
+                var progressPtr = exports.caravan_get_progress_ptr();
+                var progressView = new Float64Array(_memory.buffer, progressPtr, batchN);
+                for (var pi = 0; pi < batchN; pi++) result[off + pi] = progressView[pi];
+            }
+            return { arrived: totalArrived, progress: result };
         };
 
         // ── Terrain Rendering ──
