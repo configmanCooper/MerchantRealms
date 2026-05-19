@@ -31799,8 +31799,15 @@
 
         var chance = CONFIG.PETITION_PLAYER_SIGN_CHANCE_BASE;
         chance += relLevel * CONFIG.PETITION_PLAYER_REL_BONUS;
-        chance += townRep * CONFIG.PETITION_PLAYER_TOWN_REP_BONUS;
-        chance += kingdomRep * CONFIG.PETITION_PLAYER_KINGDOM_REP_BONUS;
+        // v9p33river327: reputation bonuses now relative to neutral 50,
+        // not raw value. Previously a default NPC with town rep 50 +
+        // kingdom rep 50 contributed +0.40 + 0.25 = +0.65 on top of the
+        // 0.30 base — producing a 95% sign chance for nearly everyone
+        // even at zero relationship. Now the baseline rep contributes 0
+        // and the modifier scales with the player's actual reputation
+        // delta from neutral (high rep → bonus, low rep → penalty).
+        chance += (townRep - 50) * CONFIG.PETITION_PLAYER_TOWN_REP_BONUS;
+        chance += (kingdomRep - 50) * CONFIG.PETITION_PLAYER_KINGDOM_REP_BONUS;
         chance += _calcNpcQuirkModifier(npc, petition.typeId);
         // loyal_heart quirk bonus
         if ((npc.quirks || []).includes('loyal_heart') && relLevel > 50) chance += 0.10;
@@ -31911,8 +31918,11 @@
 
                     var chance = CONFIG.PETITIONER_BASE_SIGN_CHANCE;
                     chance += relLevel * CONFIG.PETITIONER_RELATIONSHIP_BONUS;
-                    chance += townRep * CONFIG.PETITIONER_TOWN_REP_BONUS;
-                    chance += kingdomRep * CONFIG.PETITIONER_KINGDOM_REP_BONUS;
+                    // v9p33river327: same baseline-50 fix as the player
+                    // sign chance — reputation is a delta from neutral,
+                    // not a raw multiplier.
+                    chance += (townRep - 50) * CONFIG.PETITIONER_TOWN_REP_BONUS;
+                    chance += (kingdomRep - 50) * CONFIG.PETITIONER_KINGDOM_REP_BONUS;
                     chance += _calcNpcQuirkModifier(npc, petition.typeId) * 0.7;
                     chance = Math.max(0.02, Math.min(0.85, chance));
 
