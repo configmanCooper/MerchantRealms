@@ -32355,7 +32355,17 @@
         var roll = Math.random();
         var pType = PETITION_TYPES.find(function(t) { return t.id === petition.typeId; });
 
-        if (roll < estimate.chance) {
+        // v9p33river340: honor the Royal Decree guaranteed-petition token
+        // (granted by king's-favor `guaranteed_petition` reward at
+        // player.js:37666). Token is per-kingdom; auto-approves the next
+        // petition in that kingdom and is then consumed.
+        var _royalDecreeUsed = false;
+        if (player.guaranteedPetition && player.guaranteedPetition[petition.kingdomId]) {
+            _royalDecreeUsed = true;
+            delete player.guaranteedPetition[petition.kingdomId];
+        }
+
+        if (_royalDecreeUsed || roll < estimate.chance) {
             petition.status = 'approved';
             executePetitionAction(petition);
             var xpReward = 30 + Math.floor(Math.min(70, estimate.signaturePct * 2));
@@ -32366,6 +32376,10 @@
                 player._platinumTracking.petitionSuccesses[petition.typeId] = (player._platinumTracking.petitionSuccesses[petition.typeId] || 0) + 1;
                 if (petition.typeId === 'promote_outpost') player._platinumTracking.outpostsPromoted = (player._platinumTracking.outpostsPromoted || 0) + 1;
                 if (petition.typeId === 'build_defense') player._platinumTracking.defensePetitions = (player._platinumTracking.defensePetitions || 0) + 1;
+            }
+            if (_royalDecreeUsed) {
+                Engine.logEvent('📜 Your Royal Decree was honored! Petition for ' + (pType ? pType.name : petition.typeId) + ' AUTOMATICALLY APPROVED.');
+                return { success: true, approved: true, chance: 1.0, royalDecree: true, message: '📜 Royal Decree honored! ' + (pType ? pType.name : '') + ' approved automatically.' };
             }
             Engine.logEvent('📜 Your petition for ' + (pType ? pType.name : petition.typeId) + ' was APPROVED by the king! 🎉');
             return { success: true, approved: true, chance: estimate.chance, message: 'The king approved your petition! ' + (pType ? pType.name : '') + ' will be carried out.' };

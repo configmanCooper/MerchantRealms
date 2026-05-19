@@ -183,6 +183,19 @@
                     // amount; v9p33river334 also records assessed arrears so
                     // kingdom revenue/debt ledgers do not silently go stale.
                     if (bld.ownerId === 'player') {
+                        // v9p33river340: honor the player's tax exemption
+                        // (granted by king's-favor `tax_exemption` reward at
+                        // player.js:37618; stored as expiry-day per kingdom
+                        // on Player.state.taxExemption). Skip the property
+                        // tax for buildings in this kingdom while the
+                        // exemption is active. Income tax (line 262) does
+                        // not currently tax the player directly, so no
+                        // exemption hook is needed there yet.
+                        if (typeof Player !== 'undefined' && Player.state && Player.state.taxExemption
+                            && Player.state.taxExemption[k.id]
+                            && Player.state.taxExemption[k.id] > world.day) {
+                            continue; // exempt — skip property tax for this building
+                        }
                         // Property Magnate: -10% property tax
                         var playerTax = tax;
                         if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('property_magnate')) {
