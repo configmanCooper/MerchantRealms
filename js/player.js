@@ -2065,6 +2065,10 @@
         }
 
         player.stats.totalGoldEarned += totalRevenue;
+        // v9p33river342: track gold earned from trade for "Raise X gold
+        // through trade" kingdom quests. trackKQTradeGold walks all
+        // active kingdom quests and credits any with a goldTarget.
+        if (typeof Player !== 'undefined' && Player.trackKQTradeGold) Player.trackKQTradeGold(totalRevenue);
         // Sell from carried first (after any auto-dismount/unequip into inventory),
         // then from town storage
         var sellFromCarried = Math.min(qty, _heldNow);
@@ -2349,9 +2353,17 @@
                 var _milExempt = Player._isMilitaryOrHorse(bt.produces) && Player.hasMilitaryExemption(kingdom.id);
                 if (!_milExempt) {
                     // Check if player has a production permit for this good
-                    const hasPermit = player.productionPermits &&
+                    // v9p33river342: also honor kingdom-wide quest-rewarded
+                    // wildcard permits (player.productionPermits[kid] contains
+                    // '__wildcard__'), gated by expiry tracked separately.
+                    const _qpExp = (player._productionPermitExpiry || {})[kingdom.id] || 0;
+                    const _hasWildcard = player.productionPermits &&
                         player.productionPermits[kingdom.id] &&
-                        player.productionPermits[kingdom.id].includes(bt.produces);
+                        player.productionPermits[kingdom.id].includes('__wildcard__') &&
+                        _qpExp > Engine.getDay();
+                    const hasPermit = _hasWildcard || (player.productionPermits &&
+                        player.productionPermits[kingdom.id] &&
+                        player.productionPermits[kingdom.id].includes(bt.produces));
                     if (!hasPermit) {
                         const resName = findResource(bt.produces) ? findResource(bt.produces).name : bt.produces;
                         return { success: false, message: `🚫 ${resName} is banned in ${kingdom.name}. You need a Royal Production Permit to build this. Petition the crown (requires Magnate rank, 70+ reputation, ${CONFIG.PRODUCTION_PERMIT_FEE}g).` };
@@ -26158,9 +26170,15 @@
         var kingdom = null;
         try { kingdom = Engine.findKingdom(town.kingdomId); } catch(e) {}
         if (kingdom && kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(recipe.produces)) {
-            var hasPermit = player.productionPermits &&
+            // v9p33river342: also honor kingdom-wide quest-rewarded wildcard.
+            var _qpExp2 = (player._productionPermitExpiry || {})[kingdom.id] || 0;
+            var _hasWildcard2 = player.productionPermits &&
                 player.productionPermits[kingdom.id] &&
-                player.productionPermits[kingdom.id].includes(recipe.produces);
+                player.productionPermits[kingdom.id].includes('__wildcard__') &&
+                _qpExp2 > Engine.getDay();
+            var hasPermit = _hasWildcard2 || (player.productionPermits &&
+                player.productionPermits[kingdom.id] &&
+                player.productionPermits[kingdom.id].includes(recipe.produces));
             if (!hasPermit) {
                 var bannedResName = findResource(recipe.produces);
                 return { success: false, message: '🚫 ' + (bannedResName ? bannedResName.name : recipe.produces) + ' is banned in ' + kingdom.name + '. You need a Royal Production Permit to craft this.' };
@@ -26503,8 +26521,14 @@
             if (o.status !== 'open' && !(o.status === 'assigned' && o.assignedTo === 'player')) return false;
             // Filter out permit-required orders if player doesn't have permit
             if (o.requiresPermit) {
-                if (!player.productionPermits || !player.productionPermits[kingdomId] ||
-                    player.productionPermits[kingdomId].indexOf(o.resourceId) === -1) return false;
+                // v9p33river342: also honor kingdom-wide quest wildcard.
+                var _qpExp3 = (player._productionPermitExpiry || {})[kingdomId] || 0;
+                var _hasWildcard3 = player.productionPermits &&
+                    player.productionPermits[kingdomId] &&
+                    player.productionPermits[kingdomId].indexOf('__wildcard__') !== -1 &&
+                    _qpExp3 > Engine.getDay();
+                if (!_hasWildcard3 && (!player.productionPermits || !player.productionPermits[kingdomId] ||
+                    player.productionPermits[kingdomId].indexOf(o.resourceId) === -1)) return false;
             }
             return true;
         });
@@ -37488,7 +37512,13 @@
         var kingdom = Engine.findKingdom(kingdomId);
         var town = Engine.findTown(townId);
         var rng = Engine.getRng();
-        player.pendingSpyFavor = null;
+        // v9p33river342: previously cleared pendingSpyFavor BEFORE
+        // validating the favor. If the favor then failed (e.g.
+        // royal_marriage returning "No king found" at ~line 37510), the
+        // player lost their pending favor with nothing to show for it.
+        // Wrap the switch in an IIFE and clear pendingSpyFavor only on
+        // a successful outcome.
+        var _spyFavorResult = (function() {
 
         switch (favorId) {
             case 'rank_promotion': {
@@ -37712,6 +37742,13 @@
             default:
                 return { success: false, message: 'Unknown favor.' };
         }
+
+        })();
+        // v9p33river342: clear pending only on success — failure paths
+        // (e.g. royal_marriage with no king found) now preserve the
+        // pending favor so the player can try a different option.
+        if (_spyFavorResult && _spyFavorResult.success) player.pendingSpyFavor = null;
+        return _spyFavorResult;
     }
 
     // ========================================================

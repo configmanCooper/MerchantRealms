@@ -1587,9 +1587,20 @@ window.UI = (function () {
         if (_qtHud && _qtContent && typeof Player !== 'undefined' && Player.state) {
             var _kqs = Player.state.kingdomQuests;
             var _activeQ = null;
-            if (_kqs) {
-                for (var _qi = 0; _qi < _kqs.length; _qi++) {
-                    if (_kqs[_qi].status === 'active') { _activeQ = _kqs[_qi]; break; }
+            // v9p33river342: kingdomQuests is keyed by kingdom id, not an
+            // array. Each entry has { available, active, completed, ... }.
+            // Previously the HUD did `for (var i; i < _kqs.length;` against
+            // an object — _activeQ was always null and the tracker never
+            // showed any quest.
+            if (_kqs && typeof _kqs === 'object') {
+                for (var _kqKid in _kqs) {
+                    var _kqEntry = _kqs[_kqKid];
+                    if (!_kqEntry || !Array.isArray(_kqEntry.active)) continue;
+                    for (var _kqAi = 0; _kqAi < _kqEntry.active.length; _kqAi++) {
+                        var _kqAQ = _kqEntry.active[_kqAi];
+                        if (_kqAQ && _kqAQ.status === 'active') { _activeQ = _kqAQ; break; }
+                    }
+                    if (_activeQ) break;
                 }
             }
             if (_activeQ) {

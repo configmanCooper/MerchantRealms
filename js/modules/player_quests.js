@@ -1702,9 +1702,22 @@
         var day = Engine.getDay();
         switch (rewardType) {
             case 'production_permit':
+                // v9p33river342: previously stored only in _kqSpecialRewards
+                // which the production-ban check never reads. Also add a
+                // wildcard entry to player.productionPermits keyed by
+                // '__wildcard__' (a reserved sentinel) so the check at
+                // player.js:2352 / 26162 / 26506 honors the kingdom-wide
+                // permit. Stored separately too so expiry can be tracked.
                 if (!player._kqSpecialRewards) player._kqSpecialRewards = [];
                 player._kqSpecialRewards.push({ type: 'production_permit', kingdomId: kingdomId, expiresDay: day + 90 });
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏭 Granted: Production Permit (90 days)', 'success');
+                if (!player.productionPermits) player.productionPermits = {};
+                if (!player.productionPermits[kingdomId]) player.productionPermits[kingdomId] = [];
+                if (player.productionPermits[kingdomId].indexOf('__wildcard__') < 0) {
+                    player.productionPermits[kingdomId].push('__wildcard__');
+                }
+                if (!player._productionPermitExpiry) player._productionPermitExpiry = {};
+                player._productionPermitExpiry[kingdomId] = day + 90;
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏭 Granted: Production Permit (any banned good, 90 days)', 'success');
                 break;
             case 'tax_exemption_30d':
                 if (!player._kqSpecialRewards) player._kqSpecialRewards = [];
@@ -1722,9 +1735,21 @@
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('📜 Granted: Royal Decree (guaranteed petition)', 'success');
                 break;
             case 'land_grant':
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏘️ Land Grant: +1 building slot in your town', 'success');
-                // Increase building capacity slightly
+                // v9p33river342: previously only incremented _kqLandGrants
+                // (read by nothing). The land check at player.js:2228 uses
+                // player.landOwned[townId], so the promised free building
+                // slot did nothing. Now adds an actual plot to the player's
+                // current town's landOwned count.
+                if (!player.landOwned) player.landOwned = {};
+                var _grantTownId = player.townId;
+                if (_grantTownId) {
+                    player.landOwned[_grantTownId] = (player.landOwned[_grantTownId] || 0) + 1;
+                }
                 player._kqLandGrants = (player._kqLandGrants || 0) + 1;
+                if (typeof UI !== 'undefined' && UI.toast) {
+                    var _grantTown = _grantTownId ? Engine.findTown(_grantTownId) : null;
+                    UI.toast('🏘️ Land Grant: +1 free plot in ' + (_grantTown ? _grantTown.name : 'your town'), 'success');
+                }
                 break;
             case 'kings_favor':
                 var kingdom = null;
@@ -1872,6 +1897,30 @@
         _sync();
         if (!player._kqGoldSpent) player._kqGoldSpent = {};
         player._kqGoldSpent[questId] = (player._kqGoldSpent[questId] || 0) + amount;
+    }
+
+    // v9p33river342: trade-gold tracker called from sell/delivery paths.
+    // Walks all active kingdom quests across all kingdoms and credits gold
+    // toward any quest with a goldTarget requirement. Previously
+    // trackKQGoldSpent() existed but was never called from gameplay code,
+    // so "Raise X gold through trade" quests were impossible to progress.
+    function trackKQTradeGold(amount) {
+        _sync();
+        if (!amount || amount <= 0) return;
+        if (!player.kingdomQuests) return;
+        for (var kqKid in player.kingdomQuests) {
+            var kqData = player.kingdomQuests[kqKid];
+            if (!kqData || !Array.isArray(kqData.active)) continue;
+            for (var qi = 0; qi < kqData.active.length; qi++) {
+                var aq = kqData.active[qi];
+                if (!aq || aq.status !== 'active') continue;
+                var reqs = aq.requirements || {};
+                var goldTarget = reqs.gold || reqs.goldTarget || 0;
+                if (goldTarget > 0) {
+                    trackKQGoldSpent(aq.id, amount);
+                }
+            }
+        }
     }
 
     function trackKQActionDone(questId) {
@@ -3949,6 +3998,7 @@
     Player.tickKingdomQuests = tickKingdomQuests;
     Player.trackKQTownVisit = trackKQTownVisit;
     Player.trackKQGoldSpent = trackKQGoldSpent;
+    Player.trackKQTradeGold = trackKQTradeGold;
     Player.trackKQActionDone = trackKQActionDone;
     Player.attemptKQAction = attemptKQAction;
     Player.searchBuildingForEvidence = searchBuildingForEvidence;
