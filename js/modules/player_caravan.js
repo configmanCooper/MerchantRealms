@@ -1511,7 +1511,17 @@
                 // v9p33river313: caravan market trades now pay trade tax
                 // like all other market activity (import = true since
                 // we're buying into the town's market).
-                if (Engine.collectTradeTax) Engine.collectTradeTax(town.kingdomId, cost, o.good, true, town.id);
+                // v9p33river338: credit trade subsidy (if any) back to
+                // player gold — was previously burned (deducted from
+                // kingdom but never paid to caravan/player).
+                if (Engine.collectTradeTax) {
+                    var _ctt = Engine.collectTradeTax(town.kingdomId, cost, o.good, true, town.id);
+                    if (_ctt && _ctt.subsidyAwarded > 0) {
+                        player.gold += _ctt.subsidyAwarded;
+                        if (typeof logFinance === 'function') logFinance(_ctt.subsidyAwarded, 'caravan', 'Trade subsidy: ' + o.good);
+                        logCaravan(caravan, '💸 Royal subsidy +' + _ctt.subsidyAwarded + 'g for importing ' + resName + ' to ' + townName + '.');
+                    }
+                }
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) + buyQty;
                 logCaravan(caravan, '🛒 Bought ' + buyQty + ' ' + resName + ' for ' + cost + 'g at ' + townName + '.');
             } else if (o.action === 'store') {

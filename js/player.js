@@ -1618,11 +1618,25 @@
             kingdom.gold = (kingdom.gold || 0) + totalKingdomRevenue;
             kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + taxPortion;
             kingdom.tariffRevenue = (kingdom.tariffRevenue || 0) + tariffPortion;
+            // v9p33river338: also fire export restriction + trade subsidy
+            // policy effects (this path manually credits the kingdom tax
+            // revenue above, so we use applyTradePolicyOnly to avoid double-
+            // counting). For a buy (player is importer), credit any subsidy
+            // back to player gold.
+            if (Engine.applyTradePolicyOnly) {
+                var _policy = Engine.applyTradePolicyOnly(kingdom.id, basePrice * qty, resourceId, true);
+                if (_policy && _policy.subsidyAwarded > 0) {
+                    player.gold += _policy.subsidyAwarded;
+                    logFinance(_policy.subsidyAwarded, 'trading', 'Trade subsidy: ' + resourceId);
+                    if (typeof UI !== 'undefined' && UI.toast) {
+                        UI.toast('💸 Royal subsidy: +' + _policy.subsidyAwarded + 'g for importing ' + resourceId, 'success');
+                    }
+                }
+            }
         }
-
+        // Transfer food age from market to player inventory (anti-exploit)
         player.stats.totalGoldSpent += totalCost;
         town.market.supply[resourceId] -= qty;
-        // Transfer food age from market to player inventory (anti-exploit)
         Engine.transferFoodCohorts(town.market, player, resourceId, qty);
         // Market Manipulator: trades have 2x impact on supply (phantom removal)
         if (hasSkill('market_manipulator')) {
@@ -2016,6 +2030,14 @@
             kingdom.gold = (kingdom.gold || 0) + totalKingdomRevenue;
             kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + taxPortion;
             kingdom.tariffRevenue = (kingdom.tariffRevenue || 0) + tariffPortion;
+            // v9p33river338: fire export-restriction policy effects via the
+            // policy-only helper. Selling is an export, so no subsidy fires
+            // (subsidies are for imports). Export restrictions are tracked
+            // for the engine-side analytics; the manual tax above is the
+            // primary revenue mechanism for player-driven sells.
+            if (Engine.applyTradePolicyOnly) {
+                Engine.applyTradePolicyOnly(kingdom.id, baseSellPrice * qty, resourceId, false);
+            }
         }
 
         player.stats.totalGoldEarned += totalRevenue;
@@ -10796,26 +10818,32 @@
         if (!kingdom.laws) kingdom.laws = {};
 
         if (action === 'export_ban') {
-            if (!kingdom.laws.exportBans) kingdom.laws.exportBans = [];
-            var exists = kingdom.laws.exportBans.some(function(b) { return b.good === data.good && b.target === data.target; });
-            if (exists) return { success: false, message: 'Export ban already exists for ' + data.good + '.' };
+            // v9p33river338: was writing to kingdom.laws.exportBans
+            // (per-target objects) but live system reads
+            // kingdom.exportRestrictions (flat array of good IDs) — see
+            // engine_kingdom_finances.js:101 and engine.js:11608. Player
+            // bans now write to the canonical store. Per-target bans
+            // aren't supported by the engine, so 'target' is informational
+            // only (logged but not enforced separately).
+            if (!kingdom.exportRestrictions) kingdom.exportRestrictions = [];
+            if (kingdom.exportRestrictions.indexOf(data.good) >= 0) {
+                return { success: false, message: 'Export ban already exists for ' + data.good + '.' };
+            }
             var targetName = data.target === 'all' ? 'All Kingdoms' : data.target;
             try {
                 var _tk = Engine.findKingdom(data.target);
                 if (_tk) targetName = _tk.name;
             } catch(e) {}
-            kingdom.laws.exportBans.push({ good: data.good, target: data.target, targetName: targetName, setDay: Engine.getDay() });
+            kingdom.exportRestrictions.push(data.good);
             Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'kingdom');
             return { success: true, message: 'Export ban set: ' + data.good + ' to ' + targetName + '.' };
         }
         if (action === 'export_unban') {
-            if (!kingdom.laws.exportBans) return { success: false, message: 'No export bans active.' };
-            var idx = -1;
-            for (var _eui = 0; _eui < kingdom.laws.exportBans.length; _eui++) {
-                if (kingdom.laws.exportBans[_eui].good === data.good && kingdom.laws.exportBans[_eui].target === data.target) { idx = _eui; break; }
-            }
-            if (idx < 0) return { success: false, message: 'No ban found for ' + data.good + '.' };
-            kingdom.laws.exportBans.splice(idx, 1);
+            // v9p33river338: matched to canonical exportRestrictions array.
+            if (!kingdom.exportRestrictions || kingdom.exportRestrictions.length === 0) return { success: false, message: 'No export bans active.' };
+            var _eubIdx = kingdom.exportRestrictions.indexOf(data.good);
+            if (_eubIdx < 0) return { success: false, message: 'No ban found for ' + data.good + '.' };
+            kingdom.exportRestrictions.splice(_eubIdx, 1);
             Engine.logEvent('✅ Export ban lifted: ' + data.good, null, 'kingdom');
             return { success: true, message: 'Export ban lifted for ' + data.good + '.' };
         }
@@ -10824,17 +10852,28 @@
             // (array of {good, townId, reward}) — was writing
             // kingdom.laws.productionBounties (array of good strings) so
             // UI-created bounties did nothing.
+            // v9p33river338: also need expiresDay (engine_diplomacy.js:5180
+            // filters out bounties where expiresDay > day is false, so
+            // missing expiresDay → undefined > day === false → bounty
+            // removed next tick) and a valid townId (engine_diplomacy.js:6945
+            // skips bounties whose findTown fails — null townId broke
+            // every player-issued bounty). Use the kingdom's capital as
+            // the bounty town since the king UI doesn't expose a town picker.
             if (!kingdom.productionBounties) kingdom.productionBounties = [];
-            if (kingdom.productionBounties.some(function(b) { return b.good === data.good && !b.townId; })) {
+            if (kingdom.productionBounties.some(function(b) { return b.good === data.good; })) {
                 return { success: false, message: 'Bounty already active for ' + data.good + '.' };
             }
             if (kingdom.gold < 100) return { success: false, message: 'Need 100g in treasury for bounty.' };
+            var _bountyTownId = data.townId || kingdom.capital || (kingdom.territories && (kingdom.territories instanceof Set ? Array.from(kingdom.territories)[0] : kingdom.territories[0]));
+            if (!_bountyTownId) return { success: false, message: 'Kingdom has no towns to host the bounty.' };
             kingdom.gold -= 100;
+            var _bToday = (Engine.getDay ? Engine.getDay() : 0);
             kingdom.productionBounties.push({
                 good: data.good,
-                townId: null,
+                townId: _bountyTownId,
                 reward: CONFIG.KING_BOUNTY_DEFAULT_REWARD || 50,
-                createdDay: (Engine.getDay ? Engine.getDay() : 0),
+                createdDay: _bToday,
+                expiresDay: _bToday + (CONFIG.KING_SUBSIDY_DURATION || 90),
             });
             Engine.logEvent('🏭 Production bounty set for ' + data.good + '.', null, 'kingdom');
             return { success: true, message: 'Production bounty set for ' + data.good + '. Cost: 100g/season.' };
@@ -10884,18 +10923,32 @@
             return { success: true, message: 'Subsidy removed for ' + data.good + '.' };
         }
         if (action === 'set_land_subsidy') {
-            if (!kingdom.laws.landSubsidyTowns) kingdom.laws.landSubsidyTowns = [];
+            // v9p33river338: was writing to kingdom.laws.landSubsidyTowns
+            // (legacy schema {townId, buildingType}), but live systems
+            // read kingdom.landSubsidies with shape {townId, buildingType,
+            // discount, expiresDay} — see engine_diplomacy.js:5169/5179,
+            // engine_elite_merchants.js:2612, player.js:33862, and
+            // ui_actions.js:937. Player subsidies now use the canonical
+            // store + expiresDay (so they're not immediately expired by
+            // the strategy tick filter at engine_diplomacy.js:5179).
+            if (!kingdom.landSubsidies) kingdom.landSubsidies = [];
             var _lsBldg = data.buildingType || 'all';
             // Check for existing subsidy on same town
-            for (var _lsci = 0; _lsci < kingdom.laws.landSubsidyTowns.length; _lsci++) {
-                var _lsEntry = kingdom.laws.landSubsidyTowns[_lsci];
-                if ((typeof _lsEntry === 'string' && _lsEntry === data.townId) || (typeof _lsEntry === 'object' && _lsEntry.townId === data.townId)) {
+            for (var _lsci = 0; _lsci < kingdom.landSubsidies.length; _lsci++) {
+                var _lsEntry = kingdom.landSubsidies[_lsci];
+                if (_lsEntry && _lsEntry.townId === data.townId) {
                     return { success: false, message: 'Land subsidy already active for this town.' };
                 }
             }
             if (kingdom.gold < 200) return { success: false, message: 'Need 200g in treasury for land subsidy.' };
             kingdom.gold -= 200;
-            kingdom.laws.landSubsidyTowns.push({ townId: data.townId, buildingType: _lsBldg });
+            var _lsToday = (Engine.getDay ? Engine.getDay() : 0);
+            kingdom.landSubsidies.push({
+                townId: data.townId,
+                buildingType: _lsBldg,
+                discount: CONFIG.KING_LAND_SUBSIDY_DISCOUNT || 0.25,
+                expiresDay: _lsToday + (CONFIG.KING_SUBSIDY_DURATION || 180),
+            });
             var tName = data.townId;
             try { var _lt = Engine.findTown(data.townId); if (_lt) tName = _lt.name; } catch(e) {}
             var bldgLabel = _lsBldg === 'all' ? 'all buildings' : _lsBldg.replace(/_/g, ' ');
@@ -10903,16 +10956,15 @@
             return { success: true, message: 'Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Cost: 200g/season.' };
         }
         if (action === 'remove_land_subsidy') {
-            if (!kingdom.laws.landSubsidyTowns) return { success: false, message: 'No land subsidies active.' };
+            // v9p33river338: matched to canonical landSubsidies array.
+            if (!kingdom.landSubsidies || kingdom.landSubsidies.length === 0) return { success: false, message: 'No land subsidies active.' };
             var lIdx = -1;
-            for (var _lri = 0; _lri < kingdom.laws.landSubsidyTowns.length; _lri++) {
-                var _lrEntry = kingdom.laws.landSubsidyTowns[_lri];
-                if ((typeof _lrEntry === 'string' && _lrEntry === data.townId) || (typeof _lrEntry === 'object' && _lrEntry.townId === data.townId)) {
-                    lIdx = _lri; break;
-                }
+            for (var _lri = 0; _lri < kingdom.landSubsidies.length; _lri++) {
+                var _lrEntry = kingdom.landSubsidies[_lri];
+                if (_lrEntry && _lrEntry.townId === data.townId) { lIdx = _lri; break; }
             }
             if (lIdx < 0) return { success: false, message: 'No land subsidy for this town.' };
-            kingdom.laws.landSubsidyTowns.splice(lIdx, 1);
+            kingdom.landSubsidies.splice(lIdx, 1);
             Engine.logEvent('❌ Land subsidy removed.', null, 'kingdom');
             return { success: true, message: 'Land subsidy removed.' };
         }

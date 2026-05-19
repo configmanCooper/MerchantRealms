@@ -89,13 +89,18 @@
     // tradeBonus (config.js:1991, dead before — no consumer was reading
     // bt.tradeBonus). With townId present, kingdom-level tax is boosted
     // by the summed tradeBonus of civic buildings in that town.
+    // v9p33river338: now RETURNS { taxCollected, subsidyAwarded } so
+    // callers can credit the subsidy to the merchant/player. Previously
+    // the subsidy was deducted from kingdom gold but never paid to
+    // anyone — it was effectively burned. Callers that ignore the
+    // return value still get correct tax collection.
     function collectTradeTax(kingdomId, amount, goodId, isImport, townId) {
-        if (!world || !kingdomId || amount <= 0) return;
+        if (!world || !kingdomId || amount <= 0) return { taxCollected: 0, subsidyAwarded: 0 };
         const k = findKingdom(kingdomId);
-        if (!k) return;
+        if (!k) return { taxCollected: 0, subsidyAwarded: 0 };
 
         // Skip tax collection during tax revolt
-        if (k._taxRevoltUntil && world.day < k._taxRevoltUntil) return;
+        if (k._taxRevoltUntil && world.day < k._taxRevoltUntil) return { taxCollected: 0, subsidyAwarded: 0 };
 
         // Check export restrictions
         if (goodId && k.exportRestrictions && k.exportRestrictions.includes(goodId)) {
@@ -129,7 +134,11 @@
         // v9p33river313: gated by isImport — subsidies only fire on imports.
         // Default isImport=true preserves legacy behavior for callers that
         // haven't been updated. Callers selling/exporting now pass false.
+        // v9p33river338: also accumulate into subsidyAwarded so caller can
+        // credit the merchant. Previously deducted from kingdom but never
+        // paid to anyone — gold burned.
         const _isImport = (isImport === undefined) ? true : !!isImport;
+        let _subsidyAwarded = 0;
         if (_isImport && goodId && k.tradeSubsidies) {
             for (const sub of k.tradeSubsidies) {
                 if (sub.good === goodId && (sub.unitsPaid || 0) < sub.maxUnits && sub.expiresDay > world.day) {
@@ -137,11 +146,13 @@
                     if (k.gold >= bonus) {
                         k.gold -= bonus;
                         sub.unitsPaid = (sub.unitsPaid || 0) + 1;
+                        _subsidyAwarded += bonus;
                         recordKingdomTransaction(k, 'expense', bonus, 'Trade subsidy (' + goodId + ')', 'subsidies');
                     }
                 }
             }
         }
+        return { taxCollected: taxAmount, subsidyAwarded: _subsidyAwarded };
     }
 
     // ---- Property Tax Collection (monthly) ----
@@ -1823,8 +1834,40 @@
         k.happiness = 10;
     }
 
+    // v9p33river338: policy-only variant for callers (like Player buy/sell)
+    // that already compute and credit the kingdom tax revenue themselves.
+    // Returns { subsidyAwarded, restrictedAmount } — applies subsidy and
+    // export-restriction effects without re-collecting tax. Caller credits
+    // the subsidy to the merchant/player.
+    function applyTradePolicyOnly(kingdomId, amount, goodId, isImport) {
+        if (!world || !kingdomId || amount <= 0) return { subsidyAwarded: 0, restrictedAmount: amount };
+        const k = findKingdom(kingdomId);
+        if (!k) return { subsidyAwarded: 0, restrictedAmount: amount };
+        let _restrictedAmount = amount;
+        if (goodId && k.exportRestrictions && k.exportRestrictions.includes(goodId)) {
+            _restrictedAmount = Math.floor(amount * 0.5);
+        }
+        const _isImport = (isImport === undefined) ? true : !!isImport;
+        let _subsidyAwarded = 0;
+        if (_isImport && goodId && k.tradeSubsidies) {
+            for (const sub of k.tradeSubsidies) {
+                if (sub.good === goodId && (sub.unitsPaid || 0) < sub.maxUnits && sub.expiresDay > world.day) {
+                    const bonus = sub.bonusPerUnit || CONFIG.KING_TRADE_SUBSIDY_PER_UNIT || 2;
+                    if (k.gold >= bonus) {
+                        k.gold -= bonus;
+                        sub.unitsPaid = (sub.unitsPaid || 0) + 1;
+                        _subsidyAwarded += bonus;
+                        recordKingdomTransaction(k, 'expense', bonus, 'Trade subsidy (' + goodId + ')', 'subsidies');
+                    }
+                }
+            }
+        }
+        return { subsidyAwarded: _subsidyAwarded, restrictedAmount: _restrictedAmount };
+    }
+
     // ── Exports ──
     Engine.collectTradeTax = collectTradeTax;
+    Engine.applyTradePolicyOnly = applyTradePolicyOnly;
     Engine.tickKingdomFinances = tickKingdomFinances;
     Engine.tickRandomInspections = tickRandomInspections;
     Engine.getKingdomFinancialState = getKingdomFinancialState;
