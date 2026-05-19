@@ -19248,6 +19248,10 @@
             _schemeCooldowns: structuredClone(player._schemeCooldowns || {}),
             // v9p33river346: per-town cooldown map for the Incite Strikes scheme.
             _inciteStrikesCooldowns: structuredClone(player._inciteStrikesCooldowns || {}),
+            // v9p33river347: per-town cooldown for the Spread Plague scheme + karma flags.
+            _spreadPlagueCooldowns: structuredClone(player._spreadPlagueCooldowns || {}),
+            _plagueSelfRiskUntil: player._plagueSelfRiskUntil || 0,
+            _plagueSelfRiskTown: player._plagueSelfRiskTown || null,
             _schemeTargetHistory: structuredClone(player._schemeTargetHistory || {}),
             _schemeLog: structuredClone(player._schemeLog || []),
             _nobleDossier: structuredClone(player._nobleDossier || {}),
@@ -19825,6 +19829,10 @@
         player._schemeCooldowns = data._schemeCooldowns || {};
         // v9p33river346: restore per-town Incite Strikes cooldown map.
         player._inciteStrikesCooldowns = data._inciteStrikesCooldowns || {};
+        // v9p33river347: restore per-town Spread Plague cooldown + karma flags.
+        player._spreadPlagueCooldowns = data._spreadPlagueCooldowns || {};
+        player._plagueSelfRiskUntil = data._plagueSelfRiskUntil || 0;
+        player._plagueSelfRiskTown = data._plagueSelfRiskTown || null;
         player._schemeTargetHistory = data._schemeTargetHistory || {};
         player._schemeLog = data._schemeLog || [];
         player._nobleDossier = data._nobleDossier || {};

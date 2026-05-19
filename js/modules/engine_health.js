@@ -2275,7 +2275,101 @@
         }
         return infectNPC(person, illnessId, rngOrSource, day, source);
     };
-    Engine.tickNPCHealth = tickNPCHealth;
+    // v9p33river347: Plague-sabotage tick — runs daily, processes any
+    // towns flagged with _waterContaminated or _foodTainted by the
+    // player's spreadPlague scheme, and rolls karma self-infection
+    // for the player if they're standing in a town they tainted.
+    // Hooked into tickNPCHealth via a wrap below.
+    function _tickPlagueSabotage() {
+        if (!world || !world.towns) return;
+        var rng = world.rng;
+        var day = world.day;
+
+        // Per-town infection rolls.
+        for (var ti = 0; ti < world.towns.length; ti++) {
+            var t = world.towns[ti];
+            if (!t) continue;
+            var waterOn = t._waterContaminated && t._waterContaminated > day;
+            var foodOn  = t._foodTainted && t._foodTainted > day;
+            if (!waterOn && !foodOn) continue;
+            // Eligible victims: alive, non-player, in this town, not already sick.
+            var pool = [];
+            for (var pi = 0; pi < world.people.length; pi++) {
+                var p = world.people[pi];
+                if (!p || !p.alive || p.sick) continue;
+                if (p.townId !== t.id) continue;
+                if (p.id === 'player') continue;
+                pool.push(p);
+            }
+            if (pool.length === 0) continue;
+
+            // Infection counts per tick (tickNPCHealth runs every 3 days).
+            var picks = 0;
+            if (foodOn) picks += rng.randInt(2, 4);
+            if (waterOn) picks += rng.randInt(1, 2);
+
+            for (var pk = 0; pk < picks && pool.length > 0; pk++) {
+                var idx = rng.randInt(0, pool.length - 1);
+                var victim = pool[idx];
+                pool.splice(idx, 1);
+                infectNPC(victim, 'plague', rng, day, 'sabotage');
+            }
+
+            // Food-tainted towns: chance to spread to a connected town
+            // via caravan trade (sets _waterContaminated on the neighbor
+            // for a shorter window — proxy for "infected goods arrived").
+            if (foodOn && rng.chance(0.10)) {
+                var neighbors = [];
+                if (world.roads) {
+                    for (var ri = 0; ri < world.roads.length; ri++) {
+                        var r = world.roads[ri];
+                        if (!r || r.condition === 'destroyed') continue;
+                        if (r.fromTownId === t.id) neighbors.push(r.toTownId);
+                        else if (r.toTownId === t.id) neighbors.push(r.fromTownId);
+                    }
+                }
+                if (neighbors.length > 0) {
+                    var nbId = neighbors[rng.randInt(0, neighbors.length - 1)];
+                    var nbTown = findTown(nbId);
+                    if (nbTown && !nbTown._waterContaminated) {
+                        nbTown._waterContaminated = day + 10; // shorter spillover
+                        nbTown._waterContaminatedBy = 'plague_spread';
+                    }
+                }
+            }
+        }
+
+        // Karma: player self-infection while standing in a town they tainted.
+        try {
+            if (typeof Player !== 'undefined' && Player.state && Player.state._plagueSelfRiskUntil && Player.state._plagueSelfRiskUntil > day) {
+                if (Player.state.townId === Player.state._plagueSelfRiskTown) {
+                    // ~2.1% per 3-day tick ≈ 5% per week.
+                    if (rng.chance(0.021)) {
+                        if (Player.inflictRandomInjury || Player.addIllness) {
+                            // Use the player's illness path if present, fall back to a notification.
+                            if (typeof Player.addIllness === 'function') {
+                                Player.addIllness('plague');
+                            } else if (typeof Player.contractIllness === 'function') {
+                                Player.contractIllness('plague');
+                            }
+                            if (typeof UI !== 'undefined' && UI.toast) UI.toast('🦠 Karma — you\'ve caught the plague you spread!', 'danger', 'health');
+                            logEvent('🦠 ' + (Player.fullName || 'The player') + ' has fallen ill — possibly the very plague they spread.');
+                            // Don't keep rolling — one karma hit is enough.
+                            Player.state._plagueSelfRiskUntil = 0;
+                        }
+                    }
+                }
+            }
+        } catch (_e) {}
+    }
+
+    // v9p33river347: wrap tickNPCHealth to also run the sabotage tick.
+    var _origTickNPCHealth_v347 = tickNPCHealth;
+    Engine.tickNPCHealth = function() {
+        var _r = _origTickNPCHealth_v347.apply(this, arguments);
+        try { _tickPlagueSabotage(); } catch (_e) {}
+        return _r;
+    };
     Engine.tickNPCTreatmentSeeking = tickNPCTreatmentSeeking;
     Engine.tickKingHealthPolicy = tickKingHealthPolicy;
     Engine.tickHospitalTreatment = tickHospitalTreatment;

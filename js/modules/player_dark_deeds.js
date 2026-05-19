@@ -3398,6 +3398,26 @@
                     _needsInciteStrikesConfig: true,
                 });
             }
+            // v9p33river347: Spread Plague — biological warfare. Three
+            // variants (seed/water/food) with escalating cost + effect.
+            // Master Poisoner + Dark Connections gated. Must be physically
+            // in the target town.
+            if (hasSkill('master_poisoner') && hasSkill('dark_connections')) {
+                var _spCD = (player.schemeCooldowns && player.schemeCooldowns['spread_plague:_none']) || 0;
+                var _spAvail = day >= _spCD && player.gold >= 800;
+                actions.push({
+                    id: 'spread_plague', tab: 'sabotage',
+                    name: '🦠 Spread Plague',
+                    desc: 'Plant a contagion in the town you\'re currently in. Three escalating variants: seed direct infections (cheap), poison the water supply (medium, 21-day drip), or taint food stocks (expensive, heavy spread + may travel via caravans). Treason-tier punishment if caught. Karma: 5% per week chance of catching it yourself.',
+                    cost: '800-5000g + materials', detection: calculateCorruptDetection(0.60, town),
+                    reward: 'Plague outbreak', xp: 40,
+                    requires: 'Master Poisoner + Dark Connections',
+                    available: _spAvail,
+                    disabledReason: !player.gold || player.gold < 800 ? 'Need at least 800g.' : (day < _spCD ? 'Cooldown active.' : ''),
+                    params: [],
+                    _needsSpreadPlagueConfig: true,
+                });
+            }
         }
 
         if (hasSkill('dark_connections')) {
@@ -4244,6 +4264,140 @@
             caughtMsg: caughtMsg,
             partialMsg: 'Strike incited but you were spotted! ' + effectMsg + ' ' + caughtMsg,
             failMsg: '❌ The workers took your gold and went home anyway — no strike (' + cost + 'g lost).'
+        });
+    }
+
+    // v9p33river347: Spread Plague — biological warfare scheme with
+    // three escalating variants:
+    //   A 'seed':  cheapest (800g, 1 herb), 2-4 immediate plague infections
+    //   B 'water': medium (2500g, 2 herbs + 1 hide), 21-day water taint
+    //              that drips 1-2 infections per health tick
+    //   C 'food':  expensive (5000g, 4 herbs + 2 hide), 30-day food taint
+    //              with heavier per-tick infections AND a chance to spread
+    //              to neighboring towns via caravan trade
+    // Caught = treated as treason (10x cost fine + 90d jail + +50 notoriety).
+    // Karma: 5% per-week self-infection chance while in the town for 14d.
+    function spreadPlague(townId, variant) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('master_poisoner')) return { success: false, message: 'Requires Master Poisoner skill — you need to know how to handle disease vectors.' };
+        if (!hasSkill('dark_connections')) return { success: false, message: 'Requires Dark Connections skill — you need underworld contacts to smuggle the contagion in.' };
+        if (!townId || !variant) return { success: false, message: 'Choose a target town and a spread method.' };
+
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Unknown town.' };
+
+        if (player.townId !== townId) {
+            return { success: false, message: 'You must be in ' + town.name + ' in person to plant the contagion.' };
+        }
+
+        var day = Engine.getDay();
+        if (!player._spreadPlagueCooldowns) player._spreadPlagueCooldowns = {};
+        var cdUntil = player._spreadPlagueCooldowns[townId] || 0;
+        if (day < cdUntil) {
+            return { success: false, message: 'You attracted attention here recently. Wait ' + (cdUntil - day) + ' more days before trying ' + town.name + ' again.' };
+        }
+
+        var variants = {
+            seed:  { name: 'Seed Infections',     cost: 800,  herbs: 1, hide: 0, baseDetect: 0.60, notSucc: 25, notCaught: 40 },
+            water: { name: 'Poison Water Supply', cost: 2500, herbs: 2, hide: 1, baseDetect: 0.65, notSucc: 35, notCaught: 50 },
+            food:  { name: 'Taint Food Stocks',   cost: 5000, herbs: 4, hide: 2, baseDetect: 0.70, notSucc: 50, notCaught: 70 },
+        };
+        var def = variants[variant];
+        if (!def) return { success: false, message: 'Unknown spread method.' };
+
+        if (player.gold < def.cost) return { success: false, message: 'Need ' + def.cost + 'g for bribes and intermediaries.' };
+        var heldHerbs = (player.inventory && player.inventory.herbs) || 0;
+        var heldHide = (player.inventory && player.inventory.hide) || 0;
+        if (heldHerbs < def.herbs) return { success: false, message: 'Need ' + def.herbs + ' herbs (for the toxin base). You have ' + heldHerbs + '.' };
+        if (heldHide < def.hide) return { success: false, message: 'Need ' + def.hide + ' hide (for the disease vector — rat carcasses). You have ' + heldHide + '.' };
+
+        var rng = Engine.getRng();
+        var townKingdomId = town.kingdomId;
+
+        // Detection — capital + security scaling, same pattern as v346.
+        var sec = Math.max(0, Math.min(100, town.security || 50));
+        var secMult = 0.85 + (sec / 100) * 0.30;
+        var detect = def.baseDetect * secMult;
+        if (town.isCapital) detect += 0.15;
+        var detectChance = calculateCorruptDetection(detect, town);
+
+        var _outcome = _rollSchemeOutcome(detectChance, rng);
+        var caught = _outcome.caught;
+        var successful = _outcome.successful;
+
+        // Consume cost + materials regardless of outcome.
+        player.gold -= def.cost;
+        if (def.herbs > 0) {
+            player.inventory.herbs = (player.inventory.herbs || 0) - def.herbs;
+            if (player.inventory.herbs <= 0) delete player.inventory.herbs;
+        }
+        if (def.hide > 0) {
+            player.inventory.hide = (player.inventory.hide || 0) - def.hide;
+            if (player.inventory.hide <= 0) delete player.inventory.hide;
+        }
+
+        var effectMsg = '';
+        var infected = 0;
+        if (successful) {
+            if (variant === 'seed') {
+                // Direct seed: 2-4 immediate plague infections.
+                var seedCount = rng.randInt(2, 4);
+                var pool = (Engine.getPeopleInTown ? Engine.getPeopleInTown(townId) : [])
+                    .filter(function(p) { return p && p.alive && !p.sick && p.id !== 'player'; });
+                for (var si = pool.length - 1; si > 0; si--) {
+                    var sj = rng.randInt(0, si);
+                    var tmp = pool[si]; pool[si] = pool[sj]; pool[sj] = tmp;
+                }
+                for (var pi = 0; pi < pool.length && infected < seedCount; pi++) {
+                    if (Engine.infectNPC && Engine.infectNPC(pool[pi], 'plague', rng, day, 'sabotage')) {
+                        infected++;
+                    }
+                }
+                effectMsg = 'Plague seeded — ' + infected + ' immediate infection' + (infected === 1 ? '' : 's') + '. Natural contagion will spread it from here.';
+            } else if (variant === 'water') {
+                town._waterContaminated = day + 21;
+                town._waterContaminatedBy = 'player';
+                effectMsg = 'Water supply contaminated for 21 days. NPCs drinking the water will start falling ill within days.';
+            } else if (variant === 'food') {
+                town._foodTainted = day + 30;
+                town._foodTaintedBy = 'player';
+                effectMsg = 'Food stocks tainted for 30 days. The plague will spread heavily — and may travel to other towns via caravans.';
+            }
+
+            if (typeof town.happiness === 'number') town.happiness = Math.max(0, town.happiness - 3);
+
+            // Karma: tag the player as recently-exposed in this town for
+            // 14 days. The health tick (added below) rolls a small chance
+            // of self-infection per tick (5% per week ≈ 2.1% per 3-day tick).
+            player._plagueSelfRiskUntil = day + 14;
+            player._plagueSelfRiskTown = townId;
+
+            // 90-day per-town cooldown.
+            player._spreadPlagueCooldowns[townId] = day + 90;
+
+            grantXP(40, 'Spread Plague (' + def.name + ')');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(def.notSucc);
+            recordCorruptAction('spread_plague', false, townKingdomId, 'sabotage');
+            Engine.logEvent('🦠 Disease has appeared in ' + town.name + '! Townspeople are taking ill.');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
+            // Treason-tier punishment.
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(townKingdomId) : null;
+            var fine = applyCorruptPenalty(town, kingdom, def.cost * 10, 50, 90, false, 'sabotage');
+            recordCorruptAction('spread_plague', true, townKingdomId, 'sabotage');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(def.notCaught);
+            caughtMsg = '🚨 CAUGHT spreading disease! Treated as treason — fined ' + fine + 'g, jailed 90 days. Your reputation is destroyed.';
+        }
+
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🦠 ' + def.name + ' planted in ' + town.name + '. ' + effectMsg,
+            caughtMsg: caughtMsg,
+            partialMsg: 'The contagion took hold but you were seen! ' + effectMsg + ' ' + caughtMsg,
+            failMsg: '❌ The contagion didn\'t take hold — materials wasted (' + def.cost + 'g + ' + def.herbs + ' herbs + ' + def.hide + ' hide lost).'
         });
     }
 
@@ -5701,6 +5855,7 @@
             case 'forge_royal_order': result = forgeRoyalOrder(params[0], params[1], params[2]); break;
             case 'plant_treasonous_evidence': result = plantTreasonousEvidence(params[0], params[1], params[2]); break;
             case 'incite_strikes': result = inciteStrikes(params[0]); break;
+            case 'spread_plague': result = spreadPlague(params[0], params[1]); break;
             case 'sabotage_caravan': result = sabotageCaravan(params[0]); break;
             case 'plant_evidence': result = plantEvidence(params[0]); break;
             case 'incite_revolt': result = inciteRevolt(params[0]); break;
@@ -5727,7 +5882,7 @@
             assassinate_competitor: 60, assassinate_guard_captain: 90, assassinate_king: 180,
             assassinate_passenger: 60, poison: 20, hire_assassin_npc: 75, direct_kill: 45,
             hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
-            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, plant_treasonous_evidence: 90, incite_strikes: 7, sabotage_caravan: 30,
+            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, plant_treasonous_evidence: 90, incite_strikes: 7, spread_plague: 14, sabotage_caravan: 30,
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
             lay_low: 60, cleanse_identity: 30,
             pit_nobles: 20, turn_noble_against_king: 30, discredit_noble: 30,
@@ -5851,6 +6006,7 @@
     Player.forgeRoyalOrder = forgeRoyalOrder;
     Player.plantTreasonousEvidence = plantTreasonousEvidence;
     Player.inciteStrikes = inciteStrikes;
+    Player.spreadPlague = spreadPlague;
     Player.sabotageCaravan = sabotageCaravan;
     Player.plantEvidence = plantEvidence;
     Player.inciteRevolt = inciteRevolt;

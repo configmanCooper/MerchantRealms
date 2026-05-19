@@ -645,6 +645,13 @@ window.UI = (function () {
             if (!tSel) { toast('Configurator not ready.', 'warning'); return; }
             UI.executeScheme('incite_strikes', [tSel.value]);
         });
+        // v9p33river347: Spread Plague submit (always targets the player's current town).
+        registerAction('spreadPlagueSubmit', function(_t, d) {
+            var idx = parseInt(d.idx, 10);
+            var vSel = document.getElementById('spVariant_' + idx);
+            if (!vSel) { toast('Configurator not ready.', 'warning'); return; }
+            UI.executeScheme('spread_plague', [Player.townId, vSel.value]);
+        });
         registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
         registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
@@ -14650,6 +14657,9 @@ window.UI = (function () {
                     } else if (a._needsInciteStrikesConfig) {
                         // v9p33river346: Incite Strikes configurator.
                         html += buildInciteStrikesUI(a, ai);
+                    } else if (a._needsSpreadPlagueConfig) {
+                        // v9p33river347: Spread Plague configurator.
+                        html += buildSpreadPlagueUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
                             + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&quot;')}">⚡ Execute</button>`;
@@ -15242,6 +15252,82 @@ window.UI = (function () {
         // Building count estimate
         var buildings = Array.isArray(t.buildings) ? t.buildings.filter(function(b) { return b && b.ownerId !== 'player'; }) : [];
         lines.push('🏭 Will halt ~' + buildings.length + ' non-player buildings for 14 days.');
+        return lines.join('<br>');
+    }
+
+    // v9p33river347: configurator for "Spread Plague". The player can
+    // only target the town they're currently standing in (the function
+    // enforces this), so there's no town picker — just a variant picker
+    // (A/B/C) with cost/material/effect preview.
+    function buildSpreadPlagueUI(action, idx) {
+        var pTown = Engine.findTown(Player.townId);
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var cdMap = (Player.state && Player.state._spreadPlagueCooldowns) || {};
+        var cdLeft = pTown ? Math.max(0, (cdMap[pTown.id] || 0) - day) : 0;
+
+        var html = '<div style="margin-top:8px;padding:8px;background:rgba(40,60,30,0.18);border:1px solid #484;border-radius:4px;">';
+        html += '<div style="font-size:0.78rem;color:#caa;margin-bottom:6px;"><strong>🦠 Configure Plague Spread</strong> — you must be in the target town. 90-day per-town cooldown after success.</div>';
+
+        if (!pTown) {
+            html += '<div style="font-size:0.75rem;color:#c44e52;">⛔ You\'re not in a town.</div></div>';
+            return html;
+        }
+
+        html += '<div style="font-size:0.75rem;color:#aa9;margin-bottom:6px;">Target: <strong>' + escapeHtml(pTown.name) + '</strong></div>';
+
+        if (cdLeft > 0) {
+            html += '<div style="font-size:0.75rem;color:#c44e52;margin-bottom:6px;">⛔ On cooldown here for ' + cdLeft + ' more days.</div></div>';
+            return html;
+        }
+
+        var variants = [
+            { id: 'seed',  label: 'A: Seed Infections — 800g, 1 herb', desc: '2-4 immediate plague infections. Smallest direct hit, fastest setup, cheapest.' },
+            { id: 'water', label: 'B: Poison Water Supply — 2500g, 2 herbs + 1 hide', desc: 'Contaminates water for 21 days. 1-2 new infections per health tick. Larger total spread than A.' },
+            { id: 'food',  label: 'C: Taint Food Stocks — 5000g, 4 herbs + 2 hide', desc: 'Taints food for 30 days. 2-4 infections per tick + ~10% chance per tick to spill to a connected town via caravan. Largest total spread, hardest to contain.' },
+        ];
+
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;min-width:60px;">Method:</label>';
+        html += '<select id="spVariant_' + idx + '" onchange="UI._spRefresh(' + idx + ')" style="font-size:0.75rem;padding:2px;flex:1;min-width:140px;">';
+        for (var vi = 0; vi < variants.length; vi++) {
+            var v = variants[vi];
+            html += '<option value="' + v.id + '">' + escapeHtml(v.label) + '</option>';
+        }
+        html += '</select></div>';
+
+        html += '<div id="spPreview_' + idx + '" style="font-size:0.72rem;color:#aaa;margin-bottom:6px;padding:6px;background:rgba(0,0,0,0.18);border-radius:3px;"></div>';
+
+        html += '<button class="btn-trade sell" style="font-size:0.85rem;margin-top:4px;width:100%;" '
+              + 'data-action="spreadPlagueSubmit" data-idx="' + idx + '">⚡ Plant Contagion</button>';
+        html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Treason-tier if caught: 10× cost fine + 90-day jail + huge notoriety. Karma: 5% per week chance you catch it yourself while in town for the next 14 days.</div>';
+        html += '</div>';
+        html += '<script>setTimeout(function(){ if(UI._spRefresh) UI._spRefresh(' + idx + '); }, 30);<\/script>';
+        return html;
+    }
+
+    function _buildSpreadPlaguePreview(idx, variantId) {
+        var pTown = Engine.findTown(Player.townId);
+        if (!pTown) return '';
+        var variants = {
+            seed:  { cost: 800,  herbs: 1, hide: 0, baseDetect: 0.60, effect: '2-4 immediate plague infections; natural contagion takes over.' },
+            water: { cost: 2500, herbs: 2, hide: 1, baseDetect: 0.65, effect: '21-day water taint; 1-2 fresh infections every 3-day health tick.' },
+            food:  { cost: 5000, herbs: 4, hide: 2, baseDetect: 0.70, effect: '30-day food taint; 2-4 fresh infections every 3-day health tick + ~10% per-tick chance to spread to a connected town.' },
+        };
+        var v = variants[variantId];
+        if (!v) return '';
+        var sec = Math.max(0, Math.min(100, pTown.security || 50));
+        var secMult = 0.85 + (sec / 100) * 0.30;
+        var lines = [];
+        lines.push('💰 Cost: <strong>' + v.cost + 'g</strong> + ' + v.herbs + ' herbs' + (v.hide > 0 ? ' + ' + v.hide + ' hide' : ''));
+        var heldHerbs = (Player.inventory && Player.inventory.herbs) || 0;
+        var heldHide = (Player.inventory && Player.inventory.hide) || 0;
+        var canAfford = (Player.gold || 0) >= v.cost && heldHerbs >= v.herbs && heldHide >= v.hide;
+        lines.push('📦 You have: ' + Math.floor(Player.gold || 0) + 'g, ' + heldHerbs + ' herbs, ' + heldHide + ' hide ' + (canAfford ? '✅' : '<span style="color:#c44e52;">⛔ insufficient</span>'));
+        var detectBits = ['base ' + Math.round(v.baseDetect * 100) + '%'];
+        detectBits.push('×' + secMult.toFixed(2) + ' (security ' + Math.round(sec) + ')');
+        if (pTown.isCapital) detectBits.push('+15% (CAPITAL)');
+        lines.push('🚨 Detection: ' + detectBits.join(', ') + ' + global notoriety scaling');
+        lines.push('🦠 Effect: ' + v.effect);
         return lines.join('<br>');
     }
 
@@ -18572,6 +18658,14 @@ window.UI = (function () {
             var prev = document.getElementById('isPreview_' + idx);
             if (!tSel || !prev) return;
             prev.innerHTML = _buildInciteStrikesPreview(idx, tSel.value);
+        },
+        // v9p33river347: Spread Plague helpers.
+        _buildSpreadPlaguePreview: _buildSpreadPlaguePreview,
+        _spRefresh: function(idx) {
+            var vSel = document.getElementById('spVariant_' + idx);
+            var prev = document.getElementById('spPreview_' + idx);
+            if (!vSel || !prev) return;
+            prev.innerHTML = _buildSpreadPlaguePreview(idx, vSel.value);
         },
         // Noble Council Voting
         openVotingDialog,
