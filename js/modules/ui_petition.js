@@ -12,6 +12,14 @@
     var toast = UI.toast;
     var formatGold = UI.formatGold;
     var findResource = UI.findResource;
+    // v9p33river325: lightweight html escape for kingdom/town names in
+    // option labels (town/kingdom names shouldn't have html, but be safe).
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, function(c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
 
     function showPetitionsPanel() {
         var active = Player.getActivePetitions();
@@ -146,39 +154,99 @@
         } else if (pt.targetType === 'town_pair') {
             html += '<h4 style="color:#ccc;">Select Towns:</h4>';
             var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
-            var kTowns = towns.filter(function(t) { return t.kingdomId === playerKingdomId; });
+            // v9p33river325: petitions for build_road can now request a
+            // road that touches OTHER kingdoms (e.g. cross-border trade
+            // road). Sort player-kingdom towns first, then group by
+            // kingdom name in the dropdown for clear visual separation.
+            var kingdoms = (typeof Engine !== 'undefined' && Engine.getKingdoms) ? Engine.getKingdoms() : [];
+            var _kNameById = {};
+            for (var _ki = 0; _ki < kingdoms.length; _ki++) _kNameById[kingdoms[_ki].id] = kingdoms[_ki].name;
+            var _eligTowns = towns.filter(function(t) { return !t.isJunction && !t.isWilderness && !t.destroyed; });
+            _eligTowns.sort(function(a, b) {
+                var aOwn = a.kingdomId === playerKingdomId ? 0 : 1;
+                var bOwn = b.kingdomId === playerKingdomId ? 0 : 1;
+                if (aOwn !== bOwn) return aOwn - bOwn;
+                var aK = _kNameById[a.kingdomId] || 'Independent';
+                var bK = _kNameById[b.kingdomId] || 'Independent';
+                if (aK !== bK) return aK.localeCompare(bK);
+                return (a.name || '').localeCompare(b.name || '');
+            });
+            var _renderTownOptions = function() {
+                var s = '';
+                var _lastK = null;
+                for (var i = 0; i < _eligTowns.length; i++) {
+                    var t = _eligTowns[i];
+                    var kName = _kNameById[t.kingdomId] || 'Independent';
+                    if (kName !== _lastK) {
+                        if (_lastK !== null) s += '</optgroup>';
+                        var ownTag = (t.kingdomId === playerKingdomId) ? ' (Your Kingdom)' : '';
+                        s += '<optgroup label="' + escapeHtml(kName + ownTag) + '">';
+                        _lastK = kName;
+                    }
+                    s += '<option value="' + t.id + '">' + escapeHtml(t.name) + ' — ' + escapeHtml(kName) + '</option>';
+                }
+                if (_lastK !== null) s += '</optgroup>';
+                return s;
+            };
             html += '<div style="margin-bottom:8px;"><label style="color:#aaa;">From: </label>';
-            html += '<select id="petFromTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;">';
-            for (var i = 0; i < kTowns.length; i++) {
-                html += '<option value="' + kTowns[i].id + '">' + kTowns[i].name + '</option>';
-            }
+            html += '<select id="petFromTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;min-width:240px;">';
+            html += _renderTownOptions();
             html += '</select></div>';
             html += '<div style="margin-bottom:8px;"><label style="color:#aaa;">To: </label>';
-            html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;">';
-            for (var i = 0; i < kTowns.length; i++) {
-                html += '<option value="' + kTowns[i].id + '">' + kTowns[i].name + '</option>';
-            }
+            html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;min-width:240px;">';
+            html += _renderTownOptions();
             html += '</select></div>';
+            html += '<div style="font-size:0.72rem;color:#888;margin-bottom:6px;">💡 Roads can be petitioned to/from other kingdoms; cross-border requests are harder to pass.</div>';
             html += '<button class="btn-medieval" style="padding:6px 16px;" data-action="confirmCreatePetitionTownPair" data-id="' + typeId + '">Create Petition</button>';
         } else if (pt.targetType === 'port_pair') {
             html += '<h4 style="color:#ccc;">Select Port Towns:</h4>';
             var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
-            var portTowns = towns.filter(function(t) { return t.isPort && t.kingdomId === playerKingdomId; });
+            // v9p33river325: same cross-kingdom extension for sea routes.
+            // Show all ports, sorted player-kingdom first, then grouped
+            // by kingdom in optgroups with the kingdom name shown after
+            // the port name in each option.
+            var kingdoms = (typeof Engine !== 'undefined' && Engine.getKingdoms) ? Engine.getKingdoms() : [];
+            var _kNameById = {};
+            for (var _ki = 0; _ki < kingdoms.length; _ki++) _kNameById[kingdoms[_ki].id] = kingdoms[_ki].name;
+            var portTowns = towns.filter(function(t) { return t.isPort && !t.destroyed; });
+            portTowns.sort(function(a, b) {
+                var aOwn = a.kingdomId === playerKingdomId ? 0 : 1;
+                var bOwn = b.kingdomId === playerKingdomId ? 0 : 1;
+                if (aOwn !== bOwn) return aOwn - bOwn;
+                var aK = _kNameById[a.kingdomId] || 'Independent';
+                var bK = _kNameById[b.kingdomId] || 'Independent';
+                if (aK !== bK) return aK.localeCompare(bK);
+                return (a.name || '').localeCompare(b.name || '');
+            });
             if (portTowns.length < 2) {
-                html += '<div style="color:#888;">Not enough port towns in your kingdom.</div>';
+                html += '<div style="color:#888;">Not enough port towns to establish a sea route.</div>';
             } else {
+                var _renderPortOptions = function(selectedIdx) {
+                    var s = '';
+                    var _lastK = null;
+                    for (var i = 0; i < portTowns.length; i++) {
+                        var t = portTowns[i];
+                        var kName = _kNameById[t.kingdomId] || 'Independent';
+                        if (kName !== _lastK) {
+                            if (_lastK !== null) s += '</optgroup>';
+                            var ownTag = (t.kingdomId === playerKingdomId) ? ' (Your Kingdom)' : '';
+                            s += '<optgroup label="' + escapeHtml(kName + ownTag) + '">';
+                            _lastK = kName;
+                        }
+                        s += '<option value="' + t.id + '"' + (i === selectedIdx ? ' selected' : '') + '>⚓ ' + escapeHtml(t.name) + ' — ' + escapeHtml(kName) + '</option>';
+                    }
+                    if (_lastK !== null) s += '</optgroup>';
+                    return s;
+                };
                 html += '<div style="margin-bottom:8px;"><label style="color:#aaa;">From Port: </label>';
-                html += '<select id="petFromTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;">';
-                for (var i = 0; i < portTowns.length; i++) {
-                    html += '<option value="' + portTowns[i].id + '">⚓ ' + portTowns[i].name + '</option>';
-                }
+                html += '<select id="petFromTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;min-width:240px;">';
+                html += _renderPortOptions(0);
                 html += '</select></div>';
                 html += '<div style="margin-bottom:8px;"><label style="color:#aaa;">To Port: </label>';
-                html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;">';
-                for (var i = 0; i < portTowns.length; i++) {
-                    html += '<option value="' + portTowns[i].id + '"' + (i === 1 ? ' selected' : '') + '>⚓ ' + portTowns[i].name + '</option>';
-                }
+                html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;min-width:240px;">';
+                html += _renderPortOptions(1);
                 html += '</select></div>';
+                html += '<div style="font-size:0.72rem;color:#888;margin-bottom:6px;">💡 Sea routes can span kingdoms; foreign routes require strong diplomatic ties.</div>';
                 html += '<button class="btn-medieval" style="padding:6px 16px;" data-action="confirmCreatePetitionTownPair" data-id="' + typeId + '">Create Petition</button>';
             }
         } else if (pt.targetType === 'road') {

@@ -32003,6 +32003,32 @@
                 if (kp.temperament === 'kind') chance -= 0.15;
                 if (kp.greed === 'generous') chance -= 0.10;
             }
+            // v9p33river325: cross-kingdom road/sea route petitions are
+            // harder to pass — the king has no direct stake in foreign
+            // infrastructure. Diplomatic relations + alliances soften
+            // the penalty; war neighbors get an extra hit.
+            if ((petition.typeId === 'build_road' || petition.typeId === 'build_sea_route') && petition.targetData) {
+                var _fromT = Engine.findTown(petition.targetData.fromTownId);
+                var _toT = Engine.findTown(petition.targetData.toTownId);
+                var _isCrossBorder = (_fromT && _toT && _fromT.kingdomId !== _toT.kingdomId);
+                var _touchesForeign = (_fromT && _fromT.kingdomId !== petition.kingdomId) || (_toT && _toT.kingdomId !== petition.kingdomId);
+                if (_isCrossBorder || _touchesForeign) {
+                    chance -= 0.25; // base cross-border penalty
+                    // Restore some chance if there's an alliance with the foreign endpoint
+                    var _foreignKid = (_fromT && _fromT.kingdomId !== petition.kingdomId) ? _fromT.kingdomId :
+                                      (_toT && _toT.kingdomId !== petition.kingdomId ? _toT.kingdomId : null);
+                    if (_foreignKid && kingdom.alliances) {
+                        var _allied = (kingdom.alliances instanceof Set) ? kingdom.alliances.has(_foreignKid) :
+                                       Array.isArray(kingdom.alliances) && kingdom.alliances.indexOf(_foreignKid) >= 0;
+                        if (_allied) chance += 0.20;
+                    }
+                    if (_foreignKid && kingdom.atWar) {
+                        var _atWar = (kingdom.atWar instanceof Set) ? kingdom.atWar.has(_foreignKid) :
+                                     Array.isArray(kingdom.atWar) && kingdom.atWar.indexOf(_foreignKid) >= 0;
+                        if (_atWar) chance -= 0.40; // can't build infrastructure with active enemies
+                    }
+                }
+            }
         }
 
         // Player bonuses
