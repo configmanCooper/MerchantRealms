@@ -23,8 +23,13 @@
 
     function buyHorse(townId) {
         _sync();
-        if (player.horses.length >= ((CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0))) {
-            return { success: false, message: 'You can only have ' + ((CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0)) + ' horses.' };
+        // v9p33river305: count mounted + inventory horses to match the cap
+        // used by the regular buy/sell paths (player.js:1574) — was
+        // mount-only which let players bypass the horse cap.
+        var _maxBh = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0);
+        var _totalBh = (player.horses ? player.horses.length : 0) + ((player.inventory && player.inventory.horses) || 0);
+        if (_totalBh >= _maxBh) {
+            return { success: false, message: 'You can only have ' + _maxBh + ' horses total (mounted + inventory).' };
         }
         var town = Engine.findTown(townId);
         if (!town || !town.market) return { success: false, message: 'No market here.' };

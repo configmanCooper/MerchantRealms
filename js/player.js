@@ -18956,6 +18956,34 @@
             sabotagedBuildings: structuredClone(player.sabotagedBuildings || []),
             blackmailTargets: structuredClone(player.blackmailTargets || {}),
             rumorTargets: structuredClone(player.rumorTargets || {}),
+            // v9p33river305: previously-omitted Dark Deeds / scheme / agent state
+            // — purchased spy networks, smuggling routes, protection rackets,
+            // forged documents, double-agent service, double-noble missions,
+            // ongoing intrigues, discovered secrets, scheme cooldowns/history/
+            // log, noble dossier, lay-low notoriety reduction, and the legacy
+            // scheme cooldowns + npc-schemes-against-player history all vanished
+            // on save/load. Now serialized.
+            nobleNotoriety: player.nobleNotoriety || 0,
+            schemeCooldowns: structuredClone(player.schemeCooldowns || {}),
+            npcSchemesAgainstPlayer: structuredClone(player.npcSchemesAgainstPlayer || []),
+            spyNetworks: structuredClone(player.spyNetworks || {}),
+            smugglingRoutes: structuredClone(player.smugglingRoutes || []),
+            protectionRackets: structuredClone(player.protectionRackets || {}),
+            forgedDocuments: structuredClone(player.forgedDocuments || {}),
+            doubleAgentActive: player.doubleAgentActive ? structuredClone(player.doubleAgentActive) : null,
+            doubleNobleAgent: player.doubleNobleAgent ? structuredClone(player.doubleNobleAgent) : null,
+            nobleIntrigues: structuredClone(player.nobleIntrigues || {}),
+            _discoveredSecrets: structuredClone(player._discoveredSecrets || []),
+            _schemeCooldowns: structuredClone(player._schemeCooldowns || {}),
+            _schemeTargetHistory: structuredClone(player._schemeTargetHistory || {}),
+            _schemeLog: structuredClone(player._schemeLog || []),
+            _nobleDossier: structuredClone(player._nobleDossier || {}),
+            notorietyReduction: player.notorietyReduction ? structuredClone(player.notorietyReduction) : null,
+            // v9p33river305: gift cooldowns and military progress also missing
+            _giftCooldowns: structuredClone(player._giftCooldowns || {}),
+            militaryRankProgress: player.militaryRankProgress || 0,
+            militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
+            _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
             // Spouse personality / dating / regency
             revealedTraits: structuredClone(player.revealedTraits || {}),
             discoveredGiftPrefs: structuredClone(player.discoveredGiftPrefs || {}),
@@ -19429,6 +19457,27 @@
         player.sabotagedBuildings = data.sabotagedBuildings || [];
         player.blackmailTargets = data.blackmailTargets || {};
         player.rumorTargets = data.rumorTargets || {};
+        // v9p33river305: restore previously-omitted dark deeds / agent state.
+        player.nobleNotoriety = data.nobleNotoriety || 0;
+        player.schemeCooldowns = data.schemeCooldowns || {};
+        player.npcSchemesAgainstPlayer = data.npcSchemesAgainstPlayer || [];
+        player.spyNetworks = data.spyNetworks || {};
+        player.smugglingRoutes = data.smugglingRoutes || [];
+        player.protectionRackets = data.protectionRackets || {};
+        player.forgedDocuments = data.forgedDocuments || {};
+        player.doubleAgentActive = data.doubleAgentActive || null;
+        player.doubleNobleAgent = data.doubleNobleAgent || null;
+        player.nobleIntrigues = data.nobleIntrigues || {};
+        player._discoveredSecrets = data._discoveredSecrets || [];
+        player._schemeCooldowns = data._schemeCooldowns || {};
+        player._schemeTargetHistory = data._schemeTargetHistory || {};
+        player._schemeLog = data._schemeLog || [];
+        player._nobleDossier = data._nobleDossier || {};
+        player.notorietyReduction = data.notorietyReduction || null;
+        player._giftCooldowns = data._giftCooldowns || {};
+        player.militaryRankProgress = data.militaryRankProgress || 0;
+        player.militaryPendingEvent = data.militaryPendingEvent || null;
+        player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;
         // Spouse personality / dating / regency
         player.revealedTraits = data.revealedTraits || {};
         player.discoveredGiftPrefs = data.discoveredGiftPrefs || {};

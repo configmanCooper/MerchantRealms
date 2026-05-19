@@ -113,7 +113,11 @@
             // inventory is empty, and then buy the CHEAPEST available food.
             // Auto-buy food from town market
             const town = Engine.findTown(player.townId);
-            if (town && player.hunger < 60) {
+            // v9p33river305: gate was hunger < 60 but inner loops fill until
+            // 80. So players with hunger 60-79 stayed at the same level (no
+            // food bought, no decay since this is the entry path). Raised
+            // the gate to match the fill target.
+            if (town && player.hunger < 80) {
                 const foodTypes = [...HUNGER_CONFIG.FOOD_TYPES, ...HUNGER_CONFIG.RAW_FOOD_TYPES];
                 // First: eat from inventory if anything is there
                 while (player.hunger < 80) {

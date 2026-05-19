@@ -802,8 +802,15 @@
             if (child.birthDay != null && child.birthDay > 0) {
                 var expectedAge = Math.floor((currentDay - child.birthDay) / daysPerYear);
                 if (expectedAge > child.age) {
+                    var _wasUnder = child.age < (CONFIG.COMING_OF_AGE || 18);
                     child.age = expectedAge;
-                    if (child.age === CONFIG.COMING_OF_AGE) {
+                    // v9p33river305: was `=== CONFIG.COMING_OF_AGE` — children
+                    // who skip from below 18 to above 18 in one tick missed
+                    // the event entirely. Fire on the first tick that crosses
+                    // the threshold.
+                    var _coa = CONFIG.COMING_OF_AGE || 18;
+                    if (_wasUnder && child.age >= _coa && !child._cameOfAge) {
+                        child._cameOfAge = true;
                         child.occupation = rng.pick(['farmer', 'laborer', 'craftsman', 'miner', 'woodcutter']);
                         child.skills = { farming: 10, mining: 10, crafting: 10, trading: 10, combat: 10 };
                         child.gold = (child.gold || 0) + 20;

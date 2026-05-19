@@ -18,7 +18,10 @@
     var unlockAchievement = function(id) { return Player.unlockAchievement(id); };
     var autoJournalCapture = function(type, text, opts) { return Player.autoJournalCapture(type, text, opts); };
     var cleanupTravelState = function() { return Player.cleanupTravelState(); };
-    var hasLicense = function(resId) { return Player.hasLicense(resId); };
+    // v9p33river305: was single-arg alias dropping kingdomId — Player.hasLicense
+    // expects (kingdomId, resourceId). Caravan restricted-sale checks always
+    // saw 'no license' even with valid kingdom licenses.
+    var hasLicense = function(kingdomId, resId) { return Player.hasLicense(kingdomId, resId); };
     var attemptRestrictedTrade = function(resourceId, qty, town, kingdom, basePrice) { return Player.attemptRestrictedTrade(resourceId, qty, town, kingdom, basePrice); };
     var attemptBorderCrossing = function(townId) { return Player.attemptBorderCrossing(townId); };
     var getBuildingConsumedGoods = function(bldTypeId) { return Player.getBuildingConsumedGoods(bldTypeId); };

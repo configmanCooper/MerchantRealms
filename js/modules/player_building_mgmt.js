@@ -200,7 +200,10 @@
         if (bt.category === 'farm') {
             if (hasSkill('soil_knowledge')) mult += 0.15;
             if (hasSkill('animal_husbandry')) mult += 0.10;
-        } else if (bt.category === 'mine') {
+        } else if (bt.category === 'mining' || bt.category === 'mine') {
+            // v9p33river305: building catalog uses 'mining' (see
+            // player_building_mgmt.js:67) but this branch only matched
+            // 'mine'. Accept both so mining skill bonuses actually apply.
             if (hasSkill('mining_efficiency')) mult += 0.15;
         } else if (bt.category === 'processing' || bt.category === 'finished') {
             if (hasSkill('efficient_builder')) mult += 0.15;
@@ -224,7 +227,8 @@
         if (!player.skills) player.skills = {};
         var skillKey = null;
         if (bt.category === 'farm') skillKey = 'soil_knowledge';
-        else if (bt.category === 'mine') skillKey = 'mining_efficiency';
+        // v9p33river305: same 'mining' vs 'mine' fix as mult check above.
+        else if (bt.category === 'mining' || bt.category === 'mine') skillKey = 'mining_efficiency';
         else if (bt.category === 'processing' || bt.category === 'finished') skillKey = 'efficient_builder';
 
         if (skillKey && !Player.hasSkill(skillKey)) {

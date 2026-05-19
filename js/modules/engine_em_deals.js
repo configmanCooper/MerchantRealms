@@ -516,12 +516,15 @@
         var intervals = [14, 30, 60];
 
         // Get EM buildings for delivery targets
+        // v9p33river305: prefer the stable bld.id when present; only fall
+        // back to the synthetic `type_N` form for legacy buildings without
+        // an id. Synthetic IDs broke when town.buildings was reordered.
         var emBuildings = _getEMBuildings(em);
         var emBuildingRef = null;
         var emBuildingTown = null;
         if (emBuildings.length > 0) {
             var chosen = emBuildings[rng.randInt(0, emBuildings.length - 1)];
-            emBuildingRef = chosen.building.type + '_0';
+            emBuildingRef = (chosen.building && chosen.building.id) ? chosen.building.id : (chosen.building.type + '_0');
             emBuildingTown = chosen.townId;
         }
 
@@ -534,7 +537,8 @@
             if (pTown && pTown.buildings) {
                 for (var pbi = 0; pbi < pTown.buildings.length; pbi++) {
                     if (pTown.buildings[pbi].ownerId === 'player') {
-                        playerBuildingRef = pTown.buildings[pbi].type + '_' + pbi;
+                        var _pb = pTown.buildings[pbi];
+                        playerBuildingRef = _pb.id || (_pb.type + '_' + pbi);
                         playerBuildingTown = ps.currentTownId;
                         break;
                     }

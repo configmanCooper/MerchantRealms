@@ -2830,7 +2830,7 @@
         html += '<div style="font-size:0.8rem;color:#ddd;margin-bottom:12px;">You will abandon your crown and everything you\'ve built. There is no going back.</div>';
         html += '<div style="display:flex;gap:8px;justify-content:center;">';
         html += '<button class="btn-medieval" data-action="kingFleeConfirm" style="background:rgba(196,78,82,0.4) !important;border-color:rgba(196,78,82,0.6) !important;">💨 Yes, Flee!</button>';
-        html += '<button class="btn-medieval" data-action="openKingPanel" data-type="threats">Cancel</button>';
+        html += '<button class="btn-medieval" data-action="openKingPanel" data-id="threats">Cancel</button>';
         html += '</div></div>';
         openModal('💨 Confirm Escape', html, '');
     }

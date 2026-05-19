@@ -121,8 +121,12 @@
         if (op.hasRoad) body += '<span style="color:#55a868">🛤️ Connected</span>';
         body += '</div>';
         if (op.soilFertility > 0) body += '<div style="font-size:11px;color:#888;margin-top:4px">🌾 Soil fertility: ' + Math.floor(op.soilFertility * 100) + '%</div>';
+        // v9p33river305: defensive guards — old/partial outpost data may lack
+        // naturalDeposits / connectedRoads / connectedSeaRoutes, which would
+        // crash the whole detail panel.
         var depNames = [];
-        for (var dk in op.naturalDeposits) { if (op.naturalDeposits[dk] > 0) depNames.push(dk); }
+        var _opDeposits = op.naturalDeposits || {};
+        for (var dk in _opDeposits) { if (_opDeposits[dk] > 0) depNames.push(dk); }
         if (depNames.length > 0) body += '<div style="font-size:11px;color:#888">⛏️ Deposits: ' + depNames.join(', ') + '</div>';
         // NPC Needs display
         var _opTown = Engine.findTown(townId);
@@ -437,19 +441,23 @@
         // === INFRASTRUCTURE (Roads & Sea Routes) ===
         body += '<div style="background:rgba(40,40,40,0.6);padding:10px;border-radius:6px;margin-bottom:8px">';
         body += '<h5 style="margin:0 0 6px;color:#ccc">🛤️ Infrastructure</h5>';
-        if (op.connectedRoads.length > 0) {
-            for (var ri = 0; ri < op.connectedRoads.length; ri++) {
-                var cr = op.connectedRoads[ri];
+        // v9p33river305: defensive — connectedRoads / connectedSeaRoutes
+        // may be undefined on partial outpost data.
+        var _opRoads = op.connectedRoads || [];
+        var _opSeaRoutes = op.connectedSeaRoutes || [];
+        if (_opRoads.length > 0) {
+            for (var ri = 0; ri < _opRoads.length; ri++) {
+                var cr = _opRoads[ri];
                 body += '<div style="font-size:11px;color:#aaa;margin:2px 0">🛤️ Road → ' + cr.name + '</div>';
             }
         }
-        if (op.connectedSeaRoutes.length > 0) {
-            for (var si = 0; si < op.connectedSeaRoutes.length; si++) {
-                var cs = op.connectedSeaRoutes[si];
+        if (_opSeaRoutes.length > 0) {
+            for (var si = 0; si < _opSeaRoutes.length; si++) {
+                var cs = _opSeaRoutes[si];
                 body += '<div style="font-size:11px;color:#aaa;margin:2px 0">🚢 Sea Route → ' + cs.name + '</div>';
             }
         }
-        if (op.connectedRoads.length === 0 && op.connectedSeaRoutes.length === 0) {
+        if (_opRoads.length === 0 && _opSeaRoutes.length === 0) {
             body += '<div style="font-size:11px;color:#c44e52">⚠️ No connections — offroad access only!</div>';
         }
         // Build new road

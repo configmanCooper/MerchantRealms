@@ -717,7 +717,10 @@ var StoryMode = (function () {
         if (objId === 'ch16_reach_noble') {
             // Player just became Minor Noble — schedule a feast at the capital in 7 days
             // Also unlock the Nobility button
-            _unlockButtons(['#btnNobility']);
+            // v9p33river305: isButtonUnlocked checks tab/category keys
+            // ('character' etc.), not '#btnNobility' selectors. Pushing the
+            // selector did nothing — unlock the right category instead.
+            _unlockButtons(['character']);
             try {
                 var _valdrenKId = null;
                 var _allKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
@@ -3186,7 +3189,17 @@ var StoryMode = (function () {
             dialogsSeen:      _storyState.dialogsSeen.slice(),
             chapterStartDay:  _storyState.chapterStartDay,
             activeDialog:     dialogState,
-            progressMap:      progressMap
+            progressMap:      progressMap,
+            // v9p33river305: include player-side story fields (storyNPCs,
+            // town-quest flags, etc.) so the active-save path doesn't strip
+            // them. Player.deserialize copies this object into
+            // player.storyMode wholesale, so subsequent _findStoryNPC()
+            // lookups by storyNPCs.fatherId/lordCalderId/etc. work after
+            // load.
+            storyNPCs:            (typeof Player !== 'undefined' && Player.storyMode && Player.storyMode.storyNPCs) ? JSON.parse(JSON.stringify(Player.storyMode.storyNPCs)) : null,
+            _acceptedTownQuest:   (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._acceptedTownQuest : false,
+            _completedTownQuest:  (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._completedTownQuest : false,
+            _firstGuardHired:     (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._firstGuardHired : false,
         };
     }
 

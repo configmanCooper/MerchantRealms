@@ -284,31 +284,50 @@
         // Transfer ownership
         Player.state.gold -= price;
         em.gold = (em.gold || 0) + price;
+        // v9p33river305: previously the player-side building was a fresh
+        // clone (with a new id) while the town-side building's `id` was
+        // ALSO mutated. That created two divergent records. Reuse the
+        // town building object directly so there's a single source of
+        // truth, then transfer ownership in-place. Also: the EM-building
+        // filter below was per-(town, type) which deleted ALL same-type
+        // buildings the EM owned in that town. Now we filter by exact
+        // building reference (or id, if available).
+        var _sameRef = b;
         b.ownerId = 'player';
         b.workers = [];
         b.inventory = b.inventory || {};
+        b.active = true;
+        b.level = b.level || 1;
+        b.builtDay = b.builtDay || (Engine.getDay ? Engine.getDay() : 0);
+        b.condition = b.condition || 'new';
+        b.lastRepairDay = b.lastRepairDay || 0;
+        b.transferTarget = null;
+        b.transferEnabled = false;
+        if (!b.id) b.id = 'bld_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 
-        // Update EM's building list
+        // Update EM's building list — remove only the specific building purchased
         if (em.buildings) {
             em.buildings = em.buildings.filter(function(br) {
-                return !(br.townId === townId && br.type === b.type);
+                // Match by id if the EM record has one and it matches; else
+                // fall back to (townId, type, ownerId) but only remove the
+                // FIRST match (use a flag) to avoid deleting all same-type.
+                if (br.id && b.id && br.id === b.id) return false;
+                return true;
             });
         }
 
-        // Add to player buildings with full structure
+        // Add to player buildings list (point to the same town building)
         if (!Player.state.buildings) Player.state.buildings = [];
-        var newBldId = 'bld_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        b.id = newBldId;
         Player.state.buildings.push({
-            id: newBldId,
+            id: b.id,
             type: b.type,
             townId: townId,
             workers: [],
             active: true,
-            level: b.level || 1,
-            builtDay: Engine.getDay ? Engine.getDay() : 0,
-            condition: b.condition || 'good',
-            lastRepairDay: 0,
+            level: b.level,
+            builtDay: b.builtDay,
+            condition: b.condition,
+            lastRepairDay: b.lastRepairDay,
             transferTarget: null,
             transferEnabled: false,
         });

@@ -33220,10 +33220,21 @@
                     // Keep dead player children, elite merchants, and their heirs
                     if (p.id && p.id.startsWith('p_child_')) return true;
                     if (p.isEliteMerchant && (p.alive || (world.day - (p._deathDay || 0)) < 120)) return true;
+                    // v9p33river305: keep dead NPCs that are still REFERENCED by the
+                    // living world (player relationships, spouse/parent/child links,
+                    // story NPCs, scheme targets, etc.). Filtering them out broke
+                    // every spouseId/parentIds/childrenIds pointer to an ordinary
+                    // dead NPC.
+                    if (p.isStoryNPC) return true;
+                    if (p._referencedDead) return true;
                     return false;
                 }),
                 events: world.events,
                 eventLog: world.eventLog.slice(-100),
+                // v9p33river305: previously omitted — major event history (permanent
+                // chronicle) and 30-day background gossip vanished on load.
+                majorEventHistory: (world.majorEventHistory || []).slice(-200),
+                _backgroundGossip: (world._backgroundGossip || []).slice(-200),
                 armies: world.armies,
                 activeWars: world.activeWars || {},
                 treaties: world.treaties || [],
@@ -33245,7 +33256,12 @@
             world.hour = data.hour || 0;
             world.rng = createRNG(world.seed);
             // Advance RNG to current state (approximate — re-seed is good enough)
-            for (let i = 0; i < world.day; i++) world.rng.random();
+            // v9p33river305: include hour in the advance so same-day saves
+            // reload with a consistent RNG stream (was day-only, dropping
+            // intra-day variance).
+            var _hoursPerDay = 24;
+            var _rngTicks = (world.day * _hoursPerDay) + (world.hour || 0);
+            for (let i = 0; i < _rngTicks; i++) world.rng.random();
 
             // v9p33river31: restore the saved map's background image if it differs from
             // what was auto-loaded at page boot. Renderer's _loadTestworld1 picks at boot
@@ -33844,6 +33860,10 @@
             }
             world.events = data.events || [];
             world.eventLog = data.eventLog || [];
+            // v9p33river305: restore previously-omitted history arrays so
+            // major-world chronicle and 30-day NPC gossip survive reload.
+            world.majorEventHistory = data.majorEventHistory || [];
+            world._backgroundGossip = data._backgroundGossip || [];
             world.armies = data.armies || [];
             world.activeWars = data.activeWars || {};
             world.treaties = data.treaties || [];

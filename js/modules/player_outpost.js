@@ -59,14 +59,17 @@
         }
 
         // Determine outpost position
+        // v9p33river305: player.travelData is obsolete; live travel state is
+        // travelProgress/travelRoute/travelDestination. Use the canonical
+        // helper that resolves the player's current world coords during
+        // travel (it knows about waypoints + sea routes too).
         var ox, oy;
-        if (player.traveling && player.travelData) {
-            var from = Engine.findTown(player.travelData.fromTownId);
-            var to = Engine.findTown(player.travelData.toTownId);
-            if (from && to) {
-                var progress = player.travelData.progress || 0.5;
-                ox = Math.floor(from.x + (to.x - from.x) * progress);
-                oy = Math.floor(from.y + (to.y - from.y) * progress);
+        if (player.traveling && typeof Player !== 'undefined' && Player.getPlayerWorldPosition) {
+            var _pPos = null;
+            try { _pPos = Player.getPlayerWorldPosition(); } catch (_e) {}
+            if (_pPos && _pPos.x != null && _pPos.y != null) {
+                ox = Math.floor(_pPos.x);
+                oy = Math.floor(_pPos.y);
             } else {
                 var town = Engine.findTown(player.townId);
                 ox = town ? town.x + 30 : 100;

@@ -821,6 +821,10 @@
             if (playerTown === notif.funeralTownId) {
                 // v9p33river91: synthesize a funeralPlan so the full attendance UI
                 // opens (was just a toast before, which felt empty).
+                // v9p33river305: previously stored burialType/ceremonyStyle
+                // but consumer reads plan.burial / plan.ceremony — AI funerals
+                // lost burial/ceremony effects (extra actions, attendee logic).
+                // Match the canonical schema used by player-planned funerals.
                 ps.funeralPlan = {
                     deceasedId: notif.deceasedId,
                     deceasedName: notif.deceasedName,
@@ -829,8 +833,8 @@
                     funeralTownId: notif.funeralTownId,
                     plannedBy: notif.plannedBy,
                     timing: 'standard',
-                    burialType: 'family_plot',
-                    ceremonyStyle: 'public',
+                    burial: 'family_plot',
+                    ceremony: 'public',
                     aiPlanned: true,
                     attendees: []
                 };

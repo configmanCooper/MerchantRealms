@@ -65,6 +65,13 @@
         }
 
         if (rng && rng.chance(detectionChance)) {
+            // v9p33river305: _smugRepPenalty was previously assigned below
+            // (line ~116) AFTER this immunity branch read it — producing
+            // undefined / NaN reputation loss and broken toast messages.
+            // Compute it up front so both branches see a valid number.
+            var _smugRes = findResource(resourceId);
+            var _smugIsWarGoods = _smugRes && (_smugRes.category === 'military' || resourceId === 'swords' || resourceId === 'armor' || resourceId === 'bows' || resourceId === 'shields' || resourceId === 'blasting_powder');
+            var _smugRepPenalty = _smugIsWarGoods ? (CONFIG.SMUGGLING_REP_PENALTY_WAR_GOODS || 5) : (CONFIG.SMUGGLING_REP_PENALTY || 1);
             // Crime immunity check — Lords in lord town, RA kingdom-wide
             var smugImmunity = Player.checkCrimeImmunity(town.id, kingdom.id);
             if (smugImmunity.immune) {
@@ -111,9 +118,9 @@
             }
 
             const fineAmount = Math.floor(basePrice * qty * CONFIG.SMUGGLING_FINE_MULTIPLIER);
-            var _smugRes = findResource(resourceId);
-            var _smugIsWarGoods = _smugRes && (_smugRes.category === 'military' || resourceId === 'swords' || resourceId === 'armor' || resourceId === 'bows' || resourceId === 'shields' || resourceId === 'blasting_powder');
-            var _smugRepPenalty = _smugIsWarGoods ? (CONFIG.SMUGGLING_REP_PENALTY_WAR_GOODS || 5) : (CONFIG.SMUGGLING_REP_PENALTY || 1);
+            // v9p33river305: _smugRepPenalty + _smugRes hoisted above
+            // (computed at the top of the caught-branch so the immunity path
+            // sees a valid number).
 
             // Special law: blood_price — pay 2x fine instead of jail
             if (hasSpecialLaw(kingdom, 'blood_price')) {

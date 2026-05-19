@@ -195,9 +195,12 @@
         if (!rng) return null;
 
         // Check if this king's personality is warlike enough to assign leaders
+        // v9p33river305: kingPersonality fields are militarism/temperament/
+        // greed/intelligence/etc (see engine.js:1156-1167). There's no
+        // `military` or `diplomatic` field — the old check was always false.
         var personality = kingdom.kingPersonality || {};
-        var warlike = personality.military === 'warlike' || personality.military === 'aggressive';
-        var strategic = personality.diplomatic === 'cunning' || personality.diplomatic === 'strategic';
+        var warlike = personality.militarism === 'warlike' || personality.militarism === 'aggressive';
+        var strategic = personality.intelligence === 'brilliant' || personality.intelligence === 'clever';
         // Base chance: 40% for warlike kings, 25% for strategic, 15% for others
         var assignChance = warlike ? 0.40 : (strategic ? 0.25 : 0.15);
         // Higher chance for larger armies
@@ -386,10 +389,14 @@
                     if (!p.alive || p.occupation === 'soldier' || p.status === 'indentured') return false;
                     if (post.type === 'royal_guard') {
                         // 18-35, prior guard/soldier experience, citizen rank+
+                        // v9p33river305: p.socialRank is a per-kingdom object
+                        // map, not a number — `>= 1` was always false. Check
+                        // the rank in THIS kingdom (k.id).
+                        var _rgRank = (p.socialRank && typeof p.socialRank === 'object') ? (p.socialRank[k.id] || 0) : (p.socialRank || 0);
                         return p.age >= 18 && p.age <= 35 &&
                                (p.previousOccupation === 'soldier' || p.previousOccupation === 'guard' ||
                                 p.combatSkill >= 20 || p.militaryExperience) &&
-                               (p.socialRank >= 1 || (p.citizenship && p.citizenship[k.id]));
+                               (_rgRank >= 1 || (p.citizenship && p.citizenship[k.id]));
                     } else if (post.type === 'guard') {
                         // 16-55, able-bodied
                         return p.age >= 16 && p.age <= 55 &&
@@ -1265,8 +1272,10 @@
                     }
                 }
                 // H3: Diplomatic kings form alliances easier
+                // v9p33river305: no kingPersonality.diplomatic field. Map to
+                // non-warlike militarism + fair/kind temperament.
                 var _kDip = k.kingPersonality || {};
-                if (_kDip.diplomatic === 'diplomatic' || (_kDip.diplomatic || 0) > 60) {
+                if (_kDip.militarism === 'passive' || _kDip.temperament === 'kind' || _kDip.temperament === 'fair') {
                     allianceRelThresh -= 5;
                 }
                 if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !k.atWar.has(other.id)) {
@@ -6625,8 +6634,11 @@
         }
 
         // 2. Try to sue for peace — based on personality
+        // v9p33river305: kingPersonality has no `diplomatic` field. Use
+        // militarism/temperament instead (passive militarism + kind/fair
+        // temperament = diplomatic king).
         if (atWar && daysSinceRevolt > 10) {
-            var diplomatic = p.diplomatic || 50;
+            var _isDiplomatic = p.militarism === 'passive' || p.temperament === 'kind' || p.temperament === 'fair';
             var courage = p.courage || 'cautious';
             k.atWar.forEach(function(enemyId) {
                 var enemy = findKingdom(enemyId);
@@ -6638,7 +6650,7 @@
                 if (ourStr < theirStr * 0.5) peaceDesire += 0.4;
                 else if (ourStr < theirStr * 0.8) peaceDesire += 0.2;
                 // Diplomatic kings seek peace sooner
-                if (diplomatic === 'diplomatic' || diplomatic > 65) peaceDesire += 0.2;
+                if (_isDiplomatic) peaceDesire += 0.2;
                 // Brave/ambitious kings fight longer
                 if (courage === 'brave' || p.ambition === 'ambitious') peaceDesire -= 0.15;
                 // Low treasury pushes for peace
@@ -7346,8 +7358,10 @@
                 };
 
                 // AI: strategically send demolition tools and blasting powder from kingdom stockpile
-                var _kingPersonality = kingdom.personality || {};
-                var _isAggressive = _kingPersonality.military === 'warlike' || _kingPersonality.military === 'aggressive';
+                // v9p33river305: was kingdom.personality (doesn't exist) — the
+                // canonical field is kingdom.kingPersonality.militarism.
+                var _kingPersonality = kingdom.kingPersonality || {};
+                var _isAggressive = _kingPersonality.militarism === 'warlike' || _kingPersonality.militarism === 'aggressive';
                 var _demoAvail = 0, _blastAvail = 0;
                 for (var _kti2 = 0; _kti2 < world.towns.length; _kti2++) {
                     var _kt2 = world.towns[_kti2];

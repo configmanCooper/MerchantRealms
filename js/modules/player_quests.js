@@ -499,17 +499,27 @@
 
         if (quest.isPerformance) {
             // Performance quest: check instrument and skill
+            // v9p33river305: previously iterated only player.instrumentSkill —
+            // owning an instrument with no skill entry yet (skill 0) could
+            // never satisfy even min-0 quests. Iterate the instrument types
+            // the player actually holds and treat missing skill as 0.
             var bestInst = null;
             var bestSkill = 0;
             var instSkill = player.instrumentSkill || {};
-            for (var iid in instSkill) {
+            var _instTypes = (CONFIG && CONFIG.INSTRUMENT_TYPES) ? CONFIG.INSTRUMENT_TYPES : ['lute','flute','drum','harp','fiddle','bagpipe'];
+            var _minSkill = quest.skillReq ? quest.skillReq.min : 0;
+            for (var _qiIdx = 0; _qiIdx < _instTypes.length; _qiIdx++) {
+                var iid = _instTypes[_qiIdx];
                 var qty = (player.inventory[iid] || 0) + ((player.townStorage[player.townId] || {})[iid] || 0);
-                if (qty > 0 && instSkill[iid] >= (quest.skillReq ? quest.skillReq.min : 0)) {
-                    if (instSkill[iid] > bestSkill) { bestSkill = instSkill[iid]; bestInst = iid; }
+                if (qty <= 0) continue;
+                var _curSkill = instSkill[iid] || 0;
+                if (_curSkill >= _minSkill && _curSkill >= bestSkill) {
+                    bestSkill = _curSkill;
+                    bestInst = iid;
                 }
             }
             if (!bestInst) {
-                return { success: false, message: 'You need a musical instrument in your inventory and sufficient skill level (' + (quest.skillReq ? quest.skillReq.min : 0) + '+) to complete this quest.' };
+                return { success: false, message: 'You need a musical instrument in your inventory and sufficient skill level (' + _minSkill + '+) to complete this quest.' };
             }
 
             // Advance time for performance
@@ -534,8 +544,10 @@
                 remaining -= fromTs;
             }
             if (remaining > 0) {
+                // v9p33river305: was assigning 0 instead of deleting, leaving
+                // stale zero-value keys in inventory.
                 player.inventory[quest.resource] = (player.inventory[quest.resource] || 0) - remaining;
-                if (player.inventory[quest.resource] <= 0) player.inventory[quest.resource] = 0;
+                if (player.inventory[quest.resource] <= 0) delete player.inventory[quest.resource];
             }
         }
 

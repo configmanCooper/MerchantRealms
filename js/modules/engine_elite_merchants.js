@@ -1618,6 +1618,11 @@
                         if (kingPers.generosity === 'generous') kingBuyChance = 1.0;
                         if (kingPers.greed === 'greedy') kingBuyChance = 0.6;
                         if (kingPers.greed === 'corrupt') kingBuyChance = 0.4;
+                        // v9p33river305: previously em.buildings.splice ran
+                        // OUTSIDE the rng.chance branch — so EM tracking
+                        // dropped the building even when the kingdom REFUSED
+                        // to buy. Now removal only happens after a successful
+                        // transfer.
                         if (rng.chance(kingBuyChance)) {
                             em.gold += fsVal;
                             bankKingdom.gold = Math.max(0, (bankKingdom.gold || 0) - fsVal);
@@ -1633,8 +1638,8 @@
                                     }
                                 }
                             }
+                            em.buildings.splice(fsi, 1);
                         }
-                        em.buildings.splice(fsi, 1);
                     }
                 }
                 // Sell all remaining inventory
