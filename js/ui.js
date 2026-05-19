@@ -5823,7 +5823,8 @@ window.UI = (function () {
         if (Player.weapon) {
             var w = Player.weapon;
             if (typeof w === 'object') {
-                var qualColor = w.quality === 'masterwork' ? '#ffd700' : w.quality === 'fine' ? '#55a868' : w.quality === 'poor' ? '#888' : 'var(--parchment)';
+                // v9p33river321: quality vocabulary unified to basic/good/excellent
+                var qualColor = w.quality === 'excellent' ? '#ffd700' : w.quality === 'good' ? '#55a868' : 'var(--parchment)';
                 weaponDisplay = '⚔️ ' + w.name + ' <span style="color:' + qualColor + ';font-size:0.75rem;">(' + w.quality + ')</span> +' + Math.round(w.combatBonus * 100) + '% survival';
             } else {
                 weaponDisplay = '⚔️ Sword (+20% survival)';
@@ -5832,7 +5833,7 @@ window.UI = (function () {
         if (Player.armor) {
             var a = Player.armor;
             if (typeof a === 'object') {
-                var qualColorA = a.quality === 'masterwork' ? '#ffd700' : a.quality === 'fine' ? '#55a868' : a.quality === 'poor' ? '#888' : 'var(--parchment)';
+                var qualColorA = a.quality === 'excellent' ? '#ffd700' : a.quality === 'good' ? '#55a868' : 'var(--parchment)';
                 armorDisplay = '🛡️ ' + a.name + ' <span style="color:' + qualColorA + ';font-size:0.75rem;">(' + a.quality + ')</span> +' + Math.round(a.combatBonus * 100) + '% survival';
             } else {
                 armorDisplay = '🛡️ Armor (+30% survival)';
@@ -5868,7 +5869,8 @@ window.UI = (function () {
             html += '<div style="font-size:0.8rem;color:var(--gold);margin-bottom:6px;">⚒️ Available at Local Market</div>';
             for (var wi = 0; wi < availWeapons.length; wi++) {
                 var ew = availWeapons[wi];
-                var qc = ew.quality === 'masterwork' ? '#ffd700' : ew.quality === 'fine' ? '#55a868' : ew.quality === 'poor' ? '#888' : 'var(--parchment)';
+                // v9p33river321: quality vocabulary unified to basic/good/excellent
+                var qc = ew.quality === 'excellent' ? '#ffd700' : ew.quality === 'good' ? '#55a868' : 'var(--parchment)';
                 var bannedTag = ew.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">⚔️ ' + ew.name + ' <span style="color:' + qc + ';font-size:0.7rem;">(' + ew.quality + ')</span> +' + Math.round(ew.combatBonus * 100) + '%' + bannedTag + '</span>';
@@ -5877,7 +5879,7 @@ window.UI = (function () {
             }
             for (var ai = 0; ai < availArmor.length; ai++) {
                 var ea = availArmor[ai];
-                var qca = ea.quality === 'masterwork' ? '#ffd700' : ea.quality === 'fine' ? '#55a868' : ea.quality === 'poor' ? '#888' : 'var(--parchment)';
+                var qca = ea.quality === 'excellent' ? '#ffd700' : ea.quality === 'good' ? '#55a868' : 'var(--parchment)';
                 var bannedTagA = ea.isBanned ? ' <span style="color:var(--danger);font-size:0.65rem;cursor:help;" title="Banned items are illegal to make or sell, but legal to buy or own in small amounts.">🚫 BANNED</span>' : '';
                 html += '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;">';
                 html += '<span style="font-size:0.8rem;">🛡️ ' + ea.name + ' <span style="color:' + qca + ';font-size:0.7rem;">(' + ea.quality + ')</span> +' + Math.round(ea.combatBonus * 100) + '%' + bannedTagA + '</span>';

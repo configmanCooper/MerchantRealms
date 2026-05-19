@@ -1371,8 +1371,8 @@ window.Tutorial = (function () {
                     highlight: '#btnCharacter',
                     onEnter: function () {
                         try {
-                            Player.state.weapon = { id: 'iron_sword', name: 'Iron Sword', quality: 'standard', combatBonus: 0.15 };
-                            Player.state.armor = { id: 'leather_armor', name: 'Leather Armor', quality: 'standard', combatBonus: 0.10 };
+                            Player.state.weapon = { id: 'iron_sword', name: 'Iron Sword', quality: 'basic', combatBonus: 0.15 };
+                            Player.state.armor = { id: 'leather_armor', name: 'Leather Armor', quality: 'basic', combatBonus: 0.10 };
                         } catch (e) {}
                     },
                     waitFor: function () { return isModalOpen(); },

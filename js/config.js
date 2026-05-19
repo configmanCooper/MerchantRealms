@@ -5105,23 +5105,33 @@ const ELITE_MERCHANT_HERALDRY = [
 
 // ============================================================
 // Equipment Quality Tiers
+// v9p33river321: standardized quality labels to match goods
+// vocabulary (basic / good / excellent — same labels used by
+// market items: swords / swords_good / swords_excellent, and by
+// CONFIG.QUALITY_TIERS at config.js:1641). Previously this used
+// a parallel poor/standard/fine/masterwork vocabulary that didn't
+// match anything — quality-aware code paths silently dropped
+// every equipment item. Mapping:
+//   poor + standard → 'basic' (matches base resource id)
+//   fine            → 'good'  (matches _good resource)
+//   masterwork      → 'excellent' (matches _excellent resource)
 // ============================================================
 const EQUIPMENT_TYPES = {
     weapons: [
-        { id: 'rusty_sword', name: 'Rusty Sword', resource: 'swords', quality: 'poor', combatBonus: 0.10, priceMultiplier: 0.5 },
-        { id: 'iron_sword', name: 'Iron Sword', resource: 'swords', quality: 'standard', combatBonus: 0.20, priceMultiplier: 1.0 },
-        { id: 'steel_sword', name: 'Steel Sword', resource: 'swords_good', quality: 'fine', combatBonus: 0.30, priceMultiplier: 1.0 },
-        { id: 'masterwork_sword', name: 'Masterwork Sword', resource: 'swords_excellent', quality: 'masterwork', combatBonus: 0.40, priceMultiplier: 1.0 },
-        { id: 'short_bow', name: 'Short Bow', resource: 'bows', quality: 'poor', combatBonus: 0.08, priceMultiplier: 0.5 },
-        { id: 'hunting_bow', name: 'Hunting Bow', resource: 'bows', quality: 'standard', combatBonus: 0.15, priceMultiplier: 1.0 },
-        { id: 'longbow', name: 'Longbow', resource: 'bows_good', quality: 'fine', combatBonus: 0.25, priceMultiplier: 1.0 },
-        { id: 'war_bow', name: 'War Bow', resource: 'bows_excellent', quality: 'masterwork', combatBonus: 0.35, priceMultiplier: 1.0 },
+        { id: 'rusty_sword', name: 'Rusty Sword', resource: 'swords', quality: 'basic', combatBonus: 0.10, priceMultiplier: 0.5 },
+        { id: 'iron_sword', name: 'Iron Sword', resource: 'swords', quality: 'basic', combatBonus: 0.20, priceMultiplier: 1.0 },
+        { id: 'steel_sword', name: 'Steel Sword', resource: 'swords_good', quality: 'good', combatBonus: 0.30, priceMultiplier: 1.0 },
+        { id: 'masterwork_sword', name: 'Masterwork Sword', resource: 'swords_excellent', quality: 'excellent', combatBonus: 0.40, priceMultiplier: 1.0 },
+        { id: 'short_bow', name: 'Short Bow', resource: 'bows', quality: 'basic', combatBonus: 0.08, priceMultiplier: 0.5 },
+        { id: 'hunting_bow', name: 'Hunting Bow', resource: 'bows', quality: 'basic', combatBonus: 0.15, priceMultiplier: 1.0 },
+        { id: 'longbow', name: 'Longbow', resource: 'bows_good', quality: 'good', combatBonus: 0.25, priceMultiplier: 1.0 },
+        { id: 'war_bow', name: 'War Bow', resource: 'bows_excellent', quality: 'excellent', combatBonus: 0.35, priceMultiplier: 1.0 },
     ],
     armor: [
-        { id: 'padded_armor', name: 'Padded Armor', resource: 'armor', quality: 'poor', combatBonus: 0.15, priceMultiplier: 0.5 },
-        { id: 'chain_mail', name: 'Chain Mail', resource: 'armor', quality: 'standard', combatBonus: 0.30, priceMultiplier: 1.0 },
-        { id: 'plate_armor', name: 'Plate Armor', resource: 'armor_good', quality: 'fine', combatBonus: 0.40, priceMultiplier: 1.0 },
-        { id: 'royal_plate', name: 'Royal Plate Armor', resource: 'armor_excellent', quality: 'masterwork', combatBonus: 0.50, priceMultiplier: 1.0 },
+        { id: 'padded_armor', name: 'Padded Armor', resource: 'armor', quality: 'basic', combatBonus: 0.15, priceMultiplier: 0.5 },
+        { id: 'chain_mail', name: 'Chain Mail', resource: 'armor', quality: 'basic', combatBonus: 0.30, priceMultiplier: 1.0 },
+        { id: 'plate_armor', name: 'Plate Armor', resource: 'armor_good', quality: 'good', combatBonus: 0.40, priceMultiplier: 1.0 },
+        { id: 'royal_plate', name: 'Royal Plate Armor', resource: 'armor_excellent', quality: 'excellent', combatBonus: 0.50, priceMultiplier: 1.0 },
     ]
 };
 CONFIG.EQUIPMENT_TYPES = EQUIPMENT_TYPES;

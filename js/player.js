@@ -19560,15 +19560,27 @@
         player._lastTryForBabyDay = data._lastTryForBabyDay || 0;
         player.generation = data.generation || 1;
         // Backward compat: old saves store weapon/armor as strings
+        // v9p33river321: also normalize legacy quality labels
+        // (poor/standard → 'basic', fine → 'good', masterwork → 'excellent')
+        // so old gear matches the canonical basic/good/excellent vocabulary
+        // used by goods, QUALITY_TIERS, and degradation logic.
+        var _normQuality = function(q) {
+            if (q === 'poor' || q === 'standard') return 'basic';
+            if (q === 'fine') return 'good';
+            if (q === 'masterwork') return 'excellent';
+            return q;
+        };
         if (typeof data.weapon === 'string') {
-            player.weapon = data.weapon === 'sword' ? { id: 'iron_sword', name: 'Iron Sword', quality: 'standard', combatBonus: 0.20 } : null;
+            player.weapon = data.weapon === 'sword' ? { id: 'iron_sword', name: 'Iron Sword', quality: 'basic', combatBonus: 0.20 } : null;
         } else {
             player.weapon = data.weapon || null;
+            if (player.weapon && player.weapon.quality) player.weapon.quality = _normQuality(player.weapon.quality);
         }
         if (typeof data.armor === 'string') {
-            player.armor = data.armor === 'armor' ? { id: 'chain_mail', name: 'Chain Mail', quality: 'standard', combatBonus: 0.30 } : null;
+            player.armor = data.armor === 'armor' ? { id: 'chain_mail', name: 'Chain Mail', quality: 'basic', combatBonus: 0.30 } : null;
         } else {
             player.armor = data.armor || null;
+            if (player.armor && player.armor.quality) player.armor.quality = _normQuality(player.armor.quality);
         }
         if (data._nextCaravanId != null) _nextCaravanId = data._nextCaravanId;
         if (data._nextBuildingId != null) _nextBuildingId = data._nextBuildingId;
