@@ -61,10 +61,12 @@
     }
 
     function marry(personId) {
-        // v9p33river331: defensive — legacy/inherited saves may lack
-        // relationships. Initialize before for-in on line ~101.
-        if (!player.relationships) player.relationships = {};
         var player = ps();
+        // v9p33river332: defensive — legacy/inherited saves may lack
+        // relationships. Initialize before for-in on line ~101.
+        // (v331 had this BEFORE the `var player = ps()` line, which
+        // hoisted as undefined and threw on the assignment.)
+        if (!player.relationships) player.relationships = {};
         // Now starts the wedding planning phase instead of instant marriage
         if (!canMarry()) return { success: false, message: 'Cannot marry right now.' };
         if (player.weddingPlan) return { success: false, message: 'You are already planning a wedding!' };
@@ -623,10 +625,12 @@
     // §8D  DYNASTY MARRIAGES — arrange child marriages
     // ========================================================
     function arrangeChildMarriage(childId, targetId) {
-        // v9p33river331: defensive — childrenIds may be undefined on
-        // legacy/inherited saves; the indexOf call would crash.
-        if (!player.childrenIds) player.childrenIds = [];
         var player = ps();
+        // v9p33river332: defensive — childrenIds may be undefined on
+        // legacy/inherited saves; the indexOf call would crash. (v331
+        // had this BEFORE the `var player = ps()` line, which hoisted
+        // as undefined and threw on the assignment.)
+        if (!player.childrenIds) player.childrenIds = [];
         var child = Engine.findPerson(childId);
         var target = Engine.findPerson(targetId);
         if (!child || !child.alive) return { success: false, message: 'Child not found or not alive.' };
@@ -735,10 +739,11 @@
     }
 
     function checkEliteMarriageProposals() {
-        // v9p33river331: defensive — legacy/inherited saves may lack
-        // childrenIds; the .map call would crash.
-        if (!player.childrenIds) player.childrenIds = [];
         var player = ps();
+        // v9p33river332: defensive — legacy/inherited saves may lack
+        // childrenIds; the .map call would crash. (v331 had this
+        // BEFORE the `var player = ps()` line — see marry() comment.)
+        if (!player.childrenIds) player.childrenIds = [];
         if (!player.alive || !player.childrenIds || player.childrenIds.length === 0) return;
         if (!player._marriageProposals) player._marriageProposals = [];
         var day = Engine.getDay();
@@ -812,11 +817,13 @@
     }
 
     function tickPlayerChildren() {
-        // v9p33river331: defensive — childrenIds may be undefined on
+        var player = ps();
+        // v9p33river332: defensive — childrenIds may be undefined on
         // legacy/inherited saves. tickPlayerChildren runs every tick,
         // so a missing array would crash the entire family system.
+        // (v331 had this BEFORE the `var player = ps()` line — see
+        // marry() comment.)
         if (!player.childrenIds) player.childrenIds = [];
-        var player = ps();
         if (!player.alive) return;
 
         var currentDay = Engine.getDay();
