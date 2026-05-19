@@ -3340,6 +3340,26 @@
                     params: ['travel_papers'],
                 });
             }
+            // v9p33river344: Forge a Royal Order — high-end political forgery.
+            // Requires shadow_dealings as a second skill gate. Has its own
+            // configurator UI (kingdom + order type + sub-target). The
+            // action card just lists it; dispatch is done via the UI.
+            if (hasSkill('shadow_dealings')) {
+                var _royalCD = (player.schemeCooldowns && player.schemeCooldowns['forge_royal_order:_none']) || 0;
+                var _royalAvail = day >= _royalCD && player.gold >= 1500;
+                actions.push({
+                    id: 'forge_royal_order', tab: 'political',
+                    name: '📜 Forge a Royal Order',
+                    desc: 'Forge a sealed royal order in any kingdom — adjust taxes, ban goods, free a prisoner, jail a noble, even declare or end a war. Roughly twice as risky as ordinary forgery; very pricey; greatly increases notoriety and is heavily punished if caught.',
+                    cost: 'from 1500g', detection: calculateCorruptDetection(0.30, town),
+                    reward: 'Forged decree effect', xp: 30,
+                    requires: 'Master Forger + Shadow Dealings',
+                    available: _royalAvail,
+                    disabledReason: !player.gold || player.gold < 1500 ? 'Need at least 1500g.' : (day < _royalCD ? 'Cooldown active.' : ''),
+                    params: [],
+                    _needsRoyalOrderConfig: true,
+                });
+            }
         }
 
         if (hasSkill('dark_connections')) {
@@ -3698,6 +3718,219 @@
             partialMsg: 'Smuggling route established but customs caught wind of it! ' + caughtMsg,
             failMsg: '❌ The route fell through (1000g lost) but you weren\'t identified.'
         });
+    }
+
+    // v9p33river344: Forge a Royal Order — high-end forgery scheme.
+    // Roughly 2× as hard as basic document forgery, much pricier, with
+    // amplified notoriety effects (heavy gain on success, extra detection
+    // multiplier when player is already notorious). Nobility in the
+    // target kingdom (socialRank >= 4) gets +success / -caught modifiers.
+    // Multiple order types with their own difficulty tier:
+    //   tax_change         (raise/lower taxes)     — easier
+    //   release_prisoner   (free a jailed NPC)     — easier
+    //   good_ban_toggle    (ban or unban a good)   — medium
+    //   jail_noble         (jail a specific noble) — hard, civil unrest
+    //   war_declare/peace  (war on/off)             — very hard
+    function forgeRoyalOrder(kingdomId, orderType, orderTarget) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('master_forger')) return { success: false, message: 'Requires Master Forger skill.' };
+        if (!hasSkill('shadow_dealings')) return { success: false, message: 'Requires Shadow Dealings skill (this is political forgery).' };
+        if (!kingdomId) return { success: false, message: 'Choose a target kingdom.' };
+        if (!orderType) return { success: false, message: 'Choose an order type.' };
+
+        var kingdom = Engine.findKingdom(kingdomId);
+        if (!kingdom) return { success: false, message: 'Unknown kingdom.' };
+
+        var rng = Engine.getRng();
+        var town = Engine.findTown(player.townId);
+        var day = Engine.getDay();
+
+        // Per-order difficulty parameters (cost, base detection, notoriety
+        // hit on success, notoriety hit if caught). Base detection is
+        // roughly 2× the standard forge_documents tier so this is a
+        // distinctly riskier scheme.
+        var orderDefs = {
+            tax_change:       { cost: 1500, baseDetect: 0.30, notSucc: 18, notCaught: 28, name: 'Tax Adjustment' },
+            release_prisoner: { cost: 1500, baseDetect: 0.30, notSucc: 15, notCaught: 25, name: 'Prisoner Release' },
+            good_ban_toggle:  { cost: 2000, baseDetect: 0.45, notSucc: 22, notCaught: 35, name: 'Goods Ban Edict' },
+            jail_noble:       { cost: 3500, baseDetect: 0.60, notSucc: 30, notCaught: 50, name: 'Noble Arrest Warrant' },
+            war_declare:      { cost: 5000, baseDetect: 0.70, notSucc: 40, notCaught: 70, name: 'Declaration of War' },
+            war_peace:        { cost: 5000, baseDetect: 0.70, notSucc: 40, notCaught: 70, name: 'Treaty of Peace' },
+        };
+        var def = orderDefs[orderType];
+        if (!def) return { success: false, message: 'Unknown order type.' };
+
+        if (player.gold < def.cost) return { success: false, message: 'Need ' + def.cost + 'g for parchment, seals, and bribes.' };
+
+        // Nobility-in-target-kingdom adjustments (success: easier, caught:
+        // slightly easier to slip past since you have plausible access).
+        var rank = (player.socialRank && player.socialRank[kingdomId]) || 0;
+        var nobilityBonus = (rank >= 4) ? 0.85 : 1.0;   // detection × 0.85 for nobles
+        var nobilitySuccessNote = (rank >= 4) ? ' (Noble-access bonus applied.)' : '';
+
+        // Notoriety-sensitive caught penalty on top of the global notoriety
+        // scaling done by calculateCorruptDetection — royal-order forgers
+        // are watched.
+        var notorietyMult = 1.0;
+        var notoriety = player.notoriety || 0;
+        if (notoriety >= 80) notorietyMult = 1.5;
+        else if (notoriety >= 50) notorietyMult = 1.3;
+        else if (notoriety >= 25) notorietyMult = 1.15;
+
+        var detectChance = calculateCorruptDetection(def.baseDetect * nobilityBonus * notorietyMult, town);
+        var _outcome = _rollSchemeOutcome(detectChance, rng);
+        var caught = _outcome.caught;
+        var successful = _outcome.successful;
+
+        // Deduct cost regardless of outcome (you paid the forger up front).
+        player.gold -= def.cost;
+
+        // Apply the order's actual effect on success.
+        var effectMsg = '';
+        if (successful) {
+            var effect = _applyForgedRoyalOrderEffect(kingdom, orderType, orderTarget, rng);
+            effectMsg = effect.message || '';
+            if (effect.success === false) {
+                // The forgery passed but the targeted effect couldn't apply
+                // (e.g. no eligible prisoner found). Treat as wasted forgery.
+                successful = false;
+            }
+        }
+
+        if (successful) {
+            grantXP(30, 'Forged Royal Order');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(def.notSucc);
+            recordCorruptAction('forge_royal_order', false, kingdomId, 'forgery');
+            // Track on the forged-documents map so it's visible in the
+            // dark-deeds history and the cooldown system.
+            if (!player.forgedDocuments) player.forgedDocuments = {};
+            player.forgedDocuments['royal_order_' + orderType] = day + 1; // 1-day stub for tracking
+        }
+
+        var caughtMsg = '';
+        if (caught) {
+            // Heavy punishment — fines and jail time scale with order severity.
+            var jailDays = (orderType === 'war_declare' || orderType === 'war_peace' || orderType === 'jail_noble') ? 30 : 14;
+            var fine = applyCorruptPenalty(town, kingdom, def.cost * 4, 35, jailDays, false, 'forgery');
+            recordCorruptAction('forge_royal_order', true, kingdomId, 'forgery');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(def.notCaught);
+            caughtMsg = '🚨 CAUGHT forging a Royal Order! Fined ' + fine + 'g, jailed ' + jailDays + 'd. Reputation devastated.';
+        }
+
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '📜 Forged a Royal ' + def.name + ' (' + kingdom.name + ')! ' + effectMsg + nobilitySuccessNote,
+            caughtMsg: caughtMsg,
+            partialMsg: 'The order passed but you were exposed! ' + effectMsg + ' ' + caughtMsg,
+            failMsg: '❌ The forgery was so botched it wasn\'t even delivered (' + def.cost + 'g lost). At least no one suspects you.'
+        });
+    }
+
+    // v9p33river344: apply the actual game-state effect of a forged
+    // royal order. Returns { success, message }. If success === false,
+    // the forger's work was technically clean but the order had no
+    // target to act on (e.g. no prisoners to release).
+    function _applyForgedRoyalOrderEffect(kingdom, orderType, orderTarget, rng) {
+        var day = Engine.getDay();
+        if (orderType === 'tax_change') {
+            // orderTarget: 'raise' or 'lower'
+            var delta = (orderTarget === 'lower') ? -0.02 : 0.02;
+            var current = kingdom.taxRate || CONFIG.KINGDOM_DEFAULT_PROPERTY_TAX_RATE || 0.10;
+            kingdom.taxRate = Math.max(0.01, Math.min(0.40, current + delta));
+            Engine.logEvent('📜 [Forged Royal Order] ' + kingdom.name + ' adjusts tax rate to ' + Math.round(kingdom.taxRate * 100) + '%.');
+            return { success: true, message: 'Tax rate now ' + Math.round(kingdom.taxRate * 100) + '%.' };
+        }
+        if (orderType === 'release_prisoner') {
+            // orderTarget: townId (where the prisoner is). Free a random jailed NPC there.
+            var releaseTown = orderTarget ? Engine.findTown(orderTarget) : null;
+            if (!releaseTown) return { success: false, message: 'No town selected for the release.' };
+            var w = Engine.getWorld();
+            if (!w || !w.people) return { success: false, message: 'No prisoners found.' };
+            var jailed = w.people.filter(function(p) {
+                return p.alive && p.townId === releaseTown.id && p._jailedUntilDay && p._jailedUntilDay > day;
+            });
+            if (jailed.length === 0) return { success: false, message: 'No jailed prisoners in ' + releaseTown.name + '.' };
+            var pick = jailed[rng ? rng.randInt(0, jailed.length - 1) : 0];
+            pick._jailedUntilDay = 0;
+            pick._jailedCrimeId = null;
+            // Player gets the same kind of credit as a real jailbreak —
+            // relationship boost with the released prisoner, town rep
+            // bump for a popular act of "mercy".
+            Player.modifyRelationship(pick.id, 25, 'forged_release');
+            if (Player.modifyTownReputation) Player.modifyTownReputation(releaseTown.id, 4);
+            Engine.logEvent('🗝️ [Forged Royal Order] ' + pick.firstName + ' ' + pick.lastName + ' has been released from jail in ' + releaseTown.name + '.');
+            return { success: true, message: 'Released ' + pick.firstName + ' ' + pick.lastName + ' from jail in ' + releaseTown.name + '.' };
+        }
+        if (orderType === 'good_ban_toggle') {
+            // orderTarget: { good, mode: 'ban' | 'unban' }
+            if (!orderTarget || !orderTarget.good) return { success: false, message: 'No good specified.' };
+            if (!kingdom.laws) kingdom.laws = {};
+            if (!kingdom.laws.bannedGoods) kingdom.laws.bannedGoods = [];
+            var idx = kingdom.laws.bannedGoods.indexOf(orderTarget.good);
+            if (orderTarget.mode === 'ban') {
+                if (idx < 0) kingdom.laws.bannedGoods.push(orderTarget.good);
+                Engine.logEvent('📜 [Forged Royal Order] ' + kingdom.name + ' bans ' + orderTarget.good + '.');
+                return { success: true, message: orderTarget.good + ' is now banned in ' + kingdom.name + '.' };
+            } else {
+                if (idx >= 0) kingdom.laws.bannedGoods.splice(idx, 1);
+                Engine.logEvent('📜 [Forged Royal Order] ' + kingdom.name + ' unbans ' + orderTarget.good + '.');
+                return { success: true, message: orderTarget.good + ' is no longer banned in ' + kingdom.name + '.' };
+            }
+        }
+        if (orderType === 'jail_noble') {
+            // orderTarget: noble personId
+            var noble = orderTarget ? Engine.findPerson(orderTarget) : null;
+            if (!noble || !noble.alive) return { success: false, message: 'Selected noble not found.' };
+            noble._jailedUntilDay = day + 30;
+            noble._jailedCrimeId = 'forged_treason_warrant';
+            // Other nobles in the same kingdom lose loyalty toward the king
+            // (causes confusion, factional doubt). The jailed noble's own
+            // loyalty plummets harder.
+            var w2 = Engine.getWorld();
+            if (w2 && w2.people) {
+                for (var pi = 0; pi < w2.people.length; pi++) {
+                    var np = w2.people[pi];
+                    if (!np.alive || np.id === noble.id) continue;
+                    if (np.kingdomId !== kingdom.id) continue;
+                    var isNoble = np.isNoble || np.occupation === 'noble' ||
+                                  (np.socialRank && typeof np.socialRank === 'object' &&
+                                   Object.keys(np.socialRank).some(function(k){ return (np.socialRank[k] || 0) >= 4; }));
+                    if (!isNoble) continue;
+                    np.loyaltyToKing = Math.max(0, (np.loyaltyToKing != null ? np.loyaltyToKing : 50) - 6);
+                }
+            }
+            // The jailed noble themself: deep loyalty drop, plus the player
+            // gets a relationship hit with them.
+            noble.loyaltyToKing = Math.max(0, (noble.loyaltyToKing != null ? noble.loyaltyToKing : 50) - 25);
+            // Kingdom-wide unrest tick.
+            if (kingdom.kingMood && typeof kingdom.kingMood === 'object') {
+                kingdom.kingMood.unrest = (kingdom.kingMood.unrest || 0) + 3;
+            }
+            Engine.logEvent('⛓️ [Forged Royal Order] ' + (noble.firstName || 'A noble') + ' ' + (noble.lastName || '') + ' has been arrested in ' + kingdom.name + '! The nobility is uneasy.');
+            return { success: true, message: 'Jailed ' + (noble.firstName || '') + ' ' + (noble.lastName || '') + '. Other nobles lose loyalty to the king.' };
+        }
+        if (orderType === 'war_declare') {
+            // orderTarget: enemyKingdomId
+            var enemy = orderTarget ? Engine.findKingdom(orderTarget) : null;
+            if (!enemy) return { success: false, message: 'Target kingdom not found.' };
+            if (!Engine.declareWar) return { success: false, message: 'War system unavailable.' };
+            try { Engine.declareWar(kingdom, enemy); } catch (e) { return { success: false, message: 'War could not be declared: ' + e.message }; }
+            Engine.logEvent('⚔️ [Forged Royal Order] ' + kingdom.name + ' declares war on ' + enemy.name + '!');
+            return { success: true, message: kingdom.name + ' is now at war with ' + enemy.name + '.' };
+        }
+        if (orderType === 'war_peace') {
+            // orderTarget: enemyKingdomId (must be at war already)
+            var enemyP = orderTarget ? Engine.findKingdom(orderTarget) : null;
+            if (!enemyP) return { success: false, message: 'Target kingdom not found.' };
+            var atWar = kingdom.atWar && (kingdom.atWar instanceof Set ? kingdom.atWar.has(enemyP.id) : (Array.isArray(kingdom.atWar) && kingdom.atWar.indexOf(enemyP.id) >= 0));
+            if (!atWar) return { success: false, message: kingdom.name + ' is not at war with ' + enemyP.name + '.' };
+            if (!Engine.makePeace) return { success: false, message: 'Peace system unavailable.' };
+            try { Engine.makePeace(kingdom, enemyP, false, null); } catch (e) { return { success: false, message: 'Peace could not be brokered: ' + e.message }; }
+            Engine.logEvent('🕊️ [Forged Royal Order] ' + kingdom.name + ' makes peace with ' + enemyP.name + '!');
+            return { success: true, message: kingdom.name + ' is at peace with ' + enemyP.name + '.' };
+        }
+        return { success: false, message: 'Unknown order effect.' };
     }
 
     // ── (p3) Forge Documents ──
@@ -5151,6 +5384,7 @@
             case 'spy_network': result = plantSpyNetwork(params[0]); break;
             case 'smuggling_route': result = establishSmugglingRoute(params[0], params[1]); break;
             case 'forge_documents': result = forgeDocuments(params[0]); break;
+            case 'forge_royal_order': result = forgeRoyalOrder(params[0], params[1], params[2]); break;
             case 'sabotage_caravan': result = sabotageCaravan(params[0]); break;
             case 'plant_evidence': result = plantEvidence(params[0]); break;
             case 'incite_revolt': result = inciteRevolt(params[0]); break;
@@ -5177,7 +5411,7 @@
             assassinate_competitor: 60, assassinate_guard_captain: 90, assassinate_king: 180,
             assassinate_passenger: 60, poison: 20, hire_assassin_npc: 75, direct_kill: 45,
             hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
-            spy_network: 90, smuggling_route: 120, forge_documents: 30, sabotage_caravan: 30,
+            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, sabotage_caravan: 30,
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
             lay_low: 60, cleanse_identity: 30,
             pit_nobles: 20, turn_noble_against_king: 30, discredit_noble: 30,
@@ -5298,6 +5532,7 @@
     Player.plantSpyNetwork = plantSpyNetwork;
     Player.establishSmugglingRoute = establishSmugglingRoute;
     Player.forgeDocuments = forgeDocuments;
+    Player.forgeRoyalOrder = forgeRoyalOrder;
     Player.sabotageCaravan = sabotageCaravan;
     Player.plantEvidence = plantEvidence;
     Player.inciteRevolt = inciteRevolt;

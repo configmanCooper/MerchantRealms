@@ -593,6 +593,32 @@ window.UI = (function () {
         // HTML entities (&quot; → "). So the writer just needs &quot; in source
         // and the reader gets clean JSON in d.params with no decoding needed.
         registerAction('executeScheme', function(_t, d) { if (d.id) UI.executeScheme(d.id, JSON.parse(d.params || '{}')); });
+        // v9p33river344: Forge a Royal Order handlers — refresh sub-target
+        // when kingdom/order changes, submit collects all three selects.
+        registerAction('forgeRoyalOrderRefresh', function(_t, d) {
+            var idx = parseInt(d.idx, 10);
+            var kSel = document.getElementById('froKingdom_' + idx);
+            var tSel = document.getElementById('froType_' + idx);
+            var tgt = document.getElementById('froTarget_' + idx);
+            if (!kSel || !tSel || !tgt) return;
+            tgt.innerHTML = UI._buildForgeRoyalOrderTargetSelect(idx, kSel.value, tSel.value);
+        });
+        registerAction('forgeRoyalOrderSubmit', function(_t, d) {
+            var idx = parseInt(d.idx, 10);
+            var kSel = document.getElementById('froKingdom_' + idx);
+            var tSel = document.getElementById('froType_' + idx);
+            var sub = document.getElementById('froSub_' + idx);
+            if (!kSel || !tSel) { toast('Configurator not ready.', 'warning'); return; }
+            var kingdomId = kSel.value;
+            var orderType = tSel.value;
+            var subVal = sub ? sub.value : null;
+            var orderTarget = subVal;
+            if (orderType === 'good_ban_toggle') {
+                var modeSel = document.getElementById('froSubMode_' + idx);
+                orderTarget = { good: subVal, mode: modeSel ? modeSel.value : 'ban' };
+            }
+            UI.executeScheme('forge_royal_order', [kingdomId, orderType, orderTarget]);
+        });
         registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
         registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
@@ -14589,6 +14615,9 @@ window.UI = (function () {
                         html += buildBuildingSelectUI(a, ai);
                     } else if (a._needsNobleSelect) {
                         html += buildNobleIntrigueUI(a, ai);
+                    } else if (a._needsRoyalOrderConfig) {
+                        // v9p33river344: Forge a Royal Order configurator.
+                        html += buildForgeRoyalOrderUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
                             + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&quot;')}">⚡ Execute</button>`;
@@ -14783,6 +14812,172 @@ window.UI = (function () {
             toast(result.message, 'warning');
         }
         openSchemesDialog();
+    }
+
+    // v9p33river344: configurator UI for the "Forge a Royal Order"
+    // scheme. Shows kingdom + order-type drop-downs, plus a third
+    // contextual select for the order's sub-target (which good to ban,
+    // which prisoner-town, which noble to jail, which enemy kingdom).
+    function buildForgeRoyalOrderUI(action, idx) {
+        var kingdoms = (Engine.getKingdoms ? Engine.getKingdoms() : []);
+        var orderTypes = [
+            { id: 'tax_change',       label: 'Adjust Tax Rate (easier — 1500g)', cost: 1500, diff: 'Easier' },
+            { id: 'release_prisoner', label: 'Release a Prisoner (easier — 1500g)', cost: 1500, diff: 'Easier' },
+            { id: 'good_ban_toggle',  label: 'Ban / Unban a Good (medium — 2000g)', cost: 2000, diff: 'Medium' },
+            { id: 'jail_noble',       label: 'Jail a Noble (hard — 3500g)', cost: 3500, diff: 'Hard' },
+            { id: 'war_declare',      label: 'Declare War (very hard — 5000g)', cost: 5000, diff: 'Very Hard' },
+            { id: 'war_peace',        label: 'Make Peace (very hard — 5000g)', cost: 5000, diff: 'Very Hard' },
+        ];
+        var pTown = Engine.findTown(Player.townId);
+        var html = '<div style="margin-top:8px;padding:8px;background:rgba(80,40,40,0.15);border:1px solid #844;border-radius:4px;">';
+        html += '<div style="font-size:0.78rem;color:#caa;margin-bottom:6px;"><strong>📜 Configure Royal Order</strong> — kingdom + decree + target.</div>';
+
+        // Kingdom select
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;min-width:60px;">Kingdom:</label>';
+        html += '<select id="froKingdom_' + idx + '" data-action="forgeRoyalOrderRefresh" data-idx="' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+        for (var ki = 0; ki < kingdoms.length; ki++) {
+            var k = kingdoms[ki];
+            var nobleTag = '';
+            if (Player.state.socialRank && (Player.state.socialRank[k.id] || 0) >= 4) nobleTag = ' (noble — easier)';
+            var selK = (pTown && pTown.kingdomId === k.id) ? ' selected' : '';
+            html += '<option value="' + k.id + '"' + selK + '>' + escapeHtml(k.name) + nobleTag + '</option>';
+        }
+        html += '</select></div>';
+
+        // Order type select
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;min-width:60px;">Order:</label>';
+        html += '<select id="froType_' + idx + '" data-action="forgeRoyalOrderRefresh" data-idx="' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+        for (var oi = 0; oi < orderTypes.length; oi++) {
+            var ot = orderTypes[oi];
+            html += '<option value="' + ot.id + '">' + escapeHtml(ot.label) + '</option>';
+        }
+        html += '</select></div>';
+
+        // Sub-target select (populated by client-side selection state).
+        html += '<div id="froTarget_' + idx + '" style="margin-bottom:6px;"></div>';
+
+        html += '<button class="btn-trade sell" style="font-size:0.85rem;margin-top:4px;width:100%;" '
+              + 'data-action="forgeRoyalOrderSubmit" data-idx="' + idx + '">⚡ Forge & Deliver Royal Order</button>';
+        html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Detection ≈ 2× ordinary forgery. Massive notoriety hit on success. Devastating if caught (heavy fines, 14–30 day jail).</div>';
+        html += '</div>';
+        return html;
+    }
+
+    // v9p33river344: build the sub-target select (third dropdown)
+    // contextual to the chosen order type. Called from a refresh
+    // handler so the player sees relevant options without leaving the panel.
+    function _buildForgeRoyalOrderTargetSelect(idx, kingdomId, orderType) {
+        var kingdom = Engine.findKingdom(kingdomId);
+        if (!kingdom) return '<div style="font-size:0.7rem;color:#caa;">No kingdom selected.</div>';
+        var html = '<label style="font-size:0.7rem;color:#aaa;display:block;margin-bottom:2px;">Target:</label>';
+        if (orderType === 'tax_change') {
+            html += '<select id="froSub_' + idx + '" style="font-size:0.75rem;padding:2px;width:100%;">'
+                  + '<option value="raise">Raise tax rate by +2%</option>'
+                  + '<option value="lower">Lower tax rate by −2%</option>'
+                  + '</select>';
+        } else if (orderType === 'release_prisoner') {
+            // List towns in the target kingdom that have jailed NPCs.
+            var w = Engine.getWorld();
+            var townOpts = [];
+            if (w && w.people && kingdom.territories) {
+                var territoryIds = Array.from(kingdom.territories || []);
+                var day = Engine.getDay();
+                for (var ti = 0; ti < territoryIds.length; ti++) {
+                    var t = Engine.findTown(territoryIds[ti]);
+                    if (!t) continue;
+                    var count = w.people.filter(function(p) {
+                        return p.alive && p.townId === t.id && p._jailedUntilDay && p._jailedUntilDay > day;
+                    }).length;
+                    if (count > 0) townOpts.push({ id: t.id, name: t.name, count: count });
+                }
+            }
+            if (townOpts.length === 0) {
+                html += '<div style="font-size:0.7rem;color:#caa;">No towns with jailed prisoners in ' + escapeHtml(kingdom.name) + '.</div>';
+            } else {
+                html += '<select id="froSub_' + idx + '" style="font-size:0.75rem;padding:2px;width:100%;">';
+                for (var to = 0; to < townOpts.length; to++) {
+                    html += '<option value="' + townOpts[to].id + '">' + escapeHtml(townOpts[to].name) + ' (' + townOpts[to].count + ' jailed)</option>';
+                }
+                html += '</select>';
+            }
+        } else if (orderType === 'good_ban_toggle') {
+            // Two sub-selects: good + ban/unban mode.
+            html += '<div style="display:flex;gap:4px;">';
+            html += '<select id="froSub_' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;">';
+            // Show resources — common ones first
+            if (typeof RESOURCE_TYPES !== 'undefined') {
+                for (var rk in RESOURCE_TYPES) {
+                    var r = RESOURCE_TYPES[rk];
+                    if (!r || !r.id) continue;
+                    html += '<option value="' + r.id + '">' + escapeHtml(r.name || r.id) + '</option>';
+                }
+            }
+            html += '</select>';
+            html += '<select id="froSubMode_' + idx + '" style="font-size:0.75rem;padding:2px;">';
+            html += '<option value="ban">Ban</option>';
+            html += '<option value="unban">Unban</option>';
+            html += '</select>';
+            html += '</div>';
+        } else if (orderType === 'jail_noble') {
+            // List nobles in the target kingdom.
+            var w2 = Engine.getWorld();
+            var nobleOpts = [];
+            if (w2 && w2.people) {
+                for (var pi = 0; pi < w2.people.length; pi++) {
+                    var np = w2.people[pi];
+                    if (!np.alive) continue;
+                    if (np.kingdomId !== kingdom.id) continue;
+                    var isNoble = np.isNoble || np.occupation === 'noble' ||
+                                  (np.socialRank && (np.socialRank[kingdom.id] || 0) >= 4);
+                    if (!isNoble) continue;
+                    if (np.id === kingdom.king) continue; // can't jail the king with this
+                    nobleOpts.push(np);
+                }
+            }
+            if (nobleOpts.length === 0) {
+                html += '<div style="font-size:0.7rem;color:#caa;">No eligible nobles in ' + escapeHtml(kingdom.name) + '.</div>';
+            } else {
+                html += '<select id="froSub_' + idx + '" style="font-size:0.75rem;padding:2px;width:100%;">';
+                for (var nn = 0; nn < nobleOpts.length; nn++) {
+                    var no = nobleOpts[nn];
+                    html += '<option value="' + no.id + '">' + escapeHtml((no.firstName || 'Noble') + ' ' + (no.lastName || '')) + '</option>';
+                }
+                html += '</select>';
+            }
+        } else if (orderType === 'war_declare') {
+            // Pick a non-self kingdom not already at war with the target.
+            var allK = Engine.getKingdoms ? Engine.getKingdoms() : [];
+            html += '<select id="froSub_' + idx + '" style="font-size:0.75rem;padding:2px;width:100%;">';
+            for (var ak = 0; ak < allK.length; ak++) {
+                if (allK[ak].id === kingdom.id) continue;
+                var atWar = kingdom.atWar && (kingdom.atWar instanceof Set ? kingdom.atWar.has(allK[ak].id) : (Array.isArray(kingdom.atWar) && kingdom.atWar.indexOf(allK[ak].id) >= 0));
+                if (atWar) continue;
+                html += '<option value="' + allK[ak].id + '">' + escapeHtml(allK[ak].name) + '</option>';
+            }
+            html += '</select>';
+        } else if (orderType === 'war_peace') {
+            // Pick a kingdom the target is currently at war with.
+            var enemies = [];
+            if (kingdom.atWar) {
+                var warSet = kingdom.atWar instanceof Set ? Array.from(kingdom.atWar) : (Array.isArray(kingdom.atWar) ? kingdom.atWar : []);
+                for (var wi = 0; wi < warSet.length; wi++) {
+                    var ek = Engine.findKingdom(warSet[wi]);
+                    if (ek) enemies.push(ek);
+                }
+            }
+            if (enemies.length === 0) {
+                html += '<div style="font-size:0.7rem;color:#caa;">' + escapeHtml(kingdom.name) + ' is not currently at war.</div>';
+            } else {
+                html += '<select id="froSub_' + idx + '" style="font-size:0.75rem;padding:2px;width:100%;">';
+                for (var ei = 0; ei < enemies.length; ei++) {
+                    html += '<option value="' + enemies[ei].id + '">' + escapeHtml(enemies[ei].name) + '</option>';
+                }
+                html += '</select>';
+            }
+        }
+        return html;
     }
 
     function buildNobleIntrigueUI(action, idx) {
@@ -18085,6 +18280,8 @@ window.UI = (function () {
         // Nobility — registered by js/modules/ui_street_trading.js
         // Schemes
         openSchemesDialog,
+        // v9p33river344: Forge Royal Order helper used by registerAction handler.
+        _buildForgeRoyalOrderTargetSelect: _buildForgeRoyalOrderTargetSelect,
         // Noble Council Voting
         openVotingDialog,
         openActiveVotesDialog,
