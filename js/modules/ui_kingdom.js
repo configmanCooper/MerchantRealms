@@ -355,6 +355,15 @@
         if (!startId) { UI.toast('Please select a start scenario.', 'error'); return; }
         if (!townId) { UI.toast('No town selected.', 'error'); return; }
 
+        // v9p33river307: Military Leader start REQUIRES picking a war
+        // kingdom. Was silently falling through to the originally-selected
+        // (possibly peaceful) town, defeating the whole premise of the
+        // scenario. Force the player to select.
+        if (startId === 'military' && !window._selectedMilitaryKingdomId) {
+            UI.toast('Choose a kingdom at war from the Military Leader picker before continuing.', 'warning');
+            return;
+        }
+
         var startConfig = CONFIG.GAME_STARTS.find(function(s) { return s.id === startId; });
         if (!startConfig) return;
 

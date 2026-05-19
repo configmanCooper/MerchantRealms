@@ -19192,6 +19192,11 @@
             _guidanceBaseline: player._guidanceBaseline ? structuredClone(player._guidanceBaseline) : null,
             _guidanceDismissed: player._guidanceDismissed || false,
             _guidanceCollapsed: player._guidanceCollapsed || false,
+            // v9p33river307: persist pending encounter so save/load mid-
+            // encounter doesn't silently lose the choice. Previously the
+            // deserializer always reset encounterPending to null, erasing
+            // unresolved encounters.
+            encounterPending: player.encounterPending ? structuredClone(player.encounterPending) : null,
             // Kingdom quest data
             kingdomQuests: structuredClone(player.kingdomQuests || {}),
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
@@ -19265,7 +19270,15 @@
         player._townRepKingdomMod = data._townRepKingdomMod || {};
         player.notoriety = data.notoriety || 0;
         player.personalGuards = data.personalGuards || 0;
-        player.encounterPending = null;
+        // v9p33river307: restore the saved encounter (or null). Was
+        // hard-coded to null which erased mid-encounter saves.
+        player.encounterPending = data.encounterPending ? structuredClone(data.encounterPending) : null;
+        // If we just restored a pending encounter, re-open the dialog so the
+        // player can resolve it (matches how the engine pauses the game on
+        // encounter creation at player.js:34221).
+        if (player.encounterPending && typeof window !== 'undefined' && typeof window._showEncounterDialog === 'function') {
+            try { window._showEncounterDialog(player.encounterPending); } catch (_e) {}
+        }
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;
