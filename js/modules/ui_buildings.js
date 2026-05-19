@@ -493,11 +493,12 @@
                 var unitPrice = aptBld.unitPrice || 0;
                 // v9p33river322: prefer canonical weeklyFee
                 var weeklyFee = aptBld.weeklyFee || aptBld.monthlyFee || 0;
-                var unitPrice = aptBld.unitPrice || 0;
-                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(weeklyFee) + 'g</span></div>';
                 html += '<div style="border:1px solid #555;padding:6px;margin:3px 0;border-radius:4px;">';
                 html += '<div><strong>🏢 Apartment Building</strong> — Owner: ' + ownerName + '</div>';
-                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(monthlyFee) + 'g</span></div>';
+                // v9p33river324: was a duplicate line using stale
+                // `monthlyFee` (undefined here) — replaced with the
+                // weeklyFee resolved above.
+                html += '<div style="font-size:0.78rem;color:#aaa;">' + availableUnits.length + '/' + units.length + ' units available | Buy: <span style="color:#ffd700;">' + Math.ceil(unitPrice) + 'g</span> | Weekly: <span style="color:#ffd700;">' + Math.ceil(weeklyFee) + 'g</span></div>';
                 if (availableUnits.length > 0 && aptBld.ownerId !== 'player') {
                     var canAffordApt = (Player.gold || 0) >= unitPrice;
                     html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 8px;margin-top:4px;" ' + (canAffordApt ? '' : 'disabled') + ' data-action="buyApartmentUnit" data-id="' + aptBld._id + '">🏢 Buy Apartment (' + Math.ceil(unitPrice) + 'g)</button>';
@@ -636,9 +637,15 @@
         }
 
         // Create apartment house record for player
+        // v9p33river324: include canonical apartment fields houseType +
+        // _apartmentBuildingId so engine code that scans player houses
+        // for apartment-specific behavior (engine.js:12985, eviction +
+        // collection) recognizes the unit.
         var house = {
             id: 'apt_unit_' + aptBuildingId + '_' + unit.unitIndex,
             type: 'apartment',
+            houseType: 'apartment',
+            _apartmentBuildingId: aptBuildingId,
             townId: Player.townId,
             purchaseDay: Engine.getDay(),
             occupants: [],

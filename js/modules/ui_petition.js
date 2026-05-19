@@ -38,7 +38,11 @@
                 else if (estimate && estimate.signaturePct >= CONFIG.PETITION_GOOD_CHANCE_PCT) barColor = '#4c4';
                 else if (estimate && estimate.signaturePct >= CONFIG.PETITION_MIN_SIGNATURES_PCT) barColor = '#cc4';
                 var barWidth = Math.min(100, estimate ? estimate.signaturePct * 4 : 0);
-                var activePtrs = p.petitioners.filter(function(pt) { return pt.active; }).length;
+                // v9p33river324: guard petitioners + signatures arrays —
+                // legacy/in-progress petitions may lack one or both.
+                var _ptrs = Array.isArray(p.petitioners) ? p.petitioners : [];
+                var _sigs = Array.isArray(p.signatures) ? p.signatures : [];
+                var activePtrs = _ptrs.filter(function(pt) { return pt.active; }).length;
 
                 html += '<div style="background:rgba(50,50,50,0.8);border:1px solid #555;border-radius:6px;padding:10px;margin-bottom:8px;">';
                 html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
@@ -50,7 +54,7 @@
                 html += '<div style="background:' + barColor + ';height:100%;width:' + barWidth + '%;transition:width 0.3s;"></div>';
                 html += '</div>';
                 html += '<div style="display:flex;justify-content:space-between;font-size:0.8em;color:#aaa;margin-top:2px;">';
-                html += '<span>' + p.signatures.length + ' signatures (' + sigPct + '%)</span>';
+                html += '<span>' + _sigs.length + ' signatures (' + sigPct + '%)</span>';
                 html += '<span>' + activePtrs + ' petitioner' + (activePtrs !== 1 ? 's' : '') + '</span>';
                 html += '</div></div>';
                 html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';

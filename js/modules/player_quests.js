@@ -2155,7 +2155,9 @@
         // Check for expired active quests
         for (var i = kqData.active.length - 1; i >= 0; i--) {
             var q = kqData.active[i];
-            if (q.expiresDay && day > q.expiresDay) {
+            // v9p33river324: was `day > expiresDay` which gave an extra
+            // completable day. Strict expiration on the day itself.
+            if (q.expiresDay && day >= q.expiresDay) {
                 // Failure penalty
                 var repLoss = Math.ceil((q.rewards.kingdomRep || 3) * 0.6);
                 var relLoss = Math.ceil((q.rewards.kingRelationship || 5) * 0.6);
@@ -3203,7 +3205,10 @@
         if (!membership) return false;
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
-        return membership.expiresDay > day;
+        // v9p33river324: was `expiresDay > day` which marked the
+        // membership invalid ON the expiry day. Use >= so the member
+        // gets perks through end of expiry day.
+        return membership.expiresDay >= day;
     }
 
     function getGuildPrice(guildId, type) {

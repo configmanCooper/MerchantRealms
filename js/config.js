@@ -1826,6 +1826,18 @@ const RESOURCE_TYPES = {
     EXOTIC_ARTIFACT:  { id: 'exotic_artifact',  name: 'Exotic Artifact', category: 'quest',     basePrice: 800, icon: '🔮', weight: 1 },
 };
 
+// v9p33river324: CONFIG.ITEMS is the lowercase-keyed mirror of RESOURCE_TYPES
+// that many UI/king-panel modules reference (ui_king.js:1013/1128/1148/2103,
+// ui_buildings.js:2394/2401/2449/2655/2766, player_building_mgmt.js:20).
+// Was never defined — every consumer silently fell through to its fallback
+// branch, losing icon/name/category metadata. Build it from RESOURCE_TYPES
+// here so all existing CONFIG.ITEMS[lower_id] lookups resolve correctly.
+CONFIG.ITEMS = {};
+for (var _riKey in RESOURCE_TYPES) {
+    var _riDef = RESOURCE_TYPES[_riKey];
+    if (_riDef && _riDef.id) CONFIG.ITEMS[_riDef.id] = _riDef;
+}
+
 // ============================================================
 // Building Types & Production Recipes
 // ============================================================

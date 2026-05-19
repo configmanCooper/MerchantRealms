@@ -17018,10 +17018,18 @@
         }
 
         // 5b. Reassign all people in the town to the new kingdom
+        // v9p33river324: was checking _person.alive only (bug 15) and
+        // updating kingdomId only (bug 19). Now also processes dead
+        // NPCs (for spouse/parent reference integrity) and updates
+        // citizenshipKingdomId so transferred citizens don't keep a
+        // foreign citizenship pointing at the loser kingdom.
         for (var _pi = 0; _pi < world.people.length; _pi++) {
             var _person = world.people[_pi];
-            if (_person.alive && _person.townId === townId) {
+            if (_person.townId === townId) {
                 _person.kingdomId = toKingdomId;
+                if (_person.citizenshipKingdomId === fromKingdomId) {
+                    _person.citizenshipKingdomId = toKingdomId;
+                }
             }
         }
 
@@ -17318,6 +17326,12 @@
         for (const person of townPeople) {
             person.citizenshipKingdomId = kingdom.id;
             person.kingdomId = kingdom.id;
+            // v9p33river324: clear servitude/indentured fields so newly
+            // granted citizens aren't simultaneously enslaved (was
+            // leaving stale status from a prior imposeServitude).
+            if (person.status === 'indentured') person.status = null;
+            person._servitudeKingdomId = null;
+            person._servitudeUntilDay = 0;
         }
         town.happiness = Math.min(100, (town.happiness || 50) + CONFIG.CONQUEST_CITIZENSHIP_HAPPINESS);
 

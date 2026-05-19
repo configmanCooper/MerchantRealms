@@ -14661,9 +14661,11 @@
 
             // Add spouse observation about town
             var town = Engine.findTown(player.townId);
+            // v9p33river324: guard town.market + supply before reading
+            // (legacy towns / market-less outposts shouldn't crash chat).
             if (town && rng && rng.chance(0.3)) {
                 if (town.happiness < 30) response += ' "The people here seem unhappy lately..."';
-                else if ((town.market.supply.bread || 0) < 5) response += ' "Have you noticed the baker has been running low on bread?"';
+                else if (town.market && town.market.supply && (town.market.supply.bread || 0) < 5) response += ' "Have you noticed the baker has been running low on bread?"';
                 else if (town.prosperity > 80) response += ' "The town is thriving! I feel proud to live here."';
             }
         }
@@ -21027,7 +21029,11 @@
             for (const empId of player.employees) {
                 const person = Engine.findPerson(empId);
                 if (!person || !person.alive) continue;
-                const wage = Math.floor(_calculateWorkerWage(person) * (player.spouseCostMod || 1.0));
+                // v9p33river324: spouseCostMod (a discount that applies
+                // only to spouse-related expenses) was being multiplied
+                // into employee wages. Employees aren't spouses; their
+                // wage should ignore spouse cost modifiers.
+                const wage = Math.floor(_calculateWorkerWage(person));
                 if (player.gold >= wage) {
                     player.gold -= wage;
                     logFinance(-wage, 'wages', 'Employee wages');
@@ -21615,8 +21621,13 @@
         updateMarketIntel();
 
         // Daily profit tracking
+        // v9p33river324: was using `|| player.gold` fallback for the
+        // baseline, so starting a day with 0g (after bankruptcy/penalty)
+        // produced wrong delta. Default to 0 baseline only when truly
+        // unset (use !== undefined check).
         if (player.achievementStats) {
-            player.achievementStats.dailyProfit = player.gold - (player.achievementStats.dailyProfitPrevGold || player.gold);
+            var _prevGold = (player.achievementStats.dailyProfitPrevGold !== undefined) ? player.achievementStats.dailyProfitPrevGold : player.gold;
+            player.achievementStats.dailyProfit = player.gold - _prevGold;
         }
 
         // Supply chain tracking
