@@ -6075,6 +6075,16 @@ window.UI = (function () {
         }
 
         // Available upgrades (craft from materials)
+        // v9p33river337: backpack/cart/wagon crafting requires a home with
+        // workshop in the player's current town (see Player.buyContainer
+        // gate at player_inventory.js:917). Disable the button visually
+        // and add a clear note if no workshop is available — previously
+        // players had to click each button to discover the requirement.
+        // EXCEPTION: if the player owns a ready-made copy in inventory
+        // (bought from a market), they can equip it without a workshop.
+        var _charHouseInTown = (typeof Player !== 'undefined' && Player.getHouseInTown) ? Player.getHouseInTown(Player.townId) : null;
+        var _charHt = _charHouseInTown ? CONFIG.HOUSING_TYPES.find(function(h) { return h.id === _charHouseInTown.type; }) : null;
+        var _charHasWorkshop = (_charHt && _charHt.hasWorkshop) || (_charHouseInTown && _charHouseInTown.addons && _charHouseInTown.addons.indexOf('workshop') >= 0);
         let upgradeHtml = '';
         for (const [cId, cCfg] of Object.entries(CONFIG.STORAGE_CONTAINERS)) {
             if (charContainer && cCfg.capacityMult <= charContainer.capacityMult) continue;
@@ -6087,10 +6097,22 @@ window.UI = (function () {
                     return (res ? res.icon || '' : '') + e[1];
                 }).join(', ');
             }
-            upgradeHtml += `<button class="btn-medieval" data-action="buyContainer" data-id="${cId}" style="font-size:0.7rem;padding:3px 10px;margin:2px;">${cCfg.icon} ${cCfg.name} (${upgradeCost}g${matStr}) — ${cCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap</button>`;
+            // v9p33river337: per-button workshop gate. Allow if player has
+            // a ready-made one in inventory (no crafting needed).
+            var _upgInvHas = (Player.inventory && Player.inventory[cId]) || 0;
+            var _upgNeedsWorkshop = _upgInvHas <= 0 && !_charHasWorkshop;
+            var _upgDisabled = _upgNeedsWorkshop ? ' disabled' : '';
+            var _upgStyle = _upgNeedsWorkshop ? 'opacity:0.5;cursor:not-allowed;' : '';
+            var _upgTitle = _upgNeedsWorkshop ? ' title="Requires a home with workshop in this town to craft"' : '';
+            upgradeHtml += `<button class="btn-medieval" data-action="buyContainer" data-id="${cId}" style="font-size:0.7rem;padding:3px 10px;margin:2px;${_upgStyle}"${_upgDisabled}${_upgTitle}>${cCfg.icon} ${cCfg.name} (${upgradeCost}g${matStr}) — ${cCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap</button>`;
         }
         if (upgradeHtml) {
-            html += `<div style="margin-top:6px;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Available upgrades:</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${upgradeHtml}</div></div>`;
+            html += `<div style="margin-top:6px;"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Available upgrades:</div><div style="display:flex;flex-wrap:wrap;gap:4px;">${upgradeHtml}</div>`;
+            // v9p33river337: explanatory note when the player lacks a workshop
+            if (!_charHasWorkshop) {
+                html += `<div style="font-size:0.7rem;color:#cc9966;margin-top:4px;font-style:italic;">⚠️ Crafting requires a home with workshop in this town. Buy a ready-made container from a market or canvas workshop instead.</div>`;
+            }
+            html += `</div>`;
         } else {
             html += `<div style="font-size:0.75rem;color:#55a868;margin-top:4px;">✅ Maximum container owned</div>`;
         }
