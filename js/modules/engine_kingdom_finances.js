@@ -549,6 +549,13 @@
                         const kTowns = world.towns.filter(t => k.territories.has(t.id));
                         if (kTowns.length > 0) {
                             const town = rng.pick(kTowns);
+                            // v9p33river319: guard against territory towns
+                            // missing market (legacy outposts, partial
+                            // initialization); finance tick was crashing
+                            // on .market.prices access.
+                            if (!town || !town.market) continue;
+                            if (!town.market.supply) town.market.supply = {};
+                            if (!town.market.prices) town.market.prices = {};
                             const price = (town.market.prices[itemId] || 10) * surplus;
                             town.market.supply[itemId] = (town.market.supply[itemId] || 0) + surplus;
                             stockpile[itemId] -= surplus;
@@ -731,9 +738,12 @@
                     type: 'currency_debasement', kingdomId: k.id, cause: 'Desperate monetary policy', effects: ['Treasury gets 20% boost', 'All prices in kingdom rise 30%', 'Long-term economic damage']
                 });
                 // Inflate prices in all kingdom towns
+                // v9p33river319: guard against towns missing market.prices
+                // (legacy outposts / partial init) so debasement doesn't
+                // crash the finance tick.
                 for (const townId of k.territories) {
                     const town = findTown(townId);
-                    if (!town) continue;
+                    if (!town || !town.market || !town.market.prices) continue;
                     for (const resId in town.market.prices) {
                         town.market.prices[resId] = Math.ceil(town.market.prices[resId] * 1.30);
                     }
@@ -833,12 +843,15 @@
                 }
 
                 // Check supply need: if kingdom towns are short on this good, lower fees to encourage trade
+                // v9p33river319: guard against towns missing market or
+                // market.supply/demand (legacy outposts / partial init).
                 var totalSupply = 0, totalDemand = 0;
                 for (var ti = 0; ti < world.towns.length; ti++) {
                     var town = world.towns[ti];
                     if (!k.territories.has(town.id)) continue;
-                    totalSupply += (town.market.supply[goodId] || 0);
-                    totalDemand += (town.market.demand[goodId] || 0);
+                    if (!town.market) continue;
+                    totalSupply += (town.market.supply && town.market.supply[goodId]) || 0;
+                    totalDemand += (town.market.demand && town.market.demand[goodId]) || 0;
                 }
                 if (totalDemand > 0 && totalSupply < totalDemand * 0.5) {
                     // Severe shortage → lower fees to attract merchants

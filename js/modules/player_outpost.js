@@ -398,6 +398,11 @@
                 var gDismissId = npcId || town.outpostGuards[town.outpostGuards.length - 1];
                 var gIdx = town.outpostGuards.indexOf(gDismissId);
                 if (gIdx >= 0) {
+                    // v9p33river319: also call _unassignOutpostWorker so
+                    // any role assignment the guard had (gate/patrol/etc.)
+                    // is cleared. Worker dismissal (line 350) already did
+                    // this; guard dismissal was leaving stale assignments.
+                    _unassignOutpostWorker(town, gDismissId);
                     town.outpostGuards.splice(gIdx, 1);
                     town.hiredGuards = town.outpostGuards.length;
                     var gDismissed = Engine.findPerson(gDismissId);

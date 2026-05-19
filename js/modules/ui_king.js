@@ -1114,7 +1114,11 @@
         }
         // Show active procurement orders
         try {
-            var _kForOrders = Engine.findKingdom(Player.state.kingState.kingdomId);
+            // v9p33river319: was crashing when Player.state.kingState was
+            // null (player not king). Guard the access; this panel only
+            // makes sense when the player IS king of the rendered kingdom.
+            var _ksKid = (Player.state && Player.state.kingState && Player.state.kingState.kingdomId) || null;
+            var _kForOrders = _ksKid ? Engine.findKingdom(_ksKid) : null;
             var _orders = (_kForOrders && _kForOrders._procurementOrders) ? _kForOrders._procurementOrders.filter(function(o) { return o.remaining > 0; }) : [];
             if (_orders.length > 0) {
                 html += '<div style="margin-top:6px;border-top:1px solid #444;padding-top:4px;">';

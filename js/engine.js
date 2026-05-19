@@ -23403,7 +23403,11 @@
 
         // INSTRUMENTS — very rare durable purchase. Middle gets basic three;
         // upper gets the full lineup (harp, hurdy_gurdy are status symbols).
-        if (isMiddle && world.rng.chance(CONFIG.NPC_INSTRUMENT_CHANCE)) {
+        // v9p33river319: was gated on `isMiddle` only — upper-class NPCs
+        // (isUpper without isMiddle) skipped the branch entirely so the
+        // inner `isUpper ? full : basic` ternary never fired. Now both
+        // middle and upper can roll the instrument-purchase chance.
+        if ((isMiddle || isUpper) && world.rng.chance(CONFIG.NPC_INSTRUMENT_CHANCE)) {
             var _instList = isUpper
                 ? ['flute', 'drum', 'lute', 'harp', 'hurdy_gurdy']
                 : ['flute', 'drum', 'lute'];
