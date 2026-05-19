@@ -28925,7 +28925,7 @@
                 var kingdomRep = player.reputation[town.kingdomId] || 50;
                 var capitalRep = (player.townReputation && player.townReputation[town.id]) || 50;
                 var kingdom = Engine.findKingdom(town.kingdomId);
-                var kingRel = kingdom && kingdom.king ? (player.relationships[kingdom.king.id] || { level: 0 }).level : 0;
+                var kingRel = kingdom && kingdom.king ? (player.relationships[kingdom.king] || { level: 0 }).level : 0;
                 var hasCastleStanding = kingdomRep >= 60 || capitalRep >= 65 || kingRel >= 50;
 
                 if (isCitizen && hasCastleStanding) {
@@ -37292,7 +37292,7 @@
             // EVENT: Reputation boost — uncovered plot against the kingdom
             var repBoost = rng.randInt(3, 8);
             player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + repBoost);
-            if (kingdom.king) modifyRelationship(kingdom.king.id, rng.randInt(3, 8), 'spy_success');
+            if (kingdom.king) modifyRelationship(kingdom.king, rng.randInt(3, 8), 'spy_success');
             modifyTownReputation(town.id, rng.randInt(2, 5));
             Engine.logEvent('🕵️ Your spy work uncovered a plot against ' + kingdom.name + '! The crown is grateful. (Kingdom rep +' + repBoost + ')');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Uncovered a plot! Reputation boosted.', 'success');
@@ -37341,7 +37341,7 @@
             // EVENT: Discovered enemy war plans — reputation + kingdom benefit
             var planRepBoost = rng.randInt(8, 15);
             player.reputation[kingdom.id] = Math.min(100, (player.reputation[kingdom.id] || 50) + planRepBoost);
-            if (kingdom.king) modifyRelationship(kingdom.king.id, rng.randInt(5, 12), 'spy_war_plans');
+            if (kingdom.king) modifyRelationship(kingdom.king, rng.randInt(5, 12), 'spy_war_plans');
             // Give the kingdom a stockpile boost (as if they captured supplies)
             kingdom.gold += rng.randInt(200, 500);
             kingdom.militaryStockpile = kingdom.militaryStockpile || {};
@@ -37817,7 +37817,7 @@
             // King relationship boost
             var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
             if (kingdom && kingdom.king) {
-                modifyRelationship(kingdom.king.id, 15, 'tournament_champion');
+                modifyRelationship(kingdom.king, 15, 'tournament_champion');
             }
 
             // Advance time
