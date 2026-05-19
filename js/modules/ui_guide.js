@@ -769,7 +769,10 @@
                 var pt = Player.state._platinumTracking;
                 if (pt) {
                     pt.commissionsCompleted = (pt.commissionsCompleted || 0) + 1;
-                    pt.commissionGoodsTotal = (pt.commissionGoodsTotal || 0) + (result.quantity || 0);
+                    // v9p33river323: deliverKingCommission returns result.qty
+                    // (see player.js:12686), not result.quantity. Was always
+                    // adding 0 to commissionGoodsTotal.
+                    pt.commissionGoodsTotal = (pt.commissionGoodsTotal || 0) + (result.qty || result.quantity || 0);
                 }
             }
             closeModal();

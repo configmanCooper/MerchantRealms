@@ -2066,8 +2066,11 @@
 
             var canAfford = true;
             if (costInfo.gold > (Player.gold || 0)) canAfford = false;
+            // v9p33river323: guard Player.inventory before reading — legacy
+            // states could lack the inventory object and crash here.
+            var _pInv = (Player.inventory || (Player.state && Player.state.inventory) || {});
             for (var cm in costInfo.materials) {
-                if (costInfo.materials[cm] > 0 && (Player.inventory[cm] || 0) < costInfo.materials[cm]) canAfford = false;
+                if (costInfo.materials[cm] > 0 && (_pInv[cm] || 0) < costInfo.materials[cm]) canAfford = false;
             }
 
             html += '<div style="padding:6px 10px;margin-bottom:4px;border:1px solid rgba(120,100,60,0.3);border-radius:4px;' + (canAfford ? '' : 'opacity:0.5;') + '">';
@@ -2735,9 +2738,16 @@
         else if (bld.outputBuffer) bld.outputBuffer[resourceId] = (bld.outputBuffer[resourceId] || 0) - qty;
 
         // Revenue goes to building owner
+        // v9p33river323: also credit kingdom owners (crown-owned retail)
+        // so kingdom-run shops earn revenue instead of dropping the gold.
         if (bld.ownerId && bld.ownerId !== 'player') {
             var owner = Engine.findPerson(bld.ownerId);
-            if (owner) owner.gold = (owner.gold || 0) + totalCost;
+            if (owner) {
+                owner.gold = (owner.gold || 0) + totalCost;
+            } else {
+                var ownerK = Engine.findKingdom ? Engine.findKingdom(bld.ownerId) : null;
+                if (ownerK) ownerK.gold = (ownerK.gold || 0) + totalCost;
+            }
         }
 
         // Add to player inventory
@@ -2794,9 +2804,15 @@
         Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + fee;
 
         // Owner gets revenue
+        // v9p33river323: same kingdom-owner fix as retail purchase path.
         if (bld.ownerId && bld.ownerId !== 'player') {
             var owner = Engine.findPerson(bld.ownerId);
-            if (owner) owner.gold = (owner.gold || 0) + fee;
+            if (owner) {
+                owner.gold = (owner.gold || 0) + fee;
+            } else {
+                var ownerK = Engine.findKingdom ? Engine.findKingdom(bld.ownerId) : null;
+                if (ownerK) ownerK.gold = (ownerK.gold || 0) + fee;
+            }
         }
 
         // Apply health effects

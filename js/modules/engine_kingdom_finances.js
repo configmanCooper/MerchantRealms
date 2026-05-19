@@ -423,7 +423,7 @@
                     // Check if any town lacks a market or key production building
                     for (var _bsTid of k.territories) {
                         var _bsPTown = findTown(_bsTid);
-                        if (!_bsPTown) continue;
+                        if (!_bsPTown || !_bsPTown.buildings) continue;
                         var _bsHasMarket = _bsPTown.buildings.some(function(b) { return b.type === 'market'; });
                         if (!_bsHasMarket && k.gold > 400) {
                             kingdomBuild(k, _bsPTown, 'market', rng);
@@ -981,7 +981,7 @@
                     var _invested = false;
                     for (var _tid of k.territories) {
                         var _invTown = findTown(_tid);
-                        if (!_invTown) continue;
+                        if (!_invTown || !_invTown.buildings) continue;
                         var _hasMarket = _invTown.buildings.some(function(b) { return b.type === 'market'; });
                         if (!_hasMarket && _investBudget >= 400) {
                             kingdomBuild(k, _invTown, 'market', rng);

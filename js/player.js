@@ -21928,7 +21928,11 @@
             }
 
             // Fed while serving
-            player.hunger = Math.max(player.hunger || 0, (CONFIG.HUNGER_CONFIG ? CONFIG.HUNGER_CONFIG.START : 100) * 0.8);
+            // v9p33river323: HUNGER_CONFIG is a top-level const (not
+            // CONFIG.HUNGER_CONFIG), so the fallback was always firing
+            // and 100 * 0.8 = 80 was used regardless of config tuning.
+            var _hcStart = (typeof HUNGER_CONFIG !== 'undefined' && HUNGER_CONFIG.START) ? HUNGER_CONFIG.START : 100;
+            player.hunger = Math.max(player.hunger || 0, _hcStart * 0.8);
 
             player.conscriptionPending = null;
             Engine.logEvent('⚔️ ' + player.fullName + ' reported for conscription duty in ' + pending.kingdomName + '! Service: 1 year.');

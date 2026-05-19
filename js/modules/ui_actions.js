@@ -332,7 +332,11 @@ function showTownDetail(town) {
     const hasMarketScout = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('market_scout');
     const hasTradeNetwork = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('trade_network');
     const hasGlobalIntel = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('global_trade_intel');
-    const playerKingdomId = typeof Player !== 'undefined' ? Player.kingdomId : null;
+    // v9p33river323: prefer citizenship over Player.kingdomId for
+    // price-intel visibility, since most "your kingdom" features key
+    // off citizenship rather than the old kingdomId field.
+    const playerKingdomId = typeof Player !== 'undefined' ?
+        (Player.citizenshipKingdomId || Player.kingdomId || (Player.state && Player.state.townId && (Engine.findTown(Player.state.townId) || {}).kingdomId)) : null;
     const hasWorkersHere = typeof Player !== 'undefined' && Player.employees &&
         Player.employees.some(empId => { try { const e = Engine.getPerson(empId); return e && e.townId === town.id; } catch(ex) { return false; } });
     const hasBuildingsHere = typeof Player !== 'undefined' && Player.buildings &&

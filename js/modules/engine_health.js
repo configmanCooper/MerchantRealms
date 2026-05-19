@@ -847,7 +847,12 @@
                                     infectNPC(nTarget, illId, rng, day, 'road_spread');
                                 }
                                 if (illDef.contagious) {
-                                    logEvent('🦠 Plague has spread along the road from ' + town.name + ' to ' + nTown.name + '!', {
+                                    // v9p33river323: log message used to
+                                    // always say "Plague" regardless of the
+                                    // actual illness. Use the illness name
+                                    // for accurate cross-town spread logs.
+                                    var _illName = (illDef.name || illId || 'Illness');
+                                    logEvent('🦠 ' + _illName + ' has spread along the road from ' + town.name + ' to ' + nTown.name + '!', {
                                         type: 'plague_spread', townId: neighborId
                                     }, 'illness');
                                 }

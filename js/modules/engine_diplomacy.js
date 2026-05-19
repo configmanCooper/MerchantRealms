@@ -1272,7 +1272,13 @@
                     if (_sharedEnemy) {
                         allianceRelThresh -= 15; // Much easier to ally when fighting same enemy
                         // Modest daily relation boost for co-belligerents
-                        k.relations[other.id] = (k.relations[other.id] || 0) + rng.randFloat(0.05, 0.2);
+                        // v9p33river323: was only updating k.relations[other];
+                        // diplomatic relations should be symmetric, so update
+                        // both sides each tick.
+                        var _shBonus = rng.randFloat(0.05, 0.2);
+                        k.relations[other.id] = (k.relations[other.id] || 0) + _shBonus;
+                        if (!other.relations) other.relations = {};
+                        other.relations[k.id] = (other.relations[k.id] || 0) + _shBonus;
                     }
                 }
                 // H3: Diplomatic kings form alliances easier
@@ -1545,9 +1551,15 @@
                                 const cededTown = transferTown(cededTownId, loser.id, winner.id, 'peace_deal');
                                 if (cededTown) {
                                     // Update people in ceded town
+                                    // v9p33river323: also update citizenshipKingdomId
+                                    // so the town's residents aren't left with stale
+                                    // citizenship pointing at the loser kingdom.
                                     for (const p of world.people) {
                                         if (p.alive && p.townId === cededTownId) {
                                             p.kingdomId = winner.id;
+                                            if (p.citizenshipKingdomId === loser.id) {
+                                                p.citizenshipKingdomId = winner.id;
+                                            }
                                         }
                                     }
                                     // Apply servitude if negotiated

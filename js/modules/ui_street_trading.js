@@ -3148,7 +3148,17 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var townId = el.getAttribute('data-id');
         var idx = el.getAttribute('data-idx');
         if (!townId || typeof Engine === 'undefined') return;
-        var goldInput = document.getElementById('revolt_gold_' + idx) || document.getElementById('revolt_proactive_' + idx);
+        // v9p33river323: data-idx was sometimes "proactive_N" (prefixed)
+        // and sometimes a plain index. The input element is always
+        // "revolt_proactive_N", so concatenating "revolt_proactive_" +
+        // "proactive_N" produced a non-existent id and the typed gold
+        // amount was silently ignored (fell back to 100g default).
+        // Normalize by stripping any leading "proactive_" before lookup.
+        var _normIdx = (idx || '').replace(/^proactive_/, '');
+        var goldInput = document.getElementById('revolt_gold_' + _normIdx) ||
+                        document.getElementById('revolt_proactive_' + _normIdx) ||
+                        // Legacy fallback for any handler still passing raw idx
+                        document.getElementById('revolt_proactive_' + idx);
         var goldAmount = goldInput ? parseInt(goldInput.value) || 100 : 100;
         var result = Engine.playerSupportRevolt(townId, goldAmount);
         if (result.success) {

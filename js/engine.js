@@ -15973,6 +15973,20 @@
                 // Only create new posting if under limit and no recent posting
                 var _activePostCount = k._recruitmentPostings.length;
                 if (_activePostCount < 3) {
+                    // v9p33river323: compute strength BEFORE the conscription
+                    // check below so `_kStrength` isn't undefined (the war
+                    // strategy block at ~16021 computed these later — too
+                    // late for the desperate-wartime conscription gate to fire).
+                    var _kStrength = computeMilitaryStrength(k);
+                    var _strongestEnemy = null, _strongestEnemyStr = 0;
+                    if (k.atWar) {
+                        for (var _weId of k.atWar) {
+                            var _we = findKingdom(_weId);
+                            if (!_we) continue;
+                            var _weStr = computeMilitaryStrength(_we);
+                            if (_weStr > _strongestEnemyStr) { _strongestEnemy = _we; _strongestEnemyStr = _weStr; }
+                        }
+                    }
                     var _costPer = CONFIG.SOLDIER_RECRUIT_COST || 50;
                     var _canReserve = Math.floor((k.gold || 0) / _costPer);
                     var _toPost = Math.min(_maxNewRecruits, _canReserve);
@@ -16012,15 +16026,20 @@
             var _warPhase = k._warPhase || 'buildup';
             var _warPhaseDays = world.day - (k._warPhaseStartDay || world.day);
             var _pers = k.kingPersonality || {};
-            var _kStrength = computeMilitaryStrength(k);
-
-            // Determine strongest enemy in current wars
-            var _strongestEnemy = null, _strongestEnemyStr = 0;
-            for (var _weId of k.atWar) {
-                var _we = findKingdom(_weId);
-                if (!_we) continue;
-                var _weStr = computeMilitaryStrength(_we);
-                if (_weStr > _strongestEnemyStr) { _strongestEnemy = _we; _strongestEnemyStr = _weStr; }
+            // v9p33river323: _kStrength + _strongestEnemy may already be
+            // computed by the recruitment block above (hoisted for the
+            // conscription gate). Only compute if not present.
+            if (typeof _kStrength === 'undefined') var _kStrength = computeMilitaryStrength(k);
+            if (typeof _strongestEnemy === 'undefined') {
+                var _strongestEnemy = null, _strongestEnemyStr = 0;
+                if (k.atWar) {
+                    for (var _weId of k.atWar) {
+                        var _we = findKingdom(_weId);
+                        if (!_we) continue;
+                        var _weStr = computeMilitaryStrength(_we);
+                        if (_weStr > _strongestEnemyStr) { _strongestEnemy = _we; _strongestEnemyStr = _weStr; }
+                    }
+                }
             }
 
             // Phase transitions — C2: accelerated buildup, more aggressive phase transitions
@@ -17180,9 +17199,15 @@
         // Handle player if they are king of the destroyed kingdom
         if (typeof Player !== 'undefined' && Player.state) {
             var ps = Player.state;
-            if (ps.isKing && ps.citizenshipKingdomId === deadK.id) {
+            // v9p33river323: was only checking citizenshipKingdomId. Canonical
+            // king-of-kingdom marker is kingState.kingdomId — a player crowned
+            // in a kingdom they're not a citizen of would remain king of the
+            // dead realm. Now matches either.
+            var _isKingOfDead = ps.isKing && ((ps.kingState && ps.kingState.kingdomId === deadK.id) || ps.citizenshipKingdomId === deadK.id);
+            if (_isKingOfDead) {
                 ps.isKing = false;
                 ps.kingdomId = null;
+                if (ps.kingState) ps.kingState = null;
                 if (ps.socialRank) ps.socialRank[deadK.id] = 0;
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑💀 Your kingdom has fallen! You are no longer king.', 'danger', 'critical');
             }
@@ -33426,6 +33451,13 @@
                 peaceTreaties: k.peaceTreaties ? JSON.parse(JSON.stringify(k.peaceTreaties)) : {},
                 procurement: k.procurement ? JSON.parse(JSON.stringify(k.procurement)) : { orders: [], deals: [], needs: {}, preferredMerchants: {}, lastAssessmentDay: 0 },
                 militaryStockpile: k.militaryStockpile ? JSON.parse(JSON.stringify(k.militaryStockpile)) : { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
+                // v9p33river323: goodsStockpile and crimePunishments were
+                // used live but never explicitly serialized — relying on
+                // the `{...k}` spread, which works for plain objects but
+                // breaks defensively (and would silently drop function refs
+                // if any are added). Now explicitly deep-cloned.
+                goodsStockpile: k.goodsStockpile ? JSON.parse(JSON.stringify(k.goodsStockpile)) : {},
+                crimePunishments: k.crimePunishments ? JSON.parse(JSON.stringify(k.crimePunishments)) : {},
                 // v9p33river315: explicit serialize for fields that
                 // were only restored on deserialize, defending against
                 // any future spread-bypass refactor (function refs in

@@ -1824,8 +1824,10 @@
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
             var _isNoble = person && (person.occupation === 'noble' || person.occupation === 'king');
-            applyCorruptPenalty(town, kingdom, 0, 20, 0, false, 'forgery', _isNoble ? { isNobleTarget: true } : null);
+            applyCorruptPenalty(town, kingdom, 0, 20, 0, false, 'blackmail', _isNoble ? { isNobleTarget: true } : null);
             if (player.relationships[personId]) player.relationships[personId].level = 0;
+            // v9p33river323: was recording as 'forgery' — wrong crime
+            // profile for blackmail. Now records the actual offense.
             recordCorruptAction('blackmail', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'blackmail');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
             var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'blackmailing a noble');
@@ -1877,9 +1879,13 @@
         var caughtMsg = '';
         if (caught) {
             const kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
-            applyCorruptPenalty(town, kingdom, 0, 10, 0, false, 'blackmail');
+            // v9p33river323: caught rumor-spreading was being recorded
+            // and punished as 'forgery' / 'blackmail' crime profiles.
+            // Now uses the canonical 'spread_rumors' crime id (or
+            // 'fraud' fallback) for both penalty + record.
+            applyCorruptPenalty(town, kingdom, 0, 10, 0, false, 'fraud');
             if (player.relationships[targetMerchantId]) player.relationships[targetMerchantId].level = 0;
-            recordCorruptAction('spread_rumors', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
+            recordCorruptAction('spread_rumors', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'fraud');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             caughtMsg = '🚨 CAUGHT! Reputation -10. Target knows you spread rumors.';
         } else {
@@ -2297,6 +2303,9 @@
         const stoneQty = player.inventory.stone || 0;
         if (woodQty < 20) return { success: false, message: 'Need 20 wood.' };
         if (stoneQty < 15) return { success: false, message: 'Need 15 stone.' };
+        // v9p33river323: guard hiddenWarehouses before .some/.push so
+        // legacy saves without the field don't crash.
+        if (!player.hiddenWarehouses) player.hiddenWarehouses = [];
         // Check if already have one in this town
         if (player.hiddenWarehouses.some(hw => hw.townId === townId)) {
             return { success: false, message: 'Already have a hidden warehouse in this town.' };
@@ -2621,12 +2630,15 @@
         }
 
         // Hidden warehouse audit (each season = 90 days)
-        if (day % 90 === 0 && player.hiddenWarehouses.length > 0) {
+        if (day % 90 === 0 && player.hiddenWarehouses && player.hiddenWarehouses.length > 0) {
             for (let i = player.hiddenWarehouses.length - 1; i >= 0; i--) {
                 const hw = player.hiddenWarehouses[i];
                 const hasGoods = Object.values(hw.inventory).some(q => q > 0);
                 if (!hasGoods) continue;
-                const auditChance = 0.05 + (player.offenseCount[Engine.findTown(hw.townId)?.kingdomId] || 0) * 0.02;
+                // v9p33river323: guard offenseCount before [] access.
+                const _hwK = Engine.findTown(hw.townId)?.kingdomId;
+                const _ofc = (player.offenseCount && _hwK) ? (player.offenseCount[_hwK] || 0) : 0;
+                const auditChance = 0.05 + _ofc * 0.02;
                 if (rng && rng.chance(auditChance)) {
                     hw.inventory = {};
                     player.gold = Math.max(0, player.gold - 500);
