@@ -3345,7 +3345,10 @@
             // configurator UI (kingdom + order type + sub-target). The
             // action card just lists it; dispatch is done via the UI.
             if (hasSkill('shadow_dealings')) {
-                var _royalCD = (player.schemeCooldowns && player.schemeCooldowns['forge_royal_order:_none']) || 0;
+                // v9p33river349: cooldown key is the bare actionId
+                // (attemptScheme stores via `cdKey = actionId` at line ~5819).
+                // Previously was 'forge_royal_order:_none' which never matched.
+                var _royalCD = (player.schemeCooldowns && player.schemeCooldowns['forge_royal_order']) || 0;
                 var _royalAvail = day >= _royalCD && player.gold >= 1500;
                 actions.push({
                     id: 'forge_royal_order', tab: 'political',
@@ -3363,7 +3366,8 @@
                 // Requires the target kingdom to be at war AND the player
                 // to be a citizen of BOTH the target and the warring enemy.
                 // Very high detection; nobility in either kingdom eases it.
-                var _ptCD = (player.schemeCooldowns && player.schemeCooldowns['plant_treasonous_evidence:_none']) || 0;
+                // v9p33river349: cooldown key fix (see above).
+                var _ptCD = (player.schemeCooldowns && player.schemeCooldowns['plant_treasonous_evidence']) || 0;
                 var _ptAvail = day >= _ptCD && player.gold >= 4000;
                 actions.push({
                     id: 'plant_treasonous_evidence', tab: 'political',
@@ -3383,7 +3387,8 @@
             // with town prosperity + population (1000-10000g). 90-day
             // per-town cooldown enforced inside the function.
             if (hasSkill('dark_connections')) {
-                var _isCD = (player.schemeCooldowns && player.schemeCooldowns['incite_strikes:_none']) || 0;
+                // v9p33river349: cooldown key fix.
+                var _isCD = (player.schemeCooldowns && player.schemeCooldowns['incite_strikes']) || 0;
                 var _isAvail = day >= _isCD && player.gold >= 1000;
                 actions.push({
                     id: 'incite_strikes', tab: 'political',
@@ -3403,7 +3408,8 @@
             // Master Poisoner + Dark Connections gated. Must be physically
             // in the target town.
             if (hasSkill('master_poisoner') && hasSkill('dark_connections')) {
-                var _spCD = (player.schemeCooldowns && player.schemeCooldowns['spread_plague:_none']) || 0;
+                // v9p33river349: cooldown key fix.
+                var _spCD = (player.schemeCooldowns && player.schemeCooldowns['spread_plague']) || 0;
                 var _spAvail = day >= _spCD && player.gold >= 800;
                 actions.push({
                     id: 'spread_plague', tab: 'sabotage',
@@ -3894,7 +3900,12 @@
         if (orderType === 'tax_change') {
             // orderTarget: 'raise' or 'lower'
             var delta = (orderTarget === 'lower') ? -0.02 : 0.02;
-            var current = kingdom.taxRate || CONFIG.KINGDOM_DEFAULT_PROPERTY_TAX_RATE || 0.10;
+            // v9p33river349: was using CONFIG.KINGDOM_DEFAULT_PROPERTY_TAX_RATE
+            // (0.02) as the fallback, but kingdom.taxRate IS the trade tax,
+            // not the property tax. Every other site uses 0.10 as the
+            // trade-tax fallback (see engine_kingdom_finances.js:111,
+            // player.js:32486, engine.js:11487, etc.). Aligning here.
+            var current = kingdom.taxRate || 0.10;
             kingdom.taxRate = Math.max(0.01, Math.min(0.40, current + delta));
             Engine.logEvent('📜 [Forged Royal Order] ' + kingdom.name + ' adjusts tax rate to ' + Math.round(kingdom.taxRate * 100) + '%.');
             return { success: true, message: 'Tax rate now ' + Math.round(kingdom.taxRate * 100) + '%.' };

@@ -28884,7 +28884,14 @@
             if (!isOwn) pay = Math.round(pay * payScale);
             var hours = Math.round(ticks * 0.4);
             if (jobs.some(j => j.name === jobName)) continue;
-            jobs.push({ name: jobName, hours, ticks, pay, buildingType: bld.type, type: jobType, description, xpReward, skillGain, repGain, isOwnBuilding: isOwn, buildingId: isOwn ? bld.id : undefined });
+            // v9p33river349: always store buildingId, not just for player-owned.
+            // completeWork now looks up the exact building via id (was
+            // picking the first matching type, which could credit the
+            // wrong owner in towns with multiple same-type buildings).
+            // Also skip jobs at struck buildings so Incite Strikes can't
+            // be trivially bypassed by player manual labor.
+            if (bld._strikeUntil && bld._strikeUntil > (Engine.getDay ? Engine.getDay() : 0)) continue;
+            jobs.push({ name: jobName, hours, ticks, pay, buildingType: bld.type, type: jobType, description, xpReward, skillGain, repGain, isOwnBuilding: isOwn, buildingId: bld.id });
         }
 
         // Apprenticeships
@@ -29837,7 +29844,25 @@
         if (job.type === 'building' && !job.isOwnBuilding && job.buildingType && town) {
             var _wbt = Engine.findBuildingType(job.buildingType);
             if (_wbt && _wbt.produces) {
-                var _wBld = town.buildings.find(function(b) { return b.type === job.buildingType; });
+                // v9p33river349: look up the EXACT building by id (was
+                // picking the first matching type, which credited the
+                // wrong owner in towns with multiple same-type buildings).
+                // Falls back to type-search for legacy job entries that
+                // didn't store buildingId.
+                var _wBld = null;
+                if (job.buildingId && Array.isArray(town.buildings)) {
+                    _wBld = town.buildings.find(function(b) { return b && b.id === job.buildingId; });
+                }
+                if (!_wBld && Array.isArray(town.buildings)) {
+                    _wBld = town.buildings.find(function(b) { return b && b.type === job.buildingType; });
+                }
+                // v9p33river349: respect Incite Strikes — no production
+                // possible at a struck building, even via manual work.
+                var _curDay = Engine.getDay ? Engine.getDay() : 0;
+                if (_wBld && _wBld._strikeUntil && _wBld._strikeUntil > _curDay) {
+                    Engine.logEvent('🚧 Workers refused to help — the ' + (_wbt.name || job.buildingType) + ' is on strike.');
+                    _wBld = null;
+                }
                 if (_wBld) {
                     var _produceQty = Math.max(1, Math.round((_wbt.rate || 1) * 0.3));
                     var _produceRes = _wbt.produces;
