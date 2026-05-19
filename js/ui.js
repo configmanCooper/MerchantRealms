@@ -827,6 +827,7 @@ window.UI = (function () {
         registerAction('buyContainer', function(_t, d) { if (d.id) UI.buyContainer(d.id); });
         registerAction('mountContainerUI', function(_t, d) { if (d.id) UI.mountContainerUI(d.id); });
         registerAction('dismountContainerUI', function() { UI.dismountContainerUI(); });
+        registerAction('unequipBackpackUI', function() { UI.unequipBackpackUI(); });
         registerAction('buyHorsePermitAndOpenCharacterPanel', function(_t, d) { Player.buyHorsePermit(d.id, d.val); openCharacterDialog(); });
         registerAction('mountHorseUI', function() { UI.mountHorseUI(); });
         registerAction('sellHorse', function(_t, d) { if (d.id) UI.sellHorse(d.id); });
@@ -2306,6 +2307,11 @@ window.UI = (function () {
             const _aDef = EQUIPMENT_TYPES && EQUIPMENT_TYPES.armor ? EQUIPMENT_TYPES.armor.find(e => e.id === Player.armor.id) : null;
             if (_aDef) _equippedArmorRes = _aDef.resource;
         }
+        // v9p33river339: include equipped backpack + vehicle in the sell
+        // list (just with "(equipped)" suffix). Auto-unequip in sellResource
+        // returns them to inventory before the sale.
+        const _equippedBackpack = !!(Player._backpack || Player.storageContainer === 'backpack');
+        const _equippedVehicleRes = (Player.storageContainer && Player.storageContainer !== 'backpack') ? Player.storageContainer : null;
 
         // Merge carried and stored resource IDs (plus mounted/equipped extras)
         const allSellResIds = new Set([
@@ -2315,12 +2321,16 @@ window.UI = (function () {
         if (_mountedHorses > 0) allSellResIds.add('horses');
         if (_equippedWeaponRes) allSellResIds.add(_equippedWeaponRes);
         if (_equippedArmorRes) allSellResIds.add(_equippedArmorRes);
+        if (_equippedBackpack) allSellResIds.add('backpack');
+        if (_equippedVehicleRes) allSellResIds.add(_equippedVehicleRes);
 
         for (const resId of allSellResIds) {
             const carriedQty = (Player.inventory || {})[resId] || 0;
             const storedQty = townStorageItems[resId] || 0;
             const _mountedQty = (resId === 'horses') ? _mountedHorses : 0;
-            const _equippedQty = ((resId === _equippedWeaponRes ? 1 : 0) + (resId === _equippedArmorRes ? 1 : 0));
+            let _equippedQty = ((resId === _equippedWeaponRes ? 1 : 0) + (resId === _equippedArmorRes ? 1 : 0));
+            if (resId === 'backpack' && _equippedBackpack) _equippedQty += 1;
+            if (resId === _equippedVehicleRes) _equippedQty += 1;
             const qty = carriedQty + storedQty + _mountedQty + _equippedQty;
             if (qty <= 0) continue;
             const res = findResource(resId);
@@ -6046,13 +6056,26 @@ window.UI = (function () {
 
         const charCarriedWeight = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
         const charCarryCap = Player.getCarryCapacity ? Player.getCarryCapacity() : 20;
-        const charContainer = Player.storageContainer && CONFIG.STORAGE_CONTAINERS[Player.storageContainer]
-            ? CONFIG.STORAGE_CONTAINERS[Player.storageContainer] : null;
-        const charContainerLabel = charContainer ? (charContainer.icon + ' ' + charContainer.name) : '🚶 None (on person)';
-        html += `<div class="detail-row"><span class="label">Container</span><span class="value">${charContainerLabel}</span></div>`;
-        // Dismount current container button
-        if (charContainer) {
-            html += `<div style="margin-top:3px;"><button class="btn-medieval" data-action="dismountContainerUI" style="font-size:0.7rem;padding:2px 8px;">⬇️ Dismount ${charContainer.name} to Inventory</button></div>`;
+        // v9p33river339: render backpack and vehicle as TWO separate slots
+        // (matching the user's mental model — like weapons + armor).
+        const _vehicleId = (Player.storageContainer && Player.storageContainer !== 'backpack') ? Player.storageContainer : null;
+        const _vehicleCfg = _vehicleId ? CONFIG.STORAGE_CONTAINERS[_vehicleId] : null;
+        const _backpackEquipped = !!(Player._backpack || Player.storageContainer === 'backpack');
+        const _bpCfg = CONFIG.STORAGE_CONTAINERS['backpack'];
+        const charContainer = _vehicleCfg || (Player.storageContainer && CONFIG.STORAGE_CONTAINERS[Player.storageContainer]) || null;
+
+        // Backpack slot row
+        const _bpLabel = _backpackEquipped ? ((_bpCfg ? _bpCfg.icon : '🎒') + ' ' + (_bpCfg ? _bpCfg.name : 'Backpack')) : '🚶 None';
+        html += `<div class="detail-row"><span class="label">Backpack</span><span class="value">${_bpLabel}</span></div>`;
+        if (_backpackEquipped) {
+            html += `<div style="margin-top:3px;"><button class="btn-medieval" data-action="unequipBackpackUI" style="font-size:0.7rem;padding:2px 8px;">⬇️ Unequip Backpack to Inventory</button></div>`;
+        }
+
+        // Vehicle slot row
+        const _vehLabel = _vehicleCfg ? (_vehicleCfg.icon + ' ' + _vehicleCfg.name) : '🚶 None';
+        html += `<div class="detail-row"><span class="label">Vehicle</span><span class="value">${_vehLabel}</span></div>`;
+        if (_vehicleCfg) {
+            html += `<div style="margin-top:3px;"><button class="btn-medieval" data-action="dismountContainerUI" style="font-size:0.7rem;padding:2px 8px;">⬇️ Dismount ${_vehicleCfg.name} to Inventory</button></div>`;
         }
         html += `<div class="detail-row"><span class="label">Carrying</span><span class="value">${Math.round(charCarriedWeight)} / ${charCarryCap} weight</span></div>`;
 
@@ -6065,7 +6088,11 @@ window.UI = (function () {
             if (!mcCfg) continue;
             var invCount = (Player.inventory && Player.inventory[mcId]) || 0;
             if (invCount <= 0) continue;
-            if (charContainer && mcCfg.capacityMult <= charContainer.capacityMult) continue;
+            // v9p33river339: backpack slot is independent from vehicle slot.
+            // Hide backpack mount button if a backpack is already equipped;
+            // for vehicles, hide if THIS vehicle is already equipped.
+            if (mcId === 'backpack' && _backpackEquipped) continue;
+            if (mcId !== 'backpack' && _vehicleId === mcId) continue;
             var horsesOk = (Player.horses ? Player.horses.length : 0) >= (mcCfg.horsesRequired || 0);
             var horseNote = !horsesOk ? ' (need ' + mcCfg.horsesRequired + ' 🐴)' : '';
             mountHtml += `<button class="btn-medieval" data-action="mountContainerUI" data-id="${mcId}" style="font-size:0.7rem;padding:3px 10px;margin:2px;${!horsesOk ? 'opacity:0.5;' : ''}" ${!horsesOk ? 'disabled' : ''}>${mcCfg.icon} Mount ${mcCfg.name} (${invCount} owned) — ${mcCfg.capacityMult * (CONFIG.PLAYER_BASE_CARRY || 20)} cap${horseNote}</button>`;
@@ -6684,6 +6711,12 @@ window.UI = (function () {
 
     function dismountContainerUI() {
         var result = Player.dismountContainer();
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) openCharacterDialog();
+    }
+
+    function unequipBackpackUI() {
+        var result = Player.unequipBackpack();
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) openCharacterDialog();
     }
@@ -18116,6 +18149,7 @@ window.UI = (function () {
         buyContainer: buyContainerUI,
         mountContainerUI,
         dismountContainerUI,
+        unequipBackpackUI,
         evictTenantUI,
         showRentNegotiations,
         sellHorse,

@@ -1749,7 +1749,16 @@
             const _aDefS = (typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.armor) ? EQUIPMENT_TYPES.armor.find(function(e){return e.id === player.armor.id;}) : null;
             if (_aDefS && _aDefS.resource === resourceId) _equipArmorAvail = 1;
         }
-        const totalAvailable = held + storedQty + _mountedAvail + _equipWeaponAvail + _equipArmorAvail;
+        // v9p33river339: include equipped backpack + vehicle in the sell
+        // pool. Auto-unequip will return them to inventory before the sale.
+        let _equipBackpackAvail = 0, _equipVehicleAvail = 0;
+        if (resourceId === 'backpack' && (player._backpack || player.storageContainer === 'backpack')) {
+            _equipBackpackAvail = 1;
+        }
+        if (player.storageContainer && player.storageContainer !== 'backpack' && resourceId === player.storageContainer) {
+            _equipVehicleAvail = 1;
+        }
+        const totalAvailable = held + storedQty + _mountedAvail + _equipWeaponAvail + _equipArmorAvail + _equipBackpackAvail + _equipVehicleAvail;
         if (totalAvailable < qty) return { success: false, message: `Not enough in inventory. Have: ${totalAvailable}` };
 
         // If carried + stored alone can't cover, dismount/unequip into inventory first
@@ -1795,6 +1804,21 @@
             player.armor = null;
             _gap -= 1;
             _autoActions.push('🛡️ unequipped armor');
+        }
+        // v9p33river339: auto-unequip backpack/vehicle to fulfill sell order.
+        if (_gap > 0 && _equipBackpackAvail) {
+            player._backpack = false;
+            if (player.storageContainer === 'backpack') player.storageContainer = null;
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+            _gap -= 1;
+            _autoActions.push('🎒 unequipped backpack');
+        }
+        if (_gap > 0 && _equipVehicleAvail) {
+            // Fall back to backpack as storage if player still has one.
+            player.storageContainer = player._backpack ? 'backpack' : null;
+            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+            _gap -= 1;
+            _autoActions.push('🛒 unequipped vehicle');
         }
         // Recompute held after possible auto-actions
         const _heldNow = player.inventory[resourceId] || 0;

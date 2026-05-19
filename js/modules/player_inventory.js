@@ -929,12 +929,22 @@
         }
 
         var refund = 0;
+        // v9p33river339: with separate backpack + vehicle slots, the
+        // "already have a better/equal" check should only apply when
+        // SWITCHING vehicles, not when adding a backpack to a vehicle
+        // setup (or vice versa).
         if (player.storageContainer) {
             var old = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
-            if (old) {
-                if (container.capacityMult <= old.capacityMult) {
-                    return { success: false, message: 'You already have a better or equal container.' };
-                }
+            var _bothVehicles = old && containerId !== 'backpack' && player.storageContainer !== 'backpack';
+            var _bothBackpacks = containerId === 'backpack' && player.storageContainer === 'backpack';
+            if (_bothBackpacks || (containerId === 'backpack' && player._backpack)) {
+                return { success: false, message: 'You already have a backpack equipped.' };
+            }
+            // v9p33river339: removed the capacity-mult downgrade gate so
+            // players can swap to a smaller vehicle if they want (e.g.
+            // cart for less theft risk than a large wagon). Old vehicle
+            // is returned to inventory by the buy/equip flow.
+            if (_bothVehicles) {
                 refund = Math.floor(old.cost * 0.5);
             }
         }
@@ -968,18 +978,23 @@
             player.inventory[containerId] = inventoryGood - 1;
             if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
             if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
-            // v9p33river310: previously refunded 50% of the old container's
-            // cost as gold, silently destroying the old cart/wagon. Return
-            // the old vehicle to inventory instead so the player can keep
-            // multiple containers and swap between them. Backpack is worn
-            // and tracked separately, so we still skip it here.
+            // v9p33river339: backpack equips to its own slot (_backpack
+            // flag) without disturbing the vehicle. Vehicle equips swap
+            // any prior vehicle back to inventory.
+            if (containerId === 'backpack') {
+                player._backpack = true;
+                if (!player.storageContainer) player.storageContainer = 'backpack';
+                var _bMsg = 'Equipped ' + container.icon + ' ' + container.name + ' (from inventory)!';
+                Engine.logEvent(_bMsg);
+                return { success: true, message: _bMsg };
+            }
+            // Vehicle equip: preserve existing backpack flag, swap old vehicle out.
             var _oldId = player.storageContainer;
-            var _oldNm = _oldId ? CONFIG.STORAGE_CONTAINERS[_oldId].name : 'nothing';
-            if (containerId === 'backpack') player._backpack = true;
-            else if (player.storageContainer === 'backpack') player._backpack = true;
+            var _oldNm = (_oldId && _oldId !== 'backpack') ? CONFIG.STORAGE_CONTAINERS[_oldId].name : null;
+            if (player.storageContainer === 'backpack') player._backpack = true;
             player.storageContainer = containerId;
             var _msg = 'Equipped ' + container.icon + ' ' + container.name + ' (from inventory)!';
-            if (_oldId && _oldId !== 'backpack' && _oldId !== containerId) {
+            if (_oldNm && _oldId !== containerId) {
                 player.inventory[_oldId] = (player.inventory[_oldId] || 0) + 1;
                 _msg += ' Previous ' + _oldNm + ' returned to inventory.';
             }
@@ -1030,17 +1045,23 @@
         // v9p33river310: same return-to-inventory fix as the inventory-good
         // path above — preserve the player's previous vehicle instead of
         // silently destroying it.
-        var oldId = player.storageContainer;
-        var oldName = oldId ? CONFIG.STORAGE_CONTAINERS[oldId].name : 'nothing';
+        // v9p33river339: backpack equips to its own slot.
         if (containerId === 'backpack') {
             player._backpack = true;
-        } else if (player.storageContainer === 'backpack') {
-            player._backpack = true;
+            if (!player.storageContainer) player.storageContainer = 'backpack';
+            var bMsg2 = 'Crafted ' + container.icon + ' ' + container.name + '!';
+            if (materialMarketCost > 0) bMsg2 += ' Materials from market: ' + materialMarketCost + 'g.';
+            Engine.logEvent(bMsg2);
+            return { success: true, message: bMsg2 };
         }
+        // Vehicle craft: preserve backpack, swap old vehicle out.
+        var oldId = player.storageContainer;
+        var oldName = (oldId && oldId !== 'backpack') ? CONFIG.STORAGE_CONTAINERS[oldId].name : null;
+        if (player.storageContainer === 'backpack') player._backpack = true;
         player.storageContainer = containerId;
 
-        var msg = 'Bought ' + container.icon + ' ' + container.name + '!';
-        if (oldId && oldId !== 'backpack' && oldId !== containerId) {
+        var msg = 'Crafted ' + container.icon + ' ' + container.name + '!';
+        if (oldName && oldId !== containerId) {
             player.inventory[oldId] = (player.inventory[oldId] || 0) + 1;
             msg += ' Previous ' + oldName + ' returned to inventory.';
         }
@@ -1058,23 +1079,42 @@
         var held = player.inventory[containerId] || 0;
         if (held <= 0) return { success: false, message: 'No ' + container.name + ' in inventory.' };
 
-        // Check horse requirements
+        // v9p33river339: backpack is a SEPARATE slot from the vehicle slot.
+        // Mounting a backpack while a vehicle is equipped now just sets the
+        // _backpack flag without touching storageContainer (was previously
+        // returning "you already have a better vehicle" because backpack
+        // capacityMult (2) <= cart (4)).
+        if (containerId === 'backpack') {
+            if (player._backpack || player.storageContainer === 'backpack') {
+                return { success: false, message: 'You already have a backpack equipped.' };
+            }
+            player._backpack = true;
+            if (!player.storageContainer) player.storageContainer = 'backpack';
+            player.inventory[containerId] -= 1;
+            if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
+            var _bmsg = container.icon + ' Equipped ' + container.name + '!';
+            Engine.logEvent(_bmsg);
+            return { success: true, message: _bmsg };
+        }
+
+        // Vehicle mount: check horse requirements
         var horsesNeeded = container.horsesRequired || 0;
         if (player.horses.length < horsesNeeded) {
             return { success: false, message: 'A ' + container.name + ' requires ' + horsesNeeded + ' mounted horse(s). You have ' + player.horses.length + '.' };
         }
 
-        // If current container is backpack, save it (backpack is worn under vehicle)
+        // If current container is backpack-only, preserve it as the second slot.
         if (player.storageContainer === 'backpack') {
             player._backpack = true;
         } else if (player.storageContainer && player.storageContainer !== 'backpack') {
-            // Switching vehicles — put old vehicle in inventory
+            // Switching vehicles — put old vehicle in inventory.
             var oldC = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
-            if (oldC && container.capacityMult <= oldC.capacityMult) {
-                return { success: false, message: 'You already have a better or equal vehicle equipped.' };
-            }
+            // v9p33river339: removed the "already have a better/equal" gate —
+            // players are free to swap vehicles (e.g. downgrade to a cart
+            // for less theft risk). Old vehicle is returned to inventory.
             player.inventory[player.storageContainer] = (player.inventory[player.storageContainer] || 0) + 1;
-            Engine.logEvent('Stored your ' + oldC.name + ' in inventory.');
+            Engine.logEvent('Stored your ' + (oldC ? oldC.name : 'vehicle') + ' in inventory.');
         }
 
         player.inventory[containerId] -= 1;
@@ -1093,9 +1133,10 @@
         var container = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
         if (!container) return { success: false, message: 'Unknown container.' };
 
-        // Can't dismount backpack (it's always worn, not a vehicle)
+        // v9p33river339: dismounting a "backpack" via this path is the same
+        // as unequipping the backpack slot — route to unequipBackpack().
         if (player.storageContainer === 'backpack') {
-            return { success: false, message: 'Your backpack is worn, not a vehicle. Sell it from a shop instead.' };
+            return unequipBackpack();
         }
 
         // Calculate capacity without this vehicle but keeping backpack if owned
@@ -1124,6 +1165,42 @@
         if (player._backpack) msg += ' Backpack re-equipped.';
         Engine.logEvent(msg);
         return { success: true, message: msg };
+    }
+
+    // v9p33river339: explicit unequip path for the backpack slot.
+    // Returns the backpack to inventory and clears _backpack.
+    function unequipBackpack() {
+        _sync();
+        var hasBackpack = !!player._backpack || player.storageContainer === 'backpack';
+        if (!hasBackpack) return { success: false, message: 'No backpack equipped.' };
+        var bpContainer = CONFIG.STORAGE_CONTAINERS['backpack'];
+        // Capacity-without-backpack check.
+        var currentWeight = getCarriedWeight();
+        var base = CONFIG.PLAYER_BASE_CARRY || 20;
+        if (hasSkill('pack_mule')) base += 20;
+        if (hasSkill('beast_of_burden')) base += 20;
+        if (hasSkill('iron_back')) base += 30;
+        var horseCarry = CONFIG.HORSE_CARRY_BONUS || 40;
+        if (hasSkill('horse_mastery')) horseCarry = Math.floor(horseCarry * 1.25);
+        var horseBonus = player.horses.length * horseCarry;
+        var stillHasVehicle = player.storageContainer && player.storageContainer !== 'backpack';
+        var newCap;
+        if (stillHasVehicle) {
+            var _vc = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
+            newCap = base * (_vc ? _vc.capacityMult : 1) + horseBonus; // no backpack bonus
+        } else {
+            newCap = base + horseBonus; // bare carry
+        }
+        if (currentWeight > newCap) {
+            return { success: false, message: 'Too much cargo. Lighten your load first (carrying ' + Math.round(currentWeight) + ', capacity without backpack: ' + newCap + ').' };
+        }
+        player._backpack = false;
+        if (player.storageContainer === 'backpack') player.storageContainer = null;
+        player.inventory['backpack'] = (player.inventory['backpack'] || 0) + 1;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
+        var bpMsg = (bpContainer ? bpContainer.icon : '🎒') + ' Backpack unequipped to inventory.';
+        Engine.logEvent(bpMsg);
+        return { success: true, message: bpMsg };
     }
 
     function tickStorageTheft() {
@@ -1770,6 +1847,7 @@
     Player.buyContainer = buyContainer;
     Player.mountContainer = mountContainer;
     Player.dismountContainer = dismountContainer;
+    Player.unequipBackpack = unequipBackpack;
     Player.tickStorageTheft = tickStorageTheft;
     Player.tickLeftCartTheft = tickLeftCartTheft;
     Player.tickWorkerTheft = tickWorkerTheft;
