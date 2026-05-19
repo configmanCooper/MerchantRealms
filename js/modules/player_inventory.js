@@ -944,14 +944,20 @@
             player.inventory[containerId] = inventoryGood - 1;
             if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
             if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
-            var _oldNm = player.storageContainer ? CONFIG.STORAGE_CONTAINERS[player.storageContainer].name : 'nothing';
+            // v9p33river310: previously refunded 50% of the old container's
+            // cost as gold, silently destroying the old cart/wagon. Return
+            // the old vehicle to inventory instead so the player can keep
+            // multiple containers and swap between them. Backpack is worn
+            // and tracked separately, so we still skip it here.
+            var _oldId = player.storageContainer;
+            var _oldNm = _oldId ? CONFIG.STORAGE_CONTAINERS[_oldId].name : 'nothing';
             if (containerId === 'backpack') player._backpack = true;
             else if (player.storageContainer === 'backpack') player._backpack = true;
             player.storageContainer = containerId;
             var _msg = 'Equipped ' + container.icon + ' ' + container.name + ' (from inventory)!';
-            if (refund > 0) {
-                player.gold += refund;
-                _msg += ' Traded in ' + _oldNm + ' for ' + refund + 'g refund.';
+            if (_oldId && _oldId !== 'backpack' && _oldId !== containerId) {
+                player.inventory[_oldId] = (player.inventory[_oldId] || 0) + 1;
+                _msg += ' Previous ' + _oldNm + ' returned to inventory.';
             }
             Engine.logEvent(_msg);
             return { success: true, message: _msg };
@@ -997,18 +1003,23 @@
 
         player.gold -= totalGoldCost;
         player.stats.totalGoldSpent += totalGoldCost;
-        var oldName = player.storageContainer ? CONFIG.STORAGE_CONTAINERS[player.storageContainer].name : 'nothing';
-        // Track backpack ownership separately — backpack is worn, vehicles override it
+        // v9p33river310: same return-to-inventory fix as the inventory-good
+        // path above — preserve the player's previous vehicle instead of
+        // silently destroying it.
+        var oldId = player.storageContainer;
+        var oldName = oldId ? CONFIG.STORAGE_CONTAINERS[oldId].name : 'nothing';
         if (containerId === 'backpack') {
             player._backpack = true;
         } else if (player.storageContainer === 'backpack') {
-            // Switching from backpack to a vehicle — save backpack
             player._backpack = true;
         }
         player.storageContainer = containerId;
 
         var msg = 'Bought ' + container.icon + ' ' + container.name + '!';
-        if (refund > 0) msg += ' (Traded in ' + oldName + ' for ' + refund + 'g refund)';
+        if (oldId && oldId !== 'backpack' && oldId !== containerId) {
+            player.inventory[oldId] = (player.inventory[oldId] || 0) + 1;
+            msg += ' Previous ' + oldName + ' returned to inventory.';
+        }
         if (materialMarketCost > 0) msg += ' Materials from market: ' + materialMarketCost + 'g.';
         Engine.logEvent(msg);
         return { success: true, message: msg };

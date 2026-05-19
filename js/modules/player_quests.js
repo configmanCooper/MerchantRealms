@@ -506,7 +506,13 @@
             var bestInst = null;
             var bestSkill = 0;
             var instSkill = player.instrumentSkill || {};
-            var _instTypes = (CONFIG && CONFIG.INSTRUMENT_TYPES) ? CONFIG.INSTRUMENT_TYPES : ['lute','flute','drum','harp','fiddle','bagpipe'];
+            // v9p33river310: real instruments are drum/flute/lute/
+            // hurdy_gurdy/harp (config.js:5126-5133, exported as the
+            // top-level INSTRUMENT_IDS const). The previous CONFIG.
+            // INSTRUMENT_TYPES lookup didn't exist, so the fallback list
+            // was always used — and it omitted hurdy_gurdy while listing
+            // nonexistent 'fiddle' and 'bagpipe'.
+            var _instTypes = (typeof INSTRUMENT_IDS !== 'undefined') ? INSTRUMENT_IDS : ['drum','flute','lute','hurdy_gurdy','harp'];
             var _minSkill = quest.skillReq ? quest.skillReq.min : 0;
             for (var _qiIdx = 0; _qiIdx < _instTypes.length; _qiIdx++) {
                 var iid = _instTypes[_qiIdx];
@@ -1426,8 +1432,12 @@
             _bonusReasons.push('🎯 Flawless execution (+25% gold, +1 rep)');
         }
         // Bonus for completing well before deadline (>50% time remaining)
+        // v9p33river310: was reading quest.deadlineDay which doesn't exist —
+        // kingdom quests track timeouts via quest.expiresDay (set in
+        // player_quests.js:464, 1204, 1539). The swift-completion bonus
+        // therefore never triggered.
         var _daysUsed = (Engine.getDay() - (quest.acceptedDay || quest.issuedDay || 0));
-        var _totalDays = (quest.deadlineDay || 0) - (quest.acceptedDay || quest.issuedDay || 0);
+        var _totalDays = (quest.expiresDay || 0) - (quest.acceptedDay || quest.issuedDay || 0);
         if (_totalDays > 0 && _daysUsed < _totalDays * 0.5) {
             _bonusGold += Math.round(quest.rewards.gold * 0.15);
             _bonusRep += 1;
@@ -1505,7 +1515,11 @@
         var nextQuestType = null;
         for (var typeId in pool) {
             var qt = pool[typeId];
-            if (qt.action === nextActionType) { nextQuestType = { typeId: typeId, def: qt }; break; }
+            // v9p33river310: pool defs store the action under qt.req.action
+            // (config.js:2403-2436), not qt.action. Quest chains never
+            // matched, so royal directive follow-ups were never offered.
+            var _qtAction = (qt && qt.req && qt.req.action) || qt.action;
+            if (_qtAction === nextActionType) { nextQuestType = { typeId: typeId, def: qt }; break; }
         }
         if (!nextQuestType) return null;
 

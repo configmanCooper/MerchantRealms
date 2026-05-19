@@ -330,6 +330,13 @@
                             var _bsKTowns = world.towns.filter(function(t) { return k.territories.has(t.id); });
                             if (_bsKTowns.length > 0) {
                                 var _bsTown = rng.pick(_bsKTowns);
+                                // v9p33river310: guard malformed/partial
+                                // markets so finance tick doesn't crash on
+                                // a territory town that's missing market or
+                                // market.prices/.supply.
+                                if (!_bsTown || !_bsTown.market) continue;
+                                if (!_bsTown.market.supply) _bsTown.market.supply = {};
+                                if (!_bsTown.market.prices) _bsTown.market.prices = {};
                                 var _bsPrice = (_bsTown.market.prices[_bsItemId] || 10) * _bsSurplus;
                                 _bsTown.market.supply[_bsItemId] = (_bsTown.market.supply[_bsItemId] || 0) + _bsSurplus;
                                 _bsStockpile[_bsItemId] -= _bsSurplus;

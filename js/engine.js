@@ -1083,12 +1083,18 @@
     function _expandGoodsToTiers(goodsList) {
         if (!goodsList || !goodsList.length) return goodsList;
         var expanded = goodsList.slice();
-        var resTypes = CONFIG.RESOURCE_TYPES;
+        // v9p33river310: CONFIG.RESOURCE_TYPES doesn't exist — RESOURCE_TYPES
+        // is a top-level constant (config.js:1708). Was silently no-oping,
+        // so banned/restricted-goods law expansion never picked up the
+        // _good/_excellent quality tiers, leaving higher-tier equivalents
+        // legal to trade despite a ban on the base good.
+        var resTypes = (typeof RESOURCE_TYPES !== 'undefined') ? RESOURCE_TYPES : null;
+        if (!resTypes) return expanded;
         for (var i = 0; i < goodsList.length; i++) {
             var baseId = goodsList[i];
             for (var rk in resTypes) {
                 var rt = resTypes[rk];
-                if (rt.baseItem === baseId && expanded.indexOf(rt.id) === -1) {
+                if (rt && rt.baseItem === baseId && expanded.indexOf(rt.id) === -1) {
                     expanded.push(rt.id);
                 }
             }
@@ -11405,9 +11411,25 @@
         {
             id: 'trade_subsidy', category: 'trade', name: 'Establish Trade Subsidies',
             description: 'Subsidize merchants to encourage commerce (costs 500g from treasury)',
+            // v9p33river310: previously pushed { startDay, duration, bonus }
+            // but the live payout reader (engine_kingdom_finances.js:106-114)
+            // matches on { good, maxUnits, expiresDay, bonusPerUnit }, so
+            // subsidies never matched any imports. Now writes the canonical
+            // schema and defaults to a broad-spectrum subsidy (no `good`
+            // filter would skip everything, so apply to a default basket).
             icon: '💰', effect: function(k) {
                 if (!k.tradeSubsidies) k.tradeSubsidies = [];
-                k.tradeSubsidies.push({ startDay: world.day, duration: 90, bonus: 0.10 });
+                var _today = (typeof world !== 'undefined' && world.day) ? world.day : 0;
+                var _basket = ['wheat', 'iron', 'wood', 'tools', 'cloth'];
+                for (var _tsi = 0; _tsi < _basket.length; _tsi++) {
+                    k.tradeSubsidies.push({
+                        good: _basket[_tsi],
+                        bonusPerUnit: CONFIG.KING_TRADE_SUBSIDY_PER_UNIT || 2,
+                        maxUnits: 50,
+                        unitsPaid: 0,
+                        expiresDay: _today + 90,
+                    });
+                }
             },
             kingFavor: function(k, p) { return k.gold > 3000 ? 0.1 : -0.3; },
             requiresGold: 500
@@ -33194,6 +33216,14 @@
                 royalCommissions: k.royalCommissions || [],
                 immigrationPolicy: k.immigrationPolicy || 'open',
                 healthPolicies: JSON.parse(JSON.stringify(k.healthPolicies || [])),
+                // v9p33river310: peaceTreaties/procurement/militaryStockpile
+                // were restored by the deserializer but never serialized,
+                // so non-aggression/forced-peace state, active procurement
+                // orders, and kingdom army supplies all reset on every
+                // save/load cycle.
+                peaceTreaties: k.peaceTreaties ? JSON.parse(JSON.stringify(k.peaceTreaties)) : {},
+                procurement: k.procurement ? JSON.parse(JSON.stringify(k.procurement)) : { orders: [], deals: [], needs: {}, preferredMerchants: {}, lastAssessmentDay: 0 },
+                militaryStockpile: k.militaryStockpile ? JSON.parse(JSON.stringify(k.militaryStockpile)) : { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
                 laws: k.laws ? {
                     ...k.laws,
                     bannedGoods: [...(k.laws.bannedGoods || [])],

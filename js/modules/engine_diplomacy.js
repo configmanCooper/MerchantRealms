@@ -4980,6 +4980,19 @@
             for (const resId in town.market.supply) {
                 tradeVolume += (town.market.supply[resId] || 0);
             }
+            // v9p33river310: apply Royal Marketplace tradeVolumeBonus.
+            // The building defines tradeVolumeBonus: 0.20 (config.js:1992)
+            // but no consumer was reading it, leaving the advertised
+            // effect dead.
+            try {
+                var _mrBonus = 0;
+                for (var _mrBi = 0; _mrBi < town.buildings.length; _mrBi++) {
+                    var _mrB = town.buildings[_mrBi];
+                    var _mrBt = (typeof findBuildingType === 'function') ? findBuildingType(_mrB.type) : null;
+                    if (_mrBt && _mrBt.tradeVolumeBonus) _mrBonus += _mrBt.tradeVolumeBonus;
+                }
+                if (_mrBonus > 0) tradeVolume = Math.round(tradeVolume * (1 + _mrBonus));
+            } catch (e) {}
 
             towns.push({
                 id: town.id,

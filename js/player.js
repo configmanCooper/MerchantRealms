@@ -6735,6 +6735,14 @@
         const highRepKingdoms = Object.values(player.reputation).filter(v => v >= CONFIG.WIN_REPUTATION_VALUE).length;
         if (highRepKingdoms >= CONFIG.WIN_REPUTATION_KINGDOMS) victories.push("Emperor's Merchant");
 
+        // 5. Supply Chain Tycoon — own complete vertical chains.
+        // v9p33river310: CONFIG.WIN_SUPPLY_CHAIN_TYPES was defined (default
+        // 3) but never wired into a victory check; supply-chain progress
+        // only fed two hardcoded achievements. Now also yields a real win.
+        if ((player.supplyChains || []).length >= (CONFIG.WIN_SUPPLY_CHAIN_TYPES || 3)) {
+            victories.push('Supply Chain Tycoon');
+        }
+
         // Process victories: log, toast, achievement — but only once per type
         if (!player.victoriesAchieved) player.victoriesAchieved = {};
         for (const victory of victories) {
@@ -6749,6 +6757,7 @@
                 else if (victory === 'Kingmaker') unlockAchievement('victory_kingmaker');
                 else if (victory === 'Monopolist') unlockAchievement('victory_monopolist');
                 else if (victory === "Emperor's Merchant") unlockAchievement('victory_emperor');
+                else if (victory === 'Supply Chain Tycoon') unlockAchievement('victory_supply_chain');
             }
         }
 
@@ -19245,6 +19254,18 @@
             // the in-progress succession flow on reload.
             _deathProcessing: !!player._deathProcessing,
             _deathContext: player._deathContext ? structuredClone(player._deathContext) : null,
+            // v9p33river310: previously-omitted state fields. Without these
+            // a save during war/military service/medical rest/etc. silently
+            // erased the in-progress state on reload.
+            militaryIssuedEquipment: structuredClone(player.militaryIssuedEquipment || {}),
+            _medicalRest: player._medicalRest ? structuredClone(player._medicalRest) : null,
+            _pendingOutpostFound: !!player._pendingOutpostFound,
+            _pendingOutpostRoad: !!player._pendingOutpostRoad,
+            _pendingOutpostRoadTarget: player._pendingOutpostRoadTarget || null,
+            _pendingCustomsFind: player._pendingCustomsFind ? structuredClone(player._pendingCustomsFind) : null,
+            _kingdomTravelBan: structuredClone(player._kingdomTravelBan || {}),
+            _warFrozenAssets: structuredClone(player._warFrozenAssets || []),
+            _warSavedRanks: structuredClone(player._warSavedRanks || {}),
             // Kingdom quest data
             kingdomQuests: structuredClone(player.kingdomQuests || {}),
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
@@ -19332,6 +19353,15 @@
         // of stranding the player in a half-processed death.
         player._deathProcessing = !!data._deathProcessing;
         player._deathContext = data._deathContext ? structuredClone(data._deathContext) : null;
+        // v9p33river310: restore previously-erased state fields.
+        player._medicalRest = data._medicalRest ? structuredClone(data._medicalRest) : null;
+        player._pendingOutpostFound = !!data._pendingOutpostFound;
+        player._pendingOutpostRoad = !!data._pendingOutpostRoad;
+        player._pendingOutpostRoadTarget = data._pendingOutpostRoadTarget || null;
+        player._pendingCustomsFind = data._pendingCustomsFind ? structuredClone(data._pendingCustomsFind) : null;
+        player._kingdomTravelBan = data._kingdomTravelBan ? structuredClone(data._kingdomTravelBan) : {};
+        player._warFrozenAssets = data._warFrozenAssets ? structuredClone(data._warFrozenAssets) : [];
+        player._warSavedRanks = data._warSavedRanks ? structuredClone(data._warSavedRanks) : {};
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;
@@ -23604,11 +23634,18 @@
             if (player._warFrozenAssets && player._warFrozenAssets.length > 0) {
                 for (var rfi = 0; rfi < player._warFrozenAssets.length; rfi++) {
                     var frozen = player._warFrozenAssets[rfi];
-                    // Unfreeze buildings
+                    // v9p33river310: frozen records store enemyKingdomId,
+                    // not townId. Was matching buildings[].townId ===
+                    // frozen.townId (always undefined), so the record was
+                    // cleared but the buildings stayed frozen/inactive
+                    // forever. Match by the building's town's kingdomId.
                     for (var bfi = 0; bfi < player.buildings.length; bfi++) {
-                        if (player.buildings[bfi].townId === frozen.townId && player.buildings[bfi]._warFrozen) {
-                            player.buildings[bfi]._warFrozen = false;
-                            player.buildings[bfi].active = true;
+                        var _ufBld = player.buildings[bfi];
+                        if (!_ufBld._warFrozen) continue;
+                        var _ufTown = Engine.findTown ? Engine.findTown(_ufBld.townId) : null;
+                        if (_ufTown && _ufTown.kingdomId === frozen.enemyKingdomId) {
+                            _ufBld._warFrozen = false;
+                            _ufBld.active = true;
                         }
                     }
                 }
