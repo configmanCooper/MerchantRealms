@@ -3359,6 +3359,24 @@
                     params: [],
                     _needsRoyalOrderConfig: true,
                 });
+                // v9p33river345: Plant Treasonous Evidence — frame a noble.
+                // Requires the target kingdom to be at war AND the player
+                // to be a citizen of BOTH the target and the warring enemy.
+                // Very high detection; nobility in either kingdom eases it.
+                var _ptCD = (player.schemeCooldowns && player.schemeCooldowns['plant_treasonous_evidence:_none']) || 0;
+                var _ptAvail = day >= _ptCD && player.gold >= 4000;
+                actions.push({
+                    id: 'plant_treasonous_evidence', tab: 'political',
+                    name: '📃 Plant Treasonous Evidence',
+                    desc: 'Frame a noble of a wartime kingdom as colluding with the enemy. Requires target kingdom at war + citizenship in BOTH the target kingdom AND a kingdom it\'s at war with. On success the noble\'s perceived loyalty drops to 0 and the king immediately executes, exiles, or jails them based on his personality. Extremely difficult, ruinous if caught.',
+                    cost: '4000g', detection: calculateCorruptDetection(0.70, town),
+                    reward: 'Noble destroyed', xp: 40,
+                    requires: 'Master Forger + Shadow Dealings + citizenship in both kingdoms',
+                    available: _ptAvail,
+                    disabledReason: !player.gold || player.gold < 4000 ? 'Need at least 4000g.' : (day < _ptCD ? 'Cooldown active.' : ''),
+                    params: [],
+                    _needsTreasonConfig: true,
+                });
             }
         }
 
@@ -3931,6 +3949,152 @@
             return { success: true, message: kingdom.name + ' is at peace with ' + enemyP.name + '.' };
         }
         return { success: false, message: 'Unknown order effect.' };
+    }
+
+    // v9p33river345: Plant Treasonous Evidence — frame a noble of a
+    // wartime kingdom as colluding with the enemy. Requires the target
+    // kingdom to be at war, and the player to be at least a Citizen
+    // (rank >= 1) of BOTH the target kingdom and an enemy kingdom.
+    // Very high detection baseline (~0.70). Nobility (rank >= 4) in
+    // either kingdom slightly eases the detection. On success: the
+    // framed noble's loyaltyToKing drops to 0 and the king IMMEDIATELY
+    // metes out execution / exile / jail based on his personality.
+    function plantTreasonousEvidence(targetKingdomId, enemyKingdomId, nobleId) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings')) return { success: false, message: 'Requires Shadow Dealings skill.' };
+        if (!hasSkill('master_forger')) return { success: false, message: 'Requires Master Forger skill — you have to fake the documents.' };
+        if (!targetKingdomId || !enemyKingdomId || !nobleId) {
+            return { success: false, message: 'Select a target kingdom, the enemy kingdom, and the noble.' };
+        }
+        var targetK = Engine.findKingdom(targetKingdomId);
+        var enemyK = Engine.findKingdom(enemyKingdomId);
+        if (!targetK || !enemyK) return { success: false, message: 'Unknown kingdom.' };
+        if (targetKingdomId === enemyKingdomId) return { success: false, message: 'Target and enemy must be different kingdoms.' };
+
+        // Wartime check — target must be at war with the chosen enemy.
+        var atWar = false;
+        if (targetK.atWar) {
+            atWar = (targetK.atWar instanceof Set)
+                ? targetK.atWar.has(enemyKingdomId)
+                : (Array.isArray(targetK.atWar) && targetK.atWar.indexOf(enemyKingdomId) >= 0);
+        }
+        if (!atWar) return { success: false, message: targetK.name + ' is not at war with ' + enemyK.name + '. Treason charges need a real war to frame the noble against.' };
+
+        // Citizenship in BOTH kingdoms.
+        var targetRank = (player.socialRank && player.socialRank[targetKingdomId]) || 0;
+        var enemyRank = (player.socialRank && player.socialRank[enemyKingdomId]) || 0;
+        if (targetRank < 1) return { success: false, message: 'You must be at least a Citizen of ' + targetK.name + ' to plant evidence there.' };
+        if (enemyRank < 1) return { success: false, message: 'You must also be at least a Citizen of ' + enemyK.name + ' (the supposed conspiring enemy) to make the frame credible.' };
+
+        // Target noble validation.
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Target noble not found or already dead.' };
+        if (noble.kingdomId !== targetKingdomId) return { success: false, message: 'That noble does not belong to ' + targetK.name + '.' };
+        if (noble.id === targetK.king) return { success: false, message: 'You can\'t frame the king himself with this scheme.' };
+        var isNobleEligible = noble.isNoble || noble.occupation === 'noble' ||
+                              (noble.socialRank && (noble.socialRank[targetKingdomId] || 0) >= 4);
+        if (!isNobleEligible) return { success: false, message: 'Target must be a noble of ' + targetK.name + '.' };
+
+        // Cost.
+        var cost = 4000;
+        if (player.gold < cost) return { success: false, message: 'Need ' + cost + 'g for forged letters, bribed witnesses, and intermediaries.' };
+
+        var rng = Engine.getRng();
+        var town = Engine.findTown(player.townId);
+        var day = Engine.getDay();
+
+        // Detection: very high (0.70) base, modified by nobility access.
+        // Being a noble in EITHER kingdom grants the access multiplier.
+        var nobleAccess = (targetRank >= 4 || enemyRank >= 4) ? 0.85 : 1.0;
+        var baseDetect = 0.70 * nobleAccess;
+        var detectChance = calculateCorruptDetection(baseDetect, town);
+        var _outcome = _rollSchemeOutcome(detectChance, rng);
+        var caught = _outcome.caught;
+        var successful = _outcome.successful;
+
+        player.gold -= cost;
+
+        var effectMsg = '';
+        var noblePunishment = '';
+        if (successful) {
+            // Drop the noble's perceived loyalty to 0.
+            noble.loyaltyToKing = 0;
+            noble._loyaltyZeroedDay = day;
+            noble._jailedCrimeId = 'treason';
+
+            // King's personality decides the immediate punishment.
+            var kp = targetK.kingPersonality || {};
+            var choice;
+            if (kp.temperament === 'cruel' || kp.greed === 'corrupt' || kp.justice === 'cruel') {
+                choice = 'execute';
+            } else if (kp.temperament === 'kind' || kp.justice === 'just' || kp.justice === 'merciful') {
+                choice = 'jail';
+            } else if (kp.ambition === 'ambitious' || kp.courage === 'paranoid') {
+                // Paranoid/ambitious kings are quick to remove threats.
+                choice = (rng && rng.chance(0.6)) ? 'execute' : 'exile';
+            } else {
+                // Default: weighted random across the three.
+                var rRoll = rng ? rng.random() : Math.random();
+                if (rRoll < 0.40) choice = 'jail';
+                else if (rRoll < 0.75) choice = 'exile';
+                else choice = 'execute';
+            }
+
+            // Apply the punishment.
+            if (choice === 'execute') {
+                if (Engine.killPerson) Engine.killPerson(noble, 'executed_treason');
+                noblePunishment = '⚔️ executed for treason';
+                Engine.logEvent('⚔️ The King of ' + targetK.name + ' ordered ' + (noble.firstName || 'the noble') + ' ' + (noble.lastName || '') + ' EXECUTED for treason with ' + enemyK.name + '!');
+            } else if (choice === 'exile') {
+                // Mark as exiled: move to a random non-kingdom town and
+                // strip rank in the target kingdom.
+                noble._exiled = true;
+                noble._exiledFromKingdomId = targetKingdomId;
+                noble._exiledDay = day;
+                if (noble.socialRank && noble.socialRank[targetKingdomId]) {
+                    noble.socialRank[targetKingdomId] = 0;
+                }
+                // Relocate to a foreign town if possible.
+                var foreignTowns = (Engine.getTowns ? Engine.getTowns() : []).filter(function(t) { return t.kingdomId && t.kingdomId !== targetKingdomId; });
+                if (foreignTowns.length > 0) {
+                    var newTown = foreignTowns[rng ? rng.randInt(0, foreignTowns.length - 1) : 0];
+                    noble.townId = newTown.id;
+                    noble.kingdomId = newTown.kingdomId;
+                }
+                noble.occupation = 'commoner';
+                noble.isNoble = false;
+                noblePunishment = '🚪 exiled from ' + targetK.name;
+                Engine.logEvent('🚪 The King of ' + targetK.name + ' EXILED ' + (noble.firstName || 'the noble') + ' ' + (noble.lastName || '') + ' for treasonous correspondence with ' + enemyK.name + '!');
+            } else {
+                // Jail for treason — long sentence.
+                noble._jailedUntilDay = day + 90;
+                noblePunishment = '⛓️ jailed 90 days for treason';
+                Engine.logEvent('⛓️ The King of ' + targetK.name + ' had ' + (noble.firstName || 'the noble') + ' ' + (noble.lastName || '') + ' JAILED 90 days for suspected treason with ' + enemyK.name + '!');
+            }
+            effectMsg = 'Frame succeeded — noble ' + noblePunishment + '.';
+
+            grantXP(40, 'Planted Treasonous Evidence');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(20);
+            recordCorruptAction('plant_treasonous_evidence', false, targetKingdomId, 'sabotage');
+        }
+
+        var caughtMsg = '';
+        if (caught) {
+            // Heavy punishment — treason-framing is itself near-treasonous.
+            var fine = applyCorruptPenalty(town, targetK, cost * 5, 40, 60, false, 'sabotage');
+            recordCorruptAction('plant_treasonous_evidence', true, targetKingdomId, 'sabotage');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(60);
+            caughtMsg = '🚨 CAUGHT planting evidence! Fined ' + fine + 'g, jailed 60 days. Your reputation in ' + targetK.name + ' is ruined.';
+        }
+
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '📃 Treasonous letters "discovered"! ' + effectMsg,
+            caughtMsg: caughtMsg,
+            partialMsg: 'The frame worked but you were spotted! ' + effectMsg + ' ' + caughtMsg,
+            failMsg: '❌ The forged evidence was unconvincing — ' + cost + 'g lost but no one suspects you.'
+        });
     }
 
     // ── (p3) Forge Documents ──
@@ -5385,6 +5549,7 @@
             case 'smuggling_route': result = establishSmugglingRoute(params[0], params[1]); break;
             case 'forge_documents': result = forgeDocuments(params[0]); break;
             case 'forge_royal_order': result = forgeRoyalOrder(params[0], params[1], params[2]); break;
+            case 'plant_treasonous_evidence': result = plantTreasonousEvidence(params[0], params[1], params[2]); break;
             case 'sabotage_caravan': result = sabotageCaravan(params[0]); break;
             case 'plant_evidence': result = plantEvidence(params[0]); break;
             case 'incite_revolt': result = inciteRevolt(params[0]); break;
@@ -5411,7 +5576,7 @@
             assassinate_competitor: 60, assassinate_guard_captain: 90, assassinate_king: 180,
             assassinate_passenger: 60, poison: 20, hire_assassin_npc: 75, direct_kill: 45,
             hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
-            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, sabotage_caravan: 30,
+            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, plant_treasonous_evidence: 90, sabotage_caravan: 30,
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
             lay_low: 60, cleanse_identity: 30,
             pit_nobles: 20, turn_noble_against_king: 30, discredit_noble: 30,
@@ -5533,6 +5698,7 @@
     Player.establishSmugglingRoute = establishSmugglingRoute;
     Player.forgeDocuments = forgeDocuments;
     Player.forgeRoyalOrder = forgeRoyalOrder;
+    Player.plantTreasonousEvidence = plantTreasonousEvidence;
     Player.sabotageCaravan = sabotageCaravan;
     Player.plantEvidence = plantEvidence;
     Player.inciteRevolt = inciteRevolt;

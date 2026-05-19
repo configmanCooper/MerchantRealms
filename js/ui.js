@@ -619,6 +619,25 @@ window.UI = (function () {
             }
             UI.executeScheme('forge_royal_order', [kingdomId, orderType, orderTarget]);
         });
+        // v9p33river345: Plant Treasonous Evidence handlers.
+        registerAction('plantTreasonRefresh', function(_t, d) {
+            var idx = parseInt(d.idx, 10);
+            var tSel = document.getElementById('ptTarget_' + idx);
+            var eHost = document.getElementById('ptEnemy_' + idx);
+            var nHost = document.getElementById('ptNoble_' + idx);
+            if (!tSel || !eHost || !nHost) return;
+            var subs = UI._buildPlantTreasonSubSelects(idx, tSel.value);
+            eHost.innerHTML = subs.enemyHtml;
+            nHost.innerHTML = subs.nobleHtml;
+        });
+        registerAction('plantTreasonSubmit', function(_t, d) {
+            var idx = parseInt(d.idx, 10);
+            var tSel = document.getElementById('ptTarget_' + idx);
+            var eSel = document.getElementById('ptEnemySel_' + idx);
+            var nSel = document.getElementById('ptNobleSel_' + idx);
+            if (!tSel || !eSel || !nSel) { toast('Configurator not ready — fill in all selections.', 'warning'); return; }
+            UI.executeScheme('plant_treasonous_evidence', [tSel.value, eSel.value, nSel.value]);
+        });
         registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
         registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
@@ -14618,6 +14637,9 @@ window.UI = (function () {
                     } else if (a._needsRoyalOrderConfig) {
                         // v9p33river344: Forge a Royal Order configurator.
                         html += buildForgeRoyalOrderUI(a, ai);
+                    } else if (a._needsTreasonConfig) {
+                        // v9p33river345: Plant Treasonous Evidence configurator.
+                        html += buildPlantTreasonUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
                             + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&quot;')}">⚡ Execute</button>`;
@@ -14835,7 +14857,7 @@ window.UI = (function () {
         // Kingdom select
         html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
         html += '<label style="font-size:0.7rem;color:#aaa;min-width:60px;">Kingdom:</label>';
-        html += '<select id="froKingdom_' + idx + '" data-action="forgeRoyalOrderRefresh" data-idx="' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+        html += '<select id="froKingdom_' + idx + '" onchange="UI._froRefresh(' + idx + ')" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
         for (var ki = 0; ki < kingdoms.length; ki++) {
             var k = kingdoms[ki];
             var nobleTag = '';
@@ -14848,7 +14870,7 @@ window.UI = (function () {
         // Order type select
         html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
         html += '<label style="font-size:0.7rem;color:#aaa;min-width:60px;">Order:</label>';
-        html += '<select id="froType_' + idx + '" data-action="forgeRoyalOrderRefresh" data-idx="' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+        html += '<select id="froType_' + idx + '" onchange="UI._froRefresh(' + idx + ')" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
         for (var oi = 0; oi < orderTypes.length; oi++) {
             var ot = orderTypes[oi];
             html += '<option value="' + ot.id + '">' + escapeHtml(ot.label) + '</option>';
@@ -14862,6 +14884,8 @@ window.UI = (function () {
               + 'data-action="forgeRoyalOrderSubmit" data-idx="' + idx + '">⚡ Forge & Deliver Royal Order</button>';
         html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Detection ≈ 2× ordinary forgery. Massive notoriety hit on success. Devastating if caught (heavy fines, 14–30 day jail).</div>';
         html += '</div>';
+        // Auto-populate sub-target on first render.
+        html += '<script>setTimeout(function(){ if(UI._froRefresh) UI._froRefresh(' + idx + '); }, 30);<\/script>';
         return html;
     }
 
@@ -14978,6 +15002,129 @@ window.UI = (function () {
             }
         }
         return html;
+    }
+
+    // v9p33river345: configurator for the "Plant Treasonous Evidence"
+    // scheme. Drop-downs: target kingdom (must be at war + player citizen),
+    // enemy kingdom (must be at war with target + player citizen), noble
+    // (lives in target kingdom + not the king + noble-eligible). All three
+    // refresh in sequence; the noble list shows whether nobility access
+    // grants the easier detection.
+    function buildPlantTreasonUI(action, idx) {
+        var kingdoms = (Engine.getKingdoms ? Engine.getKingdoms() : []);
+        var citizenKingdoms = kingdoms.filter(function(k) {
+            return (Player.state.socialRank && (Player.state.socialRank[k.id] || 0) >= 1);
+        });
+        var html = '<div style="margin-top:8px;padding:8px;background:rgba(80,30,30,0.18);border:1px solid #844;border-radius:4px;">';
+        html += '<div style="font-size:0.78rem;color:#caa;margin-bottom:6px;"><strong>📃 Configure Treason Frame</strong> — target kingdom at war + enemy + noble victim.</div>';
+
+        if (citizenKingdoms.length < 2) {
+            html += '<div style="font-size:0.75rem;color:#c44e52;">⛔ You need citizenship in at least TWO kingdoms (the target and a kingdom it\'s at war with).</div>';
+            html += '</div>';
+            return html;
+        }
+
+        // Target kingdom select — only kingdoms at war where player is citizen.
+        var validTargets = citizenKingdoms.filter(function(k) {
+            var atWarSize = 0;
+            if (k.atWar) {
+                if (k.atWar instanceof Set) atWarSize = k.atWar.size;
+                else if (Array.isArray(k.atWar)) atWarSize = k.atWar.length;
+            }
+            return atWarSize > 0;
+        });
+        if (validTargets.length === 0) {
+            html += '<div style="font-size:0.75rem;color:#c44e52;">⛔ None of your citizenship kingdoms are currently at war.</div>';
+            html += '</div>';
+            return html;
+        }
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;min-width:70px;">Target:</label>';
+        html += '<select id="ptTarget_' + idx + '" onchange="UI._ptRefresh(' + idx + ')" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+        for (var ti = 0; ti < validTargets.length; ti++) {
+            var tk = validTargets[ti];
+            var tagT = (Player.state.socialRank && (Player.state.socialRank[tk.id] || 0) >= 4) ? ' (noble — easier)' : '';
+            html += '<option value="' + tk.id + '">' + escapeHtml(tk.name) + tagT + '</option>';
+        }
+        html += '</select></div>';
+
+        // Enemy + noble dropdowns will be built by the refresh handler.
+        html += '<div id="ptEnemy_' + idx + '" style="margin-bottom:4px;"></div>';
+        html += '<div id="ptNoble_' + idx + '" style="margin-bottom:6px;"></div>';
+
+        html += '<button class="btn-trade sell" style="font-size:0.85rem;margin-top:4px;width:100%;" '
+              + 'data-action="plantTreasonSubmit" data-idx="' + idx + '">⚡ Plant Evidence</button>';
+        html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Detection ~70% baseline (nobles in either kingdom: −15%). If caught: 5× cost fine, 60-day jail, reputation devastated.</div>';
+        html += '</div>';
+        // Auto-populate enemy + noble selects on first render.
+        html += '<script>setTimeout(function(){ if(UI._ptRefresh) UI._ptRefresh(' + idx + '); }, 30);<\/script>';
+        return html;
+    }
+
+    // v9p33river345: build the enemy + noble sub-selects for plant_treason.
+    function _buildPlantTreasonSubSelects(idx, targetKingdomId) {
+        var targetK = Engine.findKingdom(targetKingdomId);
+        if (!targetK) return { enemyHtml: '', nobleHtml: '' };
+        // Enemies player is also citizen of.
+        var atWarList = [];
+        if (targetK.atWar) {
+            atWarList = targetK.atWar instanceof Set ? Array.from(targetK.atWar) : (Array.isArray(targetK.atWar) ? targetK.atWar : []);
+        }
+        var enemyOpts = [];
+        for (var ei = 0; ei < atWarList.length; ei++) {
+            var ek = Engine.findKingdom(atWarList[ei]);
+            if (!ek) continue;
+            var hasCit = Player.state.socialRank && (Player.state.socialRank[ek.id] || 0) >= 1;
+            if (!hasCit) continue;
+            enemyOpts.push(ek);
+        }
+        var enemyHtml = '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        enemyHtml += '<label style="font-size:0.7rem;color:#aaa;min-width:70px;">Framed enemy:</label>';
+        if (enemyOpts.length === 0) {
+            enemyHtml += '<div style="font-size:0.7rem;color:#c44e52;flex:1;">⛔ You\'re not a citizen of any kingdom at war with ' + escapeHtml(targetK.name) + '.</div>';
+        } else {
+            enemyHtml += '<select id="ptEnemySel_' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+            for (var ej = 0; ej < enemyOpts.length; ej++) {
+                var eo = enemyOpts[ej];
+                var tagE = (Player.state.socialRank && (Player.state.socialRank[eo.id] || 0) >= 4) ? ' (noble — easier)' : '';
+                enemyHtml += '<option value="' + eo.id + '">' + escapeHtml(eo.name) + tagE + '</option>';
+            }
+            enemyHtml += '</select>';
+        }
+        enemyHtml += '</div>';
+
+        // Noble list — nobles of target kingdom, not the king.
+        var w = Engine.getWorld();
+        var nobleOpts = [];
+        if (w && w.people) {
+            for (var pi = 0; pi < w.people.length; pi++) {
+                var np = w.people[pi];
+                if (!np.alive) continue;
+                if (np.kingdomId !== targetKingdomId) continue;
+                if (np.id === targetK.king) continue;
+                var isNoble = np.isNoble || np.occupation === 'noble' ||
+                              (np.socialRank && (np.socialRank[targetKingdomId] || 0) >= 4);
+                if (!isNoble) continue;
+                if (np._jailedUntilDay && np._jailedUntilDay > (Engine.getDay ? Engine.getDay() : 0)) continue;
+                nobleOpts.push(np);
+            }
+        }
+        var nobleHtml = '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        nobleHtml += '<label style="font-size:0.7rem;color:#aaa;min-width:70px;">Victim noble:</label>';
+        if (nobleOpts.length === 0) {
+            nobleHtml += '<div style="font-size:0.7rem;color:#c44e52;flex:1;">⛔ No eligible nobles in ' + escapeHtml(targetK.name) + '.</div>';
+        } else {
+            nobleHtml += '<select id="ptNobleSel_' + idx + '" style="font-size:0.75rem;padding:2px;flex:1;min-width:120px;">';
+            for (var nn = 0; nn < nobleOpts.length; nn++) {
+                var no = nobleOpts[nn];
+                var nm = (no.firstName || 'Noble') + ' ' + (no.lastName || '');
+                nobleHtml += '<option value="' + no.id + '">' + escapeHtml(nm) + '</option>';
+            }
+            nobleHtml += '</select>';
+        }
+        nobleHtml += '</div>';
+
+        return { enemyHtml: enemyHtml, nobleHtml: nobleHtml };
     }
 
     function buildNobleIntrigueUI(action, idx) {
@@ -18280,8 +18427,26 @@ window.UI = (function () {
         // Nobility — registered by js/modules/ui_street_trading.js
         // Schemes
         openSchemesDialog,
-        // v9p33river344: Forge Royal Order helper used by registerAction handler.
+        // v9p33river344: Forge Royal Order helpers used by inline onchange.
         _buildForgeRoyalOrderTargetSelect: _buildForgeRoyalOrderTargetSelect,
+        _froRefresh: function(idx) {
+            var kSel = document.getElementById('froKingdom_' + idx);
+            var tSel = document.getElementById('froType_' + idx);
+            var tgt = document.getElementById('froTarget_' + idx);
+            if (!kSel || !tSel || !tgt) return;
+            tgt.innerHTML = _buildForgeRoyalOrderTargetSelect(idx, kSel.value, tSel.value);
+        },
+        // v9p33river345: Plant Treasonous Evidence helpers.
+        _buildPlantTreasonSubSelects: _buildPlantTreasonSubSelects,
+        _ptRefresh: function(idx) {
+            var tSel = document.getElementById('ptTarget_' + idx);
+            var eHost = document.getElementById('ptEnemy_' + idx);
+            var nHost = document.getElementById('ptNoble_' + idx);
+            if (!tSel || !eHost || !nHost) return;
+            var subs = _buildPlantTreasonSubSelects(idx, tSel.value);
+            eHost.innerHTML = subs.enemyHtml;
+            nHost.innerHTML = subs.nobleHtml;
+        },
         // Noble Council Voting
         openVotingDialog,
         openActiveVotesDialog,
