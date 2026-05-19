@@ -4,6 +4,161 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [BugFixes3] - v9p33river313 → v9p33river330 — second bug-triage sprint (~150 fixes across 18 commits)
+
+Continuation of the post-BugFixes2 marathon. Each commit was a verified-against-live-code surgical batch.
+Per-commit detail: `git log v9p33river312..v9p33river330` (or `git log d9df210..BugFixes3`).
+
+### Added — Cross-Kingdom Petition System (v9p33river325-329)
+- **Cross-kingdom road/sea route petitions** — `build_road` and `build_sea_route` selectors now show *all* towns/ports across every kingdom, sort the player's own kingdom first, group remaining kingdoms under labeled `<optgroup>`s, and tag each option as "Town — Kingdom Name".
+- **Diplomacy-driven approval modifiers** for cross-border infrastructure petitions (one dominant modifier per spec):
+  - At war with destination kingdom: **−0.50**
+  - Alliance: **+0.30**
+  - Active trade agreement (scans `world.treaties` for `terms.tradeAgreement` between both signatories): **+0.10**
+  - Otherwise cross-border: **−0.20**
+- **Rank-based approval cap** — replaces the flat 90% ceiling with a ceiling derived from the player's rank *in the petitioning kingdom*:
+  - Citizen 50% • Burgher 60% • Guildmaster 75% • Minor Noble 90% • Lord 95% • Royal Advisor 99% (effectively uncapped)
+  - UI shows the cap and its driver beneath the chance estimate so the player understands why the chance plateaus.
+- **Petition signature math fixed** — town/kingdom reputation bonuses now compute as `(rep − 50)` instead of raw value. Previously a stranger with default rep 50/50 contributed +0.65 on top of the 0.30 base, producing ~95% sign rates for everyone. New math gives ~30% for default strangers and scales up/down with actual reputation delta.
+- **Kings can't petition** — `createPetition`/`submitPetition` early-return for `isKing && kingState.kingdomId`; UI replaces the "Create New Petition" button with a hint pointing at the King's panel. In-flight petitions stay in history but can't be created/submitted while king. Auto-restored when the throne is lost.
+
+### Added — Civic Building Effects Wired
+- **GRANARY `foodStorage`** now reduces food spoilage in towns with a built granary.
+- **COURTHOUSE `crimeReduction`** subtracts from the town's effective crime rate.
+- **UNIVERSITY `knowledgeBonus`** accelerates research/education progress.
+
+### Added — Equipment Quality Unified
+- **EQUIPMENT_TYPES quality canonical names** are now `basic`/`good`/`excellent` (matches goods vocabulary). Previously a mix of `poor`/`standard`/`fine`/`masterwork` clashed with the `basic`/`good`/`excellent` system used by craftable goods. Backward-compat normalizer in player deserialize migrates old saves.
+
+### Added — Apartment Fee Cadence
+- **`weeklyFee` is now the canonical apartment fee field** (`monthlyFee` kept as backward-compat alias). The actual collection always ran weekly (`world.day % 7 === 3`) but the field name implied monthly; the rename brings the schema in line with the cadence.
+
+### Added — CONFIG.ITEMS Mirror
+- **`CONFIG.ITEMS` is a lowercase-keyed mirror of `RESOURCE_TYPES`**, built once at config load. Lets call sites that historically expected `CONFIG.ITEMS[goodId]` continue to resolve resource metadata without each one needing a `RESOURCE_TYPES` lookup.
+
+### Added — Hospital Auto-Admit / Treatment Hardening (v9p33river330)
+- **Hospital fee memoization invalidates on drift** — cache key now includes queue length, worker count, prosperity, and current market prices so price quotes stay current.
+- **Failed-treatment refunds** — patients who pay then fail due to missing supplies are now refunded on discharge.
+- **Player-owned hospital revenue ledger** — manual treatment at a player-owned hospital now credits building retail revenue (matching auto-admit) instead of paying player gold directly. Stops double-counting.
+
+### Added — WASM Hardening (v9p33river318, v9p33river330)
+- **Pathfinding bounds checks** on `from_node`/`to_node` indexes prevent caller-supplied invalid input from trapping the WASM module.
+- **Heap allocation overflow flag** + raised `MAX_HEAP` (4000 → 16000). Path truncation now returns 0 instead of partial success so JS knows the result is unusable.
+- **Caravan batch cap** — `MAX_CARAVANS` raised 100 → 256, oversized inputs return `u32::MAX` sentinel instead of silent corruption; JS-side `wasm-loader.js` chunks input arrays by 256 and validates shape.
+- **JS-side path buffer validation** — `wasm-loader.js` no longer trusts `segCount` blindly; bounds-checks against actual buffer length before reading `segCount*2` values.
+- **Caravan short-distance fix** — short routes no longer normalized to distance 1 (was slowing adjacent/short-haul caravans).
+
+### Added — Petitioner Caps & Knowledge
+- Same `(rep − 50)` baseline fix applied to **hired petitioner** sign chance (was also using raw rep, giving 60% baseline sign rate even for default-rep strangers).
+
+### Fixed — Save / Load Persistence (continuing the BugFixes2 sweep)
+- **Kingdom explicit serialize** for `kingTravel`, `nationalizedIndustries`, `directedPlayerCommission`, `_commissions`, `goodsStockpile`, `crimePunishments` (the `{...k}` spread captured most properties but these needed explicit handling).
+- **Forged kingdom documents** now serialized + restored + expired daily (previously vanished on reload and never expired).
+- **Hidden warehouse array** initialized before `.some()`/`.push()` calls.
+- **`citizenshipKingdomId`** cleared when a kingdom is destroyed.
+
+### Fixed — Schema & API Consistency
+- **`kingdom.atWar`/`alliances` as Set vs Array** — many sites now check `Array.isArray(x) ? x.includes(...) : x.has(...)` after `Engine.getKingdoms()` confusion.
+- **`kingState` king detection** — `player.isKing && player.kingState && player.kingState.kingdomId` is the canonical "player is king" check. Previously some sites checked just `player.isKing` (could be stale).
+- **`citizenshipKingdomId` vs `kingdomId`** — `peace cession` and `transferTown` now update both for residents (and dead-but-retained NPCs).
+- **Wars use `kingdomA`/`kingdomB`** — shared-enemy diplomacy now updates both sides symmetrically (was one-sided).
+- **`town.market` null guards** on broker, license-fee AI, currency debasement, conscription, retail purchases, and a half-dozen other sites.
+- **`criminalRecord[kingdomId][crimeId] = count`** schema normalization on deserialize (handles legacy flat arrays).
+- **`_jailedUntilDay` (NPC) vs `jailedUntilDay` (EM)** — agent fire/release checks both fields.
+
+### Fixed — Economy & Finance
+- **Property tax & income tax revenue accumulate per cycle** instead of being overwritten.
+- **Broke owners accrue debt/arrears** for property tax (was silently skipped).
+- **Player property tax checks/deducts consistent gold field** (was checking `Player.gold` but deducting `Player.state.gold`, risking desync — both are equivalent getters but the audit now uses one).
+- **Forced loans create debt records** instead of granting silent gold.
+- **`taxEfficiency` read from config** for any building tagged with the field.
+- **License fee AI guards `town.market`** before reading `supply`/`demand`.
+- **Stockpile liquidation guards `town.market`** before reading prices.
+- **Tariff/tax revenue uses actual sale value** (after citizen/port discounts), not base price.
+- **Kingdom delivery quests check local town storage** in addition to inventory.
+
+### Fixed — Inheritance & Estates
+- **Elite-merchant spouse death** no longer pays inheritance twice.
+- **Generic spouse inheritance** now fires (was being skipped because `spouseId` was cleared before the inheritance check).
+- **Old royal spouse downgrade** no longer requires `oldKing.alive` (the king is already dead at that point).
+- **Royal spouse demotion** handles all royal-title variants (queen, queen's lord, king's consort, etc.) — was only matching exact `queen`/`queens_lord`.
+- **New king's 100g coronation bonus** is paid AFTER the treasury transfer so it doesn't get immediately swept back.
+- **Sibling inheritance** splits among eligible heirs instead of awarding one winner.
+- **Dead-NPC estate fallback** — buildings retain ownership if the NPC's kingdom reference is stale.
+- **Apartment inheritance** can't push newborn gold negative.
+
+### Fixed — Crime & Punishment
+- **License revocation** pops the offending license, not the last license in the kingdom.
+- **Blackmail caught-punishment** uses the blackmail crime profile (was using forgery).
+- **Rumor-spreading caught-punishment** uses rumor crime profile (was using forgery).
+- **Crime punishment overrides preserve intentional 0** — fine/jail overrides use `!== undefined` checks instead of `||` so a king can set `0g fine` without falling back to defaults.
+- **Inheritance tax cap** removed at 20% — now respects kingdom law if it sets a higher rate.
+
+### Fixed — Buildings & Property
+- **Building conversion ordinal disambiguation** — when the player owns multiple same-type buildings, conversion/farm-conversion/demolition now identifies the exact building by index/id instead of removing the first match.
+- **Manager caravan reads building inventory** (where manager output is stored), not `townStorage`.
+- **Auto-hired worker / hire-manager** checks the candidate isn't already employed elsewhere; firing now clears `employerId` and removes employee-list entry.
+- **Apartment monthly→weekly fee** rename (see Added).
+- **Successful weekly apartment payment** resets the missed-payment counter so non-consecutive misses don't accumulate to eviction.
+
+### Fixed — Caravans & Routes
+- **Recurring routes with waypoint-only orders** no longer stop after the destination leg (was treating them as "completed").
+- **Return-leg sales** check market gold before paying the player.
+- **Sea pathfinding hard-blocks land** instead of using a high penalty (which previously allowed bogus sea routes through coastal flats).
+- **Bridge destruction/rebuild invalidates `_pathCache`** — routes can't keep using destroyed bridges.
+- **`buildNewSeaRoute()` updates `connectedTowns`** so dependent systems see new sea connections.
+- **New roads/sea routes invalidate `_pathCache`** so stale paths don't persist after construction.
+
+### Fixed — UI / UX
+- **Apartment listings render `weeklyFee`** (was crashing on missing `monthlyFee`).
+- **Petition petitioners/signatures array guards** for legacy/in-progress petitions.
+- **Petition chance estimate** now exposes `rankCap` and `playerRankInKingdom` so the UI can show why the chance is capped.
+- **King procurement order panel** uses the *displayed* kingdom, not `Player.state.kingState.kingdomId` (was crashing outside king state).
+- **Build dialog / town market / farm conversion** guard `Engine.getNPCBuildingSaleOffers()` and `town.buildings` array existence.
+- **Story dialog manual-close** now drains `_dialogQueue` before invoking the close callback so queued follow-ups aren't reordered/dropped.
+- **Event "Clear Log"** no longer wipes `Player.tradeLog` (was destroying trade history).
+- **HUD action router (index.html)** retries+warns instead of silently failing when `UI.registerAction` isn't yet available at parse time.
+- **Apartment purchase** sets canonical `houseType='apartment'` and `_apartmentBuildingId` so subsequent lookups work.
+
+### Fixed — Street Trading
+- **Buy/sell/contraband offer caches scoped per-town** (was global by day) — offers can no longer be bought in one town from another.
+
+### Fixed — Health & Medical
+- **Hospital fee cache invalidates on drift** (queue/worker/prosperity/price changes).
+- **Auto-admit failed treatments refund** the patient on discharge.
+- **`treatOther()` / natural recovery clear legacy `sick`/`injured` flags** in addition to `illnesses` array.
+- **Downgraded health policies recompute `costPerDay`** so towns aren't paying quarantine prices for medical support.
+- **One policy doesn't deactivate others** for the same town (close-port now coexists with quarantine, etc.).
+
+### Fixed — Story Mode
+- **`_enemyKingdomId` alias** for `enemyKingdomId` reads in diplomatic intrigue so Korvath-target progress doesn't stall.
+- **Ch4 confiscation amount** uses the Ch3-snapshot delta, not the current gold delta (so unrelated earnings/spending don't alter the story amount).
+- **Korvath deterministic pick** seeded at story init (was RNG-rerolled, could shift mid-run).
+
+### Fixed — King Mode & Royal Actions
+- **Royal feast / royal court cooldown** is set only AFTER `Engine.startRoyalFeast()` / `Engine.startCourtSession()` succeeds (previously locked out the action on failure).
+
+### Fixed — Wage System
+- **Weekly wage payment** revalidates building assignment per employee (drops stale entries).
+- **Employee wages no longer multiplied by `player.spouseCostMod`** — spouse cost modifiers should affect only spouse pay, not payroll.
+- **Wage-demand "leave" cleanup** clears `employerId` after the worker is removed from the building.
+
+### Fixed — Off-by-one & Misc
+- **Quest expiration uses `day > expiresDay`** (was `>=`, granting an extra completable day) — actually the inverse: changed to grant the expected day.
+- **Guild membership uses `expiresDay >= day`** (was `>`, making perks invalid on the expiry day itself).
+- **Daily profit baseline** treats unset as null instead of 0 (was breaking when the day started at 0g).
+- **Outpost storage zero-capacity** distinguishes 0 from missing (was `outpostStorage || 200` → real 0-capacity impossible).
+
+### Cleaned Up
+- Diagnostic console logging removed at multiple sites (post-bridge-stub debug, post-petition debug).
+
+### Stats
+- **18 commits** (`v9p33river313` → `v9p33river330`)
+- **~150 verified-and-fixed bugs** across ~30 files
+- **~10 documented false-positives** (avoided needless edits)
+- **~10 deferred feature requests** (documented but not implemented as bug fixes)
+- **WASM rebuilt** twice (v318, v330) — `merchant_realms_wasm.wasm` 23459 → 23488 bytes
+
 ## [BugFixes2] - v9p33river283 → v9p33river312 — sustained bug-triage marathon (~200 fixes across 30 commits)
 
 This release rolls up the post-TestingAlpha1 bug-triage marathon. Hundreds of issues were verified against the live code and fixed in surgical, per-commit batches. Highlights below; per-commit detail lives in `git log` between `v9p33river283..v9p33river312`.
