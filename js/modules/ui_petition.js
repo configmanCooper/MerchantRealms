@@ -196,7 +196,7 @@
             html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;min-width:240px;">';
             html += _renderTownOptions();
             html += '</select></div>';
-            html += '<div style="font-size:0.72rem;color:#888;margin-bottom:6px;">💡 Roads can be petitioned to/from other kingdoms; cross-border requests are harder to pass.</div>';
+            html += '<div style="font-size:0.72rem;color:#888;margin-bottom:6px;">💡 Cross-border roads: <span style="color:#c44e52;">war = much harder</span>, <span style="color:#aaa;">no relations = harder</span>, <span style="color:#6ab4ff;">trade deal = easier</span>, <span style="color:#a5d6a7;">alliance = much easier</span>.</div>';
             html += '<button class="btn-medieval" style="padding:6px 16px;" data-action="confirmCreatePetitionTownPair" data-id="' + typeId + '">Create Petition</button>';
         } else if (pt.targetType === 'port_pair') {
             html += '<h4 style="color:#ccc;">Select Port Towns:</h4>';
@@ -246,7 +246,7 @@
                 html += '<select id="petToTown" style="background:#333;color:#eee;border:1px solid #555;padding:4px;border-radius:3px;min-width:240px;">';
                 html += _renderPortOptions(1);
                 html += '</select></div>';
-                html += '<div style="font-size:0.72rem;color:#888;margin-bottom:6px;">💡 Sea routes can span kingdoms; foreign routes require strong diplomatic ties.</div>';
+                html += '<div style="font-size:0.72rem;color:#888;margin-bottom:6px;">💡 Foreign sea routes: <span style="color:#c44e52;">war = much harder</span>, <span style="color:#aaa;">no relations = harder</span>, <span style="color:#6ab4ff;">trade deal = easier</span>, <span style="color:#a5d6a7;">alliance = much easier</span>.</div>';
                 html += '<button class="btn-medieval" style="padding:6px 16px;" data-action="confirmCreatePetitionTownPair" data-id="' + typeId + '">Create Petition</button>';
             }
         } else if (pt.targetType === 'road') {

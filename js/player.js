@@ -32003,29 +32003,75 @@
                 if (kp.temperament === 'kind') chance -= 0.15;
                 if (kp.greed === 'generous') chance -= 0.10;
             }
-            // v9p33river325: cross-kingdom road/sea route petitions are
+            // v9p33river326: cross-kingdom road/sea route petitions are
             // harder to pass — the king has no direct stake in foreign
-            // infrastructure. Diplomatic relations + alliances soften
-            // the penalty; war neighbors get an extra hit.
+            // infrastructure. Tuned per user spec:
+            //   * Active war with destination kingdom: -0.50 (much lower,
+            //     kingdoms won't build infrastructure with active enemies)
+            //   * Active trade agreement: +0.10 (slightly higher — the
+            //     existing trade relationship makes road/sea route helpful)
+            //   * Alliance: +0.30 (significantly higher — ally
+            //     infrastructure strengthens both kingdoms)
+            //   * Otherwise cross-border: -0.20 base penalty
             if ((petition.typeId === 'build_road' || petition.typeId === 'build_sea_route') && petition.targetData) {
                 var _fromT = Engine.findTown(petition.targetData.fromTownId);
                 var _toT = Engine.findTown(petition.targetData.toTownId);
                 var _isCrossBorder = (_fromT && _toT && _fromT.kingdomId !== _toT.kingdomId);
                 var _touchesForeign = (_fromT && _fromT.kingdomId !== petition.kingdomId) || (_toT && _toT.kingdomId !== petition.kingdomId);
                 if (_isCrossBorder || _touchesForeign) {
-                    chance -= 0.25; // base cross-border penalty
-                    // Restore some chance if there's an alliance with the foreign endpoint
-                    var _foreignKid = (_fromT && _fromT.kingdomId !== petition.kingdomId) ? _fromT.kingdomId :
-                                      (_toT && _toT.kingdomId !== petition.kingdomId ? _toT.kingdomId : null);
-                    if (_foreignKid && kingdom.alliances) {
-                        var _allied = (kingdom.alliances instanceof Set) ? kingdom.alliances.has(_foreignKid) :
-                                       Array.isArray(kingdom.alliances) && kingdom.alliances.indexOf(_foreignKid) >= 0;
-                        if (_allied) chance += 0.20;
+                    // Identify the foreign kingdom involved
+                    var _foreignKid = null;
+                    if (_fromT && _fromT.kingdomId !== petition.kingdomId) _foreignKid = _fromT.kingdomId;
+                    else if (_toT && _toT.kingdomId !== petition.kingdomId) _foreignKid = _toT.kingdomId;
+
+                    // Check relationship status
+                    var _atWar = false, _allied = false, _hasTradeDeal = false;
+                    if (_foreignKid) {
+                        // War check
+                        if (kingdom.atWar) {
+                            _atWar = (kingdom.atWar instanceof Set) ? kingdom.atWar.has(_foreignKid) :
+                                     (Array.isArray(kingdom.atWar) && kingdom.atWar.indexOf(_foreignKid) >= 0);
+                        }
+                        // Alliance check
+                        if (kingdom.alliances) {
+                            _allied = (kingdom.alliances instanceof Set) ? kingdom.alliances.has(_foreignKid) :
+                                      (Array.isArray(kingdom.alliances) && kingdom.alliances.indexOf(_foreignKid) >= 0);
+                        }
+                        // Trade agreement check — scan world.treaties for
+                        // an active treaty with a tradeAgreement between
+                        // these two kingdoms.
+                        try {
+                            var _w = Engine.getWorld ? Engine.getWorld() : null;
+                            if (_w && _w.treaties) {
+                                var _today = Engine.getDay();
+                                for (var _ti = 0; _ti < _w.treaties.length; _ti++) {
+                                    var _trt = _w.treaties[_ti];
+                                    if (!_trt || !_trt.active) continue;
+                                    if (_trt.expiresDay && _trt.expiresDay <= _today) continue;
+                                    if (!_trt.terms || !_trt.terms.tradeAgreement) continue;
+                                    var _sigs = _trt.signatories || [];
+                                    if (_sigs.indexOf(petition.kingdomId) >= 0 && _sigs.indexOf(_foreignKid) >= 0) {
+                                        _hasTradeDeal = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (_te) {}
                     }
-                    if (_foreignKid && kingdom.atWar) {
-                        var _atWar = (kingdom.atWar instanceof Set) ? kingdom.atWar.has(_foreignKid) :
-                                     Array.isArray(kingdom.atWar) && kingdom.atWar.indexOf(_foreignKid) >= 0;
-                        if (_atWar) chance -= 0.40; // can't build infrastructure with active enemies
+
+                    // Apply ONE dominant modifier per user spec:
+                    //   war      -> chance -0.50 (much lower)
+                    //   alliance -> chance +0.30 (significantly higher)
+                    //   trade    -> chance +0.10 (slightly higher)
+                    //   else     -> chance -0.20 (base cross-border friction)
+                    if (_atWar) {
+                        chance -= 0.50;
+                    } else if (_allied) {
+                        chance += 0.30;
+                    } else if (_hasTradeDeal) {
+                        chance += 0.10;
+                    } else {
+                        chance -= 0.20;
                     }
                 }
             }
