@@ -12867,7 +12867,7 @@ window.UI = (function () {
             // Track/Untrack button in leaderboard
             if (!e.isPlayer && typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('merchant_tracker') && e.id) {
                 var lbTracked = Player.isTrackingMerchant && Player.isTrackingMerchant(e.id);
-                html += '<td style="text-align:center;"><button class="btn-medieval" style="font-size:0.6rem;padding:1px 5px;' + (lbTracked ? 'background:var(--gold);color:#000;' : '') + '" data-action="toggleLeaderboardTrack" data-display1="' + (lbTracked ? 'untrackMerchant' : 'trackMerchant') + '" data-id="' + e.id + '">' + (lbTracked ? '⭐' : '☆') + '</button></td>';
+                html += '<td style="text-align:center;"><button class="btn-medieval" style="font-size:0.6rem;padding:1px 5px;' + (lbTracked ? 'background:var(--gold);color:#000;' : '') + '" data-action="toggleLeaderboardTrack" data-method="' + (lbTracked ? 'untrackMerchant' : 'trackMerchant') + '" data-id="' + e.id + '">' + (lbTracked ? '⭐' : '☆') + '</button></td>';
             } else {
                 html += '<td></td>';
             }

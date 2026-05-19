@@ -2125,10 +2125,10 @@
     UI.registerAction('treatCompanionUI', function(_t, d) { if (UI.treatCompanionUI) UI.treatCompanionUI(d.type, d.id, d.val); });
     UI.registerAction('openWeddingPlanner', function() { if (UI.openWeddingPlanner) UI.openWeddingPlanner(); });
     UI.registerAction('openTalkToSpouse', function() { if (UI.openTalkToSpouse) UI.openTalkToSpouse(); });
-    UI.registerAction('_spouseGoldConfirm', function(_t, d) { if (UI._spouseGoldConfirm) UI._spouseGoldConfirm(d.id, parseInt(d.amount)); });
-    UI.registerAction('_spouseTownConfirm', function(_t, d) { if (UI._spouseTownConfirm) UI._spouseTownConfirm(d.id); });
-    UI.registerAction('_spouseBuildingConfirm', function(_t, d) { if (UI._spouseBuildingConfirm) UI._spouseBuildingConfirm(d.id, d.type); });
+    UI.registerAction('_spouseGoldConfirm', function(_t, d) { if (UI._spouseGoldConfirm) UI._spouseGoldConfirm(d.id, parseInt(d.val)); });
+    UI.registerAction('_spouseTownConfirm', function(_t, d) { if (UI._spouseTownConfirm) UI._spouseTownConfirm(d.id, d.val); });
+    UI.registerAction('_spouseBuildingConfirm', function(_t, d) { if (UI._spouseBuildingConfirm) UI._spouseBuildingConfirm(parseInt(d.val)); });
     UI.registerAction('_spouseNegotiateConfirm', function(_t, d) { if (UI._spouseNegotiateConfirm) UI._spouseNegotiateConfirm(d.id); });
-    UI.registerAction('_spouseCaravanConfirm', function(_t, d) { if (UI._spouseCaravanConfirm) UI._spouseCaravanConfirm(d.id); });
+    UI.registerAction('_spouseCaravanConfirm', function(_t, d) { if (UI._spouseCaravanConfirm) UI._spouseCaravanConfirm(parseInt(d.val)); });
 
 })(window.UI);
