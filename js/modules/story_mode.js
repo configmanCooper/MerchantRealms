@@ -2825,6 +2825,10 @@ var StoryMode = (function () {
         _storyState.chapterStartDay = 0;
 
         // Reset flags
+        // v9p33river320: now wipes the flags object so dynamic flags
+        // (e.g. _playerKingdomId, _enemyKingdomId, branch/war markers)
+        // from a prior story playthrough don't bleed into this one.
+        _storyState.flags = {};
         var flags = _storyState.flags;
         flags.suppressEncounters = true;
         flags.suppressDisease    = true;

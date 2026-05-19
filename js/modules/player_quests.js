@@ -1401,12 +1401,28 @@
             return { success: false, message: 'Quest requirements not yet met. ' + (check.remaining || '') };
         }
 
-        // Consume delivered goods from inventory
+        // Consume delivered goods from inventory (and town storage as fallback)
+        // v9p33river320: previously consumed only from player.inventory.
+        // Kingdom delivery quests can store goods in player.townStorage[townId]
+        // (caravan deposits etc.) — consume from either pool.
         if (quest.requirements.deliver) {
             for (var resId in quest.requirements.deliver) {
                 var qty = quest.requirements.deliver[resId];
-                player.inventory[resId] = (player.inventory[resId] || 0) - qty;
-                if (player.inventory[resId] < 0) player.inventory[resId] = 0;
+                var fromInv = Math.min(qty, player.inventory[resId] || 0);
+                if (fromInv > 0) {
+                    player.inventory[resId] = (player.inventory[resId] || 0) - fromInv;
+                    if (player.inventory[resId] <= 0) delete player.inventory[resId];
+                    qty -= fromInv;
+                }
+                if (qty > 0 && player.townStorage && player.townStorage[player.townId]) {
+                    var _ts = player.townStorage[player.townId];
+                    var fromTown = Math.min(qty, _ts[resId] || 0);
+                    if (fromTown > 0) {
+                        _ts[resId] -= fromTown;
+                        if (_ts[resId] <= 0) delete _ts[resId];
+                        qty -= fromTown;
+                    }
+                }
             }
         }
 

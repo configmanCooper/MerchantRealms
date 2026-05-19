@@ -95,6 +95,7 @@
     function _calcInheritanceTax(grossGold, kingdomId) {
         var cfg = INHERITANCE_TAX_DEFAULTS;
         var taxRate = cfg.maxRate;
+        var _kingdomLawRate = null;
 
         // Check if kingdom has inheritance_tax law
         if (kingdomId) {
@@ -102,16 +103,23 @@
             if (kingdom && kingdom.laws && kingdom.laws.specialLaws) {
                 for (var i = 0; i < kingdom.laws.specialLaws.length; i++) {
                     if (kingdom.laws.specialLaws[i].id === 'inheritance_tax') {
-                        taxRate = kingdom.laws.specialLaws[i].rate || cfg.maxRate;
+                        _kingdomLawRate = kingdom.laws.specialLaws[i].rate;
+                        if (_kingdomLawRate != null) taxRate = _kingdomLawRate;
                         break;
                     }
                 }
             }
         }
 
-        // Clamp tax rate
-        if (taxRate < cfg.minRate) taxRate = cfg.minRate;
-        if (taxRate > cfg.maxRate) taxRate = cfg.maxRate;
+        // v9p33river320: clamp only when there's NO explicit kingdom-law
+        // rate. If a kingdom law sets a higher rate (e.g. 35%), that's a
+        // sovereign decision and must override the 20% maxRate default.
+        if (_kingdomLawRate == null) {
+            if (taxRate < cfg.minRate) taxRate = cfg.minRate;
+            if (taxRate > cfg.maxRate) taxRate = cfg.maxRate;
+        } else if (taxRate < 0) {
+            taxRate = 0;
+        }
 
         // Noble exemption discount
         var playerRank = _getPlayerNobleRank(kingdomId);

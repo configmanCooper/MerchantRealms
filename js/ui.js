@@ -486,7 +486,7 @@ window.UI = (function () {
         // only one arg so dinner/celebration/advice/caretake never fired and
         // per-family-member buttons routed the wrong values to the handler.
         registerAction('treatCompanionUI', function(_t, d) { if (d.type) treatCompanionUI(d.type, d.id, d.val); });
-        registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val) setNotifFilter(d.key, d.val); });
+        registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val != null) setNotifFilter(d.key, d.val); });
         registerAction('setTradeQty', function(_t, d) { if (d.type && d.id) setTradeQty(d.type, d.id, parseInt(d.qty)||1, parseFloat(d.price)||0); });
         registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id, d.val, parseInt(d.qty)); });
         registerAction('_bldDeposit', function(_t, d) { if (d.id) UI._bldDeposit(d.id, d.val, parseInt(d.qty)); });
@@ -672,8 +672,8 @@ window.UI = (function () {
         registerAction('openGoodsGuide', function() { UI.openGoodsGuide(); });
         registerAction('openGameGuide', function() { UI.openGameGuide(); });
         registerAction('openIconsGlossary', function() { UI.openIconsGlossary(); });
-        registerAction('showPersonDetailAndCloseModal', function(_t, d) { var p = Engine.findPerson(d.id); if (p) { UI.showPersonDetail(p); UI.closeModal(); } });
-        registerAction('showTownDetailAndCloseModal', function(_t, d) { var t = Engine.findTown(d.id); if (t) { UI.showTownDetail(t); UI.closeModal(); } });
+        registerAction('showPersonDetailAndCloseModal', function(_t, d) { var p = Engine.findPerson(d.id); if (p) { UI.closeModal(); UI.showPersonDetail(p); } });
+        registerAction('showTownDetailAndCloseModal', function(_t, d) { var t = Engine.findTown(d.id); if (t) { UI.closeModal(); UI.showTownDetail(t); } });
         registerAction('_switchKNTab', function(_t, d) { if (d.tab) UI._switchKNTab(d.tab); });
         registerAction('executeBribeAdvisor', function(_t, d) { if (d.id && d.val) UI.executeBribeAdvisor(d.id, d.val); });
         registerAction('executeBribeGuards', function(_t, d) { if (d.id) UI.executeBribeGuards(d.id); });
@@ -705,9 +705,9 @@ window.UI = (function () {
         registerAction('castVote_no', function(_t, d) { Engine.castVote(d.id,'no');UI.openVotingDialog(d.id2); });
         registerAction('castVote_yes', function(_t, d) { Engine.castVote(d.id,'yes');UI.openVotingDialog(d.id2); });
         registerAction('executeTeachChild', function(_t, d) { if (d.id && d.val) UI.executeTeachChild(d.id, d.val); });
-        registerAction('selfTreatCondition', function(_t, d) { if (d.idx && d.val) UI.selfTreatCondition(d.idx, d.val); });
-        registerAction('treatAtClinic', function(_t, d) { if (d.idx && d.val) UI.treatAtClinic(d.idx, d.val); });
-        registerAction('treatAtHospital', function(_t, d) { if (d.idx && d.val) UI.treatAtHospital(d.idx, d.val); });
+        registerAction('selfTreatCondition', function(_t, d) { if (d.idx != null && d.val) UI.selfTreatCondition(d.idx, d.val); });
+        registerAction('treatAtClinic', function(_t, d) { if (d.idx != null && d.val) UI.treatAtClinic(d.idx, d.val); });
+        registerAction('treatAtHospital', function(_t, d) { if (d.idx != null && d.val) UI.treatAtHospital(d.idx, d.val); });
         registerAction('resolveEncounterChoice', function(_t, d) { if (d.choice) UI.resolveEncounterChoice(d.choice); });
         registerAction('resolvePendingMilitaryEventAndCloseModal', function(_t, d) { Player.resolvePendingMilitaryEvent(d.id); UI.closeModal(); });
         registerAction('executeWork', function(_t, d) { if (d.id) UI.executeWork(d.id); });
@@ -12926,8 +12926,8 @@ window.UI = (function () {
                     const pr = proposals[pi];
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
                     html += '<div style="font-size:0.85rem;color:#ddd;">' + pr.eliteMerchantName + ' proposes: ' + pr.eliteChildName + ' wed ' + pr.playerChildName + '</div>';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-response="true">✅ Accept</button> ';
-                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-response="false">❌ Reject</button>';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="true">✅ Accept</button> ';
+                    html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="false">❌ Reject</button>';
                     html += '</div>';
                 }
                 html += '</div>';

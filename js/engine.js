@@ -1507,18 +1507,25 @@
                 const isCapital = (t === 0);
 
                 // Detect port status early so building generation can use terrain
+                // v9p33river320: require multiple adjacent water tiles and
+                // a minimum contiguous water region so inland ponds/lakes
+                // don't create false ports. A pond < 6 tiles of contiguous
+                // water doesn't qualify as a navigable coast.
                 let isPort = false;
-                for (let dy2 = -portProx; dy2 <= portProx && !isPort; dy2++) {
-                    for (let dx2 = -portProx; dx2 <= portProx && !isPort; dx2++) {
+                let _waterTileCount = 0;
+                for (let dy2 = -portProx; dy2 <= portProx; dy2++) {
+                    for (let dx2 = -portProx; dx2 <= portProx; dx2++) {
                         const wx = tx + dx2;
                         const wy = ty + dy2;
                         if (wx >= 0 && wx < cols && wy >= 0 && wy < rows) {
                             if (world.terrain[wy * cols + wx] === TERRAIN.WATER.id) {
-                                isPort = true;
+                                _waterTileCount++;
                             }
                         }
                     }
                 }
+                // Require >= 6 nearby water tiles (a real sea-adjacent area)
+                if (_waterTileCount >= 6) isPort = true;
                 if (isPort) kingdomHasPort = true;
 
                 // Assign population based on settlement hierarchy:
@@ -7980,6 +7987,12 @@
                         _beneficiary.gold = (_beneficiary.gold || 0) + _benGot;
                     }
                     Player.state.gold = (Player.state.gold || 0) + _playerInheritGold;
+                    // v9p33river320: clear deceased EM's gold AFTER player
+                    // inheritance so the generic non-EM spouse inheritance
+                    // block at engine.js:8237 doesn't fire a second time
+                    // (it checks `!p.isEliteMerchant && p.gold > 0`, and
+                    // isEliteMerchant gets set to false a few lines below).
+                    p.gold = 0;
                     // Transfer building ownership
                     if (p.buildings && p.buildings.length > 0) {
                         if (_hasBeneficiary && _beneficiary) {
@@ -8848,10 +8861,17 @@
         }
 
         // Update old king's spouse occupation back to noble
-        if (oldKing && oldKing.alive && oldKing.spouseId) {
+        // v9p33river320: was gated on oldKing.alive, but in a normal
+        // succession the king is dead. Don't require the dead king to
+        // be alive to downgrade their grieving spouse. Also accept any
+        // royal-spouse title variant.
+        if (oldKing && oldKing.spouseId) {
             var _oldSpouse = findPerson(oldKing.spouseId);
             if (_oldSpouse && _oldSpouse.alive) {
-                if (_oldSpouse.occupation === 'queen' || _oldSpouse.occupation === 'queens_lord') {
+                var _oldOcc = _oldSpouse.occupation;
+                if (_oldOcc === 'queen' || _oldOcc === 'queens_lord' ||
+                    _oldOcc === 'queen_consort' || _oldOcc === 'prince_consort' ||
+                    _oldOcc === 'king_consort' || _oldOcc === 'royal_consort') {
                     _oldSpouse.occupation = 'noble';
                 }
             }
@@ -8881,7 +8901,11 @@
                 }
             }
         }
-        newKing.gold += 100;
+        // v9p33river320: was `newKing.gold += 100` followed by transferring
+        // ALL newKing.gold to kingdom — sweeping away the coronation bonus.
+        // Now transfer existing personal assets to crown FIRST, then add
+        // the 100g bonus to the new king's pocket so they actually have
+        // walking-around money.
 
         // Transfer new king's personal assets to the kingdom (buildings + gold)
         var _transferredGold = 0;
@@ -8909,6 +8933,9 @@
                 Engine.recordKingdomTransaction(kingdom, 'income', _transferredGold, 'Coronation: ' + newKing.firstName + ' ' + newKing.lastName + ' assets transferred', 'coronation');
             }
         }
+
+        // Now grant the personal-purse coronation bonus AFTER asset transfer
+        newKing.gold = (newKing.gold || 0) + 100;
 
         if (!cause || cause !== 'election') {
             logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`, { type: 'succession', kingdomId: kingdom.id });
@@ -17154,6 +17181,12 @@
                 if (ps.socialRank) ps.socialRank[deadK.id] = 0;
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑💀 Your kingdom has fallen! You are no longer king.', 'danger', 'critical');
             }
+            // v9p33river320: also clear citizenship if it points at the
+            // dead kingdom (was leaving the player a citizen of a kingdom
+            // that no longer exists, breaking embargo/property/etc).
+            if (ps.citizenshipKingdomId === deadK.id) {
+                ps.citizenshipKingdomId = null;
+            }
         }
 
         // Log the event
@@ -23464,7 +23497,11 @@
         if (!ht) return Infinity;
         if (ht.notBuildable || ht.fromApartmentBuilding) return Infinity;
         if (ht.requiresPort && !town.isPort) return Infinity;
-        if (ht.minRank) return Infinity;
+        // v9p33river320: was returning Infinity for ANY housing with a
+        // minRank requirement, making manor/castle/etc unbuyable by NPCs
+        // who actually have the rank. Callers (chooseHousing) filter by
+        // NPC rank separately, so let the cost compute normally here.
+        // (Pricing reflects the housing tier regardless of who can afford it.)
         var minCatRank = TOWN_CAT_RANK[ht.minTownCategory] || 0;
         var townCatRank = TOWN_CAT_RANK[town.category] || 0;
         if (townCatRank < minCatRank) return Infinity;

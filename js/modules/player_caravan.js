@@ -2270,7 +2270,13 @@
                                 Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, null, 'my_business');
                                 // Track cross-kingdom caravan trade for story mode
                                 if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
-                                    var _legOrigin = Engine.findTown(caravan.route[0]);
+                                    // v9p33river320: caravan.route entries are
+                                    // segment objects ({fromTownId, toTownId,
+                                    // waypoints, ...}), not town id strings.
+                                    // Use the first segment's fromTownId.
+                                    var _legSeg = caravan.route[0];
+                                    var _legOriginId = (_legSeg && _legSeg.fromTownId) || _legSeg;
+                                    var _legOrigin = Engine.findTown(_legOriginId);
                                     if (_legOrigin && _legOrigin.kingdomId && destTown.kingdomId && _legOrigin.kingdomId !== destTown.kingdomId) {
                                         StoryMode.onPlayerAction('caravan_trade_complete', { goldValue: grossRev, fromKingdom: _legOrigin.kingdomId, toKingdom: destTown.kingdomId });
                                     }

@@ -181,12 +181,25 @@
                             Player.state.gold -= playerTax;
                             if (typeof Player.state.stats !== 'undefined') Player.state.stats.totalGoldSpent += playerTax;
                             totalPropertyTax += playerTax;
+                        } else if (typeof Player !== 'undefined' && playerTax > 0) {
+                            // v9p33river320: broke owners now accrue arrears
+                            // (kingdom-owed debt) instead of just skipping
+                            // the tax. Tracked on Player.state._propertyTaxArrears
+                            // and recorded as a debt to the kingdom.
+                            if (!Player.state._propertyTaxArrears) Player.state._propertyTaxArrears = {};
+                            Player.state._propertyTaxArrears[k.id] = (Player.state._propertyTaxArrears[k.id] || 0) + playerTax;
                         }
                     } else if (bld.ownerId && bld.ownerId !== 'player') {
                         const owner = findPerson(bld.ownerId);
                         if (owner && owner.gold >= tax) {
                             owner.gold -= tax;
                             totalPropertyTax += tax;
+                        } else if (owner && tax > 0) {
+                            // v9p33river320: NPC owner arrears tracked on
+                            // the person record so kingdom can collect
+                            // later or seize the building.
+                            if (!owner._propertyTaxArrears) owner._propertyTaxArrears = {};
+                            owner._propertyTaxArrears[k.id] = (owner._propertyTaxArrears[k.id] || 0) + tax;
                         }
                     }
                 }
@@ -212,7 +225,9 @@
         totalPropertyTax = Math.floor(totalPropertyTax * (1 + vaultBonus));
 
         k.gold += totalPropertyTax;
-        k.propertyTaxRevenue = totalPropertyTax;
+        // v9p33river320: was overwriting per cycle, losing prior collections.
+        // Now accumulates so cumulative-revenue UI/AI reads are accurate.
+        k.propertyTaxRevenue = (k.propertyTaxRevenue || 0) + totalPropertyTax;
         k.taxRevenue = (k.taxRevenue || 0) + totalPropertyTax;
         if (totalPropertyTax > 0) recordKingdomTransaction(k, 'income', totalPropertyTax, 'Monthly property taxes', 'property_tax');
         if (totalPropertyTax > 50) {
@@ -256,7 +271,8 @@
         }
 
         k.gold += totalIncomeTax;
-        k.incomeTaxRevenue = totalIncomeTax;
+        // v9p33river320: same overwrite fix — accumulate.
+        k.incomeTaxRevenue = (k.incomeTaxRevenue || 0) + totalIncomeTax;
         k.taxRevenue = (k.taxRevenue || 0) + totalIncomeTax;
         if (totalIncomeTax > 0) recordKingdomTransaction(k, 'income', totalIncomeTax, 'Seasonal income taxes', 'income_tax');
         if (totalIncomeTax > 100) {

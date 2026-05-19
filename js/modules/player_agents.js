@@ -313,10 +313,15 @@
             }
 
             // Jailed agents: serve time
+            // v9p33river320: was only checking _jailUntil. v316 normalized
+            // agent jail flag to _jailedUntilDay with _jailUntil as a
+            // legacy alias. Check both so the release path fires.
             if (agent.status === 'jailed') {
-                if (agent._jailUntil && day >= agent._jailUntil) {
+                var _ajRelease = agent._jailedUntilDay || agent._jailUntil || 0;
+                if (_ajRelease && day >= _ajRelease) {
                     agent.status = 'idle';
                     agent.task = null;
+                    agent._jailedUntilDay = 0;
                     agent._jailUntil = 0;
                     agent.reports.push({ day: day, msg: '🔓 ' + agent.name + ' released from jail.' });
                 }

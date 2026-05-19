@@ -19348,6 +19348,11 @@
             // the cap nor wipe platinum progress counters.
             _dailyTradeRep: player._dailyTradeRep ? structuredClone(player._dailyTradeRep) : null,
             _platinumTracking: structuredClone(player._platinumTracking || {}),
+            // v9p33river320: previously-missing fields. _nobleLoans tracks
+            // active noble loans; leftCart tracks a parked cart and its
+            // cargo. Both used live but never serialized.
+            _nobleLoans: structuredClone(player._nobleLoans || []),
+            leftCart: player.leftCart ? structuredClone(player.leftCart) : null,
             // Kingdom quest data
             kingdomQuests: structuredClone(player.kingdomQuests || {}),
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
@@ -19451,6 +19456,9 @@
         // v9p33river312: restore daily trade-rep cap + platinum tracker.
         player._dailyTradeRep = data._dailyTradeRep ? structuredClone(data._dailyTradeRep) : null;
         player._platinumTracking = data._platinumTracking ? structuredClone(data._platinumTracking) : {};
+        // v9p33river320: restore noble-loan + left-cart state.
+        player._nobleLoans = data._nobleLoans ? structuredClone(data._nobleLoans) : [];
+        player.leftCart = data.leftCart ? structuredClone(data.leftCart) : null;
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;
@@ -27017,11 +27025,29 @@
         }
 
         // License revocation on 4th+ offense
+        // v9p33river320: was popping the LAST license in the kingdom
+        // (random punishment unrelated to the offense). Now removes the
+        // license for the specific resource being smuggled. Falls back
+        // to pop() only if no matching license exists (still need
+        // something to revoke for the punishment to bite).
         if (offense >= CONFIG.PENALTY_JAIL_AT && rng && rng.chance(CONFIG.LICENSE_REVOKE_CHANCE_ON_SMUGGLE)) {
             if (player.licenses[kId] && player.licenses[kId].length > 0) {
-                const revokedLicense = player.licenses[kId].pop();
-                const res = Object.values(RESOURCE_TYPES).find(r => r.id === revokedLicense);
-                Engine.logEvent(`${kingdom.name} has revoked ${player.fullName}'s license for ${res ? res.name : revokedLicense}!`);
+                var _revokeRes = resourceId;
+                var _matchIdx = -1;
+                for (var _rli = 0; _rli < player.licenses[kId].length; _rli++) {
+                    if (player.licenses[kId][_rli] && player.licenses[kId][_rli].resourceId === _revokeRes) {
+                        _matchIdx = _rli; break;
+                    }
+                }
+                var revokedLicense;
+                if (_matchIdx >= 0) {
+                    revokedLicense = player.licenses[kId].splice(_matchIdx, 1)[0];
+                } else {
+                    revokedLicense = player.licenses[kId].pop();
+                }
+                var _revId = (revokedLicense && revokedLicense.resourceId) || revokedLicense;
+                const res = Object.values(RESOURCE_TYPES).find(r => r.id === _revId);
+                Engine.logEvent(`${kingdom.name} has revoked ${player.fullName}'s license for ${res ? res.name : _revId}!`);
             }
         }
 
