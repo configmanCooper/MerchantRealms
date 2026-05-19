@@ -207,6 +207,19 @@
         var feast = (CONFIG.WEDDING_FEASTS || []).find(function(f) { return f.id === plan.feast; }) || CONFIG.WEDDING_FEASTS[0];
         var vow = (CONFIG.WEDDING_VOWS || []).find(function(v) { return v.id === plan.vows; }) || CONFIG.WEDDING_VOWS[0];
 
+        // v9p33river317: re-validate venue rank at finalization, not just
+        // at selection. Player could pick a high-rank venue while noble
+        // and then renounce/lose rank before the wedding fires. Fall
+        // back to the default venue if no longer eligible.
+        if (venue && venue.minRank && typeof getPlayerRankIndex === 'function' && getPlayerRankIndex() < venue.minRank) {
+            var _defaultVenue = (CONFIG.WEDDING_VENUES || []).find(function(v) { return v.id === 'town_square'; }) || CONFIG.WEDDING_VENUES[0];
+            if (_defaultVenue) {
+                Engine.logEvent('💍 Your rank has fallen since planning the wedding; the ' + venue.name + ' is no longer available. Using ' + _defaultVenue.name + ' instead.');
+                venue = _defaultVenue;
+                plan.venue = _defaultVenue.id;
+            }
+        }
+
         // Calculate total cost
         var totalCost = (CONFIG.WEDDING_COST_BASE || 50) + (venue.cost || 0) + (feast.cost || 0);
         if (player.gold < totalCost) {

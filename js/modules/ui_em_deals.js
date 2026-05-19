@@ -306,12 +306,20 @@
         if (!b.id) b.id = 'bld_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 
         // Update EM's building list — remove only the specific building purchased
+        // v9p33river317: EM building refs are usually pushed without
+        // IDs (8 sites in engine_elite_merchants.js push {type,townId,
+        // level} only). The id-only match never fired, leaving stale
+        // ownership refs after every sale. Now: prefer id match; fall
+        // back to first (townId, type) match so the right stale ref is
+        // removed without deleting all same-type refs.
         if (em.buildings) {
+            var _refRemoved = false;
             em.buildings = em.buildings.filter(function(br) {
-                // Match by id if the EM record has one and it matches; else
-                // fall back to (townId, type, ownerId) but only remove the
-                // FIRST match (use a flag) to avoid deleting all same-type.
                 if (br.id && b.id && br.id === b.id) return false;
+                if (!_refRemoved && !br.id && br.townId === townId && br.type === b.type) {
+                    _refRemoved = true;
+                    return false;
+                }
                 return true;
             });
         }

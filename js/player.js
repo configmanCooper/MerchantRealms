@@ -21970,8 +21970,15 @@
                 // Reputation hit
                 player.reputation[pending.kingdomId] = Math.max(0, (player.reputation[pending.kingdomId] || 50) - 25);
                 // Criminal record
+                // v9p33river317: was setting criminalRecord[kingdomId]=N
+                // (numeric), violating the {kingdomId:{crime:count}}
+                // schema. Other readers (22707/37077/37302) expect
+                // objects. Now writes per-crime as 'conscription_dodge'.
                 if (!player.criminalRecord) player.criminalRecord = {};
-                player.criminalRecord[pending.kingdomId] = (player.criminalRecord[pending.kingdomId] || 0) + 1;
+                if (!player.criminalRecord[pending.kingdomId] || typeof player.criminalRecord[pending.kingdomId] !== 'object') {
+                    player.criminalRecord[pending.kingdomId] = {};
+                }
+                player.criminalRecord[pending.kingdomId]['conscription_dodge'] = (player.criminalRecord[pending.kingdomId]['conscription_dodge'] || 0) + 1;
 
                 Engine.logEvent('🚔 ' + player.fullName + ' was caught dodging conscription! Sentenced to ' + Math.floor(jailDays / CONFIG.DAYS_PER_SEASON) + ' years in prison.');
 
@@ -23486,8 +23493,16 @@
         if (daysInKingdom < 90) return { success: false, message: `Must live in kingdom for 90 days (${daysInKingdom} so far).` };
 
         // Check criminal record
-        if (player.criminalRecord && player.criminalRecord[kingdomId] && player.criminalRecord[kingdomId] > 0) {
-            return { success: false, message: 'Cannot become citizen with a criminal record.' };
+        // v9p33river317: was checking `criminalRecord[kingdomId] > 0`
+        // (treating it as numeric), which is false for the canonical
+        // {kingdomId:{crime:count}} schema. Now counts crimes via
+        // Object.keys for object form, or numeric for legacy form.
+        if (player.criminalRecord && player.criminalRecord[kingdomId]) {
+            var _crRec = player.criminalRecord[kingdomId];
+            var _hasCrimes = (typeof _crRec === 'object') ? (Object.keys(_crRec).length > 0) : (_crRec > 0);
+            if (_hasCrimes) {
+                return { success: false, message: 'Cannot become citizen with a criminal record.' };
+            }
         }
 
         // Check dual citizenship laws
@@ -25441,8 +25456,21 @@
 
         var introRank = getNPCSocialRank(introducer);
         // Guildmasters (rank < 4) can introduce to Minor Nobles (rank 4)
+        // v9p33river317: was only checking guildMemberships[g].rank
+        // === 'guildmaster' for the membership branch, but memberships
+        // store {expiresDay, type} — there's no `rank` field. So real
+        // guildmaster NPCs only qualified via occupation==='guild_master'.
+        // Now also accepts membership.type === 'guildmaster' and
+        // socialRank >= 5 (canonical GM threshold).
         var isGuildmaster = introRank < 4 && (introducer.occupation === 'guild_master' ||
-            (introducer.guildMemberships && Object.keys(introducer.guildMemberships).some(function(g) { return introducer.guildMemberships[g].rank === 'guildmaster'; })));
+            (introducer.socialRank && (function() {
+                for (var _gk in introducer.socialRank) { if ((introducer.socialRank[_gk] || 0) >= 5) return true; }
+                return false;
+            })()) ||
+            (introducer.guildMemberships && Object.keys(introducer.guildMemberships).some(function(g) {
+                var _gm = introducer.guildMemberships[g];
+                return _gm && (_gm.rank === 'guildmaster' || _gm.type === 'guildmaster');
+            })));
         if (introRank < 4 && !isGuildmaster) return { success: false, message: 'This person has no noble connections.' };
 
         var rel = getRelationship(introducerId);
@@ -31044,9 +31072,15 @@
             }
 
             // Criminal record
+            // v9p33river317: was using global criminalRecord.sabotage
+            // counter, violating the {kingdomId:{crime:count}} schema.
+            // Now keyed per kingdom so reads at 22707/37077/37302 see it.
             if (!player.criminalRecord) player.criminalRecord = {};
-            if (!player.criminalRecord.sabotage) player.criminalRecord.sabotage = 0;
-            player.criminalRecord.sabotage++;
+            var _sbKid = kingdom ? kingdom.id : 'unknown';
+            if (!player.criminalRecord[_sbKid] || typeof player.criminalRecord[_sbKid] !== 'object') {
+                player.criminalRecord[_sbKid] = {};
+            }
+            player.criminalRecord[_sbKid]['sabotage'] = (player.criminalRecord[_sbKid]['sabotage'] || 0) + 1;
 
             if (typeof Engine !== 'undefined' && Engine.logEvent) {
                 Engine.logEvent('🚨 ' + (player.firstName || 'Player') + ' was caught destroying a bridge! Fined ' + actualFine + 'g and sentenced to ' + jailDays + ' days in jail.');

@@ -6141,17 +6141,11 @@
             ));
 
             // ── Water & beverage consumption ──
-            // NPCs drink water daily (1 per 5 people)
-            var waterNeeded = Math.ceil(pop * 0.2);
-            var waterAvail = town.market.supply.water || 0;
-            var waterConsumed = Math.min(waterAvail, waterNeeded);
-            town.market.supply.water = Math.max(0, waterAvail - waterConsumed);
-
-            // NPCs also drink ale/mead from market (small amount)
-            var aleConsumed = Math.min(town.market.supply.ale || 0, Math.ceil(pop * 0.03));
-            town.market.supply.ale = Math.max(0, (town.market.supply.ale || 0) - aleConsumed);
-
-            // Wells produce water daily — each active well draws from its waterRemaining
+            // v9p33river317: produce water from wells FIRST, then consume.
+            // Was consuming before production, so daily shortage effects
+            // fired even when wells would have supplied enough. Wells +
+            // cisterns yield to market.supply.water at this point, and
+            // consumption follows below.
             var wellProduction = 0;
             if (town.buildings) {
                 for (var _wi = 0; _wi < town.buildings.length; _wi++) {
@@ -6193,6 +6187,17 @@
                 }
             }
             town.market.supply.water = (town.market.supply.water || 0) + wellProduction;
+
+            // NPCs drink water daily (1 per 5 people)
+            var waterNeeded = Math.ceil(pop * 0.2);
+            var waterAvail = town.market.supply.water || 0;
+            var waterConsumed = Math.min(waterAvail, waterNeeded);
+            town.market.supply.water = Math.max(0, waterAvail - waterConsumed);
+
+            // NPCs also drink ale/mead from market (small amount)
+            var aleConsumed = Math.min(town.market.supply.ale || 0, Math.ceil(pop * 0.03));
+            town.market.supply.ale = Math.max(0, (town.market.supply.ale || 0) - aleConsumed);
+
             // Track water supply level for fire/plague use
             town.waterSupply = (town.market.supply.water || 0);
 
@@ -6925,9 +6930,14 @@
         const available = town.market.supply[resId] || 0;
         const consumed = Math.min(available, qty);
         if (consumed > 0) {
+            // v9p33river317: compute price BEFORE the supply mutation so
+            // tax math always sees the pre-consumption price. getMarketPrice
+            // reads town.market.prices directly today (price controls apply
+            // to a static price), but if a future dynamic-pricing pass
+            // derives price from supply, this ordering is correct.
+            const price = getMarketPrice(town, resId);
             town.market.supply[resId] -= consumed;
             // Bug 1 fix: collect trade tax on market consumption
-            const price = getMarketPrice(town, resId);
             Engine.collectTradeTax(town.kingdomId, consumed * price, resId);
         }
         return consumed;
@@ -19607,12 +19617,18 @@
         const towerBonus = (town.towers || 0) * (findBuildingType('watchtower') || { archerBonus: 0.5 }).archerBonus;
 
         // Military building bonuses for defender
+        // v9p33river317: wall_upgrade siege bonus now reads bt.siegeDefense
+        // from config (WALL_UPGRADE.siegeDefense = 0.40) instead of the
+        // hardcoded 0.40. Any future config tuning takes effect.
         var defCastleBonus = 0, defWallUpgradeBonus = 0;
         for (var _dbi = 0; _dbi < town.buildings.length; _dbi++) {
             var _dbld = town.buildings[_dbi];
             if (_dbld.condition === 'destroyed') continue;
             if (_dbld.type === 'castle') defCastleBonus += 0.50;
-            else if (_dbld.type === 'wall_upgrade') defWallUpgradeBonus += 0.40;
+            else {
+                var _dbBt = findBuildingType(_dbld.type);
+                if (_dbBt && _dbBt.siegeDefense) defWallUpgradeBonus += _dbBt.siegeDefense;
+            }
         }
 
         let defenseStrength = defInfCount * MILITARY_UNITS.infantry.defenseMult
@@ -20788,7 +20804,21 @@
             const wallProtection = targetTown.walls ? 1 - Math.min(targetTown.walls * 0.10, 0.40) : 1;
             rawKills = Math.floor(rawKills * wallProtection);
             // Fortress halves bombardment casualties (garrison retreats to fortified positions)
-            if (hasFortress) rawKills = Math.floor(rawKills * 0.50);
+            // v9p33river317: use PORT_FORTRESS.navalDefense config value
+            // (default 0.50) so the configured naval defense rating
+            // actually applies. Sum across all qualifying buildings.
+            if (hasFortress) {
+                var _nDef = 0;
+                for (var _nfi = 0; _nfi < targetTown.buildings.length; _nfi++) {
+                    var _nfb = targetTown.buildings[_nfi];
+                    if (_nfb.condition === 'destroyed') continue;
+                    var _nfBt = findBuildingType(_nfb.type);
+                    if (_nfBt && _nfBt.navalDefense) _nDef = Math.max(_nDef, _nfBt.navalDefense);
+                }
+                // Cast naval defense as damage reduction: 0.50 → halve kills.
+                var _navalCut = _nDef > 0 ? (1 - _nDef) : 0.50;
+                rawKills = Math.floor(rawKills * _navalCut);
+            }
             // Fortress walls absorb 75% of remaining kills as structural damage
             var _fwBld = null;
             for (var _fwi = 0; _fwi < targetTown.buildings.length; _fwi++) {

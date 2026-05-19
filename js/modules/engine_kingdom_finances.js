@@ -1047,7 +1047,14 @@
             maxGuards: Math.max(20, Math.floor(totalPop * 0.03)),
             // War budget (H-2): 40% of treasury reserved for military during war
             warBudget: atWar ? Math.floor(k.gold * 0.4) : 0,
-            civilianBudget: atWar ? Math.floor(k.gold * 0.6) : k.gold
+            civilianBudget: atWar ? Math.floor(k.gold * 0.6) : k.gold,
+            // v9p33river317: bug 13 — current-season tax sum (trade +
+            // property + income + healthcare) so callers comparing
+            // recent income aren't undercounted by reading only last
+            // season's stale total. Use max(current, lastSeason) so
+            // mid-season decisions see the higher number.
+            currentSeasonRevenue: (k.tradeTaxRevenue || 0) + (k.propertyTaxRevenue || 0) + (k.incomeTaxRevenue || 0) + (k.healthcareTaxRevenue || 0),
+            recentRevenue: Math.max(k._lastSeasonTaxRevenue || 0, (k.tradeTaxRevenue || 0) + (k.propertyTaxRevenue || 0) + (k.incomeTaxRevenue || 0) + (k.healthcareTaxRevenue || 0)),
         };
     }
 

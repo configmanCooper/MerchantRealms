@@ -1502,9 +1502,16 @@
                     for (var sbi = 0; sbi < syncTown.buildings.length; sbi++) {
                         if (syncTown.buildings[sbi].ownerId === em.id) {
                             var syncType = syncTown.buildings[sbi].type;
-                            var syncTracked = em.buildings.some(function(bb) { return bb.townId === syncTown.id && bb.type === syncType; });
-                            if (!syncTracked) {
-                                em.buildings.push({ townId: syncTown.id, type: syncType });
+                            // v9p33river317: include id when town building
+                            // has one, and also backfill missing ids on
+                            // existing em.buildings refs to match the
+                            // town building (so removal filters work).
+                            var _syncId = syncTown.buildings[sbi].id || null;
+                            var _syncMatch = em.buildings.find(function(bb) { return bb.townId === syncTown.id && bb.type === syncType; });
+                            if (_syncMatch) {
+                                if (!_syncMatch.id && _syncId) _syncMatch.id = _syncId;
+                            } else {
+                                em.buildings.push({ id: _syncId, townId: syncTown.id, type: syncType });
                             }
                         }
                     }

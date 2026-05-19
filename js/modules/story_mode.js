@@ -698,6 +698,16 @@ var StoryMode = (function () {
             try { UI.flashObjectiveComplete(objId); } catch (_e) {}
         }
 
+        // v9p33river317: ch17a conspiracy trigger was only fired from
+        // _checkUndermineLoyalty/Perceived/Reputation. If a non-undermine
+        // ch17a prerequisite (e.g. ch17a_outpost_pop) completed LAST,
+        // the conspiracy never triggered and victory stalled. Probe the
+        // trigger whenever any ch17a objective completes.
+        if (!_wasAlreadyDone && typeof objId === 'string' && objId.indexOf('ch17a_') === 0 &&
+            typeof _tryTriggerConspiracy === 'function') {
+            try { _tryTriggerConspiracy(); } catch (_te) {}
+        }
+
         // Auto-trigger follow-up dialogs when certain objectives complete
         var _followUpDialogs = {
             'ch12_attend_festival': 'ch12_lord_calder_meet',
