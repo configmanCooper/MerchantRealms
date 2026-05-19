@@ -882,10 +882,12 @@
                     var destPrice = (dest.market.prices[resId] || 0);
 
                     if (destPrice > localPrice * 1.2) {
-                        var sendQty = Math.min(inv[resId] - 2, maxCapacity - totalWeight);
+                        var _resDef = findResourceById ? findResourceById(resId) : null;
+                        var _unitWeight = (_resDef && _resDef.weight) || 1;
+                        var sendQty = Math.min(inv[resId] - 2, Math.floor((maxCapacity - totalWeight) / _unitWeight));
                         if (sendQty > 0) {
                             sendGoods[resId] = sendQty;
-                            totalWeight += sendQty;
+                            totalWeight += sendQty * _unitWeight; // v9p33river329: capacity is weight, not item count.
                             score += (destPrice - localPrice) * sendQty;
                         }
                     }

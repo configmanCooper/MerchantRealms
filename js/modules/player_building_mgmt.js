@@ -311,7 +311,7 @@
             var people = ENGINE_REF.getPeopleInTown(bld.townId);
             for (var i = 0; i < people.length; i++) {
                 var p = people[i];
-                if (p.alive && p.age >= 18 && p.age <= 60 && !p.isEliteMerchant && !p.isKing && !p.isNoble &&
+                if (p.alive && p.age >= 18 && p.age <= 60 && !p.isEliteMerchant && !p.isKing && !p.isNoble && !p.employerId &&
                     (!p.occupation || p.occupation === 'laborer' || p.occupation === 'merchant' || p.occupation === 'none')) {
                     candidates.push(p);
                 }
@@ -364,7 +364,7 @@
                 Player.state.employees.push(manager.id);
             }
         }
-        if (manager.employerId == null) manager.employerId = 'player';
+        manager.employerId = 'player';
 
         // Track employee relationship
         if (Player.modifyRelationship) Player.modifyRelationship(manager.id, 5, 'employer');
@@ -393,7 +393,14 @@
             if (idx >= 0) bld.workers.splice(idx, 1);
         }
 
-        if (Player.modifyRelationship) Player.modifyRelationship(bld._managerId, -10, 'fired');
+        var firedManagerId = bld._managerId;
+        if (Player.modifyRelationship) Player.modifyRelationship(firedManagerId, -10, 'fired');
+        var firedManager = ENGINE_REF ? ENGINE_REF.findPerson(firedManagerId) : null;
+        if (firedManager && firedManager.employerId === 'player') firedManager.employerId = null; // v9p33river329: keep NPC employment state in sync.
+        if (Player && Player.state && Player.state.employees) {
+            var empIdx = Player.state.employees.indexOf(firedManagerId);
+            if (empIdx >= 0) Player.state.employees.splice(empIdx, 1);
+        }
 
         bld._managerId = null;
         bld._managerName = null;
@@ -436,9 +443,16 @@
         } else {
             // Manager leaves to become EM
             var name = bld._managerName;
+            var leavingManagerId = bld._managerId;
             if (bld.workers) {
-                var idx = bld.workers.indexOf(bld._managerId);
+                var idx = bld.workers.indexOf(leavingManagerId);
                 if (idx >= 0) bld.workers.splice(idx, 1);
+            }
+            var leavingManager = ENGINE_REF ? ENGINE_REF.findPerson(leavingManagerId) : null;
+            if (leavingManager && leavingManager.employerId === 'player') leavingManager.employerId = null; // v9p33river329: clear manager employment when they leave.
+            if (Player && Player.state && Player.state.employees) {
+                var lmIdx = Player.state.employees.indexOf(leavingManagerId);
+                if (lmIdx >= 0) Player.state.employees.splice(lmIdx, 1);
             }
             bld._managerId = null;
             bld._managerName = null;
@@ -575,7 +589,7 @@
                             var wp = townPeople[wi];
                             if (wp.alive && wp.age >= 16 && wp.age <= 60 && !wp.isEliteMerchant && !wp.isKing &&
                                 wp.id !== bld._managerId &&
-                                bld.workers.indexOf(wp.id) < 0 &&
+                                bld.workers.indexOf(wp.id) < 0 && !wp.employerId &&
                                 (!wp.occupation || wp.occupation === 'laborer' || wp.occupation === 'none')) {
                                 bld.workers.push(wp.id);
                                 // v9p33river121: register in player.employees
@@ -595,7 +609,13 @@
                         if (bld.workers[fi] === bld._managerId) continue;
                         var fWorker = ENGINE_REF ? ENGINE_REF.findPerson(bld.workers[fi]) : null;
                         if (fWorker && (fWorker.workerSkill || 0) < 10 && rng.chance(0.05)) {
+                            var firedWorkerId = bld.workers[fi];
                             bld.workers.splice(fi, 1);
+                            if (fWorker.employerId === 'player') fWorker.employerId = null; // v9p33river329: clear fired worker state.
+                            if (Player && Player.state && Player.state.employees) {
+                                var fwIdx = Player.state.employees.indexOf(firedWorkerId);
+                                if (fwIdx >= 0) Player.state.employees.splice(fwIdx, 1);
+                            }
                         }
                     }
                 }
@@ -669,7 +689,8 @@
         // Sell output if better price elsewhere
         if (bt.produces) {
             var outputId = bld.currentProduct || bt.produces;
-            var stored = (player.townStorage && player.townStorage[bld.townId] && player.townStorage[bld.townId][outputId]) || 0;
+            if (!bld.inventory) bld.inventory = {};
+            var stored = bld.inventory[outputId] || 0; // v9p33river329: manager output is stored on the building inventory.
             if (stored > 15) {
                 var localSellPrice = (town.market.prices && town.market.prices[outputId]) || 5;
                 for (var ci3 = 0; ci3 < connections.length; ci3++) {
@@ -680,8 +701,8 @@
                         var caravanFee = 10;
                         var revenue = toSell * remoteP - caravanFee;
                         if (revenue > 0) {
-                            player.townStorage[bld.townId][outputId] -= toSell;
-                            if (player.townStorage[bld.townId][outputId] <= 0) delete player.townStorage[bld.townId][outputId];
+                            bld.inventory[outputId] -= toSell;
+                            if (bld.inventory[outputId] <= 0) delete bld.inventory[outputId];
                             if (!ct3.market.supply) ct3.market.supply = {};
                             ct3.market.supply[outputId] = (ct3.market.supply[outputId] || 0) + toSell;
                             player.gold += revenue;

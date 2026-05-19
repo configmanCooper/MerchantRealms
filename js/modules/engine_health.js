@@ -475,6 +475,7 @@
                 person.sick = false;
                 person.illness = null;
                 person.asymptomatic = false;
+                person.illnesses = []; // v9p33river329: clear array-backed illness state too.
                 person._illnessTreatPaid = false;
                 person.health = Math.min(100, person.health + 10);
                 return;
@@ -504,6 +505,7 @@
                     person.sick = false;
                     person.illness = null;
                     person.asymptomatic = false;
+                    person.illnesses = []; // v9p33river329: clear array-backed illness state too.
                     person._illnessTreatPaid = false;
                     person.health = Math.min(100, Math.max(5, person.health) + 5);
                     return;
@@ -1008,6 +1010,7 @@
                             // Downgrade to regular quarantine
                             dPol.type = 'quarantine_town';
                             dPol.expiresDay = day + 30;
+                            dPol.costPerDay = 8; // v9p33river329: downgrade cost with the policy type.
                             logEvent('📉 ' + kingdom.name + ' relaxed martial quarantine to standard quarantine in ' + ts.town.name + '.', {
                                 type: 'health_policy_relaxed', townId: ts.town.id, kingdomId: kingdom.id
                             });
@@ -1015,6 +1018,7 @@
                             // Downgrade to just medical funding
                             dPol.type = 'medical_funding';
                             dPol.expiresDay = day + 30;
+                            dPol.costPerDay = 10; // v9p33river329: don't keep quarantine pricing after downgrade.
                             logEvent('📉 ' + kingdom.name + ' lifted quarantine in ' + ts.town.name + ', continuing medical support.', {
                                 type: 'health_policy_relaxed', townId: ts.town.id, kingdomId: kingdom.id
                             });
@@ -1087,8 +1091,8 @@
                         conviction: bestPolicy.type === 'martial_quarantine' ? 0.8 : 0.5,
                         execute: (function(kRef, bp, tsRef) { return function() {
                             for (var oi2 = kRef.healthPolicies.length - 1; oi2 >= 0; oi2--) {
-                                if (kRef.healthPolicies[oi2].townId === tsRef.town.id && kRef.healthPolicies[oi2].active) {
-                                    kRef.healthPolicies[oi2].active = false;
+                                if (kRef.healthPolicies[oi2].townId === tsRef.town.id && kRef.healthPolicies[oi2].active && kRef.healthPolicies[oi2].type !== 'close_port') {
+                                    kRef.healthPolicies[oi2].active = false; // v9p33river329: port closures can coexist with medical/quarantine policy.
                                 }
                             }
                             kRef.healthPolicies.push({
@@ -1106,8 +1110,8 @@
                 } else {
                 // Remove existing lower-tier policy for this town before adding
                 for (var oi = kingdom.healthPolicies.length - 1; oi >= 0; oi--) {
-                    if (kingdom.healthPolicies[oi].townId === ts.town.id && kingdom.healthPolicies[oi].active) {
-                        kingdom.healthPolicies[oi].active = false;
+                    if (kingdom.healthPolicies[oi].townId === ts.town.id && kingdom.healthPolicies[oi].active && kingdom.healthPolicies[oi].type !== 'close_port') {
+                        kingdom.healthPolicies[oi].active = false; // v9p33river329: keep independent port closure active.
                     }
                 }
 
@@ -1561,7 +1565,28 @@
                             if (patient._noSupplyRetries > 30) {
                                 // Too many retries — discharge patient untreated
                                 var _dischPerson = findPerson(patient.personId);
-                                if (_dischPerson) _dischPerson._illnessTreatPaid = false;
+                                if (_dischPerson) {
+                                    _dischPerson._illnessTreatPaid = false;
+                                    if (patient.fee) {
+                                        _dischPerson.gold = (_dischPerson.gold || 0) + patient.fee; // v9p33river329: refund failed no-supply treatment.
+                                        var _rfTax = Math.floor(patient.fee * healthcareTaxRate);
+                                        var _rfOwner = patient.fee - _rfTax;
+                                        if (isKingdomOwned && kingdom) {
+                                            kingdom.gold = Math.max(0, (kingdom.gold || 0) - patient.fee);
+                                            kingdom.healthcareTaxRevenue = Math.max(0, (kingdom.healthcareTaxRevenue || 0) - _rfTax);
+                                        } else {
+                                            if (kingdom && _rfTax > 0) {
+                                                kingdom.gold = Math.max(0, (kingdom.gold || 0) - _rfTax);
+                                                kingdom.healthcareTaxRevenue = Math.max(0, (kingdom.healthcareTaxRevenue || 0) - _rfTax);
+                                            }
+                                            if (isPlayerOwned) bld.retailRevenue = Math.max(0, (bld.retailRevenue || 0) - _rfOwner);
+                                            else if (bld.ownerId) {
+                                                var _rfOwnerP = findPerson(bld.ownerId);
+                                                if (_rfOwnerP) _rfOwnerP.gold = Math.max(0, (_rfOwnerP.gold || 0) - _rfOwner);
+                                            }
+                                        }
+                                    }
+                                }
                                 bld._treatmentQueue.splice(qi, 1);
                                 qi--;
                             } else {
@@ -1583,6 +1608,7 @@
                                 person.sick = false;
                                 person.illness = null;
                                 person.asymptomatic = false;
+                                person.illnesses = []; // v9p33river329: treatment cure clears legacy and array illness state.
                             }
                             if (!_cureIsIll) {
                                 person.injured = false;
@@ -2155,14 +2181,12 @@
             var bld = town.buildings[i];
             if (bld.type === 'hospital' || bld.type === 'clinic') {
                 var bt = findBuildingType(bld.type);
-                if (!bld._treatmentFees) {
-                    bld._treatmentFees = {
-                        minor:    getHospitalTreatmentFee(town, bld, bt, 'minor'),
-                        moderate: getHospitalTreatmentFee(town, bld, bt, 'moderate'),
-                        serious:  getHospitalTreatmentFee(town, bld, bt, 'serious'),
-                        severe:   getHospitalTreatmentFee(town, bld, bt, 'severe'),
-                    };
-                }
+                bld._treatmentFees = {
+                    minor:    getHospitalTreatmentFee(town, bld, bt, 'minor'),
+                    moderate: getHospitalTreatmentFee(town, bld, bt, 'moderate'),
+                    serious:  getHospitalTreatmentFee(town, bld, bt, 'serious'),
+                    severe:   getHospitalTreatmentFee(town, bld, bt, 'severe'),
+                }; // v9p33river329: UI fees depend on live queue/workers/prosperity/prices.
                 var kingdom = findKingdom(town.kingdomId);
                 var taxRate = (kingdom && kingdom.healthcareTaxRate != null) ? kingdom.healthcareTaxRate : 0.10;
                 var queueLen = bld._treatmentQueue ? bld._treatmentQueue.length : 0;

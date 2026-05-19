@@ -196,6 +196,8 @@ window.Game = (function () {
         if (btnEndOk) {
             btnEndOk.addEventListener('click', function () {
                 state = 'title';
+                var endScreen = document.getElementById('endScreen');
+                if (endScreen) { endScreen.classList.add('hidden'); endScreen.style.display = 'none'; } // v9p33river329: hide end overlay when returning to title.
             });
         }
 
@@ -2901,6 +2903,7 @@ window.Game = (function () {
     var _idb = null;       // IDBDatabase reference (null until opened)
     var _idbReady = false; // true once DB is open and usable
     var _idbFailed = false; // true if IndexedDB not available — use localStorage fallback
+    var _knownIDBSaveKeys = {}; // v9p33river329: sync hint for IDB-only saves.
 
     function _openIDB() {
         return new Promise(function(resolve, reject) {
@@ -2917,6 +2920,7 @@ window.Game = (function () {
                 req.onsuccess = function(e) {
                     _idb = e.target.result;
                     _idbReady = true;
+                    _refreshKnownIDBSaveKeys(); // v9p33river329: let sync hasSave see IDB-only payloads after open.
                     resolve(_idb);
                 };
                 req.onerror = function(e) {
@@ -2981,6 +2985,14 @@ window.Game = (function () {
         });
     }
 
+    function _refreshKnownIDBSaveKeys() {
+        if (!_idbReady || _idbFailed) return;
+        _idbGetAllKeys().then(function(keys) {
+            _knownIDBSaveKeys = {};
+            for (var ki = 0; ki < keys.length; ki++) _knownIDBSaveKeys[keys[ki]] = true;
+        }).catch(function() {});
+    }
+
     // Compress data to a string for storage
     function _compressSaveData(data) {
         var jsonStr = JSON.stringify(data);
@@ -3005,6 +3017,7 @@ window.Game = (function () {
     // Store save data — IndexedDB primary, localStorage fallback
     function _storeSave(key, data) {
         var compressed = _compressSaveData(data);
+        _knownIDBSaveKeys[key] = true; // v9p33river329: remember payload even if metadata is later missing.
         // Always store metadata in localStorage (tiny, sync for slot picker)
         _storeMetaSync(key, data);
         if (_idbReady && !_idbFailed) {
@@ -3051,6 +3064,7 @@ window.Game = (function () {
     function _deleteSave(key) {
         try { localStorage.removeItem(key); } catch(e) {}
         try { localStorage.removeItem(key + '_meta'); } catch(e) {}
+        delete _knownIDBSaveKeys[key];
         if (_idbReady && !_idbFailed) {
             return _idbDelete(key).catch(function(err) {
                 console.warn('[Save] IDB delete failed:', err);
@@ -3159,6 +3173,24 @@ window.Game = (function () {
     const CURRENT_SAVE_VERSION = 6;
 
     const SAVE_MIGRATIONS = {
+        // v1 → v2: Backfill core player containers introduced after early saves.
+        1: function(data) {
+            if (data.player) {
+                if (!data.player.relationships) data.player.relationships = {};
+                if (!data.player.guildMemberships) data.player.guildMemberships = {};
+                if (!data.player.achievements) data.player.achievements = {};
+                if (!data.player.trackedMerchants) data.player.trackedMerchants = [];
+            }
+        },
+        // v2 → v3: Backfill family/corruption containers used by later deserializers.
+        2: function(data) {
+            if (data.player) {
+                if (!data.player.familyMembers) data.player.familyMembers = [];
+                if (!data.player.criminalRecord) data.player.criminalRecord = {};
+                if (!data.player.forgedDocuments) data.player.forgedDocuments = {};
+                if (!data.player.forgedKingdomDocs) data.player.forgedKingdomDocs = {}; // v9p33river329: preserve kingdom-scoped forged docs in old saves.
+            }
+        },
         // v3 → v4: Add notification filter defaults, ensure agents array
         3: function(data) {
             if (data.player) {
@@ -3851,6 +3883,7 @@ window.Game = (function () {
     function hasSave() {
         for (let i = 1; i <= NUM_SAVE_SLOTS; i++) {
             if (localStorage.getItem(SAVE_SLOT_PREFIX + i + '_meta')) return true;
+            if (_knownIDBSaveKeys[SAVE_SLOT_PREFIX + i]) return true; // v9p33river329: IDB payload can outlive localStorage metadata.
         }
         return false;
     }

@@ -1144,7 +1144,7 @@ var StoryMode = (function () {
         if (actionType === 'noble_intrigue' && data) {
             // Check if target kingdom is the enemy (Korvath) during diplomatic path
             if (_storyState.path === 'diplomatic' && data.targetKingdomId) {
-                var enemyKingdom = _storyState.flags.enemyKingdomId;
+                var enemyKingdom = _storyState.flags.enemyKingdomId || _storyState.flags._enemyKingdomId; // v9p33river329: setup stores underscored id.
                 if (data.targetKingdomId === enemyKingdom) {
                     // Track loyalty reduction (from turnNobleAgainstKing)
                     if (data.loyaltyReduced) {
@@ -1810,6 +1810,7 @@ var StoryMode = (function () {
                     enemyKingdomId = _candidates[_idx].id;
                 }
                 _storyState.flags._enemyKingdomId = enemyKingdomId;
+                _storyState.flags.enemyKingdomId = enemyKingdomId; // v9p33river329: keep action matcher and setup flag names in sync.
             }
         }
 

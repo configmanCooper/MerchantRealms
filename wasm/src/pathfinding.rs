@@ -108,7 +108,8 @@ pub extern "C" fn pathfinding_dijkstra(
     to_node: u32,
 ) -> u32 {
     let n = num_nodes as usize;
-    if n > MAX_NODES || n == 0 {
+    if n > MAX_NODES || n == 0 || (from_node as usize) >= n || (to_node as usize) >= n {
+        // v9p33river329: reject invalid endpoints before indexing static arrays.
         unsafe { PATH_RESULT_LEN = 0; }
         return 0;
     }
@@ -134,6 +135,10 @@ pub extern "C" fn pathfinding_dijkstra(
 
     while let Some((node_id, _cost)) = heap_pop() {
         let ni = node_id as usize;
+        // v9p33river329: defensive guard for any malformed heap entry.
+        if ni >= n {
+            continue;
+        }
         unsafe {
             if VISITED[ni] {
                 continue;

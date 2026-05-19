@@ -2606,6 +2606,14 @@
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('📝 Your forged ' + _fdType.replace(/_/g, ' ') + ' has expired.', 'info', 'my_business');
             }
         }
+        player.forgedKingdomDocs = player.forgedKingdomDocs || {};
+        for (var _fkd in player.forgedKingdomDocs) {
+            var _docs = player.forgedKingdomDocs[_fkd];
+            for (var _dk in _docs) {
+                if (_docs[_dk] <= day) delete _docs[_dk]; // v9p33river329: expire kingdom-scoped forged docs daily.
+            }
+            if (!_docs.license && !_docs.citizenship) delete player.forgedKingdomDocs[_fkd];
+        }
 
         // Auto-repair sabotaged roads
         for (let i = player.sabotagedRoads.length - 1; i >= 0; i--) {

@@ -732,7 +732,7 @@
             if (mode === 'sea') {
                 if (t === TERRAIN.WATER.id) return 1.0;
                 if (t === TERRAIN.SAND.id) return 8.0;
-                return 100.0;  // Heavily discourage land; pathfinder still reaches coastal water
+                return 9999.0;  // v9p33river329: block non-coastal land for sea paths instead of merely discouraging it.
             } else {
                 // land mode
                 if (t === TERRAIN.GRASS.id) return 1.0;
@@ -7473,6 +7473,9 @@
                     // Leave
                     removeWorkerFromBuilding(p);
                     p.employerId = null;
+                    if (_wasPlayerWorker && typeof Player !== 'undefined' && Player.state && Player.state.employees) {
+                        Player.state.employees = Player.state.employees.filter(function(id) { return id !== p.id; }); // v9p33river329: remove stale player employee entry.
+                    }
                     if (_wasPlayerWorker) logEvent(`${p.firstName} ${p.lastName} quit over wages.`);
                 } else if (roll < 0.80) {
                     // Stay unhappy — productivity penalty for 30 days
@@ -8295,8 +8298,8 @@
             }
         }
         if (!p.isEliteMerchant && town) {
-            var _deadKingdom = findKingdom(town.kingdomId);
-            var _deadKingdomId = _deadKingdom ? _deadKingdom.id : null;
+            var _deadKingdom = findKingdom(town.kingdomId || p.kingdomId || p.citizenshipKingdomId);
+            var _deadKingdomId = _deadKingdom ? _deadKingdom.id : (p.kingdomId || p.citizenshipKingdomId || null); // v9p33river329: keep an estate owner fallback if death town kingdom is stale.
             // Determine heir: spouse first
             var _bldHeir = null;
             if (p.spouseId) {
@@ -8328,7 +8331,8 @@
                 if (!_dt.buildings) continue;
                 for (var _dbi = 0; _dbi < _dt.buildings.length; _dbi++) {
                     if (_dt.buildings[_dbi].ownerId === p.id) {
-                        _dt.buildings[_dbi].ownerId = _newOwnerId;
+                        var _estateOwnerId = _newOwnerId || _dt.kingdomId || _deadKingdomId;
+                        _dt.buildings[_dbi].ownerId = _estateOwnerId; // v9p33river329: don't orphan buildings if NPC kingdom data is stale.
                     }
                 }
             }
@@ -13003,7 +13007,7 @@
                                             if (!_pAptBld.units[_aui].occupantId) { vacantUnit = _pAptBld.units[_aui]; break; }
                                         }
                                         if (vacantUnit && (newborn.gold || 0) + parentHelp >= _aptCost) {
-                                            var childPays = Math.max(0, _aptCost - parentHelp);
+                                            var childPays = Math.min(newborn.gold || 0, Math.max(0, _aptCost - parentHelp)); // v9p33river329: never overdraw newborn funds.
                                             newborn.gold -= childPays;
                                             parent.gold -= parentHelp;
                                             vacantUnit.occupantId = newborn.id;
@@ -24151,6 +24155,7 @@
                     }
                     if ((person.gold || 0) >= weeklyFee) {
                         person.gold -= weeklyFee;
+                        unit._missedPayments = 0; // v9p33river329: successful payment resets eviction counter.
                         // Revenue goes to building owner (kingdom or EM)
                         if (bld.ownerId) {
                             var aptOwnerK = findKingdom(bld.ownerId);

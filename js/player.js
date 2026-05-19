@@ -247,6 +247,7 @@
         smugglingRoutes: [],            // [{ fromTownId, toTownId, resource, expiresDay }]
         protectionRackets: {},          // { townId: { paymentPerWeek, lastCollectDay, npcsIntimidated } }
         forgedDocuments: {},            // { type: expiresDay } — active forged permits/titles
+        forgedKingdomDocs: {},          // v9p33river329: { kingdomId: { license, citizenship } } expirations.
         doubleAgentActive: null,        // { enemyKingdomId, startDay, paymentPerSeason } or null
         doubleNobleAgent: null,         // { targetKingdomId, sponsorKingdomId, tasks: [...], startDay, completed: 0 } or null
         nobleIntrigues: {},             // { targetNobleId: { type, startDay, ... } }
@@ -2561,6 +2562,10 @@
         if (!town) return { success: false, message: 'Town not found.' };
         var bld = town.buildings[buildingIndex];
         if (!bld) return { success: false, message: 'Building not found.' };
+        var _selectedOwnedOrdinal = 0;
+        for (var _obi = 0; _obi < buildingIndex; _obi++) {
+            if (town.buildings[_obi] && town.buildings[_obi].ownerId === 'player' && town.buildings[_obi].type === bld.type) _selectedOwnedOrdinal++;
+        }
         if (!bld.forSale && bld.ownerId !== 'player') return { success: false, message: 'Building is not for sale.' };
 
         var newBt = Engine.findBuildingType(newBuildingTypeId);
@@ -2642,10 +2647,18 @@
 
         // If player owned the old building, remove it from player.buildings
         if (bld.ownerId === 'player') {
-            var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type === bld.type; });
+            var pIdx = -1;
+            var _seenOwned = 0;
+            for (var _pbi = 0; _pbi < player.buildings.length; _pbi++) {
+                var _pb = player.buildings[_pbi];
+                if (_pb.townId === tid && _pb.type === bld.type) {
+                    if (_seenOwned === _selectedOwnedOrdinal) { pIdx = _pbi; break; }
+                    _seenOwned++;
+                }
+            }
             if (pIdx >= 0) {
                 _clearTransferTargetsFor(player.buildings[pIdx].id);
-                player.buildings.splice(pIdx, 1);
+                player.buildings.splice(pIdx, 1); // v9p33river329: remove selected duplicate by ordinal, not first type match.
             }
         }
 
@@ -2684,6 +2697,11 @@
         if (!town) return { success: false, message: 'Town not found.' };
         var bld = town.buildings[buildingIndex];
         if (!bld) return { success: false, message: 'Building not found.' };
+        var oldFarmType = bld.type;
+        var _farmOwnedOrdinal = 0;
+        for (var _fobi = 0; _fobi < buildingIndex; _fobi++) {
+            if (town.buildings[_fobi] && town.buildings[_fobi].ownerId === 'player' && town.buildings[_fobi].type === oldFarmType) _farmOwnedOrdinal++;
+        }
         if (bld.ownerId !== 'player') return { success: false, message: 'You do not own this building.' };
 
         // Get conversion cost info
@@ -2728,15 +2746,14 @@
         }
 
         // Update player buildings record
-        var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type !== newTypeId && (pb.type === bld.type || !bld.type); });
-        // The building was converted in-place, update player record
+        var _seenFarm = 0;
         for (var pi = 0; pi < player.buildings.length; pi++) {
-            if (player.buildings[pi].townId === tid && player.buildings[pi].type !== newTypeId) {
-                // Find the matching old type
-                var oldType = result.building ? null : bld.type;
-                // The engine updated bld.type in place, so check by index
-                player.buildings[pi].type = newTypeId;
-                break;
+            if (player.buildings[pi].townId === tid && player.buildings[pi].type === oldFarmType) {
+                if (_seenFarm === _farmOwnedOrdinal) {
+                    player.buildings[pi].type = newTypeId; // v9p33river329: retag the selected duplicate, not the first unrelated building.
+                    break;
+                }
+                _seenFarm++;
             }
         }
 
@@ -2752,6 +2769,11 @@
         if (!town) return { success: false, message: 'Town not found.' };
         var bld = town.buildings[buildingIndex];
         if (!bld) return { success: false, message: 'Building not found.' };
+        var _demolishType = bld.type;
+        var _demolishOwnedOrdinal = 0;
+        for (var _dobi = 0; _dobi < buildingIndex; _dobi++) {
+            if (town.buildings[_dobi] && town.buildings[_dobi].ownerId === 'player' && town.buildings[_dobi].type === _demolishType) _demolishOwnedOrdinal++;
+        }
         if (bld.ownerId !== 'player') return { success: false, message: 'You can only demolish buildings you own.' };
 
         var conversionCost = Math.floor(getLandCost(tid) / 2);
@@ -2823,10 +2845,17 @@
 
         // Remove from player buildings
         var bt = Engine.findBuildingType(bld.type);
-        var pIdx = player.buildings.findIndex(function(pb) { return pb.townId === tid && pb.type === bld.type; });
+        var pIdx = -1;
+        var _seenDemolish = 0;
+        for (var _dpbi = 0; _dpbi < player.buildings.length; _dpbi++) {
+            if (player.buildings[_dpbi].townId === tid && player.buildings[_dpbi].type === _demolishType) {
+                if (_seenDemolish === _demolishOwnedOrdinal) { pIdx = _dpbi; break; }
+                _seenDemolish++;
+            }
+        }
         if (pIdx >= 0) {
             _clearTransferTargetsFor(player.buildings[pIdx].id);
-            player.buildings.splice(pIdx, 1);
+            player.buildings.splice(pIdx, 1); // v9p33river329: demolish selected duplicate by ordinal.
         }
 
         // Perform demolition via Engine
@@ -5828,6 +5857,10 @@
             // Clear street trading cache so new town gets fresh offers
             player._streetTradesCache = null;
             player._streetTradesDay = 0;
+            player._streetContrabandCache = null;
+            player._streetContrabandDay = 0;
+            player._streetBuyCache = null;
+            player._streetBuyDay = 0;
 
             const town = Engine.findTown(player.townId);
             Engine.logEvent(`You have arrived at ${town ? town.name : 'your destination'}.`, null, 'travel_events');
@@ -8806,11 +8839,11 @@
         }
         var feastCost = 500;
         if (kingdom.gold < feastCost) return { success: false, message: 'Treasury needs ' + feastCost + 'g for a feast.' };
-        kingdom.gold -= feastCost;
-        player.kingState.feastHeldDay = Engine.getDay();
         // Create the feast event via engine with scheduling
         var feast = Engine.startRoyalFeast(player.kingState.kingdomId, leadDays);
         if (!feast) return { success: false, message: 'Could not schedule feast.' };
+        kingdom.gold -= feastCost;
+        player.kingState.feastHeldDay = Engine.getDay(); // v9p33river329: set cooldown only after engine accepts.
         // Boost happiness
         if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 5);
         // Boost noble relationships
@@ -8878,10 +8911,10 @@
         if (!leadDays) {
             return { success: true, showSchedule: true, eventType: 'court', kingdomId: player.kingState.kingdomId };
         }
-        player.kingState.courtHeldDay = Engine.getDay();
         // Create court session with scheduling
         var court = Engine.startCourtSession(player.kingState.kingdomId, leadDays);
         if (!court) return { success: false, message: 'Could not schedule court.' };
+        player.kingState.courtHeldDay = Engine.getDay(); // v9p33river329: set cooldown only after engine accepts.
         // Boost reputation and reduce revolt risk
         if (kingdom.happiness != null) kingdom.happiness = Math.min(100, kingdom.happiness + 3);
         var title = player.sex === 'F' ? 'Queen' : 'King';
@@ -19114,6 +19147,7 @@
             smugglingRoutes: structuredClone(player.smugglingRoutes || []),
             protectionRackets: structuredClone(player.protectionRackets || {}),
             forgedDocuments: structuredClone(player.forgedDocuments || {}),
+            forgedKingdomDocs: structuredClone(player.forgedKingdomDocs || {}), // v9p33river329: persist kingdom-scoped forged docs.
             doubleAgentActive: player.doubleAgentActive ? structuredClone(player.doubleAgentActive) : null,
             doubleNobleAgent: player.doubleNobleAgent ? structuredClone(player.doubleNobleAgent) : null,
             nobleIntrigues: structuredClone(player.nobleIntrigues || {}),
@@ -19686,6 +19720,7 @@
         player.smugglingRoutes = data.smugglingRoutes || [];
         player.protectionRackets = data.protectionRackets || {};
         player.forgedDocuments = data.forgedDocuments || {};
+        player.forgedKingdomDocs = data.forgedKingdomDocs || {}; // v9p33river329: restore kingdom-scoped forged docs.
         player.doubleAgentActive = data.doubleAgentActive || null;
         player.doubleNobleAgent = data.doubleNobleAgent || null;
         player.nobleIntrigues = data.nobleIntrigues || {};
@@ -21033,6 +21068,14 @@
                 // only to spouse-related expenses) was being multiplied
                 // into employee wages. Employees aren't spouses; their
                 // wage should ignore spouse cost modifiers.
+                var _assignedToPlayerBuilding = false;
+                for (var _wbi = 0; _wbi < player.buildings.length; _wbi++) {
+                    if (player.buildings[_wbi].workers && player.buildings[_wbi].workers.indexOf(empId) >= 0) { _assignedToPlayerBuilding = true; break; }
+                }
+                if (person.employerId !== 'player' || (!_assignedToPlayerBuilding && person.spouseId !== 'player')) {
+                    quitters.push(empId); // v9p33river329: skip stale employee entries instead of paying them.
+                    continue;
+                }
                 const wage = Math.floor(_calculateWorkerWage(person));
                 if (player.gold >= wage) {
                     player.gold -= wage;
@@ -22274,13 +22317,13 @@
         // Check kingdom override
         if (kingdom && kingdom.crimePunishments && kingdom.crimePunishments[crimeId]) {
             var override = kingdom.crimePunishments[crimeId];
-            result = { type: override.type, jailDays: override.jailDays || crimeType.defaultJailDays, fine: override.fine || crimeType.defaultFine };
+            result = { type: override.type || crimeType.defaultPunishment, jailDays: override.jailDays != null ? override.jailDays : crimeType.defaultJailDays, fine: override.fine != null ? override.fine : crimeType.defaultFine }; // v9p33river329: preserve intentional zero overrides.
         } else {
             // Use defaults
             result = { type: crimeType.defaultPunishment, jailDays: crimeType.defaultJailDays, fine: crimeType.defaultFine };
         }
-        // Enforce minimum fine (no crime should have 0g fine)
-        if (result.type !== 'execution' && result.fine < 25) result.fine = 25;
+        // Enforce minimum fine only when the punishment is actually a fine.
+        if (result.type === 'fine' && result.fine < 25) result.fine = 25; // v9p33river329: jail-only/waived-fine overrides may intentionally use 0.
         return result;
     }
 
@@ -29909,7 +29952,7 @@
 
         // Refresh every few days
         const day = Engine.getDay();
-        if (!player._streetTradesCache || !player._streetTradesDay || day - player._streetTradesDay >= CONFIG.STREET_TRADE_REFRESH_DAYS) {
+        if (!player._streetTradesCache || player._streetTradesTownId !== town.id || !player._streetTradesDay || day - player._streetTradesDay >= CONFIG.STREET_TRADE_REFRESH_DAYS) { // v9p33river329: cache is town-scoped.
             const trades = [];
             const people = Engine.getPeople(town.id);
             var kingdom = town ? Engine.findKingdom(town.kingdomId) : null;
@@ -30002,6 +30045,7 @@
             }
             player._streetTradesCache = trades;
             player._streetTradesDay = day;
+            player._streetTradesTownId = town.id;
         }
         return player._streetTradesCache || [];
     }
@@ -30023,7 +30067,7 @@
         if (!rng) return [];
 
         var day = Engine.getDay();
-        if (player._streetContrabandCache && player._streetContrabandDay && day - player._streetContrabandDay < (CONFIG.STREET_TRADE_REFRESH_DAYS || 3)) {
+        if (player._streetContrabandCache && player._streetContrabandTownId === town.id && player._streetContrabandDay && day - player._streetContrabandDay < (CONFIG.STREET_TRADE_REFRESH_DAYS || 3)) { // v9p33river329: cache is town-scoped.
             // Refresh held qty each time (inventory changes)
             var cached = player._streetContrabandCache;
             for (var ci = 0; ci < cached.length; ci++) {
@@ -30048,6 +30092,7 @@
         if (contrabandItems.length === 0) {
             player._streetContrabandCache = [];
             player._streetContrabandDay = day;
+            player._streetContrabandTownId = town.id;
             return [];
         }
 
@@ -30100,6 +30145,7 @@
 
         player._streetContrabandCache = offers;
         player._streetContrabandDay = day;
+        player._streetContrabandTownId = town.id;
         return offers;
     }
 
@@ -30151,8 +30197,8 @@
         if (!rng) return [];
 
         var day = Engine.getDay();
-        if (player._streetBuyCache && player._streetBuyDay && day - player._streetBuyDay < (CONFIG.STREET_TRADE_REFRESH_DAYS || 3)) {
-            return player._streetBuyCache || [];
+        if (player._streetBuyCache && player._streetBuyTownId === town.id && player._streetBuyDay && day - player._streetBuyDay < (CONFIG.STREET_TRADE_REFRESH_DAYS || 3)) {
+            return player._streetBuyCache || []; // v9p33river329: cache is town-scoped.
         }
 
         var offers = [];
@@ -30282,6 +30328,7 @@
 
         player._streetBuyCache = offers;
         player._streetBuyDay = day;
+        player._streetBuyTownId = town.id;
         return offers;
     }
 

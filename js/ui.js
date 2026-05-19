@@ -7151,7 +7151,7 @@ window.UI = (function () {
                 world.eventLog.length = 0;
             }
         } catch (e) {}
-        if (Player.tradeLog) Player.tradeLog.length = 0;
+        // v9p33river329: Clear Log is for event notifications only; keep Player.tradeLog history intact.
         _lastSeenEventCount = 0;
         // Force badge hidden immediately
         if (el.notifCount) {

@@ -223,7 +223,8 @@
         // Calculate total cost
         var totalCost = (CONFIG.WEDDING_COST_BASE || 50) + (venue.cost || 0) + (feast.cost || 0);
         if (player.gold < totalCost) {
-            return { success: false, message: 'Cannot afford wedding! Need ' + totalCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
+            player.weddingPlan = null; // v9p33river329: failed finalization must not leave an impossible stuck plan.
+            return { success: false, message: 'Cannot afford wedding! Need ' + totalCost + 'g (have ' + Math.floor(player.gold) + 'g). The wedding plan has been cancelled.' };
         }
 
         player.gold -= totalCost;

@@ -76,7 +76,9 @@ pub extern "C" fn caravan_subtick(
             }
         }
 
-        let dist = if total_dist > 1.0 { total_dist } else { 1.0 };
+        // v9p33river329: preserve legitimate sub-1.0 route distances;
+        // only fall back when the distance is invalid/non-positive.
+        let dist = if total_dist > 0.0 { total_dist } else { 1.0 };
         let new_progress = progress + (caravan_speed / dist) / ticks_per_day;
         let clamped = if new_progress >= 1.0 {
             arrived += 1;

@@ -393,6 +393,30 @@
         return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g (' + timeDesc + ').' + waitDesc + nobleNote };
     }
 
+    function _findPlayerMedicalBuildingRecord(town, medBld) {
+        if (!medBld || !player || !Array.isArray(player.buildings)) return medBld;
+        for (var i = 0; i < player.buildings.length; i++) {
+            if (medBld.id && player.buildings[i].id === medBld.id) return player.buildings[i];
+        }
+        if (!town || !Array.isArray(town.buildings)) return medBld;
+        var ordinal = 0;
+        for (var ti = 0; ti < town.buildings.length; ti++) {
+            var tb = town.buildings[ti];
+            if (!tb || tb.ownerId !== 'player' || tb.type !== medBld.type) continue;
+            if (tb === medBld) break;
+            ordinal++;
+        }
+        var seen = 0;
+        for (var pi = 0; pi < player.buildings.length; pi++) {
+            var pb = player.buildings[pi];
+            if (pb.townId === town.id && pb.type === medBld.type) {
+                if (seen === ordinal) return pb;
+                seen++;
+            }
+        }
+        return medBld;
+    }
+
     function _payHealthcareRevenue(town, fee, bldType) {
         _sync();
         if (!town) return;
@@ -438,9 +462,8 @@
                 kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + taxAmount;
             }
             if (isPlayerOwned) {
-                // Player-owned: credit to player directly
-                player.gold += ownerRevenue;
-                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + ownerRevenue;
+                var playerMedBld = _findPlayerMedicalBuildingRecord(town, medBld);
+                playerMedBld.retailRevenue = (playerMedBld.retailRevenue || 0) + ownerRevenue; // v9p33river329: credit the collectible player-owned medical building ledger.
             } else if (medBld && medBld.ownerId) {
                 var owner = Engine.findPerson(medBld.ownerId);
                 if (owner && owner.alive) owner.gold = (owner.gold || 0) + ownerRevenue;
@@ -644,9 +667,20 @@
         // Heal the NPC
         if (patient.injuries && patient.injuries.length > 0) {
             patient.injuries.shift();
+            if (patient.injuries.length === 0) {
+                patient.injured = false;
+                patient.injuryType = null;
+                patient.injuryName = null;
+                patient.injurySeverity = null;
+            }
         } else if (patient.illnesses && patient.illnesses.length > 0) {
             patient.illnesses.shift();
-        }
+            if (patient.illnesses.length === 0) {
+                patient.sick = false;
+                patient.illness = null;
+                patient.asymptomatic = false;
+            }
+        } // v9p33river329: clear legacy flags when array conditions are gone.
 
         // Payment based on skill level
         var basePay = hasSkill('doctor') ? 25 : 15;

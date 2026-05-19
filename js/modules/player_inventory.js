@@ -683,6 +683,7 @@
         if (!house.addons) house.addons = [];
         if (house.addons.indexOf(addonId) >= 0) return { success: false, message: 'Already installed.' };
         if (player.gold < addon.goldCost) return { success: false, message: 'Need ' + addon.goldCost + ' gold (have ' + Math.floor(player.gold) + ').' };
+        var addonMarketCost = 0;
         // Check materials
         if (addon.materials) {
             for (var matId in addon.materials) {
@@ -696,7 +697,14 @@
                     var res = findResource(matId);
                     return { success: false, message: 'Need ' + need + ' ' + (res ? res.name : matId) + ' (have ' + have + ', home ' + houseHas + ', market ' + mktHas + ').' };
                 }
+                var needFromMarket = Math.max(0, need - have - houseHas);
+                if (needFromMarket > 0) {
+                    var matTown = Engine.findTown(player.townId);
+                    var matPrice = (matTown && matTown.market && matTown.market.prices && matTown.market.prices[matId]) || 10;
+                    addonMarketCost += needFromMarket * matPrice;
+                }
             }
+            if (player.gold < addon.goldCost + addonMarketCost) return { success: false, message: 'Need ' + (addon.goldCost + addonMarketCost) + ' gold including market materials (have ' + Math.floor(player.gold) + ').' }; // v9p33river329: preflight total addon affordability.
             // Deduct materials: from inventory first, then home storage, then buy from market
             for (var matId2 in addon.materials) {
                 var need2 = addon.materials[matId2];
@@ -715,6 +723,7 @@
                         if (bought > 0) {
                             var mktPrice = (town2.market.prices && town2.market.prices[matId2]) || 10;
                             player.gold -= bought * mktPrice;
+                            if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town2.id, bought * mktPrice); // v9p33river329: addon market buys pay the market.
                             town2.market.supply[matId2] = (town2.market.supply[matId2] || 0) - bought;
                             need2 -= bought;
                         }

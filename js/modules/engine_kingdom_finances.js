@@ -1047,6 +1047,16 @@
         else if (p.intelligence === 'clever') reserveMult = 1.25;
         else if (p.intelligence === 'dim') reserveMult = 0.7;
         else if (p.intelligence === 'foolish') reserveMult = 0.4;
+        var _taxSeasonLen = (CONFIG && CONFIG.DAYS_PER_SEASON) || 90;
+        var _taxSeasonKey = Math.floor((world.day || 0) / _taxSeasonLen);
+        var _totalSeasonTax = (k.tradeTaxRevenue || 0) + (k.propertyTaxRevenue || 0) + (k.incomeTaxRevenue || 0) + (k.healthcareTaxRevenue || 0);
+        if (k._taxSeasonKey !== _taxSeasonKey) {
+            if (k._taxSeasonTotalBaseline != null) k._lastSeasonTaxRevenue = Math.max(0, _totalSeasonTax - k._taxSeasonTotalBaseline);
+            k._taxSeasonTotalBaseline = _totalSeasonTax; // v9p33river329: cumulative tax fields need a season baseline.
+            k._taxSeasonKey = _taxSeasonKey;
+        }
+        var _currentSeasonRevenue = Math.max(0, _totalSeasonTax - (k._taxSeasonTotalBaseline || 0));
+
         // Greedy kings raid reserves for spending, cautious kings pad them
         if (p.greed === 'greedy' || p.greed === 'corrupt') reserveMult *= 0.6;
         else if (p.greed === 'generous') reserveMult *= 0.9;
@@ -1082,8 +1092,8 @@
             // recent income aren't undercounted by reading only last
             // season's stale total. Use max(current, lastSeason) so
             // mid-season decisions see the higher number.
-            currentSeasonRevenue: (k.tradeTaxRevenue || 0) + (k.propertyTaxRevenue || 0) + (k.incomeTaxRevenue || 0) + (k.healthcareTaxRevenue || 0),
-            recentRevenue: Math.max(k._lastSeasonTaxRevenue || 0, (k.tradeTaxRevenue || 0) + (k.propertyTaxRevenue || 0) + (k.incomeTaxRevenue || 0) + (k.healthcareTaxRevenue || 0)),
+            currentSeasonRevenue: _currentSeasonRevenue,
+            recentRevenue: Math.max(k._lastSeasonTaxRevenue || 0, _currentSeasonRevenue),
         };
     }
 

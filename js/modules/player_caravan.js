@@ -2606,16 +2606,19 @@
             if (_travelingIndices.length > 0) {
                 var _data = new Float64Array(_travelingCaravans);
                 var _result = WASM.caravanSubtick(_data, _travelingIndices.length, ticksPerDay);
-                for (var _ri = 0; _ri < _travelingIndices.length; _ri++) {
-                    var _cv = player.caravans[_travelingIndices[_ri]];
-                    _cv.progress = _result.progress[_ri];
-                    if (_cv.progress >= 1.0) {
-                        _cv.progress = 1.0;
-                        _processCaravanArrival(_cv);
+                if (_result && _result.progress && _result.progress.length >= _travelingIndices.length) {
+                    for (var _ri = 0; _ri < _travelingIndices.length; _ri++) {
+                        var _cv = player.caravans[_travelingIndices[_ri]];
+                        _cv.progress = _result.progress[_ri];
+                        if (_cv.progress >= 1.0) {
+                            _cv.progress = 1.0;
+                            _processCaravanArrival(_cv);
+                        }
                     }
+                    return;
                 }
+                // v9p33river329: invalid/overflow WASM result falls through to JS update instead of freezing/crashing.
             }
-            return;
         }
 
         for (var ci = 0; ci < player.caravans.length; ci++) {

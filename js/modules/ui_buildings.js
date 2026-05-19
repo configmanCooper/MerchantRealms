@@ -160,7 +160,8 @@
         // Pointer to Town Market for buying existing buildings
         let saleHtml = '';
         if (town) {
-            const offers = Engine.getNPCBuildingSaleOffers(town.id);
+            const rawOffers = Engine.getNPCBuildingSaleOffers ? Engine.getNPCBuildingSaleOffers(town.id) : [];
+            const offers = Array.isArray(rawOffers) ? rawOffers : []; // v9p33river329: tolerate missing/non-array offer provider.
             if (offers.length > 0) {
                 saleHtml += '<div style="margin-top:12px;padding:8px;border:1px solid var(--border);border-radius:4px;text-align:center;">';
                 saleHtml += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:4px;">' + offers.length + ' existing building(s) for sale in this town</div>';
@@ -181,7 +182,7 @@
                     var fBld = farmBlds[fi];
                     var fBt = Engine.findBuildingType(fBld.type);
                     var fBldName = fBt ? fBt.name : fBld.type;
-                    var fBldIdx = town.buildings.findIndex(function(tb) { return tb.ownerId === 'player' && tb.type === fBld.type; });
+                    var fBldIdx = Array.isArray(town.buildings) ? town.buildings.findIndex(function(tb) { return tb.ownerId === 'player' && tb.type === fBld.type; }) : -1; // v9p33river329: guard towns without building arrays.
                     if (fBldIdx < 0) continue;
                     saleHtml += '<div class="build-card" style="display:flex;flex-direction:column;gap:4px;">';
                     saleHtml += '<div class="build-name">' + fBldName + '</div>';
@@ -448,7 +449,8 @@
         var html = '<div style="max-height:500px;overflow-y:auto;">';
 
         // === NPC/EM/Kingdom buildings for sale ===
-        var offers = Engine.getNPCBuildingSaleOffers(town.id);
+        var rawOffers2 = Engine.getNPCBuildingSaleOffers ? Engine.getNPCBuildingSaleOffers(town.id) : [];
+        var offers = Array.isArray(rawOffers2) ? rawOffers2 : []; // v9p33river329: tolerate missing/non-array offer provider.
         html += '<h3 style="margin-bottom:6px;">🏗️ Buildings For Sale</h3>';
         if (offers.length === 0) {
             html += '<p style="color:#888;font-size:0.8rem;">No buildings currently for sale in ' + town.name + '.</p>';

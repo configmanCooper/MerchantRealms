@@ -579,10 +579,8 @@
     }
 
     function closeStoryDialog() {
-        _dialogQueue = [];
-        var cb = _currentDialog ? _currentDialog.onComplete : null;
-        _teardown();
-        if (typeof cb === 'function') cb();
+        // v9p33river329: manual close should complete only the current dialog, not discard queued follow-ups.
+        _closeAndDequeue();
     }
 
     function isStoryDialogOpen() {

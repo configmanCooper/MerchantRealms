@@ -516,7 +516,8 @@
             var _minSkill = quest.skillReq ? quest.skillReq.min : 0;
             for (var _qiIdx = 0; _qiIdx < _instTypes.length; _qiIdx++) {
                 var iid = _instTypes[_qiIdx];
-                var qty = (player.inventory[iid] || 0) + ((player.townStorage[player.townId] || {})[iid] || 0);
+                var _questTownStore = (player.townStorage && player.townStorage[player.townId]) || {}; // v9p33river329: townStorage can be absent on old/new players.
+                var qty = (player.inventory[iid] || 0) + (_questTownStore[iid] || 0);
                 if (qty <= 0) continue;
                 var _curSkill = instSkill[iid] || 0;
                 if (_curSkill >= _minSkill && _curSkill >= bestSkill) {
