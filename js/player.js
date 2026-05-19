@@ -20603,7 +20603,10 @@
 
         // Auto-expire old feast invitations
         if (player._feastInvitations && player._feastInvitations.length > 0) {
-            var _worldDay = (typeof Engine !== 'undefined' && Engine.world) ? Engine.world.day : 0;
+            // v9p33river301: Engine.world is not exposed; use Engine.getDay()
+            // so invitations actually expire (was always 0, meaning every
+            // invite with endDay >= 0 stuck around indefinitely).
+            var _worldDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
             player._feastInvitations = player._feastInvitations.filter(function(inv) {
                 return inv.endDay >= _worldDay;
             });
@@ -34662,7 +34665,10 @@
                 var goods = ['bread', 'cloth', 'iron', 'leather', 'tools', 'furniture', 'clothes'];
                 var good = rng.pick(goods);
                 var qty = rng.randInt(2, 8);
-                var res = Engine.findResource ? Engine.findResource(good) : null;
+                // v9p33river301: Engine.findResource doesn't exist — the
+                // export is Engine.findResourceById. Was always falling back
+                // to basePrice=10 so 'Sell Goods' tasks underpaid.
+                var res = Engine.findResourceById ? Engine.findResourceById(good) : null;
                 var basePrice = res ? res.basePrice : 10;
                 return { good: good, qty: qty, minPrice: Math.floor(basePrice * 0.8) };
             }
@@ -34680,7 +34686,11 @@
                 var good = rng.pick(goods);
                 var qty = rng.randInt(5, 15);
                 // Master provides gold for the purchase
-                var res = Engine.findResource ? Engine.findResource(good) : null;
+                // v9p33river301: Engine.findResource doesn't exist — the
+                // export is Engine.findResourceById. Was always falling back
+                // to basePrice=5 so 'Purchase Supplies' tasks were
+                // underfunded by master.
+                var res = Engine.findResourceById ? Engine.findResourceById(good) : null;
                 var basePrice = res ? res.basePrice : 5;
                 var goldProvided = Math.ceil(basePrice * qty * 1.2); // 20% extra for travel/expenses
                 return { good: good, qty: qty, goldProvided: goldProvided };

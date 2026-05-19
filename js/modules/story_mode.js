@@ -839,8 +839,10 @@ var StoryMode = (function () {
 
     /** Convenience log. */
     function _log(msg) {
-        if (typeof Engine !== 'undefined' && Engine.addLogEntry) {
-            Engine.addLogEntry(msg, 'story');
+        // v9p33river301: Engine.addLogEntry doesn't exist — the engine API
+        // is logEvent(msg, details, category).
+        if (typeof Engine !== 'undefined' && Engine.logEvent) {
+            Engine.logEvent(msg, null, 'story');
         }
     }
 
@@ -1609,7 +1611,18 @@ var StoryMode = (function () {
                 var kB = w.kingdoms.find(function(k) { return k.name === 'Korvath'; });
                 if (kA && kB && Engine.declareWar) Engine.declareWar(kA, kB, true);
             }
-            if (Engine.banExport) { Engine.banExport('iron_bars'); }
+            // v9p33river301: Engine.banExport doesn't exist. Iron-bar export
+            // bans are stored on kingdom.exportRestrictions (array). Apply
+            // the ban to Valdren so the kingdom restricts iron_bars exports
+            // during the war (the player can no longer easily ship iron
+            // bars out of friendly territory to support the enemy).
+            var _wValdren = w && w.kingdoms ? w.kingdoms.find(function(k) { return k.name === 'Valdren'; }) : null;
+            if (_wValdren) {
+                if (!_wValdren.exportRestrictions) _wValdren.exportRestrictions = [];
+                if (_wValdren.exportRestrictions.indexOf('iron_bars') < 0) {
+                    _wValdren.exportRestrictions.push('iron_bars');
+                }
+            }
 
             // Remove iron ore from Ashford — war cuts off supply
             var ashford = (w.towns || []).find(function(t) { return t.name === 'Ashford'; });
@@ -2054,7 +2067,18 @@ var StoryMode = (function () {
         _storyState.flags.edmundImprisoned  = true;
         if (typeof Engine !== 'undefined') {
             if (Engine.captureTown)     { Engine.captureTown('Ashford', 'Korvath'); }
-            if (Engine.setNPCCondition) { Engine.setNPCCondition('Edmund', 'imprisoned', true); }
+            // v9p33river301: Engine.setNPCCondition doesn't exist. Edmund's
+            // NPC id is tracked on Player.storyMode.storyNPCs.fatherId.
+            // Flip the `imprisoned` flag directly on that person object so
+            // other systems (UI, dialog, AI) can see his status.
+            var _edId = (Player && Player.storyMode && Player.storyMode.storyNPCs) ? Player.storyMode.storyNPCs.fatherId : null;
+            if (_edId && Engine.findPerson) {
+                var _edPerson = Engine.findPerson(_edId);
+                if (_edPerson) {
+                    _edPerson.imprisoned = true;
+                    _edPerson.imprisonedDay = Engine.getDay ? Engine.getDay() : 0;
+                }
+            }
         }
         // Move Lord Calder from Ashford to Valdren capital
         if (typeof Engine !== 'undefined' && typeof Player !== 'undefined') {
@@ -2530,7 +2554,16 @@ var StoryMode = (function () {
         _storyState.flags.edmundImprisoned  = false;
         _storyState.flags.edmundFreed       = true;
         if (typeof Engine !== 'undefined') {
-            if (Engine.setNPCCondition) { Engine.setNPCCondition('Edmund', 'imprisoned', false); }
+            // v9p33river301: same setNPCCondition replacement — clear the
+            // imprisoned flag directly on Edmund's NPC.
+            var _edId18 = (Player && Player.storyMode && Player.storyMode.storyNPCs) ? Player.storyMode.storyNPCs.fatherId : null;
+            if (_edId18 && Engine.findPerson) {
+                var _edPerson18 = Engine.findPerson(_edId18);
+                if (_edPerson18) {
+                    _edPerson18.imprisoned = false;
+                    delete _edPerson18.imprisonedDay;
+                }
+            }
             // Military path: Valdren recaptures Ashford
             if (_storyState.path === 'military') {
                 _storyState.flags.ashfordLiberated = true;
