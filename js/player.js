@@ -19266,6 +19266,7 @@
             _kingdomTravelBan: structuredClone(player._kingdomTravelBan || {}),
             _warFrozenAssets: structuredClone(player._warFrozenAssets || []),
             _warSavedRanks: structuredClone(player._warSavedRanks || {}),
+            _jailEscapeCooldownUntil: player._jailEscapeCooldownUntil || 0,
             // Kingdom quest data
             kingdomQuests: structuredClone(player.kingdomQuests || {}),
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
@@ -19362,6 +19363,10 @@
         player._kingdomTravelBan = data._kingdomTravelBan ? structuredClone(data._kingdomTravelBan) : {};
         player._warFrozenAssets = data._warFrozenAssets ? structuredClone(data._warFrozenAssets) : [];
         player._warSavedRanks = data._warSavedRanks ? structuredClone(data._warSavedRanks) : {};
+        // v9p33river311: persist 90-day jailbreak cooldown so save/load
+        // doesn't reset it. Previously a player could escape, save, load,
+        // and immediately attempt another jailbreak.
+        player._jailEscapeCooldownUntil = data._jailEscapeCooldownUntil || 0;
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;

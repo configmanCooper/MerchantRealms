@@ -12717,6 +12717,29 @@
             // (tickOutpostImmigration / outpostResidents). Skip them entirely
             // so happiness-driven migration doesn't drop NPCs into them.
             if (town.isOutpost) continue;
+            // v9p33river311: apply passive civic-building bonuses. The
+            // building configs (config.js:1978-1994, 2070, 2145) define
+            // happinessBonus / unrestReduction values that no consumer
+            // ever read. Apply them here as a slow daily drift toward
+            // those targets so cathedrals/courthouses/universities/
+            // taverns/clinics/hospitals/marketplaces actually matter.
+            if (town.buildings && town.buildings.length > 0) {
+                var _chSum = 0, _crSum = 0;
+                for (var _cbi = 0; _cbi < town.buildings.length; _cbi++) {
+                    var _cb = town.buildings[_cbi];
+                    if (_cb.condition === 'destroyed') continue;
+                    var _cbt = findBuildingType(_cb.type);
+                    if (!_cbt) continue;
+                    if (_cbt.happinessBonus) _chSum += _cbt.happinessBonus;
+                    if (_cbt.unrestReduction) _crSum += _cbt.unrestReduction;
+                }
+                // Spread happinessBonus over ~30 days; unrestReduction
+                // gives an additional small daily boost (max 1.0/day).
+                if (_chSum > 0 || _crSum > 0) {
+                    var _dailyGain = Math.min(2.0, (_chSum / 30) + (_crSum * 0.5));
+                    town.happiness = Math.min(100, (town.happiness || 50) + _dailyGain);
+                }
+            }
             var h = town.happiness || 50;
             var pop = typeof town.population === 'number' ? town.population : 0;
             if (pop < 3) continue; // skip near-empty towns
@@ -24436,14 +24459,30 @@
         // Water + bathhouse mitigate plague severity
         var waterAvail = town.market.supply.water || 0;
         var hasBathhouse = town.buildings ? town.buildings.some(function(b) { return b.type === 'bathhouse'; }) : false;
-        var clinicCount = town.buildings ? town.buildings.filter(function(b) { return b.type === 'clinic'; }).length : 0;
-        var hospitalCount = town.buildings ? town.buildings.filter(function(b) { return b.type === 'hospital'; }).length : 0;
 
+        // v9p33river311: previously used hardcoded per-building rates
+        // (0.08/clinic, 0.15/hospital) and ignored the configured
+        // bt.plagueReduction values (config.js:1978 hospital 0.50,
+        // 2145 clinic 0.20). Now sum bt.plagueReduction across all
+        // active medical buildings so the configured values matter.
+        var _bldPlagueRed = 0;
+        if (town.buildings) {
+            for (var _bpi = 0; _bpi < town.buildings.length; _bpi++) {
+                var _bp = town.buildings[_bpi];
+                if (_bp.condition === 'destroyed') continue;
+                var _bpt = findBuildingType(_bp.type);
+                if (_bpt && _bpt.plagueReduction) {
+                    // Scale per-building so the cap is meaningful: divide
+                    // by 3 so one full hospital contributes ~0.17 (close
+                    // to the legacy 0.15) rather than a flat 0.50.
+                    _bldPlagueRed += _bpt.plagueReduction / 3;
+                }
+            }
+        }
         var plagueMitigation = 0;
         plagueMitigation += Math.min(0.15, (waterAvail / 300) * 0.15);
         if (hasBathhouse) plagueMitigation += 0.10;
-        plagueMitigation += Math.min(0.15, clinicCount * 0.08);
-        plagueMitigation += Math.min(0.20, hospitalCount * 0.15);
+        plagueMitigation += Math.min(0.30, _bldPlagueRed);
         plagueMitigation = Math.min(0.40, plagueMitigation); // max 40% reduction
 
         // Consume water for sanitation

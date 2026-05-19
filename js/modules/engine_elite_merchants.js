@@ -931,16 +931,11 @@
                     fromTownId: em.townId,
                     toTownId: bestDest,
                     goods: bestGoods,
-                    capacity: (CONFIG.EM_CARAVAN_CAPACITY_MAX || 200) + (function() {
-                        // v9p33river194: tier-weighted transport capacity
-                        if (em._transports) {
-                            var _tCaps = { backpack: 15, cart: 40, small_wagon: 70, wagon: 100, large_wagon: 150 };
-                            var _b = 0;
-                            for (var _tk in _tCaps) _b += (em._transports[_tk] || 0) * _tCaps[_tk];
-                            return Math.min(_b, 450);
-                        }
-                        return Math.min((em._wagons || 0), 3) * 100;
-                    })(),
+                    // v9p33river311: spawn now uses the same wealth-aware
+                    // formula the scoring loop computed in `maxCapacity`,
+                    // so a low-wealth merchant can't launch a 200+wagon-
+                    // bonus caravan they couldn't actually have planned.
+                    capacity: maxCapacity,
                     progress: 0,
                     speed: CONFIG.EM_CARAVAN_SPEED || 0.08,
                     startDay: world.day,

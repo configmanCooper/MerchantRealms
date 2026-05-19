@@ -154,11 +154,22 @@
         // Use player.townStorage (where caravans and deposits actually store goods)
         var _pState = Player.state || {};
         var _pTownStorage = (_pState.townStorage || {})[townId] || {};
+        // v9p33river311: previously merged op.outpostStorageItems (legacy)
+        // AND townStorage, double-counting goods that exist in both maps.
+        // Prefer townStorage (the canonical post-migration store); only
+        // fall back to outpostStorageItems when townStorage is empty.
         var storageItems = {};
-        // Merge outpostStorageItems (legacy) with townStorage (actual)
-        var _osi = op.outpostStorageItems || {};
-        for (var _ok in _osi) { if (_osi[_ok] > 0) storageItems[_ok] = (storageItems[_ok] || 0) + _osi[_ok]; }
-        for (var _tk in _pTownStorage) { if (_pTownStorage[_tk] > 0) storageItems[_tk] = (storageItems[_tk] || 0) + _pTownStorage[_tk]; }
+        var _hasTownStorage = false;
+        for (var _tk in _pTownStorage) {
+            if (_pTownStorage[_tk] > 0) {
+                storageItems[_tk] = _pTownStorage[_tk];
+                _hasTownStorage = true;
+            }
+        }
+        if (!_hasTownStorage) {
+            var _osi = op.outpostStorageItems || {};
+            for (var _ok in _osi) { if (_osi[_ok] > 0) storageItems[_ok] = _osi[_ok]; }
+        }
         var currentWeight = 0;
         for (var sk in storageItems) { var _sw = (findResource(sk) || {}).weight || 1; currentWeight += (storageItems[sk] || 0) * _sw; }
         var maxStorage = op.outpostStorage || 200;

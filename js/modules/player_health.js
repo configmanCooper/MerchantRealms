@@ -265,7 +265,7 @@
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
 
-        _payHealthcareRevenue(town, cost);
+        _payHealthcareRevenue(town, cost, 'hospital');
 
         // Track stats on building
         if (!hospBld._treatmentStats) hospBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
@@ -369,7 +369,7 @@
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
 
-        _payHealthcareRevenue(town, cost);
+        _payHealthcareRevenue(town, cost, 'clinic');
 
         // Track stats on building
         if (!clinicBld._treatmentStats) clinicBld._treatmentStats = { treated: 0, feeEarned: 0, supplyCost: 0 };
@@ -393,7 +393,7 @@
         return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g (' + timeDesc + ').' + waitDesc + nobleNote };
     }
 
-    function _payHealthcareRevenue(town, fee) {
+    function _payHealthcareRevenue(town, fee, bldType) {
         _sync();
         if (!town) return;
         var kingdom = Engine.findKingdom(town.kingdomId);
@@ -401,11 +401,22 @@
         var taxAmount = Math.floor(fee * healthcareTaxRate);
 
         // Find the medical building
+        // v9p33river311: previously took the first hospital OR clinic
+        // found, so if both existed in town the wrong owner could get
+        // paid. Callers now pass the specific type used; we prefer
+        // that, fall back to either if not provided.
         var medBld = null;
         if (town.buildings) {
-            for (var i = 0; i < town.buildings.length; i++) {
-                if (town.buildings[i].type === 'hospital' || town.buildings[i].type === 'clinic') {
-                    medBld = town.buildings[i]; break;
+            if (bldType) {
+                for (var i = 0; i < town.buildings.length; i++) {
+                    if (town.buildings[i].type === bldType) { medBld = town.buildings[i]; break; }
+                }
+            }
+            if (!medBld) {
+                for (var j = 0; j < town.buildings.length; j++) {
+                    if (town.buildings[j].type === 'hospital' || town.buildings[j].type === 'clinic') {
+                        medBld = town.buildings[j]; break;
+                    }
                 }
             }
         }
@@ -470,7 +481,10 @@
         }
         if (!supplyDef) return;
 
-        var medRank = NPC_HEALTH_CONFIG.MEDICINE_RANK || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
+        // v9p33river311: was a direct NPC_HEALTH_CONFIG.MEDICINE_RANK read
+        // which would ReferenceError if the global wasn't loaded. Use the
+        // guarded _hcCfg copy from above.
+        var medRank = (_hcCfg && _hcCfg.MEDICINE_RANK) || ['herbal_remedy', 'fever_tonic', 'healing_tonic', 'antidote'];
 
         for (var key in supplyDef) {
             var needed = supplyDef[key];

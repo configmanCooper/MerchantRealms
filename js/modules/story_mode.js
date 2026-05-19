@@ -3200,6 +3200,26 @@ var StoryMode = (function () {
             _acceptedTownQuest:   (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._acceptedTownQuest : false,
             _completedTownQuest:  (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._completedTownQuest : false,
             _firstGuardHired:     (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._firstGuardHired : false,
+            // v9p33river311: ch4b/tutorial-discovery flags. Several story
+            // objectives check Player.state.storyMode._openedStreetTrading,
+            // _viewedJournal, _talkedToNPC, _wentOnDate, _requestedIntro,
+            // _ch4b_robbed/_goldLost etc. (story_mode.js:2685-2769) but they
+            // were not in serialize, so save/load wiped chapter progress.
+            _openedStreetTrading: (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._openedStreetTrading : false,
+            _openedHelp:          (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._openedHelp : false,
+            _viewedEventLog:      (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._viewedEventLog : false,
+            _toggledFilter:       (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._toggledFilter : false,
+            _viewedFeats:         (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._viewedFeats : false,
+            _viewedJournal:       (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._viewedJournal : false,
+            _viewedPlayerImpact:  (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._viewedPlayerImpact : false,
+            _viewedRankings:      (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._viewedRankings : false,
+            _talkedToNPC:         (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._talkedToNPC : false,
+            _giftedNPC:           (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._giftedNPC : false,
+            _wentOnDate:          (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._wentOnDate : false,
+            _discoveredTrait:     (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._discoveredTrait : false,
+            _requestedIntro:      (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._requestedIntro : false,
+            _ch4b_robbed:         (typeof Player !== 'undefined' && Player.storyMode) ? !!Player.storyMode._ch4b_robbed : false,
+            _ch4b_goldLost:       (typeof Player !== 'undefined' && Player.storyMode && typeof Player.storyMode._ch4b_goldLost === 'number') ? Player.storyMode._ch4b_goldLost : 0,
         };
     }
 

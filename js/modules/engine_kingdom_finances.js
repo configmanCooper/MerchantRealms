@@ -168,11 +168,20 @@
         }
 
         // Treasury vault bonus
+        // v9p33river311: was hardcoded +0.10 per treasury_vault; now reads
+        // bt.taxEfficiency from config (config.js:1989 TREASURY_VAULT
+        // taxEfficiency: 0.10), so any building that defines taxEfficiency
+        // contributes — keeps existing behaviour when only treasury_vault
+        // has the property.
         let vaultBonus = 0;
         for (const townId of k.territories) {
             const town = findTown(townId);
             if (!town) continue;
-            if (town.buildings.some(b => b.type === 'treasury_vault')) vaultBonus += 0.10;
+            for (const _vb of town.buildings) {
+                if (_vb.condition === 'destroyed') continue;
+                const _vbt = findBuildingType(_vb.type);
+                if (_vbt && _vbt.taxEfficiency) vaultBonus += _vbt.taxEfficiency;
+            }
         }
         totalPropertyTax = Math.floor(totalPropertyTax * (1 + vaultBonus));
 

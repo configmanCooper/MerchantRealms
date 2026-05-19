@@ -184,6 +184,11 @@
             var connSea = [];
             for (var ri = 0; ri < roads.length; ri++) {
                 var r = roads[ri];
+                // v9p33river311: skip destroyed roads so broken roads
+                // don't keep outposts looking road-connected. Previously
+                // connRoads.length included destroyed entries and hasRoad
+                // would stay true after the road was wrecked.
+                if (r.condition === 'destroyed') continue;
                 if (r.fromTownId === town.id || r.toTownId === town.id) {
                     var otherId = r.fromTownId === town.id ? r.toTownId : r.fromTownId;
                     var otherT = Engine.findTown(otherId);

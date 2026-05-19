@@ -1196,7 +1196,9 @@
     function spendTimeWithSpouse(activityId) {
         var player = ps();
         if (!player.spouseId) return { success: false, message: 'You are not married.' };
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.spend_time_spouse || 15);
+        // v9p33river311: goOnDate() (called below) already advances
+        // CONFIG.ACTION_TICK_COSTS.go_on_date. The extra advanceTicks
+        // here doubled the time cost. Now defer to goOnDate's own tick.
         return goOnDate(player.spouseId, activityId);
     }
 
