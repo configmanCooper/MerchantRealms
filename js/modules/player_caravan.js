@@ -1478,7 +1478,10 @@
                 logCaravan(caravan, '📦 Picked up ' + pickupQty + ' ' + resName + ' from storage at ' + townName + '.');
             } else if (o.action === 'buy') {
                 var marketSupply = town.market.supply[o.good] || 0;
-                var marketPrice = town.market.prices[o.good] || 0;
+                // v9p33river313: was reading town.market.prices[o.good]
+                // directly, bypassing kingdom price-control law. Use
+                // Engine.getMarketPrice so essentials caps apply.
+                var marketPrice = Engine.getMarketPrice ? Engine.getMarketPrice(town.id, o.good) : (town.market.prices[o.good] || 0);
                 var maxPrice = o.priceLimit || Infinity;
                 if (marketPrice <= 0 || marketSupply <= 0) {
                     logCaravan(caravan, '🛒 ' + resName + ' not available at ' + townName + ' market.');
@@ -1508,6 +1511,10 @@
                 town.market.supply[o.good] = Math.max(0, marketSupply - buyQty);
                 // v9p33river85: caravan bought goods → gold flows into the town's market
                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, cost);
+                // v9p33river313: caravan market trades now pay trade tax
+                // like all other market activity (import = true since
+                // we're buying into the town's market).
+                if (Engine.collectTradeTax) Engine.collectTradeTax(town.kingdomId, cost, o.good, true, town.id);
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) + buyQty;
                 logCaravan(caravan, '🛒 Bought ' + buyQty + ' ' + resName + ' for ' + cost + 'g at ' + townName + '.');
             } else if (o.action === 'store') {
@@ -1648,7 +1655,9 @@
                 var sellCarried = caravan.goods[o.good] || 0;
                 var sellQty = Math.min(qty, sellCarried);
                 var minPrice = o.priceLimit || 0;
-                var sellPrice = town.market.prices[o.good] || 1;
+                // v9p33river313: use Engine.getMarketPrice so price-control
+                // law applies to caravan sell decisions too.
+                var sellPrice = Engine.getMarketPrice ? Engine.getMarketPrice(town.id, o.good) : (town.market.prices[o.good] || 1);
                 if (hasSkill('trade_route_mastery')) sellPrice *= 1.10;
                 if (sellPrice < minPrice) {
                     logCaravan(caravan, '💰 ' + resName + ' price (' + Math.floor(sellPrice) + 'g) below minimum (' + minPrice + 'g) at ' + townName + '. Holding.');
@@ -1713,6 +1722,9 @@
                 town.market.supply[o.good] = (town.market.supply[o.good] || 0) + sellQty;
                 // v9p33river85: gold flows out of the town's market to the caravan
                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -revenue);
+                // v9p33river313: caravan sells now pay trade tax (export
+                // direction so subsidies don't fire).
+                if (Engine.collectTradeTax) Engine.collectTradeTax(town.kingdomId, revenue, o.good, false, town.id);
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
                 if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
@@ -2232,7 +2244,11 @@
                             if (player.townId === destTownId) {
                                 player.inventory[resId] = (player.inventory[resId] || 0) + qty;
                             } else {
-                                let price = destTown.market.prices[resId] || 1;
+                                // v9p33river313: legacy sell path now
+                                // uses Engine.getMarketPrice (price-control
+                                // aware) and calls collectTradeTax(false,
+                                // townId) for tax/no-subsidy on export.
+                                let price = Engine.getMarketPrice ? Engine.getMarketPrice(destTownId, resId) : (destTown.market.prices[resId] || 1);
                                 if (hasSkill('trade_route_mastery')) price *= 1.10;
                                 const grossRev = Math.floor(price * qty);
                                 const _legTar = _applyCaravanTariff(grossRev, destTownId);
@@ -2249,6 +2265,7 @@
                                 tripRevenue += revenue;
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
                                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, -revenue);
+                                if (Engine.collectTradeTax) Engine.collectTradeTax(destTown.kingdomId, revenue, resId, false, destTown.id);
                                 var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
                                 Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, null, 'my_business');
                                 // Track cross-kingdom caravan trade for story mode
@@ -2480,13 +2497,15 @@
                                 } else {
                                     const originTownObj = Engine.findTown(originId);
                                     if (originTownObj) {
-                                        let price = originTownObj.market.prices[resId] || 1;
+                                        // v9p33river313: price-control aware + trade tax on recurring return sales.
+                                        let price = Engine.getMarketPrice ? Engine.getMarketPrice(originId, resId) : (originTownObj.market.prices[resId] || 1);
                                         if (hasSkill('trade_route_mastery')) price *= 1.10;
                                         const rev = Math.floor(price * qty);
                                         player.gold += rev;
                                         player.stats.totalGoldEarned += rev;
                                         caravan.totalProfit = (caravan.totalProfit || 0) + rev;
                                         originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
+                                        if (Engine.collectTradeTax) Engine.collectTradeTax(originTownObj.kingdomId, rev, resId, false, originTownObj.id);
                                         Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`, null, 'my_business');
                                     }
                                 }
@@ -2531,13 +2550,15 @@
                             } else {
                                 const originTownObj = Engine.findTown(caravan.fromTownId);
                                 if (originTownObj) {
-                                    let price = originTownObj.market.prices[resId] || 1;
+                                    // v9p33river313: same price-control + tax fix for one-way return sales.
+                                    let price = Engine.getMarketPrice ? Engine.getMarketPrice(caravan.fromTownId, resId) : (originTownObj.market.prices[resId] || 1);
                                     if (hasSkill('trade_route_mastery')) price *= 1.10;
                                     const rev = Math.floor(price * qty);
                                     player.gold += rev;
                                     player.stats.totalGoldEarned += rev;
                                     caravan.totalProfit = (caravan.totalProfit || 0) + rev;
                                     originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
+                                    if (Engine.collectTradeTax) Engine.collectTradeTax(originTownObj.kingdomId, rev, resId, false, originTownObj.id);
                                     Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`, null, 'my_business');
                                 }
                             }

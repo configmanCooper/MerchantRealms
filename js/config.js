@@ -232,7 +232,11 @@ const CONFIG = {
 
     // NPC Individual Purchasing (batched round-robin)
     NPC_PURCHASE_FOOD_RESTORE: 20,
-    NPC_DAILY_INCOME: { farmer: 2, craftsman: 4, merchant: 6, soldier: 5, laborer: 1, noble: 10, guard: 4, miner: 3, woodcutter: 2, none: 0 },
+    // v9p33river313: NPC_DAILY_INCOME was superseded by OCCUPATIONS wages
+    // in tickPeople (see engine.js:23368). The map below is kept only as
+    // a historical reference for old saves that read it; remove if
+    // nothing references it again by v320+.
+    _DEAD_NPC_DAILY_INCOME_LEGACY: { farmer: 2, craftsman: 4, merchant: 6, soldier: 5, laborer: 1, noble: 10, guard: 4, miner: 3, woodcutter: 2, none: 0 },
     NPC_CLOTHES_CHANCE: 0.033,    // ~once per 30 days
     NPC_TOOLS_CHANCE: 0.02,       // workers buy tools occasionally
     NPC_LUXURY_UPPER_CHANCE: 0.02,

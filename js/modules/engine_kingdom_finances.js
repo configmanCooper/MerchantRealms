@@ -81,7 +81,15 @@
     }
 
     // ---- Trade Tax Collection (called from market transactions) ----
-    function collectTradeTax(kingdomId, amount, goodId) {
+    // v9p33river313: optional 4th `isImport` param. When false (export
+    // transaction), trade subsidies do NOT fire — subsidies are designed
+    // to reward importing scarce goods, not paying merchants twice for
+    // exporting them. Defaults to true so legacy callers behave as before.
+    // Optional 5th `townId` param lets us apply per-town GUILD_HALL
+    // tradeBonus (config.js:1991, dead before — no consumer was reading
+    // bt.tradeBonus). With townId present, kingdom-level tax is boosted
+    // by the summed tradeBonus of civic buildings in that town.
+    function collectTradeTax(kingdomId, amount, goodId, isImport, townId) {
         if (!world || !kingdomId || amount <= 0) return;
         const k = findKingdom(kingdomId);
         if (!k) return;
@@ -95,7 +103,21 @@
             amount = Math.floor(amount * 0.5);
         }
 
-        const taxAmount = Math.floor(amount * (k.taxRate || 0.10));
+        let taxAmount = Math.floor(amount * (k.taxRate || 0.10));
+        // Per-town tradeBonus boost (e.g. GUILD_HALL.tradeBonus 0.15)
+        if (townId) {
+            const _town = findTown(townId);
+            if (_town && _town.buildings) {
+                let _tbBonus = 0;
+                for (let _tbi = 0; _tbi < _town.buildings.length; _tbi++) {
+                    const _tb = _town.buildings[_tbi];
+                    if (_tb.condition === 'destroyed') continue;
+                    const _tbt = findBuildingType(_tb.type);
+                    if (_tbt && _tbt.tradeBonus) _tbBonus += _tbt.tradeBonus;
+                }
+                if (_tbBonus > 0) taxAmount = Math.floor(taxAmount * (1 + Math.min(0.5, _tbBonus)));
+            }
+        }
         if (taxAmount > 0) {
             k.gold += taxAmount;
             k.tradeTaxRevenue = (k.tradeTaxRevenue || 0) + taxAmount;
@@ -103,8 +125,12 @@
             recordKingdomTransaction(k, 'income', taxAmount, 'Trade tax' + (goodId ? ' (' + goodId + ')' : ''), 'trade_tax');
         }
 
-        // Trade subsidy: pay bonus to merchants importing subsidized goods
-        if (goodId && k.tradeSubsidies) {
+        // Trade subsidy: pay bonus to merchants importing subsidized goods.
+        // v9p33river313: gated by isImport — subsidies only fire on imports.
+        // Default isImport=true preserves legacy behavior for callers that
+        // haven't been updated. Callers selling/exporting now pass false.
+        const _isImport = (isImport === undefined) ? true : !!isImport;
+        if (_isImport && goodId && k.tradeSubsidies) {
             for (const sub of k.tradeSubsidies) {
                 if (sub.good === goodId && (sub.unitsPaid || 0) < sub.maxUnits && sub.expiresDay > world.day) {
                     const bonus = sub.bonusPerUnit || CONFIG.KING_TRADE_SUBSIDY_PER_UNIT || 2;

@@ -679,6 +679,11 @@ var StoryMode = (function () {
 
     /** Mark an objective done by id and persist to _storyState.objectives map. */
     function _markDone(objId) {
+        // v9p33river313: was setting state + refreshing tracker, but the
+        // tracker's flashObjectiveComplete animation/notification was
+        // never invoked. Fire it now so completing an objective shows
+        // the green flash + pip even when the panel is collapsed.
+        var _wasAlreadyDone = !!_storyState.objectives[objId];
         _storyState.objectives[objId] = true;
         var ch = _currentChapterDef();
         if (!ch) { return; }
@@ -689,6 +694,9 @@ var StoryMode = (function () {
             }
         }
         _refreshTracker();
+        if (!_wasAlreadyDone && typeof UI !== 'undefined' && UI.flashObjectiveComplete) {
+            try { UI.flashObjectiveComplete(objId); } catch (_e) {}
+        }
 
         // Auto-trigger follow-up dialogs when certain objectives complete
         var _followUpDialogs = {

@@ -2495,6 +2495,10 @@
 
         player.gold -= result.price;
         player.stats.totalGoldSpent += result.price;
+        // v9p33river313: missing finance ledger entry — NPC building
+        // purchases drained gold but didn't show up in the player's
+        // finance report. Log it as building category.
+        logFinance(-result.price, 'buildings', 'Bought NPC building (' + (result.building && result.building.type ? result.building.type : '?') + ')');
 
         // Transfer ownership
         var bld = result.building;
@@ -2614,6 +2618,9 @@
         // Deduct player gold
         player.gold -= totalCost;
         player.stats.totalGoldSpent += totalCost;
+        // v9p33river313: missing finance ledger — building conversion
+        // costs were invisible in the finance report.
+        logFinance(-totalCost, 'buildings', 'Building conversion');
 
         // Deduct blasting powder
         if (blastingPowderSource === 'inventory') {
@@ -2786,6 +2793,9 @@
         // Deduct costs
         player.gold -= totalCost;
         player.stats.totalGoldSpent += totalCost;
+        // v9p33river313: missing finance ledger — demolition/conversion
+        // costs were invisible in the finance report.
+        logFinance(-totalCost, 'buildings', 'Demolition / farm conversion');
 
         // Deduct materials based on method
         if (demolMethod === 'bp_inventory') {
@@ -3094,6 +3104,9 @@
             }
             player.gold -= transportCost;
             player.stats.totalGoldSpent += transportCost;
+            // v9p33river313: missing finance ledger — worker transport
+            // fees were invisible in the finance report.
+            logFinance(-transportCost, 'travel', 'Worker transport');
             travelCost = transportCost;
             speedMult = 1.2;
             satisfactionPenalty = 0;
@@ -6306,6 +6319,10 @@
                             if (player.gold >= totalCost) {
                                 player.gold -= totalCost;
                                 player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
+                                // v9p33river313: missing finance ledger —
+                                // auto-buying building inputs drained gold
+                                // silently. Log it as building costs.
+                                logFinance(-totalCost, 'buildings', 'Building auto-buy: ' + canBuyAB + ' ' + resId);
                                 town.market.supply[resId] = Math.max(0, townHasAB - canBuyAB);
                                 if (!bld.inventory) bld.inventory = {};
                                 bld.inventory[resId] = (bld.inventory[resId] || 0) + canBuyAB;
