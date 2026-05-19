@@ -32116,10 +32116,33 @@
             }
         }
 
-        chance = Math.max(0.02, Math.min(0.90, chance));
+        // v9p33river328: rank-based ceiling on petition approval chance.
+        // Per user spec — citizens of any kingdom can submit petitions
+        // but their political weight is capped by social rank:
+        //   Citizen     (1) → 50%
+        //   Burgher     (2) → 60%
+        //   Guildmaster (3) → 75%
+        //   Minor Noble (4) → 90%
+        //   Lord        (5) → 95%
+        //   Royal Advisor (6+) → uncapped (99% ceiling for randomness)
+        // Peasants can't petition at all (config gate), but defensively
+        // share the citizen cap. Cap uses player rank in the petition's
+        // own kingdom — a Lord of Astoria petitioning Brennmark gets
+        // only the rank he holds in Brennmark, not his Astoria rank.
+        var _rankIdxForCap = getPlayerRankIndex(petition.kingdomId);
+        var _rankCap;
+        if (_rankIdxForCap >= 6) _rankCap = 0.99;
+        else if (_rankIdxForCap === 5) _rankCap = 0.95;
+        else if (_rankIdxForCap === 4) _rankCap = 0.90;
+        else if (_rankIdxForCap === 3) _rankCap = 0.75;
+        else if (_rankIdxForCap === 2) _rankCap = 0.60;
+        else _rankCap = 0.50; // Citizen and (defensively) Peasant
+        chance = Math.max(0.02, Math.min(_rankCap, chance));
 
         return {
             chance: chance,
+            rankCap: _rankCap,
+            playerRankInKingdom: _rankIdxForCap,
             signaturePct: signaturePct,
             totalWeightedSignatures: weighted,
             kingdomPop: kingdomPop,

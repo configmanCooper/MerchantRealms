@@ -358,6 +358,17 @@
             }
             if (estimate.chance > 0) {
                 html += '<div style="color:#4c4;font-size:0.85em;margin-top:4px;">Estimated approval chance: <strong>' + Math.floor(estimate.chance * 100) + '%</strong></div>';
+                // v9p33river328: show rank-based cap so player understands
+                // why their chance is capped where it is.
+                if (typeof estimate.rankCap === 'number' && estimate.rankCap < 0.99) {
+                    var _rankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[estimate.playerRankInKingdom || 0])
+                                    ? CONFIG.SOCIAL_RANKS[estimate.playerRankInKingdom || 0].name
+                                    : 'Commoner';
+                    html += '<div style="color:#aa7;font-size:0.75em;margin-top:2px;">' +
+                            'Maximum chance capped at <strong>' + Math.floor(estimate.rankCap * 100) + '%</strong> ' +
+                            '(your rank in this kingdom: ' + escapeHtml(_rankName) + '). ' +
+                            'Higher ranks command more political weight.</div>';
+                }
             }
             html += '</div>';
         }
