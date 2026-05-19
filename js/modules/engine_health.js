@@ -1670,10 +1670,14 @@
                         // Revenue split
                         var taxAmount = Math.floor(fee * healthcareTaxRate);
                         if (isKingdomOwned) {
-                            // Kingdom owns: full revenue to kingdom
+                            // Kingdom owns: full revenue to kingdom, but only
+                            // the tax portion counts toward the tax-revenue
+                            // report. v9p33river308: previously added the
+                            // entire fee to healthcareTaxRevenue, inflating
+                            // healthcare tax reports.
                             if (kingdom) {
                                 kingdom.gold = (kingdom.gold || 0) + fee;
-                                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + fee;
+                                kingdom.healthcareTaxRevenue = (kingdom.healthcareTaxRevenue || 0) + taxAmount;
                             }
                         } else {
                             // Private owner: keep revenue minus healthcare tax
@@ -1913,7 +1917,8 @@
                     if (isKingdomOwned) {
                         if (ownerKingdom) {
                             ownerKingdom.gold = (ownerKingdom.gold || 0) + fee;
-                            ownerKingdom.healthcareTaxRevenue = (ownerKingdom.healthcareTaxRevenue || 0) + fee;
+                            // v9p33river308: same tax-vs-fee fix as line 1670
+                            ownerKingdom.healthcareTaxRevenue = (ownerKingdom.healthcareTaxRevenue || 0) + Math.floor(fee * healthcareTaxRate);
                         }
                     } else if (fBld.ownerId === 'player') {
                         fBld.retailRevenue = (fBld.retailRevenue || 0) + (fee - Math.floor(fee * healthcareTaxRate));

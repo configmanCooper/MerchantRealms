@@ -10709,37 +10709,67 @@
             return { success: true, message: 'Export ban lifted for ' + data.good + '.' };
         }
         if (action === 'set_bounty') {
-            if (!kingdom.laws.productionBounties) kingdom.laws.productionBounties = [];
-            if (kingdom.laws.productionBounties.indexOf(data.good) >= 0) return { success: false, message: 'Bounty already active for ' + data.good + '.' };
+            // v9p33river308: live system reads kingdom.productionBounties
+            // (array of {good, townId, reward}) — was writing
+            // kingdom.laws.productionBounties (array of good strings) so
+            // UI-created bounties did nothing.
+            if (!kingdom.productionBounties) kingdom.productionBounties = [];
+            if (kingdom.productionBounties.some(function(b) { return b.good === data.good && !b.townId; })) {
+                return { success: false, message: 'Bounty already active for ' + data.good + '.' };
+            }
             if (kingdom.gold < 100) return { success: false, message: 'Need 100g in treasury for bounty.' };
             kingdom.gold -= 100;
-            kingdom.laws.productionBounties.push(data.good);
-            Engine.logEvent('🏭 Production bounty set: +2g per ' + data.good + ' produced.', null, 'kingdom');
+            kingdom.productionBounties.push({
+                good: data.good,
+                townId: null,
+                reward: CONFIG.KING_BOUNTY_DEFAULT_REWARD || 50,
+                createdDay: (Engine.getDay ? Engine.getDay() : 0),
+            });
+            Engine.logEvent('🏭 Production bounty set for ' + data.good + '.', null, 'kingdom');
             return { success: true, message: 'Production bounty set for ' + data.good + '. Cost: 100g/season.' };
         }
         if (action === 'remove_bounty') {
-            if (!kingdom.laws.productionBounties) return { success: false, message: 'No bounties active.' };
-            var bIdx = kingdom.laws.productionBounties.indexOf(data.good);
+            if (!kingdom.productionBounties) return { success: false, message: 'No bounties active.' };
+            var bIdx = -1;
+            for (var _bbi = 0; _bbi < kingdom.productionBounties.length; _bbi++) {
+                if (kingdom.productionBounties[_bbi].good === data.good) { bIdx = _bbi; break; }
+            }
             if (bIdx < 0) return { success: false, message: 'No bounty for ' + data.good + '.' };
-            kingdom.laws.productionBounties.splice(bIdx, 1);
+            kingdom.productionBounties.splice(bIdx, 1);
             Engine.logEvent('❌ Production bounty removed: ' + data.good, null, 'kingdom');
             return { success: true, message: 'Bounty removed for ' + data.good + '.' };
         }
         if (action === 'set_subsidy') {
-            if (!kingdom.laws.goodsSubsidies) kingdom.laws.goodsSubsidies = [];
-            if (kingdom.laws.goodsSubsidies.indexOf(data.good) >= 0) return { success: false, message: 'Subsidy already active for ' + data.good + '.' };
+            // v9p33river308: live system reads kingdom.tradeSubsidies
+            // (entries: {good, bonusPerUnit, maxUnits, unitsPaid, expiresDay})
+            // — was writing kingdom.laws.goodsSubsidies (good strings) so
+            // purchased subsidies were never applied.
+            if (!kingdom.tradeSubsidies) kingdom.tradeSubsidies = [];
+            if (kingdom.tradeSubsidies.some(function(s) { return s.good === data.good; })) {
+                return { success: false, message: 'Subsidy already active for ' + data.good + '.' };
+            }
             if (kingdom.gold < 150) return { success: false, message: 'Need 150g in treasury for subsidy.' };
             kingdom.gold -= 150;
-            kingdom.laws.goodsSubsidies.push(data.good);
-            Engine.logEvent('💸 Goods subsidy set: ' + data.good + ' prices reduced 30%.', null, 'kingdom');
+            var _today = (Engine.getDay ? Engine.getDay() : 0);
+            kingdom.tradeSubsidies.push({
+                good: data.good,
+                bonusPerUnit: CONFIG.KING_TRADE_SUBSIDY_PER_UNIT || 2,
+                maxUnits: 100,
+                unitsPaid: 0,
+                expiresDay: _today + 90,
+            });
+            Engine.logEvent('💸 Trade subsidy set for ' + data.good + '.', null, 'kingdom');
             return { success: true, message: 'Subsidy set for ' + data.good + '. Cost: 150g/season.' };
         }
         if (action === 'remove_subsidy') {
-            if (!kingdom.laws.goodsSubsidies) return { success: false, message: 'No subsidies active.' };
-            var sIdx = kingdom.laws.goodsSubsidies.indexOf(data.good);
+            if (!kingdom.tradeSubsidies) return { success: false, message: 'No subsidies active.' };
+            var sIdx = -1;
+            for (var _ssi = 0; _ssi < kingdom.tradeSubsidies.length; _ssi++) {
+                if (kingdom.tradeSubsidies[_ssi].good === data.good) { sIdx = _ssi; break; }
+            }
             if (sIdx < 0) return { success: false, message: 'No subsidy for ' + data.good + '.' };
-            kingdom.laws.goodsSubsidies.splice(sIdx, 1);
-            Engine.logEvent('❌ Goods subsidy removed: ' + data.good, null, 'kingdom');
+            kingdom.tradeSubsidies.splice(sIdx, 1);
+            Engine.logEvent('❌ Trade subsidy removed: ' + data.good, null, 'kingdom');
             return { success: true, message: 'Subsidy removed for ' + data.good + '.' };
         }
         if (action === 'set_land_subsidy') {
@@ -11321,13 +11351,20 @@
         }
         var sellQty = Math.min(10, Math.floor(kingdom.goodsStockpile[itemId]));
         // Sell at capital market price
+        // v9p33river308: town markets use town.market.supply[id] +
+        // town.market.prices[id] — NOT town.market[id]. The old check
+        // never matched a real market entry, so sellPrice always fell
+        // back to 5 and the goods were never added to actual market
+        // supply (a phantom write to town.market[itemId].supply).
         var sellPrice = 5;
         try {
             var allTowns = Engine.getTowns();
             for (var _ssi = 0; _ssi < allTowns.length; _ssi++) {
-                if (allTowns[_ssi].kingdomId === kingdom.id && allTowns[_ssi].isCapital && allTowns[_ssi].market && allTowns[_ssi].market[itemId]) {
-                    sellPrice = Math.round(allTowns[_ssi].market[itemId].price * 0.8) || 5;
-                    allTowns[_ssi].market[itemId].supply = (allTowns[_ssi].market[itemId].supply || 0) + sellQty;
+                var _stCap = allTowns[_ssi];
+                if (_stCap.kingdomId === kingdom.id && _stCap.isCapital && _stCap.market && _stCap.market.prices) {
+                    sellPrice = Math.max(1, Math.round((_stCap.market.prices[itemId] || 5) * 0.8));
+                    if (!_stCap.market.supply) _stCap.market.supply = {};
+                    _stCap.market.supply[itemId] = (_stCap.market.supply[itemId] || 0) + sellQty;
                     break;
                 }
             }
@@ -11347,12 +11384,15 @@
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         qty = Math.max(5, Math.min(500, qty || 10));
         // Cost: upfront payment of ~50% of typical market price per unit
+        // v9p33river308: same town.market[id] vs town.market.prices[id] fix
+        // as kingdomSellStockpile — was always falling back to 5g/unit.
         var baseCost = 5;
         try {
             var _allT = Engine.getTowns();
             for (var _i = 0; _i < _allT.length; _i++) {
-                if (_allT[_i].kingdomId === kingdom.id && _allT[_i].market && _allT[_i].market[goodId]) {
-                    baseCost = _allT[_i].market[goodId].price || 5;
+                var _ckCap = _allT[_i];
+                if (_ckCap.kingdomId === kingdom.id && _ckCap.market && _ckCap.market.prices && _ckCap.market.prices[goodId]) {
+                    baseCost = _ckCap.market.prices[goodId];
                     break;
                 }
             }
@@ -11403,9 +11443,12 @@
             remaining -= take2;
         }
         // Add to town market
-        if (!town.market) town.market = {};
-        if (!town.market[goodId]) town.market[goodId] = { supply: 0, demand: 0, price: 10 };
-        town.market[goodId].supply = (town.market[goodId].supply || 0) + qty;
+        // v9p33river308: town markets use town.market.supply[id] — was
+        // writing town.market[id] = {...} which made the goods invisible
+        // to all the normal market logic.
+        if (!town.market) town.market = { supply: {}, demand: {}, prices: {} };
+        if (!town.market.supply) town.market.supply = {};
+        town.market.supply[goodId] = (town.market.supply[goodId] || 0) + qty;
         Engine.logEvent('📦 Sent ' + qty + ' ' + goodId + ' from stockpile to ' + (town.name || townId) + '.');
         return { success: true, message: 'Sent ' + qty + ' ' + goodId + ' to ' + (town.name || townId) + '.' };
     }
@@ -19197,6 +19240,11 @@
             // deserializer always reset encounterPending to null, erasing
             // unresolved encounters.
             encounterPending: player.encounterPending ? structuredClone(player.encounterPending) : null,
+            // v9p33river308: persist mid-death/heir-selection state so a
+            // save taken while the heir-selection UI is open doesn't lose
+            // the in-progress succession flow on reload.
+            _deathProcessing: !!player._deathProcessing,
+            _deathContext: player._deathContext ? structuredClone(player._deathContext) : null,
             // Kingdom quest data
             kingdomQuests: structuredClone(player.kingdomQuests || {}),
             _kqVisitedTowns: structuredClone(player._kqVisitedTowns || {}),
@@ -19279,6 +19327,11 @@
         if (player.encounterPending && typeof window !== 'undefined' && typeof window._showEncounterDialog === 'function') {
             try { window._showEncounterDialog(player.encounterPending); } catch (_e) {}
         }
+        // v9p33river308: restore mid-succession state. If a save was taken
+        // while the heir-selection UI was open, re-show it on load instead
+        // of stranding the player in a half-processed death.
+        player._deathProcessing = !!data._deathProcessing;
+        player._deathContext = data._deathContext ? structuredClone(data._deathContext) : null;
         player.traveling = data.traveling || false;
         player.travelProgress = data.travelProgress || 0;
         player.travelDestination = data.travelDestination || null;
@@ -19781,7 +19834,11 @@
             player.scholar.specializationKnowledge = player.scholar.specializationKnowledge || 0;
             player.scholar.royaltiesActive = player.scholar.royaltiesActive || false;
             player.scholar.royaltiesStartDay = player.scholar.royaltiesStartDay || 0;
-            player.scholar.royaltiesGeneration = player.scholar.royaltiesGeneration || player.scholar.royaltiesPlayerId ? (player.generation || 1) : null;
+            // v9p33river308: precedence fix — was
+            //   royaltiesGeneration || royaltiesPlayerId ? (gen||1) : null
+            // which parses as ((royaltiesGeneration||royaltiesPlayerId) ? ... : null)
+            // and overwrote a saved generation with the current generation.
+            player.scholar.royaltiesGeneration = player.scholar.royaltiesGeneration || (player.scholar.royaltiesPlayerId ? (player.generation || 1) : null);
             player.scholar.totalRoyaltiesEarned = player.scholar.totalRoyaltiesEarned || 0;
         }
         // Kingdom debts & trade ledgers
@@ -39472,7 +39529,11 @@
             generalSinceDay: 0,
             tacticsUsed: {},
             lastBattleDay: 0,
-            battleReady: false,
+            // v9p33river308: battle logic reads battlePlanReady
+            // (player_conquest.js:1339, 1449-1451). Was initializing
+            // battleReady, so fresh military leaders started with the
+            // wrong prep-state field.
+            battlePlanReady: false,
             warCouncilAccess: false,
             warCouncilDecisions: 0,
             heroOfAgesEarned: false,

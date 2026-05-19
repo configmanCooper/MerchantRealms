@@ -1158,7 +1158,10 @@
                 _commGoods.sort();
             }
         } catch(e) {}
-        if (_commGoods.length === 0) _commGoods = ['swords', 'armor', 'bows', 'arrows', 'bread', 'cloth', 'tools', 'ships', 'horses', 'wine', 'ale', 'spices', 'silk', 'iron', 'wood', 'stone', 'planks', 'bricks'];
+        // v9p33river308: removed 'ships' from fallback — not a market
+        // resource, so a 'ships' commission could never be filled by
+        // market supply and would silently sit forever.
+        if (_commGoods.length === 0) _commGoods = ['swords', 'armor', 'bows', 'arrows', 'bread', 'cloth', 'tools', 'horses', 'wine', 'ale', 'spices', 'silk', 'iron', 'wood', 'stone', 'planks', 'bricks'];
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">';
         html += '<select id="_roCommGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:140px;">';
         for (var _cgi = 0; _cgi < _commGoods.length; _cgi++) {

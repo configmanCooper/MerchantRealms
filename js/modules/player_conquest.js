@@ -199,21 +199,22 @@
             // Embassy buys from local market (items sent to homeland = deleted)
             if (day % 7 === 0 && player.shipwrecked.embassyBankAccount > 100) {
                 var embTown = Engine.findTown(emb.townId);
-                if (embTown && embTown.market) {
-                    var marketKeys = Object.keys(embTown.market);
+                if (embTown && embTown.market && embTown.market.supply) {
+                    // v9p33river308: was Object.keys(embTown.market) — that
+                    // included 'supply'/'prices'/'demand' as candidates and
+                    // could spend gold without removing actual goods. Read
+                    // from market.supply to get real resource keys.
+                    var marketKeys = Object.keys(embTown.market.supply).filter(function(k) { return (embTown.market.supply[k] || 0) > 0; });
                     if (marketKeys.length > 0) {
                         var rng2 = Engine.getRng();
                         var buyRes = rng2.pick(marketKeys);
-                        var mEntry = embTown.market[buyRes];
-                        var mPrice = typeof mEntry === 'object' ? (mEntry.price || 10) : (mEntry || 10);
-                        var buyQty = Math.min(5, Math.floor(player.shipwrecked.embassyBankAccount / mPrice));
+                        var mPrice = (embTown.market.prices && embTown.market.prices[buyRes]) || 10;
+                        var buyQty = Math.min(5, embTown.market.supply[buyRes] || 0, Math.floor(player.shipwrecked.embassyBankAccount / Math.max(1, mPrice)));
                         if (buyQty > 0) {
                             var cost = buyQty * mPrice;
                             player.shipwrecked.embassyBankAccount -= cost;
                             // Items are "sent to homeland" — removed from market supply
-                            if (typeof mEntry === 'object' && mEntry.supply !== undefined) {
-                                mEntry.supply = Math.max(0, mEntry.supply - buyQty);
-                            }
+                            embTown.market.supply[buyRes] = Math.max(0, (embTown.market.supply[buyRes] || 0) - buyQty);
                         }
                     }
                 }
@@ -621,6 +622,9 @@
         if (newRecipes.length === 0) return { success: false, message: 'No more recipes to teach.' };
         var recipe = newRecipes[0];
         player.shipwrecked.exoticRecipes.push(recipe);
+        // v9p33river308: was never incrementing craftsTaught so the quest
+        // counter and shipwrecked progress stat stayed stuck at 0.
+        player.shipwrecked.craftsTaught = (player.shipwrecked.craftsTaught || 0) + 1;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.teach_foreign_craft || 10);
         grantXP(10, 'foreign craft');
         return { success: true, message: 'You taught the technique for ' + recipe.replace(/_/g, ' ') + '!' };

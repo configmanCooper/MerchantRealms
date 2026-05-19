@@ -1417,10 +1417,14 @@
         var toName = toTown ? toTown.name : caravan.toTownId;
 
         // Build goods list for dropdown
+        // v9p33river308: was reading CONFIG.RESOURCES which doesn't exist —
+        // the top-level const is RESOURCE_TYPES (keyed by uppercase id like
+        // 'WHEAT'). Each entry has a lowercase `.id` we want to expose.
         var allGoods = [];
-        if (typeof CONFIG !== 'undefined' && CONFIG.RESOURCES) {
-            for (var rk in CONFIG.RESOURCES) {
-                var r = CONFIG.RESOURCES[rk];
+        var _resSrc = (typeof RESOURCE_TYPES !== 'undefined') ? RESOURCE_TYPES : null;
+        if (_resSrc) {
+            for (var rk in _resSrc) {
+                var r = _resSrc[rk];
                 if (r && r.id) allGoods.push({ id: r.id, name: r.name || r.id });
             }
         }

@@ -85,6 +85,18 @@
         var operator = Engine.findPerson ? Engine.findPerson(service.operatorId) : null;
         if (operator) operator.gold = (operator.gold || 0) + service.price;
 
+        // v9p33river308: shared refund helper — both route-lookup failures
+        // below previously refunded the player but left the operator paid
+        // (minting gold). Now clawing back from the operator too.
+        var _refundTransport = function() {
+            player.gold += service.price;
+            if (player.stats && typeof player.stats.totalGoldSpent === 'number') {
+                player.stats.totalGoldSpent -= service.price;
+            }
+            if (operator) operator.gold = Math.max(0, (operator.gold || 0) - service.price);
+            service.capacity += 1;
+        };
+
         if (service.isSea) {
             // Sea travel via NPC ship
             var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
@@ -97,11 +109,7 @@
                 }
             }
             if (!seaRoute) {
-                player.gold += service.price;
-                if (player.stats && typeof player.stats.totalGoldSpent === 'number') {
-                    player.stats.totalGoldSpent -= service.price;
-                }
-                service.capacity += 1;
+                _refundTransport();
                 return { success: false, message: 'No sea route found.' };
             }
             player.traveling = true;
@@ -122,11 +130,7 @@
             // Land travel via NPC wagon — use normal pathfinding with speed bonus
             var route = Engine.findPath(townId, service.destinationTownId);
             if (!route || route.length === 0) {
-                player.gold += service.price;
-                if (player.stats && typeof player.stats.totalGoldSpent === 'number') {
-                    player.stats.totalGoldSpent -= service.price;
-                }
-                service.capacity += 1;
+                _refundTransport();
                 return { success: false, message: 'No route found.' };
             }
             var totalDist = 0;

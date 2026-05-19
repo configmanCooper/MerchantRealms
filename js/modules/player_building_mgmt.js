@@ -50,6 +50,12 @@
             return { success: false, message: 'You must be in the same town as this building.' };
         }
 
+        // v9p33river308: validate building type BEFORE deducting ticks/energy
+        // so corrupt/unknown building records don't silently burn a work
+        // action with no payoff.
+        var bt = findBuildingType(bld.type);
+        if (!bt) return { success: false, message: 'Unknown building type.' };
+
         // Deduct ticks if available (but don't block — owner can always work their building)
         if ((player.ticksRemaining || 0) >= 15) {
             player.ticksRemaining -= 15;
@@ -60,21 +66,22 @@
         // v9p33river98: working at your own building now costs energy too,
         // matching the regular work-job flow. Cost scales with building category.
         if (Player.consumeEnergy) {
-            var _bt = findBuildingType(bld.type);
+            var _bt = bt;
             var _ePerTick = 2.0; // default = medium
             if (_bt) {
                 if (_bt.category === 'farm') _ePerTick = 2.0;
-                else if (_bt.category === 'mining') _ePerTick = 3.0;
+                // v9p33river308: config uses 'mine' (singular) for mine
+                // buildings (iron_mine/gold_mine/quarry/coal_mine etc).
+                // Was matching only 'mining', so mines fell back to the
+                // default 2.0 instead of the intended 3.0.
+                else if (_bt.category === 'mining' || _bt.category === 'mine') _ePerTick = 3.0;
                 else if (_bt.category === 'processing') _ePerTick = 2.5;
                 else if (_bt.category === 'finished') _ePerTick = 2.0;
-                else if (_bt.category === 'retail') _ePerTick = 1.5;
+                else if (_bt.category === 'retail' || _bt.category === 'trade') _ePerTick = 1.5;
                 else if (_bt.category === 'storage') _ePerTick = 0.5;
             }
             Player.consumeEnergy(15 * _ePerTick);
         }
-
-        var bt = findBuildingType(bld.type);
-        if (!bt) return { success: false, message: 'Unknown building type.' };
 
         // Retail buildings — player works the counter
         if (bt.retailConfig) {

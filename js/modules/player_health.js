@@ -453,16 +453,20 @@
     function _consumeMedicalSupplies(town, severity, isIllness) {
         if (!town || !town.market || !town.market.supply) return;
         var supply = town.market.supply;
-        var NPC_HEALTH_CONFIG = (typeof CONFIG !== 'undefined' && CONFIG.NPC_HEALTH_CONFIG) ? CONFIG.NPC_HEALTH_CONFIG : {};
+        // v9p33river308: NPC_HEALTH_CONFIG is a top-level const
+        // (config.js:3969), not a CONFIG property. Was always falling
+        // back to an empty object, so treatment supply definitions were
+        // never found and medical supplies were never consumed.
+        var _hcCfg = (typeof NPC_HEALTH_CONFIG !== 'undefined') ? NPC_HEALTH_CONFIG : {};
         var supplyDef;
         if (isIllness) {
-            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_ILLNESS[severity]) || null;
+            supplyDef = (_hcCfg.TREATMENT_SUPPLIES_ILLNESS && _hcCfg.TREATMENT_SUPPLIES_ILLNESS[severity]) || null;
         } else {
-            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES_INJURY[severity]) || null;
+            supplyDef = (_hcCfg.TREATMENT_SUPPLIES_INJURY && _hcCfg.TREATMENT_SUPPLIES_INJURY[severity]) || null;
         }
         if (!supplyDef) {
             // Legacy fallback
-            supplyDef = (NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES && NPC_HEALTH_CONFIG.TREATMENT_SUPPLIES[severity]) || null;
+            supplyDef = (_hcCfg.TREATMENT_SUPPLIES && _hcCfg.TREATMENT_SUPPLIES[severity]) || null;
         }
         if (!supplyDef) return;
 

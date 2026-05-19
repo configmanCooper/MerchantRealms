@@ -2679,7 +2679,14 @@ function openTravelOptions(townId) {
             }
             if (destKingdom.laws.specialLaws) {
                 for (var si = 0; si < destKingdom.laws.specialLaws.length; si++) {
-                    if (destKingdom.laws.specialLaws[si].id === 'closed_borders') hasClosed = true;
+                    var sl = destKingdom.laws.specialLaws[si];
+                    // v9p33river308: configured special-law id is
+                    // 'immigration_policy' with effect 'closed_borders'
+                    // (config.js:4359). Was only matching id==='closed_borders'
+                    // which never fired — pre-travel closed-border dialog
+                    // could be skipped. Match either id, or effect, or the
+                    // legacy literal.
+                    if (sl.id === 'closed_borders' || sl.id === 'immigration_policy' || sl.effect === 'closed_borders') hasClosed = true;
                 }
             }
         }

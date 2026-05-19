@@ -784,7 +784,10 @@
         if (!em || amount <= 0) return;
         em.emXp = (em.emXp || 0) + amount;
         em.emTotalXp = (em.emTotalXp || 0) + amount;
-        var levels = CONFIG.MERCHANT_LEVELS;
+        // v9p33river308: MERCHANT_LEVELS and SKILL_POINTS_PER_LEVEL are
+        // top-level consts (config.js:3417, 3455), NOT CONFIG properties.
+        // Was always early-returning so EMs gained XP but never leveled.
+        var levels = (typeof MERCHANT_LEVELS !== 'undefined') ? MERCHANT_LEVELS : null;
         if (!levels) return;
         var newLevel = em.emLevel || 1;
         for (var li = 0; li < levels.length; li++) {
@@ -792,7 +795,8 @@
         }
         if (newLevel > (em.emLevel || 1)) {
             var levelsGained = newLevel - (em.emLevel || 1);
-            em.emSkillPoints = (em.emSkillPoints || 0) + levelsGained * CONFIG.SKILL_POINTS_PER_LEVEL;
+            var _spPerLvl = (typeof SKILL_POINTS_PER_LEVEL !== 'undefined') ? SKILL_POINTS_PER_LEVEL : 4;
+            em.emSkillPoints = (em.emSkillPoints || 0) + levelsGained * _spPerLvl;
             em.emLevel = newLevel;
             logEvent(em.name + ' has reached merchant level ' + newLevel + '!', {
                 type: 'elite_level_up',

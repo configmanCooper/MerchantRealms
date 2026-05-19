@@ -16554,8 +16554,19 @@ window.UI = (function () {
         }
 
         // Market price comparison for key goods
+        // v9p33river308: RESOURCE_TYPES is keyed by UPPERCASE ids (WHEAT,
+        // BREAD) but the filter compared lowercase strings ('wheat'),
+        // leaving existingGoods empty and the table blank. Build a
+        // lowercase-id→resource lookup and rebuild the list from that.
+        var _rtByLowerId = {};
+        if (typeof RESOURCE_TYPES !== 'undefined') {
+            for (var _rk in RESOURCE_TYPES) {
+                var _rEntry = RESOURCE_TYPES[_rk];
+                if (_rEntry && _rEntry.id) _rtByLowerId[_rEntry.id] = _rEntry;
+            }
+        }
         var keyGoods = ['wheat', 'bread', 'iron', 'wood', 'tools', 'cloth', 'leather', 'swords', 'armor', 'ale', 'wine', 'salt', 'wool', 'fish', 'herbs', 'pottery'];
-        var existingGoods = keyGoods.filter(function(g) { return RESOURCE_TYPES[g]; });
+        var existingGoods = keyGoods.filter(function(g) { return !!_rtByLowerId[g]; });
 
         html += '<div style="margin-bottom:12px;">';
         html += '<h4 style="color:#FFD700;margin:0 0 6px;">📊 Market Price Comparison (avg per kingdom)</h4>';
@@ -16568,7 +16579,7 @@ window.UI = (function () {
 
         for (var gi = 0; gi < existingGoods.length; gi++) {
             var gid = existingGoods[gi];
-            var res = RESOURCE_TYPES[gid];
+            var res = _rtByLowerId[gid] || (typeof RESOURCE_TYPES !== 'undefined' ? RESOURCE_TYPES[gid] : null) || { name: gid, icon: '' };
             html += '<tr style="border-bottom:1px solid #222;">';
             html += '<td style="padding:3px 6px;">' + (res.icon || '') + ' ' + (res.name || gid) + '</td>';
             for (var ki = 0; ki < kingdoms.length; ki++) {
