@@ -31637,6 +31637,14 @@
     }
 
     function createPetition(typeId, targetData) {
+        // v9p33river329: kings don't need to petition — they enact
+        // their will directly. Block creation entirely when the player
+        // is king of any kingdom. (Petitions are always submitted to
+        // the player's citizenship kingdom's king; the king is always
+        // king of his own kingdom, so this short-circuits all cases.)
+        if (player.isKing && player.kingState && player.kingState.kingdomId) {
+            return { success: false, message: 'As king, you don\'t need to petition — you can enact policy directly from the King\'s panel.' };
+        }
         if (!player.citizenshipKingdomId && !Object.keys(player.socialRank).some(function(k) { return (player.socialRank[k] || 0) >= 1; })) {
             return { success: false, message: 'You must be a citizen of a kingdom to create petitions.' };
         }
@@ -32154,6 +32162,12 @@
 
     function submitPetition(petitionId) {
         if (!player.petitions) return { success: false, message: 'No petitions.' };
+        // v9p33river329: if the player has become king while a petition
+        // was in flight, block submission — kings shouldn't be petitioning
+        // themselves. The petition stays in the player's history.
+        if (player.isKing && player.kingState && player.kingState.kingdomId) {
+            return { success: false, message: 'As king, you don\'t need to petition. Use the King\'s panel to enact policy directly.' };
+        }
         var petition = player.petitions.find(function(p) { return p.id === petitionId; });
         if (!petition || petition.status !== 'active') return { success: false, message: 'Petition not found or not active.' };
 

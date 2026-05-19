@@ -92,13 +92,26 @@
         }
 
         html += '<div style="margin-top:15px;">';
-        html += '<button class="btn-medieval" style="padding:8px 20px;background:rgba(212,160,23,0.2);border-color:rgba(212,160,23,0.5);" data-action="showCreatePetitionPanel">📜 Create New Petition</button>';
+        // v9p33river329: kings can't create petitions — show a hint
+        // instead of the button.
+        if (Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId) {
+            html += '<div style="color:#aa7;font-size:0.85em;padding:8px;background:rgba(60,60,40,0.4);border:1px solid #665;border-radius:4px;">' +
+                    '👑 As king, you don\'t need to petition. Open the <strong>King\'s panel</strong> to enact policy directly.' +
+                    '</div>';
+        } else {
+            html += '<button class="btn-medieval" style="padding:8px 20px;background:rgba(212,160,23,0.2);border-color:rgba(212,160,23,0.5);" data-action="showCreatePetitionPanel">📜 Create New Petition</button>';
+        }
         html += '</div></div>';
 
         openModal('Petitions', html);
     }
 
     function showCreatePetitionPanel() {
+        // v9p33river329: kings can't petition — they enact policy directly.
+        if (Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId) {
+            toast('As king, you don\'t need to petition — use the King\'s panel to enact policy directly.', 'info', 'my_kingdom');
+            return;
+        }
         var hasCitizenship = (Player.citizenshipKingdomId) || (Player.isPlayerCitizenOf && Object.keys(Player.socialRank || {}).some(function(k) { return Player.isPlayerCitizenOf(k); }));
         if (!hasCitizenship) {
             toast('You must be a citizen of a kingdom to create petitions.', 'warning', 'my_kingdom');
