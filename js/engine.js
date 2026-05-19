@@ -7820,7 +7820,19 @@
             }
 
             // Noble children under 18: near-immune (protected households)
-            if (isUnderAge && !isPlayerChild && p.socialRank >= 4) {
+            // v9p33river336: was checking `p.socialRank >= 4` directly, but
+            // NPC socialRank is a per-kingdom map/object, so `>= 4` was
+            // always false for ordinary NPCs and the branch was unreachable
+            // except when p.isNoble happened to be set. Now uses the same
+            // dual check as engine_health.js: isNoble flag, 'noble' occupation,
+            // or any kingdom rank >= 4 in the socialRank map.
+            var _npcIsNoble = p.isNoble || p.occupation === 'noble';
+            if (!_npcIsNoble && p.socialRank && typeof p.socialRank === 'object') {
+                for (var _srk in p.socialRank) {
+                    if ((p.socialRank[_srk] || 0) >= 4) { _npcIsNoble = true; break; }
+                }
+            }
+            if (isUnderAge && !isPlayerChild && _npcIsNoble) {
                 if (world.rng.chance(0.99)) return;
             }
 
@@ -33521,22 +33533,69 @@
                 towns: world.towns,
                 roads: world.roads,
                 seaRoutes: world.seaRoutes,
-                people: world.people.filter(function(p) {
-                    if (p.alive) return true;
-                    // Keep dead player children, elite merchants, and their heirs
-                    if (p.id && p.id.startsWith('p_child_')) return true;
-                    if (p.isEliteMerchant && (p.alive || (world.day - (p._deathDay || 0)) < 120)) return true;
-                    // v9p33river305: keep dead NPCs that are still REFERENCED by the
-                    // living world (player relationships, spouse/parent/child links,
-                    // story NPCs, scheme targets, etc.). Filtering them out broke
-                    // every spouseId/parentIds/childrenIds pointer to an ordinary
-                    // dead NPC.
-                    if (p.isStoryNPC) return true;
-                    if (p._referencedDead) return true;
-                    return false;
-                }),
+                people: (function() {
+                    // v9p33river336: the v305 _referencedDead flag was never
+                    // assigned anywhere, so dead NPCs still referenced by
+                    // player.spouseId/parentIds/childrenIds (and other living
+                    // NPCs' family/relationship links) were being dropped from
+                    // saves — breaking every ID pointer. Build the referenced-id
+                    // Set inline here and check it in the filter.
+                    var _refSet = new Set();
+                    function _addId(id) { if (id) _refSet.add(id); }
+                    function _addIds(arr) { if (Array.isArray(arr)) { for (var _i = 0; _i < arr.length; _i++) _addId(arr[_i]); } }
+                    // Player references
+                    try {
+                        var _ps = (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
+                        if (_ps) {
+                            _addId(_ps.spouseId);
+                            _addIds(_ps.parentIds);
+                            _addIds(_ps.childrenIds);
+                            _addIds(_ps.siblingIds);
+                            if (_ps.relationships) for (var _rid in _ps.relationships) _addId(_rid);
+                            if (_ps.familyMembers) for (var _fmi = 0; _fmi < _ps.familyMembers.length; _fmi++) {
+                                var _fm = _ps.familyMembers[_fmi];
+                                _addId(typeof _fm === 'string' ? _fm : (_fm && _fm.id));
+                            }
+                        }
+                    } catch (_e) {}
+                    // Living NPC references (family links that point to dead NPCs)
+                    for (var _pi = 0; _pi < world.people.length; _pi++) {
+                        var _lp = world.people[_pi];
+                        if (!_lp || !_lp.alive) continue;
+                        _addId(_lp.spouseId);
+                        _addIds(_lp.parentIds);
+                        _addIds(_lp.childrenIds);
+                        _addIds(_lp.siblingIds);
+                    }
+                    return world.people.filter(function(p) {
+                        if (p.alive) return true;
+                        // Keep dead player children, elite merchants, and their heirs
+                        if (p.id && p.id.startsWith('p_child_')) return true;
+                        if (p.isEliteMerchant && (p.alive || (world.day - (p._deathDay || 0)) < 120)) return true;
+                        // v9p33river305: keep dead NPCs that are still REFERENCED by the
+                        // living world (player relationships, spouse/parent/child links,
+                        // story NPCs, scheme targets, etc.). Filtering them out broke
+                        // every spouseId/parentIds/childrenIds pointer to an ordinary
+                        // dead NPC.
+                        if (p.isStoryNPC) return true;
+                        if (p._referencedDead) return true;
+                        // v9p33river336: also keep dead NPCs whose ID is in the live
+                        // reference Set computed above (covers spouseId/parentIds/
+                        // childrenIds/siblingIds/relationships on player AND all
+                        // living NPCs). The _referencedDead flag was never set
+                        // anywhere in the codebase, so without this check the
+                        // entire "preserve referenced dead" feature was dead code.
+                        if (p.id && _refSet.has(p.id)) return true;
+                        return false;
+                    });
+                })(),
                 events: world.events,
                 eventLog: world.eventLog.slice(-100),
+                // v9p33river336: previously _pendingDeathNotifications was
+                // created by killPerson but never serialized. If the player
+                // saved between queue and the next tick's display, the death
+                // notification was lost on reload.
+                _pendingDeathNotifications: (world._pendingDeathNotifications || []).slice(),
                 // v9p33river305: previously omitted — major event history (permanent
                 // chronicle) and 30-day background gossip vanished on load.
                 majorEventHistory: (world.majorEventHistory || []).slice(-200),
@@ -34170,6 +34229,10 @@
             // major-world chronicle and 30-day NPC gossip survive reload.
             world.majorEventHistory = data.majorEventHistory || [];
             world._backgroundGossip = data._backgroundGossip || [];
+            // v9p33river336: restore the pending-death-notification queue so
+            // saves between killPerson() (which queues) and the next tick
+            // (which displays) don't drop the notification.
+            world._pendingDeathNotifications = data._pendingDeathNotifications || [];
             world.armies = data.armies || [];
             world.activeWars = data.activeWars || {};
             world.treaties = data.treaties || [];

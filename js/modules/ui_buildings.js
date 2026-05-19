@@ -721,7 +721,12 @@
             if (owner) owner.gold = (owner.gold || 0) + price;
             else {
                 var kingdom = Engine.findKingdom(aptBld.ownerId);
-                if (kingdom) kingdom.treasury = (kingdom.treasury || 0) + price;
+                // v9p33river336: canonical kingdom treasury field is .gold,
+                // not .treasury. Other rent/shop owner-pay paths use .gold,
+                // and the kingdom finance system reads .gold. Previously
+                // crediting .treasury made the proceeds invisible to the
+                // live kingdom economy and relied on later cleanup migration.
+                if (kingdom) kingdom.gold = (kingdom.gold || 0) + price;
             }
         }
 

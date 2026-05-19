@@ -321,9 +321,9 @@ var StoryMode = (function () {
                   desc: 'Buy 1 cloth',
                   hint: 'Open Trade and search for Cloth.',
                   done: false },
-                { id: 'ch9c_craft_backpack', type: 'home_craft',
+                { id: 'ch9c_craft_backpack', type: 'home_craft', item: 'backpack',
                   desc: 'Craft a backpack at home',
-                  hint: 'Open Character \u2192 Housing \u2192 your home \u2192 Home Crafting section. Select Backpack and click Craft.',
+                  hint: 'Open Character \u2192 Housing \u2192 your home \u2192 Home Crafting section. Select Backpack and click Craft. (Requires a workshop addon or workshop-built home.)',
                   done: false, after: ['ch9c_buy_leather', 'ch9c_buy_cloth'] }
             ],
             endDialog: 'ch9c_complete',
@@ -1440,6 +1440,12 @@ var StoryMode = (function () {
                     break;
 
                 case 'home_craft':
+                    // v9p33river336: previously matched any home_craft action
+                    // regardless of what was crafted, so e.g. Ch9c's
+                    // "craft a backpack" objective completed when the player
+                    // crafted bandages. Now if obj.item is specified, the
+                    // crafted item must match.
+                    if (obj.item && data && data.item !== obj.item) break;
                     matched = true;
                     break;
 

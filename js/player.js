@@ -33738,6 +33738,15 @@
         { id: 'rope', name: 'Rope', inputs: { hemp: 3 }, output: 'rope', qty: 2, ticks: 4 },
         { id: 'leather', name: 'Leather', inputs: { hide: 1 }, output: 'leather', qty: 3, ticks: 2 },
         { id: 'preserved_food', name: 'Preserved Food', inputs: { meat: 2, salt: 1 }, output: 'preserved_food', qty: 2, ticks: 5 },
+        // v9p33river336: backpack/cart/wagon crafting was supposed to be
+        // available through the workshop addon — story Ch9c directs the
+        // player to craft a backpack at home, but the recipe was missing.
+        // Inputs/outputs match the CANVAS_WORKSHOP (backpack) and WHEELWRIGHT
+        // (cart/wagon) building recipes in config.js. Ticks reflect their
+        // greater complexity vs simple home crafts.
+        { id: 'backpack', name: 'Backpack', inputs: { leather: 2, cloth: 1 }, output: 'backpack', qty: 1, ticks: 6 },
+        { id: 'cart', name: 'Cart', inputs: { planks: 3, iron: 1 }, output: 'cart', qty: 1, ticks: 10 },
+        { id: 'wagon', name: 'Wagon', inputs: { planks: 8, iron: 3, rope: 2, leather: 2 }, output: 'wagon', qty: 1, ticks: 15 },
     ];
 
     function getHomeCraftRecipes() {
