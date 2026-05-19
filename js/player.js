@@ -2481,10 +2481,16 @@
         }
 
         // Check land ownership
+        // v9p33river303: was `usedLandSlots + 1` — only counted 1 slot
+        // regardless of building size. Large buildings (hospital, apartment)
+        // use multiple landSlots and could exceed owned land. Use the
+        // building's declared landSlots (default 1).
+        const _purchaseBt = Engine.findBuildingType ? Engine.findBuildingType(result.building.type) : null;
+        const _neededSlots = (_purchaseBt && _purchaseBt.landSlots != null) ? _purchaseBt.landSlots : 1;
         const ownedLand = getOwnedLand(tid);
         const usedLandSlots = getUsedLandSlots(tid);
-        if (usedLandSlots + 1 > ownedLand) {
-            return { success: false, message: 'You need to own land here first. Buy land to place buildings.' };
+        if (usedLandSlots + _neededSlots > ownedLand) {
+            return { success: false, message: 'You need to own more land here first (need ' + _neededSlots + ' slot' + (_neededSlots > 1 ? 's' : '') + ', have ' + Math.max(0, ownedLand - usedLandSlots) + ' free).' };
         }
 
         player.gold -= result.price;
@@ -2496,10 +2502,19 @@
         bld.ownerId = 'player';
 
         // Pay the old owner if alive
+        // v9p33river303: was only trying Engine.findPerson, missing the
+        // kingdom-id case (orphan dead-owner buildings are reassigned to the
+        // kingdom, so the buy "old owner" is the kingdom). Credit the
+        // kingdom treasury when that's the case.
         if (oldOwner) {
             var owner = Engine.findPerson(oldOwner);
             if (owner && owner.alive) {
                 owner.gold = (owner.gold || 0) + result.price;
+            } else {
+                var ownerKingdom = Engine.findKingdom ? Engine.findKingdom(oldOwner) : null;
+                if (ownerKingdom) {
+                    ownerKingdom.gold = (ownerKingdom.gold || 0) + result.price;
+                }
             }
         }
 
@@ -18273,7 +18288,9 @@
 
         if (kingdom) {
             // Treasury affects provision quality
-            var treasury = kingdom.treasury || 0;
+            // v9p33river303: kingdoms store wealth in `gold`, not `treasury`.
+            // Was always 0, dropping rich kingdoms to "barely fed" (0.2).
+            var treasury = kingdom.gold || 0;
             if (treasury <= 0) {
                 provisionQuality = 0.2; // Bankrupt — soldiers barely fed
             } else if (treasury < 200) {
@@ -18286,8 +18303,22 @@
             // else 1.0 — wealthy kingdom feeds well
 
             // King personality modifiers
-            var king = kingdom.king || kingdom.ruler || {};
-            var trait = king.trait || king.personality || '';
+            // v9p33river303: kingdom.king is an ID string, not the king
+            // object. Resolve via Engine.findPerson so personality modifiers
+            // actually fire (was always trait='', applying nothing).
+            var kingPerson = (kingdom.king && Engine.findPerson) ? Engine.findPerson(kingdom.king) : null;
+            var trait = '';
+            if (kingPerson) {
+                trait = kingPerson.trait || '';
+                // Also map personality.* fields to legacy trait strings
+                if (!trait && kingPerson.personality) {
+                    var kp = kingPerson.personality;
+                    if (kp.temperament === 'tyrant' || kp.temperament === 'cruel') trait = 'tyrant';
+                    else if (kp.greed === 'greedy' || kp.greed === 'corrupt') trait = 'stingy';
+                    else if (kp.temperament === 'kind' || kp.temperament === 'benevolent') trait = 'kind';
+                    else if (kp.temperament === 'warlike' || kp.temperament === 'strategic') trait = 'military';
+                }
+            }
             if (trait === 'tyrant' || trait === 'cruel' || trait === 'corrupt') {
                 provisionQuality *= 0.6; // Cruel kings neglect troops
             } else if (trait === 'stingy' || trait === 'greedy') {

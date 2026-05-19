@@ -25817,6 +25817,28 @@
         var toT = findTown(road.toTownId);
         if (!fromT || !toT) return { success: false, message: 'Road endpoints not found.' };
 
+        // v9p33river303: snapshot the original road so callers (player_outpost
+        // outpost-connector path) can rollback the junction split if a later
+        // step fails. Stored on the junction itself so cleanup is keyed by
+        // junction.id.
+        var _origRoadSnapshot = {
+            fromTownId: road.fromTownId,
+            toTownId: road.toTownId,
+            quality: road.quality,
+            safe: road.safe,
+            hasBridge: road.hasBridge,
+            bridgeDestroyed: road.bridgeDestroyed,
+            bridgeSegments: road.bridgeSegments ? road.bridgeSegments.slice() : [],
+            bridges: road.bridges ? road.bridges.slice() : [],
+            waypoints: road.waypoints ? road.waypoints.slice() : [],
+            condition: road.condition,
+            builtDay: road.builtDay,
+            builtBy: road.builtBy,
+            ownerId: road.ownerId,
+            tollRate: road.tollRate,
+            isTollRoad: road.isTollRoad,
+        };
+
         // Create minimal junction node
         var junction = {
             id: uid('junction'),
@@ -25841,6 +25863,9 @@
         };
         world.towns.push(junction);
         townIndex[junction.id] = junction;
+        // v9p33river303: keep the snapshot on the junction so rollback can
+        // restore the original road after a failed connector build.
+        junction._origRoadSnapshot = _origRoadSnapshot;
 
         // Split waypoints at the junction point
         var oldWaypoints = road.waypoints || [];
@@ -25913,6 +25938,50 @@
         });
 
         return { success: true, junction: junction, message: 'Road junction created.' };
+    }
+
+    // v9p33river303: rollback for createRoadJunction. Removes the junction
+    // town + the two split roads it created and restores the original road
+    // from the snapshot stored on the junction. Used by outpost connector
+    // build to recover when the post-split connector road fails.
+    function rollbackRoadJunction(junctionId) {
+        if (!world || !junctionId) return { success: false, message: 'Invalid junction.' };
+        var junction = findTown(junctionId);
+        if (!junction || !junction.isJunction || !junction._origRoadSnapshot) {
+            return { success: false, message: 'Junction not found or not rollback-capable.' };
+        }
+        // Remove the two split roads that have the junction as an endpoint
+        for (var rri = world.roads.length - 1; rri >= 0; rri--) {
+            var rr = world.roads[rri];
+            if (rr.fromTownId === junctionId || rr.toTownId === junctionId) {
+                world.roads.splice(rri, 1);
+            }
+        }
+        // Restore the original road
+        var s = junction._origRoadSnapshot;
+        world.roads.push({
+            fromTownId: s.fromTownId,
+            toTownId: s.toTownId,
+            quality: s.quality,
+            safe: s.safe,
+            hasBridge: s.hasBridge,
+            bridgeDestroyed: s.bridgeDestroyed,
+            bridgeSegments: s.bridgeSegments,
+            bridges: s.bridges,
+            waypoints: s.waypoints,
+            condition: s.condition,
+            builtDay: s.builtDay,
+            builtBy: s.builtBy,
+            ownerId: s.ownerId,
+            tollRate: s.tollRate,
+            tollRevenue: 0,
+            isTollRoad: s.isTollRoad,
+        });
+        // Remove the junction town
+        var jIdx = world.towns.indexOf(junction);
+        if (jIdx >= 0) world.towns.splice(jIdx, 1);
+        if (townIndex[junctionId]) delete townIndex[junctionId];
+        return { success: true, message: 'Junction rolled back.' };
     }
 
     function buildNewSeaRoute(fromTownId, toTownId, builtBy, options) {
@@ -26106,6 +26175,14 @@
     function getNPCBuildingSaleOffers(townId) {
         const town = findTown(townId);
         if (!town) return [];
+        // v9p33river303: per-day cache so the offer list shown to the player
+        // matches the offer list used by buyNPCBuilding. Previously the
+        // randomness at the bottom of the loop made offers volatile — a
+        // building shown as for-sale could vanish on click.
+        const _day = world.day;
+        if (town._npcOffersCache && town._npcOffersCacheDay === _day) {
+            return town._npcOffersCache;
+        }
         const offers = [];
         for (const bld of town.buildings) {
             if (!bld.ownerId || bld.ownerId === 'player') continue;
@@ -26123,20 +26200,32 @@
 
             const owner = findPerson(bld.ownerId);
             if (!owner || !owner.alive) {
-                // Auto-fix: reassign dead/missing owner's building to the kingdom
-                if (kingdom) bld.ownerId = kingdom.id;
-                else bld.ownerId = null;
+                // Auto-fix: reassign dead/missing owner's building to the
+                // kingdom AND mark it for sale so subsequent calls take the
+                // "kingdom-owned with forSale" branch above (otherwise the
+                // next call would skip it via the !forSale guard at top).
+                if (kingdom) {
+                    bld.ownerId = kingdom.id;
+                    bld.forSale = true;
+                    if (bld.salePrice == null) bld.salePrice = getBuildingValue(bld);
+                } else {
+                    bld.ownerId = null;
+                }
                 offers.push({ building: bld, price: getBuildingValue(bld), reason: 'Crown property — for sale' });
                 continue;
             }
 
-            // NPC sells if: low gold, unhappy, or building is unprofitable
+            // NPC sells if: low gold, unhappy, or building is unprofitable.
+            // v9p33river303: was non-deterministic — caching above means the
+            // SAME random result is reused for the rest of the day.
             const sellChance = (owner.gold < 50) ? 0.7 :
                               (owner.needs && owner.needs.happiness < 30) ? 0.4 : 0.05;
             if (world.rng.chance(sellChance)) {
                 offers.push({ building: bld, price: Math.floor(getBuildingValue(bld) * 1.2), reason: 'Owner willing to sell' });
             }
         }
+        town._npcOffersCache = offers;
+        town._npcOffersCacheDay = _day;
         return offers;
     }
 
@@ -32691,6 +32780,7 @@
         buildNewRoad(from, to, by, opts) { return buildNewRoad(from, to, by, opts); },
         buildNewSeaRoute(from, to, by, opts) { return buildNewSeaRoute(from, to, by, opts); },
         createRoadJunction(road, jx, jy) { return createRoadJunction(road, jx, jy); },
+        rollbackRoadJunction(junctionId) { return rollbackRoadJunction(junctionId); },
         collectTolls() { collectTolls(); },
         checkWaterFraction(x1, y1, x2, y2) { return checkWaterPath(x1, y1, x2, y2); },
         getDominantTerrain(ax, ay, bx, by) { return getDominantTerrain(ax, ay, bx, by); },

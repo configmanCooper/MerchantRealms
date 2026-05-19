@@ -1012,7 +1012,11 @@
         const town = Engine.findTown(player.townId);
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(0.15, town);
-        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(targetMerchantId));
+        // v9p33river303: was passing undeclared `targetMerchantId` — in
+        // strict mode that throws ReferenceError and aborts the whole
+        // sabotage call. Road sabotage has no per-noble target; pass null
+        // so _nobleSuccessMult returns the neutral 1.0 multiplier.
+        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(null));
         var caught = _o.caught;
         var successful = _o.successful;
 
@@ -1274,7 +1278,11 @@
         // Apply success effect (steal gold or item) if successful AND there's loot
         if (successful && hasLoot) {
             if (npcGold > 10 && (invKeys.length === 0 || rng.chance(0.6))) {
-                stolenGold = Math.min(npcGold, rng.randInt(10, Math.min(100, Math.floor(npcGold * 0.3))));
+                // v9p33river303: when npcGold was ~30-33, the upper bound
+                // floor(npcGold * 0.3) collapsed below 10, making rng.randInt
+                // (10, 9) → NaN with this RNG. Clamp the max to >= the min.
+                var _stealMax = Math.max(10, Math.min(100, Math.floor(npcGold * 0.3)));
+                stolenGold = Math.min(npcGold, rng.randInt(10, _stealMax));
                 if (npc.gold != null) npc.gold -= stolenGold;
                 player.gold += stolenGold;
                 player.stats.totalGoldEarned += stolenGold;

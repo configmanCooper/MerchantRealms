@@ -102,6 +102,14 @@
             if (_opTerrain === 3) return { success: false, message: 'Cannot build an outpost on mountains.' };
         }
 
+        // v9p33river303: previously deducted gold/materials BEFORE the
+        // engine's distance check ran inside foundOutpost — a "too close"
+        // failure silently kept the player's coin and resources. Snapshot
+        // and refund on any failure path.
+        var _snapGold = totalGold;
+        var _snapMats = {};
+        for (var _smK in totalMats) _snapMats[_smK] = totalMats[_smK];
+
         // Deduct all costs
         player.gold -= totalGold;
         player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalGold;
@@ -119,6 +127,16 @@
             buildWithRoad: !!opts.buildWithRoad,
             roadTargetTownId: opts.roadTargetTownId || null,
         });
+
+        if (!result.success) {
+            // Refund on any engine-side failure (distance check, terrain, etc.)
+            player.gold += _snapGold;
+            player.stats.totalGoldSpent = Math.max(0, (player.stats.totalGoldSpent || 0) - _snapGold);
+            for (var _rmK in _snapMats) {
+                player.inventory[_rmK] = (player.inventory[_rmK] || 0) + _snapMats[_rmK];
+            }
+            return result;
+        }
 
         if (result.success && result.outpost) {
             if (!player.outposts) player.outposts = [];
@@ -732,13 +750,32 @@
         if ((inv.wood || 0) < woodCost) return { success: false, message: 'Need ' + woodCost + ' wood (have ' + (inv.wood || 0) + ').' };
         if ((inv.stone || 0) < stoneCost) return { success: false, message: 'Need ' + stoneCost + ' stone (have ' + (inv.stone || 0) + ').' };
 
+        // v9p33river303: pre-validate the connector road's land path before
+        // splitting the original road. Previously, createRoadJunction ran
+        // first (splitting the original road and adding a junction town),
+        // then buildNewRoad could fail and leave an orphan junction with a
+        // split original road. Now we check terrain feasibility up front.
+        if (Engine.findTerrainPath) {
+            var _connPath = Engine.findTerrainPath(outpost.x, outpost.y, roadConn.nearestPointX, roadConn.nearestPointY, 'land');
+            if (!_connPath || !_connPath.waypoints || _connPath.waypoints.length < 2) {
+                return { success: false, message: 'No valid land path to the road (too much water in between).' };
+            }
+        }
+
         // Create junction on the road at the nearest point
         var jResult = Engine.createRoadJunction(roadConn.road, roadConn.nearestPointX, roadConn.nearestPointY);
         if (!jResult.success) return jResult;
 
         // Build road from outpost to junction
         var roadResult = Engine.buildNewRoad(outpostTownId, jResult.junction.id, player.id || 'player', { ownerId: player.id || 'player' });
-        if (!roadResult.success) return { success: false, message: 'Failed to build road to junction: ' + roadResult.message };
+        if (!roadResult.success) {
+            // v9p33river303: roll back the junction split so the original
+            // road is not left orphaned/broken.
+            if (Engine.rollbackRoadJunction) {
+                try { Engine.rollbackRoadJunction(jResult.junction.id); } catch (_eRb) { /* best-effort */ }
+            }
+            return { success: false, message: 'Failed to build road to junction: ' + roadResult.message };
+        }
 
         // Deduct costs
         player.gold -= baseCost;
