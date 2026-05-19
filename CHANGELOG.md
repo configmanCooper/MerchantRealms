@@ -4,6 +4,89 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [BugFixes4] - v9p33river331 → v9p33river349 — third bug-triage sprint + dark-deeds expansion (19 commits)
+
+The post-BugFixes3 marathon. Mix of large verification batches, gameplay expansions (3 new schemes, 1 reworked equip slot, cross-kingdom petition refinements, royal favors and quest rewards actually taking effect), and follow-up bug passes. Per-commit detail: `git log BugFixes3..BugFixes4`.
+
+### Added — Equipment & Inventory
+
+- **Backpack + Vehicle as two distinct equip slots (v9p33river339)** — backpack and cart/wagon now equip independently like weapons/armor. New `Player.unequipBackpack()` returns it to inventory with the same capacity check as dismount. Equipped backpack/vehicle appear in the trade Sell list (auto-unequip on sale). UI shows two separate slot rows. Vehicle "downgrade" swaps now allowed (drop a wagon for a cart for less theft risk).
+- **Storage-container craft buttons gated on home workshop (v9p33river337)** — backpack/cart/wagon craft buttons on the Equipment panel now visibly disable + show a hover tooltip when the player lacks a workshop in their current town. Already-owned ready-made containers still equip without one.
+
+### Added — Petition System Refinements
+
+- **Petition signing rep baseline fix (v9p33river327)** — town/kingdom reputation bonuses now compute as `(rep − 50) × bonus` instead of raw rep. Default-rep strangers no longer auto-sign at 95%; baseline is now ~30%.
+- **Rank-based petition approval cap (v9p33river328)** — Citizen 50% / Burgher 60% / Guildmaster 75% / Minor Noble 90% / Lord 95% / Royal Advisor+ 99%. Cap uses the player's rank in the petitioning kingdom.
+- **Kings can't petition (v9p33river329)** — `createPetition`/`submitPetition` early-return when player is king; UI replaces "Create New Petition" with a hint pointing at the King's panel.
+
+### Added — Royal Favor & Quest Reward Plumbing (these used to silently no-op)
+
+- **Royal Decree (`guaranteed_petition`) actually grants a guaranteed petition (v9p33river340)** — `submitPetition` checks `player.guaranteedPetition[kingdomId]` before the random roll, auto-approves, and consumes the token.
+- **`tax_exemption` king favor actually skips property tax (v9p33river340)** — property tax loop honors `Player.state.taxExemption[kingdomId] > world.day`.
+- **Kingdom-quest `production_permit` reward grants a wildcard permit (v9p33river342–343)** — writes `'__wildcard__'` sentinel into `productionPermits[kingdomId]` with separate `_productionPermitExpiry[kingdomId]` tracking. All three ban-check sites honor the wildcard. Serialized + restored.
+- **Kingdom-quest `land_grant` reward actually grants a building slot (v9p33river342)** — bumps `player.landOwned[player.townId]` so the land-requirement check sees the new plot.
+- **Kingdom-quest `tax_exemption_30d` actually exempts taxes (v9p33river343)** — also writes to canonical `player.taxExemption[kingdomId]`, never shortens a longer existing exemption.
+- **Kingdom-quest `trackKQTradeGold` actually called (v9p33river342)** — new `Player.trackKQTradeGold(amount)` walks active kingdom quests across all kingdoms and credits any with a `goldTarget`. Hooked into `Player.sellResource` and caravan sales. "Raise X gold through trade" quests now progress.
+
+### Added — Quest Tracker HUD Fixes
+
+- **HUD iterates kingdomQuests as an object, not an array (v9p33river342–343)** — was using `.length` on a per-kingdom-id-keyed object.
+- **HUD reads `_activeQ.title` and `expiresDay` directly (v9p33river343)** — no more "Directive" fallback; days-left footer renders.
+- **Delivery progress reads `requirements.deliver` as an object map (v9p33river343)** — counts items via `Object.keys(_req.deliver)`.
+
+### Added — Cross-Kingdom Trade Policy Effects
+
+- **Player export bans now use canonical `kingdom.exportRestrictions` (v9p33river338)** — previously wrote to `kingdom.laws.exportBans` which nothing read.
+- **Player production bounties get `expiresDay` and a real `townId` (v9p33river338)** — defaults to `kingdom.capital` since UI has no town picker. Previously the strategy tick removed them next cycle and the responder couldn't find their nonexistent town.
+- **Player land subsidies use canonical `kingdom.landSubsidies` shape (v9p33river338)** — `{townId, buildingType, discount, expiresDay}` matching what every other system reads.
+- **Trade subsidy bonus paid to the merchant (v9p33river338)** — `collectTradeTax` now returns `{ taxCollected, subsidyAwarded }` so callers credit the right entity. Player buy/sell + caravan paths credit subsidy to player gold + toast. Previously the gold was deducted from kingdom but burned.
+- **Player direct buy/sell fires trade-policy effects (v9p33river338)** — new `Engine.applyTradePolicyOnly` helper (for callers that already collect tax manually) lets export restrictions and import subsidies fire on direct player trades. Buy gets subsidy; sell fires export restrictions.
+
+### Added — New Schemes (Dark Deeds Expansion)
+
+- **Forge a Royal Order (v9p33river344)** — Master Forger + Shadow Dealings. Forge a sealed royal decree in any kingdom — adjust taxes, ban/unban goods, free a prisoner, jail a noble, declare or end a war. Six order types with their own difficulty tier; rank-aware difficulty (noble in target kingdom gets bonus); 60-day cooldown. Treason-tier punishment if caught.
+- **Plant Treasonous Evidence (v9p33river345)** — frame a noble of a kingdom currently at war. Requires citizenship in BOTH the target kingdom and a kingdom it's at war with. On success the king immediately executes / exiles / jails the noble based on personality. 90-day cooldown, treason-tier if caught.
+- **Incite Strikes (v9p33river346)** — Shadow Dealings + Dark Connections. Bribe workers in a town to walk off jobs for 14 days (halts all non-player buildings via the existing `_strikeUntil` flag). Cost scales 1000–10000g with town prosperity + population. Detection scales with town security and capital-city status. 90-day per-town cooldown.
+- **Spread Plague — three variants (v9p33river347)** — Master Poisoner + Dark Connections. Plant biological contagion in your current town: A "seed" (800g, 1 herb — 2-4 immediate infections), B "water" (2500g, 2 herbs + 1 hide — 21-day water taint dripping 1-2 infections/tick), or C "food" (5000g, 4 herbs + 2 hide — 30-day food taint, 2-4 infections/tick + ~10% per-tick spillover to road-connected towns). Karma: 5% per week chance to catch it yourself while in town for 14 days. Treason-tier punishment.
+
+### Added — Civic Effects from Decree Schemes
+
+- **Jail-noble side effects** (used by `forgeRoyalOrder.jail_noble` and `plantTreasonousEvidence.jail`): kingdom-wide noble `loyaltyToKing` drop, individual noble loyalty zeroed, `kingMood.unrest` bump.
+- **Exile model** (used by treason scheme): `_exiled=true`, `_exiledFromKingdomId`, kingdom rank stripped, relocate to random foreign town, demote to commoner.
+
+### Fixed — Treasury Caps, Stockpiles & Crafting
+
+- **`sellToKingdom` now adds goods to `militaryStockpile`/`goodsStockpile` (v9p33river335)** — previously the crown paid and the goods vanished. Procurement needs went unmet.
+- **`deliverSupplyDeal` caps payment to available treasury (v9p33river335)** — short-pays + toasts the player. Previously could drive kingdom gold negative.
+- **EM order delivery + completion bonus capped to treasury (v9p33river335)** — same fix applied to inventory delivery, market-fallback delivery, and completion bonus paths in `engine_elite_merchants.js`.
+- **Guild crafting preserves full batch qty (v9p33river335)** — was overwriting `qty` with the dominant quality tier count. Time cost, XP, story progress, success message, and weight now use `_totalCrafted = _excCount + _goodCount + _baseCount`.
+
+### Fixed — Sim/Health/Tournament Integrity
+
+- **`kingdom.king.id` misuse fixed at 4 sites (v9p33river341)** — `kingdom.king` IS the ID string; `.id` returned `undefined`. Tournament champion `+15 king relationship`, spy success rewards, castle-servant standing check all silently misfired before.
+- **Pending death notification queue serialized (v9p33river336)** — `world._pendingDeathNotifications` save/restore. Saves between `killPerson()` and the next tick no longer lose player-family death notifications.
+- **Referenced-dead NPC retention actually works (v9p33river336)** — the `_referencedDead` flag was never assigned. Now an inline `_refSet` walks Player.state + all living NPCs' family links and preserves dead NPCs whose ID is referenced.
+- **Noble-child death immunity branch reachable (v9p33river336)** — was checking `p.socialRank >= 4` directly on a per-kingdom map (always false). Now dual-checks `isNoble` flag, `'noble'` occupation, OR any kingdom rank ≥ 4 in the socialRank map.
+- **Apartment kingdom-owner pay credits `kingdom.gold` not `.treasury` (v9p33river336)**.
+- **Workshop addon backpack/cart/wagon home-craft recipes added (v9p33river336)** — Ch9c story step "craft a backpack at home" actually works. `home_craft` story matcher now respects `obj.item`.
+
+### Fixed — Targeted Bug Batches (verified-against-live-code)
+
+- **v9p33river331** — 3-category batch: family/spouse defensive guards (childrenIds/relationships), dark-deeds container guards (town.buildings/player.inventory/splice/auto-repair), kingdom finance ledger entries for `convertBuilding`/`demolishBuilding` when called by kingdom AI.
+- **v9p33river332** — fixed v331 `var` hoisting trap (guards ran on hoisted-undefined local before `var player = ps();`).
+- **v9p33river333** — 100-bug double-batch (50 in engine/sim/wasm files + 50 in UI/quest files): 93 fixed, 7 false positives, WASM rebuilt with bounds checks and condition cap.
+- **v9p33river334** — 131-bug triple-batch (military/diplomacy/finances + outpost/inv/health/caravans + 33 player.js serialization claims): 85 fixed, 45 false positives (most of the serialization claims), 1 feature request. `gTown._guardBonus` reset each cycle, O(n²) territory iteration hoisted, wage deduction sentinel fix, 18 production-detail null guards in ui_buildings.
+- **v9p33river348** — 2 critical bugs surfaced by code-review of recent features: (1) inline `<script>setTimeout(...)</script>` injected via innerHTML never executes — auto-populate replaced with DOM-walking post-render hook in `openSchemesDialog`; (2) plague karma called nonexistent `Player.addIllness` — replaced with `Player.inflictSpecificIllness`.
+- **v9p33river349** — 4 more verified bugs: scheme cooldown keys aligned to bare actionId (was `':_none'` suffix never matched), local-work credits routed by exact `buildingId` (was first-type-match — wrong owner in towns with multiple same-type buildings), local work refuses struck buildings (Incite Strikes was trivially bypassable), `forgeRoyalOrder` tax_change uses 0.10 fallback (was `KINGDOM_DEFAULT_PROPERTY_TAX_RATE`=0.02).
+
+### Stats
+
+- **19 commits** (`v9p33river331` → `v9p33river349`)
+- **~250 verified-and-fixed bugs** across all batches
+- **~55 documented false-positives** (especially in the v334 player.js serialization batch — most BugFixes2 work)
+- **4 new schemes** added to dark deeds (Forge Royal Order, Plant Treason, Incite Strikes, Spread Plague)
+- **Documentation**: updated `MerchantRealmsDevelopment/aiassist.md` and three personal skills with a "DO NOT HALLUCINATE FUNCTION/FIELD NAMES" rule + grep checks (response to v348 plague-karma bug, which called nonexistent `Player.addIllness`).
+
 ## [BugFixes3] - v9p33river313 → v9p33river330 — second bug-triage sprint (~150 fixes across 18 commits)
 
 Continuation of the post-BugFixes2 marathon. Each commit was a verified-against-live-code surgical batch.
