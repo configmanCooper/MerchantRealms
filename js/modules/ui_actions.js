@@ -1013,14 +1013,23 @@ function showTownDetail(town) {
 
     showRightPanel(`🏘 ${town.name}`, html);
     // Make the panel title clickable to pan camera to this town
+    // v9p33river304: previously added a new listener every render without
+    // removing prior ones — stacked listeners would pan through ALL
+    // previously viewed towns on a single click. Track the handler on the
+    // element and replace it each render.
     if (_rpTitleEl() && town.x != null && town.y != null) {
-        _rpTitleEl().style.cursor = 'pointer';
-        _rpTitleEl().title = 'Click to center view on ' + town.name;
-        _rpTitleEl().addEventListener('click', function() {
+        var _ttlEl = _rpTitleEl();
+        if (_ttlEl._panHandler) {
+            _ttlEl.removeEventListener('click', _ttlEl._panHandler);
+        }
+        _ttlEl.style.cursor = 'pointer';
+        _ttlEl.title = 'Click to center view on ' + town.name;
+        _ttlEl._panHandler = function() {
             if (typeof Renderer !== 'undefined' && Renderer.panTo) {
                 Renderer.panTo(town.x, town.y);
             }
-        });
+        };
+        _ttlEl.addEventListener('click', _ttlEl._panHandler);
     }
 }
 

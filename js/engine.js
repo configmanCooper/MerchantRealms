@@ -31951,10 +31951,13 @@
         getKingdoms() {
             if (!world) return [];
             // Filter out destroyed kingdoms, serialize Sets for safe consumption
+            // v9p33river304: also serialize `alliances` — UI code at
+            // ui.js:9109 reads `.length` and `.map` which throw on a Set.
             return world.kingdoms.filter(function(k) { return !k.destroyed; }).map(k => ({
                 ...k,
                 atWar: [...k.atWar],
                 territories: [...k.territories],
+                alliances: k.alliances ? [...k.alliances] : [],
             }));
         },
 

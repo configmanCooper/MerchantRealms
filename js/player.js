@@ -21538,12 +21538,26 @@
 
         // King decides conscription rate (2-20% of males) based on personality
         var conscriptionRate = cfg.minRate;
-        var king = conscriptKingdom.king;
+        // v9p33river304: kingdom.king is a person ID string, not the king
+        // object — the personality branch was never taken, so conscription
+        // always fell through to the random uniform. Resolve via Engine.findPerson.
+        // ALSO: NPC king personality (per engine.js:4662-4670) has these
+        // fields: intelligence/warmth/ambition/frugality/loyalty/honesty/
+        // selfishness — no `militarism` field. Map to a real one: high
+        // ambition + low warmth → warlike; high ambition → aggressive;
+        // high loyalty (courage) + moderate warmth → defensive.
+        var king = (conscriptKingdom.king && Engine.findPerson) ? Engine.findPerson(conscriptKingdom.king) : null;
         if (king && king.personality) {
-            if (king.personality.militarism === 'warlike') conscriptionRate = rng.randInt(12, 20) / 100;
-            else if (king.personality.militarism === 'aggressive') conscriptionRate = rng.randInt(8, 15) / 100;
-            else if (king.personality.militarism === 'defensive') conscriptionRate = rng.randInt(4, 10) / 100;
-            else conscriptionRate = rng.randInt(2, 6) / 100;
+            var _kp = king.personality;
+            if ((_kp.ambition || 50) >= 65 && (_kp.warmth || 50) < 40) {
+                conscriptionRate = rng.randInt(12, 20) / 100; // warlike
+            } else if ((_kp.ambition || 50) >= 60) {
+                conscriptionRate = rng.randInt(8, 15) / 100;  // aggressive
+            } else if ((_kp.loyalty || 50) >= 60 && (_kp.warmth || 50) >= 50) {
+                conscriptionRate = rng.randInt(4, 10) / 100;  // defensive
+            } else {
+                conscriptionRate = rng.randInt(2, 6) / 100;
+            }
         } else {
             conscriptionRate = rng.randInt(cfg.minRate * 100, cfg.maxRate * 100) / 100;
         }
@@ -21752,11 +21766,18 @@
             var extraDays = rng.randInt(5, 20);
             var extraFine = rng.randInt(50, 300);
             // Kingdom personality affects punishment
+            // v9p33river304: king.personality has no `strictness` field
+            // (see engine.js:4662-4670). Strict kings are derived from
+            // low warmth (cruel/stern temperament); lenient from high
+            // warmth (kind/fair).
             if (kingdom && kingdom.king) {
                 var king = Engine.findPerson(kingdom.king);
                 if (king && king.personality) {
-                    if (king.personality.strictness > 0.6) { extraDays = Math.floor(extraDays * 1.5); extraFine = Math.floor(extraFine * 1.5); }
-                    else if (king.personality.strictness < 0.3) { extraDays = Math.floor(extraDays * 0.7); extraFine = Math.floor(extraFine * 0.7); }
+                    var _kw = king.personality.warmth;
+                    if (typeof _kw === 'number') {
+                        if (_kw < 30) { extraDays = Math.floor(extraDays * 1.5); extraFine = Math.floor(extraFine * 1.5); }
+                        else if (_kw > 70) { extraDays = Math.floor(extraDays * 0.7); extraFine = Math.floor(extraFine * 0.7); }
+                    }
                 }
             }
             player.jailedUntilDay += extraDays;
@@ -32177,8 +32198,15 @@
             if (sp) for (var spi = 0; spi < sp.length; spi++) { if (sp[spi].isKing) { sponsorKing = sp[spi]; break; } }
         }
         if (sponsorKing && sponsorKing.personality) {
-            if (sponsorKing.personality.generosity > 0.6) reward = Math.floor(reward * 1.25);
-            if (sponsorKing.personality.greed > 0.6) reward = Math.floor(reward * 0.80);
+            // v9p33river304: NPC king personality has no `generosity` or
+            // `greed` fields (engine.js:4662-4670). The greed-mapping
+            // lives on `frugality`: generous→80, fair→55, greedy→30,
+            // corrupt→15. So HIGH frugality = generous, LOW = greedy.
+            var _spf = sponsorKing.personality.frugality;
+            if (typeof _spf === 'number') {
+                if (_spf > 70) reward = Math.floor(reward * 1.25);  // generous
+                else if (_spf < 30) reward = Math.floor(reward * 0.80); // greedy
+            }
         }
 
         // Demote in target kingdom to citizen

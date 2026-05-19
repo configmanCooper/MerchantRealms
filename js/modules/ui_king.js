@@ -1965,7 +1965,11 @@
         if (plagueCount > 0) {
             var plagueTowns = [];
             for (var _pti = 0; _pti < towns.length; _pti++) { if (towns[_pti].plagueActive) plagueTowns.push(towns[_pti].name); }
-            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '🦠', text: 'Quarantine needed! ' + plagueTowns.join(', ') + ' ha' + (plagueTowns.length > 1 ? 've' : 's') + ' active plague. Issue a quarantine directive from the Directives tab to contain the spread.', action: 'openKingPanel', actionParam: 'directives', actionLabel: '🏥 Directives' });
+            // v9p33river304: was actionParam: 'directives' — no such tab
+            // exists. Royal directives (including quarantine assignments)
+            // live inside the Nobility tab (_kingAssignDirectivesSection
+            // is called from _kingNobilityTab).
+            suggestions.push({ advisor: advisors[_advIdx % advisors.length], icon: '🦠', text: 'Quarantine needed! ' + plagueTowns.join(', ') + ' ha' + (plagueTowns.length > 1 ? 've' : 's') + ' active plague. Issue a quarantine directive from the Nobility tab to contain the spread.', action: 'openKingPanel', actionParam: 'nobility', actionLabel: '🏅 Nobility' });
             _advIdx++;
         }
 

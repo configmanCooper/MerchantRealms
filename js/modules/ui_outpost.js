@@ -497,10 +497,31 @@
                 for (var sti = 0; sti < Math.min(seaTargets.length, 8); sti++) {
                     var st = seaTargets[sti];
                     var sGold = Math.floor(200 + st.dist * 0.8);
-                    if (Player.skills && Player.skills.cartographer) sGold = Math.floor(sGold * 0.75);
+                    // v9p33river304: backend also requires rope/planks/cloth
+                    // (player_outpost.js:609-625). Show them in the UI and
+                    // disable Build if any material is insufficient — was
+                    // previously always-enabled and silently failed on click.
+                    var sRope = Math.floor(10 + st.dist * 0.05);
+                    var sPlanks = Math.floor(15 + st.dist * 0.08);
+                    var sCloth = Math.floor(5 + st.dist * 0.03);
+                    if (Player.skills && Player.skills.cartographer) {
+                        sGold = Math.floor(sGold * 0.75);
+                        sRope = Math.floor(sRope * 0.75);
+                        sPlanks = Math.floor(sPlanks * 0.75);
+                        sCloth = Math.floor(sCloth * 0.75);
+                    }
+                    var _pInv = (Player.inventory) || {};
+                    var _haveGold = (Player.gold || 0) >= sGold;
+                    var _haveRope = (_pInv.rope || 0) >= sRope;
+                    var _havePlanks = (_pInv.planks || 0) >= sPlanks;
+                    var _haveCloth = (_pInv.cloth || 0) >= sCloth;
+                    var _canBuildSr = _haveGold && _haveRope && _havePlanks && _haveCloth;
                     body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap">';
-                    body += '<button data-action="_opBuildSeaRoute" data-id="' + townId + '" data-val="' + st.townId + '" style="padding:2px 8px;font-size:11px;cursor:pointer">Build</button>';
-                    body += '<span style="font-size:11px">🚢 ' + st.name + ' <span style="color:#888">(' + sGold + 'g)</span></span>';
+                    body += '<button data-action="_opBuildSeaRoute" data-id="' + townId + '" data-val="' + st.townId + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (_canBuildSr ? '' : ';opacity:0.5') + '"' + (_canBuildSr ? '' : ' disabled') + '>Build</button>';
+                    body += '<span style="font-size:11px">🚢 ' + st.name + ' <span style="color:' + (_haveGold ? '#888' : '#c44e52') + '">(' + sGold + 'g</span>';
+                    body += ' <span style="color:' + (_haveRope ? '#888' : '#c44e52') + '">+ ' + sRope + ' rope</span>';
+                    body += ' <span style="color:' + (_havePlanks ? '#888' : '#c44e52') + '">+ ' + sPlanks + ' planks</span>';
+                    body += ' <span style="color:' + (_haveCloth ? '#888' : '#c44e52') + '">+ ' + sCloth + ' cloth)</span></span>';
                     body += '</div>';
                 }
             }

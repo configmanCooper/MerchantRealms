@@ -651,7 +651,15 @@ window.UI = (function () {
         registerAction('_godSetGold', function() { var v=document.getElementById('gm-set-gold').value; if(v){var g=parseInt(v,10); if(!isNaN(g)&&isFinite(g)){Player.state.gold=Math.max(0,g); UI.toast('💰 Gold set to '+g,'success');}else{UI.toast('Invalid number','error');}} });
         registerAction('_handler_10', function() { Player.state.traveling=false;Player.state.travelProgress=0;Player.state.travelDestination=null;Player.state.travelRoute=null;Player.state.travelOrigin=null;Player.state.travelPaid=0;Player.state.travelMode=null;Player.state.travelBySea=false;Player.state.travelOffroad=false;Player.state.travelWaypoints=null;Player.state.travelDestCoords=null;Player.state.travelRestBonus=0;Player.state.travelTotalDist=0;UI.toast('🏠 Travel cancelled','success') });
         registerAction('_handler_11', function() { if(Player.state.jailedUntilDay){Player.state.jailedUntilDay=0;UI.toast('🔓 Freed from jail','success');}else{UI.toast('Not in jail','info');} });
-        registerAction('_handler_12', function() { Player.state.energy=100;Player.state.hunger=0;Player.state.thirst=0;UI.toast('💪 Full energy/food/drink','success') });
+        registerAction('_handler_12', function() {
+            // v9p33river304: hunger and thirst are 0-100 where 100 = full.
+            // Setting them to 0 made the player starving + dehydrated —
+            // opposite of what the label "Full energy/food/drink" promised.
+            Player.state.energy = 100;
+            Player.state.hunger = (typeof HUNGER_CONFIG !== 'undefined' && HUNGER_CONFIG.MAX) ? HUNGER_CONFIG.MAX : 100;
+            Player.state.thirst = (typeof THIRST_CONFIG !== 'undefined' && THIRST_CONFIG.MAX) ? THIRST_CONFIG.MAX : 100;
+            UI.toast('💪 Full energy/food/drink','success');
+        });
         registerAction('_godAddGold100k', function() { Player.state.gold+=100000;UI.toast('💰 +100,000 gold','success') });
         registerAction('_godAddGold10k', function() { Player.state.gold+=10000;UI.toast('💰 +10,000 gold','success') });
         registerAction('_godSkipChapter', function() { if (typeof StoryMode !== 'undefined' && StoryMode.skipChapter) { StoryMode.skipChapter(); UI.toast('⏭️ Chapter skipped!', 'warning'); } else { UI.toast('Story mode not active', 'error'); } });

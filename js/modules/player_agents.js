@@ -8,7 +8,29 @@
     // §12G  NOBLE AGENTS SYSTEM
     // ========================================================
     var _nextAgentId = 1;
-    function agentUid() { return 'agent_' + (_nextAgentId++); }
+    // v9p33river304: re-sync the counter to be safely above the highest
+    // existing agent ID. Called from agentUid() so new IDs never collide
+    // with loaded saved agents (the counter resets to 1 on every page
+    // load while saved agents keep their old numeric IDs).
+    function _syncAgentIdCounter() {
+        if (!player || !player.agents || player.agents.length === 0) return;
+        var maxId = 0;
+        for (var i = 0; i < player.agents.length; i++) {
+            var id = player.agents[i].id || '';
+            // ids are 'agent_N' — parse the numeric suffix
+            var m = /^agent_(\d+)$/.exec(id);
+            if (m) {
+                var n = parseInt(m[1], 10);
+                if (!isNaN(n) && n > maxId) maxId = n;
+            }
+        }
+        if (maxId >= _nextAgentId) _nextAgentId = maxId + 1;
+    }
+    function agentUid() {
+        _sync();
+        _syncAgentIdCounter();
+        return 'agent_' + (_nextAgentId++);
+    }
 
     // Random agent name generator
     var _agentFirstNames = ['Marcus','Aldric','Rowan','Felix','Cedric','Hugo','Lucian','Dorian','Giles','Edmund','Theron','Gareth','Silas','Owen','Roderick','Elias','Conrad','Barrett','Desmond','Caspian','Lydia','Brenna','Isolde','Mira','Seraphina','Rowena','Helena','Celeste','Ingrid','Astrid'];
@@ -600,9 +622,19 @@
             return;
         }
         var goldStolen = 20 + (rng ? rng.randInt(0, 80) : 40) + agent.skills.stealth * 5;
-        player.gold += goldStolen;
-        agent.earnings += goldStolen;
-        agent.reports.push({ day: day, msg: '🥷 Stole ' + goldStolen + 'g worth of goods from ' + (target.firstName || 'target') + '\'s warehouse.' });
+        // v9p33river304: previously minted gold — added to player + agent
+        // earnings without removing anything from the target. Deduct from
+        // target gold first (clamped to what they actually have).
+        var targetHas = Math.max(0, Math.floor(target.gold || 0));
+        var actuallyStolen = Math.min(goldStolen, targetHas);
+        if (actuallyStolen <= 0) {
+            agent.reports.push({ day: day, msg: '🥷 Target had nothing of value in their warehouse.' });
+            return;
+        }
+        target.gold = (target.gold || 0) - actuallyStolen;
+        player.gold += actuallyStolen;
+        agent.earnings += actuallyStolen;
+        agent.reports.push({ day: day, msg: '🥷 Stole ' + actuallyStolen + 'g worth of goods from ' + (target.firstName || 'target') + '\'s warehouse.' });
     }
 
     function _agentIntimidate(agent, target, day, rng) {
