@@ -638,6 +638,13 @@ window.UI = (function () {
             if (!tSel || !eSel || !nSel) { toast('Configurator not ready — fill in all selections.', 'warning'); return; }
             UI.executeScheme('plant_treasonous_evidence', [tSel.value, eSel.value, nSel.value]);
         });
+        // v9p33river346: Incite Strikes submit.
+        registerAction('inciteStrikesSubmit', function(_t, d) {
+            var idx = parseInt(d.idx, 10);
+            var tSel = document.getElementById('isTown_' + idx);
+            if (!tSel) { toast('Configurator not ready.', 'warning'); return; }
+            UI.executeScheme('incite_strikes', [tSel.value]);
+        });
         registerAction('_castElectionVote', function(_t, d) { if (d.kingdom && d.id) UI._castElectionVote(d.kingdom, d.id, d.name || ''); });
         registerAction('executeNobleIntrigue', function(_t, d) { if (d.id) UI.executeNobleIntrigue(d.id, parseInt(d.idx)||0, d.needTwo === 'true'); });
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
@@ -14640,6 +14647,9 @@ window.UI = (function () {
                     } else if (a._needsTreasonConfig) {
                         // v9p33river345: Plant Treasonous Evidence configurator.
                         html += buildPlantTreasonUI(a, ai);
+                    } else if (a._needsInciteStrikesConfig) {
+                        // v9p33river346: Incite Strikes configurator.
+                        html += buildInciteStrikesUI(a, ai);
                     } else {
                         html += `<button class="btn-trade sell" style="font-size:0.85rem;margin-top:6px;" `
                             + `data-action="executeScheme" data-id="${a.id}" data-params="${JSON.stringify(a.params).replace(/"/g, '&quot;')}">⚡ Execute</button>`;
@@ -15125,6 +15135,114 @@ window.UI = (function () {
         nobleHtml += '</div>';
 
         return { enemyHtml: enemyHtml, nobleHtml: nobleHtml };
+    }
+
+    // v9p33river346: configurator for "Incite Strikes". One drop-down
+    // (town), with a live cost preview and modifiers display so the
+    // player can compare options before paying.
+    function buildInciteStrikesUI(action, idx) {
+        var towns = (Engine.getTowns ? Engine.getTowns() : []);
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        var cdMap = (Player.state && Player.state._inciteStrikesCooldowns) || {};
+
+        // Build town option list with computed cost + cooldown status.
+        var townOpts = [];
+        for (var ti = 0; ti < towns.length; ti++) {
+            var t = towns[ti];
+            if (!t || !t.kingdomId) continue;
+            var prosperity = Math.max(0, Math.min(100, t.prosperity || 50));
+            var pop = 0;
+            if (Engine.getPeopleInTown) {
+                try { pop = (Engine.getPeopleInTown(t.id) || []).length; } catch (_e) { pop = 0; }
+            }
+            if (!pop) pop = 50;
+            var rawCost = 1000 + Math.floor((prosperity / 100) * 4500) + Math.floor((Math.min(200, pop) / 200) * 4500);
+            var cost = Math.max(1000, Math.min(10000, rawCost));
+            var cdUntil = cdMap[t.id] || 0;
+            var cdLeft = Math.max(0, cdUntil - day);
+            townOpts.push({ town: t, cost: cost, cdLeft: cdLeft, prosperity: prosperity, pop: pop });
+        }
+        // Sort by cost ascending so cheapest options surface first.
+        townOpts.sort(function(a, b) { return a.cost - b.cost; });
+
+        var html = '<div style="margin-top:8px;padding:8px;background:rgba(60,60,30,0.18);border:1px solid #884;border-radius:4px;">';
+        html += '<div style="font-size:0.78rem;color:#caa;margin-bottom:6px;"><strong>🚧 Configure Strike</strong> — bribes scale with prosperity + population. 90-day per-town cooldown on success.</div>';
+
+        if (townOpts.length === 0) {
+            html += '<div style="font-size:0.75rem;color:#c44e52;">⛔ No towns available.</div></div>';
+            return html;
+        }
+
+        html += '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap;">';
+        html += '<label style="font-size:0.7rem;color:#aaa;min-width:60px;">Town:</label>';
+        html += '<select id="isTown_' + idx + '" onchange="UI._isRefresh(' + idx + ')" style="font-size:0.75rem;padding:2px;flex:1;min-width:140px;">';
+        var pTown = Engine.findTown(Player.townId);
+        for (var oi = 0; oi < townOpts.length; oi++) {
+            var to = townOpts[oi];
+            var label = to.town.name + ' — ' + to.cost + 'g';
+            var tags = [];
+            if (to.town.isCapital) tags.push('CAPITAL');
+            if (to.cdLeft > 0) tags.push('on cooldown ' + to.cdLeft + 'd');
+            var aff = (Player.gold || 0) >= to.cost;
+            if (!aff) tags.push('can\'t afford');
+            if (tags.length > 0) label += ' (' + tags.join(', ') + ')';
+            var sel = (pTown && pTown.id === to.town.id) ? ' selected' : '';
+            // Visually mark unavailable options but still selectable so the
+            // player sees why.
+            html += '<option value="' + to.town.id + '"' + sel + '>' + escapeHtml(label) + '</option>';
+        }
+        html += '</select></div>';
+
+        // Cost + modifier preview pane (populated by _isRefresh).
+        html += '<div id="isPreview_' + idx + '" style="font-size:0.72rem;color:#aaa;margin-bottom:6px;padding:6px;background:rgba(0,0,0,0.18);border-radius:3px;"></div>';
+
+        html += '<button class="btn-trade sell" style="font-size:0.85rem;margin-top:4px;width:100%;" '
+              + 'data-action="inciteStrikesSubmit" data-idx="' + idx + '">⚡ Pay Bribes & Incite Strike</button>';
+        html += '<div style="font-size:0.7rem;color:#aa7;margin-top:4px;font-style:italic;">⚠️ Halts ALL non-player buildings in the town for 14 days. Costs 1000–10000g. If caught: 3× cost fine + 20-day jail.</div>';
+        html += '</div>';
+        // Auto-populate preview on first render.
+        html += '<script>setTimeout(function(){ if(UI._isRefresh) UI._isRefresh(' + idx + '); }, 30);<\/script>';
+        return html;
+    }
+
+    // v9p33river346: build the live cost/modifier preview for incite_strikes.
+    function _buildInciteStrikesPreview(idx, townId) {
+        var t = Engine.findTown(townId);
+        if (!t) return '<span style="color:#c44e52;">Town not found.</span>';
+        var prosperity = Math.max(0, Math.min(100, t.prosperity || 50));
+        var pop = 0;
+        if (Engine.getPeopleInTown) {
+            try { pop = (Engine.getPeopleInTown(t.id) || []).length; } catch (_e) { pop = 0; }
+        }
+        if (!pop) pop = 50;
+        var rawCost = 1000 + Math.floor((prosperity / 100) * 4500) + Math.floor((Math.min(200, pop) / 200) * 4500);
+        var cost = Math.max(1000, Math.min(10000, rawCost));
+        var sec = Math.max(0, Math.min(100, t.security || 50));
+        var secMult = 0.85 + (sec / 100) * 0.30;
+        var citizenHere = !!(Player.state.socialRank && t.kingdomId && (Player.state.socialRank[t.kingdomId] || 0) >= 1);
+
+        var lines = [];
+        lines.push('💰 Cost: <strong>' + cost + 'g</strong> (prosperity ' + Math.round(prosperity) + '%, pop ~' + pop + ')');
+        var detectBits = ['base 50%'];
+        if (citizenHere) detectBits.push('+5% (your home kingdom)');
+        if (pop > 150) detectBits.push('+5% (large town)');
+        detectBits.push('×' + secMult.toFixed(2) + ' (security ' + Math.round(sec) + ')');
+        if (t.isCapital) detectBits.push('+15% (CAPITAL — royal scrutiny)');
+        lines.push('🚨 Detection: ' + detectBits.join(', '));
+        // Live cooldown indicator
+        var cdUntil = (Player.state._inciteStrikesCooldowns || {})[t.id] || 0;
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (cdUntil > day) {
+            lines.push('<span style="color:#c44e52;">⛔ On cooldown for ' + (cdUntil - day) + ' more days in this town.</span>');
+        }
+        // Affordability indicator
+        if ((Player.gold || 0) < cost) {
+            lines.push('<span style="color:#c44e52;">⛔ You only have ' + Math.floor(Player.gold || 0) + 'g.</span>');
+        }
+        // Building count estimate
+        var buildings = Array.isArray(t.buildings) ? t.buildings.filter(function(b) { return b && b.ownerId !== 'player'; }) : [];
+        lines.push('🏭 Will halt ~' + buildings.length + ' non-player buildings for 14 days.');
+        return lines.join('<br>');
     }
 
     function buildNobleIntrigueUI(action, idx) {
@@ -18446,6 +18564,14 @@ window.UI = (function () {
             var subs = _buildPlantTreasonSubSelects(idx, tSel.value);
             eHost.innerHTML = subs.enemyHtml;
             nHost.innerHTML = subs.nobleHtml;
+        },
+        // v9p33river346: Incite Strikes helpers.
+        _buildInciteStrikesPreview: _buildInciteStrikesPreview,
+        _isRefresh: function(idx) {
+            var tSel = document.getElementById('isTown_' + idx);
+            var prev = document.getElementById('isPreview_' + idx);
+            if (!tSel || !prev) return;
+            prev.innerHTML = _buildInciteStrikesPreview(idx, tSel.value);
         },
         // Noble Council Voting
         openVotingDialog,

@@ -3378,6 +3378,26 @@
                     _needsTreasonConfig: true,
                 });
             }
+            // v9p33river346: Incite Strikes — bribe workers to walk off.
+            // Requires shadow_dealings + dark_connections. Cost scales
+            // with town prosperity + population (1000-10000g). 90-day
+            // per-town cooldown enforced inside the function.
+            if (hasSkill('dark_connections')) {
+                var _isCD = (player.schemeCooldowns && player.schemeCooldowns['incite_strikes:_none']) || 0;
+                var _isAvail = day >= _isCD && player.gold >= 1000;
+                actions.push({
+                    id: 'incite_strikes', tab: 'political',
+                    name: '🚧 Incite Strikes',
+                    desc: 'Bribe workers in a chosen town to walk off their jobs for 14 days. Halts production at every NPC, elite-merchant, and kingdom-owned building (your own buildings excluded). Cost scales with the town\'s prosperity and population (1000-10000g). 90-day per-town cooldown after success.',
+                    cost: '1000-10000g', detection: calculateCorruptDetection(0.50, town),
+                    reward: '14-day production halt', xp: 25,
+                    requires: 'Shadow Dealings + Dark Connections',
+                    available: _isAvail,
+                    disabledReason: !player.gold || player.gold < 1000 ? 'Need at least 1000g.' : (day < _isCD ? 'Cooldown active.' : ''),
+                    params: [],
+                    _needsInciteStrikesConfig: true,
+                });
+            }
         }
 
         if (hasSkill('dark_connections')) {
@@ -4094,6 +4114,136 @@
             caughtMsg: caughtMsg,
             partialMsg: 'The frame worked but you were spotted! ' + effectMsg + ' ' + caughtMsg,
             failMsg: '❌ The forged evidence was unconvincing — ' + cost + 'g lost but no one suspects you.'
+        });
+    }
+
+    // v9p33river346: Incite Strikes — bribe workers in a town to walk
+    // off their jobs for 14 days. Halts production at every NPC-,
+    // elite-merchant-, and kingdom-owned building in the town (player
+    // buildings are skipped — the player can't strike against themselves).
+    // Cost scales with town prosperity + population (1000g min, 10000g max).
+    // 90-day per-town cooldown on success.
+    function inciteStrikes(townId) {
+        _sync();
+        if (isJailed()) return { success: false, message: 'You are in jail.' };
+        if (!hasSkill('shadow_dealings')) return { success: false, message: 'Requires Shadow Dealings skill.' };
+        if (!hasSkill('dark_connections')) return { success: false, message: 'Requires Dark Connections skill — you need underworld contacts to reach the workers.' };
+        if (!townId) return { success: false, message: 'Choose a target town.' };
+
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Unknown town.' };
+
+        var day = Engine.getDay();
+        if (!player._inciteStrikesCooldowns) player._inciteStrikesCooldowns = {};
+        var cdUntil = player._inciteStrikesCooldowns[townId] || 0;
+        if (day < cdUntil) {
+            return { success: false, message: 'Workers in ' + town.name + ' are still wary. Wait ' + (cdUntil - day) + ' more days before inciting again.' };
+        }
+
+        // Calculate bribe cost from prosperity + population.
+        // Prosperity 0–100, population varies. Bribe cost ranges from
+        // 1000g (low pros + small pop) to 10000g (max pros + huge pop).
+        var prosperity = Math.max(0, Math.min(100, town.prosperity || 50));
+        var pop = 0;
+        if (Engine.getPeopleInTown) {
+            try { pop = (Engine.getPeopleInTown(townId) || []).length; } catch (_e) { pop = 0; }
+        }
+        if (!pop) pop = 50; // fallback if pop cache missing
+        // Linear-ish formula: 1000 + (prosperity/100) * 4500 + (pop/200) * 4500,
+        // clamped to [1000, 10000]. Bigger, richer towns are much pricier.
+        var rawCost = 1000 + Math.floor((prosperity / 100) * 4500) + Math.floor((Math.min(200, pop) / 200) * 4500);
+        var cost = Math.max(1000, Math.min(10000, rawCost));
+
+        if (player.gold < cost) {
+            return { success: false, message: 'Need ' + cost + 'g for worker bribes (scaled by ' + town.name + '\'s prosperity ' + Math.round(prosperity) + '% and population ~' + pop + ').' };
+        }
+
+        var rng = Engine.getRng();
+
+        // Detection — fairly high (this is widely visible). Slightly
+        // easier in foreign / hostile kingdoms where guards care less.
+        var townKingdomId = town.kingdomId;
+        var playerRank = (player.socialRank && townKingdomId) ? (player.socialRank[townKingdomId] || 0) : 0;
+        var citizenHere = playerRank >= 1;
+        var baseDetect = 0.50;
+        // Player's home-kingdom: harder to hide (guards know your face).
+        if (citizenHere) baseDetect += 0.05;
+        // Bigger town = more witnesses + more constables.
+        if (pop > 150) baseDetect += 0.05;
+        // v9p33river346: town security scales detection. Default town.security
+        // is roughly 0-100; map it to a ±15% swing around the baseline so
+        // a lawless (0) town is much easier and a fortress (100) is much
+        // harder. calculateCorruptDetection already adds town.security * 0.005
+        // (a small additive bump), this multiplier is a stronger explicit
+        // gate the player can plan around.
+        var _townSec = Math.max(0, Math.min(100, (town && town.security) || 50));
+        var _securityMult = 0.85 + (_townSec / 100) * 0.30; // 0.85 at sec 0, 1.15 at sec 100
+        baseDetect *= _securityMult;
+        // Capital cities have additional scrutiny (royal guards + spies).
+        if (town && town.isCapital) baseDetect += 0.15;
+        var detectChance = calculateCorruptDetection(baseDetect, town);
+        var _outcome = _rollSchemeOutcome(detectChance, rng);
+        var caught = _outcome.caught;
+        var successful = _outcome.successful;
+
+        player.gold -= cost;
+
+        var struckCount = 0;
+        var effectMsg = '';
+        if (successful) {
+            // Flag all non-player buildings in the town with _strikeUntil.
+            // Player buildings excluded (you don't bribe your own staff to quit).
+            var strikeEnd = day + 14;
+            var tBuildings = Array.isArray(town.buildings) ? town.buildings : [];
+            for (var bi = 0; bi < tBuildings.length; bi++) {
+                var bld = tBuildings[bi];
+                if (!bld) continue;
+                if (bld.ownerId === 'player') continue;
+                // Skip already-struck buildings (don't shorten an existing longer strike).
+                if (bld._strikeUntil && bld._strikeUntil >= strikeEnd) continue;
+                bld._strikeUntil = strikeEnd;
+                bld._strikeReason = 'incited';
+                struckCount++;
+            }
+
+            // Town-level signal: a brief happiness dip while the strike
+            // is on (workers' grievances feel justified to onlookers).
+            if (typeof town.happiness === 'number') {
+                town.happiness = Math.max(0, town.happiness - 5);
+            }
+
+            // 90-day cooldown for this town.
+            player._inciteStrikesCooldowns[townId] = day + 90;
+
+            grantXP(25, 'Incited Strikes');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
+            recordCorruptAction('incite_strikes', false, townKingdomId, 'political');
+
+            effectMsg = struckCount + ' building' + (struckCount === 1 ? '' : 's') + ' in ' + town.name + ' halted for 14 days.';
+            Engine.logEvent('🚧 Workers in ' + town.name + ' have walked off the job! ' + struckCount + ' buildings halted for 14 days.');
+            // If no buildings ended up flagged (e.g. town was already
+            // entirely struck), the bribe still went through but the
+            // observable effect is muted. Cooldown still applies.
+            if (struckCount === 0) {
+                effectMsg = 'Bribe accepted but every business was already shut down. No new strikes triggered.';
+            }
+        }
+
+        var caughtMsg = '';
+        if (caught) {
+            var kingdom = Engine.findKingdom ? Engine.findKingdom(townKingdomId) : null;
+            var fine = applyCorruptPenalty(town, kingdom, cost * 3, 30, 20, false, 'political');
+            recordCorruptAction('incite_strikes', true, townKingdomId, 'political');
+            player.notoriety = (player.notoriety || 0) + _trackedNotoriety(35);
+            caughtMsg = '🚨 CAUGHT inciting strikes! Fined ' + fine + 'g, jailed 20 days.';
+        }
+
+        return _schemeResult({
+            successful: successful, caught: caught,
+            successMsg: '🚧 Strike incited in ' + town.name + '! ' + effectMsg + ' (Cost: ' + cost + 'g.)',
+            caughtMsg: caughtMsg,
+            partialMsg: 'Strike incited but you were spotted! ' + effectMsg + ' ' + caughtMsg,
+            failMsg: '❌ The workers took your gold and went home anyway — no strike (' + cost + 'g lost).'
         });
     }
 
@@ -5550,6 +5700,7 @@
             case 'forge_documents': result = forgeDocuments(params[0]); break;
             case 'forge_royal_order': result = forgeRoyalOrder(params[0], params[1], params[2]); break;
             case 'plant_treasonous_evidence': result = plantTreasonousEvidence(params[0], params[1], params[2]); break;
+            case 'incite_strikes': result = inciteStrikes(params[0]); break;
             case 'sabotage_caravan': result = sabotageCaravan(params[0]); break;
             case 'plant_evidence': result = plantEvidence(params[0]); break;
             case 'incite_revolt': result = inciteRevolt(params[0]); break;
@@ -5576,7 +5727,7 @@
             assassinate_competitor: 60, assassinate_guard_captain: 90, assassinate_king: 180,
             assassinate_passenger: 60, poison: 20, hire_assassin_npc: 75, direct_kill: 45,
             hidden_warehouse: 90, cook_books: 90, insider_trading: 30,
-            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, plant_treasonous_evidence: 90, sabotage_caravan: 30,
+            spy_network: 90, smuggling_route: 120, forge_documents: 30, forge_royal_order: 60, plant_treasonous_evidence: 90, incite_strikes: 7, sabotage_caravan: 30,
             plant_evidence: 30, incite_revolt: 120, double_agent: 180, protection_racket: 60,
             lay_low: 60, cleanse_identity: 30,
             pit_nobles: 20, turn_noble_against_king: 30, discredit_noble: 30,
@@ -5699,6 +5850,7 @@
     Player.forgeDocuments = forgeDocuments;
     Player.forgeRoyalOrder = forgeRoyalOrder;
     Player.plantTreasonousEvidence = plantTreasonousEvidence;
+    Player.inciteStrikes = inciteStrikes;
     Player.sabotageCaravan = sabotageCaravan;
     Player.plantEvidence = plantEvidence;
     Player.inciteRevolt = inciteRevolt;
