@@ -641,7 +641,7 @@
                     boostKingdomHappiness(k, -10);
                     logEvent(`💰 ${k.name} imposes an emergency wealth tax! ${levy}g collected from citizens.`, {
                         type: 'emergency_tax', kingdomId: k.id, cause: 'Near-bankruptcy', effects: ['Happiness drops significantly (-10)', 'Citizens lose savings', 'Unrest may follow']
-                    });
+                    }, 'my_kingdom');
                 }
             }
 
