@@ -157,7 +157,9 @@
 
         // Severity scaling: paranoid (false accusation) is lighter
         var baseRelHit = paranoid ? -25 : -50;
-        try { Player.modifyRelationship(spouse.id, baseRelHit); } catch(e) {}
+        var _jealousyReason = 'spouse_jealousy_' + (paranoid ? 'paranoid' : 'caught') + '_' + day;
+        // v9p33river366: spouse jealousy must still be able to drive the marriage below neutral.
+        try { Player.modifyRelationship(spouse.id, baseRelHit, 'spouse', _jealousyReason); } catch(e) {}
         consequences.push('Relationship with ' + spouse.firstName + ' dropped by ' + Math.abs(baseRelHit) + '.');
 
         // Silent treatment: refuse interaction for 30 days
@@ -212,21 +214,25 @@
                     var bld = player.buildings[bIdx];
                     if (bld) {
                         if (!player.sabotagedBuildings) player.sabotagedBuildings = [];
-                        // Find the corresponding building index in the town
+                        // v9p33river366: disable the canonical player-building entry so player.js production actually pauses.
+                        bld._disabledUntil = day + 30;
                         var t = _findTown(bld.townId);
                         if (t && t.buildings) {
+                            var matchedIdx = -1;
                             for (var sbi = 0; sbi < t.buildings.length; sbi++) {
-                                if (t.buildings[sbi].ownerId === 'player' && t.buildings[sbi].type === bld.type) {
-                                    t.buildings[sbi]._disabledUntil = day + 30;
-                                    player.sabotagedBuildings.push({
-                                        townId: bld.townId, buildingIdx: sbi,
-                                        expiresDay: day + 30
-                                    });
-                                    consequences.push('Your ' + (bld.type || 'building') + ' in ' + (t.name || 'town') + ' has been SABOTAGED.');
-                                    break;
-                                }
+                                if (!t.buildings[sbi] || t.buildings[sbi].ownerId !== 'player') continue;
+                                if (bld.id && t.buildings[sbi].id === bld.id) { matchedIdx = sbi; break; }
+                                if (matchedIdx < 0 && t.buildings[sbi].type === bld.type) matchedIdx = sbi;
+                            }
+                            if (matchedIdx >= 0) {
+                                t.buildings[matchedIdx]._disabledUntil = day + 30;
+                                player.sabotagedBuildings.push({
+                                    townId: bld.townId, buildingIdx: matchedIdx,
+                                    expiresDay: day + 30
+                                });
                             }
                         }
+                        consequences.push('Your ' + (bld.type || 'building') + ' in ' + ((t && t.name) || 'town') + ' has been SABOTAGED.');
                     }
                 }
             } catch(e) {}
@@ -277,11 +283,13 @@
                 }
                 // Apply small relationship hits
                 var cascadeCount = 0;
+                var _spreadReason = 'spouse_scandal_' + day + '_' + (spouse.id || 'spouse') + '_' + (lover.id || 'lover');
                 for (var si = 0; si < spread.length && cascadeCount < 6; si++) {
                     if (spread[si].id === player.spouseId) continue;
                     if (spread[si].id === player.id) continue;
                     try {
-                        Player.modifyRelationship(spread[si].id, -8);
+                        // v9p33river366: each scandal event should be able to create real hostility.
+                        Player.modifyRelationship(spread[si].id, -8, undefined, _spreadReason);
                         // Record on memory if applicable
                         if (Player.recordNpcMemory) {
                             Player.recordNpcMemory(spread[si], 'heard_about_affair',

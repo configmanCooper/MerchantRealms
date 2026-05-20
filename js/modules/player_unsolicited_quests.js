@@ -647,30 +647,94 @@
         };
         player._pendingUnsolicitedOffer = offer;
         player._lastUnsolicitedOfferDay = day;
-        // Show the popup
-        try {
-            if (typeof UI !== 'undefined' && UI.openUnsolicitedQuestOffer) {
-                UI.openUnsolicitedQuestOffer(offer);
-            }
-        } catch (e) {}
+        // v9p33river366: show toast instead of popup — view offer in Quests tab
+        _toast('📜 ' + offer.npcName + ' has a quest for you! Check the Quests tab.', 'info');
         _logEvent('📜 ' + offer.npcName + ' has approached you with a quest.', null, 'my_actions');
         return true;
     }
 
     // ── Daily / Entry rolls ──
-    function _candidateNpcsInTown(townId) {
+    function _questNpcRecordsInTown(townId) {
         if (!townId) return [];
         var w = _getWorld(); if (!w) return [];
         var day = _getDay();
+        var pending = player._pendingUnsolicitedOffer;
+        var active = player._activeUnsolicitedQuests || [];
+        var activeByNpc = {};
+        for (var ai = 0; ai < active.length; ai++) {
+            var activeQuest = active[ai];
+            if (!activeQuest || !activeQuest.npcId) continue;
+            activeByNpc[activeQuest.npcId] = true;
+        }
         var out = [];
         for (var i = 0; i < w.people.length; i++) {
             var p = w.people[i];
             if (!p || p.alive === false || p.townId !== townId) continue;
             if (!(_isEliteMerchant(p) || _isNoble(p))) continue;
             if (!_canTalkToNpc(p.id)) continue;
-            var cd = (player._unsolicitedNpcCooldowns && player._unsolicitedNpcCooldowns[p.id]) || 0;
-            if (cd && day - cd < NPC_COOLDOWN_DAYS) continue;
-            out.push(p);
+            var cd = player._unsolicitedNpcCooldowns ? player._unsolicitedNpcCooldowns[p.id] : null;
+            var cooldownDaysLeft = 0;
+            // v9p33river366: day 0 is a valid NPC cooldown day.
+            if (cd != null && day - cd < NPC_COOLDOWN_DAYS) cooldownDaysLeft = NPC_COOLDOWN_DAYS - (day - cd);
+            out.push({
+                npcId: p.id,
+                npcName: ((p.firstName || '') + ' ' + (p.lastName || '')).trim(),
+                occupation: p.occupation || (_isEliteMerchant(p) ? 'elite_merchant' : (_isNoble(p) ? 'noble' : '')),
+                relLevel: _relLevel(p.id),
+                hasActiveQuest: !!activeByNpc[p.id],
+                hasPendingOffer: !!(pending && pending.npcId === p.id),
+                onCooldown: cooldownDaysLeft > 0,
+                cooldownDaysLeft: cooldownDaysLeft
+            });
+        }
+        return out;
+    }
+
+    function _candidateNpcsInTown(townId) {
+        var records = _questNpcRecordsInTown(townId);
+        var out = [];
+        for (var i = 0; i < records.length; i++) {
+            if (records[i].onCooldown) continue;
+            var npc = _findPerson(records[i].npcId);
+            if (npc) out.push(npc);
+        }
+        return out;
+    }
+
+    function getQuestCandidatesInTown(townId) {
+        _ensureState();
+        return _questNpcRecordsInTown(townId);
+    }
+
+    function getActiveQuestsInTown(townId) {
+        _ensureState();
+        if (!townId) return [];
+        var day = _getDay();
+        var out = [];
+        var active = player._activeUnsolicitedQuests || [];
+        for (var i = 0; i < active.length; i++) {
+            var q = active[i];
+            if (!q || !q.npcId) continue;
+            var npc = _findPerson(q.npcId);
+            if (!npc || npc.townId !== townId) continue;
+            var questCopy = Object.assign({}, q);
+            var def = QUEST_DEFS[q.defId] || null;
+            var check = null;
+            if (def && def.check) {
+                try {
+                    check = def.check(q);
+                } catch (e) {
+                    check = { ok: false, reason: 'Quest status unavailable.' };
+                }
+            } else if (!def) {
+                check = { ok: false, reason: 'Quest definition missing.' };
+            }
+            questCopy.dialog = q.dialog || '';
+            questCopy.npcName = questCopy.npcName || ((npc.firstName || '') + ' ' + (npc.lastName || '')).trim();
+            questCopy.canTurnIn = !!(check && check.ok);
+            questCopy.turnInReason = (check && !check.ok) ? (check.reason || '') : '';
+            questCopy.daysRemaining = Math.max(0, (q.deadlineDay || 0) - day);
+            out.push(questCopy);
         }
         return out;
     }
@@ -700,21 +764,24 @@
         }
         if (player._pendingUnsolicitedOffer) return false;
         // v9p33river360: 7-day global cooldown between unsolicited offers
-        if (player._lastUnsolicitedOfferDay && (day - player._lastUnsolicitedOfferDay) < 7) return false;
+        // v9p33river366: offers accepted/generated on day 0 must still respect cooldown.
+        if (player._lastUnsolicitedOfferDay != null && (day - player._lastUnsolicitedOfferDay) < 7) return false;
         if ((player._activeUnsolicitedQuests || []).length >= MAX_ACTIVE) return false;
         if (!player.townId || player.traveling) return false;
         if (player.jailedUntilDay && player.jailedUntilDay > day) return false;
         var candidates = _candidateNpcsInTown(player.townId);
         if (!candidates.length) return false;
-        // Shuffle
+        var rng = _rng();
+        if (!rng) return false;
+        // v9p33river366: use deterministic engine RNG for offer ordering/chance.
         for (var i = candidates.length - 1; i > 0; i--) {
-            var j = Math.floor(Math.random() * (i + 1));
+            var j = rng.randInt(0, i);
             var tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp;
         }
         for (var ci = 0; ci < candidates.length; ci++) {
             var npc = candidates[ci];
             var chance = baseChance * _relMultiplier(npc.id);
-            if (Math.random() < chance) {
+            if (rng.random() < chance) {
                 if (_generateOfferFromNpc(npc)) return true;
             }
         }
@@ -723,6 +790,9 @@
 
     function tryGenerateDailyUnsolicitedOffer() {
         _ensureState();
+        // Disable during tutorial and story mode
+        var _isTutorial = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+        var _isStory = player && player.storyMode && player.storyMode.active && !player.storyMode.complete;
         var townChanged = (player._lastUnsolicitedSeenTownId !== undefined && player._lastUnsolicitedSeenTownId !== player.townId);
         // If the player arrived in a new town, also check active quests
         // for an onArrival progress trigger (deliver-letter quests etc).
@@ -739,12 +809,16 @@
             }
         }
         var chance = townChanged ? BASE_ENTRY_CHANCE : BASE_DAILY_CHANCE;
-        var fired = _runRollPass(chance);
+        var fired = (_isTutorial || _isStory) ? false : _runRollPass(chance);
         player._lastUnsolicitedSeenTownId = player.townId;
         return fired;
     }
     function tryGenerateEntryUnsolicitedOffer(townId) {
         _ensureState();
+        // Disable during tutorial and story mode
+        var _isTutorial = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+        var _isStory = player && player.storyMode && player.storyMode.active && !player.storyMode.complete;
+        if (_isTutorial || _isStory) return false;
         if (townId && player.townId !== townId) return false;
         var fired = _runRollPass(BASE_ENTRY_CHANCE);
         player._lastUnsolicitedSeenTownId = player.townId;
@@ -758,12 +832,19 @@
         _ensureState();
         var offer = player._pendingUnsolicitedOffer;
         if (!offer) return { success: false, message: 'No pending offer.' };
+        var offerNpc = _findPerson(offer.npcId);
+        if (!offerNpc || offerNpc.alive === false) {
+            // v9p33river366: don't let dead/missing NPCs hand out ghost quests.
+            player._pendingUnsolicitedOffer = null;
+            return { success: false, message: 'That offer is no longer available.' };
+        }
         var day = _getDay();
         var quest = {
             id: 'uq_' + (player._nextUnsolicitedQuestId++),
             npcId: offer.npcId,
             npcName: offer.npcName,
             defId: offer.defId,
+            dialog: offer.dialog,
             params: offer.params,
             objectives: offer.objectives,
             rewards: offer.rewards,
@@ -803,6 +884,13 @@
         for (; i >= 0; i--) {
             var q = player._activeUnsolicitedQuests[i];
             if (!q) { player._activeUnsolicitedQuests.splice(i, 1); continue; }
+            var questNpc = q.npcId ? _findPerson(q.npcId) : null;
+            if (!questNpc || questNpc.alive === false) {
+                // v9p33river366: dead quest givers should invalidate their quests
+                // immediately instead of lingering until the timer expires.
+                _failUnsolicitedQuest(i, 'giver_dead');
+                continue;
+            }
             if (q.deadlineDay && day > q.deadlineDay) {
                 _failUnsolicitedQuest(i, 'expired');
             }
@@ -812,10 +900,14 @@
     function _failUnsolicitedQuest(idx, reason) {
         var q = player._activeUnsolicitedQuests[idx];
         if (!q) return;
-        try { Player.modifyRelationship(q.npcId, -10, undefined, 'quest_fail_' + q.id); } catch (e) {}
+        var failNpc = q.npcId ? _findPerson(q.npcId) : null;
+        if (reason !== 'giver_dead' && failNpc && failNpc.alive !== false) {
+            try { Player.modifyRelationship(q.npcId, -10, undefined, 'quest_fail_' + q.id); } catch (e) {}
+        }
         player._activeUnsolicitedQuests.splice(idx, 1);
-        _logEvent('📜 Quest from ' + q.npcName + ' failed (' + (reason || 'expired') + ').', null, 'my_actions');
-        _toast('Quest failed (' + (reason || 'expired') + ')', 'warning');
+        var failLabel = reason === 'giver_dead' ? 'quest giver died' : (reason || 'expired');
+        _logEvent('📜 Quest from ' + q.npcName + ' failed (' + failLabel + ').', null, 'my_actions');
+        _toast('Quest failed (' + failLabel + ')', 'warning');
     }
 
     function attemptCompleteUnsolicitedQuest(questId) {
@@ -863,12 +955,19 @@
         if (!unique || !unique.type) return;
         try {
             if (unique.type === 'marriage_blessing') {
-                // Boost relationship with target child + flag a guaranteed-yes proposal
                 if (unique.childId) {
-                    Player.modifyRelationship(unique.childId, 80);
-                    if (!player._guaranteedProposals) player._guaranteedProposals = {};
-                    player._guaranteedProposals[unique.childId] = _getDay() + 90;
-                    _logEvent('💍 Marriage blessing earned. Their child will accept a proposal.', null, 'my_actions');
+                    if (player.spouseId === unique.childId) {
+                        // v9p33river366: these quests are turned in after marriage,
+                        // so convert the blessing into an actual spouse bonus.
+                        Player.modifyRelationship(unique.childId, 15, 'spouse');
+                        _logEvent('💍 Marriage blessing earned. The union has been formally blessed by the family.', null, 'my_actions');
+                    } else {
+                        // Boost relationship with target child + flag a guaranteed-yes proposal
+                        Player.modifyRelationship(unique.childId, 80);
+                        if (!player._guaranteedProposals) player._guaranteedProposals = {};
+                        player._guaranteedProposals[unique.childId] = _getDay() + 90;
+                        _logEvent('💍 Marriage blessing earned. Their child will accept a proposal.', null, 'my_actions');
+                    }
                 }
             } else if (unique.type === 'citizenship') {
                 if (unique.kingdomId) {
@@ -883,6 +982,10 @@
 
     function generateQuestFromNpc(personId) {
         _ensureState();
+        // Disable during tutorial and story mode
+        var _isTutorial = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+        var _isStory = player && player.storyMode && player.storyMode.active && !player.storyMode.complete;
+        if (_isTutorial || _isStory) return false;
         if (!personId) return false;
         var npc = _findPerson(personId);
         var day = _getDay();
@@ -892,10 +995,12 @@
         if (_relLevel(npc.id) < 40) return false;
         if (player._pendingUnsolicitedOffer) return false;
         if ((player._activeUnsolicitedQuests || []).length >= MAX_ACTIVE) return false;
+        if (activeQuestsForNpc(npc.id).length) return false;
         if (!player.townId || player.traveling || npc.townId !== player.townId) return false;
         if (player.jailedUntilDay && player.jailedUntilDay > day) return false;
-        var cd = (player._unsolicitedNpcCooldowns && player._unsolicitedNpcCooldowns[npc.id]) || 0;
-        if (cd && day - cd < NPC_COOLDOWN_DAYS) return false;
+        var cd = player._unsolicitedNpcCooldowns ? player._unsolicitedNpcCooldowns[npc.id] : null;
+        // v9p33river366: manual quest requests must honor day-0 NPC cooldowns too.
+        if (cd != null && day - cd < NPC_COOLDOWN_DAYS) return false;
         return _generateOfferFromNpc(npc);
     }
 
@@ -914,18 +1019,24 @@
 
     // ── Arrival hook (entry roll) ──
     function onPlayerArrival(townId) {
-        tryGenerateEntryUnsolicitedOffer(townId);
-        // Also: any active quest with onArrival
         _ensureState();
+        // Disable during tutorial and story mode
+        var _isTutorial = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+        var _isStory = player && player.storyMode && player.storyMode.active && !player.storyMode.complete;
+        var fired = false;
+        if (!_isTutorial && !_isStory) fired = tryGenerateEntryUnsolicitedOffer(townId);
+        // Also: any active quest with onArrival
         var active = player._activeUnsolicitedQuests || [];
         for (var i = 0; i < active.length; i++) {
             var q = active[i];
+            if (!q) continue;
             var def = QUEST_DEFS[q.defId]; if (!def || !def.onArrival) continue;
             var res = def.onArrival(q, townId);
             if (res && res.advance) {
                 _toast(res.msg || 'Quest progress.', 'success');
             }
         }
+        return fired;
     }
 
     Player.tryGenerateDailyUnsolicitedOffer = tryGenerateDailyUnsolicitedOffer;
@@ -939,5 +1050,7 @@
     Player.generateQuestFromNpc = generateQuestFromNpc;
     Player.unsolicitedOfferForNpc = unsolicitedOfferForNpc;
     Player.activeUnsolicitedQuestsForNpc = activeQuestsForNpc;
+    Player.getQuestCandidatesInTown = getQuestCandidatesInTown;
+    Player.getActiveQuestsInTown = getActiveQuestsInTown;
     Player.onPlayerArrival_unsolicited = onPlayerArrival;
 })(window.Player);

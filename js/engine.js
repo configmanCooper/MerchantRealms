@@ -6178,7 +6178,8 @@
                             _wb.waterRemaining = _wb.waterCapacity;
                             _wb.depleted = false;
                         }
-                        var wellDraw = Math.min(15, _wb.waterRemaining);
+                        // v9p33river366: honor the configured daily well draw rate instead of the stale 15/day cap.
+                        var wellDraw = Math.min((typeof WELL_CAPACITY_CONFIG !== 'undefined' && WELL_CAPACITY_CONFIG.DAILY_DRAW_RATE) ? WELL_CAPACITY_CONFIG.DAILY_DRAW_RATE : 15, _wb.waterRemaining);
                         _wb.waterRemaining -= wellDraw;
                         wellProduction += wellDraw;
                         // Well runs dry
@@ -10747,7 +10748,8 @@
                 if (k._pendingRAFavor && world.day > k._pendingRAFavor.expiresDay) {
                     logEvent('😤 The King of ' + k.name + ' is displeased that their Royal Advisor ignored their request.');
                     if (typeof Player !== 'undefined' && Player.modifyRelationship) {
-                        Player.modifyRelationship(k.king, -8, 'ignored_king_favor');
+                        // v9p33river366: this penalty should apply once per expired favor, not overwrite rel.type.
+                        Player.modifyRelationship(k.king, -8, undefined, 'ignored_king_favor_' + ((k._pendingRAFavor && k._pendingRAFavor.askedDay) || (world.day || 0)));
                     }
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('😤 King displeased! -8 relationship for ignoring favor.', 'danger');
                     k._pendingRAFavor = null;

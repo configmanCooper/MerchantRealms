@@ -6372,6 +6372,8 @@
             if (!bld.active) continue;
             // Skip buildings under fire repair
             if (bld._fireRepairUntil && day < bld._fireRepairUntil) continue;
+            // v9p33river366: disabled player buildings must actually stop producing until sabotage expires.
+            if (bld._disabledUntil && day < bld._disabledUntil) continue;
 
             // ═══════════════════════════════════════════════════════════
             // PASSIVE WORKER SKILL GAIN — happens every day the building
@@ -13047,7 +13049,8 @@
             return { success: true, message: 'Favor fulfilled!' };
         } else {
             // Decline — hurts relationship
-            if (kingdom.king) modifyRelationship(kingdom.king, -5, 'king_favor_declined');
+            // v9p33river366: this is a per-favor penalty, not the relationship type label.
+            if (kingdom.king) modifyRelationship(kingdom.king, -5, undefined, 'king_favor_declined_' + ((favor && favor.askedDay) || (Engine.getDay ? Engine.getDay() : 0)));
             kingdom._pendingRAFavor = null;
 
             Engine.logEvent('❌ ' + player.fullName + ' declined the king\'s request: ' + favor.description + '.');
@@ -14361,6 +14364,11 @@
             return { success: false, message: 'Need relationship ' + minRel + '+ to propose (current: ' + Math.floor(rel.level) + '). Build through gifts and time.' };
         }
 
+        // v9p33river366: unsolicited-quest marriage blessings grant a temporary
+        // guaranteed proposal window for that exact child.
+        var guaranteedProposalUntil = player._guaranteedProposals ? player._guaranteedProposals[personId] : null;
+        var hasGuaranteedProposal = guaranteedProposalUntil != null && guaranteedProposalUntil >= (Engine.getDay ? Engine.getDay() : 0);
+
         // Housing affects marriage acceptance
         var bestHouse = null;
         var bestComfort = -1;
@@ -14374,9 +14382,10 @@
         else housingAcceptMod = Math.min(0.30, bestComfort / 100 * 0.30);
         var baseAcceptChance = 0.70 + housingAcceptMod;
         var rngMarriage = Engine.getRng();
-        if (rngMarriage && !rngMarriage.chance(Math.min(0.95, Math.max(0.10, baseAcceptChance)))) {
+        if (!hasGuaranteedProposal && rngMarriage && !rngMarriage.chance(Math.min(0.95, Math.max(0.10, baseAcceptChance)))) {
             return { success: false, message: 'Your proposal was rejected.' + (housingAcceptMod < 0 ? ' Having a home might help.' : '') };
         }
+        if (hasGuaranteedProposal && player._guaranteedProposals) delete player._guaranteedProposals[personId];
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.petition_promotion || 10);
 
@@ -18348,7 +18357,8 @@
             if (Engine.getDay() > order.issuedDay + 2) {
                 // Player ignored the order — lose rep and relationship
                 player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - 10);
-                if (k.kingId) modifyRelationship(k.kingId, -20, 'defied_order');
+                // v9p33river366: use canonical kingdom.king and a per-order reason tag.
+                if (k.king) modifyRelationship(k.king, -20, undefined, 'defied_order_' + (order.issuedDay || (Engine.getDay ? Engine.getDay() : 0)));
                 Engine.logEvent('👑 You failed to respond to the king\'s order to lead the army. The king is displeased.');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 The king is furious that you ignored his order! -10 kingdom rep, -20 king relationship.', 'danger', 'kingdom');
                 player._pendingArmyLeaderOrder = null;
@@ -18423,7 +18433,7 @@
         } else {
             // Refuse — severe consequences
             player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - 10);
-            if (k && k.kingId) modifyRelationship(k.kingId, -20, 'refused_order');
+            if (k && k.king) modifyRelationship(k.king, -20, undefined, 'refused_order_' + (order.issuedDay || (Engine.getDay ? Engine.getDay() : 0)));
             // Other nobles may also lose respect
             var people = Engine.getPeople ? Engine.getPeople() : [];
             for (var _i = 0; _i < people.length; _i++) {
@@ -18431,7 +18441,7 @@
                 if (_p.alive && _p.socialRank && (_p.socialRank[kId] || 0) >= 4) {
                     // Loyal nobles dislike refusers
                     if ((_p.kingLoyalty || 50) >= 60) {
-                        modifyRelationship(_p.id, -3, 'coward');
+                        modifyRelationship(_p.id, -3, undefined, 'coward_' + (order.issuedDay || (Engine.getDay ? Engine.getDay() : 0)));
                     }
                 }
             }
@@ -19337,7 +19347,8 @@
             _familyChildArrangement: player._familyChildArrangement ? structuredClone(player._familyChildArrangement) : null,
             _childrenTravelWith: !!player._childrenTravelWith,
             _lastNannyChargeDay: player._lastNannyChargeDay || 0,
-            _kidsAtRiskSince: player._kidsAtRiskSince || null,
+            // v9p33river366: preserve day-0 childcare risk state across saves.
+            _kidsAtRiskSince: player._kidsAtRiskSince != null ? player._kidsAtRiskSince : null,
             militaryRankProgress: player.militaryRankProgress || 0,
             militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
             _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
@@ -19967,7 +19978,8 @@
         player._familyChildArrangement = data._familyChildArrangement || null;
         player._childrenTravelWith = !!data._childrenTravelWith;
         player._lastNannyChargeDay = data._lastNannyChargeDay || 0;
-        player._kidsAtRiskSince = data._kidsAtRiskSince || null;
+        // v9p33river366: preserve day-0 childcare risk state across saves.
+        player._kidsAtRiskSince = data._kidsAtRiskSince != null ? data._kidsAtRiskSince : null;
         player.militaryRankProgress = data.militaryRankProgress || 0;
         player.militaryPendingEvent = data.militaryPendingEvent || null;
         player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;

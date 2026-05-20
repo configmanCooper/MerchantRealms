@@ -3246,7 +3246,7 @@
             Game.advanceTicks(3);
         }
 
-        // Apply 2x relationship gain (the whole point of trait interactions)
+        // Apply relationship gain
         var gain = matched.gain;
         Player.modifyRelationship(personId, gain);
 
@@ -3265,9 +3265,75 @@
         }
         player._npcInteractions[personId].count++;
 
+        // Generate context-aware dialogue
+        var fn = person.firstName || 'Someone';
+        var rng = null;
+        try { rng = Engine.getRng(); } catch(e) {}
+        var pick = function(arr) { return rng ? rng.pick(arr) : arr[Math.floor(Math.random() * arr.length)]; };
+        var dialogueMsg = '';
+
+        switch (interactionId) {
+            case 'trait_discuss_ambitions':
+                dialogueMsg = pick([
+                    fn + '\'s eyes light up: "You want to hear my plans? I aim to own the largest enterprise in this region. I will not rest until I do."',
+                    fn + ' leans forward eagerly: "Most people think small. Not me. I see what this town could become — and I intend to build it."',
+                    fn + ' grins: "Ambition is not a sin, it is a virtue. The world rewards those who reach for more."',
+                    fn + ' speaks with fire: "Every morning I wake up and ask myself — what can I conquer today? That is how empires are built."',
+                    fn + ' confides: "I was not born to greatness. I am carving my own path, stone by stone. And I will not stop."'
+                ]);
+                break;
+            case 'trait_heartfelt_chat':
+                dialogueMsg = pick([
+                    fn + ' smiles gently: "Thank you for asking how I truly feel. So few people bother these days."',
+                    fn + '\'s expression softens: "I worry about the families in town who are struggling. I wish I could do more for them."',
+                    fn + ' takes a deep breath: "You know, some days the kindness of a friend is worth more than a bag of gold. Today is one of those days."',
+                    fn + ' looks at you warmly: "I had a hard week. But talking to you... it reminds me that there are good people left in this world."',
+                    fn + ' chuckles softly: "My mother always said the strongest thing a person can do is care. I try to live by that."'
+                ]);
+                break;
+            case 'trait_intellectual_debate':
+                dialogueMsg = pick([
+                    fn + ' rubs their hands together: "Excellent! Let us debate — do you think trade tariffs help or harm the common folk? I have thoughts."',
+                    fn + '\'s mind clearly races: "I have been reading about ancient irrigation techniques. The principles could transform how we farm here."',
+                    fn + ' argues passionately: "The trouble with governance is that leaders confuse tradition with wisdom. Sometimes the old ways are simply the wrong ways."',
+                    fn + ' challenges you: "Consider this — if every merchant paid a fair tax, would we even need noble patronage? Think carefully before you answer."',
+                    fn + ' nods approvingly: "Finally, someone who can hold an intelligent conversation! Most people\'s eyes glaze over when I mention economics."'
+                ]);
+                break;
+            case 'trait_honest_confession':
+                dialogueMsg = pick([
+                    fn + ' meets your eyes steadily: "I appreciate your honesty. Let me be honest too — I have made mistakes I am not proud of. But I own them."',
+                    fn + ' speaks plainly: "The world would be better if more people said what they meant. I have always believed that truth, however uncomfortable, is the foundation of trust."',
+                    fn + ' nods slowly: "I once lied to protect someone I loved. It haunts me still. Honesty is a harder path, but it is the right one."',
+                    fn + ' looks relieved: "Thank you for being straightforward with me. I cannot abide flattery or manipulation. You are a rare sort."',
+                    fn + ' pauses thoughtfully: "I will tell you something true — I am afraid of failing the people who depend on me. There. Now you know."'
+                ]);
+                break;
+            case 'trait_pledge_loyalty':
+                dialogueMsg = pick([
+                    fn + ' clasps your hand firmly: "Loyalty is not given — it is earned. And you have earned mine. Whatever comes, I stand with you."',
+                    fn + '\'s voice grows firm: "I do not throw that word around lightly. But you have been steadfast. I will not forget it."',
+                    fn + ' looks you in the eye: "In my life, I can count my true allies on one hand. You are among them now."',
+                    fn + ' nods solemnly: "My word is my bond. If you ever need me — truly need me — send word. I will come."',
+                    fn + ' places a hand on your shoulder: "The world is full of fair-weather friends. I am not one of them. Remember that."'
+                ]);
+                break;
+            case 'trait_share_savings_tips':
+                dialogueMsg = pick([
+                    fn + ' produces a small notebook: "Ah, a fellow penny-pincher! Let me show you — if you buy grain just after harvest, you save nearly forty percent."',
+                    fn + ' grins knowingly: "The secret to wealth is not earning more. It is spending less. I have not paid full price for anything in years."',
+                    fn + ' whispers conspiratorially: "Never buy tools on market day. Wait until Tuesday — the smiths are desperate to move inventory."',
+                    fn + ' taps their nose: "I mend my own clothes, brew my own ale, and grow my own herbs. The gold I save goes to investments that pay dividends."',
+                    fn + ' chuckles: "My neighbors think me miserly, but my pantry is full and my debts are zero. Who is laughing now?"'
+                ]);
+                break;
+            default:
+                dialogueMsg = fn + ' enjoys the conversation. Your shared understanding deepened the bond.';
+        }
+
         var gainSign = gain >= 0 ? '+' : '';
         Player.grantXP(3, 'trait_interaction');
-        return { success: true, message: matched.name + ': 💚 Relationship ' + gainSign + gain.toFixed(1) + '. Your knowledge of their personality deepened the conversation!' };
+        return { success: true, message: dialogueMsg + ' 💚 Relationship ' + gainSign + gain.toFixed(1) };
     }
 
     function _handleJobInteraction(personId, person, interactionId) {
@@ -3413,6 +3479,7 @@
         try { day = Engine.getDay(); } catch(e) {}
         var fn = person.firstName || 'Noble';
         var pers = person.personality || {};
+        var relLevel = player.relationships[personId] ? player.relationships[personId].level : 0;
 
         // Advance time
         if (typeof Game !== 'undefined' && Game.advanceTicks) {
@@ -3420,29 +3487,207 @@
         }
 
         var gain = 3.0;
+
+        // Gather context for rich dialogue
+        var town = null, kingdom = null, kingName = '', atWar = false, kName = '';
+        try {
+            town = Engine.findTown(person.townId || player.townId);
+            if (town && town.kingdomId) {
+                kingdom = Engine.findKingdom(town.kingdomId);
+                if (kingdom) {
+                    kName = kingdom.name || 'the kingdom';
+                    atWar = kingdom.atWar ? (Array.isArray(kingdom.atWar) ? kingdom.atWar.length > 0 : kingdom.atWar.size > 0) : false;
+                    var kingPerson = kingdom.king ? Engine.findPerson(kingdom.king) : null;
+                    kingName = kingPerson ? kingPerson.firstName : 'the king';
+                }
+            }
+        } catch(e) {}
+        var tName = town ? town.name : 'town';
+        var highRel = relLevel >= 60;
+        var veryHigh = relLevel >= 80;
+        var rng = null;
+        try { rng = Engine.getRng(); } catch(e) {}
+        var pick = function(arr) { return rng ? rng.pick(arr) : arr[Math.floor(Math.random() * arr.length)]; };
+
         var dialogueMsg = '';
 
         switch (interactionId) {
-            case 'noble_discuss_power':
-                dialogueMsg = fn + ' leans in: "You understand ambition. Together, we could reshape the court."';
+            case 'noble_discuss_power': {
                 if ((pers.ambition || 50) > 70) gain = 4.0;
+                if ((pers.ambition || 50) > 80) gain = 4.5;
+                var powerLines;
+                if (atWar) {
+                    powerLines = [
+                        fn + ' glances around carefully: "War reshuffles the deck. Those who position themselves now will hold the cards when peace comes."',
+                        fn + ' lowers their voice: "The war council is where the real power lies right now. I have been angling for a seat — perhaps we could help each other."',
+                        fn + ' taps the table: "Every war creates vacancies at court. Lands are seized, titles forfeited. The bold will claim what the fallen leave behind."',
+                        fn + '\'s eyes gleam: "' + kingName + ' relies heavily on those who fund the war. Gold buys influence that swords cannot."'
+                    ];
+                } else if (veryHigh) {
+                    powerLines = [
+                        fn + ' speaks freely: "Between us — I have been cultivating allies among the lesser nobles. When the time is right, we could propose reforms that benefit... our circle."',
+                        fn + ' confides: "The royal court is a chessboard. ' + kingName + ' controls the center, but the flanks? Those belong to people like us."',
+                        fn + ' meets your eyes: "I trust you enough to say this plainly — I intend to rise higher. And I want you beside me when I do."',
+                        fn + ' smiles knowingly: "Real power is not the throne. It\'s the ear of the one who sits on it. Remember that."'
+                    ];
+                } else if (highRel) {
+                    powerLines = [
+                        fn + ' leans in: "I have been studying the court alliances. Three families hold most of the influence in ' + kName + '. We need to be the fourth."',
+                        fn + ' speaks carefully: "Ambition without allies is just daydreaming. I think we understand each other — shall we be more... deliberate in our plans?"',
+                        fn + ' nods approvingly: "You have the instinct for this. Most people flinch at the word \'power.\' You and I know it is simply the ability to shape what happens next."'
+                    ];
+                } else {
+                    powerLines = [
+                        fn + ' raises an eyebrow: "You wish to discuss influence? Good. Too many are content to let others decide their fate."',
+                        fn + ' studies you: "Ambition is the first requirement. The second is patience. Do you have both?"',
+                        fn + ' gestures broadly: "The court in ' + kName + ' is a web of favors and debts. Understanding who owes whom — that is where power begins."',
+                        fn + ' tilts their head: "Every noble family started somewhere. The question is whether you have the stomach for the climb."',
+                        fn + ' folds their arms: "' + kingName + ' rewards loyalty, yes — but competence more so. Show your value, and the doors will open."'
+                    ];
+                }
+                dialogueMsg = pick(powerLines);
                 break;
-            case 'noble_discuss_duty':
-                dialogueMsg = fn + ' nods solemnly: "The crown needs loyal subjects now more than ever. I\'m glad I can count on you."';
+            }
+            case 'noble_discuss_duty': {
                 if ((pers.loyalty || 50) > 70) gain = 4.0;
+                if ((pers.loyalty || 50) > 80) gain = 4.5;
+                var dutyLines;
+                if (atWar) {
+                    dutyLines = [
+                        fn + ' places a hand over their heart: "In times of war, duty is not a concept — it is a lifeline. Every grain we send, every coin we contribute, keeps ' + kName + ' alive."',
+                        fn + '\'s expression hardens: "I have sent three of my household guard to the front. It tears at me, but ' + kingName + ' called, and we must answer."',
+                        fn + ' looks toward the horizon: "Some nobles flee their obligations when war comes. I will not be among them, and I am glad you share that conviction."',
+                        fn + ' straightens: "The soldiers fight with swords. We fight with supply lines, morale, and keeping the people fed. Our duty is no less vital."'
+                    ];
+                } else if (veryHigh) {
+                    dutyLines = [
+                        fn + ' speaks with quiet intensity: "You know why I remain loyal to the crown? Because without order, the common folk suffer most. That is the burden we carry."',
+                        fn + ' clasps your shoulder: "There are nights I question whether ' + kingName + ' deserves our loyalty. Then I remember — it is not about the king. It is about ' + kName + '."',
+                        fn + ' smiles sadly: "Duty and ambition pull in opposite directions, friend. I have chosen duty. I hope I have chosen wisely."'
+                    ];
+                } else if (highRel) {
+                    dutyLines = [
+                        fn + ' nods firmly: "I took an oath when I received my title. Some treat it as ceremony. I do not."',
+                        fn + ' looks you in the eye: "Loyalty is tested not in prosperity but in hardship. I respect that you come to discuss this openly."',
+                        fn + ' reflects: "My father served the crown faithfully for forty years. I intend to honor that legacy, whatever it costs me."'
+                    ];
+                } else {
+                    dutyLines = [
+                        fn + ' nods solemnly: "The crown demands much, but gives structure to our world. Without it, we would have only chaos."',
+                        fn + ' straightens with pride: "Service to ' + kName + ' is the highest calling a noble can answer. I am glad you see that."',
+                        fn + ' looks thoughtful: "Every day I ask myself — have I done enough for my people? The answer is always the same: not yet."',
+                        fn + '\'s voice grows soft: "' + kingName + ' carries the weight of the kingdom. The least we can do is shoulder some of that burden."',
+                        fn + ' speaks deliberately: "A noble who shirks their duty is no noble at all. I have seen too many forget that in ' + tName + '."'
+                    ];
+                }
+                dialogueMsg = pick(dutyLines);
                 break;
-            case 'noble_discuss_strategy':
-                dialogueMsg = fn + ' strokes their chin: "Your strategic mind impresses me. Few think beyond tomorrow."';
+            }
+            case 'noble_discuss_strategy': {
                 if ((pers.intelligence || 50) > 70) gain = 4.0;
+                if ((pers.intelligence || 50) > 80) gain = 4.5;
+                var stratLines;
+                if (atWar) {
+                    stratLines = [
+                        fn + ' pulls out a rough map: "Our supply lines are stretched thin. If the enemy targets ' + tName + ', we would have perhaps three weeks of reserves. We need contingencies."',
+                        fn + ' taps their chin: "The war is winnable, but not by brute force alone. We need to disrupt their trade routes — starve their war machine."',
+                        fn + ' muses: "I have been studying our enemy\'s movements. They commit heavily to the front, leaving their eastern flank exposed. If only ' + kingName + ' would listen..."',
+                        fn + '\'s eyes sharpen: "The real battle is economic. Whoever runs out of gold first will sue for peace. Right now, that could be either side."'
+                    ];
+                } else if (veryHigh) {
+                    stratLines = [
+                        fn + ' unfolds their thoughts: "I have a theory — the kingdoms that thrive long-term are those that invest in infrastructure over military. Roads, wells, granaries. The boring things."',
+                        fn + ' speaks candidly: "Between us, I believe ' + kName + '\'s biggest vulnerability is food dependency. If we diversified our agriculture, we would be nearly untouchable."',
+                        fn + ' leans forward: "I have been quietly corresponding with scholars abroad. Their insights on governance could reshape how ' + kName + ' manages its territories."'
+                    ];
+                } else if (highRel) {
+                    stratLines = [
+                        fn + ' considers carefully: "The wisest strategy is one your opponent never sees coming. Subtlety over spectacle — that is my philosophy."',
+                        fn + ' traces patterns on the table: "' + kName + '\'s strength lies in its natural resources, but we squander them with poor management. There is much room for improvement."',
+                        fn + ' reflects: "Military might is a blunt instrument. Economic strength, alliances, intelligence networks — these are the true sinews of power."'
+                    ];
+                } else {
+                    stratLines = [
+                        fn + ' strokes their chin: "Few people think strategically. They react instead of planning. Tell me — when you look at ' + kName + ', what do you see? Strengths or vulnerabilities?"',
+                        fn + ' raises an eyebrow: "Your strategic mind impresses me. Most who come to court think only of today\'s meal, not tomorrow\'s harvest."',
+                        fn + ' gestures expansively: "A kingdom is like a merchant enterprise writ large. Revenue, expenses, investments, risks. Govern it with a ledger and a map, not just a scepter."',
+                        fn + '\'s eyes light up: "Ah, someone who appreciates the long game! Tell me your thoughts on ' + tName + '\'s defensive position. I have some concerns."',
+                        fn + ' nods approvingly: "Strategy begins with information. I make it my business to know the price of wheat in every town in ' + kName + '. Patterns reveal intentions."'
+                    ];
+                }
+                dialogueMsg = pick(stratLines);
                 break;
-            case 'noble_discuss_people':
-                dialogueMsg = fn + ' smiles warmly: "It heartens me that someone of your station cares about the common folk."';
+            }
+            case 'noble_discuss_people': {
                 if ((pers.warmth || 50) > 70) gain = 4.0;
+                if ((pers.warmth || 50) > 80) gain = 4.5;
+                var peopleLines;
+                if (atWar) {
+                    peopleLines = [
+                        fn + '\'s expression falls: "The war hits the common folk hardest. Higher prices, sons marched off to fight, widows left to tend farms alone. It keeps me up at night."',
+                        fn + ' sighs heavily: "I have been distributing grain from my personal stores. It is not enough, but what else can I do? The people of ' + tName + ' are suffering."',
+                        fn + ' looks pained: "They cheer when the army marches through, but they weep when the tax collector follows. We owe them better than this."',
+                        fn + ' speaks softly: "A child in the market yesterday asked me when her father would come home from the war. I had no answer. That haunts me."'
+                    ];
+                } else if (veryHigh) {
+                    peopleLines = [
+                        fn + ' takes your hand briefly: "I have been quietly funding a school in ' + tName + '. Education is the only ladder that lifts everyone, not just the privileged."',
+                        fn + ' confides: "Most nobles see the commonfolk as numbers — labor, taxes, soldiers. I cannot. I see my nurse who raised me, the blacksmith who taught me patience, the farmers who feed us all."',
+                        fn + ' wipes their eye: "Forgive me. I visited the poorest quarter of ' + tName + ' yesterday. The conditions... we must do better. We can afford to."'
+                    ];
+                } else if (highRel) {
+                    peopleLines = [
+                        fn + ' smiles warmly: "You know what I love about market days? Watching the children chase each other between the stalls. That is what we protect — those simple joys."',
+                        fn + ' grows serious: "The gap between noble and common is not of worth, but of circumstance. Any of us could have been born on the other side."',
+                        fn + ' nods: "I make a point to walk through ' + tName + ' without my sigil once a month. You learn more in an hour as a nobody than a year as a lord."'
+                    ];
+                } else {
+                    peopleLines = [
+                        fn + ' smiles softly: "It heartens me that someone of your station cares about the common folk. Too many nobles wall themselves away from reality."',
+                        fn + ' looks out thoughtfully: "A kingdom is its people. Not its walls, not its throne — its people. Everything we do should serve them."',
+                        fn + '\'s voice warms: "Do you know what the fishermen of ' + tName + ' told me last week? They said they feel forgotten by the court. That shames me."',
+                        fn + ' shakes their head: "The harvest festival is the one day nobles and peasants sit at the same table. We should have more days like that."',
+                        fn + ' reflects: "My grandmother used to say: \'The strength of a castle is not in its stones, but in the people willing to defend it.\' She was right."'
+                    ];
+                }
+                dialogueMsg = pick(peopleLines);
                 break;
-            case 'noble_discuss_economy':
-                dialogueMsg = fn + ' raises an eyebrow: "A fellow pragmatist! Let me share what I know about the kingdom\'s finances."';
+            }
+            case 'noble_discuss_economy': {
                 if ((pers.frugality || 50) > 70) gain = 4.0;
+                if ((pers.frugality || 50) > 80) gain = 4.5;
+                var econLines;
+                if (atWar) {
+                    econLines = [
+                        fn + ' frowns: "War is ruinously expensive. The treasury bleeds gold daily. If this drags on another season, ' + kingName + ' will need to raise taxes — and that never ends well."',
+                        fn + ' lowers their voice: "I have been quietly converting some holdings to gold. When the war ends — and it will — the shrewd will buy land at desperate prices."',
+                        fn + ' taps the table: "Iron and wheat are worth their weight in gold right now. Any merchant supplying the army is getting rich. The question is whether it lasts."',
+                        fn + ' sighs: "Trade agreements are frozen during wartime. ' + kName + '\'s merchants are suffering, and that suffering flows downhill to every shop and stall."'
+                    ];
+                } else if (veryHigh) {
+                    econLines = [
+                        fn + ' speaks openly: "I will tell you something most nobles would never admit — I track every coin that enters and leaves my household. Discipline, not birth, builds lasting wealth."',
+                        fn + ' confides: "The kingdom\'s books are... concerning. ' + kingName + ' spends lavishly on the court while infrastructure crumbles. It is not sustainable."',
+                        fn + ' draws you close: "I have been experimenting with crop rotation on my estates. The yields are remarkable. If we could convince other landholders... ' + kName + ' could become a breadbasket."'
+                    ];
+                } else if (highRel) {
+                    econLines = [
+                        fn + ' nods knowingly: "The merchants in ' + tName + ' complain about taxes, but they never mention the roads those taxes built. A functioning economy needs both sides."',
+                        fn + ' gestures: "I have been watching the price of timber closely. Three months ago it was stable. Now? Rising steadily. Something is shifting in the supply chains."',
+                        fn + ' speaks firmly: "Prosperity is not found — it is built, stone by stone, trade by trade, harvest by harvest. ' + kName + ' has the potential if we manage wisely."'
+                    ];
+                } else {
+                    econLines = [
+                        fn + ' raises an eyebrow: "A fellow pragmatist! The economy is the heartbeat of ' + kName + '. When trade flows, everything thrives. When it stalls, even the crown suffers."',
+                        fn + ' produces a small ledger: "I keep records of commodity prices across every town I visit. Patterns emerge — and patterns are profit."',
+                        fn + ' speaks plainly: "Gold is not everything, but without it, everything else falls apart. The kingdom\'s finances must be sound before we dream of anything grand."',
+                        fn + ' tilts their head: "Have you noticed how the price of grain fluctuates with the seasons? Most don\'t. But those who do can plan harvests — or exploit shortages."',
+                        fn + '\'s expression sharpens: "There is a merchant in ' + tName + ' trying to corner the market on salt. I admire the ambition, but it will hurt the people. Someone should address it."'
+                    ];
+                }
+                dialogueMsg = pick(econLines);
                 break;
+            }
             default:
                 dialogueMsg = fn + ' enjoys the conversation.';
         }

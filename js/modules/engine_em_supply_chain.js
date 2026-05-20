@@ -88,8 +88,7 @@
     // ─── Per-EM scouting ───
     function tickEmSupplyChain() {
         var w = _getWorld(); if (!w) return;
-        // First: process arrivals.
-        tickEmSupplyArrivals();
+        // v9p33river366: arrivals are processed once per day from engine.js; calling them again here double-delivered shipments.
         var day = _getDay();
 
         // Iterate elite merchants

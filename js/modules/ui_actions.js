@@ -1938,7 +1938,11 @@ function showPersonDetail(person) {
                     html += '</div></div>';
                 }
                 var _uqPendingAny = Player.getPendingUnsolicitedOffer ? Player.getPendingUnsolicitedOffer() : ((Player.state && Player.state._pendingUnsolicitedOffer) || null);
-                var _uqCanRequest = !_uqPendingAny;
+                // v9p33river366: request button should only appear while co-located.
+                var _uqCanRequest = !_uqPendingAny && isInSameTown;
+                var _isTutActive = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+                var _isStoryActive = Player.state && Player.state.storyMode && Player.state.storyMode.active && !Player.state.storyMode.complete;
+                if (_isTutActive || _isStoryActive) _uqCanRequest = false;
                 if (_uqCanRequest) {
                     var _uqIsQuestNpc = !!person.isEliteMerchant;
                     if (!_uqIsQuestNpc && person.socialRank && typeof person.socialRank === 'object') {
@@ -1948,8 +1952,10 @@ function showPersonDetail(person) {
                     }
                     if (!_uqIsQuestNpc && person.occupation === 'noble') _uqIsQuestNpc = true;
                     var _uqDay = Engine.getDay ? Engine.getDay() : 0;
-                    var _uqCd = (Player.state && Player.state._unsolicitedNpcCooldowns && Player.state._unsolicitedNpcCooldowns[person.id]) || 0;
-                    if (!_uqIsQuestNpc || rel.level < 40 || (_uqCd && (_uqDay - _uqCd) < 60)) _uqCanRequest = false;
+                    var _uqCd = (Player.state && Player.state._unsolicitedNpcCooldowns) ? Player.state._unsolicitedNpcCooldowns[person.id] : null;
+                    var _uqActive = Player.activeUnsolicitedQuestsForNpc ? Player.activeUnsolicitedQuestsForNpc(person.id) : [];
+                    // v9p33river366: hide the request button when a day-0 cooldown is active.
+                    if (!_uqIsQuestNpc || rel.level < 40 || (_uqCd != null && (_uqDay - _uqCd) < 60) || (_uqActive && _uqActive.length)) _uqCanRequest = false;
                 }
                 if (_uqCanRequest) {
                     html += '<div class="detail-section" style="border:1px solid rgba(212,175,55,0.28);background:rgba(212,175,55,0.06);">';
@@ -2249,12 +2255,10 @@ function showPersonDetail(person) {
                     }
                 }
 
-                // Propose marriage button
-                if (rel.level >= 60 && !person.spouseId && !playerSpouseId) {
+                // Propose marriage button — only show if courtship accepted (lovers)
+                if (_courtshipAccepted && rel.level >= 60 && !person.spouseId && !playerSpouseId) {
                     html += `<button id="btnPropose" class="btn-medieval" data-action="proposeTo" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;margin-top:4px;">
                         💍 Propose Marriage</button>`;
-                } else if (rel.level < 60 && !person.spouseId && !playerSpouseId) {
-                    html += `<div class="text-dim" style="font-size:0.7rem;margin-top:4px;">💍 Propose requires relationship 60+</div>`;
                 }
 
                 html += `</div></div>`;
@@ -3978,8 +3982,9 @@ function _siegeJoinSide(townId, optionId, side, winChance) {
             }
             // Reputation loss with enemy
             Player.state.reputation[enemyKingdomId] = Math.max(0, (Player.state.reputation[enemyKingdomId] || 50) - 1);
-            if (enemyK && enemyK.kingId) {
-                if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(enemyK.kingId, -2, 'battle_enemy');
+            if (enemyK && enemyK.king) {
+                // v9p33river366: battle penalties should hit the actual king id and stay below neutral when earned.
+                if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(enemyK.king, -2, undefined, 'battle_enemy_' + (Engine.getDay ? Engine.getDay() : 0));
             }
         }
         if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' and won the battle!' + injuryMsg);
@@ -4850,22 +4855,32 @@ function clickTown(townId) {
 
     // v9p33river357: Unsolicited Quest actions
     UI.registerAction('acceptUnsolicitedOffer', function() {
+        var pending = Player.getPendingUnsolicitedOffer ? Player.getPendingUnsolicitedOffer() : null;
         var res = Player.acceptUnsolicitedOffer ? Player.acceptUnsolicitedOffer() : { success: false, message: 'Unavailable.' };
         UI.toast(res.message || (res.success ? 'Accepted.' : 'Cannot accept.'), res.success ? 'success' : 'warning');
+        // v9p33river366: refresh both the quests modal and the currently-open NPC detail.
+        try { if (UI._renderTownQuestsTab) UI._renderTownQuestsTab(); } catch(e) {}
         try {
-            var pid = (res.quest && res.quest.npcId) || (UI._selectedPersonId);
-            if (pid) UI.showPersonDetail(Engine.getPerson(pid));
+            var questNpcId = (res && res.quest && res.quest.npcId) || (pending && pending.npcId) || null;
+            if (questNpcId && UI._selectedPersonId === questNpcId) {
+                var questNpc = Engine.findPerson ? Engine.findPerson(questNpcId) : null;
+                if (questNpc && UI.showPersonDetail) UI.showPersonDetail(questNpc);
+            }
         } catch(e) {}
-        try { UI.closeModal && UI.closeModal(); } catch(e) {}
     });
     UI.registerAction('declineUnsolicitedOffer', function() {
+        var pending = Player.getPendingUnsolicitedOffer ? Player.getPendingUnsolicitedOffer() : null;
         var res = Player.declineUnsolicitedOffer ? Player.declineUnsolicitedOffer() : { success: false, message: 'Unavailable.' };
         UI.toast(res.message || 'Declined.', 'info');
+        // v9p33river366: refresh both the quests modal and the currently-open NPC detail.
+        try { if (UI._renderTownQuestsTab) UI._renderTownQuestsTab(); } catch(e) {}
         try {
-            var pid = UI._selectedPersonId;
-            if (pid) UI.showPersonDetail(Engine.getPerson(pid));
+            var declinedNpcId = pending && pending.npcId;
+            if (declinedNpcId && UI._selectedPersonId === declinedNpcId) {
+                var declinedNpc = Engine.findPerson ? Engine.findPerson(declinedNpcId) : null;
+                if (declinedNpc && UI.showPersonDetail) UI.showPersonDetail(declinedNpc);
+            }
         } catch(e) {}
-        try { UI.closeModal && UI.closeModal(); } catch(e) {}
     });
     UI.registerAction('requestNpcQuest', function(_t, d) {
         var personId = d.id;
@@ -4879,6 +4894,9 @@ function clickTown(townId) {
     UI.registerAction('attemptCompleteUnsolicitedQuest', function(_t, d) {
         var res = Player.attemptCompleteUnsolicitedQuest ? Player.attemptCompleteUnsolicitedQuest(d.id) : { success: false, message: 'Unavailable.' };
         UI.toast(res.message, res.success ? 'success' : 'warning');
+        try {
+            if (window._townPeopleTab === 'quests' && UI._switchTownTab && window._townPeopleData) UI._switchTownTab('quests');
+        } catch(e) {}
         try {
             var pid = UI._selectedPersonId;
             if (pid) UI.showPersonDetail(Engine.getPerson(pid));

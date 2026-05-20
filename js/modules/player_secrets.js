@@ -227,7 +227,8 @@
 
         // Cooldown check
         var day = _getDay();
-        if (player._secretCooldowns[personId] && (day - player._secretCooldowns[personId]) < COOLDOWN_DAYS) return null;
+        // v9p33river366: day 0 is a valid cooldown timestamp; don't bypass on falsy checks.
+        if (player._secretCooldowns[personId] != null && (day - player._secretCooldowns[personId]) < COOLDOWN_DAYS) return null;
 
         // Max secrets per NPC
         if (_countSecretsFrom(personId) >= MAX_SECRETS_PER_NPC) return null;
@@ -373,10 +374,13 @@
         if (!listener) return { success: false, message: 'Person not found.' };
 
         secret.shared = true;
+        // v9p33river366: betrayal penalties need a reason so modifyRelationship
+        // applies the negative hit below neutral instead of clamping at 0.
+        var _shareReasonBase = 'shared_secret_' + String(secret.templateId || secret.id || secret.type || 'secret') + '_' + String(listenerPersonId);
 
         // Base relationship effects
         try { Player.modifyRelationship(listenerPersonId, secret.shareL); } catch(e) {}
-        try { Player.modifyRelationship(secret.npcId, secret.shareO); } catch(e) {}
+        try { Player.modifyRelationship(secret.npcId, secret.shareO, undefined, _shareReasonBase); } catch(e) {}
 
         // Listener's relationship with owner drops too
         // (simulated — set a flag the AI can pick up)
@@ -396,7 +400,7 @@
         consequences.push(secret.shareO + ' relationship with ' + oName + '.');
 
         // Unique effects
-        var uniqueResult = _applyUniqueShareEffect(secret, listener, owner);
+        var uniqueResult = _applyUniqueShareEffect(secret, listener, owner, _shareReasonBase);
         if (uniqueResult) consequences.push(uniqueResult);
 
         _logEvent('🗣️ You shared ' + oName + '\'s secret with ' + lName + '.', null, 'my_actions');
@@ -409,7 +413,7 @@
         };
     }
 
-    function _applyUniqueShareEffect(secret, listener, owner) {
+    function _applyUniqueShareEffect(secret, listener, owner, shareReasonBase) {
         if (!secret.uniqueEffect) return null;
         var day = _getDay();
 
@@ -461,7 +465,7 @@
                 if ((listener.isKing || listener.isNoble || listener.occupation === 'noble') && owner) {
                     if (Math.random() < 0.3) {
                         owner._jailedUntilDay = day + 90;
-                        try { Player.modifyRelationship(secret.npcId, -20); } catch(e) {} // additional hit
+                        try { Player.modifyRelationship(secret.npcId, -20, undefined, String(shareReasonBase || 'shared_secret') + '_treason'); } catch(e) {} // additional hit
                         return '⚖️ ' + (owner.firstName || 'They') + ' has been accused of treason and imprisoned!';
                     }
                     return '⚖️ Rumors of ' + (owner.firstName || 'their') + ' treason are spreading.';
@@ -522,7 +526,7 @@
                         var t3 = _findTown(owner.townId);
                         if (t3 && t3.kingdomId) {
                             // Reputation hit for the owner
-                            try { Player.modifyRelationship(secret.npcId, -10); } catch(e) {} // additional hit
+                            try { Player.modifyRelationship(secret.npcId, -10, undefined, String(shareReasonBase || 'shared_secret') + '_market'); } catch(e) {} // additional hit
                             return '📊 News of ' + (owner.firstName || 'the merchant') + '\'s market manipulation spreads through ' + t3.name + '.';
                         }
                     } catch(e) {}

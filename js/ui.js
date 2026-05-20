@@ -953,6 +953,7 @@ window.UI = (function () {
         registerAction('executeAdviseKing', function(_t, d) { if (d.id && d.val) UI.executeAdviseKing(d.id, d.val); });
         registerAction('doRequestIntroduction', function(_t, d) { if (d.id && d.val) UI.doRequestIntroduction(d.id, d.val); });
         registerAction('proposeMarriage', function(_t, d) { if (d.id) UI.proposeMarriage(d.id); });
+        registerAction('_confirmMarriage', function(_t, d) { if (d.id) UI._confirmMarriage(d.id); });
         registerAction('openGiftDialog', function(_t, d) { if (d.id) UI.openGiftDialog(d.id); });
         registerAction('goOnDate', function(_t, d) { if (d.id && d.val) UI.goOnDate(d.id, d.val); });
         registerAction('observePerson', function(_t, d) { if (d.id) UI.observePerson(d.id); });
@@ -5720,9 +5721,11 @@ window.UI = (function () {
                         var _failPerson = Engine.getPerson(pid);
                         var _failDlg = document.getElementById('npcInteractionDialog');
                         if (_failDlg && _failPerson) {
+                            // v9p33river366: escape dialog failure text so quoted NPC replies cannot break markup.
+                            var _failText = String(failMsg).replace(/.*says:\s*"?/i, '').replace(/"$/, '');
                             _failDlg.innerHTML = '<div style="margin:8px 0;padding:8px 12px;background:rgba(200,150,50,0.15);border-left:3px solid #d4af37;border-radius:4px;">' +
-                                '<span style="color:#d4af37;font-style:italic;">' + (_failPerson.firstName || 'They') + ': </span>' +
-                                '<span style="color:#ccc;">"' + failMsg.replace(/.*says:\s*"?/i, '').replace(/"$/, '') + '"</span></div>';
+                                '<span style="color:#d4af37;font-style:italic;">' + escapeHtml(_failPerson.firstName || 'They') + ': </span>' +
+                                '<span style="color:#ccc;">"' + escapeHtml(_failText) + '"</span></div>';
                         } else {
                             toast(failMsg, 'warning');
                         }
@@ -5794,10 +5797,217 @@ window.UI = (function () {
 
     function proposeTo(personId) {
         if (typeof Player === 'undefined' || !Player.marry) return;
+
+        // Build marriage proposal confirmation UI
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        if (!person) { toast('Person not found.', 'warning'); return; }
+
+        var fn = person.firstName || 'Someone';
+        var ln = person.lastName || '';
+        var fullName = (fn + ' ' + ln).trim();
+        var rel = Player.getRelationship ? Player.getRelationship(personId) : { level: 0 };
+        var relLevel = rel.level || 0;
+        var pers = person.personality || {};
+        var revealed = Player.getRevealedInfo ? Player.getRevealedInfo(personId) : { traits: {}, quirks: [] };
+        var portrait = (Player.getPersonPortrait) ? Player.getPersonPortrait(person) : '';
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+
+        // ── Calculate acceptance chance (mirror marry() logic) ──
+        var bestComfort = -1;
+        var bestHouseName = 'None';
+        var houses = Player.state ? (Player.state.houses || []) : [];
+        var housingTypes = CONFIG.HOUSING_TYPES || [];
+        for (var hi = 0; hi < houses.length; hi++) {
+            for (var hti = 0; hti < housingTypes.length; hti++) {
+                if (housingTypes[hti].id === houses[hi].type && housingTypes[hti].comfort > bestComfort) {
+                    bestComfort = housingTypes[hti].comfort;
+                    bestHouseName = housingTypes[hti].name || houses[hi].type;
+                }
+            }
+        }
+        var housingMod = 0;
+        if (bestComfort <= 0) housingMod = -0.30;
+        else if (bestComfort <= 15) housingMod = 0;
+        else housingMod = Math.min(0.30, bestComfort / 100 * 0.30);
+        var baseChance = Math.min(0.95, Math.max(0.10, 0.70 + housingMod));
+        var chancePct = Math.round(baseChance * 100);
+
+        // Chance label
+        var chanceLabel, chanceColor;
+        if (chancePct >= 80) { chanceLabel = 'Very Likely'; chanceColor = '#55a868'; }
+        else if (chancePct >= 60) { chanceLabel = 'Likely'; chanceColor = '#8bc34a'; }
+        else if (chancePct >= 40) { chanceLabel = 'Uncertain'; chanceColor = '#d4af37'; }
+        else if (chancePct >= 20) { chanceLabel = 'Unlikely'; chanceColor = '#e67e22'; }
+        else { chanceLabel = 'Very Unlikely'; chanceColor = '#c0392b'; }
+
+        // ── Build factors list ──
+        var factors = [];
+        factors.push({ text: 'Base acceptance', value: '70%', positive: true });
+        if (housingMod > 0) factors.push({ text: 'Good housing (' + bestHouseName + ')', value: '+' + Math.round(housingMod * 100) + '%', positive: true });
+        else if (housingMod < 0) factors.push({ text: 'No proper housing', value: Math.round(housingMod * 100) + '%', positive: false });
+        else if (bestComfort > 0) factors.push({ text: 'Basic housing (' + bestHouseName + ')', value: '+0%', positive: null });
+        if (relLevel >= 80) factors.push({ text: 'Very high relationship (' + Math.floor(relLevel) + ')', value: '✓', positive: true });
+        else if (relLevel >= 60) factors.push({ text: 'Good relationship (' + Math.floor(relLevel) + ')', value: '✓', positive: true });
+        if (Player.hasSkill && Player.hasSkill('romantic')) factors.push({ text: 'Romantic skill', value: 'Lower threshold', positive: true });
+
+        // ── Revealed traits ──
+        var allTraitNames = pers ? Object.keys(pers) : [];
+        var revealedTraits = revealed.traits || {};
+        var revealedQuirks = revealed.quirks || [];
+        var totalQuirks = (person.quirks || []).length;
+        var unrevealedTraitCount = allTraitNames.length - Object.keys(revealedTraits).length;
+        var unrevealedQuirkCount = totalQuirks - revealedQuirks.length;
+        var hasUnknowns = unrevealedTraitCount > 0 || unrevealedQuirkCount > 0;
+
+        // Trait display
+        var traitAdjMap = { loyalty: 'Loyalty', ambition: 'Ambition', frugality: 'Frugality', intelligence: 'Intelligence', warmth: 'Warmth', honesty: 'Honesty' };
+        var traitLevelMap = { high: '🟢 High', moderate: '🟡 Moderate', low: '🔴 Low' };
+
+        // Quirk display — look up from SPOUSE_QUIRKS
+        var quirkDefs = (typeof SPOUSE_QUIRKS !== 'undefined') ? SPOUSE_QUIRKS : [];
+
+        // ── Benefits & drawbacks ──
+        var benefits = [
+            'Spouse can look after your children',
+            'Potential heirs for your legacy',
+            'Spouse quirks may provide business bonuses',
+            'Family connections and social status'
+        ];
+        var drawbacks = [
+            'Annulment requires noble status + gold, or petition the king (difficult)',
+            'Spouse may react badly to low relationship or infidelity',
+            'Some spouse quirks have negative effects on business/finances',
+            'Must maintain the relationship or face consequences'
+        ];
+
+        // ── Build HTML ──
+        var html = '<div style="max-height:520px;overflow-y:auto;padding:4px;">';
+
+        // Header
+        html += '<div style="text-align:center;margin-bottom:12px;">';
+        html += '<div style="font-size:1.8rem;">' + (portrait || '💍') + '</div>';
+        html += '<div style="font-size:1.1rem;color:#d4af37;font-weight:bold;">' + escapeHtml(fullName) + '</div>';
+        html += '<div style="font-size:0.75rem;color:#888;">❤ Relationship: ' + Math.floor(relLevel) + '/100</div>';
+        html += '</div>';
+
+        // Acceptance chance
+        html += '<div style="background:rgba(0,0,0,0.3);border:1px solid rgba(200,170,100,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:#d4af37;font-weight:bold;margin-bottom:6px;">📊 Chance of Acceptance</div>';
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+        html += '<div style="flex:1;height:8px;background:rgba(100,80,50,0.4);border-radius:4px;overflow:hidden;">';
+        html += '<div style="width:' + chancePct + '%;height:100%;background:' + chanceColor + ';border-radius:4px;"></div></div>';
+        html += '<span style="font-size:0.85rem;font-weight:bold;color:' + chanceColor + ';">' + chanceLabel + '</span>';
+        html += '</div>';
+
+        // Factors
+        html += '<div style="font-size:0.7rem;color:#999;margin-top:4px;">';
+        for (var fi = 0; fi < factors.length; fi++) {
+            var f = factors[fi];
+            var fColor = f.positive === true ? '#55a868' : (f.positive === false ? '#c0392b' : '#888');
+            html += '<div style="display:flex;justify-content:space-between;padding:1px 0;">';
+            html += '<span>' + escapeHtml(f.text) + '</span>';
+            html += '<span style="color:' + fColor + ';">' + escapeHtml(f.value) + '</span>';
+            html += '</div>';
+        }
+        html += '</div></div>';
+
+        // Known personality
+        html += '<div style="background:rgba(0,0,0,0.3);border:1px solid rgba(200,170,100,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:#d4af37;font-weight:bold;margin-bottom:6px;">🧠 Known Personality</div>';
+        var revTraitKeys = Object.keys(revealedTraits);
+        if (revTraitKeys.length > 0) {
+            for (var rti = 0; rti < revTraitKeys.length; rti++) {
+                var tName = revTraitKeys[rti];
+                var tLevel = revealedTraits[tName];
+                var tDisplay = traitAdjMap[tName] || tName;
+                var tLevelDisplay = traitLevelMap[tLevel] || ('🟡 ' + tLevel);
+                html += '<div style="display:flex;justify-content:space-between;font-size:0.75rem;padding:2px 0;">';
+                html += '<span style="color:#ccc;">' + escapeHtml(tDisplay) + '</span>';
+                html += '<span>' + tLevelDisplay + '</span></div>';
+            }
+        } else {
+            html += '<div style="font-size:0.72rem;color:#888;font-style:italic;">No personality traits discovered yet.</div>';
+        }
+        if (unrevealedTraitCount > 0) {
+            html += '<div style="font-size:0.7rem;color:#e67e22;margin-top:4px;">⚠️ ' + unrevealedTraitCount + ' personality trait' + (unrevealedTraitCount > 1 ? 's' : '') + ' still unknown</div>';
+        }
+        html += '</div>';
+
+        // Known quirks
+        html += '<div style="background:rgba(0,0,0,0.3);border:1px solid rgba(200,170,100,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:#d4af37;font-weight:bold;margin-bottom:6px;">✨ Known Quirks</div>';
+        if (revealedQuirks.length > 0) {
+            for (var rqi = 0; rqi < revealedQuirks.length; rqi++) {
+                var qId = revealedQuirks[rqi];
+                var qDef = null;
+                for (var qdi = 0; qdi < quirkDefs.length; qdi++) {
+                    if (quirkDefs[qdi].id === qId) { qDef = quirkDefs[qdi]; break; }
+                }
+                if (qDef) {
+                    var qColor = qDef.positive ? '#55a868' : '#c0392b';
+                    html += '<div style="font-size:0.75rem;padding:2px 0;color:' + qColor + ';">';
+                    html += qDef.icon + ' <strong>' + escapeHtml(qDef.name) + '</strong> — ' + escapeHtml(qDef.effect);
+                    html += '</div>';
+                } else {
+                    html += '<div style="font-size:0.75rem;padding:2px 0;color:#888;">' + escapeHtml(qId) + '</div>';
+                }
+            }
+        } else {
+            html += '<div style="font-size:0.72rem;color:#888;font-style:italic;">No quirks discovered yet.</div>';
+        }
+        if (unrevealedQuirkCount > 0) {
+            html += '<div style="font-size:0.7rem;color:#c0392b;margin-top:4px;">⚠️ ' + unrevealedQuirkCount + ' quirk' + (unrevealedQuirkCount > 1 ? 's' : '') + ' still hidden — marriage may reveal unpleasant surprises!</div>';
+        } else if (totalQuirks === 0 && revealedQuirks.length === 0) {
+            html += '<div style="font-size:0.7rem;color:#888;margin-top:4px;">You haven\'t discovered any quirks. Spend more time courting to learn their hidden traits before committing.</div>';
+        }
+        html += '</div>';
+
+        // Benefits & Risks
+        html += '<div style="display:flex;gap:8px;margin-bottom:10px;">';
+        html += '<div style="flex:1;background:rgba(0,0,0,0.3);border:1px solid rgba(85,168,104,0.3);border-radius:6px;padding:8px;">';
+        html += '<div style="font-size:0.8rem;color:#55a868;font-weight:bold;margin-bottom:4px;">✅ Benefits</div>';
+        for (var bi = 0; bi < benefits.length; bi++) {
+            html += '<div style="font-size:0.68rem;color:#a0c0a0;padding:1px 0;">• ' + benefits[bi] + '</div>';
+        }
+        html += '</div>';
+        html += '<div style="flex:1;background:rgba(0,0,0,0.3);border:1px solid rgba(192,57,43,0.3);border-radius:6px;padding:8px;">';
+        html += '<div style="font-size:0.8rem;color:#c0392b;font-weight:bold;margin-bottom:4px;">⚠️ Risks</div>';
+        for (var di = 0; di < drawbacks.length; di++) {
+            html += '<div style="font-size:0.68rem;color:#c0a0a0;padding:1px 0;">• ' + drawbacks[di] + '</div>';
+        }
+        html += '</div></div>';
+
+        // Warning about unknowns
+        if (hasUnknowns) {
+            html += '<div style="background:rgba(230,126,34,0.12);border:1px solid rgba(230,126,34,0.35);border-radius:6px;padding:8px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.78rem;color:#e67e22;">⚠️ <strong>Undiscovered traits and quirks</strong></div>';
+            html += '<div style="font-size:0.7rem;color:#d4a050;margin-top:3px;">You have not fully learned ' + escapeHtml(fn) + '\'s personality. Hidden quirks could include gambling, infertility, violent temper, or worse. Consider spending more time courting before proposing.</div>';
+            html += '</div>';
+        }
+
+        // Annulment warning
+        html += '<div style="background:rgba(150,100,50,0.1);border:1px solid rgba(150,100,50,0.25);border-radius:6px;padding:8px;margin-bottom:12px;">';
+        html += '<div style="font-size:0.72rem;color:#b0a070;">📜 <strong>Annulment Notice:</strong> Marriage is not easily dissolved. Annulment requires noble status and a large gold payment, or you can petition the king as a citizen — but approval is very difficult and rare.</div>';
+        html += '</div>';
+
+        // Buttons
+        html += '<div style="display:flex;gap:8px;justify-content:center;">';
+        html += '<button class="btn-medieval" data-action="_confirmMarriage" data-id="' + escapeHtml(String(personId)) + '" style="background:rgba(85,168,104,0.2);border-color:rgba(85,168,104,0.5);color:#55a868;padding:8px 24px;font-size:0.85rem;">💍 Propose Marriage</button>';
+        html += '<button class="btn-medieval" onclick="UI.closeModal()" style="background:rgba(150,100,50,0.15);padding:8px 24px;font-size:0.85rem;">Cancel</button>';
+        html += '</div>';
+        html += '</div>';
+
+        openModal('💍 Marriage Proposal — ' + escapeHtml(fullName), html, '');
+    }
+
+    // Confirm handler — actually calls Player.marry()
+    function _confirmMarriage(personId) {
+        closeModal();
         const result = Player.marry(personId);
         if (result && result.success && result.startPlanning) {
             toast(result.message, 'success');
-            // Open wedding planner after a short delay
             setTimeout(function() { openWeddingPlanner(); }, 500);
         } else if (result && result.success) {
             toast(result.message, 'success');
@@ -6322,7 +6532,174 @@ window.UI = (function () {
 
         // Store for re-render
         window._townPeopleData = { townId: townId, people: people, townName: townName };
-        _renderTownPeople('name-asc', 'all', '');
+        window._townPeopleTab = 'people';
+        window._townPeopleRenderState = { sortBy: 'name-asc', filterBy: 'all', searchQuery: '', page: 0, rankFilter: 'all-ranks' };
+        _renderTownPeople('name-asc', 'all', '', 0, 'all-ranks');
+    }
+
+    function _getTownPeopleRenderState() {
+        return window._townPeopleRenderState || { sortBy: 'name-asc', filterBy: 'all', searchQuery: '', page: 0, rankFilter: 'all-ranks' };
+    }
+
+    function _renderTownQuestsTab() {
+        if (!window._townPeopleData) return;
+        var state = _getTownPeopleRenderState();
+        window._townPeopleTab = 'quests';
+        _renderTownPeople(state.sortBy, state.filterBy, state.searchQuery, state.page, state.rankFilter);
+    }
+
+    function _switchTownTab(tab) {
+        if (!window._townPeopleData) return;
+        window._townPeopleTab = tab === 'quests' ? 'quests' : 'people';
+        if (window._townPeopleTab === 'quests') {
+            _renderTownQuestsTab();
+            return;
+        }
+        var state = _getTownPeopleRenderState();
+        _renderTownPeople(state.sortBy, state.filterBy, state.searchQuery, state.page, state.rankFilter);
+    }
+
+    function _buildTownQuestsTabHtml() {
+        var data = window._townPeopleData;
+        if (!data) return '<div class="text-dim" style="padding:12px;text-align:center;">No town selected.</div>';
+        var townId = data.townId;
+        var townName = data.townName || 'Unknown';
+        var html = '';
+        var day = 0;
+        try { day = Engine.getDay ? Engine.getDay() : 0; } catch (e) {}
+
+        var pendingOffer = null;
+        try { pendingOffer = Player.getPendingUnsolicitedOffer ? Player.getPendingUnsolicitedOffer() : null; } catch (e) { pendingOffer = null; }
+        if (pendingOffer) {
+            var pendingNpc = pendingOffer.npcId && Engine.findPerson ? Engine.findPerson(pendingOffer.npcId) : null;
+            var pendingTown = pendingNpc && pendingNpc.townId && Engine.findTown ? Engine.findTown(pendingNpc.townId) : null;
+            html += '<div style="border:1px solid #9b59b6;background:rgba(155,89,182,0.10);border-radius:6px;padding:10px;margin-bottom:12px;">';
+            html += '<div style="font-size:0.9rem;color:#c39bd3;font-weight:bold;margin-bottom:6px;">Pending Quest Offer</div>';
+            html += '<div style="margin-bottom:6px;">';
+            if (pendingOffer.npcId) {
+                html += '<button class="btn-medieval" data-action="showPersonDetailById" data-id="' + escapeHtml(String(pendingOffer.npcId || '')) + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:0.9rem;">' + escapeHtml(pendingOffer.npcName || 'Unknown NPC') + '</button>';
+            } else {
+                html += '<span style="font-weight:bold;color:#d4af37;">' + escapeHtml(pendingOffer.npcName || 'Unknown NPC') + '</span>';
+            }
+            if (pendingTown && pendingTown.name) html += '<span style="font-size:0.75rem;color:#999;margin-left:6px;">📍 ' + escapeHtml(pendingTown.name) + '</span>';
+            html += '</div>';
+            if (pendingOffer.dialog) html += '<div style="padding:8px 10px;margin-bottom:8px;background:rgba(0,0,0,0.18);border-left:3px solid #9b59b6;border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">"' + escapeHtml(pendingOffer.dialog) + '"</div>';
+            if ((pendingOffer.objectives || []).length) {
+                html += '<div style="font-size:0.78rem;color:#ddd;margin-bottom:4px;"><b>Objectives</b></div>';
+                html += '<ul style="margin:0 0 8px 18px;padding:0;font-size:0.76rem;color:#ccc;">';
+                for (var poi = 0; poi < pendingOffer.objectives.length; poi++) {
+                    html += '<li>' + escapeHtml(pendingOffer.objectives[poi]) + '</li>';
+                }
+                html += '</ul>';
+            }
+            html += '<div style="font-size:0.76rem;color:#cfc7b0;margin-bottom:4px;">Reward: ' + _formatUnsolicitedQuestRewardText(pendingOffer.rewards || {}) + '</div>';
+            html += '<div style="font-size:0.72rem;color:#999;margin-bottom:8px;">Offer expires in ' + Math.max(0, (pendingOffer.expiresDay || day) - day) + ' days</div>';
+            html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+            html += '<button class="btn-medieval" data-action="acceptUnsolicitedOffer" style="background:rgba(85,168,104,0.3);">Accept</button>';
+            html += '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
+            html += '</div></div>';
+        }
+
+        var activeQuests = [];
+        try { activeQuests = Player.getActiveQuestsInTown ? Player.getActiveQuestsInTown(townId) : []; } catch (e) { activeQuests = []; }
+        html += '<div style="font-size:0.9rem;color:var(--gold);margin-bottom:6px;">Active Quests in ' + escapeHtml(townName) + '</div>';
+        if (!activeQuests.length) {
+            html += '<div class="text-dim" style="padding:10px 12px;margin-bottom:14px;text-align:center;border:1px solid rgba(200,170,100,0.12);border-radius:6px;">No active quests in this town.</div>';
+        } else {
+            for (var aqi = 0; aqi < activeQuests.length; aqi++) {
+                var quest = activeQuests[aqi];
+                if (!quest) continue;
+                var turnTown = _getUnsolicitedQuestTurnInTown(quest);
+                var daysLeft = quest.daysRemaining != null ? quest.daysRemaining : Math.max(0, (quest.deadlineDay || 0) - day);
+                var questNpc = quest.npcId && Engine.findPerson ? Engine.findPerson(quest.npcId) : null;
+                var questPortrait = (questNpc && typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(questNpc) : '';
+                html += '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:6px;padding:10px;margin-bottom:10px;background:rgba(212,175,55,0.06);">';
+                html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px;">';
+                html += '<div>';
+                html += '<button class="btn-medieval" data-action="showPersonDetailById" data-id="' + escapeHtml(String(quest.npcId || '')) + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:0.88rem;text-align:left;">' + (questPortrait || '👤') + ' ' + escapeHtml(quest.npcName || 'Unknown NPC') + '</button>';
+                if (turnTown && turnTown.name) html += '<div style="font-size:0.72rem;color:#999;margin-top:2px;">Turn-in town: ' + escapeHtml(turnTown.name) + '</div>';
+                html += '</div>';
+                html += '<div style="font-size:0.72rem;color:' + (daysLeft <= 5 ? '#c85050' : '#999') + ';white-space:nowrap;">⏱️ ' + daysLeft + 'd</div>';
+                html += '</div>';
+                if (quest.dialog) html += '<div style="padding:8px 10px;margin-bottom:8px;background:rgba(0,0,0,0.18);border-left:3px solid rgba(212,175,55,0.5);border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">"' + escapeHtml(quest.dialog) + '"</div>';
+                if ((quest.objectives || []).length) {
+                    html += '<div style="font-size:0.78rem;color:#ddd;margin-bottom:4px;"><b>Objectives</b></div>';
+                    html += '<ul style="margin:0 0 8px 18px;padding:0;font-size:0.76rem;color:#ccc;">';
+                    for (var qoi = 0; qoi < quest.objectives.length; qoi++) {
+                        html += '<li>' + escapeHtml(quest.objectives[qoi]) + '</li>';
+                    }
+                    html += '</ul>';
+                }
+                html += '<div style="font-size:0.76rem;color:#cfc7b0;margin-bottom:8px;">Reward: ' + _formatUnsolicitedQuestRewardText(quest.rewards || {}) + '</div>';
+                if (quest.canTurnIn) {
+                    html += '<button class="btn-medieval" data-action="attemptCompleteUnsolicitedQuest" data-id="' + escapeHtml(String(quest.id || '')) + '" style="background:rgba(85,168,104,0.3);">✅ Turn In</button>';
+                } else {
+                    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+                    html += '<button class="btn-medieval" disabled style="opacity:0.45;cursor:not-allowed;">✅ Turn In</button>';
+                    if (quest.turnInReason) html += '<span style="font-size:0.74rem;color:#999;">' + escapeHtml(quest.turnInReason) + '</span>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        }
+
+        var candidates = [];
+        try { candidates = Player.getQuestCandidatesInTown ? Player.getQuestCandidatesInTown(townId) : []; } catch (e) { candidates = []; }
+        candidates.sort(function(a, b) { return (b.relLevel || 0) - (a.relLevel || 0); });
+        var activeAll = [];
+        try { activeAll = Player.getActiveUnsolicitedQuests ? Player.getActiveUnsolicitedQuests() : []; } catch (e) { activeAll = []; }
+        var isTutorial = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+        var isStory = Player.state && Player.state.storyMode && Player.state.storyMode.active && !Player.state.storyMode.complete;
+        var sameTown = Player.state && Player.state.townId === townId && !Player.state.traveling;
+        var jailed = Player.state && Player.state.jailedUntilDay && Player.state.jailedUntilDay > day;
+        var questLimitReached = activeAll.length >= 6;
+        var rankNames = ['Peasant', 'Citizen', 'Burgher', 'Guildmaster', 'Minor Noble', 'Lord', 'Royal Advisor', 'King'];
+        html += '<div style="font-size:0.9rem;color:var(--gold);margin:14px 0 6px 0;">Available Quest Givers</div>';
+        if (!candidates.length) {
+            html += '<div class="text-dim" style="padding:12px;text-align:center;border:1px solid rgba(200,170,100,0.12);border-radius:6px;">No quest givers available in this town.</div>';
+            return html;
+        }
+        for (var cqi = 0; cqi < candidates.length; cqi++) {
+            var candidate = candidates[cqi];
+            var candidatePerson = candidate.npcId && Engine.findPerson ? Engine.findPerson(candidate.npcId) : null;
+            var candidatePortrait = (candidatePerson && typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(candidatePerson) : '';
+            var relLevel = Math.floor(candidate.relLevel || 0);
+            var relLabel = Player.getRelationshipLabel ? Player.getRelationshipLabel(relLevel) : { icon: '🤝', name: 'Acquaintance' };
+            var roleParts = [];
+            var occText = candidate.occupation ? capitalize(String(candidate.occupation).replace(/_/g, ' ')) : 'Quest giver';
+            if (occText) roleParts.push(escapeHtml(occText));
+            var npcRank = candidatePerson && Player.getNPCSocialRank ? Player.getNPCSocialRank(candidatePerson) : 0;
+            if (npcRank > 0) roleParts.push(escapeHtml(rankNames[npcRank] || ('Rank ' + npcRank)));
+            var npcActiveQuests = [];
+            try { npcActiveQuests = Player.activeUnsolicitedQuestsForNpc ? Player.activeUnsolicitedQuestsForNpc(candidate.npcId) : []; } catch (e) { npcActiveQuests = []; }
+            var canRequest = !isTutorial && !isStory && !pendingOffer && sameTown && !jailed && !questLimitReached && !candidate.hasActiveQuest && !candidate.onCooldown && relLevel >= 40;
+            var statusText = '';
+            if (isTutorial || isStory) statusText = 'Unavailable during tutorial/story mode.';
+            else if (candidate.hasPendingOffer) statusText = 'Offer pending above.';
+            else if (pendingOffer) statusText = 'Another quest offer is already pending.';
+            else if (candidate.hasActiveQuest) statusText = 'Active quest already in progress.';
+            else if (!sameTown) statusText = 'Travel to ' + townName + ' to request.';
+            else if (jailed) statusText = 'Unavailable while jailed.';
+            else if (questLimitReached) statusText = 'Quest limit reached.';
+            else if (candidate.onCooldown) statusText = 'Available in ' + candidate.cooldownDaysLeft + ' days';
+            else if (relLevel < 40) statusText = 'Need relationship 40+';
+            html += '<div style="border:1px solid rgba(200,170,100,0.18);border-radius:6px;padding:10px;margin-bottom:10px;background:rgba(255,255,255,0.03);">';
+            html += '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">';
+            html += '<div style="flex:1;min-width:0;">';
+            html += '<button class="btn-medieval" data-action="showPersonDetailById" data-id="' + escapeHtml(String(candidate.npcId || '')) + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:0.88rem;text-align:left;">' + (candidatePortrait || '👤') + ' ' + escapeHtml(candidate.npcName || 'Unknown NPC') + '</button>';
+            if (roleParts.length) html += '<div style="font-size:0.74rem;color:#aaa;margin-top:2px;">' + roleParts.join(' • ') + '</div>';
+            html += '<div style="font-size:0.74rem;color:#cfc7b0;margin-top:4px;">' + escapeHtml(relLabel.icon + ' ' + relLabel.name) + ' · ' + relLevel + '/100</div>';
+            if (npcActiveQuests.length) html += '<div style="font-size:0.72rem;color:#9dc1ff;margin-top:4px;">📌 Active quests with you: ' + npcActiveQuests.length + '</div>';
+            html += '</div>';
+            html += '<div style="display:flex;align-items:center;justify-content:flex-end;min-width:150px;">';
+            if (canRequest) {
+                html += '<button class="btn-medieval" data-action="requestNpcQuest" data-id="' + escapeHtml(String(candidate.npcId || '')) + '" style="background:rgba(212,175,55,0.18);border-color:rgba(212,175,55,0.38);">📜 Request Quest</button>';
+            } else {
+                html += '<div style="font-size:0.72rem;color:#999;text-align:right;">' + escapeHtml(statusText || 'Unavailable right now.') + '</div>';
+            }
+            html += '</div></div></div>';
+        }
+        return html;
     }
 
     function _renderTownPeople(sortBy, filterBy, searchQuery, page, rankFilter) {
@@ -6332,6 +6709,29 @@ window.UI = (function () {
         var townName = data.townName;
         page = parseInt(page, 10) || 0;
         window._townPeoplePage = page;
+        rankFilter = rankFilter || 'all-ranks';
+        window._townPeopleRenderState = {
+            sortBy: sortBy || 'name-asc',
+            filterBy: filterBy || 'all',
+            searchQuery: searchQuery || '',
+            page: page,
+            rankFilter: rankFilter
+        };
+        var activeTab = window._townPeopleTab === 'quests' ? 'quests' : 'people';
+        window._townPeopleTab = activeTab;
+        var html = '<div style="max-height:520px;overflow-y:auto;">';
+        var activeTabStyle = 'background:rgba(200,170,100,0.25);color:#d4af37;border-bottom:2px solid #d4af37;';
+        var inactiveTabStyle = 'background:transparent;color:#888;border-bottom:2px solid transparent;';
+        html += '<div style="display:flex;gap:2px;margin-bottom:10px;border-bottom:2px solid rgba(200,170,100,0.3);">';
+        html += '<button class="btn-medieval" id="tab-people" onclick="UI._switchTownTab(\'people\')" style="padding:6px 12px;border-radius:6px 6px 0 0;font-size:0.78rem;' + (activeTab === 'people' ? activeTabStyle : inactiveTabStyle) + '">👥 People</button>';
+        html += '<button class="btn-medieval" id="tab-quests" onclick="UI._switchTownTab(\'quests\')" style="padding:6px 12px;border-radius:6px 6px 0 0;font-size:0.78rem;' + (activeTab === 'quests' ? activeTabStyle : inactiveTabStyle) + '">📜 Quests</button>';
+        html += '</div>';
+        if (activeTab === 'quests') {
+            html += _buildTownQuestsTabHtml();
+            html += '</div>';
+            openModal('👥 People of ' + townName, html, '');
+            return;
+        }
 
         // Filter alive only
         var filtered = people.filter(function (p) { return p.alive !== false; });
@@ -6449,8 +6849,7 @@ window.UI = (function () {
         if (page >= totalPages) page = Math.max(0, totalPages - 1);
         var startIdx = page * perPage;
         var pageItems = filtered.slice(startIdx, startIdx + perPage);
-
-        var html = '<div style="max-height:520px;overflow-y:auto;">';
+        window._townPeopleRenderState.page = page;
 
         // Controls bar
         html += '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">';
@@ -20297,6 +20696,7 @@ window.UI = (function () {
         usePerk,
         dateAction,
         proposeTo,
+        _confirmMarriage,
         stealFromPerson,
         spreadRumorsAbout,
         blackmailPerson,
@@ -20311,6 +20711,8 @@ window.UI = (function () {
         filterTownPeople,
         _reTownPeople,
         _reTownPeoplePage,
+        _switchTownTab,
+        _renderTownQuestsTab,
         _renderTownPeople,
         // Toll Routes → js/modules/ui_guide.js
         // Free-form travel: forage & bridges → js/modules/ui_actions.js

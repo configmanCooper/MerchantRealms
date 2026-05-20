@@ -51,7 +51,7 @@
         if (player._activeNanny === undefined) player._activeNanny = null;
         if (player._familyChildArrangement === undefined) player._familyChildArrangement = null;
         if (player._childrenTravelWith === undefined) player._childrenTravelWith = false;
-        if (!player._lastNannyChargeDay) player._lastNannyChargeDay = 0;
+        if (player._lastNannyChargeDay == null) player._lastNannyChargeDay = 0;
         if (player._kidsAtRiskSince === undefined) player._kidsAtRiskSince = null;
     }
 
@@ -276,7 +276,8 @@
 
         // Nanny: weekly auto-charge; if cannot pay, nanny leaves
         if (player._activeNanny) {
-            if (!player._lastNannyChargeDay || day - player._lastNannyChargeDay >= 7) {
+            // v9p33river366: a nanny hired on day 0 should not be charged again on day 1.
+            if (player._lastNannyChargeDay == null || day - player._lastNannyChargeDay >= 7) {
                 if ((player.gold || 0) >= NANNY_WEEKLY_COST) {
                     player.gold = Math.max(0, (player.gold || 0) - NANNY_WEEKLY_COST);
                     player._lastNannyChargeDay = day;
@@ -330,7 +331,8 @@
         }
 
         // Kids are at risk
-        if (!player._kidsAtRiskSince) {
+        // v9p33river366: preserve a day-0 risk timestamp so abandonment time accumulates correctly.
+        if (player._kidsAtRiskSince == null) {
             player._kidsAtRiskSince = day;
             _logEvent('⚠️ Your children are UNATTENDED. Get to them or arrange care.', null, 'critical');
             _toast('Your children are unattended!', 'warning');

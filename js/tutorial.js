@@ -1034,7 +1034,7 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Meeting & Courtship',
-                    text: '\uD83E\uDD1D Open the <strong>\uD83C\uDF0D World</strong> tab, then click <strong>\uD83D\uDC65 Townspeople</strong> to browse everyone in town \u2014 or click NPCs directly on the map. Build relationships through <strong>gifts</strong> and <strong>dates</strong>. At high relationship, begin courtship and eventually propose!',
+                    text: '\uD83E\uDD1D Open the <strong>\uD83C\uDF0D World</strong> tab, then click <strong>\uD83D\uDC65 Townspeople</strong> to browse everyone in town \u2014 or click NPCs directly on the map. Build relationships through <strong>gifts</strong> and <strong>conversation</strong>. Once relationship reaches 20+, you can <strong>Propose Courtship</strong>. If accepted, courtship activities unlock (walks, meals, etc.). After building a strong bond (relationship 60+), you can <strong>Propose Marriage</strong>!',
                     highlight: '#btnTownspeople'
                 },
                 {
@@ -1056,9 +1056,8 @@ window.Tutorial = (function () {
                             }
                         }
                         if (!candidate) {
-                            // Fallback: any unmarried adult alive NPC
                             for (var j = 0; j < npcs.length; j++) {
-                                if (npcs[j] && npcs[j].alive !== false && !npcs[j].spouseId && npc.age >= 16) {
+                                if (npcs[j] && npcs[j].alive !== false && !npcs[j].spouseId && npcs[j].age >= 16) {
                                     candidate = npcs[j];
                                     break;
                                 }
@@ -1073,12 +1072,18 @@ window.Tutorial = (function () {
                             // Also set NPC-side
                             if (!candidate.relationships) candidate.relationships = {};
                             candidate.relationships.player = { level: 95 };
+                            // v9p33river366: set courtship as accepted so Propose Marriage button appears
+                            if (!Player.state.courtshipAccepted) Player.state.courtshipAccepted = {};
+                            Player.state.courtshipAccepted[candidate.id] = true;
+                            // Set courtship interactions so they count as lovers
+                            if (!Player.state.courtshipInteractions) Player.state.courtshipInteractions = {};
+                            Player.state.courtshipInteractions[candidate.id] = 3;
                             snapshotState.marriageCandidateId = candidate.id;
                             snapshotState.marriageCandidate = ((candidate.firstName || '') + ' ' + (candidate.lastName || '')).trim() || 'a townsperson';
                         }
                         var step = chapters[currentChapter].steps[currentStep];
                         var name = snapshotState.marriageCandidate || 'a townsperson';
-                        step.text = '\uD83D\uDC8D We\u2019ve arranged things so <strong>' + name + '</strong> is very interested in you (relationship 95)! Open the <strong>\uD83C\uDF0D World</strong> tab \u2192 <strong>\uD83D\uDC65 Townspeople</strong> to find them (or click them directly on the map). Once you find them, click <strong>\uD83D\uDC8D Propose Marriage</strong>!';
+                        step.text = '\uD83D\uDC8D We\u2019ve arranged things so <strong>' + name + '</strong> is very interested in you and courtship is already accepted! Open the <strong>\uD83C\uDF0D World</strong> tab \u2192 <strong>\uD83D\uDC65 Townspeople</strong> to find them (or click them on the map). Click their name, then click <strong>\uD83D\uDC8D Propose Marriage</strong> to see the marriage confirmation screen!';
                         // Periodically highlight the Propose button when it appears
                         snapshotState._proposeGlowTimer = setInterval(function () {
                             var btn = document.getElementById('btnPropose');
@@ -1100,11 +1105,11 @@ window.Tutorial = (function () {
                 },
                 {
                     title: 'Dynasty Strategies',
-                    text: '\uD83D\uDCA1 <strong>Dynasty tips</strong>:<br>\u2022 <strong>Marry early</strong> \u2014 don\u2019t risk game over<br>\u2022 <strong>Date first</strong> to check traits before committing<br>\u2022 <strong>Train children</strong> \u2014 spend 3 SP to give a child 1 SP<br>\u2022 <strong>Dynasty Founder</strong> skill adds SP to your dynasty bank for heirs'
+                    text: '\uD83D\uDCA1 <strong>Dynasty tips</strong>:<br>\u2022 <strong>Marry early</strong> \u2014 don\u2019t risk game over<br>\u2022 <strong>Propose courtship first</strong> (relationship 20+), then date to check traits<br>\u2022 <strong>Check the marriage confirmation screen</strong> for acceptance odds and risks<br>\u2022 <strong>Train children</strong> \u2014 spend 3 SP to give a child 1 SP<br>\u2022 <strong>Dynasty Founder</strong> skill adds SP to your dynasty bank for heirs'
                 },
                 {
                     title: 'Investigating NPCs',
-                    text: '\uD83D\uDD0D Every NPC has <strong>hidden quirks</strong>. Discover them before marrying or hiring:<br>\u2022 \uD83D\uDC41\uFE0F <strong>Observe</strong>: 8hrs, 30% success<br>\u2022 \uD83D\uDDE3\uFE0F <strong>Ask Around</strong>: 4hrs, 25% success<br>\u2022 \uD83D\uDD0D <strong>Investigate</strong>: costs gold, 50% success'
+                    text: '\uD83D\uDD0D Every NPC has <strong>hidden quirks</strong>. Discover them before proposing marriage \u2014 the marriage confirmation screen warns you about unknown traits! Ways to investigate:<br>\u2022 \uD83D\uDC41\uFE0F <strong>Observe</strong>: 8hrs, 30% success<br>\u2022 \uD83D\uDDE3\uFE0F <strong>Ask Around</strong>: 4hrs, 25% success<br>\u2022 \uD83D\uDD0D <strong>Investigate</strong>: costs gold, 50% success'
                 }
             ]
         },

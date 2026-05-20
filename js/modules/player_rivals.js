@@ -32,6 +32,35 @@
     function _findPerson(id) { try { return _eng().findPerson(id); } catch(e) { return null; } }
     function _findTown(id)   { try { return _eng().findTown(id); } catch(e) { return null; } }
     function _toast(msg, type) { try { _ui().toast(msg, type || 'warning'); } catch(e) {} }
+    function _findPlayerTownBuilding(playerBld) {
+        if (!playerBld || !playerBld.townId) return null;
+        var town = _findTown(playerBld.townId);
+        if (!town || !town.buildings) return null;
+        var fallbackIdx = -1;
+        for (var i = 0; i < town.buildings.length; i++) {
+            var tb = town.buildings[i];
+            if (!tb || tb.ownerId !== 'player') continue;
+            if (playerBld.id && tb.id === playerBld.id) return { town: town, building: tb, index: i };
+            if (fallbackIdx < 0 && tb.type === playerBld.type) fallbackIdx = i;
+        }
+        return fallbackIdx >= 0 ? { town: town, building: town.buildings[fallbackIdx], index: fallbackIdx } : null;
+    }
+    function _damagePlayerBuilding(playerBld) {
+        if (!playerBld) return null;
+        var condOrder = ['destroyed', 'breaking', 'used', 'new'];
+        var curIdx = condOrder.indexOf(playerBld.condition || 'new');
+        if (curIdx < 0) curIdx = 3;
+        var townMatch = _findPlayerTownBuilding(playerBld);
+        if (curIdx > 0) {
+            playerBld.condition = condOrder[curIdx - 1];
+            if (townMatch && townMatch.building) townMatch.building.condition = playerBld.condition;
+            if (playerBld.condition === 'destroyed') {
+                playerBld.active = false;
+                if (townMatch && townMatch.building) townMatch.building.active = false;
+            }
+        }
+        return townMatch;
+    }
 
     // ── Hostile action definitions ──
     var RIVAL_ACTIONS = [
@@ -41,9 +70,12 @@
               // -5 reputation in the kingdom
               var kId = _npcKingdomId(npc);
               if (kId) {
-                  try { Player.modifyRelationship(npc.id, -3, undefined, 'rival_false_accusation'); } catch(e) {}
+                  // v9p33river366: rival false accusations are repeatable hostile acts,
+                  // so their reason key must be unique per event/day.
+                  var accusationReason = 'rival_false_accusation_' + (npc.id || 'npc') + '_' + _day();
+                  try { Player.modifyRelationship(npc.id, -3, undefined, accusationReason); } catch(e) {}
                   // Lower relationship with other nobles in that kingdom
-                  _spreadReputationDamage(kId, npc, 3, 5);
+                  _spreadReputationDamage(kId, npc, 3, 5, accusationReason);
               }
           }
         },
@@ -58,14 +90,10 @@
               if (targets.length === 0) return false;
               var rng = _rng(); if (!rng) return false;
               var bld = targets[rng.randInt(0, targets.length - 1)];
-              // Damage building condition (string progression: new → used → breaking → destroyed)
-              var condOrder = ['destroyed', 'breaking', 'used', 'new'];
-              var curIdx = condOrder.indexOf(bld.condition || 'new');
-              if (curIdx < 0) curIdx = 3; // default to 'new'
-              if (curIdx > 0) {
-                  bld.condition = condOrder[curIdx - 1];
-                  if (bld.condition === 'destroyed') bld.active = false;
-              }
+              var match = _damagePlayerBuilding(bld);
+              // v9p33river366: rival sabotage must pause the actual player building tick for a few days.
+              bld._disabledUntil = _day() + 7;
+              if (match && match.building) match.building._disabledUntil = bld._disabledUntil;
               return true;
           }
         },
@@ -112,9 +140,13 @@
                   _toast('An assassination attempt by ' + (npc.firstName || 'an enemy') + ' failed!', 'warning');
                   // Assassin may be caught — NPC gets criminal record
                   if (rng.chance(0.3)) {
-                      if (!npc.criminalRecord) npc.criminalRecord = [];
-                      npc.criminalRecord.push({ type: 'attempted_murder', day: _day(), target: 'player' });
-                      _toast((npc.firstName || 'The assassin') + ' was caught and faces justice.', 'info');
+                      var kId = _npcKingdomId(npc);
+                      // v9p33river366: NPC criminal records are kingdom-keyed objects, not ad-hoc arrays.
+                      if (!npc.criminalRecord || typeof npc.criminalRecord !== 'object' || Array.isArray(npc.criminalRecord)) npc.criminalRecord = {};
+                      if (kId) npc.criminalRecord[kId] = (npc.criminalRecord[kId] || 0) + 1;
+                      npc._jailedCrimeId = 'attempted_murder';
+                      npc._jailedUntilDay = _day() + 30;
+                      _toast((npc.firstName || 'The assassin') + ' was caught and jailed.', 'info');
                   }
               }
               return true;
@@ -127,13 +159,10 @@
         { id: 'remote_sabotage', label: 'remote sabotage', minRel: -20,
           desc: function(npc, bld) { return (npc.firstName || 'A rival') + ' damaged your ' + (bld.type || 'building') + ' in ' + (bld.townName || 'a town') + '!'; },
           effect: function(npc, bld) {
-              var condOrder = ['destroyed', 'breaking', 'used', 'new'];
-              var curIdx = condOrder.indexOf(bld.condition || 'new');
-              if (curIdx < 0) curIdx = 3;
-              if (curIdx > 0) {
-                  bld.condition = condOrder[curIdx - 1];
-                  if (bld.condition === 'destroyed') bld.active = false;
-              }
+              var match = _damagePlayerBuilding(bld);
+              // v9p33river366: remote sabotage also needs a real production pause on player buildings.
+              bld._disabledUntil = _day() + 7;
+              if (match && match.building) match.building._disabledUntil = bld._disabledUntil;
               return true;
           }
         },
@@ -164,32 +193,31 @@
         return null;
     }
 
-    function _spreadReputationDamage(kId, instigator, count, amount) {
+    function _spreadReputationDamage(kId, instigator, count, amount, reasonBase) {
         // Lower player's relationship with a few random nobles in the kingdom
         try {
-            var eng = _eng(); if (!eng || !eng.getKingdoms) return;
-            var kingdoms = eng.getKingdoms();
-            var k = null;
-            for (var ki = 0; ki < kingdoms.length; ki++) {
-                if (kingdoms[ki].id === kId) { k = kingdoms[ki]; break; }
-            }
-            if (!k || !k.territories) return;
+            var eng = _eng(); if (!eng || !eng.getWorld) return;
+            var w = eng.getWorld();
+            if (!w || !w.people) return;
             var nobles = [];
-            for (var ti = 0; ti < k.territories.length; ti++) {
-                var town = _findTown(k.territories[ti]);
-                if (!town || !town.people) continue;
-                for (var pi = 0; pi < town.people.length; pi++) {
-                    var p = town.people[pi];
-                    if (p && p.id !== instigator.id && (p.occupation === 'noble' || p.isEliteMerchant)) {
-                        nobles.push(p);
+            for (var pi = 0; pi < w.people.length; pi++) {
+                var p = w.people[pi];
+                if (!p || p.alive === false || p.id === instigator.id) continue;
+                if (_npcKingdomId(p) !== kId) continue;
+                var important = !!p.isEliteMerchant || !!p.isKing || p.occupation === 'noble';
+                if (!important && p.socialRank) {
+                    for (var rk in p.socialRank) {
+                        if ((p.socialRank[rk] || 0) >= 4) { important = true; break; }
                     }
                 }
+                if (important) nobles.push(p);
             }
             var rng = _rng(); if (!rng || nobles.length === 0) return;
             var affected = Math.min(count, nobles.length);
             for (var ai = 0; ai < affected; ai++) {
                 var idx = rng.randInt(0, nobles.length - 1);
-                try { Player.modifyRelationship(nobles[idx].id, -amount, undefined, 'rival_false_accusation_' + instigator.id); } catch(e) {}
+                // v9p33river366: town.people is not populated; scan world.people so false accusations actually spread.
+                try { Player.modifyRelationship(nobles[idx].id, -amount, undefined, String(reasonBase || ('rival_false_accusation_' + instigator.id + '_' + _day())) + '_' + nobles[idx].id); } catch(e) {}
                 nobles.splice(idx, 1);
                 if (nobles.length === 0) break;
             }

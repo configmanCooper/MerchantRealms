@@ -248,7 +248,8 @@
 
         var day = _getDay();
         // Global cooldown
-        if (player._lastUnsolicitedFavorDay && (day - player._lastUnsolicitedFavorDay) < FAVOR_COOLDOWN_DAYS) return;
+        // v9p33river366: favor cooldowns set on day 0 must still block immediate repeats.
+        if (player._lastUnsolicitedFavorDay != null && (day - player._lastUnsolicitedFavorDay) < FAVOR_COOLDOWN_DAYS) return;
         if (!player.townId || player.traveling) return;
         if (!player.alive) return;
 
