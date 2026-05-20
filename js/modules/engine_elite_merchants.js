@@ -1466,7 +1466,7 @@
                     _isMedical: true,
                 });
 
-                logEvent('⚕️ ' + k.name + ' dispatched medical supplies from ' + bestSource.name + ' to ' + crisis.town.name + ' (' + totalSent + ' units).');
+                logEvent('⚕️ ' + k.name + ' dispatched medical supplies from ' + bestSource.name + ' to ' + crisis.town.name + ' (' + totalSent + ' units).', { type: 'kingdom_medical', kingdomId: k.id, townId: crisis.town.id, _noToast: true }, 'my_kingdom');
             }
         }
     }

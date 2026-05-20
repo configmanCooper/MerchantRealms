@@ -4985,9 +4985,9 @@ function clickTown(townId) {
     // Single-arg passthrough handlers (data-id)
     UI.registerAction('showTownPeople', function(_t, d) { UI.showTownPeople(d.id); });
     UI.registerAction('openTownQuests', function(_t, d) { UI.openTownQuests(d.id); });
-    // v9p33river372: open townspeople Quests tab from event detail
-    UI.registerAction('openTownQuestsTab', function() {
-        var townId = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
+    // v9p33river375: prefer the event town so historical quest notifications reopen the right Quests tab.
+    UI.registerAction('openTownQuestsTab', function(_t, d) {
+        var townId = (d && d.id) || ((typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null);
         if (!townId) { UI.toast('You must be in a town.', 'warning'); return; }
         UI.closeModal();
         UI.showTownPeople(townId);

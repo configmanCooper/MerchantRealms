@@ -6730,7 +6730,7 @@
                             bld._overflowSold = (bld._overflowSold || 0) + overflow;
                             bld._overflowRevenue = (bld._overflowRevenue || 0) + revenue;
                             if (bld._overflowSold >= 10 || (day % 7 === 0 && bld._overflowSold > 0)) {
-                                Engine.logEvent('🏭 ' + bt.name + ' in ' + sellTown.name + ': sold ' + bld._overflowSold + ' ' + _ovResName + ' to market for ' + bld._overflowRevenue + 'g (output storage full).', null, 'my_business');
+                                // v9p33river376: removed noisy overflow notification — tracked in finance log
                                 bld._overflowSold = 0;
                                 bld._overflowRevenue = 0;
                             }

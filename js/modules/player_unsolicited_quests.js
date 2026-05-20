@@ -658,9 +658,10 @@
         };
         player._pendingUnsolicitedOffer = offer;
         player._lastUnsolicitedOfferDay = day;
-        // v9p33river366: show toast instead of popup — view offer in Quests tab
+        // v9p33river375: store the quest town so Event Details can reopen the correct Quests tab.
+        var offerTownId = npc.townId || (data.params && data.params.townId) || null;
         _toast('📜 ' + offer.npcName + ' has a quest for you! Check the Quests tab.', 'info');
-        _logEvent('📜 ' + offer.npcName + ' has approached you with a quest.', null, 'my_actions');
+        _logEvent('📜 ' + offer.npcName + ' has approached you with a quest.', offerTownId ? { townId: offerTownId } : null, 'my_actions');
         return true;
     }
 

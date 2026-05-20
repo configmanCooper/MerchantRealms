@@ -9611,10 +9611,10 @@ window.UI = (function () {
             html += '<button class="btn-action" style="margin-top:8px;" data-action="clickTown" data-id="' + locTownId + '">🗺️ View Location</button>';
         }
 
-        // v9p33river372: quest notification — add button to open Quests tab
-        var _evtMsg = (event.message || event.description || '');
-        if (_evtMsg.indexOf('has a quest for you') !== -1) {
-            html += '<button class="btn-action" style="margin-top:8px;margin-left:6px;" data-action="openTownQuestsTab">📜 View Quests</button>';
+        // v9p33river375: match both the live toast text and the logged quest event text.
+        var _evtMsg = ((event.message || event.description || '') + '').toLowerCase();
+        if (_evtMsg.indexOf('has a quest for you') !== -1 || _evtMsg.indexOf('has approached you with a quest') !== -1) {
+            html += '<button class="btn-action" style="margin-top:8px;margin-left:6px;" data-action="openTownQuestsTab"' + (locTownId ? ' data-id="' + locTownId + '"' : '') + '>📜 View Quests</button>';
         }
 
         html += '</div>';
