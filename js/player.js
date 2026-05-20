@@ -628,7 +628,7 @@
             if (player.debts[i].creditorId === creditorId && player.debts[i].creditorType === creditorType) {
                 player.debts[i].amount += amount;
                 player.debts[i].reason = reason;
-                Engine.logEvent('💸 Your debt to ' + creditorName + ' increased by ' + Math.floor(amount) + 'g (total: ' + Math.floor(player.debts[i].amount) + 'g).', null, 'finance');
+                Engine.logEvent('💸 Your debt to ' + creditorName + ' increased by ' + Math.floor(amount) + 'g (total: ' + Math.floor(player.debts[i].amount) + 'g).', null, 'my_actions');
                 return;
             }
         }
@@ -644,7 +644,7 @@
             reason: reason
         };
         player.debts.push(debt);
-        Engine.logEvent('💸 You now owe ' + Math.floor(amount) + 'g to ' + creditorName + ' (' + reason + ').', null, 'finance');
+        Engine.logEvent('💸 You now owe ' + Math.floor(amount) + 'g to ' + creditorName + ' (' + reason + ').', null, 'my_actions');
     }
 
     function getTotalDebt() {
@@ -684,7 +684,7 @@
         if (debt.amount <= 0.5) {
             // Debt paid off
             player.debts = player.debts.filter(function(d) { return d.id !== debtId; });
-            Engine.logEvent('✅ Debt to ' + debt.creditorName + ' fully paid off!', null, 'finance');
+            Engine.logEvent('✅ Debt to ' + debt.creditorName + ' fully paid off!', null, 'my_actions');
             return { success: true, message: 'Debt to ' + debt.creditorName + ' paid off!', paidOff: true };
         }
         return { success: true, message: 'Paid ' + Math.floor(amount) + 'g toward debt to ' + debt.creditorName + '. Remaining: ' + Math.floor(debt.amount) + 'g.' };
@@ -724,7 +724,7 @@
         player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
         // Cannot rank up penalty is inherent (checked elsewhere)
         logFinance(0, 'bankruptcy', 'Declared bankruptcy — ' + Math.floor(totalDebt) + 'g discharged');
-        Engine.logEvent('💥 ' + player.fullName + ' declared bankruptcy! ' + Math.floor(totalDebt) + 'g in debts discharged. All assets seized. ' + bldCount + ' buildings lost.', null, 'finance');
+        Engine.logEvent('💥 ' + player.fullName + ' declared bankruptcy! ' + Math.floor(totalDebt) + 'g in debts discharged. All assets seized. ' + bldCount + ' buildings lost.', null, 'my_actions');
         return { success: true, message: 'Declared bankruptcy. ' + Math.floor(totalDebt) + 'g discharged. All gold, inventory, and ' + bldCount + ' buildings seized. Reputation damaged.' };
     }
 
@@ -745,7 +745,7 @@
                 if (interest < 1) interest = 1;
                 debt.amount += interest;
                 debt.lastInterestDay = day;
-                Engine.logEvent('📈 Interest: debt to ' + debt.creditorName + ' grew by ' + interest + 'g (now ' + Math.floor(debt.amount) + 'g).', null, 'finance');
+                Engine.logEvent('📈 Interest: debt to ' + debt.creditorName + ' grew by ' + interest + 'g (now ' + Math.floor(debt.amount) + 'g).', null, 'my_actions');
             }
         }
 
@@ -769,7 +769,7 @@
                         // Reduce debt by jailed time * 5g/day
                         var jailPay = jailDays * 5;
                         d.amount = Math.max(0, d.amount - jailPay);
-                        Engine.logEvent('⛓️ Jailed ' + jailDays + ' days by ' + d.creditorName + ' for unpaid debt! ' + jailPay + 'g worked off.', null, 'finance');
+                        Engine.logEvent('⛓️ Jailed ' + jailDays + ' days by ' + d.creditorName + ' for unpaid debt! ' + jailPay + 'g worked off.', null, 'my_actions');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⛓️ Jailed for ' + jailDays + ' days — unpaid debt to ' + d.creditorName + '!', 'danger', 'critical');
                         if (d.amount <= 0) { player.debts.splice(j, 1); j--; }
                         break; // only one jail per cycle
@@ -832,32 +832,32 @@
 
             // Every-30-day reminder (at 30, 60 days of age)
             if (oldestUnpaidAge > 0 && oldestUnpaidAge % 30 === 0 && daysUntilBankruptcy > 14) {
-                Engine.logEvent('💸 Debt reminder: you owe ' + totalDebtAmt + 'g. ' + daysUntilBankruptcy + ' days until forced bankruptcy.' + payHint, null, 'finance');
+                Engine.logEvent('💸 Debt reminder: you owe ' + totalDebtAmt + 'g. ' + daysUntilBankruptcy + ' days until forced bankruptcy.' + payHint, null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Debt reminder: ' + totalDebtAmt + 'g owed — ' + daysUntilBankruptcy + ' days left', 'warning');
             }
 
             // Countdown warnings at 30, 14, 3, 1 days before bankruptcy
             if (daysUntilBankruptcy === 30) {
-                Engine.logEvent('⚠️ WARNING: 30 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g.' + payHint, null, 'finance');
+                Engine.logEvent('⚠️ WARNING: 30 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g.' + payHint, null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ 30 days until bankruptcy! Pay your debts!', 'warning', 'critical');
             } else if (daysUntilBankruptcy === 14) {
-                Engine.logEvent('⚠️ URGENT: 14 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g.' + payHint, null, 'finance');
+                Engine.logEvent('⚠️ URGENT: 14 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g.' + payHint, null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ 14 days until bankruptcy!', 'danger', 'critical');
             } else if (daysUntilBankruptcy === 3) {
-                Engine.logEvent('🚨 CRITICAL: 3 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g! Pay immediately!' + payHint, null, 'finance');
+                Engine.logEvent('🚨 CRITICAL: 3 days until forced bankruptcy! You owe ' + totalDebtAmt + 'g! Pay immediately!' + payHint, null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 3 DAYS until bankruptcy! Pay now!', 'danger', 'critical');
             } else if (daysUntilBankruptcy === 1) {
-                Engine.logEvent('🚨 FINAL WARNING: Tomorrow the kingdom seizes everything! You owe ' + totalDebtAmt + 'g!' + payHint, null, 'finance');
+                Engine.logEvent('🚨 FINAL WARNING: Tomorrow the kingdom seizes everything! You owe ' + totalDebtAmt + 'g!' + payHint, null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 LAST DAY — bankruptcy tomorrow!', 'danger', 'critical');
             }
 
             // 90-day unpaid debt → forced bankruptcy (kings exempt — they have treasury)
             if (oldestUnpaidAge >= 90 && !player.isKing) {
-                Engine.logEvent('💸 Your debts have gone unpaid for over 90 days! The kingdom intervenes.', null, 'finance');
+                Engine.logEvent('💸 Your debts have gone unpaid for over 90 days! The kingdom intervenes.', null, 'my_actions');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Debts unpaid 90+ days — bankruptcy!', 'danger', 'critical');
                 triggerDebtBankruptcy();
             } else if (oldestUnpaidAge >= 90 && player.isKing) {
-                Engine.logEvent('💸 Your personal debts have been unpaid for over 90 days. As ruler, you are shielded, but your reputation suffers.', null, 'finance');
+                Engine.logEvent('💸 Your personal debts have been unpaid for over 90 days. As ruler, you are shielded, but your reputation suffers.', null, 'my_actions');
                 // Rep penalty for king with old debts
                 if (player.reputation && player.citizenshipKingdomId) {
                     player.reputation[player.citizenshipKingdomId] = Math.max(0, (player.reputation[player.citizenshipKingdomId] || 50) - 2);
@@ -7702,7 +7702,7 @@
                     }
                 }
                 player.gold = Math.max(0, player.gold - totalDebtAmount);
-                Engine.logEvent('💀 ' + oldName + '\'s outstanding debts of ' + Math.floor(totalDebtAmount) + 'g were settled from the estate.' + (player.gold <= 0 ? ' The heir receives no inheritance.' : ''), null, 'finance');
+                Engine.logEvent('💀 ' + oldName + '\'s outstanding debts of ' + Math.floor(totalDebtAmount) + 'g were settled from the estate.' + (player.gold <= 0 ? ' The heir receives no inheritance.' : ''), null, 'my_actions');
             }
             player.debts = [];
             player._lastDebtEnforcementDay = 0;
@@ -8881,7 +8881,7 @@
         if (player.gold < amount) return { success: false, message: 'You only have ' + Math.floor(player.gold) + 'g.' };
         player.gold -= amount;
         kingdom.gold = (kingdom.gold || 0) + amount;
-        Engine.logEvent('💰 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' donated ' + amount + 'g to the kingdom treasury.', null, 'kingdom');
+        Engine.logEvent('💰 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' donated ' + amount + 'g to the kingdom treasury.', null, 'my_actions');
         return { success: true, message: 'Donated ' + amount + 'g to the treasury. Kingdom treasury: ' + Math.floor(kingdom.gold) + 'g.' };
     }
 
@@ -8895,7 +8895,7 @@
         player.gold += amount;
         // Withdrawing from treasury hurts happiness slightly
         if (kingdom.happiness != null) kingdom.happiness = Math.max(0, kingdom.happiness - Math.ceil(amount / 200));
-        Engine.logEvent('🏦 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' withdrew ' + amount + 'g from the kingdom treasury.', null, 'kingdom');
+        Engine.logEvent('🏦 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' withdrew ' + amount + 'g from the kingdom treasury.', null, 'my_actions');
         return { success: true, message: 'Withdrew ' + amount + 'g. Treasury: ' + Math.floor(kingdom.gold) + 'g.' };
     }
 
@@ -10111,7 +10111,7 @@
                 }
 
                 Engine.logEvent('👑 ' + cm.nobleName + ' returns successfully from ' + cm.missionLabel + '! (+' + cm.loyaltySuccess + ' loyalty)');
-                Engine.logEvent('👑 Mission Success! ' + cm.nobleName + ' completed ' + cm.missionLabel + '.', null, 'kingdom');
+                Engine.logEvent('👑 Mission Success! ' + cm.nobleName + ' completed ' + cm.missionLabel + '.', null, 'my_kingdom');
             } else {
                 if (noble) {
                     noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + cm.loyaltyFail);
@@ -10120,13 +10120,13 @@
                         noble.alive = false;
                         noble.causeOfDeath = 'killed during ' + cm.missionLabel;
                         Engine.logEvent('💀 ' + cm.nobleName + ' was killed during ' + cm.missionLabel + '!');
-                        Engine.logEvent('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', null, 'kingdom');
+                        Engine.logEvent('💀 ' + cm.nobleName + ' died on ' + cm.missionLabel + '!', null, 'my_kingdom');
                         continue;
                     }
                 }
                 modifyRelationship(cm.nobleId, -2);
                 Engine.logEvent('👑 ' + cm.nobleName + ' returns from failed ' + cm.missionLabel + '. (' + cm.loyaltyFail + ' loyalty)');
-                Engine.logEvent('👑 Mission Failed. ' + cm.nobleName + ' failed ' + cm.missionLabel + '.', null, 'kingdom');
+                Engine.logEvent('👑 Mission Failed. ' + cm.nobleName + ' failed ' + cm.missionLabel + '.', null, 'my_kingdom');
             }
         }
     }
@@ -10193,7 +10193,7 @@
                     message: plotDescs[plotType]
                 });
 
-                Engine.logEvent('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', null, 'kingdom');
+                Engine.logEvent('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', null, 'my_kingdom');
                 break; // Only one report per check
             }
         }
@@ -10443,8 +10443,8 @@
             }
             delete kingdom._conspiracy;
             Engine.logEvent('👑 King orders mass arrests! ' + arrested + ' conspirators are imprisoned.', {
-                type: 'conspiracy_arrest', category: 'political'
-            });
+                type: 'conspiracy_arrest', kingdomId: kingdom.id
+            }, 'my_kingdom');
             autoJournalCapture('king', 'I ordered the arrest of all ' + arrested + ' conspirators. The plot is foiled.', { mood: 'stern' });
             return { success: true, message: arrested + ' conspirators arrested and imprisoned for 30 days. Conspiracy dissolved.' };
         } else if (action === 'execute_ringleader') {
@@ -10467,8 +10467,8 @@
                     nobles[fi].kingLoyalty = Math.max(0, (nobles[fi].kingLoyalty || 50) - 5);
                 }
                 Engine.logEvent('⚔️ King executes ' + lName + ' for treason! The other nobles tremble.', {
-                    type: 'conspiracy_execution', category: 'political'
-                });
+                    type: 'conspiracy_execution', kingdomId: kingdom.id
+                }, 'my_kingdom');
                 autoJournalCapture('king', 'I had ' + lName + ' executed for treason. Let this be a warning to any who would plot against the crown.', { mood: 'ruthless' });
                 return { success: true, message: lName + ' executed for treason. Nobles now fear the crown (+20 fear, -5 loyalty).' };
             }
@@ -10481,7 +10481,7 @@
                 }
             }
             delete kingdom._conspiracy;
-            Engine.logEvent('👑 King shows mercy — all conspirators are pardoned!', { type: 'conspiracy_pardoned', category: 'political' });
+            Engine.logEvent('👑 King shows mercy — all conspirators are pardoned!', { type: 'conspiracy_pardoned', kingdomId: kingdom.id }, 'my_kingdom');
             autoJournalCapture('king', 'I chose mercy and pardoned the conspirators. I hope this generosity will inspire loyalty.', { mood: 'merciful' });
             return { success: true, message: 'All conspirators pardoned. Loyalty improved, but ambitious nobles may see weakness.' };
         }
@@ -10899,7 +10899,7 @@
                 if (_tk) targetName = _tk.name;
             } catch(e) {}
             kingdom.exportRestrictions.push(data.good);
-            Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'kingdom');
+            Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'my_actions');
             return { success: true, message: 'Export ban set: ' + data.good + ' to ' + targetName + '.' };
         }
         if (action === 'export_unban') {
@@ -10908,7 +10908,7 @@
             var _eubIdx = kingdom.exportRestrictions.indexOf(data.good);
             if (_eubIdx < 0) return { success: false, message: 'No ban found for ' + data.good + '.' };
             kingdom.exportRestrictions.splice(_eubIdx, 1);
-            Engine.logEvent('✅ Export ban lifted: ' + data.good, null, 'kingdom');
+            Engine.logEvent('✅ Export ban lifted: ' + data.good, null, 'my_actions');
             return { success: true, message: 'Export ban lifted for ' + data.good + '.' };
         }
         if (action === 'set_bounty') {
@@ -10939,7 +10939,7 @@
                 createdDay: _bToday,
                 expiresDay: _bToday + (CONFIG.KING_SUBSIDY_DURATION || 90),
             });
-            Engine.logEvent('🏭 Production bounty set for ' + data.good + '.', null, 'kingdom');
+            Engine.logEvent('🏭 Production bounty set for ' + data.good + '.', null, 'my_actions');
             return { success: true, message: 'Production bounty set for ' + data.good + '. Cost: 100g/season.' };
         }
         if (action === 'remove_bounty') {
@@ -10950,7 +10950,7 @@
             }
             if (bIdx < 0) return { success: false, message: 'No bounty for ' + data.good + '.' };
             kingdom.productionBounties.splice(bIdx, 1);
-            Engine.logEvent('❌ Production bounty removed: ' + data.good, null, 'kingdom');
+            Engine.logEvent('❌ Production bounty removed: ' + data.good, null, 'my_actions');
             return { success: true, message: 'Bounty removed for ' + data.good + '.' };
         }
         if (action === 'set_subsidy') {
@@ -10972,7 +10972,7 @@
                 unitsPaid: 0,
                 expiresDay: _today + 90,
             });
-            Engine.logEvent('💸 Trade subsidy set for ' + data.good + '.', null, 'kingdom');
+            Engine.logEvent('💸 Trade subsidy set for ' + data.good + '.', null, 'my_actions');
             return { success: true, message: 'Subsidy set for ' + data.good + '. Cost: 150g/season.' };
         }
         if (action === 'remove_subsidy') {
@@ -10983,7 +10983,7 @@
             }
             if (sIdx < 0) return { success: false, message: 'No subsidy for ' + data.good + '.' };
             kingdom.tradeSubsidies.splice(sIdx, 1);
-            Engine.logEvent('❌ Trade subsidy removed: ' + data.good, null, 'kingdom');
+            Engine.logEvent('❌ Trade subsidy removed: ' + data.good, null, 'my_actions');
             return { success: true, message: 'Subsidy removed for ' + data.good + '.' };
         }
         if (action === 'set_land_subsidy') {
@@ -11016,7 +11016,7 @@
             var tName = data.townId;
             try { var _lt = Engine.findTown(data.townId); if (_lt) tName = _lt.name; } catch(e) {}
             var bldgLabel = _lsBldg === 'all' ? 'all buildings' : _lsBldg.replace(/_/g, ' ');
-            Engine.logEvent('🏡 Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Building costs -25%.', null, 'kingdom');
+            Engine.logEvent('🏡 Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Building costs -25%.', null, 'my_actions');
             return { success: true, message: 'Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Cost: 200g/season.' };
         }
         if (action === 'remove_land_subsidy') {
@@ -11029,7 +11029,7 @@
             }
             if (lIdx < 0) return { success: false, message: 'No land subsidy for this town.' };
             kingdom.landSubsidies.splice(lIdx, 1);
-            Engine.logEvent('❌ Land subsidy removed.', null, 'kingdom');
+            Engine.logEvent('❌ Land subsidy removed.', null, 'my_actions');
             return { success: true, message: 'Land subsidy removed.' };
         }
         return { success: false, message: 'Unknown economic order: ' + action };
@@ -24660,8 +24660,7 @@
                 };
 
                 var msg = tierMessages[t.tier] || '🤝 Your relationship with ' + npcName + ' has grown to ' + t.name + '!';
-                Engine.logEvent(msg, null, 'social');
-                Engine.logEvent(msg);
+                Engine.logEvent(msg, null, 'my_actions');
                 break;
             }
         }
@@ -36894,13 +36893,13 @@
             player.debts = [];
             player._lastDebtEnforcementDay = 0;
             player.bankruptDays = 0;
-            Engine.logEvent('💸 The kingdom seized your assets to pay off your debts: ' + seizedDesc + '. Your ' + Math.floor(totalDebtBefore) + 'g debt is now settled.', null, 'finance');
+            Engine.logEvent('💸 The kingdom seized your assets to pay off your debts: ' + seizedDesc + '. Your ' + Math.floor(totalDebtBefore) + 'g debt is now settled.', null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Kingdom seized assets — debts paid! (' + seizedDesc + ')', 'warning', 'critical');
             if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(1);
         } else {
             // Debts remain — show full bankruptcy UI
             var remainingDebt = getTotalDebt();
-            Engine.logEvent('💸 The kingdom seized ' + seizedDesc + ' but ' + Math.floor(remainingDebt) + 'g in debt remains. You must choose your fate.', null, 'finance');
+            Engine.logEvent('💸 The kingdom seized ' + seizedDesc + ' but ' + Math.floor(remainingDebt) + 'g in debt remains. You must choose your fate.', null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('💸 Assets seized but debt remains!', 'danger', 'critical');
             triggerBankruptcy('unpaid_debts');
         }

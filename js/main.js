@@ -2010,12 +2010,19 @@ window.Game = (function () {
                         // Pass event category so notification filter can suppress non-player toasts
                         // Pass _skipEventLog=true to prevent circular toast→logEvent→processEvents→toast loop
                         var evtCategory = event.category || 'local_town';
+                        // v9p33river374: skip toasts for events explicitly marked log-only
+                        if (event.details && event.details._noToast) { /* log-only event */ }
+                        // v9p33river374: skip toasts for non-actionable categories
+                        else if (evtCategory === 'npc_activity' || evtCategory === 'foreign_kingdoms') { /* log-only */ }
                         // v9p33river369: local_town events only show if player is in that town
-                        if (evtCategory === 'local_town' && event.townId) {
+                        else if (evtCategory === 'local_town' && event.townId) {
                             var _pTownId = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
-                            if (_pTownId && event.townId !== _pTownId) continue;
+                            if (!_pTownId || event.townId === _pTownId) {
+                                UI.toast(msg, toastType, evtCategory, true);
+                            }
+                        } else {
+                            UI.toast(msg, toastType, evtCategory, true);
                         }
-                        UI.toast(msg, toastType, evtCategory, true);
                     }
                     emit('eventOccurred', event);
                 }

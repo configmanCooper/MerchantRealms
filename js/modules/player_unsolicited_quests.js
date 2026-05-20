@@ -305,7 +305,7 @@
         },
         consume: function(q) {
             // v9p33river364: marriage blessing improves family standing
-            _logEvent('A marriage blessed by the merchant house brings good fortune.', null, 'world_events');
+            _logEvent('A marriage blessed by the merchant house brings good fortune.', { _noToast: true }, 'my_actions');
         }
     });
 
@@ -332,7 +332,7 @@
             var t = _findTown(q.params.townId);
             if (t) {
                 t.storageCapacity = (t.storageCapacity || 500) + 200;
-                _logEvent('A new warehouse in ' + q.params.townName + ' expanded storage capacity.', null, 'world_events');
+                _logEvent('A new warehouse in ' + q.params.townName + ' expanded storage capacity.', { townId: q.params.townId, _noToast: true }, 'world_economy');
             }
         }
     });
@@ -370,7 +370,7 @@
                 if (purpose === 'alliance') {
                     target._npcRelationships[sender.id] = Math.min(100, oldRel + 15);
                     sender._npcRelationships[target.id] = Math.min(100, (sender._npcRelationships[target.id] || 0) + 10);
-                    _logEvent('The letter strengthened the alliance between ' + (sender.firstName||'') + ' and ' + (target.firstName||'') + '.', null, 'world_events');
+                    _logEvent('The letter strengthened the alliance between ' + (sender.firstName||'') + ' and ' + (target.firstName||'') + '.', { _noToast: true }, 'my_actions');
                 } else if (purpose === 'trade_deal') {
                     var targetTown = _findTown(q.params.targetTownId);
                     var senderTown = _findTown(sender.townId);
@@ -379,20 +379,20 @@
                         senderTown.tradeDealBonus = (senderTown.tradeDealBonus || 0) + 0.05;
                     }
                     target._npcRelationships[sender.id] = Math.min(100, oldRel + 10);
-                    _logEvent('A trade deal between ' + (senderTown ? senderTown.name : 'towns') + ' and ' + (targetTown ? targetTown.name : 'towns') + ' was established.', null, 'world_events');
+                    _logEvent('A trade deal between ' + (senderTown ? senderTown.name : 'towns') + ' and ' + (targetTown ? targetTown.name : 'towns') + ' was established.', { townId: q.params.targetTownId, otherTownId: senderTown ? senderTown.id : null, _noToast: true }, 'world_economy');
                 } else if (purpose === 'warning') {
                     target._npcRelationships[sender.id] = Math.min(100, oldRel + 20);
                     var tTown = _findTown(q.params.targetTownId);
                     if (tTown) tTown.security = Math.min(100, (tTown.security || 50) + 10);
-                    _logEvent('The warning was heeded — ' + (tTown ? tTown.name : 'the town') + ' increased security.', null, 'world_events');
+                    _logEvent('The warning was heeded — ' + (tTown ? tTown.name : 'the town') + ' increased security.', { townId: q.params.targetTownId, _noToast: true }, 'my_actions');
                 } else if (purpose === 'invitation') {
                     target._npcRelationships[sender.id] = Math.min(100, oldRel + 8);
                     try { Player.modifyRelationship(q.params.targetNobleId, 5); } catch(e) {}
-                    _logEvent((target.firstName||'The noble') + ' was pleased by the invitation.', null, 'world_events');
+                    _logEvent((target.firstName||'The noble') + ' was pleased by the invitation.', { targetId: q.params.targetNobleId, _noToast: true }, 'my_actions');
                 } else if (purpose === 'petition') {
                     target._npcRelationships[sender.id] = Math.min(100, oldRel + 5);
                     try { Player.modifyRelationship(q.params.targetNobleId, 3); } catch(e) {}
-                    _logEvent('The petition was delivered. Political matters are in motion.', null, 'world_events');
+                    _logEvent('The petition was delivered. Political matters are in motion.', { targetId: q.params.targetNobleId, _noToast: true }, 'my_actions');
                 }
             }
         }
@@ -476,7 +476,7 @@
             // v9p33river364: military goods boost town security
             var t = _findTown(q.params.townId);
             if (t) { t.security = Math.min(100, (t.security || 50) + 8); }
-            _logEvent('The militia in ' + q.params.townName + ' has been re-equipped.', null, 'world_events');
+            _logEvent('The militia in ' + q.params.townName + ' has been re-equipped.', { townId: q.params.townId, _noToast: true }, 'my_actions');
         }
     });
 
@@ -535,7 +535,7 @@
             var toTown = _findTown(q.params.toTownId);
             if (fromTown) { fromTown.tradeDealBonus = (fromTown.tradeDealBonus || 0) + 0.1; }
             if (toTown) { toTown.tradeDealBonus = (toTown.tradeDealBonus || 0) + 0.1; }
-            _logEvent('A new road between ' + q.params.fromTownName + ' and ' + q.params.toTownName + ' strengthens trade routes.', null, 'world_events');
+            _logEvent('A new road between ' + q.params.fromTownName + ' and ' + q.params.toTownName + ' strengthens trade routes.', { townId: q.params.fromTownId, otherTownId: q.params.toTownId, _noToast: true }, 'world_economy');
         }
     });
 
@@ -583,8 +583,10 @@
         consume: function(q) {
             // v9p33river364: political marriage forges alliance between houses
             var npc = _findPerson(q.params.npcId);
+            var marriageKingdomId = null;
             if (npc) {
                 var kId = _npcKingdomId(npc);
+                marriageKingdomId = kId || null;
                 if (kId) {
                     var kingdom = _findKingdom(kId);
                     if (kingdom && kingdom.king) {
@@ -592,7 +594,7 @@
                     }
                 }
             }
-            _logEvent('A political marriage strengthens the alliance between noble houses.', null, 'world_events');
+            _logEvent('A political marriage strengthens the alliance between noble houses.', { kingdomId: marriageKingdomId, _noToast: true }, marriageKingdomId ? 'my_kingdom' : 'my_actions');
         }
     });
 

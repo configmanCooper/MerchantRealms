@@ -2807,7 +2807,9 @@
                 if (k.gold >= buildCost) {
                     k.gold -= buildCost;
                     buildNewRoad(bestPair.a.id, bestPair.b.id, k.id);
-                    logEvent(`\uD83D\uDC51 ${k.name} has commissioned a new road between ${bestPair.a.name} and ${bestPair.b.name}!`);
+                    logEvent(`\uD83D\uDC51 ${k.name} has commissioned a new road between ${bestPair.a.name} and ${bestPair.b.name}!`, {
+                        type: 'road_construction', townId: bestPair.a.id, otherTownId: bestPair.b.id, kingdomId: k.id, _noToast: true
+                    }, 'local_town');
                 }
             }
         }
@@ -3077,7 +3079,9 @@
                         if (banIdx >= 0) town.buildings.splice(banIdx, 1);
                     }
                     if (tcamps.length > 0) {
-                        logEvent('🚫 Soldiers of ' + k.name + ' demolished ' + tcamps.length + ' tent camp(s) in ' + town.name + ' under the No Tent Camps law.');
+                        logEvent('🚫 Soldiers of ' + k.name + ' demolished ' + tcamps.length + ' tent camp(s) in ' + town.name + ' under the No Tent Camps law.', {
+                            type: 'tent_camp_demolition', townId: town.id, kingdomId: k.id, campCount: tcamps.length
+                        }, 'local_town');
                         if (town.happiness !== undefined) town.happiness = Math.max(0, town.happiness - 3 * tcamps.length);
                     }
                     continue; // Don't build under ban law
@@ -3136,7 +3140,9 @@
                         }
                         town.buildings.push(newTc);
                         k.gold -= (tcBt && tcBt.cost) || 50;
-                        logEvent('⛺ The ruler of ' + k.name + ' has ordered a tent camp built in ' + town.name + ' to shelter the homeless.');
+                        logEvent('⛺ The ruler of ' + k.name + ' has ordered a tent camp built in ' + town.name + ' to shelter the homeless.', {
+                            type: 'tent_camp_build', townId: town.id, kingdomId: k.id
+                        }, 'local_town');
                         logKingAction(k, '⛺ Built tent camp in ' + town.name);
                     }
                 }
@@ -3170,7 +3176,9 @@
                         }
                         var tcIdx = town.buildings.indexOf(targetCamp);
                         if (tcIdx >= 0) town.buildings.splice(tcIdx, 1);
-                        logEvent('🔥 The ruler of ' + k.name + ' ordered soldiers to demolish a tent camp in ' + town.name + '.');
+                        logEvent('🔥 The ruler of ' + k.name + ' ordered soldiers to demolish a tent camp in ' + town.name + '.', {
+                            type: 'tent_camp_demolition', townId: town.id, kingdomId: k.id
+                        }, 'local_town');
                         logKingAction(k, '🔥 Demolished tent camp in ' + town.name);
                         if (town.happiness !== undefined) town.happiness = Math.max(0, town.happiness - 5);
                     }
@@ -3544,14 +3552,14 @@
                         _road.bridgeDestroyedBy = k.id;
                         logEvent('💥 ' + k.name + ' destroyed the bridge between ' + ourTown.name + ' and ' + enemyTown.name + '! ' +
                             (theirMilStr > myMilStr ? 'A desperate defensive measure.' : 'A strategic strike to cut off the enemy.'), {
-                            type: 'bridge_destroyed',
+                            type: 'bridge_destroyed', townId: ourTown.id, otherTownId: enemyTown.id, kingdomId: k.id, _noToast: true,
                             cause: 'Wartime strategic decision by ' + (k.king || 'ruler'),
                             effects: [
                                 'Road between ' + ourTown.name + ' and ' + enemyTown.name + ' is now impassable',
                                 'Armies must take slower off-road routes',
                                 'Trade between towns disrupted'
                             ]
-                        });
+                        }, 'local_town');
                         logKingAction(k, '💥 Destroyed bridge to ' + enemyTown.name);
                         break; // Only destroy one bridge per tick
                     }
@@ -4181,16 +4189,18 @@
                                 townRef.buildings.push({ type: typeId, level: 1, ownerId: kRef.id, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
                                 kRef.gold -= cost;
                                 logEvent('🏗️ ' + kRef.name + ' commissions a new ' + (btRef ? btRef.name : typeId) + ' in ' + townRef.name + '!', {
-                                    type: 'construction_project', cause: 'Royal investment in infrastructure (approved by Royal Advisor)', effects: ['New building provides benefits', 'Treasury -' + cost + 'g']
-                                });
+                                    type: 'construction_project', townId: townRef.id, kingdomId: kRef.id, _noToast: true,
+                                    cause: 'Royal investment in infrastructure (approved by Royal Advisor)', effects: ['New building provides benefits', 'Treasury -' + cost + 'g']
+                                }, 'local_town');
                             }; })(k, _ipTown, _ipType, _ipCost, _ipBt)
                         });
                     } else {
                         chosen.town.buildings.push({ type: chosen.type, level: 1, ownerId: k.id, builtDay: world.day, condition: 'new', lastRepairDay: 0 });
                         k.gold -= chosen.cost;
                         logEvent(`🏗️ ${k.name} commissions a new ${bt ? bt.name : chosen.type} in ${chosen.town.name}!`, {
-                            type: 'construction_project', cause: 'Royal investment in infrastructure', effects: ['New building provides benefits', 'Treasury -' + chosen.cost + 'g']
-                        });
+                            type: 'construction_project', townId: chosen.town.id, kingdomId: k.id, _noToast: true,
+                            cause: 'Royal investment in infrastructure', effects: ['New building provides benefits', 'Treasury -' + chosen.cost + 'g']
+                        }, 'local_town');
                     }
                 }
             }
@@ -5703,9 +5713,9 @@
                         expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180),
                     });
                     logEvent(`👑 ${kingdom.name} offers cheap land in ${strat.townName} for anyone who builds a ${strat.buildingName}!`, {
-                        type: 'economic_strategy', cause: `${strat.good} deficit in ${strat.townName}`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.good} deficit in ${strat.townName}`,
                         effects: [`${Math.round(discount * 100)}% discount on land for ${strat.buildingName} builders`, `Lasts ${CONFIG.KING_SUBSIDY_DURATION || 180} days`]
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5720,9 +5730,9 @@
                     const resInfo = findResourceById(strat.good);
                     const goodName = resInfo ? resInfo.name : strat.good;
                     logEvent(`📜 ${kingdom.name} seeks ${goodName} producers in ${strat.townName} — ${reward}g bounty!`, {
-                        type: 'economic_strategy', cause: `${goodName} shortage in ${strat.townName}`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${goodName} shortage in ${strat.townName}`,
                         effects: [`${reward}g reward for building ${goodName} production`, 'NPCs may respond to this opportunity']
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5737,9 +5747,9 @@
                     const resInfo = findResourceById(strat.good);
                     const goodName = resInfo ? resInfo.name : strat.good;
                     logEvent(`💰 ${kingdom.name} subsidizes ${goodName} imports — ${strat.bonusPerUnit}g bonus per unit!`, {
-                        type: 'economic_strategy', cause: `${goodName} scarcity across kingdom`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${goodName} scarcity across kingdom`,
                         effects: [`Merchants get +${strat.bonusPerUnit}g per ${goodName} sold in kingdom`, 'Treasury funds the subsidy']
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5749,9 +5759,9 @@
                         expiresDay: day + (CONFIG.KING_TAX_HOLIDAY_DURATION || 180),
                     });
                     logEvent(`🎉 ${kingdom.name} declares a tax holiday in ${strat.townName}! New businesses pay no property tax for ${CONFIG.KING_TAX_HOLIDAY_DURATION || 180} days.`, {
-                        type: 'economic_strategy', cause: `Low prosperity (${analysis.towns.find(t => t.id === strat.townId)?.prosperity || '?'}%) in ${strat.townName}`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `Low prosperity (${analysis.towns.find(t => t.id === strat.townId)?.prosperity || '?'}%) in ${strat.townName}`,
                         effects: ['No property tax for new buildings', 'Attracts investment']
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5762,9 +5772,9 @@
                         expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180),
                     });
                     logEvent(`🏠 ${kingdom.name} offers ${CONFIG.KING_IMMIGRATION_BONUS || 50}g to families relocating to ${strat.townName}!`, {
-                        type: 'economic_strategy', cause: `${strat.townName} is underpopulated (${analysis.towns.find(t => t.id === strat.townId)?.population || '?'} people)`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.townName} is underpopulated (${analysis.towns.find(t => t.id === strat.townId)?.population || '?'} people)`,
                         effects: ['Gold bonus for immigrants', 'Population may grow']
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5781,9 +5791,9 @@
                                 var kbCvRes = convertBuilding(town, kbCi, strat.buildingType, kingdom.id, 'kingdom');
                                 if (kbCvRes.success) {
                                     logEvent('\uD83D\uDC51\uD83D\uDD04 ' + kingdom.name + ' converts a building to ' + strat.buildingName + ' in ' + strat.townName + '.', {
-                                        type: 'kingdom_conversion', cause: 'No empty slots — converted for-sale building',
+                                        type: 'kingdom_conversion', kingdomId: kingdom.id, cause: 'No empty slots — converted for-sale building',
                                         effects: ['New ' + strat.buildingName + ' via conversion', 'Treasury spent on conversion']
-                                    });
+                                    }, 'my_kingdom');
                                     kbConvDone = true;
                                     actionsThisCycle++;
                                 }
@@ -5799,9 +5809,9 @@
                     });
                     kingdom.gold -= strat.cost;
                     logEvent(`🏗️ ${kingdom.name} builds a ${strat.buildingName} in ${strat.townName} to complete ${strat.input} → ${strat.output} supply chain!`, {
-                        type: 'economic_strategy', cause: `${strat.input} produced locally but no ${strat.buildingName} to process it`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.input} produced locally but no ${strat.buildingName} to process it`,
                         effects: [`New ${strat.buildingName} in ${strat.townName}`, `${strat.output} production begins`, `Treasury spent ${strat.cost}g`]
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5818,9 +5828,9 @@
                                 var sgCvRes = convertBuilding(sgTown, sgCi, strat.buildingType, kingdom.id, 'kingdom');
                                 if (sgCvRes.success) {
                                     logEvent('\uD83D\uDC51\uD83D\uDD04 ' + kingdom.name + ' converts a building to address ' + strat.good + ' shortage in ' + strat.townName + '.', {
-                                        type: 'kingdom_conversion', cause: 'No empty slots — converted for-sale building to produce ' + strat.good,
+                                        type: 'kingdom_conversion', kingdomId: kingdom.id, cause: 'No empty slots — converted for-sale building to produce ' + strat.good,
                                         effects: ['New ' + strat.buildingName + ' via conversion', strat.good + ' production begins']
-                                    });
+                                    }, 'my_kingdom');
                                     sgConvDone = true;
                                     actionsThisCycle++;
                                 }
@@ -5838,9 +5848,9 @@
                     var sgKing = kingdom.king ? findPerson(kingdom.king) : null;
                     var sgKingName = sgKing ? (sgKing.firstName + ' ' + sgKing.lastName) : 'The ruler';
                     logEvent('\uD83D\uDC51\uD83D\uDCE6 ' + sgKingName + ' has ordered construction of a ' + strat.buildingName + ' to address the shortage of ' + strat.good + ' in ' + kingdom.name + '.', {
-                        type: 'supply_gap_building', cause: strat.good + ' has zero supply but high demand across ' + kingdom.name,
+                        type: 'supply_gap_building', kingdomId: kingdom.id, cause: strat.good + ' has zero supply but high demand across ' + kingdom.name,
                         effects: ['New ' + strat.buildingName + ' in ' + strat.townName, strat.good + ' production begins', 'Treasury spent ' + strat.cost + 'g']
-                    });
+                    }, 'my_kingdom');
                     // Royal Monopoly: greedy/corrupt kings may ban the good to control supply
                     if (p.greed === 'greedy' || p.greed === 'corrupt' || p.justice === 'corrupt') {
                         var monopolyChance = 0;
@@ -5881,9 +5891,9 @@
                         kingdom.militaryStockpile[strat.good] += toBuy;
                     }
                     logEvent(`📦 ${kingdom.name} stockpiles ${toBuy} ${strat.good} from ${strat.townName} at low prices.`, {
-                        type: 'economic_strategy', cause: `${strat.good} priced below market value`,
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.good} priced below market value`,
                         effects: [`${toBuy} units purchased for ${cost}g`, 'Strategic reserves increased']
-                    });
+                    }, 'my_kingdom');
                     actionsThisCycle++;
                     break;
                 }
@@ -5991,9 +6001,9 @@
                     const resInfo = findResourceById(bad);
                     const goodName = resInfo ? resInfo.name : bad;
                     logEvent(`🤦 ${kingdom.name}'s foolish king restricts export of ${goodName} — which is already scarce!`, {
-                        type: 'economic_strategy', cause: 'Poor judgment by dim ruler',
+                        type: 'economic_strategy', kingdomId: kingdom.id, cause: 'Poor judgment by dim ruler',
                         effects: ['Already scarce goods become harder to get', 'Merchants frustrated']
-                    });
+                    }, 'my_kingdom');
                 }
             }
         }
@@ -6006,9 +6016,9 @@
                 kingdom.taxRate = Math.min(0.25, (kingdom.taxRate || 0.05) + 0.03);
                 kingdom.lastTaxIncreaseDay = world.day;
                 logEvent('\uD83E\uDD26 The foolish ruler of ' + kingdom.name + ' raises taxes despite widespread unhappiness!', {
-                    type: 'bad_decision', cause: 'Poor judgment',
+                    type: 'bad_decision', kingdomId: kingdom.id, cause: 'Poor judgment',
                     effects: ['Tax rate increased to ' + Math.round(kingdom.taxRate * 100) + '%', 'Citizens grow more unhappy']
-                });
+                }, 'my_kingdom');
             } else if (badAction === 1) {
                 // Subsidize a wrong good (pick a surplus good instead of a deficit good)
                 var surplusGoods = Object.entries(analysis.kingdomSupply)
@@ -6025,18 +6035,18 @@
                         });
                         var wrInfo = findResourceById(wrongGood);
                         logEvent('\uD83E\uDD26 ' + kingdom.name + ' offers bounties for ' + (wrInfo ? wrInfo.name : wrongGood) + ' — which is already in surplus!', {
-                            type: 'bad_decision', cause: 'Foolish ruler misreads the market',
+                            type: 'bad_decision', kingdomId: kingdom.id, cause: 'Foolish ruler misreads the market',
                             effects: ['Gold wasted on unnecessary production']
-                        });
+                        }, 'my_kingdom');
                     }
                 }
             } else if (badAction === 2 && kingdom.laws) {
                 // Raise tariffs when trade is needed
                 kingdom.laws.tradeTariff = Math.min(0.20, (kingdom.laws.tradeTariff || 0.05) + 0.03);
                 logEvent('\uD83E\uDD26 The dim ruler of ' + kingdom.name + ' raises trade tariffs, discouraging needed imports!', {
-                    type: 'bad_decision', cause: 'Poor economic understanding',
+                    type: 'bad_decision', kingdomId: kingdom.id, cause: 'Poor economic understanding',
                     effects: ['Tariffs raised to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%']
-                });
+                }, 'my_kingdom');
             }
         }
     }
@@ -6291,10 +6301,10 @@
                 if (kingdomBuild(k, bp.town, bp.type, rng)) {
                     bldSpent += bCost;
                     logEvent('🏗️ ' + k.name + ' invests treasury surplus into a ' + (bt.name || bp.type) + ' in ' + bp.town.name + '.', {
-                        type: 'treasury_spending', kingdomId: k.id,
+                        type: 'treasury_spending', townId: bp.town.id, kingdomId: k.id, _noToast: true,
                         cause: 'Large treasury drives kingdom investment',
                         effects: ['New ' + (bt.name || bp.type) + ' in ' + bp.town.name, 'Treasury -' + bCost + 'g']
-                    });
+                    }, 'my_kingdom');
                 }
             }
             spent += bldSpent;
@@ -7010,9 +7020,10 @@
                     k.gold -= bounty.reward;
                     bounty.fulfilled = true;
                     logEvent(`✅ ${npc.firstName} ${npc.lastName} builds a ${targetBt.name} in ${town.name} and claims the ${bounty.reward}g bounty!`, {
-                        type: 'bounty_fulfilled', cause: `Kingdom bounty for ${bounty.good}`,
+                        type: 'bounty_fulfilled', townId: town.id, kingdomId: k.id, _noToast: true,
+                        cause: `Kingdom bounty for ${bounty.good}`,
                         effects: [`New ${targetBt.name} in ${town.name}`, `${bounty.reward}g paid from treasury`]
-                    });
+                    }, 'my_kingdom');
                 }
             }
 

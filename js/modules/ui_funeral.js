@@ -784,7 +784,7 @@
 
         // Log
         if (Engine.logEvent) {
-            Engine.logEvent('⚰️ ' + actionMsg, { type: 'funeral_action', action: actionId, target: targetPersonId || null }, 'player_activity');
+            Engine.logEvent('⚰️ ' + actionMsg, { type: 'funeral_action', action: actionId, target: targetPersonId || null }, 'my_actions');
         }
 
         toast(actionMsg, 'info');
@@ -824,7 +824,7 @@
                         Engine.logEvent('⚰️ The funeral of ' + (plan.deceasedName || 'your family member') + ' was held in ' + _getTownName(plan.funeralTownId) + ' without you.', {
                             type: 'funeral_missed',
                             deceasedId: plan.deceasedId
-                        }, 'player_activity');
+                        }, 'my_actions');
                     }
                     toast('The funeral was held without you.', 'warning');
                     _resolveFuneral(plan);
@@ -862,7 +862,7 @@
                     Engine.logEvent('⚰️ You attend the funeral of ' + (notif.deceasedName || 'your family member') + ', arranged by ' + (notif.plannedBy || 'the family') + '.', {
                         type: 'funeral_attended_ai',
                         deceasedId: notif.deceasedId
-                    }, 'player_activity');
+                    }, 'my_actions');
                 }
                 toast('You attend the funeral of ' + (notif.deceasedName || 'your family member') + '.', 'info');
                 showFuneralEvent();
@@ -871,7 +871,7 @@
                     Engine.logEvent('⚰️ The funeral of ' + (notif.deceasedName || 'your family member') + ' was held in ' + _getTownName(notif.funeralTownId) + '. You were unable to attend.', {
                         type: 'funeral_missed_ai',
                         deceasedId: notif.deceasedId
-                    }, 'player_activity');
+                    }, 'my_actions');
                 }
             }
             ps.funeralNotification = null;
@@ -1128,7 +1128,7 @@
         var _funTownName = funeralTownId ? _getTownName(funeralTownId) : 'an unknown town';
         var _msg = '⚰️ ' + (plannedByName || 'The family') + ' is planning the funeral of ' + _getPersonName(deceasedPerson) + ' in ' + _funTownName + ' for day ' + funeralDay + '.';
         toast(_msg, 'info');
-        try { if (Engine.logEvent) Engine.logEvent(_msg, { type: 'family' }, 'family'); } catch (_e) {}
+        try { if (Engine.logEvent) Engine.logEvent(_msg, { type: 'family' }, 'npc_activity'); } catch (_e) {}
     }
 
     // ── ACTION REGISTRATIONS ──
@@ -1236,7 +1236,7 @@
                 timing: draft.timing,
                 burial: draft.burial,
                 ceremony: draft.ceremony
-            }, 'player_activity');
+            }, 'my_actions');
         }
 
         closeModal();
@@ -1269,7 +1269,7 @@
                 Engine.logEvent('⚰️ The funeral of ' + (plan.deceasedName || 'your family member') + ' has concluded. You performed ' + actionCount + ' act(s) of remembrance.', {
                     type: 'funeral_complete',
                     actions: actionCount
-                }, 'player_activity');
+                }, 'my_actions');
             }
             _resolveFuneral(plan);
         }

@@ -368,7 +368,7 @@
                     k.lastTaxIncreaseDay = world.day;
                     logEvent('📈 ' + k.name + ' raises trade taxes to ' + Math.round(k.taxRate * 100) + '% for budget sustainability.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Trade more expensive']
-                    });
+                    }, 'my_kingdom');
                     _bsActionsTaken++;
                 }
 
@@ -377,7 +377,7 @@
                     k.propertyTaxRate = Math.min(0.05, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
                     logEvent('📈 ' + k.name + ' raises property taxes to ' + Math.round(k.propertyTaxRate * 100) + '%.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Building owners pay more']
-                    });
+                    }, 'my_kingdom');
                     _bsActionsTaken++;
                 }
 
@@ -387,7 +387,7 @@
                     k.incomeTaxRate = Math.min(0.10, (k.incomeTaxRate || 0.05) + _itInc);
                     logEvent('📈 ' + k.name + ' raises income tax to ' + Math.round(k.incomeTaxRate * 100) + '%.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Citizens pay more income tax']
-                    });
+                    }, 'my_kingdom');
                     _bsActionsTaken++;
                 }
 
@@ -438,8 +438,8 @@
                     if (_bsSoldItems > 0) {
                         recordKingdomTransaction(k, 'income', _bsSoldGold, 'Sold ' + _bsSoldItems + ' surplus military items', 'stockpile_sale');
                         logEvent('🏰 ' + k.name + ' sells ' + _bsSoldItems + ' surplus military items for ' + _bsSoldGold + 'g.', {
-                            type: 'stockpile_sale', cause: 'Budget sustainability', effects: ['Treasury bolstered']
-                        });
+                            type: 'stockpile_sale', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Treasury bolstered'], _noToast: true
+                        }, 'my_kingdom');
                         _bsActionsTaken++;
                     }
                 }
@@ -450,8 +450,8 @@
                     // Smart king realizes high taxes are driving merchants away
                     k.taxRate = Math.max(0.08, k.taxRate - rng.randFloat(0.01, 0.03));
                     logEvent('📉 ' + k.name + ' lowers trade taxes to ' + Math.round(k.taxRate * 100) + '% to attract more merchants.', {
-                        type: 'tax_decrease', cause: 'Trade stimulation strategy', effects: ['Trade more attractive', 'Long-term revenue growth']
-                    });
+                        type: 'tax_decrease', kingdomId: k.id, cause: 'Trade stimulation strategy', effects: ['Trade more attractive', 'Long-term revenue growth'], _noToast: true
+                    }, 'my_kingdom');
                     _bsActionsTaken++;
                 }
 
@@ -465,8 +465,8 @@
                         if (!_bsHasMarket && k.gold > 400) {
                             kingdomBuild(k, _bsPTown, 'market', rng);
                             logEvent('🏗️ ' + k.name + ' builds a market in ' + _bsPTown.name + ' to boost trade revenue.', {
-                                type: 'construction', cause: 'Revenue strategy', effects: ['More trade in ' + _bsPTown.name]
-                            });
+                                type: 'construction', kingdomId: k.id, cause: 'Revenue strategy', effects: ['More trade in ' + _bsPTown.name]
+                            }, 'my_kingdom');
                             _bsActionsTaken++;
                             break;
                         }
@@ -479,7 +479,7 @@
                 if ((k.guardBudget || 0.15) > 0.05 && rng.chance(0.3) && _bsActionsTaken < 3) {
                     k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
                     logEvent('🏰 ' + k.name + ' reduces guard spending.', {
-                        type: 'budget_cut', cause: 'Budget sustainability', effects: ['Fewer guards hired']
+                        type: 'budget_cut', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Fewer guards hired'], _noToast: true
                     }, 'my_kingdom');
                     _bsActionsTaken++;
                 }
@@ -524,8 +524,8 @@
                         }
                         if (discharged > 0) {
                             logEvent('🏰 ' + k.name + ' discharges ' + discharged + ' soldiers to balance the budget.', {
-                                type: 'military_cut', cause: 'Budget sustainability review', effects: ['Army reduced', 'Budget pressure eased']
-                            });
+                                type: 'military_cut', kingdomId: k.id, cause: 'Budget sustainability review', effects: ['Army reduced', 'Budget pressure eased']
+                            }, 'my_kingdom');
                         }
                     }
                 }
@@ -536,8 +536,8 @@
                     var _cancelled = k._buildQueue.pop();
                     if (_cancelled) {
                         logEvent('🏗️ ' + k.name + ' cancels planned construction to save gold.', {
-                            type: 'budget_cut', cause: 'Budget sustainability', effects: ['Construction delayed']
-                        });
+                            type: 'budget_cut', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Construction delayed'], _noToast: true
+                        }, 'my_kingdom');
                     }
                 }
             }
@@ -552,7 +552,7 @@
                 k.lastTaxIncreaseDay = world.day;
                 logEvent(`📈 ${k.name} raises trade taxes to ${Math.round(k.taxRate * 100)}%.`, {
                     type: 'tax_increase', kingdomId: k.id, cause: 'Low treasury (' + Math.floor(treasury) + 'g)', effects: ['Trade becomes more expensive', 'Merchants may avoid this kingdom']
-                });
+                }, 'my_kingdom');
                 actionsTaken++;
             }
 
@@ -561,7 +561,7 @@
                 k.propertyTaxRate = Math.min(0.06, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
                 logEvent(`📈 ${k.name} raises property taxes to ${Math.round(k.propertyTaxRate * 100)}%.`, {
                     type: 'tax_increase', kingdomId: k.id, cause: 'Low treasury', effects: ['Building owners pay more']
-                });
+                }, 'my_kingdom');
                 actionsTaken++;
             }
 
@@ -577,8 +577,8 @@
                     cut++;
                 }
                 logEvent(`🏰 ${k.name} reduces its army by ${cut} soldiers to save gold.`, {
-                    type: 'military_cut', cause: 'Budget constraints', effects: ['Military strength reduced', 'Former soldiers seek work']
-                });
+                    type: 'military_cut', kingdomId: k.id, cause: 'Budget constraints', effects: ['Military strength reduced', 'Former soldiers seek work']
+                }, 'my_kingdom');
                 actionsTaken++;
             }
 
@@ -586,7 +586,7 @@
             if (actionsTaken < 2 && (k.guardBudget || 0.15) > 0.05 && rng.chance(0.3)) {
                 k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
                 logEvent(`🏰 ${k.name} reduces guard spending.`, {
-                    type: 'budget_cut', cause: 'Financial austerity', effects: ['Fewer guards hired', 'Town security may decrease']
+                    type: 'budget_cut', kingdomId: k.id, cause: 'Financial austerity', effects: ['Fewer guards hired', 'Town security may decrease'], _noToast: true
                 }, 'my_kingdom');
                 actionsTaken++;
             }
@@ -619,8 +619,8 @@
                 }
                 if (soldItems > 0) {
                     logEvent(`🏰 ${k.name} sells surplus military equipment (${soldItems} items) to raise funds.`, {
-                        type: 'stockpile_sale', cause: 'Financial need', effects: ['Military reserves reduced', 'Treasury bolstered']
-                    });
+                        type: 'stockpile_sale', kingdomId: k.id, cause: 'Financial need', effects: ['Military reserves reduced', 'Treasury bolstered'], _noToast: true
+                    }, 'my_kingdom');
                 }
             }
         }

@@ -5318,7 +5318,8 @@
                                     em.firstName + ' sells ' + underQty + ' ' + rGood + ' at discount',
                                     'Market price pressure on ' + rGood,
                                     'Competition intensifies between elite merchants'
-                                ]
+                                ],
+                                _noToast: true
                             });
                         }
                     }
@@ -5592,7 +5593,8 @@
                     bribeAmount + 'g donated to ' + kingdom.name + '\'s treasury',
                     'Royal relationship strengthened',
                     em.firstName + '\'s influence at court grows'
-                ]
+                ],
+                _noToast: true
             });
         }
 
@@ -5646,13 +5648,15 @@
                     logEvent(em.firstName + ' ' + (em.lastName || '') + ' persuades ' + kingdom.name + ' to subsidize ' + petGood + ' trade!', {
                         type: 'elite_petition_subsidy',
                         cause: em.firstName + ' lobbied the crown for trade subsidies.',
-                        effects: [petGood + ' trade subsidized in ' + kingdom.name, em.firstName + '\'s influence at court grows']
+                        effects: [petGood + ' trade subsidized in ' + kingdom.name, em.firstName + '\'s influence at court grows'],
+                        _noToast: true
                     });
                 } else {
                     logEvent(em.firstName + ' ' + (em.lastName || '') + '\'s petition for ' + petGood + ' subsidies was denied by ' + kingdom.name + '.', {
                         type: 'elite_petition_denied',
                         cause: em.firstName + ' lobbied the crown, but was rebuffed.',
-                        effects: [petitionFee + 'g spent on failed petition']
+                        effects: [petitionFee + 'g spent on failed petition'],
+                        _noToast: true
                     });
                 }
                 break; // one petition per cycle
@@ -5678,7 +5682,8 @@
                     logEvent(em.firstName + ' ' + (em.lastName || '') + ' successfully lobbies ' + kingdom.name + ' to reduce tariffs from ' + Math.round(oldTariff * 100) + '% to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.', {
                         type: 'elite_lobby_tariff',
                         cause: em.firstName + ' uses court influence to push for trade reform.',
-                        effects: ['Tariff reduced by 2%', 'All merchants benefit from lower trade costs']
+                        effects: ['Tariff reduced by 2%', 'All merchants benefit from lower trade costs'],
+                        _noToast: true
                     });
                 }
             }
@@ -5751,10 +5756,11 @@
                     logEvent('📜 ' + em.firstName + ' ' + (em.lastName || '') + ' secures a tax reduction in ' + kingdom.name +
                         ' (' + Math.round(oldTax * 100) + '% → ' + Math.round(kingdom.taxRate * 100) + '%).', {
                         type: 'elite_petition_tax',
-                        effects: ['Business taxes reduced', 'Economic growth encouraged']
+                        effects: ['Business taxes reduced', 'Economic growth encouraged'],
+                        _noToast: true
                     });
                 } else {
-                    logEvent(em.firstName + '\'s tax relief petition to ' + kingdom.name + ' was denied.', { type: 'elite_petition_denied' });
+                    logEvent(em.firstName + '\'s tax relief petition to ' + kingdom.name + ' was denied.', { type: 'elite_petition_denied', _noToast: true });
                 }
             }
         }

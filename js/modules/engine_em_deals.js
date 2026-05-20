@@ -188,7 +188,7 @@
                 logEvent(
                     'Trade deal with ' + ((em0 && em0.name) || 'Elite Merchant') + ' cancelled — a deal building was lost or changed ownership.',
                     { dealId: deal.id, emId: deal.emId },
-                    'trade'
+                    'my_business'
                 );
                 continue;
             }
@@ -203,7 +203,7 @@
             var em = findPerson(deal.emId);
             if (!em) {
                 deal.status = 'cancelled_by_em';
-                logEvent('Trade deal cancelled — merchant no longer available.', { dealId: deal.id }, 'trade');
+                logEvent('Trade deal cancelled — merchant no longer available.', { dealId: deal.id }, 'my_business');
                 continue;
             }
 
@@ -224,7 +224,7 @@
                 logEvent(
                     (em.name || 'Elite Merchant') + ' deal fulfilled — next delivery in ' + deal.interval + ' days.',
                     { dealId: deal.id, emId: deal.emId },
-                    'trade'
+                    'my_business'
                 );
             } else if (deal.emDelivered && !deal.playerDelivered) {
                 // EM delivered but player did not
@@ -246,7 +246,7 @@
                     'You failed to deliver ' + deal.playerGives.qty + ' ' + deal.playerGives.good +
                     ' to ' + (em.name || 'the merchant') + '. Deal broken! You paid ' + penalty + ' gold as penalty.',
                     { dealId: deal.id, emId: deal.emId, penalty: penalty },
-                    'trade'
+                    'my_business'
                 );
             } else if (!deal.emDelivered && deal.playerDelivered) {
                 // EM failed to deliver but player did — EM broke deal
@@ -256,7 +256,7 @@
                     logEvent(
                         (em.name || 'Elite Merchant') + ' repeatedly failed to deliver. Deal broken.',
                         { dealId: deal.id, emId: deal.emId },
-                        'trade'
+                        'my_business'
                     );
                 } else {
                     // Grace: advance to next period, EM gets another chance
@@ -266,7 +266,7 @@
                     logEvent(
                         (em.name || 'Elite Merchant') + ' missed a delivery but the deal continues.',
                         { dealId: deal.id, emId: deal.emId },
-                        'trade'
+                        'my_business'
                     );
                 }
             } else {
@@ -277,7 +277,7 @@
                     logEvent(
                         'Trade deal with ' + (em.name || 'Elite Merchant') + ' cancelled due to repeated non-delivery.',
                         { dealId: deal.id, emId: deal.emId },
-                        'trade'
+                        'my_business'
                     );
                 } else {
                     deal.emDelivered = false;
@@ -477,7 +477,7 @@
         logEvent(
             'You delivered ' + qty + ' ' + goodId + ' to ' + ((em && em.name) || 'the merchant') + '.',
             { dealId: deal.id, good: goodId, qty: qty },
-            'trade'
+            'my_business'
         );
 
         return { success: true, message: 'Delivered ' + qty + ' ' + goodId + ' successfully.' };
@@ -668,7 +668,7 @@
             deal.playerGives.qty + ' ' + deal.playerGives.good + ' for ' +
             deal.emGives.qty + ' ' + deal.emGives.good + ' every ' + deal.interval + ' days.',
             { dealId: dealId, emId: emId },
-            'trade'
+            'my_business'
         );
 
         return { success: true, message: 'Deal accepted!', dealId: dealId };
@@ -698,7 +698,7 @@
             logEvent(
                 'You cancelled your trade deal with ' + emName + '. They are displeased.',
                 { dealId: dealId, emId: deal.emId },
-                'trade'
+                'my_business'
             );
         } else {
             deal.status = 'cancelled_by_em';
@@ -780,3 +780,4 @@
     Engine.canPlayerDeliverToDeal = canPlayerDeliverToDeal;
 
 })(typeof Engine !== 'undefined' ? Engine : null);
+

@@ -7408,7 +7408,7 @@
                         var _wasPlayerEmp = p.employerId === 'player';
                         removeWorkerFromBuilding(p);
                         p.employerId = null;
-                        if (_wasPlayerEmp) logEvent(`${p.firstName} ${p.lastName} has retired from work.`);
+                        if (_wasPlayerEmp) logEvent(`${p.firstName} ${p.lastName} has retired from work.`, { _noToast: true });
                     }
                 }
             }
@@ -7450,7 +7450,7 @@
                 if (p.workerSkill == null) p.workerSkill = 0;
                 p.workerSkill = Math.min(100, p.workerSkill + CONFIG.WORKER_TRAINING_SKILL_GAIN);
                 delete p.trainingUntilDay;
-                if (p.employerId === 'player') logEvent(`${p.firstName} ${p.lastName} returned from training (skill: ${Math.floor(p.workerSkill)}).`);
+                if (p.employerId === 'player') logEvent(`${p.firstName} ${p.lastName} returned from training (skill: ${Math.floor(p.workerSkill)}).`, { _noToast: true });
             }
 
             // ---- Wage demands (skilled workers periodically demand raises) ----
@@ -7482,7 +7482,7 @@
                     if (_wasPlayerWorker && typeof Player !== 'undefined' && Player.state && Player.state.employees) {
                         Player.state.employees = Player.state.employees.filter(function(id) { return id !== p.id; }); // v9p33river329: remove stale player employee entry.
                     }
-                    if (_wasPlayerWorker) logEvent(`${p.firstName} ${p.lastName} quit over wages.`);
+                    if (_wasPlayerWorker) logEvent(`${p.firstName} ${p.lastName} quit over wages.`, { _noToast: true });
                 } else if (roll < 0.80) {
                     // Stay unhappy — productivity penalty for 30 days
                     p.unhappyUntilDay = day + 30;
@@ -7530,7 +7530,7 @@
                         emSpouse.spouseId = p.id;
                         initFamilyRelationship(p, emSpouse, 'spouse');
                         var emTown = findTown(p.townId);
-                        logEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + (emTown ? emTown.name : 'town') + '.');
+                        logEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + (emTown ? emTown.name : 'town') + '.', { _noToast: true });
                     }
                 }
             }
@@ -8233,7 +8233,8 @@
                         heir.firstName + ' inherits ' + Math.floor(inheritedGold) + 'g (after 15% death tax)',
                         'Buildings and inventory transferred to heir',
                         'The merchant dynasty continues under new leadership'
-                    ]
+                    ],
+                    _noToast: true
                 });
             } else {
                 // No heir — estate liquidated
@@ -8679,7 +8680,10 @@
             // Only a female heir but kingdom doesn't allow female succession
             crisisSeverity = 'extreme';
             newKing = null; // reject the female heir
-            logEvent('⚠️ ' + kingdom.name + ' does not recognize female succession! The throne is contested.', null, 'sensitive_intel');
+            logEvent('⚠️ ' + kingdom.name + ' does not recognize female succession! The throne is contested.', {
+                type: 'succession_crisis',
+                kingdomId: kingdom.id
+            }, 'my_kingdom');
         } else if (newKing.age < CONFIG.COMING_OF_AGE) {
             crisisSeverity = 'major'; // child heir = regency contest
         }
@@ -10992,8 +10996,9 @@
 
         logEvent(crisisMsg, {
             type: 'succession_crisis', severity: severity,
+            kingdomId: kingdom.id,
             effects: ['Happiness -' + happinessDrop, 'Trade disrupted', pretenders.length + ' pretenders']
-        });
+        }, 'my_kingdom');
 
         // Toast for succession crisis (major/extreme only)
         if (typeof UI !== 'undefined' && UI.toast && world.day > 2 && severity !== 'minor') {
@@ -11029,7 +11034,10 @@
                     // Eliminate pretenders with 0 support
                     if (loser.support <= 0) {
                         crisis.pretenders = crisis.pretenders.filter(function(p) { return p.id !== loser.id; });
-                        logEvent('💀 ' + loser.name + '\'s claim to the throne of ' + k.name + ' has collapsed.', null, 'sensitive_intel');
+                        logEvent('💀 ' + loser.name + '\'s claim to the throne of ' + k.name + ' has collapsed.', {
+                            type: 'succession_crisis',
+                            kingdomId: k.id
+                        }, 'my_kingdom');
                     }
                 }
             }
@@ -11088,7 +11096,10 @@
         crisis.active = false;
         crisis.resolved = true;
         k.successionCrisis = null;
-        logEvent('✅ The succession crisis in ' + k.name + ' has been resolved.', null, 'sensitive_intel');
+        logEvent('✅ The succession crisis in ' + k.name + ' has been resolved.', {
+            type: 'succession_crisis',
+            kingdomId: k.id
+        }, 'my_kingdom');
     }
 
     // ============================================================
@@ -12137,7 +12148,7 @@
             kingdomId: kingdom.id,
             cause: 'Noble Council law requires major decisions to be voted upon.',
             effects: ['Nobles have 3 days to cast their votes', 'King\'s vote counts with extra weight']
-        });
+        }, 'my_kingdom');
 
         return vote;
     }
@@ -12369,7 +12380,7 @@
                         kingdomId: kingdom.id,
                         cause: 'Noble Council vote concluded after 3 days.',
                         effects: [vote.result === 'passed' ? 'The motion has been approved by the council' : 'The motion was rejected by the council']
-                    });
+                    }, 'my_kingdom');
                 }
             }
         }
@@ -12562,7 +12573,7 @@
             type: 'noble_trial_scheduled',
             kingdomId: kingdom.id,
             cause: 'Noble Council law deferred a death/exile sentence to trial.'
-        });
+        }, 'my_kingdom');
 
         return vote;
     }
@@ -12620,7 +12631,7 @@
                 kingdom.name + '! (' + notCnt + ' not guilty, ' + gCnt + ' guilty)', {
                 type: 'noble_trial_acquitted', kingdomId: kingdom.id,
                 effects: [accusedName + ' walks free', 'Guilty-voters lose 10 relationship with accused']
-            });
+            }, 'my_kingdom');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚖️ ACQUITTED: ' + accusedName, 'success', 'critical');
             return;
         }
@@ -12648,21 +12659,21 @@
                     accused._deathCause = 'executed';
                     logEvent('💀 ' + accusedName + ' was EXECUTED by order of the Noble Council of ' + kingdom.name + '.', {
                         type: 'noble_execution', kingdomId: kingdom.id
-                    });
+                    }, 'my_kingdom');
                 } else if (pun.exile) {
                     accused.socialRank = accused.socialRank || {};
                     accused.socialRank[kingdom.id] = 0;
                     if (accused.kingdomId === kingdom.id) accused.kingdomId = null;
                     logEvent('🚪 ' + accusedName + ' has been EXILED from ' + kingdom.name + ' by Noble Council vote.', {
                         type: 'noble_exile', kingdomId: kingdom.id
-                    });
+                    }, 'my_kingdom');
                 }
             }
         }
         logEvent('⚖️ TRIAL VERDICT — ' + accusedName + ' found GUILTY by the council of ' +
             kingdom.name + '. (' + gCnt + ' guilty, ' + notCnt + ' not guilty)', {
             type: 'noble_trial_guilty', kingdomId: kingdom.id
-        });
+        }, 'my_kingdom');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚖️ GUILTY: ' + accusedName, 'danger', 'critical');
     }
 
@@ -13406,7 +13417,7 @@
                     kingName: _kingName,
                     happiness: Math.round(h),
                     effects: ['Tax collection halted 30 days', revoltDamage + 'g in damages', 'Happiness drops further']
-                }, 'sensitive_intel');
+                }, 'my_kingdom');
             }
 
         // ── REBELLION (happiness < 18) ──
@@ -13455,7 +13466,7 @@
                         targetKingId: king.id,
                         happiness: Math.round(h),
                         effects: ['King\'s life at risk', 'Kingdom stability threatened']
-                    }, 'sensitive_intel');
+                    }, 'my_kingdom');
                     // Check if king is the player
                     var _isPlayerKing = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
                     if (_isPlayerKing) {
@@ -13481,7 +13492,7 @@
                             newKing: _newKingName,
                             newKingId: k.king,
                             effects: ['New king installed', 'Policies may change']
-                        }, 'sensitive_intel');
+                        }, 'my_kingdom');
                         Engine.boostKingdomHappiness(k, 15); // New king brings hope
                     } else {
                         logEvent('🛡️ The coup in ' + k.name + ' has failed. The king purges dissenters.', {
@@ -13490,7 +13501,7 @@
                             survivedKing: _coupKingName,
                             survivedKingId: king.id,
                             effects: ['Happiness drops further', 'Purges follow']
-                        }, 'sensitive_intel');
+                        }, 'my_kingdom');
                         Engine.boostKingdomHappiness(k, -8);
                     }
                 }
@@ -13532,9 +13543,9 @@
                 var collapseChance = (CONFIG.KINGDOM_REBELLION_COLLAPSE_CHANCE || 0.12) * rebellionIntensity;
                 if (rng.chance(collapseChance)) {
                     logEvent('💀 ' + k.name + ' is on the brink of total collapse! Bankrupt and in rebellion!', {
-                        type: 'kingdom_collapse_warning', cause: 'Bankruptcy + rebellion',
+                        type: 'kingdom_collapse_warning', kingdomId: k.id, cause: 'Bankruptcy + rebellion',
                         effects: ['Kingdom may fragment', 'Towns may declare independence']
-                    }, 'sensitive_intel');
+                    }, 'my_kingdom');
                     // Trigger economic collapse if the function exists
                     if (typeof Engine.triggerEconomicCollapse === 'function') {
                         Engine.triggerEconomicCollapse(k);
@@ -14084,7 +14095,7 @@
             nobleParticipants: _noblePartNames,
             cause: 'Low town happiness (' + Math.round(town.happiness || 0) + '%) — citizens rise against ' + k.name,
             effects: ['Town blocked during revolt', 'Trade halted', 'Citizens take cover']
-        }, 'sensitive_intel');
+        }, 'my_kingdom');
 
         // Notify player if they are in this town or are king of this kingdom
         if (typeof Player !== 'undefined' && Player.state) {
@@ -14542,7 +14553,7 @@
             cause: 'Revolt in ' + town.name + ' against ' + (parentK ? parentK.name : 'the crown'),
             effects: ['New kingdom created', 'At war with ' + (parentK ? parentK.name : 'parent'), 'Town independence',
                 _goldPlunder > 0 ? 'Plundered ' + _goldPlunder + 'g' : 'No gold plundered']
-        }, 'sensitive_intel');
+        }, 'my_kingdom');
 
         // Check if parent kingdom has 0 towns — eliminate if so
         // v9p33river293: previously this only LOGGED the loss but never
@@ -14554,8 +14565,9 @@
             logEvent('💀 ' + parentK.name + ' has lost all territories and ceases to exist!', {
                 type: 'kingdom_eliminated',
                 kingdom: parentK.name,
+                kingdomId: parentK.id,
                 cause: 'Lost last town to revolt'
-            }, 'sensitive_intel');
+            }, 'my_kingdom');
             try { eliminateKingdom(parentK, newKingdom); } catch (_eEK) { /* defensive — never crash a revolt */ }
         }
 
@@ -14678,7 +14690,7 @@
                     if (_isNobleParticipant) {
                         logEvent('⚔️ Noble ' + rebel.name + ' executed for treason after revolt in ' + town.name, {
                             type: 'noble_revolt_execution', noble: rebel.name, town: town.name
-                        }, 'kingdom');
+                        }, 'my_kingdom');
                     }
                 } else {
                     if (rebel.happiness != null) rebel.happiness = Math.max(0, rebel.happiness - 20);
@@ -14700,7 +14712,7 @@
                         }
                         logEvent('🔗 Noble ' + rebel.name + ' stripped of rank for revolt participation in ' + town.name, {
                             type: 'noble_revolt_stripped', noble: rebel.name, town: town.name
-                        }, 'kingdom');
+                        }, 'my_kingdom');
                     }
                 }
             }
@@ -14743,7 +14755,7 @@
             durationDays: revolt.daysElapsed || 0,
             cause: revolt.groupName + ' failed to overcome ' + (k ? k.name + "'s" : 'the') + ' defenders in ' + town.name,
             effects: ['Revolt cooldown ' + cooldownDays + ' days', 'Rebels punished', 'Order restored']
-        }, 'sensitive_intel');
+        }, 'my_kingdom');
 
         // Notify player
         if (typeof Player !== 'undefined' && Player.state) {
@@ -15400,6 +15412,7 @@
 
                     logEvent(`🔥 TAX REVOLT in ${k.name}! Citizens refuse to pay the ${Math.round(taxPct)}% tax rate!`, {
                         type: 'tax_revolt',
+                        kingdomId: k.id,
                         cause: 'Excessive taxation (' + Math.round(taxPct) + '%) combined with low happiness (' + Math.round(kingdomHappiness) + '%) has driven the people to revolt.',
                         effects: [
                             'Tax collection suspended for 30 days',
@@ -15407,7 +15420,7 @@
                             'Kingdom happiness drops further (-10)',
                             'Tax infrastructure must be rebuilt'
                         ]
-                    }, 'sensitive_intel');
+                    }, 'my_kingdom');
                 }
             }
         }
@@ -20065,7 +20078,7 @@
                         k.gold -= ransomCost;
                         delete leader._jailed;
                         leader.occupation = null;
-                        logEvent('👑 ' + (k.name || 'The kingdom') + ' paid ' + ransomCost + 'g ransom for ' + leaderName + '.', null, 'kingdom');
+                        logEvent('👑 ' + (k.name || 'The kingdom') + ' paid ' + ransomCost + 'g ransom for ' + leaderName + '.', null, 'my_kingdom');
                     }
                 }
             }
@@ -22023,7 +22036,12 @@
             m.includes('heir born') ||
             m.includes('border closed') || m.includes('blockade') ||
             m.includes('did not survive') || m.includes('has sunk')) {
-            return 'critical';
+            if (m.includes('conscripted') || m.includes('ship sunk') || m.includes('caravan captured') ||
+                m.includes('assassination') || m.includes('border closed') || m.includes('blockade') ||
+                m.includes('has sunk')) {
+                return 'military';
+            }
+            return 'my_kingdom';
         }
 
         // Helper: determine if a kingdom event involves the player's kingdom
@@ -22603,7 +22621,7 @@
                 const age = day - (bld.lastRepairDay || bld.builtDay);
                 if (age >= 3600 && bld.condition !== 'destroyed') {
                     bld.condition = 'destroyed';    // ~10 years
-                    logEvent(`A ${bld.type} in ${town.name} has collapsed from neglect!`, null, 'local_town');
+                    logEvent(`A ${bld.type} in ${town.name} has collapsed from neglect!`, { type: 'infrastructure', townId: town.id }, 'local_town');
                 } else if (age >= 2160 && bld.condition !== 'breaking' && bld.condition !== 'destroyed') {
                     bld.condition = 'breaking';      // ~6 years
                 } else if (age >= 1080 && bld.condition === 'new') {
@@ -24860,7 +24878,7 @@
             }
         }
 
-        logEvent(`⛏️ A rich vein of ore discovered near ${town.name}! Prospectors flood in.`, null, 'local_town');
+        logEvent(`⛏️ A rich vein of ore discovered near ${town.name}! Prospectors flood in.`, { type: 'infrastructure', townId: town.id }, 'local_town');
     }
 
     // ========================================================
@@ -27486,7 +27504,7 @@
 
             var isPlayerK3 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
             logEvent('⚖️ Royal Court is now in session in ' + (pc.townName || k.name) + '! ' + courtNobles.length + ' nobles in attendance.', {
-                type: 'court_started', kingdomId: k.id, townId: pc.townId
+                type: 'court_started', kingdomId: k.id, townId: pc.townId, _noToast: true
             }, isPlayerK3 ? 'my_kingdom' : 'foreign_kingdoms');
             k._pendingCourt = null;
             // Update _nextCourtDay so old court system doesn't immediately re-trigger
@@ -27672,7 +27690,8 @@
             logEvent('🎪 The king of ' + k.name + ' is hosting a Royal Feast in ' + feastTownName + '! (3 days)', {
                 type: 'feast_started', kingdomId: k.id, townId: feastTownId,
                 cause: 'The king has called a Royal Feast',
-                effects: ['Nobles gather in ' + feastTownName, 'The feast lasts 3 days']
+                effects: ['Nobles gather in ' + feastTownName, 'The feast lasts 3 days'],
+                _noToast: true
             }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
 
             // M1: Smarter feast scheduling based on king personality and kingdom state
@@ -27736,7 +27755,7 @@
                 var toasteeName = toastee.firstName || 'a noble';
                 feast.events.push('The king raised a toast to ' + toasteeName + '!');
                 logEvent('🍷 At the feast in ' + k.name + ', the king raised a toast to ' + toasteeName + '.', {
-                    type: 'feast_event', kingdomId: k.id
+                    type: 'feast_event', kingdomId: k.id, _noToast: true
                 }, category);
             }
         } else if (eventType === 1) {
@@ -27756,7 +27775,7 @@
                     var n2 = arguer2.firstName || 'another noble';
                     feast.events.push(n1 + ' and ' + n2 + ' got into a heated argument!');
                     logEvent('😤 At the feast in ' + k.name + ', ' + n1 + ' and ' + n2 + ' got into a heated argument.', {
-                        type: 'feast_event', kingdomId: k.id
+                        type: 'feast_event', kingdomId: k.id, _noToast: true
                     }, category);
                 }
             }
@@ -27770,7 +27789,7 @@
                 var audName = audiencee.firstName || 'a noble';
                 feast.events.push('The king granted ' + audName + ' a private audience.');
                 logEvent('👑 At the feast in ' + k.name + ', the king granted ' + audName + ' a private audience.', {
-                    type: 'feast_event', kingdomId: k.id
+                    type: 'feast_event', kingdomId: k.id, _noToast: true
                 }, category);
             }
         } else if (eventType === 3) {
@@ -27783,7 +27802,7 @@
             }
             feast.events.push('Grand entertainment delighted all attendees!');
             logEvent('🎭 At the feast in ' + k.name + ', grand entertainment delighted all attendees.', {
-                type: 'feast_event', kingdomId: k.id
+                type: 'feast_event', kingdomId: k.id, _noToast: true
             }, category);
         } else {
             // Noble Boasts — a noble with high ambition brags, others with low warmth lose 3 relationship
@@ -27803,7 +27822,7 @@
                 }
                 feast.events.push(braggartName + ' boasted loudly, annoying some nobles.');
                 logEvent('🗣️ At the feast in ' + k.name + ', ' + braggartName + ' boasted loudly about their accomplishments.', {
-                    type: 'feast_event', kingdomId: k.id
+                    type: 'feast_event', kingdomId: k.id, _noToast: true
                 }, category);
             }
         }
@@ -28472,7 +28491,7 @@
 
             var acceptCount = invitedNobles.filter(function(n) { return n.accepted; }).length;
             logEvent('🎪 A Royal Feast has been announced in ' + feastTownName + '! Beginning in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.', {
-                type: 'feast_announced', kingdomId: kId, townId: feastTownId
+                type: 'feast_announced', kingdomId: kId, townId: feastTownId, _noToast: true
             }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms');
 
             k._nextFeastDay = endDay + rng.randInt(60, 120);
@@ -28512,7 +28531,7 @@
         k._nextFeastDay = world.day + rng.randInt(60, 120);
 
         logEvent('🎪 The ' + (k.governmentType === 'monarchy' ? 'king' : 'ruler') + ' of ' + k.name + ' is hosting a Royal Feast in ' + feastTownName + '! (3 days)', {
-            type: 'feast_started', kingdomId: kId, townId: feastTownId
+            type: 'feast_started', kingdomId: kId, townId: feastTownId, _noToast: true
         }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms');
 
         return k._activeFeast;
@@ -28696,7 +28715,7 @@
 
             var acceptCount = invitedNobles.filter(function(n) { return n.accepted; }).length;
             logEvent('⚖️ Royal Court has been announced in ' + courtTownName + '! Convening in ' + leadDays + ' days. ' + acceptCount + ' nobles plan to attend.', {
-                type: 'court_announced', kingdomId: k.id, townId: courtTownId
+                type: 'court_announced', kingdomId: k.id, townId: courtTownId, _noToast: true
             }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
 
             return k._pendingCourt;
@@ -28729,7 +28748,7 @@
         };
 
         logEvent('⚖️ The ' + (k.governmentType === 'monarchy' ? 'king' : 'ruler') + ' of ' + k.name + ' is holding court!', {
-            type: 'court_started', kingdomId: k.id
+            type: 'court_started', kingdomId: k.id, _noToast: true
         }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
 
         return k._courtSession;
@@ -28842,7 +28861,7 @@
         var allResolved = court.cases.every(function(c) { return c.resolved; });
         if (allResolved) {
             court.events.push('All cases have been heard. Court is adjourned.');
-            logEvent('⚖️ Court session in ' + k.name + ' has concluded. ' + court._resolvedCount + ' cases resolved.', null,
+            logEvent('⚖️ Court session in ' + k.name + ' has concluded. ' + court._resolvedCount + ' cases resolved.', { _noToast: true },
                 typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
         }
 
@@ -28962,7 +28981,7 @@
             if (action) {
                 feast.events.push(action);
                 if (isPlayerK) {
-                    logEvent('🎪 ' + action, { type: 'feast_noble_action', kingdomId: k.id }, category);
+                    logEvent('🎪 ' + action, { type: 'feast_noble_action', kingdomId: k.id, _noToast: true }, category);
                 }
             }
         }
@@ -29048,7 +29067,7 @@
             if (action) {
                 feast.events.push(action);
                 if (isPlayerK) {
-                    logEvent('🎪 ' + action, { type: 'feast_em_action', kingdomId: k.id }, category);
+                    logEvent('🎪 ' + action, { type: 'feast_em_action', kingdomId: k.id, _noToast: true }, category);
                 }
             }
         }
@@ -29079,7 +29098,7 @@
                 }
                 var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
                 logEvent('🎉 The festival in ' + f.townName + ' has ended. The townsfolk are still in good spirits.', {
-                    type: 'festival_ended', kingdomId: k.id, townId: f.townId
+                    type: 'festival_ended', kingdomId: k.id, townId: f.townId, _noToast: true
                 }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
             } else {
                 stillActive.push(f);
@@ -29197,7 +29216,7 @@
 
             var isPlayerK2 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
             logEvent('🎉 ' + (king.firstName || 'The King') + ' has ordered a ' + type + ' festival in ' + (town.name || tId) + '! Cost: ' + cost + 'g.', {
-                type: 'festival_started', kingdomId: k.id, townId: tId, festivalType: type
+                type: 'festival_started', kingdomId: k.id, townId: tId, festivalType: type, _noToast: true
             }, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
         });
     }
@@ -29665,7 +29684,7 @@
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
         var _festMusicMsg = _festMusicians.length > 0 ? ' ' + _festMusicians.length + ' musicians entertain the crowds!' : '';
         logEvent('🎉 A ' + type + ' festival has been declared in ' + (town.name || townId) + '! The people rejoice!' + _festMusicMsg, {
-            type: 'festival_started', kingdomId: k.id, townId: townId, festivalType: type
+            type: 'festival_started', kingdomId: k.id, townId: townId, festivalType: type, _noToast: true
         }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
 
         return festival;

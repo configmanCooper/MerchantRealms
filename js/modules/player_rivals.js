@@ -275,7 +275,7 @@
                     var desc = chosen.desc(rival.npc);
                     _toast(desc, 'danger');
                     try {
-                        if (_eng().logEvent) _eng().logEvent(desc, null, 'world_events');
+                        if (_eng().logEvent) _eng().logEvent(desc, { rivalId: rival.npc.id }, 'npc_activity');
                     } catch(e) {}
                     player._rivalLastActionDay = day;
                     actionTaken = true;
@@ -312,7 +312,7 @@
                     var remoteDesc = remoteChosen.desc(rival.npc, target);
                     _toast(remoteDesc, 'danger');
                     try {
-                        if (_eng().logEvent) _eng().logEvent(remoteDesc, null, 'world_events');
+                        if (_eng().logEvent) _eng().logEvent(remoteDesc, { rivalId: rival.npc.id, townId: rival.npc.townId, _noToast: true }, 'npc_activity');
                     } catch(e) {}
                     player._rivalLastActionDay = day;
                     actionTaken = true;
