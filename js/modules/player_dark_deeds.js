@@ -3403,11 +3403,11 @@
                     _needsInciteStrikesConfig: true,
                 });
             }
-            // v9p33river347: Spread Plague — biological warfare. Three
+            // v9p33river350: Spread Plague — biological warfare. Three
             // variants (seed/water/food) with escalating cost + effect.
-            // Master Poisoner + Dark Connections gated. Must be physically
+            // Poisoner + Dark Connections gated. Must be physically
             // in the target town.
-            if (hasSkill('master_poisoner') && hasSkill('dark_connections')) {
+            if (hasSkill('poisoner') && hasSkill('dark_connections')) {
                 // v9p33river349: cooldown key fix.
                 var _spCD = (player.schemeCooldowns && player.schemeCooldowns['spread_plague']) || 0;
                 var _spAvail = day >= _spCD && player.gold >= 800;
@@ -3417,7 +3417,7 @@
                     desc: 'Plant a contagion in the town you\'re currently in. Three escalating variants: seed direct infections (cheap), poison the water supply (medium, 21-day drip), or taint food stocks (expensive, heavy spread + may travel via caravans). Treason-tier punishment if caught. Karma: 5% per week chance of catching it yourself.',
                     cost: '800-5000g + materials', detection: calculateCorruptDetection(0.60, town),
                     reward: 'Plague outbreak', xp: 40,
-                    requires: 'Master Poisoner + Dark Connections',
+                    requires: 'Poisoner + Dark Connections',
                     available: _spAvail,
                     disabledReason: !player.gold || player.gold < 800 ? 'Need at least 800g.' : (day < _spCD ? 'Cooldown active.' : ''),
                     params: [],
@@ -4291,7 +4291,11 @@
     function spreadPlague(townId, variant) {
         _sync();
         if (isJailed()) return { success: false, message: 'You are in jail.' };
-        if (!hasSkill('master_poisoner')) return { success: false, message: 'Requires Master Poisoner skill — you need to know how to handle disease vectors.' };
+        // v9p33river350: was checking 'master_poisoner' which doesn't exist
+        // in config.js skill list. Canonical underworld skill is 'poisoner'
+        // (config.js:3615). Both gates (this and the action card at ~3410)
+        // now use the real id.
+        if (!hasSkill('poisoner')) return { success: false, message: 'Requires Poisoner skill — you need to know how to handle disease vectors.' };
         if (!hasSkill('dark_connections')) return { success: false, message: 'Requires Dark Connections skill — you need underworld contacts to smuggle the contagion in.' };
         if (!townId || !variant) return { success: false, message: 'Choose a target town and a spread method.' };
 
@@ -5903,7 +5907,18 @@
         // Getting caught doubles cooldown; escalation from prior catches
         var catchMult = (result && result.caught) ? 2 : 1;
         var escalation = Math.min(5, (player.crimesCommitted[actionId] || 0));
-        player.schemeCooldowns[cdKey] = day + Math.floor(baseCd * catchMult) + escalation;
+        // v9p33river350: previously applied the global cooldown
+        // unconditionally — including when the scheme returned
+        // success: false from a validation pre-check (e.g. picking a
+        // town still on a per-target cooldown). That double-penalized
+        // the player by locking the whole scheme out for days. Now we
+        // only apply the cooldown when the scheme actually FIRED
+        // (success === true) or got CAUGHT. Pure pre-validation
+        // failures (no engagement) skip the cooldown.
+        var _engaged = !!(result && (result.success === true || result.caught === true));
+        if (_engaged) {
+            player.schemeCooldowns[cdKey] = day + Math.floor(baseCd * catchMult) + escalation;
+        }
 
         return result;
     }

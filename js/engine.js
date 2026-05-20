@@ -29468,10 +29468,16 @@
             case 'pickpocket': {
                 var hasPickSkill = false;
                 try {
-                    hasPickSkill = (Player.hasSkill && (Player.hasSkill('lockpicking') || Player.hasSkill('pickpocket')));
+                    // v9p33river350: 'lockpicking' and 'pickpocket' aren't
+                    // skills in config.js. The underworld skill that
+                    // unlocks pickpocketing is 'discrete' (config.js:3602
+                    // — "Unlocks: Steal goods, Pickpocket, Plant evidence")
+                    // and the actual pickpocket scheme at
+                    // player_dark_deeds.js:1219 gates on hasSkill('discrete').
+                    hasPickSkill = (Player.hasSkill && Player.hasSkill('discrete'));
                 } catch(e) {}
                 if (!hasPickSkill) {
-                    result.message = 'You lack the skill for pickpocketing (need lockpicking or pickpocket).';
+                    result.message = 'You lack the skill for pickpocketing (need Discrete from the Underworld branch).';
                     break;
                 }
                 var ppRoll = rng.random();
@@ -34495,7 +34501,25 @@
             var inConspiracy = k._conspiracy.plotters.indexOf('player') >= 0;
             var hasSpy = false;
             try {
-                hasSpy = typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('spy_network');
+                // v9p33river350: 'spy_network' is NOT a skill — it's a
+                // per-town state stored at player.spyNetworks[townId].
+                // Any active spy network in this kingdom should let the
+                // player see the conspiracy. Walk the player's networks
+                // and check whether any cover a town in this kingdom.
+                if (typeof Player !== 'undefined' && Player.state && Player.state.spyNetworks) {
+                    var _curDay = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+                    for (var _snTid in Player.state.spyNetworks) {
+                        var _sn = Player.state.spyNetworks[_snTid];
+                        if (!_sn) continue;
+                        if (_sn.expiresDay && _sn.expiresDay <= _curDay) continue;
+                        if (_sn.kingdomId === k.id) { hasSpy = true; break; }
+                        // Fallback: resolve town if kingdomId wasn't stored.
+                        if (!_sn.kingdomId) {
+                            var _snTown = findTown(_snTid);
+                            if (_snTown && _snTown.kingdomId === k.id) { hasSpy = true; break; }
+                        }
+                    }
+                }
             } catch (e) { /* Player not loaded */ }
             if (!inConspiracy && !hasSpy) return null;
             return {

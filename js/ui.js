@@ -14763,17 +14763,35 @@ window.UI = (function () {
             'Silver Tongue (Dark)': 'silver_tongue_dark'
         };
         if (typeof action.requires === 'string') {
-            // Handle "X or Y" format
-            var parts = action.requires.split(' or ');
-            for (var pi = 0; pi < parts.length; pi++) {
-                var mapped = skillMap[parts[pi].trim()];
+            // v9p33river350: support both 'X or Y' (OR — any matches) AND
+            // 'X + Y' (AND — all must match). Previously only split on
+            // ' or ', so strings like 'Master Forger + Shadow Dealings'
+            // were treated as one impossible skill name and the UI
+            // showed a false lock warning for schemes the player
+            // actually had access to.
+            // Sub-clauses (comma-separated) are also treated as AND.
+            function _matchOne(token) {
+                token = token.trim();
+                if (!token) return true;
+                var mapped = skillMap[token];
                 if (mapped && Player.hasSkill(mapped)) return true;
-                if (Player.hasSkill(parts[pi].trim())) return true;
+                return Player.hasSkill(token);
             }
-            // Single skill
-            var single = skillMap[action.requires];
-            if (single) return Player.hasSkill(single);
-            return Player.hasSkill(action.requires);
+            // Strip parenthesized clarifications like "(both)" or
+            // "(citizenship in both kingdoms)" — they're not skills.
+            var cleaned = action.requires.replace(/\([^)]*\)/g, '').trim();
+            // Split on ' or ' first into OR groups, then each group on
+            // ' + ' (or ',') into AND tokens.
+            var orGroups = cleaned.split(/\s+or\s+/i);
+            for (var ogi = 0; ogi < orGroups.length; ogi++) {
+                var andTokens = orGroups[ogi].split(/\s*\+\s*|\s*,\s*/);
+                var allMatch = true;
+                for (var ati = 0; ati < andTokens.length; ati++) {
+                    if (!_matchOne(andTokens[ati])) { allMatch = false; break; }
+                }
+                if (allMatch) return true;
+            }
+            return false;
         }
         return true;
     }
