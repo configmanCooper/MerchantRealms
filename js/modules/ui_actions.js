@@ -1868,6 +1868,53 @@ function showPersonDetail(person) {
             </div>
         </div>`;
 
+        // ── v9p33river357: Unsolicited Quest section ──
+        // Player must be able to talk to the NPC to see quest controls.
+        try {
+            var _uqTalk = Player.canTalkTo ? Player.canTalkTo(person.id) : { canTalk: true };
+            if (_uqTalk && _uqTalk.canTalk) {
+                // Pending offer (popup may have been dismissed)
+                var _uqOffer = Player.unsolicitedOfferForNpc ? Player.unsolicitedOfferForNpc(person.id) : null;
+                if (_uqOffer) {
+                    html += '<div class="detail-section" style="border:1px solid #9b59b6;background:rgba(155,89,182,0.1);">';
+                    html += '<h3 style="color:#c39bd3;">📜 Quest Offer</h3>';
+                    html += '<div style="font-style:italic;color:#ccc;margin-bottom:6px;">"' + escapeHtml(_uqOffer.dialog) + '"</div>';
+                    html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;"><b>Objectives:</b></div><ul style="font-size:0.82em;margin:2px 0 6px 16px;padding:0;">';
+                    for (var _uqOi = 0; _uqOi < _uqOffer.objectives.length; _uqOi++) {
+                        html += '<li>' + escapeHtml(_uqOffer.objectives[_uqOi]) + '</li>';
+                    }
+                    html += '</ul>';
+                    var _uqRew = _uqOffer.rewards || {};
+                    var _uqRewParts = [];
+                    if (_uqRew.gold) _uqRewParts.push(_uqRew.gold + 'g');
+                    if (_uqRew.rel) _uqRewParts.push('+' + _uqRew.rel + ' relationship');
+                    if (_uqRew.unique) _uqRewParts.push('Special: ' + _uqRew.unique.type.replace(/_/g,' '));
+                    html += '<div style="font-size:0.82em;color:#d4af37;margin-bottom:4px;"><b>Reward:</b> ' + _uqRewParts.join(' • ') + '</div>';
+                    html += '<div style="font-size:0.78em;color:#999;margin-bottom:6px;">Time limit: ' + _uqOffer.timeLimitDays + ' days</div>';
+                    html += '<div style="display:flex;gap:6px;">';
+                    html += '<button class="btn-medieval" data-action="acceptUnsolicitedOffer" style="background:rgba(85,168,104,0.3);">Accept</button>';
+                    html += '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
+                    html += '</div></div>';
+                }
+                // Active quests in progress for this NPC
+                var _uqActive = Player.activeUnsolicitedQuestsForNpc ? Player.activeUnsolicitedQuestsForNpc(person.id) : [];
+                for (var _uqAi = 0; _uqAi < _uqActive.length; _uqAi++) {
+                    var _uqA = _uqActive[_uqAi];
+                    var _uqDeadline = _uqA.deadlineDay - (Engine.getDay ? Engine.getDay() : 0);
+                    html += '<div class="detail-section" style="border:1px solid #d4af37;background:rgba(212,175,55,0.07);">';
+                    html += '<h3 style="color:#d4af37;">⚒️ Active Quest</h3>';
+                    html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;"><b>Objectives:</b></div><ul style="font-size:0.82em;margin:2px 0 6px 16px;padding:0;">';
+                    for (var _uqOj = 0; _uqOj < _uqA.objectives.length; _uqOj++) {
+                        html += '<li>' + escapeHtml(_uqA.objectives[_uqOj]) + '</li>';
+                    }
+                    html += '</ul>';
+                    html += '<div style="font-size:0.78em;color:' + (_uqDeadline < 7 ? '#c85050' : '#999') + ';margin-bottom:6px;">Time remaining: ' + Math.max(0, _uqDeadline) + ' days</div>';
+                    html += '<button class="btn-medieval" data-action="attemptCompleteUnsolicitedQuest" data-id="' + _uqA.id + '" style="background:rgba(85,168,104,0.25);">Turn In Quest</button>';
+                    html += '</div>';
+                }
+            }
+        } catch (_uqe) { /* defensive */ }
+
         // ── Kingdom Quest Interactive Buttons (interview, ask, capture) ──
         if (isInSameTown) {
             var _kqInteractive = Player.state._kqInteractiveData || {};
@@ -4735,7 +4782,36 @@ function clickTown(townId) {
     UI.registerAction('trackMerchantPerson', function(_t, d) { Player.trackMerchant(d.id); UI.showPersonDetail(Engine.getPerson(d.id)); });
     UI.registerAction('showPersonLink', function(t, d) { UI.showPersonDetail(Engine.getPerson(d.id)); });
     UI.registerAction('treatCompanionUI', function(_t, d) { UI.treatCompanionUI(d.type, d.id, d.val); });
-    UI.registerAction('takeHorseFromWorker', function(_t, d) { var r = Player.takeHorseFromWorker(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) { try { var p = Engine.findPerson(d.id); if (p) UI.showPersonDetail(p); } catch(e) {} } });
+
+    // v9p33river357: Unsolicited Quest actions
+    UI.registerAction('acceptUnsolicitedOffer', function() {
+        var res = Player.acceptUnsolicitedOffer ? Player.acceptUnsolicitedOffer() : { success: false, message: 'Unavailable.' };
+        UI.toast(res.message || (res.success ? 'Accepted.' : 'Cannot accept.'), res.success ? 'success' : 'warning');
+        try {
+            var pid = (res.quest && res.quest.npcId) || (UI._selectedPersonId);
+            if (pid) UI.showPersonDetail(Engine.getPerson(pid));
+        } catch(e) {}
+        try { UI.closeModal && UI.closeModal(); } catch(e) {}
+    });
+    UI.registerAction('declineUnsolicitedOffer', function() {
+        var res = Player.declineUnsolicitedOffer ? Player.declineUnsolicitedOffer() : { success: false, message: 'Unavailable.' };
+        UI.toast(res.message || 'Declined.', 'info');
+        try {
+            var pid = UI._selectedPersonId;
+            if (pid) UI.showPersonDetail(Engine.getPerson(pid));
+        } catch(e) {}
+        try { UI.closeModal && UI.closeModal(); } catch(e) {}
+    });
+    UI.registerAction('attemptCompleteUnsolicitedQuest', function(_t, d) {
+        var res = Player.attemptCompleteUnsolicitedQuest ? Player.attemptCompleteUnsolicitedQuest(d.id) : { success: false, message: 'Unavailable.' };
+        UI.toast(res.message, res.success ? 'success' : 'warning');
+        try {
+            var pid = UI._selectedPersonId;
+            if (pid) UI.showPersonDetail(Engine.getPerson(pid));
+        } catch(e) {}
+    });
+
+    UI.registerAction('takeHorseFromWorker',function(_t, d) { var r = Player.takeHorseFromWorker(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) { try { var p = Engine.findPerson(d.id); if (p) UI.showPersonDetail(p); } catch(e) {} } });
     UI.registerAction('requestSignature', function(_t, d) { var r = Player.requestSignature(d.id, d.val); UI.toast(r.message, r.signed ? 'success' : 'warning'); try { var p = Engine.getPerson(d.val); if (p) UI.showPersonDetail(p); } catch(e) {} });
     UI.registerAction('interviewNpcForQuestUI', function(_t, d) {
         var r = Player.interviewNpcForQuest ? Player.interviewNpcForQuest(d.id, parseInt(d.val)) : { success: false, message: 'Interview not available.' };

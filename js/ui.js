@@ -1865,6 +1865,36 @@ window.UI = (function () {
         _modalDragState = null;
     });
 
+    // v9p33river357: Open the unsolicited-quest offer popup with
+    // NPC dialog + objectives + rewards + Accept/Decline buttons.
+    function openUnsolicitedQuestOffer(offer) {
+        if (!offer) return;
+        var npc = null;
+        try { npc = Engine.getPerson(offer.npcId); } catch(e) {}
+        var portrait = (npc && typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(npc) : '';
+        var html = '<div style="max-width:480px;padding:6px;">';
+        if (portrait) html += '<div style="text-align:center;font-size:2.4em;margin-bottom:4px;">' + portrait + '</div>';
+        html += '<div style="text-align:center;font-weight:bold;color:#d4af37;margin-bottom:6px;">' + escapeHtml(offer.npcName || 'A noble') + '</div>';
+        html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(155,89,182,0.10);border-left:3px solid #9b59b6;border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">"' + escapeHtml(offer.dialog) + '"</div>';
+        html += '<div style="font-weight:bold;color:#d4af37;margin-top:8px;">Objectives:</div><ul style="margin:4px 0 8px 18px;">';
+        for (var i = 0; i < (offer.objectives || []).length; i++) {
+            html += '<li>' + escapeHtml(offer.objectives[i]) + '</li>';
+        }
+        html += '</ul>';
+        var rew = offer.rewards || {};
+        var rewParts = [];
+        if (rew.gold) rewParts.push(rew.gold + ' gold');
+        if (rew.rel) rewParts.push('+' + rew.rel + ' relationship');
+        if (rew.unique) rewParts.push('Special reward: ' + String(rew.unique.type).replace(/_/g, ' '));
+        html += '<div style="font-weight:bold;color:#d4af37;margin-top:6px;">Reward:</div>';
+        html += '<div style="margin:2px 0 6px 6px;color:#eee;">' + (rewParts.join(' • ') || '—') + '</div>';
+        html += '<div style="color:#bbb;font-size:0.85em;margin-bottom:8px;">Time limit: ' + offer.timeLimitDays + ' days</div>';
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="acceptUnsolicitedOffer" style="background:rgba(85,168,104,0.3);margin-right:8px;">Accept Quest</button>' +
+                     '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
+        openModal('📜 ' + escapeHtml(offer.npcName) + ' approaches you', html, footer);
+    }
+
     function openModal(title, bodyHtml, footerHtml) {
         // Block opening non-encounter modals while encounter decision pending
         // v9p33river215: skip the funeral-lock while the player is in jail —
@@ -19496,6 +19526,7 @@ window.UI = (function () {
         showLoseScreen,
         closeModal,
         openModal,
+        openUnsolicitedQuestOffer,
         formatGold,
         escapeHtml,
         _clearBankruptcyLock: function() { _bankruptcyLock = false; },

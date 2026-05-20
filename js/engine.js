@@ -32011,6 +32011,31 @@
             if (Engine.tickNpcObservations && (!_rFF || _d % 9 === 0) && _d % 3 === 0) {
                 try { Engine.tickNpcObservations(); } catch (_eObs) { /* defensive */ }
             }
+
+            // v9p33river357: NPC food/water subsistence travel
+            // Towns with low food/water dispatch runners to passable
+            // connected neighbors with surplus. Every 2 days.
+            if (Engine.tickNpcSubsistence && _d % 2 === 0 && (!_rFF || _d % 6 === 0)) {
+                try { Engine.tickNpcSubsistence(); } catch (_eSub) { /* defensive */ }
+            }
+            // v9p33river357: process EM supply chain arrivals daily +
+            // scout for shortages on a per-EM cadence.
+            if (Engine.tickEmSupplyArrivals) {
+                try { Engine.tickEmSupplyArrivals(); } catch (_eEm) { /* defensive */ }
+            }
+            if (Engine.tickEmSupplyChain && (!_rFF || _d % 14 === 0)) {
+                try { Engine.tickEmSupplyChain(); } catch (_eEm2) { /* defensive */ }
+            }
+
+            // v9p33river357: unsolicited quest daily roll + expire active.
+            if (typeof Player !== 'undefined') {
+                if (Player.tickActiveUnsolicitedQuests) {
+                    try { Player.tickActiveUnsolicitedQuests(); } catch (_eUq) { /* defensive */ }
+                }
+                if (Player.tryGenerateDailyUnsolicitedOffer && !_rFF) {
+                    try { Player.tryGenerateDailyUnsolicitedOffer(); } catch (_eUq2) { /* defensive */ }
+                }
+            }
             if (!_rFF || _d % 7 === 0) Engine.tickEliteMerchantOutposts();
             if (!_rFF || _d % 3 === 0) tickWorkerEconomy();
             if (!_rFF || _d % 5 === 0) tickTravelDemand();

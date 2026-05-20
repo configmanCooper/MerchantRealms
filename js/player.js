@@ -19287,6 +19287,14 @@
             // events or reset per-NPC question 7-day cooldowns.
             _observerLastSnapshot: player._observerLastSnapshot ? structuredClone(player._observerLastSnapshot) : null,
             _npcQuestionCooldowns: structuredClone(player._npcQuestionCooldowns || {}),
+            // v9p33river357: unsolicited quest state.
+            _pendingUnsolicitedOffer: player._pendingUnsolicitedOffer ? structuredClone(player._pendingUnsolicitedOffer) : null,
+            _activeUnsolicitedQuests: structuredClone(player._activeUnsolicitedQuests || []),
+            _unsolicitedNpcCooldowns: structuredClone(player._unsolicitedNpcCooldowns || {}),
+            _lastUnsolicitedOfferDay: player._lastUnsolicitedOfferDay || 0,
+            _lastUnsolicitedSeenTownId: player._lastUnsolicitedSeenTownId || null,
+            _nextUnsolicitedQuestId: player._nextUnsolicitedQuestId || 1,
+            _guaranteedProposals: structuredClone(player._guaranteedProposals || {}),
             militaryRankProgress: player.militaryRankProgress || 0,
             militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
             _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
@@ -19887,6 +19895,14 @@
         // v9p33river356: restore NPC observation snapshot and Q&A cooldowns.
         player._observerLastSnapshot = data._observerLastSnapshot || null;
         player._npcQuestionCooldowns = data._npcQuestionCooldowns || {};
+        // v9p33river357: restore unsolicited quest state.
+        player._pendingUnsolicitedOffer = data._pendingUnsolicitedOffer || null;
+        player._activeUnsolicitedQuests = data._activeUnsolicitedQuests || [];
+        player._unsolicitedNpcCooldowns = data._unsolicitedNpcCooldowns || {};
+        player._lastUnsolicitedOfferDay = data._lastUnsolicitedOfferDay || 0;
+        player._lastUnsolicitedSeenTownId = data._lastUnsolicitedSeenTownId || null;
+        player._nextUnsolicitedQuestId = data._nextUnsolicitedQuestId || 1;
+        player._guaranteedProposals = data._guaranteedProposals || {};
         player.militaryRankProgress = data.militaryRankProgress || 0;
         player.militaryPendingEvent = data.militaryPendingEvent || null;
         player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;
