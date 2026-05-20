@@ -19271,6 +19271,17 @@
             _streetGoodsRequestDay: player._streetGoodsRequestDay || 0,
             _outpostRecruitCooldowns: structuredClone(player._outpostRecruitCooldowns || {}),
             _doctorPersuasionCooldown: player._doctorPersuasionCooldown || 0,
+            // v9p33river353: noble/court session state that was previously
+            // dropped on save — pending street offer, feast invitations,
+            // player king-loyalty fields, and the three court action
+            // cooldowns (flatter, whisper, boost).
+            _streetGoodsOffer: player._streetGoodsOffer ? structuredClone(player._streetGoodsOffer) : null,
+            _feastInvitations: structuredClone(player._feastInvitations || []),
+            kingLoyalty: (player.kingLoyalty != null) ? player.kingLoyalty : null,
+            perceivedKingLoyalty: (player.perceivedKingLoyalty != null) ? player.perceivedKingLoyalty : null,
+            _flatterCooldown: player._flatterCooldown || 0,
+            _whisperCooldowns: structuredClone(player._whisperCooldowns || {}),
+            _boostCooldowns: structuredClone(player._boostCooldowns || {}),
             militaryRankProgress: player.militaryRankProgress || 0,
             militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
             _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
@@ -19859,6 +19870,15 @@
         // v9p33river352: restore previously-missing per-action cooldowns.
         player._streetGoodsRequestDay = data._streetGoodsRequestDay || 0;
         player._outpostRecruitCooldowns = data._outpostRecruitCooldowns || {};
+        // v9p33river353: restore noble/court state — pending street offer,
+        // feast invites, player king-loyalty fields, court cooldowns.
+        player._streetGoodsOffer = data._streetGoodsOffer || null;
+        player._feastInvitations = data._feastInvitations || [];
+        if (data.kingLoyalty != null) player.kingLoyalty = data.kingLoyalty;
+        if (data.perceivedKingLoyalty != null) player.perceivedKingLoyalty = data.perceivedKingLoyalty;
+        player._flatterCooldown = data._flatterCooldown || 0;
+        player._whisperCooldowns = data._whisperCooldowns || {};
+        player._boostCooldowns = data._boostCooldowns || {};
         player.militaryRankProgress = data.militaryRankProgress || 0;
         player.militaryPendingEvent = data.militaryPendingEvent || null;
         player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;
