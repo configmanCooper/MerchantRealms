@@ -2573,6 +2573,44 @@
             }
         }
 
+        // v9p33river360: Secrets — keep secret (for NPCs whose secrets we know)
+        if (Player.hasSecretsFor && Player.hasSecretsFor(personId) && relLevel >= 30) {
+            interactions.push({
+                id: 'keep_secret',
+                name: 'Keep Secret',
+                icon: '🤫',
+                description: 'Promise to keep one of ' + (person.firstName || 'their') + '\'s secrets',
+                cost: 0,
+                gain: 4,
+                rating: 'good',
+                showRating: false,
+                available: !atLimit,
+                atCooldownLimit: atLimit,
+                dateProgress: 5,
+                timeHours: 1,
+                isSecret: true
+            });
+        }
+
+        // v9p33river360: Secrets — share secret (with any NPC, from any source)
+        if (Player.hasAnySecrets && Player.hasAnySecrets() && relLevel >= 10) {
+            interactions.push({
+                id: 'share_secret',
+                name: 'Share a Secret',
+                icon: '🗣️',
+                description: 'Tell ' + (person.firstName || 'them') + ' someone else\'s secret',
+                cost: 0,
+                gain: 8,
+                rating: 'great',
+                showRating: false,
+                available: !atLimit,
+                atCooldownLimit: atLimit,
+                dateProgress: 10,
+                timeHours: 1,
+                isSecret: true
+            });
+        }
+
         return interactions;
     }
 
@@ -3019,6 +3057,14 @@
             if (interactionId === 'fulfill_noble_favor') {
                 return Player.fulfillNobleFavor ? Player.fulfillNobleFavor(personId) : { success: false, message: 'Favor system unavailable.' };
             }
+            // v9p33river360: secrets — these are intercepted by UI for
+            // sub-modal selection, but we handle fallback here
+            if (interactionId === 'keep_secret') {
+                return { success: true, message: 'Select a secret to keep.', isSecretSelection: true, secretType: 'keep', personId: personId };
+            }
+            if (interactionId === 'share_secret') {
+                return { success: true, message: 'Select a secret to share.', isSecretSelection: true, secretType: 'share', personId: personId };
+            }
             return { success: false, message: 'Unknown interaction.' };
         }
 
@@ -3129,7 +3175,19 @@
             var _memSent = gain >= 1 ? 'positive' : (gain <= -1 ? 'negative' : 'neutral');
             recordNpcMemory(person, 'interaction', interaction.name, { sentiment: _memSent });
         } catch (_eMem) { /* defensive */ }
-        return { success: true, message: msg, gain: gain, interactionId: interactionId };
+
+        // v9p33river360: secret discovery roll after each interaction
+        var _secretMsg = null;
+        try {
+            if (Player.maybeDiscoverSecret) {
+                _secretMsg = Player.maybeDiscoverSecret(personId);
+            }
+        } catch (_eSec) { /* defensive */ }
+        if (_secretMsg) {
+            msg += '\n\n🤫 ' + _secretMsg;
+        }
+
+        return { success: true, message: msg, gain: gain, interactionId: interactionId, secretDiscovered: !!_secretMsg };
     }
 
     // ── Special Interaction Handlers ─────────────────────────

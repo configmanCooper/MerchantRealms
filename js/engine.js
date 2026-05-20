@@ -32048,6 +32048,10 @@
                 if (Player.maybeParanoidSpouseCheck && _d % 14 === 0) {
                     try { Player.maybeParanoidSpouseCheck(); } catch (_ePs) { /* defensive */ }
                 }
+                // v9p33river360: unsolicited favors daily tick
+                if (Player.tickUnsolicitedFavors && !_rFF) {
+                    try { Player.tickUnsolicitedFavors(); } catch (_eUf) { /* defensive */ }
+                }
             }
             if (!_rFF || _d % 7 === 0) Engine.tickEliteMerchantOutposts();
             if (!_rFF || _d % 3 === 0) tickWorkerEconomy();

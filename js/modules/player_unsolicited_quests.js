@@ -590,7 +590,8 @@
             player._pendingUnsolicitedOffer = null;
         }
         if (player._pendingUnsolicitedOffer) return false;
-        if (player._lastUnsolicitedOfferDay && player._lastUnsolicitedOfferDay === day) return false;
+        // v9p33river360: 7-day global cooldown between unsolicited offers
+        if (player._lastUnsolicitedOfferDay && (day - player._lastUnsolicitedOfferDay) < 7) return false;
         if ((player._activeUnsolicitedQuests || []).length >= MAX_ACTIVE) return false;
         if (!player.townId || player.traveling) return false;
         if (player.jailedUntilDay && player.jailedUntilDay > day) return false;

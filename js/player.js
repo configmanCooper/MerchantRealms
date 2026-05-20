@@ -19322,6 +19322,12 @@
             _npcGossipCooldowns: structuredClone(player._npcGossipCooldowns || {}),
             _npcJobCooldowns: structuredClone(player._npcJobCooldowns || {}),
             _nobleFavorRequests: structuredClone(player._nobleFavorRequests || {}),
+            // v9p33river360: secrets + unsolicited favors
+            _knownSecrets: structuredClone(player._knownSecrets || []),
+            _secretCooldowns: structuredClone(player._secretCooldowns || {}),
+            _keptSecretIds: structuredClone(player._keptSecretIds || []),
+            _lastUnsolicitedFavorDay: player._lastUnsolicitedFavorDay || 0,
+            _favorHistory: structuredClone(player._favorHistory || []),
             _nobleVoteSupport: structuredClone(player._nobleVoteSupport || {}),
             _territoryProtection: structuredClone(player._territoryProtection || {}),
             _relationshipTiers: structuredClone(player._relationshipTiers || {}),
@@ -19953,6 +19959,13 @@
         player._npcGossipCooldowns = data._npcGossipCooldowns || {};
         player._npcJobCooldowns = data._npcJobCooldowns || {};
         player._nobleFavorRequests = data._nobleFavorRequests || {};
+        // v9p33river360: secrets + unsolicited favors
+        player._knownSecrets = data._knownSecrets || [];
+        player._secretCooldowns = data._secretCooldowns || {};
+        player._keptSecretIds = data._keptSecretIds || [];
+        player._lastUnsolicitedFavorDay = data._lastUnsolicitedFavorDay || 0;
+        player._favorHistory = data._favorHistory || [];
+        player._lastFavorInfo = null; // transient
         player._nobleVoteSupport = data._nobleVoteSupport || {};
         player._territoryProtection = data._territoryProtection || {};
         player._relationshipTiers = data._relationshipTiers || {};

@@ -1896,6 +1896,175 @@ window.UI = (function () {
     }
 
     // v9p33river358: Spouse confrontation popup
+    // ── v9p33river360: Keep Secret sub-UI ──────────────────
+    function _openKeepSecretUI(personId) {
+        if (!Player.getSecretsForNPC) { toast('Secrets system unavailable.', 'error'); return; }
+        var secrets = Player.getSecretsForNPC(personId);
+        if (!secrets || !secrets.length) { toast('No secrets known about this person.', 'warning'); return; }
+        var person = null;
+        try { person = Engine.getPerson(personId); } catch(e) {}
+        var pName = person ? person.firstName : 'this person';
+
+        var html = '<div style="max-width:480px;padding:6px;">';
+        html += '<div style="text-align:center;font-size:1.5em;margin-bottom:4px;">🤫</div>';
+        html += '<div style="text-align:center;color:#d4af37;margin-bottom:8px;">Secrets you know about <strong>' + escapeHtml(pName) + '</strong></div>';
+        html += '<div style="font-size:0.8em;color:#aaa;margin-bottom:10px;">Promise to keep a secret to strengthen your bond.</div>';
+        for (var i = 0; i < secrets.length; i++) {
+            var s = secrets[i].secret;
+            var idx = secrets[i].index;
+            var keptClass = s.kept ? 'opacity:0.5;' : '';
+            var keptLabel = s.kept ? ' <span style="color:#55a868;font-size:0.8em;">(Kept ✓)</span>' : '';
+            var typeColor = s.type === 'criminal' ? '#c85050' : s.type === 'conspiracy' ? '#9b59b6' : s.type === 'financial' ? '#d4af37' : s.type === 'political' ? '#5dade2' : '#aaa';
+            html += '<div style="' + keptClass + 'margin-bottom:8px;padding:8px 10px;background:rgba(0,0,0,0.3);border:1px solid #444;border-radius:6px;border-left:3px solid ' + typeColor + ';">';
+            html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;">' + escapeHtml(s.text) + keptLabel + '</div>';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="font-size:0.7em;color:' + typeColor + ';text-transform:uppercase;">' + escapeHtml(s.type) + '</span>';
+            if (!s.kept) {
+                html += '<button class="btn-medieval btn-keep-secret" data-secret-idx="' + idx + '" data-person-id="' + personId + '" style="font-size:0.75em;padding:3px 10px;">🤝 Keep Secret (+' + s.keepRel + ' rel)</button>';
+            }
+            html += '</div></div>';
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="closeModal">Close</button>';
+        openModal('🤫 Keep a Secret', html, footer);
+
+        // Bind click handlers for keep buttons
+        setTimeout(function() {
+            var keepBtns = document.querySelectorAll('.btn-keep-secret');
+            for (var kb = 0; kb < keepBtns.length; kb++) {
+                keepBtns[kb].addEventListener('click', function() {
+                    var sIdx = parseInt(this.getAttribute('data-secret-idx'), 10);
+                    var pId = this.getAttribute('data-person-id');
+                    var result = Player.keepSecret(pId, sIdx);
+                    if (result && result.success) {
+                        toast('+' + (result.gain || 4) + ' relationship', 'success');
+                        closeModal();
+                        // Re-open the talk modal to show the response
+                        var dlgEl = document.getElementById('npcInteractionDialog');
+                        if (dlgEl) {
+                            dlgEl.innerHTML = '<div style="padding:8px 12px;background:rgba(80,150,80,0.10);border-left:3px solid #55a868;border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">' + escapeHtml(result.message) + '</div>';
+                        }
+                    } else {
+                        toast((result && result.message) || 'Could not keep secret.', 'warning');
+                    }
+                });
+            }
+        }, 50);
+    }
+
+    // ── v9p33river360: Share Secret sub-UI ─────────────────
+    function _openShareSecretUI(listenerPersonId) {
+        if (!Player.getAllKnownSecrets) { toast('Secrets system unavailable.', 'error'); return; }
+        var allSecrets = Player.getAllKnownSecrets();
+        if (!allSecrets || !allSecrets.length) { toast('You have no secrets to share.', 'warning'); return; }
+        // Filter out secrets owned by the listener
+        var shareable = [];
+        for (var i = 0; i < allSecrets.length; i++) {
+            if (allSecrets[i].secret.npcId !== listenerPersonId) {
+                shareable.push(allSecrets[i]);
+            }
+        }
+        if (!shareable.length) { toast('No secrets to share with this person.', 'warning'); return; }
+
+        var listener = null;
+        try { listener = Engine.getPerson(listenerPersonId); } catch(e) {}
+        var lName = listener ? listener.firstName : 'this person';
+
+        var html = '<div style="max-width:500px;padding:6px;">';
+        html += '<div style="text-align:center;font-size:1.5em;margin-bottom:4px;">🗣️</div>';
+        html += '<div style="text-align:center;color:#d4af37;margin-bottom:8px;">Share a secret with <strong>' + escapeHtml(lName) + '</strong></div>';
+        html += '<div style="font-size:0.8em;color:#aaa;margin-bottom:10px;">Sharing gains trust with the listener but betrays the secret owner.</div>';
+
+        // Group by NPC
+        var grouped = {};
+        for (var gi = 0; gi < shareable.length; gi++) {
+            var s = shareable[gi].secret;
+            var key = s.npcId;
+            if (!grouped[key]) grouped[key] = { name: s.npcName || 'Unknown', secrets: [] };
+            grouped[key].secrets.push(shareable[gi]);
+        }
+
+        for (var npcId in grouped) {
+            var group = grouped[npcId];
+            html += '<div style="margin-bottom:6px;font-weight:bold;color:#d4af37;font-size:0.85em;">📋 Secrets of ' + escapeHtml(group.name) + '</div>';
+            for (var si = 0; si < group.secrets.length; si++) {
+                var sec = group.secrets[si].secret;
+                var sidx = group.secrets[si].index;
+                var sharedTag = sec.shared ? ' <span style="color:#c85050;font-size:0.75em;">(Already shared)</span>' : '';
+                var typeColor = sec.type === 'criminal' ? '#c85050' : sec.type === 'conspiracy' ? '#9b59b6' : sec.type === 'financial' ? '#d4af37' : sec.type === 'political' ? '#5dade2' : '#aaa';
+                var catIcon = sec.category === 'king' ? '👑' : sec.category === 'noble' ? '🏰' : sec.category === 'elite_merchant' ? '💰' : '👤';
+                html += '<div style="margin-bottom:6px;padding:8px 10px;background:rgba(0,0,0,0.3);border:1px solid #444;border-radius:6px;border-left:3px solid ' + typeColor + ';">';
+                html += '<div style="font-size:0.82em;color:#ddd;margin-bottom:4px;">' + catIcon + ' ' + escapeHtml(sec.text) + sharedTag + '</div>';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                html += '<span style="font-size:0.7em;color:' + typeColor + ';text-transform:uppercase;">' + escapeHtml(sec.type) + (sec.uniqueEffect ? ' ⚡' : '') + '</span>';
+                if (sec.shared) {
+                    html += '<span style="font-size:0.75em;padding:3px 10px;color:#888;">Already shared</span>';
+                } else {
+                    html += '<button class="btn-medieval btn-share-secret" data-secret-idx="' + sidx + '" data-listener-id="' + listenerPersonId + '" style="font-size:0.75em;padding:3px 10px;">🗣️ Share (+' + sec.shareL + ' / ' + sec.shareO + ')</button>';
+                }
+                html += '</div></div>';
+            }
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="closeModal">Cancel</button>';
+        openModal('🗣️ Share a Secret', html, footer);
+
+        // Bind click handlers
+        setTimeout(function() {
+            var shareBtns = document.querySelectorAll('.btn-share-secret');
+            for (var sb = 0; sb < shareBtns.length; sb++) {
+                shareBtns[sb].addEventListener('click', function() {
+                    var sIdx = parseInt(this.getAttribute('data-secret-idx'), 10);
+                    var lId = this.getAttribute('data-listener-id');
+                    var result = Player.shareSecret(lId, sIdx);
+                    if (result && result.success) {
+                        toast(result.message, 'success');
+                        closeModal();
+                        var dlgEl = document.getElementById('npcInteractionDialog');
+                        if (dlgEl) {
+                            var cHtml = '<div style="padding:8px 12px;background:rgba(100,80,150,0.10);border-left:3px solid #9b59b6;border-radius:0 6px 6px 0;color:#ddd;">';
+                            cHtml += '<div style="font-style:italic;margin-bottom:6px;">"Well, well... that is very interesting indeed."</div>';
+                            if (result.consequences) {
+                                for (var c = 0; c < result.consequences.length; c++) {
+                                    cHtml += '<div style="font-size:0.85em;color:#ccc;">• ' + escapeHtml(result.consequences[c]) + '</div>';
+                                }
+                            }
+                            cHtml += '</div>';
+                            dlgEl.innerHTML = cHtml;
+                        }
+                        // Refresh rel badge
+                        var badge = document.getElementById('npcInteractionRelBadge');
+                        var lPerson = null;
+                        try { lPerson = Engine.getPerson(lId); } catch(e) {}
+                        if (badge && lPerson) badge.innerHTML = _renderRelTierBadge(lPerson.id);
+                    } else {
+                        toast((result && result.message) || 'Could not share secret.', 'warning');
+                    }
+                });
+            }
+        }, 50);
+    }
+
+    // ── v9p33river360: Favor popup ─────────────────────────
+    function openFavorPopup(info) {
+        if (!info) return;
+        var html = '<div style="max-width:420px;padding:6px;">';
+        html += '<div style="text-align:center;font-size:2em;margin-bottom:4px;">🎁</div>';
+        html += '<div style="text-align:center;font-weight:bold;color:#55a868;margin-bottom:8px;">' + escapeHtml(info.npcName || 'Someone') + ' did you a favor!</div>';
+        html += '<div style="padding:10px 12px;margin-bottom:8px;background:rgba(80,200,80,0.08);border-left:3px solid #55a868;border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">' + escapeHtml(info.text || '') + '</div>';
+        if (info.effects && info.effects.length > 0) {
+            html += '<div style="margin-top:6px;font-weight:bold;color:#d4af37;font-size:0.85em;">Effects:</div>';
+            html += '<ul style="margin:4px 0 8px 18px;color:#eee;font-size:0.85em;">';
+            for (var i = 0; i < info.effects.length; i++) {
+                html += '<li>' + escapeHtml(info.effects[i]) + '</li>';
+            }
+            html += '</ul>';
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="closeModal">Thank you!</button>';
+        openModal('🎁 A Kind Gesture', html, footer);
+    }
+
     function openSpouseConfrontation(info) {
         if (!info) return;
         var html = '<div style="max-width:480px;padding:6px;">';
@@ -5450,6 +5619,17 @@ window.UI = (function () {
                 var pid = this.getAttribute('data-person');
                 var iid = this.getAttribute('data-interaction');
                 if (!pid || !iid) return;
+
+                // v9p33river360: intercept secret interactions for sub-modal
+                if (iid === 'keep_secret') {
+                    _openKeepSecretUI(pid);
+                    return;
+                }
+                if (iid === 'share_secret') {
+                    _openShareSecretUI(pid);
+                    return;
+                }
+
                 var result = Player.interactWithNPC(pid, iid);
                 if (result && result.success) {
                     window._tutorialSocialInteracted = true;
@@ -19552,6 +19732,7 @@ window.UI = (function () {
         closeModal,
         openModal,
         openSpouseConfrontation,
+        openFavorPopup,
         openUnsolicitedQuestOffer,
         formatGold,
         escapeHtml,
