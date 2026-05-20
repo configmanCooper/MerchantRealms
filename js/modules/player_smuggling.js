@@ -107,7 +107,7 @@
 
             // But check untouchable skill
             if (hasSkill('untouchable') && rng.chance(0.25)) {
-                Engine.logEvent(`${player.fullName} was almost caught smuggling, but charges were dropped!`);
+                Engine.logEvent(`${player.fullName} was almost caught smuggling, but charges were dropped!`, null, 'my_actions');
                 // Still sell at normal price
                 const normalRevenue = Math.floor(basePrice * qty);
                 player.gold += normalRevenue;

@@ -758,7 +758,7 @@
         if (!Player.state.primaryHouseId) Player.state.primaryHouseId = house.id;
 
         toast('🏢 Apartment purchased for ' + price + 'g! Weekly maintenance: ' + (aptBld.weeklyFee || aptBld.monthlyFee || 0) + 'g.', 'success');
-        Engine.logEvent('🏢 ' + Player.state.fullName + ' bought an apartment in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.');
+        Engine.logEvent('🏢 ' + Player.state.fullName + ' bought an apartment in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.', null, 'my_business');
         if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) StoryMode.onPlayerAction('own_building', { building: 'housing' });
         openTownMarket(); // Refresh
     }
@@ -811,7 +811,7 @@
         Player.state._tentIndex = slot.tentIndex;
         if (!Player.state.primaryHouseId) Player.state.primaryHouseId = tentHouseId;
         toast('⛺ You rented a tent for ' + upfront + 'g. Monthly rent: ' + (tcBld.tentMonthlyCost || 5) + 'g.', 'success');
-        Engine.logEvent('⛺ ' + Player.state.fullName + ' rented a tent in ' + town.name + '.');
+        Engine.logEvent('⛺ ' + Player.state.fullName + ' rented a tent in ' + town.name + '.', null, 'my_business');
         openTownMarket(); // Refresh
     }
 

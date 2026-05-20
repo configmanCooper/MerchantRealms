@@ -206,7 +206,7 @@
         // 50% chance to receive the notification
         if (world.rng && world.rng.random() > 0.50) return;
         var fullMsg = '⭐ ' + (em.firstName || 'Unknown') + ' ' + (em.lastName || '') + ': ' + message;
-        logEvent(fullMsg, Object.assign({ category: 'tracked', emId: em.id }, details || {}));
+        logEvent(fullMsg,  Object.assign({ category: 'tracked', emId: em.id }, details || {}), 'npc_activity');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(fullMsg, 'info', 'tracked');
         }
@@ -280,7 +280,7 @@
                             createEliteMerchantFromNPC(promoted);
                             world.eliteMerchants.push(promoted);
                             activeEmCount++;
-                            logEvent('🌟 ' + (promoted.firstName || '') + ' ' + (promoted.lastName || '') + ' of ' + (candidateTown.name || 'unknown') + ' has risen to become a renowned elite merchant! Their shrewd trading and growing wealth earned them a place among the elite.', { 
+                            logEvent('🌟 ' + (promoted.firstName || '') + ' ' + (promoted.lastName || '') + ' of ' + (candidateTown.name || 'unknown') + ' has risen to become a renowned elite merchant! Their shrewd trading and growing wealth earned them a place among the elite.',  { 
                                 type: 'elite_promotion',
                                 townId: promoted.townId, 
                                 category: 'npc_activity',
@@ -290,7 +290,8 @@
                                     (promoted.firstName || '') + ' gains access to elite trade networks',
                                     'Competition among elite merchants intensifies'
                                 ]
-                            });
+                            ,
+                            _noToast: true}, 'npc_activity');
                             // B: Allow a second promotion per check if still below target
                             if (candidates.length > 1 && activeEmCount < emTarget && world.rng.random() < 0.30) {
                                 var promoted2 = candidates[1];
@@ -298,9 +299,10 @@
                                 world.eliteMerchants.push(promoted2);
                                 activeEmCount++;
                                 var _p2Town = findTown(promoted2.townId);
-                                logEvent('🌟 ' + (promoted2.firstName || '') + ' ' + (promoted2.lastName || '') + ' of ' + (_p2Town ? _p2Town.name : 'unknown') + ' has also risen to elite merchant status!', { 
+                                logEvent('🌟 ' + (promoted2.firstName || '') + ' ' + (promoted2.lastName || '') + ' of ' + (_p2Town ? _p2Town.name : 'unknown') + ' has also risen to elite merchant status!',  { 
                                     type: 'elite_promotion', townId: promoted2.townId, category: 'npc_activity'
-                                });
+                                ,
+                                _noToast: true}, 'npc_activity');
                             }
                         }
                     }
@@ -323,10 +325,11 @@
                             createEliteMerchantFromNPC(_boomEM);
                             world.eliteMerchants.push(_boomEM);
                             activeEmCount++;
-                            logEvent('🌟 The thriving economy of ' + _tt.name + ' has produced a new elite merchant: ' + (_boomEM.firstName || '') + ' ' + (_boomEM.lastName || '') + '!', { 
+                            logEvent('🌟 The thriving economy of ' + _tt.name + ' has produced a new elite merchant: ' + (_boomEM.firstName || '') + ' ' + (_boomEM.lastName || '') + '!',  { 
                                 type: 'elite_promotion', townId: _boomEM.townId, category: 'npc_activity',
                                 cause: 'Economic boom in ' + _tt.name + ' (prosperity ' + Math.round(_tt.prosperity) + ')'
-                            });
+                            ,
+                            _noToast: true}, 'npc_activity');
                         }
                     }
                 }
@@ -342,7 +345,7 @@
                     var fb = fallbackCandidates[0];
                     createEliteMerchantFromNPC(fb);
                     world.eliteMerchants.push(fb);
-                    logEvent('🎯 ' + (fb.firstName || '') + ' ' + (fb.lastName || '') + ' has risen to fill the ranks of elite merchants.', { townId: fb.townId, category: 'npc_activity' });
+                    logEvent('🎯 ' + (fb.firstName || '') + ' ' + (fb.lastName || '') + ' has risen to fill the ranks of elite merchants.',  { townId: fb.townId, category: 'npc_activity' , _noToast: true}, 'npc_activity');
                 } else {
                     var newFb = generateFreshEliteMerchant();
                     if (newFb) world.eliteMerchants.push(newFb);
@@ -378,7 +381,7 @@
                     if (_curDemRank < 3) em.socialRank[_emDemKid] = 3;
                 }
                 world.eliteMerchants.splice(bi, 1);
-                logEvent('📉 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' has lost their elite merchant status due to bankruptcy.', { townId: em.townId, category: 'npc_activity' });
+                logEvent('📉 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' has lost their elite merchant status due to bankruptcy.',  { townId: em.townId, category: 'npc_activity' , _noToast: true}, 'npc_activity');
             }
         }
     }
@@ -806,7 +809,7 @@
             var _spPerLvl = (typeof SKILL_POINTS_PER_LEVEL !== 'undefined') ? SKILL_POINTS_PER_LEVEL : 4;
             em.emSkillPoints = (em.emSkillPoints || 0) + levelsGained * _spPerLvl;
             em.emLevel = newLevel;
-            logEvent(em.name + ' has reached merchant level ' + newLevel + '!', {
+            logEvent(em.name + ' has reached merchant level ' + newLevel + '!',  {
                 type: 'elite_level_up',
                 townId: em.townId,
                 cause: em.name + ' gained enough experience to level up.',
@@ -814,7 +817,8 @@
                 // which doesn't exist (top-level const), producing NaN in
                 // the toast text. Use the _spPerLvl resolved above.
                 effects: [em.name + ' is now level ' + newLevel, 'Gained ' + (levelsGained * _spPerLvl) + ' skill points']
-            });
+            ,
+            _noToast: true}, 'npc_activity');
         }
     }
 
@@ -1679,7 +1683,7 @@
                     }
                 }
                 // Demote: strip elite merchant status
-                logEvent('💸 ' + em.firstName + ' ' + (em.lastName || '') + ' goes bankrupt and is demoted from Elite Merchant status!', {
+                logEvent('💸 ' + em.firstName + ' ' + (em.lastName || '') + ' goes bankrupt and is demoted from Elite Merchant status!',  {
                     type: 'elite_bankruptcy',
                     cause: em.firstName + ' was below 1000g for 30+ days.',
                     effects: [
@@ -1687,7 +1691,8 @@
                         'All buildings sold to the kingdom',
                         em.firstName + ' becomes a common NPC'
                     ]
-                });
+                ,
+                _noToast: true}, 'npc_activity');
                 em.isEliteMerchant = false;
                 // Nobles keep their noble occupation even when losing EM status
                 if (em.occupation !== 'noble') em.occupation = 'laborer';
@@ -1894,7 +1899,7 @@
                         em._transports[_tier.id] = (em._transports[_tier.id] || 0) + 1;
                         em._wagons = (em._wagons || 0) + 1;
                         _wagonBought = true;
-                        logEvent(em.firstName + ' acquired a ' + _tier.name + ' for ' + Math.round(_tPrice) + 'g — caravan capacity boosted.', {
+                        logEvent(em.firstName + ' acquired a ' + _tier.name + ' for ' + Math.round(_tPrice) + 'g — caravan capacity boosted.',  {
                             type: 'elite_logistics',
                             cause: em.firstName + ' invested in better transport.',
                             effects: ['Caravan capacity +' + (
@@ -1902,7 +1907,8 @@
                                 _tier.id === 'wagon' ? 100 :
                                 _tier.id === 'small_wagon' ? 70 :
                                 _tier.id === 'cart' ? 40 : 15)]
-                        });
+                        ,
+                        _noToast: true}, 'npc_activity');
                     }
                     // If no transport available and EM is wealthy, consider building a wheelwright
                     if (!_wagonBought && (em._lastWagonCheck || 0) + 60 < day && (em.gold || 0) > 1500) {
@@ -1928,11 +1934,12 @@
                                             town.buildings.push(_wwBld);
                                             if (!em.buildings) em.buildings = [];
                                             em.buildings.push({ type: 'wheelwright', townId: town.id, level: 1 });
-                                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' builds a Wheelwright to produce wagons for caravans.', {
+                                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' builds a Wheelwright to produce wagons for caravans.',  {
                                                 type: 'elite_supply_chain',
                                                 cause: em.firstName + ' invests in wagon production for trade logistics.',
                                                 effects: ['New Wheelwright produces wagons', em.firstName + ' invested ' + _wwBt.cost + 'g']
-                                            });
+                                            ,
+                                            _noToast: true}, 'npc_activity');
                                         }
                                     }
                                 }
@@ -2895,7 +2902,7 @@
         em.buildings.push({ type: bType, townId: buildTown.id, level: 1 });
         var subsidyNote = subsidyDiscount > 0 ? ' (with ' + Math.round(subsidyDiscount * 100) + '% land subsidy)' : '';
         var holidayNote = hasTaxHoliday ? ' Tax holiday active.' : '';
-        logEvent(em.firstName + ' ' + (em.lastName || '') + ' built a ' + bt.name + ' in ' + buildTown.name + '. (materials: ' + (+materialCost).toFixed(2) + 'g, labor: ' + (+laborCost).toFixed(2) + 'g)' + subsidyNote, {
+        logEvent(em.firstName + ' ' + (em.lastName || '') + ' built a ' + bt.name + ' in ' + buildTown.name + '. (materials: ' + (+materialCost).toFixed(2) + 'g, labor: ' + (+laborCost).toFixed(2) + 'g)' + subsidyNote,  {
             type: 'elite_construction',
             townId: buildTown.id,
             cause: em.firstName + ' ' + (em.lastName || '') + ' invested in ' + buildTown.name + '\'s economy.' + holidayNote,
@@ -2904,7 +2911,8 @@
                 em.firstName + ' spent ' + effectiveCost + 'g on construction' + subsidyNote,
                 'Town economy should improve over time'
             ]
-        });
+        ,
+        _noToast: true}, 'npc_activity');
         grantEmXp(em, 10, 'build');
     }
 
@@ -3079,11 +3087,12 @@
                 ugBld.level = ugLevel + 1;
                 ugRef.level = ugLevel + 1;
                 ugBld.maxWorkers = (ugBt.maxWorkers || 2) + ugLevel;
-                logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades ' + ugBt.name + ' to level ' + (ugLevel + 1) + ' in ' + (ugTown.name || 'town') + '.', {
+                logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades ' + ugBt.name + ' to level ' + (ugLevel + 1) + ' in ' + (ugTown.name || 'town') + '.',  {
                     type: 'elite_building_upgrade',
                     cause: em.firstName + ' invests in expanding profitable operations.',
                     effects: [ugBt.name + ' upgraded to level ' + (ugLevel + 1), 'Invested ' + upgradeCost + 'g in the upgrade', 'Increased production capacity and worker slots']
-                });
+                ,
+                _noToast: true}, 'npc_activity');
                 break;
             }
         }
@@ -3118,11 +3127,12 @@
                         _apBld.level = _apLvl + 1;
                         _apRef.level = _apLvl + 1;
                         var _unlockMsg = (_apLvl + 1 >= 3) ? ' 🔓 Can now produce Healing Tonics!' : '';
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades Apothecary to level ' + (_apLvl + 1) + ' in ' + (_apTown.name || 'town') + '.' + _unlockMsg, {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades Apothecary to level ' + (_apLvl + 1) + ' in ' + (_apTown.name || 'town') + '.' + _unlockMsg,  {
                             type: 'elite_building_upgrade',
                             cause: 'High demand for Healing Tonics motivates investment.',
                             effects: ['Apothecary upgraded to level ' + (_apLvl + 1), _unlockMsg || 'Closer to unlocking Healing Tonic production']
-                        });
+                        ,
+                        _noToast: true}, 'npc_activity');
                         break;
                     }
                 }
@@ -3666,14 +3676,14 @@
         em.socialRank[kId] = currentRank + 1;
         if (!em.rankSince) em.rankSince = {};
         em.rankSince[kId] = world.day;
-        logEvent(em.firstName + ' ' + (em.lastName || '') + ' has been elevated to ' + nextRank.name + '!');
+        logEvent(em.firstName + ' ' + (em.lastName || '') + ' has been elevated to ' + nextRank.name + '!', { _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
         grantEmXp(em, 50, 'rank_up');
 
         // Becoming a Minor Noble makes an elite merchant a noble
         if (currentRank + 1 >= 4 && em.occupation !== 'noble') {
             em.occupation = 'noble';
             em.wealthClass = 'upper';
-            logEvent('🏰 ' + em.firstName + ' ' + (em.lastName || '') + ' has entered the aristocracy!');
+            logEvent('🏰 ' + em.firstName + ' ' + (em.lastName || '') + ' has entered the aristocracy!', { _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
             // Kingdom grants 4 personal guards
             if (!em.guards) em.guards = [];
             var guardsToAdd = Math.min(4, 4 - em.guards.length);
@@ -3685,7 +3695,7 @@
                     kingdomPaid: true
                 });
             }
-            logEvent('🛡️ ' + em.firstName + ' ' + (em.lastName || '') + ' has been granted ' + guardsToAdd + ' guards by the kingdom.');
+            logEvent('🛡️ ' + em.firstName + ' ' + (em.lastName || '') + ' has been granted ' + guardsToAdd + ' guards by the kingdom.', { _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
         }
     }
 
@@ -3790,12 +3800,13 @@
             var bDef = SKILLS[bestSkill];
             em.emSkillPoints -= (bDef.cost || 0);
             em.emSkills[bestSkill] = true;
-            logEvent(em.name + ' learned skill: ' + (bDef.name || bestSkill), {
+            logEvent(em.name + ' learned skill: ' + (bDef.name || bestSkill),  {
                 type: 'elite_skill_learned',
                 townId: em.townId,
                 cause: em.name + ' invested time in learning ' + (bDef.name || bestSkill) + '.',
                 effects: [em.name + ' now has ' + Object.keys(em.emSkills).length + ' skills']
-            });
+            ,
+            _noToast: true}, 'npc_activity');
         }
     }
 
@@ -3865,9 +3876,10 @@
                 originalPunishment: { execution: true, exile: true, jailDays: jailDays || 360, fine: fine, town: town }
             });
             if (_emTrial) {
-                logEvent('⚖️ ' + (actor.firstName || 'A merchant') + ' ' + (actor.lastName || '') + ' faces a Noble Council trial in ' + kingdom.name + ' for ' + crimeType.name + '.', {
+                logEvent('⚖️ ' + (actor.firstName || 'A merchant') + ' ' + (actor.lastName || '') + ' faces a Noble Council trial in ' + kingdom.name + ' for ' + crimeType.name + '.',  {
                     type: 'npc_noble_trial', cause: 'Noble Council law deferred execution to trial.', townId: town && town.id, kingdomId: kingdom.id
-                });
+                ,
+                _noToast: true}, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms'));
                 return fine;
             }
         }
@@ -3875,9 +3887,10 @@
         if (ptype === 'execution') {
             actor.alive = false;
             actor.deathCause = 'executed for ' + crimeType.name;
-            logEvent('☠️ ' + (actor.firstName || 'A merchant') + ' ' + (actor.lastName || '') + ' was executed in ' + (town ? town.name : 'a town') + ' for ' + crimeType.name + '.', {
+            logEvent('☠️ ' + (actor.firstName || 'A merchant') + ' ' + (actor.lastName || '') + ' was executed in ' + (town ? town.name : 'a town') + ' for ' + crimeType.name + '.',  {
                 type: 'npc_executed', cause: crimeType.name + ' (capital crime).', townId: town && town.id, kingdomId: kingdom.id
-            });
+            ,
+            _noToast: true}, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms'));
         } else if (jailDays > 0) {
             actor._jailedUntilDay = (world.day || 0) + jailDays;
             actor._jailedCrimeId = crimeId || null; // v9p33river264
@@ -3929,19 +3942,21 @@
 
         if (caught) {
             var fine = _applyActorCrimePenalty(em, town, kingdom, 'sabotage', 1.0);
-            logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught sabotaging ' + bestRival.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '! Fined ' + fine + 'g.', {
+            logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught sabotaging ' + bestRival.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '! Fined ' + fine + 'g.',  {
                 type: 'em_crime_sabotage_caught', cause: 'EM-vs-EM sabotage attempt failed.',
                 effects: [fine + 'g fine', 'Notoriety +5', 'Reputation damaged'], townId: town.id, kingdomId: kingdom && kingdom.id
-            });
+            ,
+            _noToast: true}, 'npc_activity');
             return true;
         }
         // Success — disable target building 10–25 days
         var disableDays = 10 + Math.floor(rng.random() * 16);
         realBld._disabledUntil = (world.day || 0) + disableDays;
-        logEvent('💣 ' + bestRival.firstName + ' ' + (bestRival.lastName || '') + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + ' was sabotaged by an unknown rival! Disabled ' + disableDays + ' days.', {
+        logEvent('💣 ' + bestRival.firstName + ' ' + (bestRival.lastName || '') + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + ' was sabotaged by an unknown rival! Disabled ' + disableDays + ' days.',  {
             type: 'em_crime_sabotage_success', townId: town.id, kingdomId: kingdom && kingdom.id,
             cause: 'Rival merchant sabotage (perpetrator unknown to authorities).'
-        });
+        ,
+        _noToast: true}, 'npc_activity');
         return true;
     }
 
@@ -3965,18 +3980,20 @@
 
         if (caught) {
             var fine = _applyActorCrimePenalty(em, town, kingdom, 'theft', 1.0);
-            logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught attempting to rob ' + target.firstName + ' in ' + town.name + '! Fined ' + fine + 'g.', {
+            logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught attempting to rob ' + target.firstName + ' in ' + town.name + '! Fined ' + fine + 'g.',  {
                 type: 'em_crime_theft_caught', cause: 'EM-vs-EM theft attempt failed.',
                 effects: [fine + 'g fine', 'Notoriety +5'], townId: town.id, kingdomId: kingdom && kingdom.id
-            });
+            ,
+            _noToast: true}, 'npc_activity');
             return true;
         }
         target.gold -= stolen;
         em.gold = (em.gold || 0) + stolen;
-        logEvent('💰 ' + target.firstName + ' ' + (target.lastName || '') + ' was robbed of ' + stolen + 'g in ' + town.name + ' (perpetrator unknown).', {
+        logEvent('💰 ' + target.firstName + ' ' + (target.lastName || '') + ' was robbed of ' + stolen + 'g in ' + town.name + ' (perpetrator unknown).',  {
             type: 'em_crime_theft_success', townId: town.id, kingdomId: kingdom && kingdom.id,
             cause: 'Robbery in the merchant district.'
-        });
+        ,
+        _noToast: true}, 'npc_activity');
         return true;
     }
 
@@ -4003,7 +4020,7 @@
             var kingdom = findKingdom(town.kingdomId);
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 0.4);
-                logEvent('⚖️ ' + em.firstName + ' caught spreading malicious rumors about ' + target.firstName + ' in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_rumors_caught', townId: town.id });
+                logEvent('⚖️ ' + em.firstName + ' caught spreading malicious rumors about ' + target.firstName + ' in ' + town.name + ' — fined ' + fine + 'g.',  { type: 'em_scheme_rumors_caught', townId: town.id , _noToast: true}, 'npc_activity');
             } else {
                 var repLoss = 4 + Math.floor(rng.random() * 5);
                 if (target._isPlayer) {
@@ -4015,10 +4032,10 @@
                     } catch (e) {}
                     // Record a memory on the EM so the player can reference it back.
                     try { Engine.recordPlayerSchemeAgainst && Engine.recordPlayerSchemeAgainst(em, 'spread_rumors'); } catch (e) {}
-                    logEvent('🤫 Whispers spread by ' + em.firstName + ' damage your reputation in ' + town.name + ' (-' + repLoss + ').', { type: 'em_scheme_rumors_vs_player', townId: town.id });
+                    logEvent('🤫 Whispers spread by ' + em.firstName + ' damage your reputation in ' + town.name + ' (-' + repLoss + ').',  { type: 'em_scheme_rumors_vs_player', townId: town.id , _noToast: true}, 'npc_activity');
                 } else if (target.reputation && kingdom) {
                     target.reputation[kingdom.id] = Math.max(0, (target.reputation[kingdom.id] || 50) - repLoss);
-                    logEvent('🤫 Whispers about ' + target.firstName + ' ' + (target.lastName || '') + ' damage their reputation in ' + town.name + ' (-' + repLoss + ').', { type: 'em_scheme_rumors_success', townId: town.id });
+                    logEvent('🤫 Whispers about ' + target.firstName + ' ' + (target.lastName || '') + ' damage their reputation in ' + town.name + ' (-' + repLoss + ').',  { type: 'em_scheme_rumors_success', townId: town.id , _noToast: true}, 'npc_activity');
                 }
             }
             return true;
@@ -4037,11 +4054,11 @@
             var kingdom = findKingdom(town.kingdomId);
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 1.5);
-                logEvent('⚖️ ' + em.firstName + ' caught framing ' + target.firstName + ' for a crime in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_frame_caught', townId: town.id });
+                logEvent('⚖️ ' + em.firstName + ' caught framing ' + target.firstName + ' for a crime in ' + town.name + ' — fined ' + fine + 'g.',  { type: 'em_scheme_frame_caught', townId: town.id , _noToast: true}, 'npc_activity');
             } else {
                 // Apply forgery penalty to the framed target (charged with the planted crime)
                 _applyActorCrimePenalty(target, town, kingdom, 'forgery', 1.0);
-                logEvent('📝 ' + target.firstName + ' ' + (target.lastName || '') + ' was framed for forgery in ' + town.name + ' — record blemished.', { type: 'em_scheme_frame_success', townId: town.id });
+                logEvent('📝 ' + target.firstName + ' ' + (target.lastName || '') + ' was framed for forgery in ' + town.name + ' — record blemished.',  { type: 'em_scheme_frame_success', townId: town.id , _noToast: true}, 'npc_activity');
             }
             return true;
         }
@@ -4057,11 +4074,11 @@
             em.gold -= bribeCost;
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'bribery', 1.0);
-                logEvent('⚖️ ' + em.firstName + ' caught bribing town guards in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_bribe_caught', townId: town.id });
+                logEvent('⚖️ ' + em.firstName + ' caught bribing town guards in ' + town.name + ' — fined ' + fine + 'g.',  { type: 'em_scheme_bribe_caught', townId: town.id , _noToast: true}, 'npc_activity');
             } else {
                 if (!em._bribedGuards) em._bribedGuards = {};
                 em._bribedGuards[town.id] = { expiresDay: world.day + 30, reductionPct: 35 };
-                logEvent('💸 ' + em.firstName + ' ' + (em.lastName || '') + ' bribes guards in ' + town.name + ' (covert).', { type: 'em_scheme_bribe_success', townId: town.id });
+                logEvent('💸 ' + em.firstName + ' ' + (em.lastName || '') + ' bribes guards in ' + town.name + ' (covert).',  { type: 'em_scheme_bribe_success', townId: town.id , _noToast: true}, 'npc_activity');
             }
             return true;
         }
@@ -4102,20 +4119,20 @@
 
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'forgery', 2.0);
-                logEvent('⚖️ ' + em.firstName + ' caught forging documents in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_forge_caught', townId: town.id });
+                logEvent('⚖️ ' + em.firstName + ' caught forging documents in ' + town.name + ' — fined ' + fine + 'g.',  { type: 'em_scheme_forge_caught', townId: town.id , _noToast: true}, 'npc_activity');
                 return true;
             }
             if (docKind === 'cash') {
                 var revenue = 300 + Math.floor(rng.random() * 500);
                 em.gold = (em.gold || 0) + revenue;
-                logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' profits ' + revenue + 'g from forged documents in ' + town.name + ' (covert).', { type: 'em_scheme_forge_success', townId: town.id });
+                logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' profits ' + revenue + 'g from forged documents in ' + town.name + ' (covert).',  { type: 'em_scheme_forge_success', townId: town.id , _noToast: true}, 'npc_activity');
             } else {
                 em.gold -= docCost;
                 em._forgedKingdomDocs = em._forgedKingdomDocs || {};
                 if (!em._forgedKingdomDocs[bestK.id]) em._forgedKingdomDocs[bestK.id] = {};
                 var docKey = (docKind === 'temp_citizenship') ? 'citizenship' : 'license';
                 em._forgedKingdomDocs[bestK.id][docKey] = (world.day || 0) + 30;
-                logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' forges 30-day ' + (docKind === 'temp_citizenship' ? 'citizenship' : 'trade license') + ' for ' + bestK.name + ' (covert).', { type: 'em_scheme_forge_success', townId: town.id, kingdomId: bestK.id });
+                logEvent('📝 ' + em.firstName + ' ' + (em.lastName || '') + ' forges 30-day ' + (docKind === 'temp_citizenship' ? 'citizenship' : 'trade license') + ' for ' + bestK.name + ' (covert).',  { type: 'em_scheme_forge_success', townId: town.id, kingdomId: bestK.id , _noToast: true}, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === bestK.id ? 'my_kingdom' : 'foreign_kingdoms'));
             }
             return true;
         }
@@ -4136,11 +4153,11 @@
             var kingdom = findKingdom(town.kingdomId);
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'arson', 1.0);
-                logEvent('⚖️ ' + em.firstName + ' caught attempting arson in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_arson_caught', townId: town.id });
+                logEvent('⚖️ ' + em.firstName + ' caught attempting arson in ' + town.name + ' — fined ' + fine + 'g.',  { type: 'em_scheme_arson_caught', townId: town.id , _noToast: true}, 'npc_activity');
             } else {
                 realBld.condition = 'destroyed';
                 realBld._destroyedDay = world.day;
-                logEvent('🔥 A fire of suspicious origin destroyed ' + target.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '.', { type: 'em_scheme_arson_success', townId: town.id });
+                logEvent('🔥 A fire of suspicious origin destroyed ' + target.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '.',  { type: 'em_scheme_arson_success', townId: town.id , _noToast: true}, 'npc_activity');
             }
             return true;
         }
@@ -4171,8 +4188,8 @@
             if (rng.chance(detection)) {
                 var fine = _applyActorCrimePenalty(em, town, kingdom, 'poison', 1.0);
                 logEvent('☠️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught paying an agent to poison ' +
-                    (target.firstName || '') + ' ' + (target.lastName || '') + ' in ' + town.name + ' — fined ' + fine + 'g.',
-                    { type: 'em_scheme_poison_caught', townId: town.id, kingdomId: kingdom && kingdom.id });
+                    (target.firstName || '') + ' ' + (target.lastName || '') + ' in ' + town.name + ' — fined ' + fine + 'g.', 
+                    { type: 'em_scheme_poison_caught', townId: town.id, kingdomId: kingdom && kingdom.id , _noToast: true}, 'npc_activity');
             } else {
                 // Inflict 'poisoned' (severe) on the target via the real illness system
                 if (typeof Engine.infectNPC === 'function') {
@@ -4188,8 +4205,8 @@
                     }
                     if (target.health > 75) target.health = 75;
                 }
-                logEvent('☠️ ' + (target.firstName || '') + ' ' + (target.lastName || '') + ' has fallen mysteriously ill in ' + town.name + '...',
-                    { type: 'em_scheme_poison_success', townId: town.id });
+                logEvent('☠️ ' + (target.firstName || '') + ' ' + (target.lastName || '') + ' has fallen mysteriously ill in ' + town.name + '...', 
+                    { type: 'em_scheme_poison_success', townId: town.id , _noToast: true}, 'npc_activity');
             }
             return true;
         }
@@ -4229,10 +4246,11 @@
                     var fine = Math.floor(profit * 2);
                     em.gold = Math.max(0, em.gold - fine);
                     em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 10);
-                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' was fined ' + fine + 'g for war profiteering!', {
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' was fined ' + fine + 'g for war profiteering!',  {
                         type: 'elite_crime_caught', cause: 'War profiteering detected by kingdom authorities.',
                         effects: [fine + 'g fine levied', 'Reputation damaged']
-                    });
+                    ,
+                    _noToast: true}, 'npc_activity');
                 }
             }
         }
@@ -4256,15 +4274,17 @@
                         var smugFine = smugPrice * smugQty * 3;
                         em.gold = Math.max(0, em.gold - smugFine);
                         em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 15);
-                        logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught smuggling ' + smugQty + ' ' + smugGood + '! Fined ' + smugFine + 'g.', {
+                        logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught smuggling ' + smugQty + ' ' + smugGood + '! Fined ' + smugFine + 'g.',  {
                             type: 'elite_crime_smuggling', cause: 'Smuggling banned goods: ' + smugGood,
                             effects: [smugFine + 'g fine', 'Criminal record increased', 'Reputation severely damaged']
-                        });
+                        ,
+                        _noToast: true}, 'npc_activity');
                     } else {
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' secretly sells ' + smugQty + ' smuggled ' + smugGood + '.', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' secretly sells ' + smugQty + ' smuggled ' + smugGood + '.',  {
                             type: 'elite_smuggle_success', cause: 'Black market sale of banned goods.',
                             effects: [smugPrice * smugQty + 'g earned from black market']
-                        });
+                        ,
+                        _noToast: true}, 'npc_activity');
                     }
                 }
             }
@@ -4280,10 +4300,11 @@
                 var taxPenalty = evadedTax * 5;
                 em.gold = Math.max(0, em.gold - taxPenalty);
                 em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 8);
-                logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' audited for tax evasion! Penalty: ' + taxPenalty + 'g.', {
+                logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' audited for tax evasion! Penalty: ' + taxPenalty + 'g.',  {
                     type: 'elite_crime_tax_evasion', cause: 'Kingdom tax audit uncovered unreported income.',
                     effects: [taxPenalty + 'g penalty', 'Criminal record increased']
-                });
+                ,
+                _noToast: true}, 'npc_activity');
             }
         }
 
@@ -4296,10 +4317,11 @@
                 if (rng.chance(0.1 * detectionReduction)) {
                     em.criminalRecord[kId] = (em.criminalRecord[kId] || 0) + 2;
                     em.reputation[kId] = Math.max(0, (em.reputation[kId] || 50) - 20);
-                    logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught bribing officials! Record worsened.', {
+                    logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught bribing officials! Record worsened.',  {
                         type: 'elite_crime_bribery_caught', cause: 'Attempted bribery of kingdom officials failed.',
                         effects: ['Criminal record increased by 2', 'Reputation severely damaged']
-                    });
+                    ,
+                    _noToast: true}, 'npc_activity');
                 } else {
                     em.criminalRecord[kId] = Math.max(0, em.criminalRecord[kId] - 1);
                     em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 5);
@@ -4499,7 +4521,7 @@
                 delete em.servitudeEndDay;
                 delete em.servitudeFreedomCost;
                 delete em.servitudeKingdomId;
-                logEvent(em.firstName + ' ' + (em.lastName || '') + ' immediately buys their freedom for ' + freedomCost + 'g!', {
+                logEvent(em.firstName + ' ' + (em.lastName || '') + ' immediately buys their freedom for ' + freedomCost + 'g!',  {
                     type: 'elite_freedom_buyout',
                     cause: 'Wealthy elite merchant refuses to remain in servitude.',
                     effects: [
@@ -4507,7 +4529,8 @@
                         'Elite merchant resumes trading operations',
                         'Kingdom treasury receives ' + freedomCost + 'g'
                     ]
-                });
+                ,
+                _noToast: true}, 'npc_activity');
                 // After buying freedom, try to relocate to a safer town
                 eliteEmergencyRelocate(em, rng);
             }
@@ -4539,7 +4562,7 @@
                 if (town.population > 0) town.population--;
                 dest.population = (dest.population || 0) + 1;
                 if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, dest.id, dest.kingdomId);
-                logEvent(em.firstName + ' ' + (em.lastName || '') + ' flees the frontline in ' + oldTown + ' for safety in ' + dest.name + '.', {
+                logEvent(em.firstName + ' ' + (em.lastName || '') + ' flees the frontline in ' + oldTown + ' for safety in ' + dest.name + '.',  {
                     type: 'elite_frontline_flee',
                     cause: oldTown + ' is on the front lines of war — too dangerous for trade.',
                     effects: [
@@ -4547,7 +4570,8 @@
                         'Trading operations disrupted temporarily',
                         'Buildings in ' + oldTown + ' left unmanned'
                     ]
-                });
+                ,
+                _noToast: true}, 'npc_activity');
             }
         }
     }
@@ -4612,7 +4636,7 @@
                             if (kingdom.gold >= reward) kingdom.gold -= reward;
                             em._bountiesFulfilled = (em._bountiesFulfilled || 0) + 1;
                             em.reputation[kingdom.id] = Math.min(100, (em.reputation[kingdom.id] || 50) + 5);
-                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' fulfills a royal bounty for ' + bounty.good + ', earning ' + reward + 'g.', {
+                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' fulfills a royal bounty for ' + bounty.good + ', earning ' + reward + 'g.',  {
                                 type: 'elite_bounty_fulfilled',
                                 cause: 'Kingdom requested ' + bounty.good + ' production.',
                                 effects: [
@@ -4620,7 +4644,8 @@
                                     'Earned ' + reward + 'g bounty reward',
                                     'Royal reputation increased'
                                 ]
-                            });
+                            ,
+                            _noToast: true}, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms'));
                         }
                     }
                     // If we don't have inventory but can build, consider building (handled in eliteBuildAI with subsidies)
@@ -4686,7 +4711,7 @@
                         if (!em._foreignInvestments) em._foreignInvestments = {};
                         em._foreignInvestments[bestRefuge.id] = (em._foreignInvestments[bestRefuge.id] || 0) + moveAmount;
                         em._assetsDiversified = true;
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' evacuates ' + moveAmount + 'g from collapsing ' + kingdom.name + '.', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' evacuates ' + moveAmount + 'g from collapsing ' + kingdom.name + '.',  {
                             type: 'elite_collapse_flight',
                             cause: kingdom.name + ' has been bankrupt for ' + bankruptDays + ' days.',
                             effects: [
@@ -4694,7 +4719,8 @@
                                 em.firstName + ' prepares for potential kingdom collapse',
                                 'Elite merchants losing confidence in ' + kingdom.name
                             ]
-                        });
+                        ,
+                        _noToast: true}, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms'));
                     }
                 }
             }
@@ -4713,7 +4739,7 @@
                 em.socialRank[kId] = Math.max((em.socialRank[kId] || 0), 3); // Noble rank
                 em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 30);
                 em._kingRelationship[kId] = (em._kingRelationship[kId] || 0) + 50;
-                logEvent('\uD83D\uDC51 ' + em.firstName + ' ' + (em.lastName || '') + ' bails out ' + kingdom.name + ' with ' + bailoutCost + 'g! Elevated to nobility.', {
+                logEvent('\uD83D\uDC51 ' + em.firstName + ' ' + (em.lastName || '') + ' bails out ' + kingdom.name + ' with ' + bailoutCost + 'g! Elevated to nobility.',  {
                     type: 'elite_bailout',
                     cause: em.firstName + ' saves ' + kingdom.name + ' from complete economic collapse.',
                     effects: [
@@ -4722,7 +4748,8 @@
                         'Kingdom avoids collapse and begins recovery',
                         em.firstName + ' gains massive political influence'
                     ]
-                });
+                ,
+                _noToast: true}, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms'));
                 return;
             }
         }
@@ -4760,7 +4787,7 @@
                             var prevPerson = findPerson(prevOwner);
                             if (prevPerson) prevPerson.gold = (prevPerson.gold || 0) + discountedPrice;
                         }
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' buys a distressed ' + bType.name + ' in ' + cheapTown.name + ' for ' + discountedPrice + 'g (50% off).', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' buys a distressed ' + bType.name + ' in ' + cheapTown.name + ' for ' + discountedPrice + 'g (50% off).',  {
                             type: 'elite_distressed_purchase',
                             cause: 'Economic collapse creates buying opportunities.',
                             effects: [
@@ -4768,7 +4795,8 @@
                                 'New asset in ' + cheapTown.name,
                                 'Opportunistic investment during economic downturn'
                             ]
-                        });
+                        ,
+                        _noToast: true}, 'npc_activity');
                         break; // One purchase per cycle
                     }
                 }
@@ -4840,11 +4868,12 @@
                             if (cvResult.success) {
                                 if (!em.buildings) em.buildings = [];
                                 em.buildings.push({ type: cvTarget, townId: cvTown.id, level: 1 });
-                                logEvent(em.firstName + ' ' + (em.lastName || '') + ' converted a ' + (cvBt.name || cvBld.type) + ' to a ' + cvTargetBt.name + ' in ' + cvTown.name + '.', {
+                                logEvent(em.firstName + ' ' + (em.lastName || '') + ' converted a ' + (cvBt.name || cvBld.type) + ' to a ' + cvTargetBt.name + ' in ' + cvTown.name + '.',  {
                                     type: 'elite_conversion',
                                     cause: em.firstName + ' saw better opportunity in ' + cvTargetBt.name + ' production.',
                                     effects: ['Old building demolished with blasting powder', 'New ' + cvTargetBt.name + ' built', 'Investment: ' + cvConversionCost + 'g']
-                                });
+                                ,
+                                _noToast: true}, 'npc_activity');
                             }
                             return; // One conversion per cycle
                         }
@@ -4889,7 +4918,7 @@
                         bld2.forSale = false;
                         if (!em.buildings) em.buildings = [];
                         em.buildings.push({ type: bld2.type, townId: checkTown.id, level: bld2.level || 1 });
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' snaps up a ' + bType2.name + ' in booming ' + checkTown.name + '.', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' snaps up a ' + bType2.name + ' in booming ' + checkTown.name + '.',  {
                             type: 'elite_growth_investment',
                             cause: 'Population influx makes ' + checkTown.name + ' a growth market.',
                             effects: [
@@ -4897,7 +4926,8 @@
                                 'Property values expected to rise',
                                 'Smart investment in growing town'
                             ]
-                        });
+                        ,
+                        _noToast: true}, 'npc_activity');
                         break;
                     }
                 }
@@ -4912,14 +4942,15 @@
                         for (var tbIdx = 0; tbIdx < checkTown.buildings.length; tbIdx++) {
                             if (checkTown.buildings[tbIdx].ownerId === em.id && !checkTown.buildings[tbIdx].forSale) {
                                 checkTown.buildings[tbIdx].forSale = true;
-                                logEvent(em.firstName + ' ' + (em.lastName || '') + ' puts their ' + checkTown.buildings[tbIdx].type + ' up for sale in declining ' + checkTown.name + '.', {
+                                logEvent(em.firstName + ' ' + (em.lastName || '') + ' puts their ' + checkTown.buildings[tbIdx].type + ' up for sale in declining ' + checkTown.name + '.',  {
                                     type: 'elite_decline_sale',
                                     cause: 'Population exodus from ' + checkTown.name + ' signals declining property values.',
                                     effects: [
                                         em.firstName + ' liquidates assets before further decline',
                                         'Building listed for sale in ' + checkTown.name
                                     ]
-                                });
+                                ,
+                                _noToast: true}, 'npc_activity');
                                 break;
                             }
                         }
@@ -5029,7 +5060,7 @@
                 var chainBld = { type: producerType, level: 1, ownerId: em.id, townId: town.id, workers: [], upgrades: [], builtDay: world.day };
                 town.buildings.push(chainBld);
                 em.buildings.push({ type: producerType, townId: town.id, level: 1 });
-                logEvent(em.firstName + ' ' + (em.lastName || '') + ' builds a ' + pBt.name + ' to secure ' + needId + ' supply chain.', {
+                logEvent(em.firstName + ' ' + (em.lastName || '') + ' builds a ' + pBt.name + ' to secure ' + needId + ' supply chain.',  {
                     type: 'elite_supply_chain',
                     cause: em.firstName + ' vertically integrates to secure raw material supply.',
                     effects: [
@@ -5037,7 +5068,8 @@
                         em.firstName + ' invested ' + pBt.cost + 'g in supply chain',
                         'Reduced dependency on external suppliers'
                     ]
-                });
+                ,
+                _noToast: true}, 'npc_activity');
                 break; // One supply chain investment per cycle
             }
         }
@@ -5175,7 +5207,7 @@
                             var gapBld = { type: gapProducer, level: 1, ownerId: em.id, townId: gapTown.id, workers: [], upgrades: [], builtDay: world.day };
                             gapTown.buildings.push(gapBld);
                             em.buildings.push({ type: gapProducer, townId: gapTown.id, level: 1 });
-                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' identifies supply gap: builds ' + gapBt.name + ' in ' + gapTown.name + '.', {
+                            logEvent(em.firstName + ' ' + (em.lastName || '') + ' identifies supply gap: builds ' + gapBt.name + ' in ' + gapTown.name + '.',  {
                                 type: 'elite_supply_gap',
                                 cause: gapTown.name + ' lacks local production of ' + gapRes + ' despite high demand.',
                                 effects: [
@@ -5183,7 +5215,8 @@
                                     em.firstName + ' invested ' + gapBt.cost + 'g to fill market need',
                                     'Town should see lower ' + gapRes + ' prices'
                                 ]
-                            });
+                            ,
+                            _noToast: true}, 'npc_activity');
                             break;
                         }
                     }
@@ -5311,8 +5344,9 @@
                             em.gold += underPrice * underQty;
                             em.npcMerchantInventory[rGood] -= underQty;
                             town.market.supply[rGood] = (town.market.supply[rGood] || 0) + underQty;
+                            // v9p33river377: elite-merchant maneuvers should stay in NPC Activity even when toast-suppressed.
                             logEvent(em.firstName + ' ' + (em.lastName || '') + ' undercuts ' + rival.firstName + '\'s ' + rGood + ' monopoly.', {
-                                type: 'elite_market_competition',
+                                type: 'elite_market_competition', townId: town.id,
                                 cause: rival.firstName + ' was hoarding ' + rGood + '; ' + em.firstName + ' floods the market.',
                                 effects: [
                                     em.firstName + ' sells ' + underQty + ' ' + rGood + ' at discount',
@@ -5320,7 +5354,7 @@
                                     'Competition intensifies between elite merchants'
                                 ],
                                 _noToast: true
-                            });
+                            }, 'npc_activity');
                         }
                     }
                 }
@@ -5340,7 +5374,7 @@
                 if (altStrategies.length > 0 && rng.chance(0.1)) {
                     var oldStrategy = em.strategy;
                     em.strategy = rng.pick(altStrategies);
-                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' pivots strategy from ' + oldStrategy + ' to ' + em.strategy + ' to avoid competition.', {
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' pivots strategy from ' + oldStrategy + ' to ' + em.strategy + ' to avoid competition.',  {
                         type: 'elite_strategy_pivot',
                         cause: 'Too many competitors pursuing ' + oldStrategy + ' strategy.',
                         effects: [
@@ -5348,7 +5382,7 @@
                             'New trading patterns and building priorities',
                             'Reduced direct competition with rival merchants'
                         ]
-                    });
+                    }, 'npc_activity');
                 }
             }
         }
@@ -5417,11 +5451,11 @@
                         em.gold += dumpPrice * dumpQty;
                         emInv[pwGood] -= dumpQty;
                         town.market.supply[pwGood] = (town.market.supply[pwGood] || 0) + dumpQty;
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' dumps ' + dumpQty + ' ' + pwGood + ' to undercut competitors.', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' dumps ' + dumpQty + ' ' + pwGood + ' to undercut competitors.',  {
                             type: 'elite_price_war',
                             cause: 'Multiple competitors stockpiling ' + pwGood + ' in ' + (town.name || 'town'),
                             effects: [pwGood + ' prices collapse in ' + (town.name || 'town'), 'Competitors forced to sell at lower margins']
-                        });
+                        }, 'npc_activity');
                         break;
                     }
                 }
@@ -5478,7 +5512,7 @@
                 if (safeStrategies.length > 0) {
                     var oldStrat = em.strategy;
                     em.strategy = rng.pick(safeStrategies);
-                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' pivots from ' + oldStrat + ' after ' + kingdom.name + ' nationalizes their industry.', {
+                    logEvent(em.firstName + ' ' + (em.lastName || '') + ' pivots from ' + oldStrat + ' after ' + kingdom.name + ' nationalizes their industry.',  {
                         type: 'elite_nationalization_pivot',
                         cause: kingdom.name + ' nationalized ' + affectedBuildings[0].type + ', forcing ' + em.firstName + ' to adapt.',
                         effects: [
@@ -5487,7 +5521,7 @@
                             'Buildings marked for sale',
                             'Relationship with ' + kingdom.name + ' damaged'
                         ]
-                    });
+                    }, 'npc_activity');
                 }
             }
 
@@ -5508,7 +5542,7 @@
                         em.townId = freeDest.id;
                         em.kingdomId = freeDest.kingdomId;
                         if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, freeDest.id, freeDest.kingdomId);
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' relocates to ' + freeDest.name + ' in ' + freeK.name + ' to escape nationalization.', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' relocates to ' + freeDest.name + ' in ' + freeK.name + ' to escape nationalization.',  {
                             type: 'elite_nationalization_flee',
                             cause: 'Nationalization policies in ' + kingdom.name + ' threaten ' + em.firstName + '\'s business.',
                             effects: [
@@ -5516,7 +5550,7 @@
                                 'Business operations resume in ' + freeDest.name,
                                 'Capital flight from ' + kingdom.name
                             ]
-                        });
+                        }, 'npc_activity');
                     }
                 }
             }
@@ -5565,7 +5599,7 @@
                         em.townId = dest.id;
                         em.kingdomId = dest.kingdomId;
                         if (Engine.moveYoungChildrenWithParent) Engine.moveYoungChildrenWithParent(em, dest.id, dest.kingdomId);
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' abandons ' + kingdom.name + ' after royal seizure, relocating to ' + betterK.name + '.', {
+                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' abandons ' + kingdom.name + ' after royal seizure, relocating to ' + betterK.name + '.',  {
                             type: 'elite_seizure_response',
                             cause: 'Royal confiscation destroyed trust between ' + em.firstName + ' and ' + kingdom.name + '.',
                             effects: [
@@ -5573,7 +5607,7 @@
                                 'Major capital flight from ' + kingdom.name,
                                 'Elite merchant loyalty to crown shattered'
                             ]
-                        });
+                        }, 'npc_activity');
                     }
                 }
             }
@@ -5587,7 +5621,7 @@
             rel += 10;
             em.reputation[kId] = Math.min(100, (em.reputation[kId] || 50) + 5);
             logEvent(em.firstName + ' ' + (em.lastName || '') + ' makes a ' + bribeAmount + 'g "gift" to the crown of ' + kingdom.name + '.', {
-                type: 'elite_king_gift',
+                type: 'elite_king_gift', kingdomId: kingdom.id,
                 cause: em.firstName + ' cultivates royal favor through generous donations.',
                 effects: [
                     bribeAmount + 'g donated to ' + kingdom.name + '\'s treasury',
@@ -5595,7 +5629,7 @@
                     em.firstName + '\'s influence at court grows'
                 ],
                 _noToast: true
-            });
+            }, 'npc_activity');
         }
 
         // Petition for trade subsidies on goods we produce (requires social rank 2+ and good relationship)
@@ -5645,19 +5679,20 @@
                         requestedBy: em.id
                     });
                     rel += 5;
+                    // v9p33river377: keep elite-merchant court lobbying under NPC Activity instead of inferred local/world buckets.
                     logEvent(em.firstName + ' ' + (em.lastName || '') + ' persuades ' + kingdom.name + ' to subsidize ' + petGood + ' trade!', {
-                        type: 'elite_petition_subsidy',
+                        type: 'elite_petition_subsidy', kingdomId: kingdom.id,
                         cause: em.firstName + ' lobbied the crown for trade subsidies.',
                         effects: [petGood + ' trade subsidized in ' + kingdom.name, em.firstName + '\'s influence at court grows'],
                         _noToast: true
-                    });
+                    }, 'npc_activity');
                 } else {
                     logEvent(em.firstName + ' ' + (em.lastName || '') + '\'s petition for ' + petGood + ' subsidies was denied by ' + kingdom.name + '.', {
-                        type: 'elite_petition_denied',
+                        type: 'elite_petition_denied', kingdomId: kingdom.id,
                         cause: em.firstName + ' lobbied the crown, but was rebuffed.',
                         effects: [petitionFee + 'g spent on failed petition'],
                         _noToast: true
-                    });
+                    }, 'npc_activity');
                 }
                 break; // one petition per cycle
             }
@@ -5680,11 +5715,11 @@
                     kingdom.laws.tradeTariff = Math.max(0.01, oldTariff - 0.02);
                     rel += 3;
                     logEvent(em.firstName + ' ' + (em.lastName || '') + ' successfully lobbies ' + kingdom.name + ' to reduce tariffs from ' + Math.round(oldTariff * 100) + '% to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.', {
-                        type: 'elite_lobby_tariff',
+                        type: 'elite_lobby_tariff', kingdomId: kingdom.id,
                         cause: em.firstName + ' uses court influence to push for trade reform.',
                         effects: ['Tariff reduced by 2%', 'All merchants benefit from lower trade costs'],
                         _noToast: true
-                    });
+                    }, 'npc_activity');
                 }
             }
         }
@@ -5755,12 +5790,12 @@
                     kingdom.taxRate = Math.max(0.02, oldTax - 0.02);
                     logEvent('📜 ' + em.firstName + ' ' + (em.lastName || '') + ' secures a tax reduction in ' + kingdom.name +
                         ' (' + Math.round(oldTax * 100) + '% → ' + Math.round(kingdom.taxRate * 100) + '%).', {
-                        type: 'elite_petition_tax',
+                        type: 'elite_petition_tax', kingdomId: kingdom.id,
                         effects: ['Business taxes reduced', 'Economic growth encouraged'],
                         _noToast: true
-                    });
+                    }, 'npc_activity');
                 } else {
-                    logEvent(em.firstName + '\'s tax relief petition to ' + kingdom.name + ' was denied.', { type: 'elite_petition_denied', _noToast: true });
+                    logEvent(em.firstName + '\'s tax relief petition to ' + kingdom.name + ' was denied.', { type: 'elite_petition_denied', kingdomId: kingdom.id, _noToast: true }, 'npc_activity');
                 }
             }
         }
@@ -6069,7 +6104,7 @@
                 if (bridgeRoads.length > 0) {
                     const target = bridgeRoads[rng.randInt(0, bridgeRoads.length - 1)];
                     destroyBridge(target.idx);
-                    logEvent(`\uD83D\uDC80 An unknown saboteur has destroyed the bridge between ${findTown(target.road.fromTownId)?.name || '?'} and ${findTown(target.road.toTownId)?.name || '?'}!`);
+                    logEvent(`\uD83D\uDC80 An unknown saboteur has destroyed the bridge between ${findTown(target.road.fromTownId)?.name || '?'} and ${findTown(target.road.toTownId)?.name || '?'}!`, null, 'npc_activity');
                 }
             }
 
@@ -6502,7 +6537,7 @@
                     if (!p.buildings) p.buildings = [];
                     p.buildings.push({ type: bType, townId: p.townId, level: 1 });
                     town.buildings.push({ type: bType, level: 1, ownerId: p.id });
-                    logEvent(`Your family member ${p.firstName || p.name || 'relative'} opened a ${bt.name} in ${town.name}.`);
+                    logEvent(`Your family member ${p.firstName || p.name || 'relative'} opened a ${bt.name} in ${town.name}.`, null, 'npc_activity');
                 }
             }
 
@@ -6616,7 +6651,7 @@
                             }
                             if (_eqWeap) {
                                 p.weapon = { id: _eqWeap.id, name: _eqWeap.name, quality: _eqWeap.quality, combatBonus: _eqWeap.combatBonus };
-                                logEvent('⚔️ Your ' + (p._familyRole || 'family member') + ' ' + _fName + ' bought and equipped a ' + _eqWeap.name + '.');
+                                logEvent('⚔️ Your ' + (p._familyRole || 'family member') + ' ' + _fName + ' bought and equipped a ' + _eqWeap.name + '.', null, 'npc_activity');
                             }
                             break;
                         }
@@ -6643,7 +6678,7 @@
                                 _fGold -= _uwCost;
                                 _fSupply[_uwId] = (_fSupply[_uwId] || 0) - 1;
                                 p.weapon = { id: _uwDef.id, name: _uwDef.name, quality: _uwDef.quality, combatBonus: _uwDef.combatBonus };
-                                logEvent('⚔️ ' + _fName + ' upgraded to a ' + _uwDef.name + '.');
+                                logEvent('⚔️ ' + _fName + ' upgraded to a ' + _uwDef.name + '.', null, 'npc_activity');
                                 break;
                             }
                         }
@@ -6672,7 +6707,7 @@
                             }
                             if (_eqArm) {
                                 p.armor = { id: _eqArm.id, name: _eqArm.name, quality: _eqArm.quality, combatBonus: _eqArm.combatBonus };
-                                logEvent('🛡️ ' + _fName + ' bought and equipped ' + _eqArm.name + '.');
+                                logEvent('🛡️ ' + _fName + ' bought and equipped ' + _eqArm.name + '.', null, 'npc_activity');
                             }
                             break;
                         }
@@ -6699,7 +6734,7 @@
                                 _fGold -= _uaCost;
                                 _fSupply[_uaId] = (_fSupply[_uaId] || 0) - 1;
                                 p.armor = { id: _uaDef.id, name: _uaDef.name, quality: _uaDef.quality, combatBonus: _uaDef.combatBonus };
-                                logEvent('🛡️ ' + _fName + ' upgraded to ' + _uaDef.name + '.');
+                                logEvent('🛡️ ' + _fName + ' upgraded to ' + _uaDef.name + '.', null, 'npc_activity');
                                 break;
                             }
                         }
@@ -6717,7 +6752,7 @@
                     _fGold -= _hCost;
                     _fSupply.horses = (_fSupply.horses || 0) - 1;
                     p.horse = { name: 'Horse', stamina: 100 };
-                    logEvent('🐴 ' + _fName + ' bought a horse!');
+                    logEvent('🐴 ' + _fName + ' bought a horse!', null, 'npc_activity');
                 }
             }
 
@@ -6746,7 +6781,7 @@
                         var _instName = _instDef ? _instDef.name : _instId;
                         if ((_curSkill < 26 && _newSkill >= 26) || (_curSkill < 51 && _newSkill >= 51) || (_curSkill < 76 && _newSkill >= 76)) {
                             var _tier = _newSkill >= 76 ? 'Master' : _newSkill >= 51 ? 'Expert' : 'Competent';
-                            logEvent('🎵 ' + _fName + ' reached ' + _tier + ' level on the ' + _instName + '!');
+                            logEvent('🎵 ' + _fName + ' reached ' + _tier + ' level on the ' + _instName + '!', null, 'npc_activity');
                         }
                     }
                 }
@@ -6770,7 +6805,7 @@
                             _fSupply[_ipId] = (_fSupply[_ipId] || 0) - 1;
                             p._familyInstruments[_ipId] = true;
                             var _bInstDef = INSTRUMENTS[_ipId];
-                            logEvent('🎵 ' + _fName + ' bought a ' + (_bInstDef ? _bInstDef.name : _ipId) + ' and started learning to play!');
+                            logEvent('🎵 ' + _fName + ' bought a ' + (_bInstDef ? _bInstDef.name : _ipId) + ' and started learning to play!', null, 'npc_activity');
                             break;
                         }
                     }

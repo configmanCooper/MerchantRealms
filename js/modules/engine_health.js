@@ -916,9 +916,10 @@
                                     var seaTarget = seaHealthy[rng.randInt(0, seaHealthy.length - 1)];
                                     infectNPC(seaTarget, illId, rng, day, 'sea_spread');
                                 }
-                                logEvent('🦠 ' + (illDef.name || illId) + ' arrived by ship to ' + seaTown.name + ' from ' + town.name + '!', {
+                                logEvent('🦠 ' + (illDef.name || illId) + ' arrived by ship to ' + seaTown.name + ' from ' + town.name + '!',  {
                                     type: 'illness_spread', townId: seaNeighborId
-                                });
+                                ,
+                                _noToast: true}, 'illness');
                             }
                         }
                     }
@@ -2356,7 +2357,7 @@
                         }
                         if (_karmaApplied) {
                             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🦠 Karma — you\'ve caught the plague you spread!', 'danger', 'health');
-                            logEvent('🦠 ' + (Player.fullName || 'The player') + ' has fallen ill with plague — possibly the very plague they spread.');
+                            logEvent('🦠 ' + (Player.fullName || 'The player') + ' has fallen ill with plague — possibly the very plague they spread.', null, 'illness');
                             // Don't keep rolling — one karma hit is enough.
                             Player.state._plagueSelfRiskUntil = 0;
                         }

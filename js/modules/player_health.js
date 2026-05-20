@@ -42,7 +42,7 @@
             player.health = Math.max(0, (player.health || 100) - hit);
             if (player.health <= 0 && !window._godInvincible) {
                 player.deathCause = 'Succumbed to ' + severity + ' injuries/illness';
-                Engine.logEvent('💀 ' + player.fullName + ' died from their injuries/illness.');
+                Engine.logEvent('💀 ' + player.fullName + ' died from their injuries/illness.', null, 'illness');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ You have died!', 'danger', 'critical');
                 handlePlayerDeath();
             }
@@ -75,7 +75,7 @@
         };
         player.injuries.push(injury);
         _applyConditionHealthHit(severity);
-        Engine.logEvent(`${player.fullName} sustained ${type.name} (${severity}).`);
+        Engine.logEvent(`${player.fullName} sustained ${type.name} (${severity}).`, null, 'illness');
 
         // Journal — injury
         recordJournalEntry('injury', 'Suffered a ' + type.name + ' (' + severity + ') from ' + (source || 'an unfortunate incident') + '. Recovery will take some days.', { mood: 'weary' });
@@ -164,7 +164,7 @@
         // Housing disease resistance — player's primary home reduces illness chance
         var dReduction = getHousingDiseaseReduction();
         if (dReduction > 0 && rng.chance(dReduction)) {
-            Engine.logEvent(player.fullName + '\'s housing protected them from illness.');
+            Engine.logEvent(player.fullName + '\'s housing protected them from illness.', { _noToast: true }, 'illness');
             return;
         }
         // Filter out specialty illnesses from random pool (waterlogged_fever is sea-only, infection is combat-only)
@@ -182,7 +182,7 @@
         };
         player.illnesses.push(illness);
         _applyConditionHealthHit(type.severity);
-        Engine.logEvent(`${player.fullName} contracted ${type.name} (${type.severity}).`);
+        Engine.logEvent(`${player.fullName} contracted ${type.name} (${type.severity}).`, null, 'illness');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`🤒 Illness: ${type.name} (${type.severity})`, 'warning');
         }
@@ -197,7 +197,7 @@
         var dReduction = getHousingDiseaseReduction();
         var rng = Engine.getRng();
         if (dReduction > 0 && rng && rng.chance(dReduction)) {
-            Engine.logEvent(player.fullName + '\'s housing protected them from ' + type.name + '.');
+            Engine.logEvent(player.fullName + '\'s housing protected them from ' + type.name + '.', { _noToast: true }, 'illness');
             return;
         }
         const illness = {
@@ -211,7 +211,7 @@
         };
         player.illnesses.push(illness);
         _applyConditionHealthHit(type.severity);
-        Engine.logEvent(`${player.fullName} contracted ${type.name}.`);
+        Engine.logEvent(`${player.fullName} contracted ${type.name}.`, null, 'illness');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`🤒 Illness: ${type.name}`, 'warning');
         }
@@ -293,7 +293,7 @@
         if (rng.chance(0.20)) {
             // Treatment failed — condition remains, gold still spent
             var waitDesc2 = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
-            Engine.logEvent('🏥 ' + player.fullName + ' was treated at the hospital for ' + condition.name + ' but the treatment was not effective. (' + cost + 'g spent)');
+            Engine.logEvent('🏥 ' + player.fullName + ' was treated at the hospital for ' + condition.name + ' but the treatment was not effective. (' + cost + 'g spent)', null, 'illness');
             return { success: true, treatmentFailed: true, message: 'Treatment for ' + condition.name + ' was not effective. The hospital could not cure it this time. (' + cost + 'g spent)' + waitDesc2 };
         }
 
@@ -301,7 +301,7 @@
 
         var waitDesc = _queueWaitTicks > 0 ? ', waited ~' + Math.round(_queueWaitTicks / 60 * 10) / 10 + ' days in queue' : '';
         var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + (_playerOwnsHosp ? ' 🏥 Owner priority — skipped the queue.' : (_playerIsNoble ? ' Noble priority — skipped the queue.' : '')));
+        Engine.logEvent(player.fullName + ' was treated at the hospital for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + (_playerOwnsHosp ? ' 🏥 Owner priority — skipped the queue.' : (_playerIsNoble ? ' Noble priority — skipped the queue.' : '')), null, 'illness');
         return { success: true, message: 'Treated ' + condition.name + ' at the hospital for ' + cost + 'g (' + timeDesc + ').' + waitDesc + (_playerOwnsHosp ? ' 🏥 Owner priority.' : (_playerIsNoble ? ' 👑 Noble priority.' : '')) };
     }
 
@@ -399,14 +399,14 @@
         // 20% chance treatment didn't work
         var rng = Engine.getRng();
         if (rng.chance(0.20)) {
-            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' but the treatment was not effective. (' + cost + 'g spent)');
+            Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' but the treatment was not effective. (' + cost + 'g spent)', null, 'illness');
             return { success: true, treatmentFailed: true, message: 'Treatment for ' + condition.name + ' was not effective at the clinic. (' + cost + 'g spent)' + waitDesc + nobleNote };
         }
 
         // Clinic fully cures all conditions (time + cost is the tradeoff vs hospital)
         list.splice(conditionIndex, 1);
         var timeDesc = totalTicks <= 10 ? 'a quick visit' : totalTicks <= 60 ? 'half a day' : '~' + (Math.round(totalTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + nobleNote);
+        Engine.logEvent(player.fullName + ' was treated at the clinic for ' + condition.name + ' (' + cost + 'g, ' + timeDesc + ').' + nobleNote, null, 'illness');
         return { success: true, message: 'Treated ' + condition.name + ' at the clinic for ' + cost + 'g (' + timeDesc + ').' + waitDesc + nobleNote };
     }
 
@@ -605,7 +605,7 @@
         grantXP(8, 'medical');
 
         var timeDesc = treatTicks <= 10 ? 'a quick treatment' : treatTicks <= 60 ? 'half a day' : '~' + (Math.round(treatTicks / 60 * 10) / 10) + ' days';
-        Engine.logEvent('⚕️ ' + player.fullName + ' self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + ' (' + timeDesc + ').');
+        Engine.logEvent('⚕️ ' + player.fullName + ' self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + ' (' + timeDesc + ').', null, 'illness');
         return { success: true, message: 'Self-treated ' + condition.name + ' using ' + productId.replace(/_/g, ' ') + '. Fully recovered! (' + timeDesc + ')' };
     }
 
@@ -719,7 +719,7 @@
         // Relationship boost
         modifyRelationship(patient.id, 10);
 
-        Engine.logEvent(`⚕️ ${player.fullName} treated ${patient.name || 'a townsperson'} and earned ${basePay}g.`);
+        Engine.logEvent(`⚕️ ${player.fullName} treated ${patient.name || 'a townsperson'} and earned ${basePay}g.`, null, 'illness');
         return { success: true, message: `Treated ${patient.name || 'a townsperson'} using ${usedSupply}. Earned ${basePay}g.` };
     }
 
@@ -822,17 +822,17 @@
                         ai.condition = 'sick';
                         ai.sickEndDay = Engine.getDay() + rng.randInt(3, 7);
                         ai.health = Math.min(ai.health + 20, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Condition stabilized from gravely ill to sick.');
+                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Condition stabilized from gravely ill to sick.', null, 'illness');
                     } else if (ai.condition === 'sick') {
                         ai.condition = 'healthy';
                         ai.daysSick = 0;
                         ai.health = Math.min(ai.health + 30, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Fully recovered!');
+                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Fully recovered!', null, 'illness');
                     } else if (ai.condition === 'injured') {
                         ai.condition = 'healthy';
                         ai.daysInjured = 0;
                         ai.health = Math.min(ai.health + 25, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
-                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '\'s injuries. Fully recovered!');
+                        Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '\'s injuries. Fully recovered!', null, 'illness');
                     }
                     grantXP(8, 'medical');
                     modifyRelationship(player.spouseId, 5);
@@ -862,7 +862,7 @@
                 // 20% chance treatment didn't work
                 var rng2 = Engine.getRng();
                 if (rng2.chance(0.20)) {
-                    Engine.logEvent('🏥 ' + spouse.firstName + ' is at the hospital, but the treatment may not be effective. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).');
+                    Engine.logEvent('🏥 ' + spouse.firstName + ' is at the hospital, but the treatment may not be effective. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).', null, 'illness');
                     spouse._treatmentFailed = true;
                     return { success: true, treatmentFailed: true, message: spouse.firstName + ' sent to hospital (' + cost + 'g). Must stay ' + spouseTreatDays + ' day(s). ⚠️ Treatment may not be effective.' };
                 }
@@ -873,7 +873,7 @@
                 ai.daysInjured = 0;
                 ai.health = Math.min(ai.health + 40, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
                 modifyRelationship(player.spouseId, 3);
-                Engine.logEvent('🏥 ' + spouse.firstName + ' was sent to the hospital for treatment. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).');
+                Engine.logEvent('🏥 ' + spouse.firstName + ' was sent to the hospital for treatment. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).', null, 'illness');
                 return { success: true, message: spouse.firstName + ' sent to hospital (' + cost + 'g). Must stay ' + spouseTreatDays + ' day(s). You may leave without them.' };
             }
         }
@@ -992,7 +992,7 @@
 
                 grantXP(6, 'medical');
                 modifyRelationship(targetId, 8);
-                Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + (npc.firstName || 'a companion') + ' using ' + usedSup + '.');
+                Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + (npc.firstName || 'a companion') + ' using ' + usedSup + '.', null, 'illness');
                 return { success: true, message: 'Treated ' + (npc.firstName || 'companion') + ' using ' + usedSup + '.' };
             } else {
                 // Hospital treatment for family/guard NPC
@@ -1018,7 +1018,7 @@
                 // 20% chance treatment didn't work
                 var rng2 = Engine.getRng();
                 if (rng2.chance(0.20)) {
-                    Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' is being treated at the hospital but the treatment may not be effective. Cost: ' + cost2 + 'g. They must stay for ' + treatDays + ' day(s).');
+                    Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' is being treated at the hospital but the treatment may not be effective. Cost: ' + cost2 + 'g. They must stay for ' + treatDays + ' day(s).', null, 'illness');
                     // Still lock them at hospital for duration, but don't cure
                     npc._treatmentFailed = true;
                     return { success: true, treatmentFailed: true, message: (npc.firstName || 'Companion') + ' sent to hospital (' + cost2 + 'g). They must stay ' + treatDays + ' day(s). ⚠️ Treatment may not be effective.' };
@@ -1036,7 +1036,7 @@
                 if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
 
                 modifyRelationship(targetId, 5);
-                Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' was sent to the hospital for treatment. Cost: ' + cost2 + 'g. They must stay for ' + treatDays + ' day(s).');
+                Engine.logEvent('🏥 ' + (npc.firstName || 'Your companion') + ' was sent to the hospital for treatment. Cost: ' + cost2 + 'g. They must stay for ' + treatDays + ' day(s).', null, 'illness');
                 return { success: true, message: (npc.firstName || 'Companion') + ' treated at hospital (' + cost2 + 'g). They must stay ' + treatDays + ' day(s). You may leave without them.' };
             }
         }
@@ -1103,7 +1103,7 @@
         npc.health = Math.min((npc.health || 50) + 40, 100);
         if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
         _payHealthcareRevenue(town, cost);
-        Engine.logEvent('🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).');
+        Engine.logEvent('🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).', null, 'illness');
     }
 
     // Tick hospitalized companions — release them when treatment duration is over
@@ -1130,10 +1130,10 @@
                 var npcName = npc.firstName || 'Your companion';
                 if (npc._treatmentFailed) {
                     // Treatment didn't work — they still have their conditions
-                    Engine.logEvent('🏥 ' + npcName + ' has been released from the hospital, but the treatment was not effective. They are still unwell.');
+                    Engine.logEvent('🏥 ' + npcName + ' has been released from the hospital, but the treatment was not effective. They are still unwell.', null, 'illness');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ ' + npcName + '\'s treatment failed — still sick', 'warning');
                 } else {
-                    Engine.logEvent('🏥 ' + npcName + ' has been released from the hospital, fully recovered.');
+                    Engine.logEvent('🏥 ' + npcName + ' has been released from the hospital, fully recovered.', null, 'illness');
                 }
                 // Move them to the hospital town if they're not there already
                 if (npc._hospitalTownId) {
@@ -1258,7 +1258,7 @@
                 for (var wj = 0; wj < (player.illnesses || []).length; wj++) {
                     if ((sevMap[player.illnesses[wj].severity] || 0) > worstSev) { worstSev = sevMap[player.illnesses[wj].severity]; worstName = player.illnesses[wj].name || 'illness'; }
                 }
-                Engine.logEvent('💀 ' + player.fullName + ' succumbed to ' + worstName + '. Health reached zero.');
+                Engine.logEvent('💀 ' + player.fullName + ' succumbed to ' + worstName + '. Health reached zero.', null, 'illness');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ Died from ' + worstName + '!', 'danger', 'critical');
                 player.deathCause = worstName;
                 handlePlayerDeath();
@@ -1286,7 +1286,7 @@
             const inj = player.injuries[i];
             if (inj.treated && day >= inj.healDay) {
                 player.injuries.splice(i, 1);
-                Engine.logEvent(`${player.fullName}'s ${inj.name} has healed.`);
+                Engine.logEvent(`${player.fullName}'s ${inj.name} has healed.`, null, 'illness');
                 continue;
             }
             if (!inj.treated) {
@@ -1298,7 +1298,7 @@
                     const healTime = typeDef ? Math.max(5, Math.min(30, typeDef.healDays * 2)) : 15;
                     if (daysUntreated >= healTime) {
                         player.injuries.splice(i, 1);
-                        Engine.logEvent(`${player.fullName}'s ${inj.name} has naturally healed.`);
+                        Engine.logEvent(`${player.fullName}'s ${inj.name} has naturally healed.`, { _noToast: true }, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`💚 ${inj.name} healed naturally`, 'success');
                         continue;
                     }
@@ -1308,14 +1308,14 @@
                     const healTime = typeDef ? Math.max(30, Math.min(90, typeDef.healDays * 4)) : 60;
                     if (daysUntreated >= healTime) {
                         player.injuries.splice(i, 1);
-                        Engine.logEvent(`${player.fullName}'s ${inj.name} has naturally healed.`);
+                        Engine.logEvent(`${player.fullName}'s ${inj.name} has naturally healed.`, { _noToast: true }, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`💚 ${inj.name} healed naturally`, 'success');
                         continue;
                     }
                     // 1% daily chance of worsening to severe if untreated
                     if (daysUntreated >= 10 && rng && rng.random() < 0.01) {
                         inj.severity = 'severe';
-                        Engine.logEvent(`${player.fullName}'s ${inj.name} has worsened to severe!`);
+                        Engine.logEvent(`${player.fullName}'s ${inj.name} has worsened to severe!`, null, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`⚠️ ${inj.name} is now severe!`, 'danger');
                     }
                 } else if (inj.severity === 'severe') {
@@ -1324,7 +1324,7 @@
                     var injDeathRisk = (typeDef2 && typeDef2.deathRisk) ? typeDef2.deathRisk : 0;
                     // Type-specific death risk applies immediately (e.g. deep wound 2%/day)
                     if (injDeathRisk > 0 && rng && rng.random() < injDeathRisk && !window._godInvincible) {
-                        Engine.logEvent(`${player.fullName} died from ${inj.name}.`);
+                        Engine.logEvent(`${player.fullName} died from ${inj.name}.`, null, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${inj.name}!`, 'danger', 'critical');
                         player.deathCause = inj.name;
                         handlePlayerDeath();
@@ -1332,7 +1332,7 @@
                     }
                     // General severe injury death: ~1.5% daily after 30 days untreated
                     if (daysUntreated >= 30 && rng && rng.random() < 0.015 && !window._godInvincible) {
-                        Engine.logEvent(`${player.fullName} died from untreated ${inj.name}.`);
+                        Engine.logEvent(`${player.fullName} died from untreated ${inj.name}.`, null, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from untreated ${inj.name}!`, 'danger', 'critical');
                         player.deathCause = 'Untreated ' + inj.name;
                         handlePlayerDeath();
@@ -1354,7 +1354,7 @@
             const ill = player.illnesses[i];
             if (ill.treated && day >= ill.healDay) {
                 player.illnesses.splice(i, 1);
-                Engine.logEvent(`${player.fullName} recovered from ${ill.name}.`);
+                Engine.logEvent(`${player.fullName} recovered from ${ill.name}.`, null, 'illness');
                 continue;
             }
             if (!ill.treated) {
@@ -1369,22 +1369,22 @@
                         ill.treated = true;
                         ill.healDay = day + _treatTime;
                         ill.source = (ill.source || '') + ' [prison physician]';
-                        Engine.logEvent(`⚕️ Prison guards summoned a physician for ${player.fullName}'s ${ill.name}. Recovery in ${_treatTime} day${_treatTime !== 1 ? 's' : ''}.`);
+                        Engine.logEvent(`⚕️ Prison guards summoned a physician for ${player.fullName}'s ${ill.name}. Recovery in ${_treatTime} day${_treatTime !== 1 ? 's' : ''}.`, null, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`⚕️ Prison physician treated your ${ill.name}.`, 'info');
                         continue;
                     }
                 }
                 if (ill.severity === 'minor' && daysUntreated >= 10) {
                     ill.severity = 'moderate';
-                    Engine.logEvent(`${player.fullName}'s ${ill.name} has worsened!`);
+                    Engine.logEvent(`${player.fullName}'s ${ill.name} has worsened!`, null, 'illness');
                 } else if (ill.severity === 'moderate' && daysUntreated >= 25) {
                     ill.severity = 'severe';
-                    Engine.logEvent(`${player.fullName}'s ${ill.name} is now severe!`);
+                    Engine.logEvent(`${player.fullName}'s ${ill.name} is now severe!`, null, 'illness');
                 } else if (ill.severity === 'severe') {
                     const typeDef = ILLNESS_TYPES.find(t => t.id === ill.type);
                     const deathRisk = (typeDef && typeDef.deathRisk) ? typeDef.deathRisk : 0.05;
                     if (rng && rng.random() < deathRisk && !window._godInvincible) {
-                        Engine.logEvent(`${player.fullName} died from ${ill.name}.`);
+                        Engine.logEvent(`${player.fullName} died from ${ill.name}.`, null, 'illness');
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast(`☠️ Died from ${ill.name}!`, 'danger', 'critical');
                         player.deathCause = ill.name;
                         handlePlayerDeath();

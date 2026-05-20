@@ -2227,6 +2227,16 @@ function showPersonDetail(person) {
                 // v9p33river364: courtship gating — spouse always sees activities, others need proposal accepted
                 var _courtshipAccepted = isSpouse || (Player.courtshipAccepted && Player.courtshipAccepted[person.id]);
                 if (_courtshipAccepted) {
+                    // v9p33river378: courtship bonding progress bar
+                    var _dpBond = (Player.state && Player.state.dateProgress && Player.state.dateProgress[person.id]) ? Player.state.dateProgress[person.id] : null;
+                    var _bondVal = (_dpBond && _dpBond.courtshipBonding !== undefined) ? Math.round(_dpBond.courtshipBonding) : 0;
+                    var _bondColor = _bondVal >= 75 ? '#55a868' : (_bondVal >= 50 ? '#8bc34a' : (_bondVal >= 25 ? '#d4af37' : '#c0392b'));
+                    var _bondLabel = _bondVal >= 75 ? 'Strong Bond' : (_bondVal >= 50 ? 'Growing Bond' : (_bondVal >= 25 ? 'Getting Closer' : 'Just Started'));
+                    html += '<div style="margin-bottom:6px;padding:4px 6px;background:rgba(0,0,0,0.2);border-radius:4px;">';
+                    html += '<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#aaa;margin-bottom:2px;"><span>💞 Courtship Bond</span><span style="color:' + _bondColor + ';">' + _bondVal + '% — ' + _bondLabel + '</span></div>';
+                    html += '<div style="height:5px;background:rgba(100,80,50,0.4);border-radius:3px;overflow:hidden;">';
+                    html += '<div style="width:' + _bondVal + '%;height:100%;background:' + _bondColor + ';border-radius:3px;transition:width 0.3s;"></div></div></div>';
+
                     for (const activity of DATING_ACTIVITIES) {
                         const meetsMin = !activity.minRelationship || rel.level >= activity.minRelationship;
                         const canAfford = !activity.cost || (Player.gold >= activity.cost);
@@ -2678,7 +2688,7 @@ function _resistRequisition(targetRes, seizeQty, kingdomId) {
         if (kingdom && Player.state.reputation) {
             Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 20);
         }
-        Engine.logEvent(Player.state.fullName + ' resisted forced requisition by force!');
+        Engine.logEvent(Player.state.fullName + ' resisted forced requisition by force!', null, 'combat');
     } else {
         toast('⚔️ You tried to resist but were overpowered! Goods seized + fined.', 'danger');
         Player.executeRequisition(targetRes, seizeQty);
@@ -2689,7 +2699,7 @@ function _resistRequisition(targetRes, seizeQty, kingdomId) {
         if (kingdom2 && Player.state.reputation) {
             Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 25);
         }
-        Engine.logEvent(Player.state.fullName + ' tried to resist requisition but was captured! Fined ' + fineAmt + 'g.');
+        Engine.logEvent(Player.state.fullName + ' tried to resist requisition but was captured! Fined ' + fineAmt + 'g.', null, 'combat');
     }
 }
 
@@ -2705,12 +2715,12 @@ function _fightingRetreat(targetRes, seizeQty, kingdomId) {
         if (kingdom && Player.state.reputation) {
             Player.state.reputation[kingdomId] = Math.max(0, (Player.state.reputation[kingdomId] || 50) - 10);
         }
-        Engine.logEvent(Player.state.fullName + ' fought off requisition guards and fled!');
+        Engine.logEvent(Player.state.fullName + ' fought off requisition guards and fled!', null, 'combat');
     } else {
         toast('🏃 You tried to flee but the guards caught you! Goods seized.', 'danger');
         Player.executeRequisition(targetRes, seizeQty);
         if (Player.state) Player.state.notoriety = Math.min(100, (Player.state.notoriety || 0) + 15);
-        Engine.logEvent(Player.state.fullName + ' tried to flee requisition but was caught.');
+        Engine.logEvent(Player.state.fullName + ' tried to flee requisition but was caught.', null, 'combat');
     }
 }
 
@@ -3821,7 +3831,7 @@ function _revoltJoinSide(townId, optionId, side, winChance) {
     // Check death
     if (rng.random() < deathChance && !window._godInvincible) {
         if (typeof Player !== 'undefined' && Player.state) Player.state.deathCause = 'Killed in the revolt at ' + (town.name || 'a town');
-        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('💀 You were killed fighting in the revolt at ' + (town.name || 'a town') + '!');
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('💀 You were killed fighting in the revolt at ' + (town.name || 'a town') + '!', null, 'military');
         if (typeof Player !== 'undefined' && Player.handlePlayerDeath) Player.handlePlayerDeath();
         return;
     }
@@ -3870,7 +3880,7 @@ function _revoltJoinSide(townId, optionId, side, winChance) {
             }
         }
 
-        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt and won!' + injuryMsg);
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt and won!' + injuryMsg, null, 'military');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Victory! You helped ' + alliedName + '!' + injuryMsg, 'success');
 
         // Add journal entry
@@ -3886,7 +3896,7 @@ function _revoltJoinSide(townId, optionId, side, winChance) {
             revolt.defenderMorale = Math.max(0, (revolt.defenderMorale || 50) - 5);
         }
 
-        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt but lost the skirmish.' + injuryMsg);
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' in the revolt but lost the skirmish.' + injuryMsg, null, 'military');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Defeat. ' + alliedName + ' lost ground.' + injuryMsg, 'warning');
 
         if (typeof Player !== 'undefined' && Player.recordJournalEntry) {
@@ -3938,7 +3948,7 @@ function _siegeJoinSide(townId, optionId, side, winChance) {
     // Check death
     if (rng.random() < deathChance && !window._godInvincible) {
         if (typeof Player !== 'undefined' && Player.state) Player.state.deathCause = 'Killed in the siege of ' + (town.name || 'a town');
-        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('💀 ' + (typeof Player !== 'undefined' && Player.state ? Player.state.fullName : 'You') + ' was killed fighting in the siege of ' + (town.name || 'a town') + '!');
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('💀 ' + (typeof Player !== 'undefined' && Player.state ? Player.state.fullName : 'You') + ' was killed fighting in the siege of ' + (town.name || 'a town') + '!', null, 'military');
         if (typeof Player !== 'undefined' && Player.handlePlayerDeath) Player.handlePlayerDeath();
         return;
     }
@@ -3987,7 +3997,7 @@ function _siegeJoinSide(townId, optionId, side, winChance) {
                 if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(enemyK.king, -2, undefined, 'battle_enemy_' + (Engine.getDay ? Engine.getDay() : 0));
             }
         }
-        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' and won the battle!' + injuryMsg);
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' and won the battle!' + injuryMsg, null, 'military');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Victory! You helped ' + alliedName + ' win! +3 kingdom rep.' + injuryMsg, 'success');
 
         // If defending side won, player enters the town
@@ -4003,7 +4013,7 @@ function _siegeJoinSide(townId, optionId, side, winChance) {
             Player.state.reputation = Player.state.reputation || {};
             Player.state.reputation[alliedKingdomId] = Math.min(100, (Player.state.reputation[alliedKingdomId] || 50) + 1); // still get some rep for trying
         }
-        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' but your side was defeated.' + injuryMsg);
+        if (typeof Engine !== 'undefined' && Engine.logEvent) Engine.logEvent('⚔️ You fought alongside ' + alliedName + ' but your side was defeated.' + injuryMsg, null, 'military');
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚔️ Defeat! ' + alliedName + ' lost the battle.' + injuryMsg, 'danger');
     }
 }

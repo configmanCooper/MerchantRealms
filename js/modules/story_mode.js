@@ -2672,7 +2672,7 @@ var StoryMode = (function () {
                     }
                     _log('King Aldric has bestowed the title of Lord upon you for your service to the realm.');
                     _toast('👑 You have been promoted to Lord!');
-                    if (Engine.logEvent) Engine.logEvent('👑 ' + (Player.fullName || 'The player') + ' has been granted the title of Lord by King Aldric!');
+                    if (Engine.logEvent) Engine.logEvent('👑 ' + (Player.fullName || 'The player') + ' has been granted the title of Lord by King Aldric!', null, 'my_actions');
                     if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
                         StoryMode.onPlayerAction('reach_rank', { rank: 5, kingdomId: _kId });
                     }

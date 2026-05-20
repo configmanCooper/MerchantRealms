@@ -274,7 +274,7 @@
                     UI.toast('🎓 Learned skill through hard work: ' + _label + '!', 'success');
                 }
                 if (typeof Engine !== 'undefined' && Engine.logEvent) {
-                    Engine.logEvent('🎓 ' + (player.fullName || 'You') + ' mastered ' + (SKILLS && SKILLS[skillKey] ? SKILLS[skillKey].name : skillKey) + ' from ' + unlockAt + ' shifts of hard labor.');
+                    Engine.logEvent('🎓 ' + (player.fullName || 'You') + ' mastered ' + (SKILLS && SKILLS[skillKey] ? SKILLS[skillKey].name : skillKey) + ' from ' + unlockAt + ' shifts of hard labor.', null, 'my_business');
                 }
             }
         }

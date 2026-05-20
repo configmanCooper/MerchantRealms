@@ -598,7 +598,7 @@
         town.buildings.splice(idx, 1);
         if (town.prosperity) town.prosperity = Math.max(0, town.prosperity - 3);
         agent.reports.push({ day: day, msg: '🔥 Burned down ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + ' in ' + town.name + '!' });
-        Engine.logEvent('A building in ' + town.name + ' was destroyed by fire!');
+        Engine.logEvent('A building in ' + town.name + ' was destroyed by fire!', null, 'my_business');
         if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('agent_sabotage', { agentId: agent.id, townId: agent.townId, targetId: agent.task.targetId });
         }

@@ -5831,7 +5831,11 @@ window.UI = (function () {
         if (bestComfort <= 0) housingMod = -0.30;
         else if (bestComfort <= 15) housingMod = 0;
         else housingMod = Math.min(0.30, bestComfort / 100 * 0.30);
-        var baseChance = Math.min(0.95, Math.max(0.10, 0.70 + housingMod));
+        // v9p33river378: courtship bonding affects acceptance (0=-30%, 50=0%, 100=+10%)
+        var _dpForProposal = (Player.state && Player.state.dateProgress) ? Player.state.dateProgress[personId] : null;
+        var _courtBondVal = (_dpForProposal && _dpForProposal.courtshipBonding !== undefined) ? _dpForProposal.courtshipBonding : 0;
+        var courtshipMod = _courtBondVal < 50 ? (-0.30 + (_courtBondVal / 50) * 0.30) : ((_courtBondVal - 50) / 50) * 0.10;
+        var baseChance = Math.min(0.95, Math.max(0.10, 0.70 + housingMod + courtshipMod));
         var chancePct = Math.round(baseChance * 100);
 
         // Chance label
@@ -5850,6 +5854,15 @@ window.UI = (function () {
         else if (bestComfort > 0) factors.push({ text: 'Basic housing (' + bestHouseName + ')', value: '+0%', positive: null });
         if (relLevel >= 80) factors.push({ text: 'Very high relationship (' + Math.floor(relLevel) + ')', value: '✓', positive: true });
         else if (relLevel >= 60) factors.push({ text: 'Good relationship (' + Math.floor(relLevel) + ')', value: '✓', positive: true });
+        // v9p33river378: courtship bonding factor
+        var _courtPctRound = Math.round(courtshipMod * 100);
+        if (_courtBondVal > 0) {
+            if (courtshipMod > 0) factors.push({ text: 'Courtship bonding (' + Math.round(_courtBondVal) + '%)', value: '+' + _courtPctRound + '%', positive: true });
+            else if (courtshipMod < 0) factors.push({ text: 'Weak courtship (' + Math.round(_courtBondVal) + '%)', value: _courtPctRound + '%', positive: false });
+            else factors.push({ text: 'Courtship bonding (' + Math.round(_courtBondVal) + '%)', value: '+0%', positive: null });
+        } else {
+            factors.push({ text: 'No courtship bonding', value: '-30%', positive: false });
+        }
         if (Player.hasSkill && Player.hasSkill('romantic')) factors.push({ text: 'Romantic skill', value: 'Lower threshold', positive: true });
 
         // ── Revealed traits ──
@@ -8882,7 +8895,7 @@ window.UI = (function () {
             all:      { label: '📋 All',      categories: null },
             personal: { label: '🧑 Personal', categories: ['my_actions', 'my_business', 'travel_events', 'combat'] },
             local:    { label: '🏘️ Local',    categories: ['local_town', 'npc_activity', 'illness'] },
-            world:    { label: '🌍 World',     categories: ['my_kingdom', 'foreign_kingdoms', 'world_economy', 'military'] },
+            world:    { label: '🌍 World',     categories: ['my_kingdom', 'foreign_kingdoms', 'world_economy', 'military', 'political_intrigue'] },
         };
         if (!openEventLog._activeTab) openEventLog._activeTab = 'all';
         var activeTab = openEventLog._activeTab;
@@ -8915,6 +8928,7 @@ window.UI = (function () {
                 travel_events: '🚶 Travel',
                 illness: '🦠 Illness',
                 combat: '☠️ Combat',
+                political_intrigue: '🕵️ Intrigue',
                 error_alerts: '🐛 Debug',
             };
             var filters = (typeof Player !== 'undefined' && Player.getNotificationFilters) ? Player.getNotificationFilters() : {};
@@ -9257,6 +9271,11 @@ window.UI = (function () {
                 { key: 'blockades', label: '⛵ Blockades' },
                 { key: 'bandits', label: '🗡️ Bandit Attacks' },
             ]},
+            { key: 'political_intrigue', label: '🕵️ Political Intrigue', desc: 'Court whispers, noble schemes, faction plots (requires Court Informant skill)', subs: [
+                { key: 'feast_intrigue', label: '🍷 Feast Whispers' },
+                { key: 'noble_schemes', label: '🗡️ Noble Schemes' },
+                { key: 'faction_plots', label: '🏴 Faction Plots' },
+            ]},
             { key: 'tracked', label: '⭐ Tracked Merchants', desc: 'Activities of elite merchants you are tracking' },
             { key: 'error_alerts', label: '🐛 Error Alerts', desc: 'Get notified when the game detects console errors (for bug reporting)' },
         ];
@@ -9484,6 +9503,11 @@ window.UI = (function () {
                 { key: 'pirates', label: '🏴‍☠️ Pirates & Raids' },
                 { key: 'blockades', label: '⛵ Blockades' },
                 { key: 'bandits', label: '🗡️ Bandits & Ambushes' },
+            ]},
+            { key: 'political_intrigue', label: '🕵️ Political Intrigue', subs: [
+                { key: 'feast_intrigue', label: '🍷 Feast Whispers' },
+                { key: 'noble_schemes', label: '🗡️ Noble Schemes' },
+                { key: 'faction_plots', label: '🏴 Faction Plots' },
             ]},
         ];
         for (var i = 0; i < defs.length; i++) {
@@ -9722,8 +9746,20 @@ window.UI = (function () {
         toastEl.innerHTML = `<span class="toast-icon">${icons[type] || ''}</span> ${message}`;
         toastEl.addEventListener('click', function() {
             dismissToast(id);
-            // Open event log to show the most recent matching event
+            // Open event log and show event detail for the matching event
             openEventLog();
+            // Find the most recent event matching this toast message
+            var cachedEvts = openEventLog._cachedEvents;
+            if (cachedEvts && cachedEvts.length > 0) {
+                var _toastMsg = message.replace(/<[^>]*>/g, '').trim();
+                for (var _tei = cachedEvts.length - 1; _tei >= 0; _tei--) {
+                    var _evMsg = (cachedEvts[_tei].message || cachedEvts[_tei].description || '');
+                    if (_evMsg.indexOf(_toastMsg) !== -1 || _toastMsg.indexOf(_evMsg) !== -1) {
+                        showEventDetail(_tei);
+                        break;
+                    }
+                }
+            }
         });
 
         if (!el.toastContainer) return id;

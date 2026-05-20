@@ -34,6 +34,22 @@
     var handleKingDeath = function(k, cause) { return Engine.handleKingDeath(k, cause); };
     var logKingAction = function(k, message) { return Engine.logKingAction(k, message); };
 
+    // v9p33river375: kingdom AI events must stay foreign for non-player kingdoms.
+    function _eventKingdomCategory(kingdomId) {
+        try {
+            if (typeof Player !== 'undefined' && kingdomId) {
+                var _playerCit = Player.citizenshipKingdomId || (Player.state && Player.state.citizenshipKingdomId);
+                if (_playerCit === kingdomId) return 'my_kingdom';
+                var _playerTownId = Player.townId || (Player.state && Player.state.townId);
+                if (_playerTownId) {
+                    var _playerTown = findTown(_playerTownId);
+                    if (_playerTown && _playerTown.kingdomId === kingdomId) return 'my_kingdom';
+                }
+            }
+        } catch (e) {}
+        return 'foreign_kingdoms';
+    }
+
     // ========================================================
     // §19F  KINGDOM FINANCES & BANKRUPTCY
     // ========================================================
@@ -266,8 +282,8 @@
         if (totalPropertyTax > 0) recordKingdomTransaction(k, 'income', totalPropertyTax, 'Monthly property taxes', 'property_tax');
         if (totalPropertyTax > 50) {
             logEvent(`📜 ${k.name} collects ${totalPropertyTax}g in property taxes.`, {
-                type: 'property_tax', kingdomId: k.id, cause: 'Monthly property tax collection', effects: []
-            });
+                type: 'property_tax', kingdomId: k.id, cause: 'Monthly property tax collection', effects: [], _noToast: true
+            }, _eventKingdomCategory(k.id));
         }
     }
 
@@ -311,8 +327,8 @@
         if (totalIncomeTax > 0) recordKingdomTransaction(k, 'income', totalIncomeTax, 'Seasonal income taxes', 'income_tax');
         if (totalIncomeTax > 100) {
             logEvent(`📜 ${k.name} collects ${totalIncomeTax}g in seasonal income taxes.`, {
-                type: 'income_tax', kingdomId: k.id, cause: 'Seasonal income tax assessment', effects: []
-            });
+                type: 'income_tax', kingdomId: k.id, cause: 'Seasonal income tax assessment', effects: [], _noToast: true
+            }, _eventKingdomCategory(k.id));
         }
     }
 
@@ -368,7 +384,7 @@
                     k.lastTaxIncreaseDay = world.day;
                     logEvent('📈 ' + k.name + ' raises trade taxes to ' + Math.round(k.taxRate * 100) + '% for budget sustainability.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Trade more expensive']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                     _bsActionsTaken++;
                 }
 
@@ -377,7 +393,7 @@
                     k.propertyTaxRate = Math.min(0.05, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
                     logEvent('📈 ' + k.name + ' raises property taxes to ' + Math.round(k.propertyTaxRate * 100) + '%.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Building owners pay more']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                     _bsActionsTaken++;
                 }
 
@@ -387,7 +403,7 @@
                     k.incomeTaxRate = Math.min(0.10, (k.incomeTaxRate || 0.05) + _itInc);
                     logEvent('📈 ' + k.name + ' raises income tax to ' + Math.round(k.incomeTaxRate * 100) + '%.', {
                         type: 'tax_increase', kingdomId: k.id, cause: 'Budget review', effects: ['Citizens pay more income tax']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                     _bsActionsTaken++;
                 }
 
@@ -439,7 +455,7 @@
                         recordKingdomTransaction(k, 'income', _bsSoldGold, 'Sold ' + _bsSoldItems + ' surplus military items', 'stockpile_sale');
                         logEvent('🏰 ' + k.name + ' sells ' + _bsSoldItems + ' surplus military items for ' + _bsSoldGold + 'g.', {
                             type: 'stockpile_sale', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Treasury bolstered'], _noToast: true
-                        }, 'my_kingdom');
+                        }, _eventKingdomCategory(k.id));
                         _bsActionsTaken++;
                     }
                 }
@@ -451,7 +467,7 @@
                     k.taxRate = Math.max(0.08, k.taxRate - rng.randFloat(0.01, 0.03));
                     logEvent('📉 ' + k.name + ' lowers trade taxes to ' + Math.round(k.taxRate * 100) + '% to attract more merchants.', {
                         type: 'tax_decrease', kingdomId: k.id, cause: 'Trade stimulation strategy', effects: ['Trade more attractive', 'Long-term revenue growth'], _noToast: true
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                     _bsActionsTaken++;
                 }
 
@@ -466,7 +482,7 @@
                             kingdomBuild(k, _bsPTown, 'market', rng);
                             logEvent('🏗️ ' + k.name + ' builds a market in ' + _bsPTown.name + ' to boost trade revenue.', {
                                 type: 'construction', kingdomId: k.id, cause: 'Revenue strategy', effects: ['More trade in ' + _bsPTown.name]
-                            }, 'my_kingdom');
+                            }, _eventKingdomCategory(k.id));
                             _bsActionsTaken++;
                             break;
                         }
@@ -480,7 +496,7 @@
                     k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
                     logEvent('🏰 ' + k.name + ' reduces guard spending.', {
                         type: 'budget_cut', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Fewer guards hired'], _noToast: true
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                     _bsActionsTaken++;
                 }
 
@@ -525,7 +541,7 @@
                         if (discharged > 0) {
                             logEvent('🏰 ' + k.name + ' discharges ' + discharged + ' soldiers to balance the budget.', {
                                 type: 'military_cut', kingdomId: k.id, cause: 'Budget sustainability review', effects: ['Army reduced', 'Budget pressure eased']
-                            }, 'my_kingdom');
+                            }, _eventKingdomCategory(k.id));
                         }
                     }
                 }
@@ -537,7 +553,7 @@
                     if (_cancelled) {
                         logEvent('🏗️ ' + k.name + ' cancels planned construction to save gold.', {
                             type: 'budget_cut', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Construction delayed'], _noToast: true
-                        }, 'my_kingdom');
+                        }, _eventKingdomCategory(k.id));
                     }
                 }
             }
@@ -552,7 +568,7 @@
                 k.lastTaxIncreaseDay = world.day;
                 logEvent(`📈 ${k.name} raises trade taxes to ${Math.round(k.taxRate * 100)}%.`, {
                     type: 'tax_increase', kingdomId: k.id, cause: 'Low treasury (' + Math.floor(treasury) + 'g)', effects: ['Trade becomes more expensive', 'Merchants may avoid this kingdom']
-                }, 'my_kingdom');
+                }, _eventKingdomCategory(k.id));
                 actionsTaken++;
             }
 
@@ -561,7 +577,7 @@
                 k.propertyTaxRate = Math.min(0.06, (k.propertyTaxRate || 0.02) + rng.randFloat(0.005, 0.01));
                 logEvent(`📈 ${k.name} raises property taxes to ${Math.round(k.propertyTaxRate * 100)}%.`, {
                     type: 'tax_increase', kingdomId: k.id, cause: 'Low treasury', effects: ['Building owners pay more']
-                }, 'my_kingdom');
+                }, _eventKingdomCategory(k.id));
                 actionsTaken++;
             }
 
@@ -578,7 +594,7 @@
                 }
                 logEvent(`🏰 ${k.name} reduces its army by ${cut} soldiers to save gold.`, {
                     type: 'military_cut', kingdomId: k.id, cause: 'Budget constraints', effects: ['Military strength reduced', 'Former soldiers seek work']
-                }, 'my_kingdom');
+                }, _eventKingdomCategory(k.id));
                 actionsTaken++;
             }
 
@@ -587,7 +603,7 @@
                 k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
                 logEvent(`🏰 ${k.name} reduces guard spending.`, {
                     type: 'budget_cut', kingdomId: k.id, cause: 'Financial austerity', effects: ['Fewer guards hired', 'Town security may decrease'], _noToast: true
-                }, 'my_kingdom');
+                }, _eventKingdomCategory(k.id));
                 actionsTaken++;
             }
 
@@ -620,7 +636,7 @@
                 if (soldItems > 0) {
                     logEvent(`🏰 ${k.name} sells surplus military equipment (${soldItems} items) to raise funds.`, {
                         type: 'stockpile_sale', kingdomId: k.id, cause: 'Financial need', effects: ['Military reserves reduced', 'Treasury bolstered'], _noToast: true
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -641,7 +657,7 @@
                     boostKingdomHappiness(k, -10);
                     logEvent(`💰 ${k.name} imposes an emergency wealth tax! ${levy}g collected from citizens.`, {
                         type: 'emergency_tax', kingdomId: k.id, cause: 'Near-bankruptcy', effects: ['Happiness drops significantly (-10)', 'Citizens lose savings', 'Unrest may follow']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -669,7 +685,7 @@
                         recordKingdomTransaction(k, 'income', salePrice, 'Emergency sale of ' + (bt ? bt.name : bld.type) + ' in ' + town.name, 'building_sale');
                         logEvent(`🏚️ ${k.name} sells a ${bt ? bt.name : bld.type} in ${town.name} for ${salePrice}g.`, {
                             type: 'building_sale', kingdomId: k.id, cause: 'Desperate for gold', effects: ['Town loses building benefits']
-                        });
+                        }, _eventKingdomCategory(k.id));
                         break;
                     }
                 }
@@ -698,7 +714,7 @@
                 });
                 logEvent(`👑 ${k.name}'s king demands a ${loan}g "loan" from ${target.firstName} ${target.lastName}.`, {
                     type: 'forced_loan', kingdomId: k.id, cause: 'Royal decree to raise emergency funds', effects: ['Target loses gold', 'Relations strained', 'Kingdom owes ' + loan + 'g back within 180 days']
-                });
+                }, _eventKingdomCategory(k.id));
             }
         }
 
@@ -717,8 +733,8 @@
                 }
                 if (deserted > 0) {
                     logEvent(`🏰 ${k.name} cuts soldier pay. ${deserted} soldiers desert.`, {
-                        type: 'soldier_pay_cut', cause: 'Cannot afford full military wages', effects: ['Some soldiers desert', 'Army morale drops']
-                    });
+                        type: 'soldier_pay_cut', kingdomId: k.id, cause: 'Cannot afford full military wages', effects: ['Some soldiers desert', 'Army morale drops']
+                    }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -733,8 +749,8 @@
                     k.relations[friendliest.id] = Math.min(100, (k.relations[friendliest.id] || 0) + 10);
                     friendliest.relations[k.id] = Math.min(100, (friendliest.relations[k.id] || 0) + 10);
                     logEvent(`🤝 ${k.name} negotiates a trade concession deal with ${friendliest.name} for ${aid}g.`, {
-                        type: 'trade_concession', cause: 'Financial diplomacy', effects: ['Relations improve', 'Treasury bolstered']
-                    });
+                        type: 'trade_concession', kingdomId: k.id, cause: 'Financial diplomacy', effects: ['Relations improve', 'Treasury bolstered']
+                    }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -754,7 +770,7 @@
                         k.gold += value;
                         logEvent(`⚠️ ${k.name}'s king seizes a ${bt ? bt.name : npcBld.type} in ${town.name}! (${value}g)`, {
                             type: 'asset_seizure', kingdomId: k.id, cause: 'Despotic measures to avoid collapse', effects: ['Building nationalized', 'Citizens fearful', 'Happiness drops']
-                        });
+                        }, _eventKingdomCategory(k.id));
                         boostKingdomHappiness(k, -5);
                         break;
                     }
@@ -777,7 +793,7 @@
                     localElite._seizureVictim = true;
                     logEvent(`⚠️ ${k.name}'s king seizes ${seized}g from the merchant house of ${localElite.firstName} ${localElite.lastName}!`, {
                         type: 'elite_seizure', kingdomId: k.id, cause: 'Royal confiscation of merchant wealth', effects: ['Elite merchant may flee', 'Trade confidence shattered']
-                    });
+                    }, _eventKingdomCategory(k.id));
                     boostKingdomHappiness(k, -8);
                 }
             }
@@ -788,7 +804,7 @@
                 k.gold += rng.randInt(200, 500);
                 logEvent(`⛓️ ${k.name}'s king decrees forced labor! Citizens conscripted for kingdom projects.`, {
                     type: 'forced_labor', kingdomId: k.id, cause: 'Desperate attempt to generate revenue', effects: ['Happiness plummets (-20)', 'Small amount of gold generated', 'Risk of rebellion']
-                });
+                }, _eventKingdomCategory(k.id));
             }
 
             // 18. Debase currency
@@ -798,7 +814,7 @@
                 k.gold = Math.floor(k.gold * 1.20); // instant 20% boost
                 logEvent(`💰 ${k.name} debases its currency! The kingdom mints cheaper coins.`, {
                     type: 'currency_debasement', kingdomId: k.id, cause: 'Desperate monetary policy', effects: ['Treasury gets 20% boost', 'All prices in kingdom rise 30%', 'Long-term economic damage']
-                });
+                }, _eventKingdomCategory(k.id));
                 // Inflate prices in all kingdom towns
                 // v9p33river319: guard against towns missing market.prices
                 // (legacy outposts / partial init) so debasement doesn't
@@ -821,8 +837,8 @@
                     .sort((a, b) => (k.relations[b.id] || 0) - (k.relations[a.id] || 0))[0];
                 if (bestNeighbor) {
                     logEvent(`🏳️ ${k.name}'s king offers to merge with ${bestNeighbor.name} to avoid total collapse.`, {
-                        type: 'merger_offer', cause: 'Kingdom cannot survive independently', effects: ['Towns may transfer', 'King may abdicate']
-                    }, 'sensitive_intel');
+                        type: 'merger_offer', kingdomId: k.id, cause: 'Kingdom cannot survive independently', effects: ['Towns may transfer', 'King may abdicate']
+                    }, _eventKingdomCategory(k.id));
                     // Transfer half the towns
                     const townIds = [...k.territories];
                     const toTransfer = Math.max(1, Math.floor(townIds.length / 2));
@@ -844,8 +860,8 @@
                 const king = findPerson(k.king);
                 if (king && king.alive) {
                     logEvent(`👑 The king of ${k.name} abdicates! A new ruler must be found.`, {
-                        type: 'abdication', cause: 'Kingdom bankruptcy and despair', effects: ['New king with different personality', 'Brief period of instability', 'Debts may be restructured']
-                    });
+                        type: 'abdication', kingdomId: k.id, cause: 'Kingdom bankruptcy and despair', effects: ['New king with different personality', 'Brief period of instability', 'Debts may be restructured']
+                    }, _eventKingdomCategory(k.id));
                     king.occupation = 'merchant';
                     handleKingDeath(k, 'abdication');
                     k._bankruptDays = Math.floor(k._bankruptDays * 0.5); // partial reset
@@ -1490,6 +1506,7 @@
             if (k._bankruptDays === 30) {
                 logEvent(`💸 ${k.name} has been bankrupt for a month. Soldiers are deserting!`, {
                     type: 'military_desertion',
+                    kingdomId: k.id,
                     cause: k.name + ' cannot pay its soldiers. Treasury: ' + Math.floor(k.gold) + 'g.',
                     effects: [
                         'Soldiers are leaving the army to find paid work',
@@ -1497,10 +1514,10 @@
                         'Towns may lose garrison protection',
                         'Enemy kingdoms may take advantage of the weakness'
                     ]
-                });
+                }, _eventKingdomCategory(k.id));
             }
             if (k._bankruptDays === 60) {
-                logEvent(`💸 ${k.name} has been bankrupt for two months. The kingdom teeters on collapse!`, null, 'sensitive_intel');
+                logEvent(`💸 ${k.name} has been bankrupt for two months. The kingdom teeters on collapse!`, { kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
         } else {
             k._bankruptDays = 0;
@@ -1509,7 +1526,7 @@
                 k._debasementInflation = Math.max(0, k._debasementInflation - 0.001);
                 if (k._debasementInflation <= 0) {
                     k._currencyDebased = false;
-                    logEvent(`💰 ${k.name}'s currency has stabilized after debasement.`);
+                    logEvent(`💰 ${k.name}'s currency has stabilized after debasement.`, { kingdomId: k.id, _noToast: true }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -1525,6 +1542,7 @@
 
         logEvent(`🔥 ECONOMIC COLLAPSE in ${k.name}! Riots, famine, and chaos spread!`, {
             type: 'economic_collapse',
+            kingdomId: k.id,
             cause: k.name + ' has been bankrupt for ' + (k._bankruptDays || 60) + ' days despite all measures.',
             effects: [
                 'Random buildings damaged or destroyed (10-30%)',
@@ -1534,7 +1552,7 @@
                 'Crime rate spikes',
                 'Merchants flee to other kingdoms'
             ]
-        }, 'sensitive_intel');
+        }, _eventKingdomCategory(k.id));
 
         // 1. RIOTS — damage buildings
         for (const townId of k.territories) {
@@ -1916,3 +1934,4 @@
     Engine.tickKingdomFinancialStrategy = tickKingdomFinancialStrategy;
     Engine.triggerEconomicCollapse = triggerEconomicCollapse;
 })(window.Engine);
+

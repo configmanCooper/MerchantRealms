@@ -93,7 +93,7 @@
             speed: 0.8 + (hrng ? hrng.random() * 0.4 : Math.random() * 0.4), // 0.8-1.2 multiplier
         };
         player.horses.push(horse);
-        Engine.logEvent('🐴 You bought a horse named ' + horse.name + '!');
+        Engine.logEvent('🐴 You bought a horse named ' + horse.name + '!', null, 'my_business');
 
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('buy_horse', {});
@@ -134,7 +134,7 @@
         }
         player.horses.splice(idx, 1);
         if (player.horses.length === 0) player.travelMode = 'walk';
-        Engine.logEvent('🐴 You sold ' + horse.name + ' for ' + price + 'g.');
+        Engine.logEvent('🐴 You sold ' + horse.name + ' for ' + price + 'g.', null, 'my_business');
         return { success: true, message: 'Sold ' + horse.name + ' for ' + price + 'g.' + (horse.saddled ? ' Saddle returned.' : '') };
     }
 
@@ -184,7 +184,7 @@
         };
         player.horses.push(horse);
         player.travelMode = 'horse';
-        Engine.logEvent('🐴 You mounted ' + horse.name + '!');
+        Engine.logEvent('🐴 You mounted ' + horse.name + '!', null, 'my_business');
 
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('mount_horse', {});
@@ -213,7 +213,7 @@
         player.horses.splice(idx, 1);
         player.inventory.horses = (player.inventory.horses || 0) + 1;
         if (player.horses.length === 0) player.travelMode = 'walk';
-        Engine.logEvent('🐴 You dismounted ' + horse.name + '.');
+        Engine.logEvent('🐴 You dismounted ' + horse.name + '.', null, 'my_business');
         return { success: true, message: '🐴 Dismounted ' + horse.name + '. Horse added to inventory.' + (horse.saddled ? ' Saddle returned.' : '') };
     }
 
@@ -227,7 +227,7 @@
         player.inventory.saddles -= 1;
         if (player.inventory.saddles <= 0) delete player.inventory.saddles;
         horse.saddled = true;
-        Engine.logEvent('🪑 Saddle mounted on ' + horse.name + '.');
+        Engine.logEvent('🪑 Saddle mounted on ' + horse.name + '.', null, 'my_business');
         return { success: true, message: '🪑 Saddle mounted on ' + horse.name + '! Travel energy reduced.' };
     }
 
@@ -238,7 +238,7 @@
         if (!horse.saddled) return { success: false, message: horse.name + ' has no saddle.' };
         horse.saddled = false;
         player.inventory.saddles = (player.inventory.saddles || 0) + 1;
-        Engine.logEvent('🪑 Saddle removed from ' + horse.name + '.');
+        Engine.logEvent('🪑 Saddle removed from ' + horse.name + '.', null, 'my_business');
         return { success: true, message: '🪑 Saddle removed from ' + horse.name + '. Returned to inventory.' };
     }
 
@@ -268,7 +268,7 @@
         // Permit fee goes to kingdom coffers
         kingdom.gold = (kingdom.gold || 0) + cost;
         var label = isAnnual ? 'annual' : '30-day';
-        Engine.logEvent('🐴 Purchased a ' + label + ' horse permit in ' + kingdom.name + ' for ' + cost + 'g (valid ' + duration + ' days).');
+        Engine.logEvent('🐴 Purchased a ' + label + ' horse permit in ' + kingdom.name + ' for ' + cost + 'g (valid ' + duration + ' days).', null, 'my_business');
         return { success: true, message: '🐴 Horse permit purchased! Valid for ' + duration + ' days.' };
     }
 
@@ -546,7 +546,7 @@
                         }
                     }
                     var goodsMsg = stolenGoods.length > 0 ? ' Along with: ' + stolenGoods.join(', ') + '.' : '';
-                    Engine.logEvent('🏴‍☠️ Your parked ' + name + ' was stolen in ' + townName + '!' + goodsMsg);
+                    Engine.logEvent('🏴‍☠️ Your parked ' + name + ' was stolen in ' + townName + '!' + goodsMsg, null, 'my_business');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏴‍☠️ Your ' + name + ' was stolen in ' + townName + '!' + goodsMsg, 'error', 'critical');
                 }
             }
@@ -759,7 +759,7 @@
             house._lastManureDecayDay = typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0;
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 3);
-        Engine.logEvent(player.fullName + ' installed ' + addon.icon + ' ' + addon.name + ' in their ' + house.type + '.');
+        Engine.logEvent(player.fullName + ' installed ' + addon.icon + ' ' + addon.name + ' in their ' + house.type + '.', null, 'my_business');
 
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('install_addon', { addon: addonId });
@@ -1001,7 +1001,7 @@
                 player._backpack = true;
                 if (!player.storageContainer) player.storageContainer = 'backpack';
                 var _bMsg = 'Equipped ' + container.icon + ' ' + container.name + ' (from inventory)!';
-                Engine.logEvent(_bMsg);
+                Engine.logEvent(_bMsg, null, 'my_business');
                 return { success: true, message: _bMsg };
             }
             // Vehicle equip: preserve existing backpack flag, swap old vehicle out.
@@ -1014,7 +1014,7 @@
                 player.inventory[_oldId] = (player.inventory[_oldId] || 0) + 1;
                 _msg += ' Previous ' + _oldNm + ' returned to inventory.';
             }
-            Engine.logEvent(_msg);
+            Engine.logEvent(_msg, null, 'my_business');
             return { success: true, message: _msg };
         }
 
@@ -1067,7 +1067,7 @@
             if (!player.storageContainer) player.storageContainer = 'backpack';
             var bMsg2 = 'Crafted ' + container.icon + ' ' + container.name + '!';
             if (materialMarketCost > 0) bMsg2 += ' Materials from market: ' + materialMarketCost + 'g.';
-            Engine.logEvent(bMsg2);
+            Engine.logEvent(bMsg2, null, 'my_business');
             return { success: true, message: bMsg2 };
         }
         // Vehicle craft: preserve backpack, swap old vehicle out.
@@ -1082,7 +1082,7 @@
             msg += ' Previous ' + oldName + ' returned to inventory.';
         }
         if (materialMarketCost > 0) msg += ' Materials from market: ' + materialMarketCost + 'g.';
-        Engine.logEvent(msg);
+        Engine.logEvent(msg, null, 'my_business');
         return { success: true, message: msg };
     }
 
@@ -1110,7 +1110,7 @@
             if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
             if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
             var _bmsg = container.icon + ' Equipped ' + container.name + '!';
-            Engine.logEvent(_bmsg);
+            Engine.logEvent(_bmsg, null, 'my_business');
             return { success: true, message: _bmsg };
         }
 
@@ -1130,7 +1130,7 @@
             // players are free to swap vehicles (e.g. downgrade to a cart
             // for less theft risk). Old vehicle is returned to inventory.
             player.inventory[player.storageContainer] = (player.inventory[player.storageContainer] || 0) + 1;
-            Engine.logEvent('Stored your ' + (oldC ? oldC.name : 'vehicle') + ' in inventory.');
+            Engine.logEvent('Stored your ' + (oldC ? oldC.name : 'vehicle') + ' in inventory.', null, 'my_business');
         }
 
         player.inventory[containerId] -= 1;
@@ -1139,7 +1139,7 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
         var msg = container.icon + ' Equipped ' + container.name + ' from inventory!';
-        Engine.logEvent(msg);
+        Engine.logEvent(msg, null, 'my_business');
         return { success: true, message: msg };
     }
 
@@ -1179,7 +1179,7 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
         var msg = container.icon + ' Dismounted ' + container.name + ' to inventory.';
         if (player._backpack) msg += ' Backpack re-equipped.';
-        Engine.logEvent(msg);
+        Engine.logEvent(msg, null, 'my_business');
         return { success: true, message: msg };
     }
 
@@ -1215,7 +1215,7 @@
         player.inventory['backpack'] = (player.inventory['backpack'] || 0) + 1;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
         var bpMsg = (bpContainer ? bpContainer.icon : '🎒') + ' Backpack unequipped to inventory.';
-        Engine.logEvent(bpMsg);
+        Engine.logEvent(bpMsg, null, 'my_business');
         return { success: true, message: bpMsg };
     }
 
@@ -1246,7 +1246,7 @@
             stolen = Math.min(stolen, qty);
             player.inventory[targetRes] -= stolen;
             var res = findResource(targetRes);
-            Engine.logEvent('\u26A0\uFE0F Thieves raided your ' + container.name + '! Lost ' + stolen + ' ' + (res ? res.name : targetRes) + '.');
+            Engine.logEvent('\u26A0\uFE0F Thieves raided your ' + container.name + '! Lost ' + stolen + ' ' + (res ? res.name : targetRes) + '.', null, 'my_business');
         }
     }
 
@@ -1274,7 +1274,7 @@
             var res = findResource(targetRes);
             var cartContainer = CONFIG.STORAGE_CONTAINERS[lc.container];
             var cartName = cartContainer ? cartContainer.name : 'Cart';
-            Engine.logEvent('⚠️ Thieves raided your unattended ' + cartName + '! Lost ' + stolen + ' ' + (res ? res.name : targetRes) + '.');
+            Engine.logEvent('⚠️ Thieves raided your unattended ' + cartName + '! Lost ' + stolen + ' ' + (res ? res.name : targetRes) + '.', null, 'my_business');
         }
     }
 
@@ -1316,7 +1316,7 @@
                         if (stored[targetRes] <= 0) delete stored[targetRes];
                         var res = findResource(targetRes);
                         var workerName = worker ? (worker.firstName || 'A worker') : 'A worker';
-                        Engine.logEvent('\uD83D\uDD75\uFE0F ' + workerName + ' stole ' + maxSteal + ' ' + (res ? res.name : targetRes) + ' from your warehouse!');
+                        Engine.logEvent('\uD83D\uDD75\uFE0F ' + workerName + ' stole ' + maxSteal + ' ' + (res ? res.name : targetRes) + ' from your warehouse!', null, 'my_business');
                     }
                 }
             }
@@ -1408,7 +1408,7 @@
                 }
                 player.buildings = player.buildings.filter(b => b.active);
                 player.reputation[disadvantagedId] = 0;
-                Engine.logEvent(`${disadvantagedK.name} seizes all your assets for supplying their enemy!`);
+                Engine.logEvent(`${disadvantagedK.name} seizes all your assets for supplying their enemy!`, null, 'military');
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast(`💀 ${disadvantagedK.name} has seized all your assets!`, 'danger', 'critical');
                 }
@@ -1430,7 +1430,7 @@
                         if (idx !== -1) town.buildings[idx].ownerId = null;
                     }
                     player.buildings = player.buildings.filter(b => b.active);
-                    Engine.logEvent(`${disadvantagedK.name} seizes one of your buildings!`);
+                    Engine.logEvent(`${disadvantagedK.name} seizes one of your buildings!`, null, 'military');
                     if (typeof UI !== 'undefined' && UI.toast) {
                         UI.toast(`⚠️ ${disadvantagedK.name} seized a building!`, 'warning', 'critical');
                     }
@@ -1440,7 +1440,7 @@
             // Extra 10% tax — tracked in alleg
             if (!alleg._penaltyApplied3) {
                 alleg._penaltyApplied3 = true;
-                Engine.logEvent(`${disadvantagedK.name} imposes extra taxes on your trades!`);
+                Engine.logEvent(`${disadvantagedK.name} imposes extra taxes on your trades!`, null, 'military');
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast(`⚠️ ${disadvantagedK.name} added 10% extra tax on your trades.`, 'warning', 'military');
                 }
@@ -1476,7 +1476,7 @@
         repGain = Math.min(repGain, 8); // Cap at +8 max per donation
         dt.count++;
         modifyKingdomReputation(kingdomId, repGain);
-        Engine.logEvent('Donated ' + cost + 'g to ' + kingdom.name + '. Reputation +' + repGain.toFixed(1) + '.');
+        Engine.logEvent('Donated ' + cost + 'g to ' + kingdom.name + '. Reputation +' + repGain.toFixed(1) + '.', null, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('💰 Donated ' + cost + 'g to ' + kingdom.name + '! Rep +' + repGain.toFixed(1), 'success');
         }
@@ -1536,7 +1536,7 @@
                 }
             }
 
-            Engine.logEvent('⚠️ You changed allegiance from ' + (_oldK ? _oldK.name : _oldSide) + '! Severe reputation penalties applied.');
+            Engine.logEvent('⚠️ You changed allegiance from ' + (_oldK ? _oldK.name : _oldSide) + '! Severe reputation penalties applied.', null, 'military');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Allegiance changed! -20 rep with former ally, relationship penalties applied.', 'warning');
 
             // Clear old allegiance — will be set fresh below
@@ -1559,7 +1559,7 @@
                     var oldRank = CONFIG.SOCIAL_RANKS[playerRankInEnemy] ? CONFIG.SOCIAL_RANKS[playerRankInEnemy].name : 'Noble';
                     player.socialRank[enemySide] = 3; // guildmaster
                     delete player.rankSince[enemySide];
-                    Engine.logEvent('⚠️ Your ' + oldRank + ' rank in the enemy kingdom has been stripped — demoted to Guildmaster for siding against them!');
+                    Engine.logEvent('⚠️ Your ' + oldRank + ' rank in the enemy kingdom has been stripped — demoted to Guildmaster for siding against them!', null, 'military');
                     if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Demoted to Guildmaster in enemy kingdom for siding against them!', 'warning');
                 }
             }
@@ -1575,7 +1575,7 @@
         };
 
         if (side === 'neutral') {
-            Engine.logEvent('You chose to remain neutral in the war.');
+            Engine.logEvent('You chose to remain neutral in the war.', null, 'military');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🕊️ You chose neutrality.', 'info');
             }
@@ -1613,7 +1613,7 @@
             }
 
             Engine.logEvent('⚔️ You sided with ' + (chosenK ? chosenK.name : side) + ' in the war!' +
-                (enemyK ? ' (-5 rep with ' + enemyK.name + ')' : ''));
+                (enemyK ? ' (-5 rep with ' + enemyK.name + ')' : ''), null, 'military');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('⚔️ You sided with ' + (chosenK ? chosenK.name : side) + '! +5 rep, -5 enemy rep', 'info', 'military');
             }
@@ -1714,7 +1714,7 @@
                     if (ourStrength < theirStrength) unlockAchievement('against_all_odds');
                 }
 
-                Engine.logEvent('🎖️ Your side won the war! +' + repGain + ' rep, +' + reward + 'g reward, guaranteed petition granted.');
+                Engine.logEvent('🎖️ Your side won the war! +' + repGain + ' rep, +' + reward + 'g reward, guaranteed petition granted.', null, 'military');
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast('🎖️ War Hero! ' + (alliedK ? alliedK.name : 'Your side') + ' wins! +' + repGain + ' rep, +' + reward + 'g, petition granted!', 'success', 'military');
                 }
@@ -1793,7 +1793,7 @@
                 var lossMsg = '💀 Defeat! -' + repLoss + ' rep both kingdoms, -' + retribution + 'g retribution';
                 if (jailDays > 0) lossMsg += ', jailed for ' + jailDays + ' days';
                 lossMsg += '.';
-                Engine.logEvent(lossMsg);
+                Engine.logEvent(lossMsg, null, 'military');
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast(lossMsg, 'danger', 'critical');
                 }

@@ -2012,12 +2012,13 @@ window.Game = (function () {
                         var evtCategory = event.category || 'local_town';
                         // v9p33river374: skip toasts for events explicitly marked log-only
                         if (event.details && event.details._noToast) { /* log-only event */ }
-                        // v9p33river374: skip toasts for non-actionable categories
-                        else if (evtCategory === 'npc_activity' || evtCategory === 'foreign_kingdoms') { /* log-only */ }
-                        // v9p33river369: local_town events only show if player is in that town
+                        // v9p33river377: let notification visibility inspect the full event context before any popup is shown.
+                        else if (typeof Player !== 'undefined' && Player.shouldShowNotification &&
+                            !Player.shouldShowNotification(evtCategory, event, msg)) { /* filtered */ }
+                        // v9p33river377: local_town toasts only make sense when the player is actually in that town.
                         else if (evtCategory === 'local_town' && event.townId) {
                             var _pTownId = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
-                            if (!_pTownId || event.townId === _pTownId) {
+                            if (_pTownId && event.townId === _pTownId) {
                                 UI.toast(msg, toastType, evtCategory, true);
                             }
                         } else {

@@ -737,6 +737,27 @@
         } catch (e) { return false; }
     }
 
+    // v9p33river375: kingdom AI events must stay foreign for non-player kingdoms.
+    function _eventKingdomCategory(kingdomId) {
+        try {
+            if (typeof Player !== 'undefined' && kingdomId) {
+                var _playerCit = Player.citizenshipKingdomId || (Player.state && Player.state.citizenshipKingdomId);
+                if (_playerCit === kingdomId) return 'my_kingdom';
+                var _playerTownId = Player.townId || (Player.state && Player.state.townId);
+                if (_playerTownId) {
+                    var _playerTown = findTown(_playerTownId);
+                    if (_playerTown && _playerTown.kingdomId === kingdomId) return 'my_kingdom';
+                }
+            }
+        } catch (e) {}
+        return 'foreign_kingdoms';
+    }
+    function _eventEitherKingdomCategory(kingdomAId, kingdomBId) {
+        return _eventKingdomCategory(kingdomAId) === 'my_kingdom' || _eventKingdomCategory(kingdomBId) === 'my_kingdom'
+            ? 'my_kingdom'
+            : 'foreign_kingdoms';
+    }
+
     // Generate an advisor suggestion for the player-king instead of AI executing
     function _addAdvisorSuggestion(k, category, icon, title, desc, actionId, actionData) {
         if (!k._advisorSuggestions) k._advisorSuggestions = [];
@@ -954,12 +975,12 @@
                     // Small relation boost
                     k.relations[_napTarget.id] = Math.min(100, (k.relations[_napTarget.id] || 0) + 5);
                     _napTarget.relations[k.id] = Math.min(100, (_napTarget.relations[k.id] || 0) + 5);
-                    logEvent('🕊️ ' + k.name + ' and ' + _napTarget.name + ' sign a non-aggression pact! (' + _napDuration + ' days)', {
+                    logEvent('🕊️ ' + k.name + ' and ' + _napTarget.name + ' sign a non-aggression pact! (' + _napDuration + ' days)',  {
                         type: 'non_aggression_pact',
                         cause: 'Diplomatic negotiations led to a peace agreement',
                         effects: ['Neither kingdom may declare war for ' + _napDuration + ' days', 'Relations +5 both ways'],
                         kingdoms: [k.id, _napTarget.id]
-                    });
+                    }, _eventEitherKingdomCategory(k.id, _napTarget.id));
                 }
             }
 
@@ -973,7 +994,7 @@
                         const shift = -rng.randInt(CONFIG.DISPUTE_MIN || 8, CONFIG.DISPUTE_MAX || 25);
                         k.relations[other.id] = Math.max(-100, (k.relations[other.id] || 0) + shift);
                         other.relations[k.id] = Math.max(-100, (other.relations[k.id] || 0) + shift);
-                        logEvent(`Border dispute between ${k.name} and ${other.name}! Relations worsen.`, {
+                        logEvent(`Border dispute between ${k.name} and ${other.name}! Relations worsen.`,  {
                             type: 'border_dispute',
                             cause: 'A territorial disagreement has flared up along the border.',
                             effects: [
@@ -982,7 +1003,7 @@
                                 (k.relations[other.id] || 0) < CONFIG.RELATION_WAR_THRESHOLD ? '\u26A0\uFE0F Relations are dangerously close to war!' : 'Risk of further escalation exists'
                             ],
                             kingdoms: [k.id, other.id]
-                        });
+                        }, _eventEitherKingdomCategory(k.id, other.id));
                     } else {
                         // L4: Differentiated diplomatic proposals — trade agreements, mutual defense pacts, border accords
                         var _treatyRoll = rng.random();
@@ -1001,7 +1022,7 @@
                             var _treaty = { type: 'trade_agreement', partnerId: other.id, good: _tradeGood, tariffReduction: _tariffReduction, startDay: world.day, endDay: world.day + _tradeDuration };
                             k._activeTreaties.push(_treaty);
                             other._activeTreaties.push({ type: 'trade_agreement', partnerId: k.id, good: _tradeGood, tariffReduction: _tariffReduction, startDay: world.day, endDay: world.day + _tradeDuration });
-                            logEvent('📦 Trade Agreement: ' + k.name + ' and ' + other.name + ' agree on ' + _tradeGood + ' trade terms for ' + _tradeDuration + ' days.', {
+                            logEvent('📦 Trade Agreement: ' + k.name + ' and ' + other.name + ' agree on ' + _tradeGood + ' trade terms for ' + _tradeDuration + ' days.',  {
                                 type: 'trade_agreement',
                                 cause: 'Merchants negotiated favorable trade terms for ' + _tradeGood + '.',
                                 effects: [
@@ -1011,7 +1032,7 @@
                                     '+0.3 passive relations boost while active'
                                 ],
                                 kingdoms: [k.id, other.id]
-                            });
+                            }, _eventEitherKingdomCategory(k.id, other.id));
                         } else if (_treatyRoll < 0.70) {
                             // MUTUAL DEFENSE PACT — defensive only (if attacked, partner helps)
                             var _mdpDuration = rng.randInt(180, 720); // 6 months to 2 years
@@ -1022,7 +1043,7 @@
                             if (!other._activeTreaties) other._activeTreaties = [];
                             k._activeTreaties.push({ type: 'mutual_defense', partnerId: other.id, startDay: world.day, endDay: world.day + _mdpDuration });
                             other._activeTreaties.push({ type: 'mutual_defense', partnerId: k.id, startDay: world.day, endDay: world.day + _mdpDuration });
-                            logEvent('🛡️ Mutual Defense Pact: ' + k.name + ' and ' + other.name + ' pledge to defend each other if attacked.', {
+                            logEvent('🛡️ Mutual Defense Pact: ' + k.name + ' and ' + other.name + ' pledge to defend each other if attacked.',  {
                                 type: 'mutual_defense_pact',
                                 cause: 'Both kingdoms see benefit in mutual protection.',
                                 effects: [
@@ -1033,7 +1054,7 @@
                                     '+0.2 passive relations boost while active'
                                 ],
                                 kingdoms: [k.id, other.id]
-                            });
+                            }, _eventEitherKingdomCategory(k.id, other.id));
                         } else {
                             // BORDER ACCORD — allows passage even if laws prohibit
                             var _baDuration = rng.randInt(90, 360);
@@ -1044,7 +1065,7 @@
                             if (!other._activeTreaties) other._activeTreaties = [];
                             k._activeTreaties.push({ type: 'border_accord', partnerId: other.id, startDay: world.day, endDay: world.day + _baDuration });
                             other._activeTreaties.push({ type: 'border_accord', partnerId: k.id, startDay: world.day, endDay: world.day + _baDuration });
-                            logEvent('🤝 Border Accord: ' + k.name + ' and ' + other.name + ' open their borders to each other\'s citizens.', {
+                            logEvent('🤝 Border Accord: ' + k.name + ' and ' + other.name + ' open their borders to each other\'s citizens.',  {
                                 type: 'border_accord',
                                 cause: 'Diplomatic negotiations opened the borders.',
                                 effects: [
@@ -1054,7 +1075,7 @@
                                     '+0.1 passive relations boost while active'
                                 ],
                                 kingdoms: [k.id, other.id]
-                            });
+                            }, _eventEitherKingdomCategory(k.id, other.id));
                         }
                     }
                 }
@@ -1071,11 +1092,11 @@
                     var _cbAmt = rng.randInt(10, 25);
                     k._casusBelli[_cbTarget.id] = Math.min(100, (k._casusBelli[_cbTarget.id] || 0) + _cbAmt);
                     k.relations[_cbTarget.id] = Math.max(-100, (k.relations[_cbTarget.id] || 0) - Math.floor(_cbAmt * 0.5));
-                    logEvent('🗡️ Raiders from ' + _cbTarget.name + ' attack ' + k.name + '\'s border settlements! (+' + _cbAmt + ' casus belli)', {
+                    logEvent('🗡️ Raiders from ' + _cbTarget.name + ' attack ' + k.name + '\'s border settlements! (+' + _cbAmt + ' casus belli)',  {
                         type: 'border_raid', kingdoms: [k.id, _cbTarget.id],
                         cause: 'Armed raiders from across the border',
                         effects: ['War justification grows', 'Relations worsen by ' + Math.floor(_cbAmt * 0.5)]
-                    });
+                    }, _eventEitherKingdomCategory(k.id, _cbTarget.id));
                 }
             }
             // Trade disputes create casus belli
@@ -1084,9 +1105,9 @@
                 if (_tdTargets.length > 0) {
                     var _tdTarget = rng.pick(_tdTargets);
                     k._casusBelli[_tdTarget.id] = Math.min(100, (k._casusBelli[_tdTarget.id] || 0) + 15);
-                    logEvent('⚖️ Trade dispute between ' + k.name + ' and ' + _tdTarget.name + '! Merchants demand action. (+15 casus belli)', {
+                    logEvent('⚖️ Trade dispute between ' + k.name + ' and ' + _tdTarget.name + '! Merchants demand action. (+15 casus belli)',  {
                         type: 'trade_dispute', kingdoms: [k.id, _tdTarget.id]
-                    });
+                    }, _eventEitherKingdomCategory(k.id, _tdTarget.id));
                 }
             }
             // Insults between kings (personality-driven)
@@ -1099,10 +1120,10 @@
                     _insTarget._casusBelli[k.id] = Math.min(100, (_insTarget._casusBelli[k.id] || 0) + 10);
                     k.relations[_insTarget.id] = Math.max(-100, (k.relations[_insTarget.id] || 0) - 5);
                     _insTarget.relations[k.id] = Math.max(-100, (_insTarget.relations[k.id] || 0) - 5);
-                    logEvent('😤 The king of ' + k.name + ' publicly insults ' + _insTarget.name + '! Diplomatic relations sour.', {
+                    logEvent('😤 The king of ' + k.name + ' publicly insults ' + _insTarget.name + '! Diplomatic relations sour.',  {
                         type: 'diplomatic_insult', kingdoms: [k.id, _insTarget.id],
                         effects: ['Casus belli grows', 'Relations -5 both ways']
-                    });
+                    }, _eventEitherKingdomCategory(k.id, _insTarget.id));
                 }
             }
             // Decay casus belli over time
@@ -1299,11 +1320,11 @@
                         ally.alliances.add(k.id);
                         k.allianceMeta[ally.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'threat_response' };
                         ally.allianceMeta[k.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'threat_response' };
-                        logEvent('🛡️ ' + k.name + ' and ' + ally.name + ' form a defensive alliance against the growing power of ' + threat.name + '!', {
+                        logEvent('🛡️ ' + k.name + ' and ' + ally.name + ' form a defensive alliance against the growing power of ' + threat.name + '!',  {
                             type: 'alliance_formed', cause: threat.name + ' military strength and territory threaten smaller kingdoms',
                             effects: ['Defensive pact formed against shared threat', 'Both kingdoms will defend each other if attacked'],
                             kingdoms: [k.id, ally.id]
-                        });
+                        }, _eventEitherKingdomCategory(k.id, ally.id));
                         break; // one alliance per tick
                     }
                 }
@@ -1373,7 +1394,7 @@
                                 if (!otherRef.allianceMeta) otherRef.allianceMeta = {};
                                 kRef.allianceMeta[otherRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
                                 otherRef.allianceMeta[kRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                                logEvent('🤝 ' + kRef.name + ' and ' + otherRef.name + ' have formed a ' + alType + ' alliance!', {
+                                logEvent('🤝 ' + kRef.name + ' and ' + otherRef.name + ' have formed a ' + alType + ' alliance!',  {
                                     type: 'alliance_formed',
                                     cause: 'Relations reached ' + Math.round(kRef.relations[otherRef.id] || 0) + ' (approved by Royal Advisor).',
                                     effects: [
@@ -1384,7 +1405,7 @@
                                         'Diplomatic relations are strengthened'
                                     ],
                                     kingdoms: [kRef.id, otherRef.id]
-                                });
+                                }, _eventEitherKingdomCategory(kRef.id, otherRef.id));
                             }; })(k, _alOther, _alType)
                         });
                     } else if (hasSpecialLaw(k, 'noble_council')) {
@@ -1398,7 +1419,7 @@
                                 if (!otherRef.allianceMeta) otherRef.allianceMeta = {};
                                 kRef.allianceMeta[otherRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
                                 otherRef.allianceMeta[kRef.id] = { type: alType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                                logEvent('🤝 ' + kRef.name + ' and ' + otherRef.name + ' have formed a ' + alType + ' alliance!', {
+                                logEvent('🤝 ' + kRef.name + ' and ' + otherRef.name + ' have formed a ' + alType + ' alliance!',  {
                                     type: 'alliance_formed',
                                     cause: 'Noble Council approved the alliance.',
                                     effects: [
@@ -1409,7 +1430,7 @@
                                         'Diplomatic relations are strengthened'
                                     ],
                                     kingdoms: [kRef.id, otherRef.id]
-                                });
+                                }, _eventEitherKingdomCategory(kRef.id, otherRef.id));
                             }; })(k, other, newAllianceType),
                             { action: 'form_alliance', args: { kingdomAId: k.id, kingdomBId: other.id, allianceType: newAllianceType } }
                         );
@@ -1418,7 +1439,7 @@
                         other.alliances.add(k.id);
                         k.allianceMeta[other.id] = { type: newAllianceType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
                         other.allianceMeta[k.id] = { type: newAllianceType, formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                        logEvent(`🤝 ${k.name} and ${other.name} have formed a ${newAllianceType} alliance!`, {
+                        logEvent(`🤝 ${k.name} and ${other.name} have formed a ${newAllianceType} alliance!`,  {
                             type: 'alliance_formed',
                             cause: 'Relations between ' + k.name + ' and ' + other.name + ' reached ' + Math.round(rel) + ' (threshold: ' + CONFIG.RELATION_ALLIANCE_THRESHOLD + ').',
                             effects: [
@@ -1429,7 +1450,7 @@
                                 'Diplomatic relations are strengthened'
                             ],
                             kingdoms: [k.id, other.id]
-                        });
+                        }, _eventEitherKingdomCategory(k.id, other.id));
                     }
                 }
                 // Alliance breaks if relations drop too low
@@ -1438,7 +1459,7 @@
                     other.alliances.delete(k.id);
                     if (k.allianceMeta) delete k.allianceMeta[other.id];
                     if (other.allianceMeta) delete other.allianceMeta[k.id]; // v9p33river334: legacy allies may lack allianceMeta.
-                    logEvent(`💔 The alliance between ${k.name} and ${other.name} has been dissolved!`, {
+                    logEvent(`💔 The alliance between ${k.name} and ${other.name} has been dissolved!`,  {
                         type: 'alliance_dissolved',
                         cause: 'Relations between ' + k.name + ' and ' + other.name + ' dropped to ' + Math.round(rel) + ', below the alliance maintenance threshold.',
                         effects: [
@@ -1447,7 +1468,7 @@
                             'Risk of future conflict increases'
                         ],
                         kingdoms: [k.id, other.id]
-                    });
+                    }, _eventEitherKingdomCategory(k.id, other.id));
                 }
 
                 // ---- Alliance fatigue decay over time ----
@@ -1463,7 +1484,7 @@
                             other.alliances.delete(k.id);
                             if (k.allianceMeta) delete k.allianceMeta[other.id];
                             if (other.allianceMeta) delete other.allianceMeta[k.id]; // v9p33river334: legacy allies may lack allianceMeta.
-                            logEvent(`💔 The ancient alliance between ${k.name} and ${other.name} has withered away.`, {
+                            logEvent(`💔 The ancient alliance between ${k.name} and ${other.name} has withered away.`,  {
                                 type: 'alliance_decayed',
                                 cause: 'The ' + allianceAge + '-day old alliance has succumbed to fatigue and neglect.',
                                 effects: [
@@ -1471,7 +1492,7 @@
                                     'Both kingdoms must forge new diplomatic ties'
                                 ],
                                 kingdoms: [k.id, other.id]
-                            });
+                            }, _eventEitherKingdomCategory(k.id, other.id));
                         }
                     }
                     // Slow natural fatigue recovery during peaceful times
@@ -2054,9 +2075,9 @@
             if (ap.greed === 'greedy' || ap.greed === 'corrupt') warCostThreshold *= 0.7;
 
             if (a.gold < sixMonthWarCost * warCostThreshold) {
-                logEvent(`${a.name}'s advisors warn against war with ${b.name} — the treasury cannot sustain it (${Math.floor(a.gold)}g vs estimated ${Math.floor(sixMonthWarCost)}g needed).`, {
+                logEvent(`${a.name}'s advisors warn against war with ${b.name} — the treasury cannot sustain it (${Math.floor(a.gold)}g vs estimated ${Math.floor(sixMonthWarCost)}g needed).`,  {
                     type: 'war_averted', cause: 'Insufficient treasury', effects: ['War declaration cancelled', 'Kingdom saves gold for buildup']
-                });
+                }, _eventEitherKingdomCategory(a.id, b.id));
                 return;
             }
         }
@@ -2065,7 +2086,7 @@
         var soldiers = ((_tickCache.soldiersByKingdom || {})[a.id] || []);
         const warDeclarationCost = Math.min(2000, Math.max(500, soldiers.length * 10));
         if (a.gold < warDeclarationCost) {
-            logEvent(`${a.name} cannot afford to declare war on ${b.name} (need ${warDeclarationCost}g).`);
+            logEvent(`${a.name} cannot afford to declare war on ${b.name} (need ${warDeclarationCost}g).`, null, _eventEitherKingdomCategory(a.id, b.id));
             return;
         }
         a.gold -= warDeclarationCost;
@@ -2171,12 +2192,12 @@
                     _mdpPartner.atWar.add(a.id);
                     a.atWar.add(_mdpPartner.id);
                     _mdpPartner._lastWarStartDay = world.day;
-                    logEvent('🛡️ ' + _mdpPartner.name + ' honors their mutual defense pact with ' + b.name + ' and declares war on ' + a.name + '!', {
+                    logEvent('🛡️ ' + _mdpPartner.name + ' honors their mutual defense pact with ' + b.name + ' and declares war on ' + a.name + '!',  {
                         type: 'war_declared',
                         cause: 'Mutual defense pact with ' + b.name + ' triggered by ' + a.name + '\'s aggression.',
                         effects: [_mdpPartner.name + ' joins the war against ' + a.name],
                         kingdoms: [_mdpPartner.id, a.id]
-                    });
+                    }, _eventEitherKingdomCategory(_mdpPartner.id, a.id));
                 }
             }
         }
@@ -2508,10 +2529,10 @@
             // Foolish kings waste money on vanity projects
             var wasteAmount = Math.min(200, Math.floor(k.gold * 0.1));
             k.gold -= wasteAmount;
-            logEvent('\uD83E\uDD34 The foolish ruler of ' + k.name + ' wastes ' + wasteAmount + 'g on a vanity project.', {
+            logEvent('\uD83E\uDD34 The foolish ruler of ' + k.name + ' wastes ' + wasteAmount + 'g on a vanity project.',  {
                 type: 'vanity_project', cause: 'Poor judgment by dim ruler',
                 effects: ['Treasury -' + wasteAmount + 'g', 'No benefit to the kingdom']
-            });
+            }, _eventKingdomCategory(k.id));
         }
 
         // 3a. NATIONALIZATION — greedy/corrupt kings may nationalize industries (rare, seasonal)
@@ -2523,7 +2544,7 @@
             if (candidates.length > 0) {
                 const target = rng.pick(candidates);
                 k.nationalizedIndustries.push(target);
-                logEvent(`👑 ${k.name} has nationalized all ${target} operations! NPC-owned ${target}s can no longer produce.`);
+                logEvent(`👑 ${k.name} has nationalized all ${target} operations! NPC-owned ${target}s can no longer produce.`, null, _eventKingdomCategory(k.id));
                 // Kingdom builds nationalized buildings in towns that lack them
                 for (const townId of k.territories) {
                     const town = findTown(townId);
@@ -2916,7 +2937,7 @@
                         }
                         if (built) {
                             var infra = chosenType === 'road' ? '\uD83D\uDEE4\uFE0F road' : '\u26F5 sea route';
-                            logEvent(`\uD83E\uDD1D ${k.name} and ${chosen.partner.name} jointly funded a new ${infra} between ${chosen.a.name} and ${chosen.b.name}!`);
+                            logEvent(`\uD83E\uDD1D ${k.name} and ${chosen.partner.name} jointly funded a new ${infra} between ${chosen.a.name} and ${chosen.b.name}!`, null, _eventEitherKingdomCategory(k.id, a.id));
                         } else {
                             // Refund if construction failed
                             k.gold += halfCost;
@@ -2968,7 +2989,7 @@
             if (!hasReq) {
                 if (!k.laws.specialLaws) k.laws.specialLaws = [];
                 k.laws.specialLaws.push({ id: 'forced_requisition', name: 'Forced Requisition', desc: 'Guards may seize goods from merchants.' });
-                logEvent(`${k.name} enacts Forced Requisition laws!`, {
+                logEvent(`${k.name} enacts Forced Requisition laws!`,  {
                     type: 'forced_requisition', kingdomId: k.id,
                     cause: 'The corrupt ruler of ' + k.name + ' has authorized the seizure of merchant goods.',
                     effects: [
@@ -2977,7 +2998,7 @@
                         'Trade in the kingdom becomes more dangerous',
                         'Kingdom happiness may decrease'
                     ]
-                });
+                }, _eventKingdomCategory(k.id));
                 logKingAction(k, '⚠️ Enacted Forced Requisition');
             }
         }
@@ -3005,7 +3026,7 @@
         // Expire any finished tournament (lasts 30 days)
         if (k.tournament && k.tournament.active && (world.day - k.tournament.startDay) > 30) {
             k.tournament.active = false;
-            logEvent(`🏟️ The royal tournament in ${k.name} has concluded.`);
+            logEvent(`🏟️ The royal tournament in ${k.name} has concluded.`, null, _eventKingdomCategory(k.id));
         }
         // Kings can sponsor new tournaments when not at war, treasury > 1000g, no active tournament
         // H-3: Only if treasury > 12 months of upkeep (festivals/tournaments are lowest priority)
@@ -3035,10 +3056,10 @@
                         townId: capitalTown.id,
                     };
                     boostKingdomHappiness(k, 5);
-                    logEvent(`🏟️ The ruler of ${k.name} has announced a Royal Tournament in ${capitalTown.name}! Entry fee: ${entryFee}g.`, {
+                    logEvent(`🏟️ The ruler of ${k.name} has announced a Royal Tournament in ${capitalTown.name}! Entry fee: ${entryFee}g.`,  {
                         type: 'tournament', cause: 'Royal decree',
                         effects: ['Fighters from across the land gather', 'Kingdom happiness +5', 'Grand prizes for the champion']
-                    });
+                    }, _eventKingdomCategory(k.id));
                     logKingAction(k, '🏟️ Sponsored a royal tournament');
                 }
             }
@@ -3313,7 +3334,7 @@
                     distributeConstructionWages(town.id, wallConfig.cost, rng);
                     var _wallBuildDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade) ? CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade.build : 30;
                     town._wallConstruction = { targetLevel: nextLevel, completeDay: world.day + _wallBuildDays, name: wallConfig.name };
-                    logEvent(`${kingdom_name(k)} begins building ${wallConfig.name} around ${town.name}!`);
+                    logEvent(`${kingdom_name(k)} begins building ${wallConfig.name} around ${town.name}!`, null, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -3469,9 +3490,9 @@
                             fortressWallsHP: _fwCfg2.maxHP || 600,
                             fortressWallsMaxHP: _fwCfg2.maxHP || 600
                         });
-                        logEvent('🏰 ' + kingdom_name(k) + ' begins constructing fortress walls at ' + _fwTown.name + '!', {
+                        logEvent('🏰 ' + kingdom_name(k) + ' begins constructing fortress walls at ' + _fwTown.name + '!',  {
                             type: 'construction_project', townId: _fwTown.id
-                        });
+                        }, _eventKingdomCategory(k.id));
                         logKingAction(k, '🏰 Ordered fortress wall construction at ' + _fwTown.name);
                         break;
                     }
@@ -3745,10 +3766,10 @@
                     k.taxRate = Math.min(0.25, k.taxRate + taxRaiseAmount);
                     k.lastTaxIncreaseDay = world.day;
                     logKingAction(k, '📈 Raised wartime taxes to ' + Math.round(k.taxRate * 100) + '%');
-                    logEvent('📈 ' + k.name + ' raises taxes to ' + Math.round(k.taxRate * 100) + '% to fund the war effort.', {
+                    logEvent('📈 ' + k.name + ' raises taxes to ' + Math.round(k.taxRate * 100) + '% to fund the war effort.',  {
                         type: 'wartime_tax_increase', kingdomId: k.id, cause: 'War expenses depleting treasury (' + Math.floor(k.gold) + 'g)',
                         effects: ['Trade becomes more expensive', 'Citizens pay more taxes', 'War funding improved']
-                    });
+                    }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -3770,13 +3791,13 @@
                     k._seizureLawDay = world.day;
                     k._seizureCount = 0;
                     k._seizureResentment = 0;
-                    logEvent('⚖️👑 The ruler of ' + k.name + ' enacts the Right of Royal Requisition — the crown may seize assets for the war effort!', {
+                    logEvent('⚖️👑 The ruler of ' + k.name + ' enacts the Right of Royal Requisition — the crown may seize assets for the war effort!',  {
                         type: 'seizure_law', cause: 'War treasury crisis (' + Math.floor(k.gold) + 'g)',
                         effects: ['The king can now seize buildings, gold, and goods from citizens',
                                   'Citizens will grow resentful if seizures are frequent',
                                   'Rebellion may follow if the king goes too far'],
                         kingdomId: k.id
-                    });
+                    }, _eventKingdomCategory(k.id));
                     logKingAction(k, '⚖️ Enacted Right of Royal Requisition');
                 }
             }
@@ -3866,12 +3887,12 @@
                             k.gold += Math.floor(bldValue * 0.4); // immediate partial liquidation value
                             buildingSeized += Math.floor(bldValue * 0.4);
                             k._seizureCount = (k._seizureCount || 0) + 1;
-                            logEvent('👑⚠️ The crown of ' + k.name + ' seizes a ' + targetBld.type + ' in ' + _bTown.name + '!', {
+                            logEvent('👑⚠️ The crown of ' + k.name + ' seizes a ' + targetBld.type + ' in ' + _bTown.name + '!',  {
                                 type: 'building_seizure', cause: 'Royal Requisition for war effort',
                                 effects: ['Building now crown property', 'Previous owner loses investment',
                                           'Citizens grow fearful and resentful'],
                                 kingdomId: k.id, townId: _bTown.id
-                            });
+                            }, _eventKingdomCategory(k.id));
                             logKingAction(k, '👑 Seized a ' + targetBld.type + ' in ' + _bTown.name);
                             break;
                         }
@@ -3884,11 +3905,11 @@
                 k._seizureResentment = (k._seizureResentment || 0) + seizedFrom * 2 + (k._seizureCount || 0) * 5;
 
                 if (totalSeized > 0) {
-                    logEvent('💰 The crown of ' + k.name + ' requisitions ' + Math.floor(totalSeized) + 'g worth of assets for the war effort.', {
+                    logEvent('💰 The crown of ' + k.name + ' requisitions ' + Math.floor(totalSeized) + 'g worth of assets for the war effort.',  {
                         type: 'asset_seizure', cause: 'War funding crisis',
                         effects: ['Treasury +' + Math.floor(totalSeized) + 'g', 'Citizen resentment grows (' + Math.floor(k._seizureResentment || 0) + ')'],
                         kingdomId: k.id
-                    });
+                    }, _eventKingdomCategory(k.id));
                 }
 
                 // REBELLION CHECK — seizure resentment can trigger rebellion
@@ -3904,7 +3925,7 @@
                     if (rng.chance(rebellionChance)) {
                         var _seizKing = findPerson(k.king);
                         var _seizKingName = _seizKing ? ((_seizKing.firstName || '?') + ' ' + (_seizKing.lastName || '')) : 'the king';
-                        logEvent('🔥⚔️ REBELLION in ' + k.name + '! Citizens revolt against the crown\'s seizure of assets!', {
+                        logEvent('🔥⚔️ REBELLION in ' + k.name + '! Citizens revolt against the crown\'s seizure of assets!',  {
                             type: 'seizure_rebellion',
                             cause: 'Citizens of ' + k.name + ' rebel against ' + _seizKingName + '\'s tyrannical asset seizures',
                             kingName: _seizKingName,
@@ -3912,7 +3933,7 @@
                             effects: ['Major happiness drop (-25)', 'Soldiers may defect', 'King faces overthrow risk',
                                       'Seizure law repealed by force'],
                             kingdomId: k.id
-                        });
+                        }, _eventKingdomCategory(k.id));
                         // Consequences
                         boostKingdomHappiness(k, -25);
                         k._seizureLawActive = false;
@@ -3933,14 +3954,14 @@
                         }
                         // King may be overthrown
                         if (rng.chance(0.25)) {
-                            logEvent('👑💀 The ruler of ' + k.name + ' is overthrown by the rebellion!', {
+                            logEvent('👑💀 The ruler of ' + k.name + ' is overthrown by the rebellion!',  {
                                 type: 'seizure_overthrow', kingdomId: k.id,
                                 cause: _seizKingName + ' overthrown by popular uprising against tyrannical seizures',
                                 overthrownKing: _seizKingName,
                                 overthrownKingId: k.king,
                                 defectors: _defectorNames.slice(0, 5),
                                 effects: ['New ruler takes power', 'Seizure law permanently repealed', 'Period of instability']
-                            });
+                            }, _eventKingdomCategory(k.id));
                             handleKingDeath(k, 'rebellion');
                         }
                     }
@@ -3950,9 +3971,9 @@
             // Peacetime: repeal seizure law if active, wind down resentment
             if (k._seizureLawActive) {
                 k._seizureLawActive = false;
-                logEvent('⚖️ ' + k.name + ' repeals the Right of Royal Requisition as peace returns.', {
+                logEvent('⚖️ ' + k.name + ' repeals the Right of Royal Requisition as peace returns.',  {
                     type: 'seizure_law_repeal', kingdomId: k.id, cause: 'War ended', effects: ['Citizens relieved', 'Normal property rights restored']
-                });
+                }, _eventKingdomCategory(k.id));
             }
             if ((k._seizureResentment || 0) > 0) {
                 k._seizureResentment = Math.max(0, (k._seizureResentment || 0) - 1); // slowly decays in peacetime
@@ -3971,9 +3992,9 @@
                 const partner = rng.pick(potentialPartners);
                 k.relations[partner.id] = Math.min(100, (k.relations[partner.id] || 0) + 5);
                 partner.relations[k.id] = Math.min(100, (partner.relations[k.id] || 0) + 5);
-                logEvent(`🤝 ${k.name} proposes a trade agreement with ${partner.name}. Relations improve.`, {
+                logEvent(`🤝 ${k.name} proposes a trade agreement with ${partner.name}. Relations improve.`,  {
                     type: 'trade_proposal', cause: 'Diplomatic initiative', effects: ['Relations +5 both ways', 'Trade may increase']
-                });
+                }, _eventEitherKingdomCategory(k.id, partner.id));
             }
         }
 
@@ -3988,9 +4009,9 @@
                 var relBoost = Math.min(25, Math.floor((CONFIG.KINGDOM_GIFT_DIPLOMACY_RELATION || 15) * (_dipGiftCost / 500)));
                 k.relations[worstRelation.id] = Math.min(100, (k.relations[worstRelation.id] || 0) + relBoost);
                 worstRelation.relations[k.id] = Math.min(100, (worstRelation.relations[k.id] || 0) + Math.floor(relBoost * 0.5));
-                logEvent(`🎁 ${k.name} sends a diplomatic gift to ${worstRelation.name} (${_dipGiftCost}g).`, {
+                logEvent(`🎁 ${k.name} sends a diplomatic gift to ${worstRelation.name} (${_dipGiftCost}g).`,  {
                     type: 'diplomatic_gift', cause: 'Improving strained relations', effects: ['Relations +' + relBoost, 'Treasury -' + _dipGiftCost + 'g']
-                });
+                }, _eventEitherKingdomCategory(k.id, worstRelation.id));
             }
         }
 
@@ -4009,10 +4030,10 @@
                 if (!target._marriageAlliances) target._marriageAlliances = {};
                 k._marriageAlliances[target.id] = world.day + 720; // lasts 2 years
                 target._marriageAlliances[k.id] = world.day + 720;
-                logEvent(`💒 A royal marriage is arranged between ${k.name} and ${target.name}! Relations soar.`, {
+                logEvent(`💒 A royal marriage is arranged between ${k.name} and ${target.name}! Relations soar.`,  {
                     type: 'royal_marriage', cause: 'Diplomatic alliance through marriage',
                     effects: ['Relations +' + relBoost + ' both ways', 'War probability halved for 2 years', 'Alliance more likely']
-                });
+                }, _eventEitherKingdomCategory(k.id, target.id));
             }
         }
 
@@ -4030,14 +4051,14 @@
                     target.gold -= tributeAmount;
                     k.gold += tributeAmount;
                     target.relations[k.id] = Math.max(-100, (target.relations[k.id] || 0) - 15);
-                    logEvent(`💰 ${k.name} demands and receives ${tributeAmount}g tribute from ${target.name}!`, {
+                    logEvent(`💰 ${k.name} demands and receives ${tributeAmount}g tribute from ${target.name}!`,  {
                         type: 'tribute_demand', cause: 'Military dominance', effects: ['Treasury +' + tributeAmount + 'g', 'Target kingdom resentful']
-                    });
+                    }, _eventEitherKingdomCategory(k.id, target.id));
                 } else {
                     target.relations[k.id] = Math.max(-100, (target.relations[k.id] || 0) - 10);
-                    logEvent(`😤 ${target.name} refuses ${k.name}'s demand for tribute!`, {
+                    logEvent(`😤 ${target.name} refuses ${k.name}'s demand for tribute!`,  {
                         type: 'tribute_refused', cause: 'Pride or lack of funds', effects: ['Relations worsen']
-                    });
+                    }, _eventEitherKingdomCategory(k.id, target.id));
                 }
             }
         }
@@ -4051,9 +4072,9 @@
                 const target = rng.pick(enemies);
                 if (!hasEmbargo(k.id, target.id)) {
                     declareEmbargo(k, target);
-                    logEvent(`🚫 ${k.name} declares an economic embargo against ${target.name}!`, {
+                    logEvent(`🚫 ${k.name} declares an economic embargo against ${target.name}!`,  {
                         type: 'embargo_declared', cause: 'Poor relations and hostile policy', effects: ['Trade banned between kingdoms', 'Smuggling opportunities arise']
-                    });
+                    }, _eventEitherKingdomCategory(k.id, target.id));
                 }
             }
         }
@@ -4069,10 +4090,10 @@
                 kTowns2[0].garrison += mercCount;
                 kTowns2[0]._mercenaryExpiry = world.day + 30; // mercenaries leave after 30 days
                 kTowns2[0]._mercenaryCount = (kTowns2[0]._mercenaryCount || 0) + mercCount;
-                logEvent(`🛡️ ${k.name} hires ${mercCount} mercenaries for defense of ${kTowns2[0].name} (-${mercCost}g, 30 days).`, {
+                logEvent(`🛡️ ${k.name} hires ${mercCount} mercenaries for defense of ${kTowns2[0].name} (-${mercCost}g, 30 days).`,  {
                     type: 'mercenary_hire', cause: 'Preventive defense investment',
                     effects: ['Garrison +' + mercCount + ' in ' + kTowns2[0].name, 'Mercenaries serve for 30 days', 'Treasury -' + mercCost + 'g']
-                });
+                }, _eventKingdomCategory(k.id));
             }
         }
 
@@ -4228,9 +4249,9 @@
 
         // c. Set price controls (intelligent kings only)
         if ((p.intelligence === 'brilliant') && rng.chance(0.05) && happiness < 35) {
-            logEvent(`📜 ${k.name}'s wise king sets price controls on essential goods to protect citizens.`, {
+            logEvent(`📜 ${k.name}'s wise king sets price controls on essential goods to protect citizens.`,  {
                 type: 'price_controls', kingdomId: k.id, cause: 'Protecting citizens from price gouging', effects: ['Essential goods prices capped', 'Merchants may be discouraged']
-            });
+            }, _eventKingdomCategory(k.id));
             const kTowns = world.towns.filter(t => k.territories.has(t.id));
             for (const town of kTowns) {
                 const essentials = ['bread', 'wheat', 'meat', 'fish'];
@@ -4260,17 +4281,17 @@
             k.gold -= festCost;
             boostKingdomHappiness(k, festHappy);
             for (const tid of k.territories) { const t = findTown(tid); if (t) t._festivalDay = world.day; }
-            logEvent(`🎉 ${k.name} holds a grand festival! The people celebrate. (+${festHappy} happiness, -${festCost}g)`, {
+            logEvent(`🎉 ${k.name} holds a grand festival! The people celebrate. (+${festHappy} happiness, -${festCost}g)`,  {
                 type: 'grand_festival', kingdomId: k.id, cause: 'Royal celebration to boost morale', effects: ['Happiness +' + festHappy, 'Treasury -' + festCost + 'g']
-            });
+            }, _eventKingdomCategory(k.id));
         }
 
         // b. Issue pardons (just/kind kings)
         if ((p.justice === 'just' || p.temperament === 'kind') && rng.chance(0.05)) {
             boostKingdomHappiness(k, 3);
-            logEvent(`⚖️ The king of ${k.name} issues royal pardons. Prisoners are freed. (+3 happiness)`, {
+            logEvent(`⚖️ The king of ${k.name} issues royal pardons. Prisoners are freed. (+3 happiness)`,  {
                 type: 'royal_pardon', kingdomId: k.id, cause: 'Act of mercy and justice', effects: ['Happiness +3', 'Some criminals released']
-            });
+            }, _eventKingdomCategory(k.id));
         }
 
         // c. Crack down on crime (stern/just kings)
@@ -4280,9 +4301,9 @@
                 const town = findTown(townId);
                 if (town) town.security = Math.min(100, (town.security || 50) + 10);
             }
-            logEvent(`🛡️ ${k.name} cracks down on crime! Guards patrol the streets. (-200g, +10 security)`, {
+            logEvent(`🛡️ ${k.name} cracks down on crime! Guards patrol the streets. (-200g, +10 security)`,  {
                 type: 'crime_crackdown', kingdomId: k.id, cause: 'Royal order to restore order', effects: ['Security +10 in all towns', 'Treasury -200g']
-            });
+            }, _eventKingdomCategory(k.id));
         }
 
         // d. Fund public works (require healthy treasury + H-3 12-month threshold)
@@ -4295,9 +4316,9 @@
                 const town = findTown(townId);
                 if (town) town.prosperity = Math.min(100, town.prosperity + 2);
             }
-            logEvent(`🏗️ ${k.name} funds public works projects. Roads and buildings are improved.`, {
+            logEvent(`🏗️ ${k.name} funds public works projects. Roads and buildings are improved.`,  {
                 type: 'public_works', kingdomId: k.id, cause: 'Investment in infrastructure', effects: ['Happiness +' + happyBoost, 'Prosperity +2', 'Treasury -' + cost + 'g']
-            });
+            }, _eventKingdomCategory(k.id));
         }
 
         // e. Establish welfare (generous/kind kings — require healthy treasury + H-3 threshold)
@@ -4306,9 +4327,9 @@
             const happyBoost = CONFIG.KINGDOM_WELFARE_HAPPINESS || 5;
             k.gold -= cost;
             boostKingdomHappiness(k, happyBoost);
-            logEvent(`🤲 ${k.name}'s kind ruler distributes gold to the poorest citizens. (+${happyBoost} happiness)`, {
+            logEvent(`🤲 ${k.name}'s kind ruler distributes gold to the poorest citizens. (+${happyBoost} happiness)`,  {
                 type: 'welfare_distribution', kingdomId: k.id, cause: 'Compassion for the less fortunate', effects: ['Happiness +' + happyBoost, 'Treasury -' + cost + 'g']
-            });
+            }, _eventKingdomCategory(k.id));
             logKingAction(k, '🤲 Distributed gold to the poor (-' + cost + 'g, +' + happyBoost + ' happiness)');
         }
 
@@ -4324,10 +4345,10 @@
                 _tiTowns[0].prosperity = Math.min(100, (_tiTowns[0].prosperity || 50) + 5);
                 _tiTowns[0].happiness = Math.min(100, (_tiTowns[0].happiness || 50) + 3);
                 logKingAction(k, '🏘️ Town improvement in ' + (_tiTowns[0].name || 'a town') + ' (-' + _tiCost + 'g, +5 prosperity, +3 happiness)');
-                logEvent('🏘️ ' + k.name + ' invests in improving ' + (_tiTowns[0].name || 'a town') + '! Roads paved, wells dug, buildings repaired.', {
+                logEvent('🏘️ ' + k.name + ' invests in improving ' + (_tiTowns[0].name || 'a town') + '! Roads paved, wells dug, buildings repaired.',  {
                     type: 'town_improvement', kingdomId: k.id, townId: _tiTowns[0].id,
                     effects: ['Prosperity +5', 'Happiness +3', 'Treasury -' + _tiCost + 'g']
-                });
+                }, _eventKingdomCategory(k.id));
             }
         }
 
@@ -4358,10 +4379,10 @@
                     prospBoost: _gpChoice.prospBoost
                 };
                 logKingAction(k, _gpChoice.icon + ' Began ' + _gpChoice.name + ' in ' + _gpCapital.name + ' (-' + _gpCost + 'g, ' + _gpDuration + ' days)');
-                logEvent(_gpChoice.icon + ' ' + k.name + ' begins construction of a ' + _gpChoice.name + ' in ' + _gpCapital.name + '! (' + _gpDuration + ' days, ' + _gpCost + 'g)', {
+                logEvent(_gpChoice.icon + ' ' + k.name + ' begins construction of a ' + _gpChoice.name + ' in ' + _gpCapital.name + '! (' + _gpDuration + ' days, ' + _gpCost + 'g)',  {
                     type: 'grand_project_start', kingdomId: k.id, townId: _gpCapital.id,
                     effects: ['Treasury -' + _gpCost + 'g', 'Completes in ' + _gpDuration + ' days', 'Will boost prosperity and happiness']
-                });
+                }, _eventKingdomCategory(k.id));
             }
         }
         // Check for grand project completion
@@ -4371,10 +4392,10 @@
                 _gpTown.prosperity = Math.min(100, (_gpTown.prosperity || 50) + k._grandProject.prospBoost);
                 boostKingdomHappiness(k, k._grandProject.happyBoost);
             }
-            logEvent(k._grandProject.icon + ' The ' + k._grandProject.type + ' in ' + (_gpTown ? _gpTown.name : 'the capital') + ' is complete! ' + k.name + ' celebrates!', {
+            logEvent(k._grandProject.icon + ' The ' + k._grandProject.type + ' in ' + (_gpTown ? _gpTown.name : 'the capital') + ' is complete! ' + k.name + ' celebrates!',  {
                 type: 'grand_project_complete', kingdomId: k.id,
                 effects: ['Happiness +' + k._grandProject.happyBoost, 'Prosperity +' + k._grandProject.prospBoost, k._grandProject.type + ' stands as a symbol of the kingdom']
-            });
+            }, _eventKingdomCategory(k.id));
             logKingAction(k, k._grandProject.icon + ' ' + k._grandProject.type + ' completed! (+' + k._grandProject.happyBoost + ' happiness, +' + k._grandProject.prospBoost + ' prosperity)');
             k._grandProject = null;
         }
@@ -4398,10 +4419,10 @@
                 k._lastHappinessBoostDay = world.day;
                 boostActionTaken = true;
                 logKingAction(k, '🏟️ Hosted a grand tournament (-' + gameCost + 'g, +' + gameHappy + ' happiness)');
-                logEvent('🏟️ ' + k.name + ' hosts a grand tournament! Knights joust and the people cheer. (+' + gameHappy + ' happiness)', {
+                logEvent('🏟️ ' + k.name + ' hosts a grand tournament! Knights joust and the people cheer. (+' + gameHappy + ' happiness)',  {
                     type: 'games_tournament', kingdomId: k.id, cause: 'A spectacular display of martial prowess',
                     effects: ['Happiness +' + gameHappy, 'Treasury -' + gameCost + 'g', '90-day cooldown']
-                });
+                }, _eventKingdomCategory(k.id));
             }
 
             // Grand Feast: generous/kind kings, costs 800g
@@ -4419,10 +4440,10 @@
                 k._lastHappinessBoostDay = world.day;
                 boostActionTaken = true;
                 logKingAction(k, '🍖 Grand feast for the people (-' + feastCost + 'g, +' + feastHappy + ' happiness)');
-                logEvent('🍖 ' + k.name + ' throws a grand feast for the common folk! Food and drink flow freely. (+' + feastHappy + ' happiness)', {
+                logEvent('🍖 ' + k.name + ' throws a grand feast for the common folk! Food and drink flow freely. (+' + feastHappy + ' happiness)',  {
                     type: 'grand_feast_people', kingdomId: k.id, cause: 'Generosity and concern for the people',
                     effects: ['Happiness +' + feastHappy, 'Treasury -' + feastCost + 'g', '90-day cooldown']
-                });
+                }, _eventKingdomCategory(k.id));
             }
 
             // Tax Rebate: clever/brilliant kings, costs vary by pop
@@ -4441,10 +4462,10 @@
                     k._lastHappinessBoostDay = world.day;
                     boostActionTaken = true;
                     logKingAction(k, '💰 Tax rebate for citizens (-' + Math.floor(rebateCost) + 'g, +' + rebateHappy + ' happiness)');
-                    logEvent('💰 ' + k.name + ' issues a tax rebate to all citizens! Gold flows back to the people. (+' + rebateHappy + ' happiness)', {
+                    logEvent('💰 ' + k.name + ' issues a tax rebate to all citizens! Gold flows back to the people. (+' + rebateHappy + ' happiness)',  {
                         type: 'tax_rebate', kingdomId: k.id, cause: 'Strategic tax relief to boost morale',
                         effects: ['Happiness +' + rebateHappy, 'Treasury -' + Math.floor(rebateCost) + 'g', '90-day cooldown']
-                    });
+                    }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -4458,10 +4479,10 @@
                 k._lastHappinessBoostDay = world.day;
                 boostActionTaken = true;
                 logKingAction(k, '📜 Forgave debts of poorest citizens (-' + debtCost + 'g, +' + debtHappy + ' happiness)');
-                logEvent('📜 ' + k.name + ' forgives the debts of its poorest citizens! Relief spreads through the land. (+' + debtHappy + ' happiness)', {
+                logEvent('📜 ' + k.name + ' forgives the debts of its poorest citizens! Relief spreads through the land. (+' + debtHappy + ' happiness)',  {
                     type: 'debt_forgiveness', kingdomId: k.id, cause: 'Act of royal mercy',
                     effects: ['Happiness +' + debtHappy, 'Treasury -' + debtCost + 'g', '90-day cooldown']
-                });
+                }, _eventKingdomCategory(k.id));
             }
 
             // Fallback: any king with enough gold can do basic happiness action
@@ -4472,10 +4493,10 @@
                 boostKingdomHappiness(k, basicHappy);
                 k._lastHappinessBoostDay = world.day;
                 logKingAction(k, '🎪 Public entertainments and food distribution (-' + basicCost + 'g, +' + basicHappy + ' happiness)');
-                logEvent('🎪 ' + k.name + ' organizes public entertainments and food distribution. (+' + basicHappy + ' happiness)', {
+                logEvent('🎪 ' + k.name + ' organizes public entertainments and food distribution. (+' + basicHappy + ' happiness)',  {
                     type: 'public_entertainment', kingdomId: k.id, cause: 'Desperate attempt to lift morale',
                     effects: ['Happiness +' + basicHappy, 'Treasury -' + basicCost + 'g', '90-day cooldown']
-                });
+                }, _eventKingdomCategory(k.id));
             }
         }
 
@@ -4507,11 +4528,11 @@
                 _nceN.perceivedKingLoyalty = Math.min(100, (_nceN.perceivedKingLoyalty || _nceN.kingLoyalty || 50) + 3);
             }
             logKingAction(k, '🗳️ Established a Noble Council');
-            logEvent('🗳️ ' + k.name + ' establishes a Noble Council! Major decisions now require noble approval. (+10 happiness)', {
+            logEvent('🗳️ ' + k.name + ' establishes a Noble Council! Major decisions now require noble approval. (+10 happiness)',  {
                 type: 'law_change', kingdomId: k.id,
                 cause: 'The ruler seeks to share power and stabilize the realm.',
                 effects: ['Major decisions (war, peace, alliances, bans) now voted on', 'Kingdom happiness +10', 'Nobles gain political influence', 'Noble loyalty +5, fear -3']
-            });
+            }, _eventKingdomCategory(k.id));
         }
         // Noble Council repeal — ambitious/greedy kings may repeal when stability returns
         if (hasSpecialLaw(k, 'noble_council') &&
@@ -4528,11 +4549,11 @@
             }
             boostKingdomHappiness(k, -10);
             logKingAction(k, '🗳️ Dissolved the Noble Council — power returns to the crown');
-            logEvent('🗳️ ' + k.name + ' dissolves the Noble Council! The king seizes back all decision-making power. (-10 happiness, nobles furious)', {
+            logEvent('🗳️ ' + k.name + ' dissolves the Noble Council! The king seizes back all decision-making power. (-10 happiness, nobles furious)',  {
                 type: 'law_change', kingdomId: k.id,
                 cause: 'The king consolidates power by disbanding the council.',
                 effects: ['Noble Council dissolved', 'Happiness -10', 'Noble loyalty -10, fear +6', 'Nobles lose political voice']
-            });
+            }, _eventKingdomCategory(k.id));
         }
 
         // a. Price Controls — brilliant kings enact during crises, repeal when stable
@@ -4540,11 +4561,11 @@
             && happiness < 30 && rng.chance(0.15 * (mood.conscriptMod || 1))) {
             k.laws.specialLaws.push({ id: 'price_controls', name: 'Price Controls', desc: 'Maximum prices on essential goods.', icon: '📊' });
             logKingAction(k, '📊 Enacted Price Controls to protect citizens');
-            logEvent('📊 ' + k.name + ' enacts price controls on essential goods!', { type: 'law_change', kingdomId: k.id });
+            logEvent('📊 ' + k.name + ' enacts price controls on essential goods!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         } else if (hasSpecialLaw(k, 'price_controls') && happiness > 60 && rng.chance(0.1)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'price_controls'; });
             logKingAction(k, '📊 Repealed Price Controls — economy is stable');
-            logEvent('📊 ' + k.name + ' lifts price controls as prosperity returns.', { type: 'law_change', kingdomId: k.id });
+            logEvent('📊 ' + k.name + ' lifts price controls as prosperity returns.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // b. Immigration Policy — traditionalist/paranoid kings close borders
@@ -4553,13 +4574,13 @@
             k.laws.specialLaws.push({ id: 'immigration_policy', name: 'Closed Borders', desc: 'Foreigners need citizenship to settle.', icon: '🚧' });
             k.immigrationPolicy = 'closed';
             logKingAction(k, '🚧 Closed borders to foreigners');
-            logEvent('🚧 ' + k.name + ' closes its borders! Foreigners must earn citizenship.', { type: 'law_change', kingdomId: k.id });
+            logEvent('🚧 ' + k.name + ' closes its borders! Foreigners must earn citizenship.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         } else if (hasSpecialLaw(k, 'immigration_policy') && (p.tradition === 'progressive' || moodCurrent === 'jubilant')
             && rng.chance(0.1)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'immigration_policy'; });
             k.immigrationPolicy = 'open';
             logKingAction(k, '🚧 Opened borders to foreigners');
-            logEvent('🚧 ' + k.name + ' opens its borders! All are welcome.', { type: 'law_change', kingdomId: k.id });
+            logEvent('🚧 ' + k.name + ' opens its borders! All are welcome.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // c. Inheritance Tax — greedy/corrupt kings impose, generous repeal
@@ -4573,11 +4594,11 @@
                 icon: '💀', rate: taxRate
             });
             logKingAction(k, '💀 Imposed ' + Math.round(taxRate * 100) + '% inheritance tax');
-            logEvent('💀 ' + k.name + ' enacts inheritance tax: ' + Math.round(taxRate * 100) + '% of inherited wealth goes to the crown!', { type: 'law_change', kingdomId: k.id });
+            logEvent('💀 ' + k.name + ' enacts inheritance tax: ' + Math.round(taxRate * 100) + '% of inherited wealth goes to the crown!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         } else if (hasSpecialLaw(k, 'inheritance_tax') && p.greed === 'generous' && rng.chance(0.12)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'inheritance_tax'; });
             logKingAction(k, '💀 Repealed inheritance tax');
-            logEvent('💀 ' + k.name + ' abolishes the inheritance tax!', { type: 'law_change', kingdomId: k.id });
+            logEvent('💀 ' + k.name + ' abolishes the inheritance tax!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // d. Draft Animal Law — traditionalist kings restrict horse ownership
@@ -4585,12 +4606,12 @@
             && (p.greed === 'greedy' || p.greed === 'corrupt') && rng.chance(0.05)) {
             k.laws.specialLaws.push({ id: 'draft_animal_law', name: 'Draft Animal Permits', desc: 'Commoners need permits for horses.', icon: '🐴' });
             logKingAction(k, '🐴 Restricted horse ownership — permits required');
-            logEvent('🐴 ' + k.name + ' now requires permits for horse ownership by commoners!', { type: 'law_change', kingdomId: k.id });
+            logEvent('🐴 ' + k.name + ' now requires permits for horse ownership by commoners!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         } else if (hasSpecialLaw(k, 'draft_animal_law') && (p.tradition === 'progressive' || p.greed === 'generous')
             && rng.chance(0.1)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'draft_animal_law'; });
             logKingAction(k, '🐴 Lifted horse ownership restrictions');
-            logEvent('🐴 ' + k.name + ' lifts restrictions on horse ownership!', { type: 'law_change', kingdomId: k.id });
+            logEvent('🐴 ' + k.name + ' lifts restrictions on horse ownership!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // e. Female Succession — progressive kings may allow, traditional may block
@@ -4598,7 +4619,7 @@
             && rng.chance(0.03)) {
             k.laws.specialLaws.push({ id: 'female_heir_law', name: 'Female Succession', desc: 'Women may inherit the throne.', icon: '👑' });
             logKingAction(k, '👑 Enacted female succession law');
-            logEvent('👑 ' + k.name + ' now allows women to inherit the throne!', { type: 'law_change', kingdomId: k.id });
+            logEvent('👑 ' + k.name + ' now allows women to inherit the throne!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // f. Exclusive Citizenship — paranoid/traditional kings may forbid dual citizenship
@@ -4606,12 +4627,12 @@
             && rng.chance(0.04)) {
             k.laws.specialLaws.push({ id: 'no_dual_citizenship', name: 'Exclusive Citizenship', desc: 'Citizens may not hold citizenship in other kingdoms.', icon: '🛡️' });
             logKingAction(k, '🛡️ Enacted exclusive citizenship law');
-            logEvent('🛡️ ' + k.name + ' now forbids dual citizenship!', { type: 'law_change', kingdomId: k.id });
+            logEvent('🛡️ ' + k.name + ' now forbids dual citizenship!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         } else if (hasSpecialLaw(k, 'no_dual_citizenship') && (p.tradition === 'progressive' || moodCurrent === 'jubilant')
             && rng.chance(0.08)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'no_dual_citizenship'; });
             logKingAction(k, '🛡️ Repealed exclusive citizenship law');
-            logEvent('🛡️ ' + k.name + ' now allows dual citizenship!', { type: 'law_change', kingdomId: k.id });
+            logEvent('🛡️ ' + k.name + ' now allows dual citizenship!',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // g. No Tent Camps — cruel/greedy kings ban tent camps, considering disease vs compassion
@@ -4631,12 +4652,12 @@
             if (wantsBan) {
                 k.laws.specialLaws.push({ id: 'no_tent_camps', name: 'No Tent Camps', desc: 'Tent camps are forbidden.', icon: '🚫' });
                 logKingAction(k, '🚫 Banned tent camps across the kingdom');
-                logEvent('🚫 ' + k.name + ' bans all tent camps! Soldiers will demolish existing camps.', { type: 'law_change', kingdomId: k.id });
+                logEvent('🚫 ' + k.name + ' bans all tent camps! Soldiers will demolish existing camps.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
         } else if (hasSpecialLaw(k, 'no_tent_camps') && (p.temperament === 'kind' || p.greed === 'generous') && rng.chance(0.10)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'no_tent_camps'; });
             logKingAction(k, '🚫 Lifted tent camp ban');
-            logEvent('⛺ ' + k.name + ' lifts the ban on tent camps. The homeless may shelter again.', { type: 'law_change', kingdomId: k.id });
+            logEvent('⛺ ' + k.name + ' lifts the ban on tent camps. The homeless may shelter again.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // h. Right to Camps — kind/generous kings allow citizens to self-build tent camps
@@ -4648,12 +4669,12 @@
             if (wantsRight) {
                 k.laws.specialLaws.push({ id: 'right_to_camps', name: 'Right to Camps', desc: 'Homeless citizens may build tent camps.', icon: '⛺' });
                 logKingAction(k, '⛺ Granted Right to Camps for the homeless');
-                logEvent('⛺ ' + k.name + ' grants the Right to Camps! Homeless citizens may build tent camps.', { type: 'law_change', kingdomId: k.id });
+                logEvent('⛺ ' + k.name + ' grants the Right to Camps! Homeless citizens may build tent camps.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
         } else if (hasSpecialLaw(k, 'right_to_camps') && (p.temperament === 'cruel' || p.greed === 'corrupt') && rng.chance(0.08)) {
             k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'right_to_camps'; });
             logKingAction(k, '⛺ Revoked Right to Camps');
-            logEvent('🚫 ' + k.name + ' revokes the Right to Camps. Only the king may authorize shelter.', { type: 'law_change', kingdomId: k.id });
+            logEvent('🚫 ' + k.name + ' revokes the Right to Camps. Only the king may authorize shelter.',  { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
         }
 
         // =============================================
@@ -4665,11 +4686,11 @@
                 var oldTax = k.taxRate || 0.10;
                 k.taxRate = Math.min(0.25, oldTax + 0.05);
                 logKingAction(k, '💰 Raised taxes to ' + Math.round(k.taxRate * 100) + '% (greed)');
-                logEvent('💰 The king of ' + k.name + ' raises taxes! Citizens grumble. (+' + Math.round((k.taxRate - oldTax) * 100) + '% tax)', {
+                logEvent('💰 The king of ' + k.name + ' raises taxes! Citizens grumble. (+' + Math.round((k.taxRate - oldTax) * 100) + '% tax)',  {
                     type: 'unpopular_decision', kingdomId: k.id,
                     cause: 'The king demands more gold from the people',
                     effects: ['Tax rate increased to ' + Math.round(k.taxRate * 100) + '%', 'Noble loyalty will suffer', 'Treasury income increases']
-                });
+                }, _eventKingdomCategory(k.id));
             }
 
             // Ambitious kings seize noble estates (enriches crown but enrages nobles)
@@ -4684,11 +4705,11 @@
                     k.gold += _seizeAmt;
                     _seizeTarget.kingLoyalty = Math.max(0, (_seizeTarget.kingLoyalty || 50) - 25);
                     logKingAction(k, '👑 Seized ' + _seizeAmt + 'g from ' + (_seizeTarget.firstName || 'a noble') + '\'s estate');
-                    logEvent('👑 ' + k.name + '\'s king seizes wealth from ' + (_seizeTarget.firstName || 'a noble') + '\'s estate! (-' + _seizeAmt + 'g from noble, -25 loyalty)', {
+                    logEvent('👑 ' + k.name + '\'s king seizes wealth from ' + (_seizeTarget.firstName || 'a noble') + '\'s estate! (-' + _seizeAmt + 'g from noble, -25 loyalty)',  {
                         type: 'unpopular_decision', kingdomId: k.id,
                         cause: 'The king needs gold and takes it from the nobility',
                         effects: ['Treasury +' + _seizeAmt + 'g', 'Noble loyalty -25', 'Other nobles grow wary']
-                    });
+                    }, _eventKingdomCategory(k.id));
                     // Other nobles become wary
                     var _snNobles = Engine.getNoblesInKingdom(k.id).filter(function(np) {
                         return np.id !== _seizeTarget.id;
@@ -4710,11 +4731,11 @@
                     _purgeTarget.kingLoyalty = Math.max(0, (_purgeTarget.kingLoyalty || 50) - 30);
                     k.assassinationRisk = Math.max(0, (k.assassinationRisk || 0) - 10);
                     logKingAction(k, '😡 Stripped ' + (_purgeTarget.firstName || 'a noble') + ' of their title (paranoia)');
-                    logEvent('😡 ' + k.name + '\'s king strips ' + (_purgeTarget.firstName || 'a noble') + ' of their noble title!', {
+                    logEvent('😡 ' + k.name + '\'s king strips ' + (_purgeTarget.firstName || 'a noble') + ' of their noble title!',  {
                         type: 'unpopular_decision', kingdomId: k.id,
                         cause: 'The paranoid king suspects treachery',
                         effects: ['Noble stripped of rank', 'Assassination risk reduced', 'Other nobles fear the king more']
-                    });
+                    }, _eventKingdomCategory(k.id));
                     // Other nobles fear increases
                     var _pnNobles = Engine.getNoblesInKingdom(k.id).filter(function(np) {
                         return np.id !== _purgeTarget.id;
@@ -4748,11 +4769,11 @@
                     boostKingdomHappiness(k, -5);
                     k._lastConscriptionDay = world.day; // H1: Track for noble fear
                     logKingAction(k, '⚔️ Conscripted ' + _conscripts + ' citizens into the army');
-                    logEvent('⚔️ ' + k.name + ' conscripts ' + _conscripts + ' citizens! Families weep as men are marched to war. (-5 happiness)', {
+                    logEvent('⚔️ ' + k.name + ' conscripts ' + _conscripts + ' citizens! Families weep as men are marched to war. (-5 happiness)',  {
                         type: 'unpopular_decision', kingdomId: k.id,
                         cause: 'Wartime desperation requires more soldiers',
                         effects: ['Army +' + _conscripts + ' soldiers', 'Happiness -5', 'Noble loyalty may suffer']
-                    });
+                    }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -4806,11 +4827,11 @@
                         // EXECUTION — maximum fear spike
                         killPerson(_h1Target, 'executed_by_king');
                         logKingAction(k, '💀 Executed ' + _h1TargetName + ' for suspected disloyalty');
-                        logEvent('💀 ' + k.name + '\'s king EXECUTES noble ' + _h1TargetName + '! The court trembles.', {
+                        logEvent('💀 ' + k.name + '\'s king EXECUTES noble ' + _h1TargetName + '! The court trembles.',  {
                             type: 'noble_execution', kingdomId: k.id,
                             cause: 'The king suspects treachery',
                             effects: ['Noble killed', 'All nobles fear increases dramatically', 'Some may become more loyal, others may plot revenge']
-                        });
+                        }, _eventKingdomCategory(k.id));
                         // Massive fear spike for ALL nobles
                         for (var _h1fi = 0; _h1fi < _h1Nobles.length; _h1fi++) {
                             var _h1n = _h1Nobles[_h1fi];
@@ -4839,11 +4860,11 @@
                         _h1Target._imprisonedDuration = 30 + rng.randInt(0, 60);
                         _h1Target.kingLoyalty = Math.max(0, (_h1Target.kingLoyalty || 50) - 20);
                         logKingAction(k, '⛓️ Imprisoned ' + _h1TargetName + ' for suspected disloyalty');
-                        logEvent('⛓️ ' + k.name + '\'s king IMPRISONS noble ' + _h1TargetName + '!', {
+                        logEvent('⛓️ ' + k.name + '\'s king IMPRISONS noble ' + _h1TargetName + '!',  {
                             type: 'noble_imprisonment', kingdomId: k.id,
                             cause: 'The king suspects disloyalty',
                             effects: ['Noble imprisoned', 'Moderate fear increase for all nobles']
-                        });
+                        }, _eventKingdomCategory(k.id));
                         for (var _h1ji = 0; _h1ji < _h1Nobles.length; _h1ji++) {
                             var _h1jn = _h1Nobles[_h1ji];
                             if (_h1jn.id === _h1Target.id) continue;
@@ -4862,9 +4883,9 @@
                         k.gold += _h1Fine;
                         _h1Target.kingLoyalty = Math.max(0, (_h1Target.kingLoyalty || 50) - 5);
                         logKingAction(k, '💰 Fined ' + _h1TargetName + ' ' + _h1Fine + 'g for displeasing the crown');
-                        logEvent('💰 ' + k.name + '\'s king fines noble ' + _h1TargetName + ' ' + _h1Fine + 'g.', {
+                        logEvent('💰 ' + k.name + '\'s king fines noble ' + _h1TargetName + ' ' + _h1Fine + 'g.',  {
                             type: 'noble_fine', kingdomId: k.id
-                        });
+                        }, _eventKingdomCategory(k.id));
                         for (var _h1fni = 0; _h1fni < _h1Nobles.length; _h1fni++) {
                             if (_h1Nobles[_h1fni].id !== _h1Target.id) {
                                 _h1Nobles[_h1fni].fearOfKing = Math.min(100, (_h1Nobles[_h1fni].fearOfKing || 15) + 3);
@@ -4923,8 +4944,8 @@
                     if (!k.laws) k.laws = {};
                     k.laws.kingdomTransport = true;
                     if (!k.laws.transportRate) k.laws.transportRate = rng.randInt(10, 25);
-                    logEvent('👑 ' + k.name + ' has established a kingdom transport service! Setup cost: ' + setupCost + 'g',
-                        { type: 'law_change', kingdomId: k.id });
+                    logEvent('👑 ' + k.name + ' has established a kingdom transport service! Setup cost: ' + setupCost + 'g', 
+                        { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
             } else {
                 // Consider ending transport
@@ -4946,8 +4967,8 @@
 
                 if (wantEnd) {
                     k.laws.kingdomTransport = false;
-                    logEvent('📢 ' + k.name + ' has ended its kingdom transport service.',
-                        { type: 'law_change', kingdomId: k.id });
+                    logEvent('📢 ' + k.name + ' has ended its kingdom transport service.', 
+                        { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -5239,10 +5260,10 @@
             wastedGold = Math.min(wastedGold, Math.floor(kingdom.gold * 0.1));
             if (wastedGold > 0 && kingdom.gold > wastedGold + 500) {
                 kingdom.gold -= wastedGold;
-                logEvent('\uD83E\uDD34 The foolish ruler of ' + kingdom.name + ' wastes ' + wastedGold + 'g on royal frivolity!', {
+                logEvent('\uD83E\uDD34 The foolish ruler of ' + kingdom.name + ' wastes ' + wastedGold + 'g on royal frivolity!',  {
                     type: 'royal_frivolity', cause: 'Poor judgment by dim ruler',
                     effects: ['Treasury -' + wastedGold + 'g', 'Gold wasted on pointless vanity projects']
-                });
+                }, _eventKingdomCategory(kingdom.id));
             }
         }
 
@@ -5715,7 +5736,7 @@
                     logEvent(`👑 ${kingdom.name} offers cheap land in ${strat.townName} for anyone who builds a ${strat.buildingName}!`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.good} deficit in ${strat.townName}`,
                         effects: [`${Math.round(discount * 100)}% discount on land for ${strat.buildingName} builders`, `Lasts ${CONFIG.KING_SUBSIDY_DURATION || 180} days`]
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5732,7 +5753,7 @@
                     logEvent(`📜 ${kingdom.name} seeks ${goodName} producers in ${strat.townName} — ${reward}g bounty!`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${goodName} shortage in ${strat.townName}`,
                         effects: [`${reward}g reward for building ${goodName} production`, 'NPCs may respond to this opportunity']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5749,7 +5770,7 @@
                     logEvent(`💰 ${kingdom.name} subsidizes ${goodName} imports — ${strat.bonusPerUnit}g bonus per unit!`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${goodName} scarcity across kingdom`,
                         effects: [`Merchants get +${strat.bonusPerUnit}g per ${goodName} sold in kingdom`, 'Treasury funds the subsidy']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5761,7 +5782,7 @@
                     logEvent(`🎉 ${kingdom.name} declares a tax holiday in ${strat.townName}! New businesses pay no property tax for ${CONFIG.KING_TAX_HOLIDAY_DURATION || 180} days.`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `Low prosperity (${analysis.towns.find(t => t.id === strat.townId)?.prosperity || '?'}%) in ${strat.townName}`,
                         effects: ['No property tax for new buildings', 'Attracts investment']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5774,7 +5795,7 @@
                     logEvent(`🏠 ${kingdom.name} offers ${CONFIG.KING_IMMIGRATION_BONUS || 50}g to families relocating to ${strat.townName}!`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.townName} is underpopulated (${analysis.towns.find(t => t.id === strat.townId)?.population || '?'} people)`,
                         effects: ['Gold bonus for immigrants', 'Population may grow']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5793,7 +5814,7 @@
                                     logEvent('\uD83D\uDC51\uD83D\uDD04 ' + kingdom.name + ' converts a building to ' + strat.buildingName + ' in ' + strat.townName + '.', {
                                         type: 'kingdom_conversion', kingdomId: kingdom.id, cause: 'No empty slots — converted for-sale building',
                                         effects: ['New ' + strat.buildingName + ' via conversion', 'Treasury spent on conversion']
-                                    }, 'my_kingdom');
+                                    }, _eventKingdomCategory(kingdom.id));
                                     kbConvDone = true;
                                     actionsThisCycle++;
                                 }
@@ -5811,7 +5832,7 @@
                     logEvent(`🏗️ ${kingdom.name} builds a ${strat.buildingName} in ${strat.townName} to complete ${strat.input} → ${strat.output} supply chain!`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.input} produced locally but no ${strat.buildingName} to process it`,
                         effects: [`New ${strat.buildingName} in ${strat.townName}`, `${strat.output} production begins`, `Treasury spent ${strat.cost}g`]
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5830,7 +5851,7 @@
                                     logEvent('\uD83D\uDC51\uD83D\uDD04 ' + kingdom.name + ' converts a building to address ' + strat.good + ' shortage in ' + strat.townName + '.', {
                                         type: 'kingdom_conversion', kingdomId: kingdom.id, cause: 'No empty slots — converted for-sale building to produce ' + strat.good,
                                         effects: ['New ' + strat.buildingName + ' via conversion', strat.good + ' production begins']
-                                    }, 'my_kingdom');
+                                    }, _eventKingdomCategory(kingdom.id));
                                     sgConvDone = true;
                                     actionsThisCycle++;
                                 }
@@ -5850,7 +5871,7 @@
                     logEvent('\uD83D\uDC51\uD83D\uDCE6 ' + sgKingName + ' has ordered construction of a ' + strat.buildingName + ' to address the shortage of ' + strat.good + ' in ' + kingdom.name + '.', {
                         type: 'supply_gap_building', kingdomId: kingdom.id, cause: strat.good + ' has zero supply but high demand across ' + kingdom.name,
                         effects: ['New ' + strat.buildingName + ' in ' + strat.townName, strat.good + ' production begins', 'Treasury spent ' + strat.cost + 'g']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     // Royal Monopoly: greedy/corrupt kings may ban the good to control supply
                     if (p.greed === 'greedy' || p.greed === 'corrupt' || p.justice === 'corrupt') {
                         var monopolyChance = 0;
@@ -5866,10 +5887,10 @@
                                     if (sgCurrentBanned.indexOf(_sgExpanded[_sge]) === -1) sgCurrentBanned.push(_sgExpanded[_sge]);
                                 }
                                 kingdom.laws.bannedGoods = sgCurrentBanned;
-                                logEvent('\uD83D\uDC51\uD83D\uDEAB ' + sgKingName + ' of ' + kingdom.name + ' has declared a royal monopoly on ' + strat.good + '! Private trade in ' + strat.good + ' is now banned.', {
+                                logEvent('\uD83D\uDC51\uD83D\uDEAB ' + sgKingName + ' of ' + kingdom.name + ' has declared a royal monopoly on ' + strat.good + '! Private trade in ' + strat.good + ' is now banned.',  {
                                     type: 'royal_monopoly', cause: sgKingName + ' seized control of ' + strat.good + ' trade after building production',
                                     effects: [strat.good + ' cannot be freely traded in ' + kingdom.name, 'Only kingdom-owned buildings produce ' + strat.good, 'A Royal Production Permit is required to trade ' + strat.good]
-                                });
+                                }, _eventKingdomCategory(kingdom.id));
                             }
                         }
                     }
@@ -5893,7 +5914,7 @@
                     logEvent(`📦 ${kingdom.name} stockpiles ${toBuy} ${strat.good} from ${strat.townName} at low prices.`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.good} priced below market value`,
                         effects: [`${toBuy} units purchased for ${cost}g`, 'Strategic reserves increased']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5904,10 +5925,10 @@
                         minPerSeason: strat.minPerSeason,
                         expiresDay: day + CONFIG.DAYS_PER_SEASON,
                     });
-                    logEvent(`⚖️ ${kingdom.name} sets production quota for ${strat.good} in ${strat.townName}: minimum ${strat.minPerSeason} per season.`, {
+                    logEvent(`⚖️ ${kingdom.name} sets production quota for ${strat.good} in ${strat.townName}: minimum ${strat.minPerSeason} per season.`,  {
                         type: 'economic_strategy', cause: `Low prosperity in ${strat.townName} (${analysis.towns.find(t => t.id === strat.townId)?.prosperity || '?'}%)`,
                         effects: [`Towns failing quota lose ${CONFIG.KING_QUOTA_HAPPINESS_PENALTY || -5} happiness`, 'Workers pressured to produce more']
-                    });
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5930,10 +5951,10 @@
                         builtDay: day, condition: 'new', lastRepairDay: 0
                     });
                     town.happiness = Math.max(0, (town.happiness || 50) + (CONFIG.KING_FORCED_LABOR_HAPPINESS || -10));
-                    logEvent(`⛓️ ${kingdom.name} conscripts laborers in ${strat.townName} to build a ${bt.name}!`, {
+                    logEvent(`⛓️ ${kingdom.name} conscripts laborers in ${strat.townName} to build a ${bt.name}!`,  {
                         type: 'economic_strategy', cause: 'Treasury too low for normal construction',
                         effects: [`${bt.name} built at half cost`, `Happiness in ${strat.townName} drops by ${Math.abs(CONFIG.KING_FORCED_LABOR_HAPPINESS || -10)}`]
-                    });
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5950,10 +5971,10 @@
                         prevOwner.needs.happiness = Math.max(0, (prevOwner.needs.happiness || 50) - 30);
                     }
                     const bt = findBuildingType(strat.buildingType);
-                    logEvent(`👑 ${kingdom.name} seizes a ${bt ? bt.name : strat.buildingType} in ${strat.townName}!`, {
+                    logEvent(`👑 ${kingdom.name} seizes a ${bt ? bt.name : strat.buildingType} in ${strat.townName}!`,  {
                         type: 'economic_strategy', cause: 'Corrupt king confiscates underperforming business',
                         effects: ['Building transferred to kingdom ownership', `Happiness in ${strat.townName} drops sharply`, 'Former owner furious']
-                    });
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5961,10 +5982,10 @@
                     kingdom.exportRestrictions.push(strat.good);
                     const resInfo = findResourceById(strat.good);
                     const goodName = resInfo ? resInfo.name : strat.good;
-                    logEvent(`🚫 ${kingdom.name} restricts export of ${goodName} to protect domestic supply!`, {
+                    logEvent(`🚫 ${kingdom.name} restricts export of ${goodName} to protect domestic supply!`,  {
                         type: 'economic_strategy', cause: `Severe ${goodName} shortage domestically`,
                         effects: [`${goodName} cannot be exported from ${kingdom.name}`, 'Domestic prices stabilize', 'Trade partners may be upset']
-                    });
+                    }, _eventKingdomCategory(kingdom.id));
                     actionsThisCycle++;
                     break;
                 }
@@ -5977,10 +5998,10 @@
                     // Lower tariffs on deficit goods (attract imports)
                     if (surplus.length > 0 && kingdom.laws.tradeTariff > 0.02) {
                         kingdom.laws.tradeTariff = Math.max(0.02, kingdom.laws.tradeTariff - 0.01);
-                        logEvent(`📊 ${kingdom.name} lowers trade tariffs to attract imports of scarce goods.`, {
+                        logEvent(`📊 ${kingdom.name} lowers trade tariffs to attract imports of scarce goods.`,  {
                             type: 'economic_strategy', cause: 'Market intelligence: goods needed from abroad',
                             effects: [`Tariffs reduced to ${Math.round(kingdom.laws.tradeTariff * 100)}%`]
-                        });
+                        }, _eventKingdomCategory(kingdom.id));
                     }
                     actionsThisCycle++;
                     break;
@@ -6003,7 +6024,7 @@
                     logEvent(`🤦 ${kingdom.name}'s foolish king restricts export of ${goodName} — which is already scarce!`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: 'Poor judgment by dim ruler',
                         effects: ['Already scarce goods become harder to get', 'Merchants frustrated']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(kingdom.id));
                 }
             }
         }
@@ -6018,7 +6039,7 @@
                 logEvent('\uD83E\uDD26 The foolish ruler of ' + kingdom.name + ' raises taxes despite widespread unhappiness!', {
                     type: 'bad_decision', kingdomId: kingdom.id, cause: 'Poor judgment',
                     effects: ['Tax rate increased to ' + Math.round(kingdom.taxRate * 100) + '%', 'Citizens grow more unhappy']
-                }, 'my_kingdom');
+                }, _eventKingdomCategory(kingdom.id));
             } else if (badAction === 1) {
                 // Subsidize a wrong good (pick a surplus good instead of a deficit good)
                 var surplusGoods = Object.entries(analysis.kingdomSupply)
@@ -6037,7 +6058,7 @@
                         logEvent('\uD83E\uDD26 ' + kingdom.name + ' offers bounties for ' + (wrInfo ? wrInfo.name : wrongGood) + ' — which is already in surplus!', {
                             type: 'bad_decision', kingdomId: kingdom.id, cause: 'Foolish ruler misreads the market',
                             effects: ['Gold wasted on unnecessary production']
-                        }, 'my_kingdom');
+                        }, _eventKingdomCategory(kingdom.id));
                     }
                 }
             } else if (badAction === 2 && kingdom.laws) {
@@ -6046,7 +6067,7 @@
                 logEvent('\uD83E\uDD26 The dim ruler of ' + kingdom.name + ' raises trade tariffs, discouraging needed imports!', {
                     type: 'bad_decision', kingdomId: kingdom.id, cause: 'Poor economic understanding',
                     effects: ['Tariffs raised to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%']
-                }, 'my_kingdom');
+                }, _eventKingdomCategory(kingdom.id));
             }
         }
     }
@@ -6304,7 +6325,7 @@
                         type: 'treasury_spending', townId: bp.town.id, kingdomId: k.id, _noToast: true,
                         cause: 'Large treasury drives kingdom investment',
                         effects: ['New ' + (bt.name || bp.type) + ' in ' + bp.town.name, 'Treasury -' + bCost + 'g']
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                 }
             }
             spent += bldSpent;
@@ -6355,10 +6376,10 @@
                         }
                         k.gold -= dockCost;
                         infraSpent += dockCost;
-                        logEvent('⚓ ' + k.name + ' builds a dock at ' + dTown.name + ', opening it for sea trade!', {
+                        logEvent('⚓ ' + k.name + ' builds a dock at ' + dTown.name + ', opening it for sea trade!',  {
                             type: 'treasury_spending', kingdomId: k.id,
                             effects: [dTown.name + ' is now a port town', 'Treasury -' + dockCost + 'g']
-                        });
+                        }, _eventKingdomCategory(k.id));
                     }
                 }
             }
@@ -6375,10 +6396,10 @@
                             k._tradingShips++;
                             k.gold -= shipCost;
                             infraSpent += shipCost;
-                            logEvent('⛵ ' + k.name + ' commissions a new trading ship at ' + sTown.name + '!', {
+                            logEvent('⛵ ' + k.name + ' commissions a new trading ship at ' + sTown.name + '!',  {
                                 type: 'treasury_spending', kingdomId: k.id,
                                 effects: ['Kingdom fleet +1 trading ship', 'Treasury -' + shipCost + 'g']
-                            });
+                            }, _eventKingdomCategory(k.id));
                         }
                     }
                 }
@@ -6396,10 +6417,10 @@
                         wTown.wallLevel = wallLevel + 1;
                         k.gold -= wallCost;
                         infraSpent += wallCost;
-                        logEvent('🧱 ' + k.name + ' upgrades walls in ' + wTown.name + ' to level ' + wTown.wallLevel + '!', {
+                        logEvent('🧱 ' + k.name + ' upgrades walls in ' + wTown.name + ' to level ' + wTown.wallLevel + '!',  {
                             type: 'treasury_spending', kingdomId: k.id,
                             effects: ['Town defense improved', 'Treasury -' + wallCost + 'g']
-                        });
+                        }, _eventKingdomCategory(k.id));
                     }
                 }
             }
@@ -6430,10 +6451,10 @@
                         expSpent += investCost;
                         // Distribute some gold as wages to townsfolk
                         distributeConstructionWages(xTown.id, investCost, rng);
-                        logEvent('💰 ' + k.name + ' invests ' + investCost + 'g in ' + xTown.name + ' development!', {
+                        logEvent('💰 ' + k.name + ' invests ' + investCost + 'g in ' + xTown.name + ' development!',  {
                             type: 'treasury_spending', kingdomId: k.id,
                             effects: ['Prosperity boosted in ' + xTown.name, 'Treasury -' + investCost + 'g']
-                        });
+                        }, _eventKingdomCategory(k.id));
                     }
                 }
             }
@@ -6580,11 +6601,11 @@
             if (k._treasurySpending.military > spent * 0.5) spendingType = 'military';
             else if (k._treasurySpending.buildings > spent * 0.4) spendingType = 'construction';
             else if (k._treasurySpending.infra > spent * 0.3) spendingType = 'infrastructure';
-            logEvent('💎 ' + k.name + ' spends ' + Math.floor(spent) + 'g from its overflowing treasury on ' + spendingType + ' investments.', {
+            logEvent('💎 ' + k.name + ' spends ' + Math.floor(spent) + 'g from its overflowing treasury on ' + spendingType + ' investments.',  {
                 type: 'treasury_spending', kingdomId: k.id,
                 cause: 'Kingdom treasury of ' + Math.floor(treasury) + 'g drives aggressive investment',
                 effects: ['Military: ' + Math.floor(k._treasurySpending.military) + 'g', 'Buildings: ' + Math.floor(k._treasurySpending.buildings) + 'g', 'Infrastructure: ' + Math.floor(k._treasurySpending.infra) + 'g']
-            });
+            }, _eventKingdomCategory(k.id));
         }
     }
 
@@ -6736,11 +6757,11 @@
 
                 var resInfo = findResourceById(need.good);
                 var goodName = resInfo ? resInfo.name : need.good;
-                logEvent('🤝 ' + k.name + ' purchases ' + buyQty + ' ' + goodName + ' from ' + other.name + ' for ' + totalCost + 'g.', {
+                logEvent('🤝 ' + k.name + ' purchases ' + buyQty + ' ' + goodName + ' from ' + other.name + ' for ' + totalCost + 'g.',  {
                     type: 'trade_deal', kingdomId: k.id,
                     cause: 'Inter-kingdom trade agreement for needed goods',
                     effects: [k.name + ' -' + totalCost + 'g', other.name + ' +' + totalCost + 'g', buyQty + ' ' + goodName + ' transferred']
-                });
+                }, _eventEitherKingdomCategory(k.id, other.id));
 
                 // Only one deal per tick
                 return;
@@ -6821,11 +6842,11 @@
                         enemy.peaceTreaties[k.id] = treatyEnd;
                         k.relations[enemyId] = Math.min(0, (k.relations[enemyId] || -80) + 30);
                         enemy.relations[k.id] = Math.min(0, (enemy.relations[k.id] || -80) + 30);
-                        logEvent('🕊️ ' + k.name + ' and ' + enemy.name + ' agree to a cease-fire!', {
+                        logEvent('🕊️ ' + k.name + ' and ' + enemy.name + ' agree to a cease-fire!',  {
                             type: 'peace_treaty', cause: 'Revolt kingdom negotiated peace',
                             effects: ['War ends', '360-day peace treaty signed'],
                             kingdoms: [k.id, enemyId]
-                        });
+                        }, _eventEitherKingdomCategory(k.id, enemyId));
                     }
                 }
             });
@@ -6856,10 +6877,10 @@
                         if (!other.allianceMeta) other.allianceMeta = {};
                         k.allianceMeta[other.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'revolt_solidarity' };
                         other.allianceMeta[k.id] = { type: 'defensive', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0, reason: 'revolt_solidarity' };
-                        logEvent('🤝 ' + k.name + ' forges an alliance with ' + other.name + ' against their common enemy!', {
+                        logEvent('🤝 ' + k.name + ' forges an alliance with ' + other.name + ' against their common enemy!',  {
                             type: 'alliance_formed', kingdoms: [k.id, other.id],
                             cause: 'New revolt kingdom seeks protection'
-                        });
+                        }, _eventEitherKingdomCategory(k.id, other.id));
                     }
                 }
             }
@@ -6956,11 +6977,11 @@
             // Remove status from old kingdom
             if (em.socialRank && oldKingdomId) delete em.socialRank[oldKingdomId];
 
-            logEvent('🏪 Elite Merchant ' + (em.firstName || em.name || 'A merchant') + ' defects to ' + k.name + '!', {
+            logEvent('🏪 Elite Merchant ' + (em.firstName || em.name || 'A merchant') + ' defects to ' + k.name + '!',  {
                 type: 'em_defection', kingdomId: k.id,
                 cause: 'Revolt kingdom recruited the merchant with status and gold',
                 effects: ['Guildmaster status granted', bonus > 0 ? bonus + 'g signing bonus' : 'No bonus']
-            });
+            }, _eventKingdomCategory(k.id));
         }
     }
 
@@ -7023,7 +7044,7 @@
                         type: 'bounty_fulfilled', townId: town.id, kingdomId: k.id, _noToast: true,
                         cause: `Kingdom bounty for ${bounty.good}`,
                         effects: [`New ${targetBt.name} in ${town.name}`, `${bounty.reward}g paid from treasury`]
-                    }, 'my_kingdom');
+                    }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -7048,10 +7069,10 @@
                     migrant.needs.happiness = Math.min(100, (migrant.needs.happiness || 30) + 20);
                     targetTown.population++;
                     if (oldTown && oldTown.population > 0) oldTown.population--;
-                    logEvent(`🚶 ${migrant.firstName} ${migrant.lastName} migrates to ${targetTown.name} in ${k.name}, drawn by the ${inc.bonus}g immigration bonus.`, {
+                    logEvent(`🚶 ${migrant.firstName} ${migrant.lastName} migrates to ${targetTown.name} in ${k.name}, drawn by the ${inc.bonus}g immigration bonus.`,  {
                         type: 'immigration', cause: 'Kingdom immigration incentive',
                         effects: [`${targetTown.name} gains a citizen`, `Treasury pays ${inc.bonus}g`]
-                    });
+                    }, _eventKingdomCategory(k.id));
                     inc.fulfilled = true; // Mark incentive as fulfilled
                 }
             }
@@ -7064,10 +7085,10 @@
                     const currentProd = town.market.supply[quota.good] || 0;
                     if (currentProd < quota.minPerSeason) {
                         town.happiness = Math.max(0, (town.happiness || 50) + (CONFIG.KING_QUOTA_HAPPINESS_PENALTY || -5));
-                        logEvent(`⚠️ ${town.name} fails to meet ${quota.good} production quota. Happiness drops.`, {
+                        logEvent(`⚠️ ${town.name} fails to meet ${quota.good} production quota. Happiness drops.`,  {
                             type: 'quota_failure', cause: `Produced ${currentProd} of ${quota.minPerSeason} required`,
                             effects: [`Happiness penalty: ${CONFIG.KING_QUOTA_HAPPINESS_PENALTY || -5}`]
-                        });
+                        }, 'foreign_kingdoms');
                     }
                 }
             }
@@ -7289,10 +7310,10 @@
                     townId: strat.townId, buildingType: strat.buildingType,
                     discount: _disc, expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
                 });
-                logEvent('👑 ' + kingdom.name + ' offers cheap land in ' + (strat.townName || '?') + ' for ' + (strat.buildingName || '?') + ' builders!', {
+                logEvent('👑 ' + kingdom.name + ' offers cheap land in ' + (strat.townName || '?') + ' for ' + (strat.buildingName || '?') + ' builders!',  {
                     type: 'economic_strategy', cause: (strat.good || 'goods') + ' deficit',
                     effects: [Math.round(_disc * 100) + '% discount on land']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'bounty':
                 kingdom.productionBounties.push({
@@ -7302,9 +7323,9 @@
                 });
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
-                logEvent('📜 ' + kingdom.name + ' seeks ' + _goodName + ' producers in ' + (strat.townName || '?') + ' — ' + (strat.reward || 50) + 'g bounty!', {
+                logEvent('📜 ' + kingdom.name + ' seeks ' + _goodName + ' producers in ' + (strat.townName || '?') + ' — ' + (strat.reward || 50) + 'g bounty!',  {
                     type: 'economic_strategy', effects: [(strat.reward || 50) + 'g reward']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'trade_subsidy':
                 kingdom.tradeSubsidies.push({
@@ -7314,18 +7335,18 @@
                 });
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
-                logEvent('💰 ' + kingdom.name + ' subsidizes ' + _goodName + ' imports — ' + (strat.bonusPerUnit || 2) + 'g bonus per unit!', {
+                logEvent('💰 ' + kingdom.name + ' subsidizes ' + _goodName + ' imports — ' + (strat.bonusPerUnit || 2) + 'g bonus per unit!',  {
                     type: 'economic_strategy', effects: ['Merchants get +' + (strat.bonusPerUnit || 2) + 'g per ' + _goodName + ' sold']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'tax_holiday':
                 kingdom.taxHolidays.push({
                     townId: strat.townId,
                     expiresDay: day + (CONFIG.KING_TAX_HOLIDAY_DURATION || 180)
                 });
-                logEvent('🎉 ' + kingdom.name + ' declares a tax holiday in ' + (strat.townName || '?') + '!', {
+                logEvent('🎉 ' + kingdom.name + ' declares a tax holiday in ' + (strat.townName || '?') + '!',  {
                     type: 'economic_strategy', effects: ['No property tax for new buildings']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'immigration':
                 kingdom.immigrationIncentives.push({
@@ -7333,9 +7354,9 @@
                     bonus: CONFIG.KING_IMMIGRATION_BONUS || 50,
                     expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
                 });
-                logEvent('🏘️ ' + kingdom.name + ' offers immigration bonuses for ' + (strat.townName || '?') + '!', {
+                logEvent('🏘️ ' + kingdom.name + ' offers immigration bonuses for ' + (strat.townName || '?') + '!',  {
                     type: 'economic_strategy', effects: [(CONFIG.KING_IMMIGRATION_BONUS || 50) + 'g per settler']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'supply_gap_building': {
                 var _sgTown = findTown(strat.townId);
@@ -7347,9 +7368,9 @@
                     type: _sgBt.id, level: 1, ownerId: kingdom.id,
                     builtDay: day, condition: 'new', lastRepairDay: 0
                 });
-                logEvent('🏭 ' + kingdom.name + ' builds a ' + _sgBt.name + ' in ' + _sgTown.name + '!', {
+                logEvent('🏭 ' + kingdom.name + ' builds a ' + _sgBt.name + ' in ' + _sgTown.name + '!',  {
                     type: 'economic_strategy', effects: ['New ' + _sgBt.name + ' in ' + _sgTown.name, 'Treasury -' + _sgBt.cost + 'g']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             }
             case 'export_restriction':
@@ -7358,16 +7379,16 @@
                 }
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
-                logEvent('🚫 ' + kingdom.name + ' restricts export of ' + _goodName + ' to protect domestic supply!', {
+                logEvent('🚫 ' + kingdom.name + ' restricts export of ' + _goodName + ' to protect domestic supply!',  {
                     type: 'economic_strategy', effects: [_goodName + ' cannot be exported']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'tariff_adjustment':
                 if (kingdom.laws && kingdom.laws.tradeTariff > 0.02) {
                     kingdom.laws.tradeTariff = Math.max(0.02, kingdom.laws.tradeTariff - 0.01);
-                    logEvent('📊 ' + kingdom.name + ' lowers trade tariffs to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.', {
+                    logEvent('📊 ' + kingdom.name + ' lowers trade tariffs to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.',  {
                         type: 'economic_strategy', effects: ['Tariffs reduced']
-                    });
+                    }, _eventKingdomCategory(kingdom.id));
                 }
                 break;
             case 'forced_labor': {
@@ -7382,9 +7403,9 @@
                     builtDay: day, condition: 'new', lastRepairDay: 0
                 });
                 _flTown.happiness = Math.max(0, (_flTown.happiness || 50) + (CONFIG.KING_FORCED_LABOR_HAPPINESS || -10));
-                logEvent('⛓️ ' + kingdom.name + ' conscripts laborers in ' + _flTown.name + ' to build a ' + _flBt.name + '!', {
+                logEvent('⛓️ ' + kingdom.name + ' conscripts laborers in ' + _flTown.name + ' to build a ' + _flBt.name + '!',  {
                     type: 'economic_strategy', effects: [_flBt.name + ' built at half cost', 'Happiness drops']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             }
             case 'asset_seizure': {
@@ -7400,9 +7421,9 @@
                     _prevOwner.needs.happiness = Math.max(0, (_prevOwner.needs.happiness || 50) - 30);
                 }
                 var _asBt = BUILDING_TYPES ? BUILDING_TYPES[strat.buildingType] : null;
-                logEvent('👑 ' + kingdom.name + ' seizes a ' + (_asBt ? _asBt.name : strat.buildingType) + ' in ' + _asTown.name + '!', {
+                logEvent('👑 ' + kingdom.name + ' seizes a ' + (_asBt ? _asBt.name : strat.buildingType) + ' in ' + _asTown.name + '!',  {
                     type: 'economic_strategy', effects: ['Building transferred to crown', 'Happiness drops']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             }
             case 'production_quota':
@@ -7413,9 +7434,9 @@
                 });
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
-                logEvent('⚒️ ' + kingdom.name + ' sets production quotas for ' + _goodName + ' in ' + (strat.townName || '?') + '.', {
+                logEvent('⚒️ ' + kingdom.name + ' sets production quotas for ' + _goodName + ' in ' + (strat.townName || '?') + '.',  {
                     type: 'economic_strategy', effects: ['Minimum production mandated']
-                });
+                }, _eventKingdomCategory(kingdom.id));
                 break;
             default:
                 return { success: false, message: 'Unknown proposal type: ' + strat.type };
@@ -7571,7 +7592,7 @@
                     stagingTownName: fromT.name
                 });
                 var _ml = _propMounted ? ' (🐴 mounted)' : '';
-                logEvent('⚔️ ' + soldiers + (_propMounted ? ' mounted cavalry' : ' soldiers') + ' march from ' + fromT.name + ' to attack ' + tgtT.name + '!' + _ml);
+                logEvent('⚔️ ' + soldiers + (_propMounted ? ' mounted cavalry' : ' soldiers') + ' march from ' + fromT.name + ' to attack ' + tgtT.name + '!' + _ml, null, 'foreign_kingdoms');
                 break;
 
             case 'recruit':
@@ -7591,7 +7612,7 @@
                     payPerSoldier: costPer, reservedGold: totalCost,
                     postedDay: world.day, isConscription: false
                 });
-                logEvent('📜 Recruitment posting for ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g. NPCs will enlist over time.');
+                logEvent('📜 Recruitment posting for ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g. NPCs will enlist over time.', null, 'foreign_kingdoms');
                 break;
 
             case 'supply':
@@ -7606,7 +7627,7 @@
                 if (!supTown.market.supply) supTown.market.supply = {};
                 supTown.market.supply[good] = (supTown.market.supply[good] || 0) + qty;
                 var _resInfo = findResourceById ? findResourceById(good) : null;
-                logEvent('🗡️ Procured ' + qty + ' ' + (_resInfo ? _resInfo.name : good) + ' at ' + supTown.name + '. Cost: ' + supCost + 'g.');
+                logEvent('🗡️ Procured ' + qty + ' ' + (_resInfo ? _resInfo.name : good) + ' at ' + supTown.name + '. Cost: ' + supCost + 'g.', null, 'foreign_kingdoms');
                 break;
 
             case 'build_ships':
@@ -7624,7 +7645,7 @@
                     mission: null,
                     builtDay: world.day
                 });
-                logEvent('⛵ New warship built at ' + shipTown.name + ' for ' + shipCost + 'g.');
+                logEvent('⛵ New warship built at ' + shipTown.name + ' for ' + shipCost + 'g.', null, 'foreign_kingdoms');
                 break;
 
             case 'fortify':
@@ -7643,7 +7664,7 @@
                     reservedGold: 5 * (CONFIG.SOLDIER_RECRUIT_COST || 50),
                     postedDay: world.day, isConscription: false
                 });
-                logEvent('🏰 ' + fortTown.name + ' being fortified! Recruitment posted for 5 soldiers. Cost: ' + fortCost + 'g.');
+                logEvent('🏰 ' + fortTown.name + ' being fortified! Recruitment posted for 5 soldiers. Cost: ' + fortCost + 'g.', null, 'foreign_kingdoms');
                 break;
 
             default:

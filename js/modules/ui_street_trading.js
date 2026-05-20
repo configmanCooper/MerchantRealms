@@ -3096,7 +3096,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
 
         // Log and notify
         if (typeof Engine !== 'undefined' && Engine.logEvent) {
-            Engine.logEvent('📜 You accepted the offer from ' + deal.kingdomName + '! ' + deal.offeredRankName + ' status, ' + deal.offeredGold + 'g, and ' + (deal.offeredBuildings ? deal.offeredBuildings.length : 0) + ' building(s) received.');
+            Engine.logEvent('📜 You accepted the offer from ' + deal.kingdomName + '! ' + deal.offeredRankName + ' status, ' + deal.offeredGold + 'g, and ' + (deal.offeredBuildings ? deal.offeredBuildings.length : 0) + ' building(s) received.', null, 'my_actions');
         }
         toast('✅ You are now a ' + deal.offeredRankName + ' of ' + deal.kingdomName + '! +' + deal.offeredGold + 'g', 'success');
 

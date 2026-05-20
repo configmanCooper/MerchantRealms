@@ -157,7 +157,11 @@
         if (!bestHouse || bestComfort <= 0) housingAcceptMod = -0.30;
         else if (bestComfort <= 15) housingAcceptMod = 0;
         else housingAcceptMod = Math.min(0.30, bestComfort / 100 * 0.30);
-        var baseAcceptChance = 0.70 + housingAcceptMod;
+        // v9p33river378: courtship bonding affects acceptance (0=-30%, 50=0%, 100=+10%)
+        var _dpForMarry = player.dateProgress && player.dateProgress[personId];
+        var _courtBond = (_dpForMarry && _dpForMarry.courtshipBonding !== undefined) ? _dpForMarry.courtshipBonding : 0;
+        var courtshipMod = _courtBond < 50 ? (-0.30 + (_courtBond / 50) * 0.30) : ((_courtBond - 50) / 50) * 0.10;
+        var baseAcceptChance = 0.70 + housingAcceptMod + courtshipMod;
         var rngMarriage = Engine.getRng();
         if (rngMarriage && !rngMarriage.chance(Math.min(0.95, Math.max(0.10, baseAcceptChance)))) {
             return { success: false, message: 'Your proposal was rejected.' + (housingAcceptMod < 0 ? ' Having a home might help.' : '') };
@@ -179,7 +183,7 @@
             guests: [],
         };
 
-        Engine.logEvent(player.fullName + ' proposed to ' + person.firstName + ' ' + person.lastName + '! Wedding in ' + (CONFIG.WEDDING_PLANNING_DAYS || 5) + ' days.');
+        Engine.logEvent(player.fullName + ' proposed to ' + person.firstName + ' ' + person.lastName + '! Wedding in ' + (CONFIG.WEDDING_PLANNING_DAYS || 5) + ' days.', null, 'my_actions');
         return { success: true, message: person.firstName + ' accepted your proposal! 💍 Plan your wedding — it will be held in ' + (CONFIG.WEDDING_PLANNING_DAYS || 5) + ' days.', startPlanning: true };
     }
 
@@ -247,7 +251,7 @@
         if (venue && venue.minRank && typeof getPlayerRankIndex === 'function' && getPlayerRankIndex() < venue.minRank) {
             var _defaultVenue = _venues.find(function(v) { return v.id === 'town_square'; }) || _venues[0] || venue;
             if (_defaultVenue) {
-                Engine.logEvent('💍 Your rank has fallen since planning the wedding; the ' + venue.name + ' is no longer available. Using ' + _defaultVenue.name + ' instead.');
+                Engine.logEvent('💍 Your rank has fallen since planning the wedding; the ' + venue.name + ' is no longer available. Using ' + _defaultVenue.name + ' instead.', null, 'my_actions');
                 venue = _defaultVenue;
                 plan.venue = _defaultVenue.id;
             }
@@ -289,7 +293,7 @@
             person.fullName = person.firstName + ' ' + player.lastName;
         } else if (_keepsMaidenName) {
             person._maidenName = person.lastName;
-            Engine.logEvent('💁 ' + person.firstName + ' has chosen to keep their maiden name.');
+            Engine.logEvent('💁 ' + person.firstName + ' has chosen to keep their maiden name.', null, 'my_actions');
         }
 
         // Relationship bonuses from choices
@@ -359,7 +363,7 @@
         journalText += vow.description + ' A new chapter begins.';
 
         autoJournalCapture('wedding', journalText, { mood: 'triumphant' });
-        Engine.logEvent(player.fullName + ' married ' + person.firstName + ' ' + person.lastName + '! ' + venue.icon + ' ' + feast.icon);
+        Engine.logEvent(player.fullName + ' married ' + person.firstName + ' ' + person.lastName + '! ' + venue.icon + ' ' + feast.icon, null, 'my_actions');
         grantXP(XP_REWARDS.MARRY, 'marry');
 
         // Clear wedding plan
@@ -384,7 +388,7 @@
         } catch(e) {}
         if (_marriedKingChild && _mkKingdomId) {
             player._marriedToRoyalChild = { kingdomId: _mkKingdomId, personId: plan.fianceId };
-            Engine.logEvent('👑 ' + player.fullName + ' has married into the royal family of ' + (Engine.findKingdom(_mkKingdomId) ? Engine.findKingdom(_mkKingdomId).name : 'the kingdom') + '! +25% relationship gains with the king and kingdom.');
+            Engine.logEvent('👑 ' + player.fullName + ' has married into the royal family of ' + (Engine.findKingdom(_mkKingdomId) ? Engine.findKingdom(_mkKingdomId).name : 'the kingdom') + '! +25% relationship gains with the king and kingdom.', null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 You married into the royal family! +25% king & kingdom relationship gains!', 'success', 'critical');
         }
 
@@ -410,13 +414,13 @@
                 player.socialRank[playerKingdomForMarriage] = newRank;
                 player.rankSince[playerKingdomForMarriage] = Engine.getDay();
                 var rankName = CONFIG.SOCIAL_RANKS[newRank] ? CONFIG.SOCIAL_RANKS[newRank].name : 'noble';
-                Engine.logEvent('🏰 Through marriage, ' + player.fullName + ' has been elevated to ' + rankName + '!');
+                Engine.logEvent('🏰 Through marriage, ' + player.fullName + ' has been elevated to ' + rankName + '!', null, 'my_actions');
 
                 // Grant noble benefits if reaching Minor Noble+ (rank 4+)
                 if (newRank >= 4 && !player.isNoble) {
                     player.isNoble = true;
                     player.occupation = 'noble';
-                    Engine.logEvent('🏰 ' + player.fullName + ' has entered the aristocracy!');
+                    Engine.logEvent('🏰 ' + player.fullName + ' has entered the aristocracy!', null, 'my_actions');
                     player.guards = player.guards || [];
                     var _mrng = Engine.getRng();
                     var _mTownPeople = Engine.getPeople ? Engine.getPeople(player.townId) : [];
@@ -456,7 +460,7 @@
                     if (_mGranted > 0) {
                         var _mK = Engine.findKingdom(playerKingdomForMarriage);
                         if (_mK) _mK.gold = Math.max(0, (_mK.gold || 0) - _mGranted * (CONFIG.PLAYER_GUARD_HIRE_COST || 30));
-                        Engine.logEvent('🛡️ As a new noble, ' + player.fullName + ' has been granted ' + _mGranted + ' personal guards by the kingdom!');
+                        Engine.logEvent('🛡️ As a new noble, ' + player.fullName + ' has been granted ' + _mGranted + ' personal guards by the kingdom!', null, 'my_actions');
                     }
                 }
 
@@ -499,7 +503,7 @@
                 if (!person.socialRank) person.socialRank = {};
                 person.socialRank[playerKingdomForMarriage] = spouseNewRank;
                 var spouseRankName = CONFIG.SOCIAL_RANKS[spouseNewRank] ? CONFIG.SOCIAL_RANKS[spouseNewRank].name : 'rank ' + spouseNewRank;
-                Engine.logEvent('🏰 Through marriage to ' + player.fullName + ', ' + person.firstName + ' has been elevated to ' + spouseRankName + '!');
+                Engine.logEvent('🏰 Through marriage to ' + player.fullName + ', ' + person.firstName + ' has been elevated to ' + spouseRankName + '!', null, 'my_actions');
                 person._marriageRankWaiver = { rank: spouseNewRank, spouseRank: finalPlayerRank, day: Engine.getDay() };
             }
         }
@@ -738,7 +742,7 @@
             }
         }
 
-        Engine.logEvent(child.firstName + ' ' + (child.lastName || '') + ' married ' + target.firstName + ' ' + (target.lastName || '') + '!');
+        Engine.logEvent(child.firstName + ' ' + (child.lastName || '') + ' married ' + target.firstName + ' ' + (target.lastName || '') + '!', null, 'my_actions');
         return { success: true, message: child.firstName + ' married ' + target.firstName + '! (Cost: ' + weddingCost + 'g)' };
     }
 
@@ -831,7 +835,7 @@
                         eliteChildName: ec.firstName + ' ' + (ec.lastName || ''),
                         day: day,
                     });
-                    Engine.logEvent(em.firstName + ' ' + (em.lastName || '') + ' proposes a marriage between ' + ec.firstName + ' and your child ' + pc.firstName + '!');
+                    Engine.logEvent(em.firstName + ' ' + (em.lastName || '') + ' proposes a marriage between ' + ec.firstName + ' and your child ' + pc.firstName + '!', { _noToast: true }, 'my_actions');
                     return;
                 }
             }
@@ -888,7 +892,7 @@
                         child.occupation = rng.pick(['farmer', 'laborer', 'craftsman', 'miner', 'woodcutter']);
                         child.skills = { farming: 10, mining: 10, crafting: 10, trading: 10, combat: 10 };
                         child.gold = (child.gold || 0) + 20;
-                        Engine.logEvent(child.firstName + ' ' + child.lastName + ' has come of age!');
+                        Engine.logEvent(child.firstName + ' ' + child.lastName + ' has come of age!', null, 'my_actions');
                         if (typeof UI !== 'undefined' && UI.toast) {
                             UI.toast('\u{1F389} ' + child.firstName + ' has come of age at 18!', 'success');
                         }
@@ -1011,7 +1015,7 @@
                 }
 
                 if (_spouseNamesChild) {
-                    Engine.logEvent('A child is born! ' + spouse.firstName + ' has named ' + (childSex === 'M' ? 'him' : 'her') + ' ' + childFirstName + ' ' + player.lastName + '.');
+                    Engine.logEvent('A child is born! ' + spouse.firstName + ' has named ' + (childSex === 'M' ? 'him' : 'her') + ' ' + childFirstName + ' ' + player.lastName + '.', null, 'my_actions');
                     autoJournalCapture('child', spouse.firstName + ' insisted on naming our child ' + childFirstName + '. I had no say in the matter.', { mood: 'mixed' });
                     grantXP(XP_REWARDS.CHILD, 'child');
                     if (typeof UI !== 'undefined' && UI.toast) {
@@ -1033,7 +1037,7 @@
                     if (typeof UI !== 'undefined' && UI.showChildNamingDialog) {
                         UI.showChildNamingDialog(newChild.id, childSex, spouseSuggestion, spouse ? spouse.firstName : null);
                     } else {
-                        Engine.logEvent('A child is born! ' + childFirstName + ' ' + player.lastName + ' joins the family.');
+                        Engine.logEvent('A child is born! ' + childFirstName + ' ' + player.lastName + ' joins the family.', null, 'my_actions');
                         autoJournalCapture('child', 'Our child ' + childFirstName + ' has come into this world. I am overwhelmed with joy.', { mood: 'triumphant' });
                         grantXP(XP_REWARDS.CHILD, 'child');
                         if (typeof UI !== 'undefined' && UI.toast) {
@@ -1070,7 +1074,7 @@
         var dueDay = currentDay + (CONFIG.PREGNANCY_DURATION || 60);
         var dueSeason = CONFIG.SEASONS[Math.floor(dueDay / CONFIG.DAYS_PER_SEASON) % 4];
         var whoIsExpecting = player.sex === 'F' ? 'You are' : 'Your spouse is';
-        Engine.logEvent('Wonderful news! ' + whoIsExpecting + ' expecting a child!');
+        Engine.logEvent('Wonderful news! ' + whoIsExpecting + ' expecting a child!', null, 'my_actions');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('\u{1F930} ' + (player.sex === 'F' ? 'You are' : spouse.firstName + ' is') + ' expecting! Due in ' + dueSeason + '.', 'success', 'my_actions');
         }
@@ -1746,14 +1750,14 @@
                 ai.daysSick = 0;
                 ai.sickEndDay = Engine.getDay() + rng.randInt(cfg.SICK_MIN_DAYS, cfg.SICK_MAX_DAYS);
                 ai.health = Math.max(ai.health - rng.randInt(10, 25), 20);
-                Engine.logEvent(spouse.firstName + ' has fallen ill.');
+                Engine.logEvent(spouse.firstName + ' has fallen ill.', null, 'my_actions');
             }
             // Roll for injury
             if (rng.chance(cfg.INJURY_DAILY_CHANCE * injuryMod)) {
                 ai.condition = 'injured';
                 ai.daysInjured = 0;
                 ai.health = Math.max(ai.health - rng.randInt(15, 35), 10);
-                Engine.logEvent(spouse.firstName + ' has been injured.');
+                Engine.logEvent(spouse.firstName + ' has been injured.', null, 'my_actions');
             }
         } else if (ai.condition === 'sick') {
             ai.daysSick++;
@@ -1761,13 +1765,13 @@
             if (rng.chance(cfg.SEVERE_ILLNESS_CHANCE)) {
                 ai.condition = 'gravely_ill';
                 ai.health = Math.max(ai.health - 20, 5);
-                Engine.logEvent(spouse.firstName + ' has become gravely ill!');
+                Engine.logEvent(spouse.firstName + ' has become gravely ill!', null, 'my_actions');
             } else if (Engine.getDay() >= ai.sickEndDay) {
                 // Recovery
                 ai.condition = 'healthy';
                 ai.daysSick = 0;
                 ai.health = Math.min(ai.health + cfg.RECOVERY_RATE_HOME, cfg.HEALTH_MAX);
-                Engine.logEvent(spouse.firstName + ' has recovered from illness.');
+                Engine.logEvent(spouse.firstName + ' has recovered from illness.', null, 'my_actions');
             } else {
                 // Slow recovery while sick
                 ai.health = Math.min(ai.health + 1, cfg.HEALTH_MAX);
@@ -1779,14 +1783,14 @@
                 spouse.alive = false;
                 spouse.causeOfDeath = 'severe illness';
                 player.spouseId = null;
-                Engine.logEvent(spouse.firstName + ' has died from a severe illness. You are devastated.');
+                Engine.logEvent(spouse.firstName + ' has died from a severe illness. You are devastated.', null, 'my_actions');
                 return;
             }
             // Chance of downgrade back to sick
             if (ai.daysSick > cfg.SICK_MAX_DAYS && rng.chance(0.15)) {
                 ai.condition = 'sick';
                 ai.sickEndDay = Engine.getDay() + rng.randInt(cfg.SICK_MIN_DAYS, cfg.SICK_MAX_DAYS);
-                Engine.logEvent(spouse.firstName + '\'s condition has stabilized.');
+                Engine.logEvent(spouse.firstName + '\'s condition has stabilized.', null, 'my_actions');
             }
         } else if (ai.condition === 'injured') {
             ai.daysInjured++;
@@ -1794,7 +1798,7 @@
             if (ai.health > 50) {
                 ai.condition = 'healthy';
                 ai.daysInjured = 0;
-                Engine.logEvent(spouse.firstName + ' has recovered from injuries.');
+                Engine.logEvent(spouse.firstName + ' has recovered from injuries.', null, 'my_actions');
             }
         }
 
@@ -2170,7 +2174,7 @@
                         _payHealthcareRevenue(_spTown, _spCost);
                         ai.activity = 'recovering';
                         ai.activityDetail = 'Treated at hospital (' + _spCost + 'g)';
-                        Engine.logEvent('🏥 ' + spouse.firstName + ' sought treatment at the hospital (' + _spCost + 'g from savings).');
+                        Engine.logEvent('🏥 ' + spouse.firstName + ' sought treatment at the hospital (' + _spCost + 'g from savings).', null, 'my_actions');
                         logSpouseAction(day, 'hospital', 'Sought treatment', -_spCost);
                         return;
                     }
@@ -2527,7 +2531,7 @@
         if (result.accepted) {
             player.spouseAI.activity = 'hiring';
             player.spouseAI.activityDetail = 'Recruiting workers for your buildings';
-            Engine.logEvent(spouse.firstName + ' is recruiting workers on your behalf.');
+            Engine.logEvent(spouse.firstName + ' is recruiting workers on your behalf.', { _noToast: true }, 'my_actions');
         }
         return result;
     }
@@ -2566,7 +2570,7 @@
         var boost = rng.randInt(3, 8);
         modifyRelationship(player.spouseId, boost);
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.spend_time_spouse || 15);
-        Engine.logEvent('You spend quality time with ' + spouse.firstName + '. Your bond grows stronger.');
+        Engine.logEvent('You spend quality time with ' + spouse.firstName + '. Your bond grows stronger.', null, 'my_actions');
         return { success: true, accepted: true, message: 'You and ' + spouse.firstName + ' enjoy time together. (Relationship +' + boost + ')' };
     }
 
@@ -2723,11 +2727,11 @@
             modifyRelationship(player.spouseId, 10, 'spouse');
             var spouse = Engine.findPerson(player.spouseId);
             var spouseName = spouse ? spouse.firstName : 'Your spouse';
-            Engine.logEvent('❤️ ' + spouseName + ' is delighted you chose ' + (spouse && spouse.sex === 'F' ? 'her' : 'his') + ' suggested name!');
+            Engine.logEvent('❤️ ' + spouseName + ' is delighted you chose ' + (spouse && spouse.sex === 'F' ? 'her' : 'his') + ' suggested name!', null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('❤️ ' + spouseName + ' loves the name! (+10 relationship)', 'success', 'my_actions');
         }
 
-        Engine.logEvent('A child is born! ' + child.fullName + ' joins the family.');
+        Engine.logEvent('A child is born! ' + child.fullName + ' joins the family.', null, 'my_actions');
         autoJournalCapture('child', 'Our child ' + chosenName + ' has come into this world. I am overwhelmed with joy.', { mood: 'triumphant' });
         grantXP(XP_REWARDS.CHILD, 'child');
         if (typeof UI !== 'undefined' && UI.toast) {
@@ -2850,7 +2854,7 @@
             player.pregnantDay = currentDay;
             var dueDay = currentDay + (CONFIG.PREGNANCY_DURATION || 270);
             var who = player.sex === 'F' ? 'You are' : 'Your spouse is';
-            Engine.logEvent('💕 Wonderful news! ' + who + ' expecting a child!');
+            Engine.logEvent('💕 Wonderful news! ' + who + ' expecting a child!', null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🤰 ' + who + ' expecting a child!', 'success');
             return { success: true, chance: Math.round(chance * 10) / 10, message: who + ' expecting a child!' };
         } else {
@@ -2988,7 +2992,7 @@
         player.injuries = [];
         player.health = 100;
 
-        Engine.logEvent(`${player.fullName} has passed. ${spouse.firstName} serves as regent for young ${heir.firstName}.`);
+        Engine.logEvent(`${player.fullName} has passed. ${spouse.firstName} serves as regent for young ${heir.firstName}.`, null, 'my_actions');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`⚰️ You have passed. ${spouse.firstName} will raise ${heir.firstName} until they come of age.`, 'warning', 'my_actions');
         }
@@ -3017,7 +3021,7 @@
             player.regencyMode = false;
             player.regencyData = null;
             player.deathCause = 'Heir died during regency — the legacy ends';
-            Engine.logEvent('The heir has died during regency. The legacy ends.');
+            Engine.logEvent('The heir has died during regency. The legacy ends.', null, 'my_actions');
             player.alive = false;
             if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
             if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
@@ -3249,7 +3253,7 @@
 
         player.skillPoints = Math.max(0, bonusPoints) + dynastyBank3;
         if (dynastyBank3 > 0) {
-            Engine.logEvent('🏰 ' + player.fullName + ' inherited ' + dynastyBank3 + ' skill points from the dynasty bank!');
+            Engine.logEvent('🏰 ' + player.fullName + ' inherited ' + dynastyBank3 + ' skill points from the dynasty bank!', null, 'my_actions');
         }
         checkLevelUp();
 
@@ -3429,7 +3433,7 @@
             delete player.relationships[rd.heirId];
         }
 
-        Engine.logEvent(`${player.fullName} has come of age and inherits the family legacy! (${threshold.label})`);
+        Engine.logEvent(`${player.fullName} has come of age and inherits the family legacy! (${threshold.label})`, null, 'my_actions');
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast(`👑 ${player.fullName} comes of age! Regency outcome: ${threshold.label}`, 'success');
         }

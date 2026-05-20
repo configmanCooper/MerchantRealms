@@ -2004,7 +2004,7 @@
 
             toast('✅ Commission fulfilled! +' + result.reward + 'g, +' + result.repReward + ' rep!', 'success');
             if (typeof Engine !== 'undefined' && Engine.logEvent) {
-                Engine.logEvent('✅ Fulfilled royal commission for ' + kingdom.name + ': ' + comm.description + ' → +' + result.reward + 'g, +' + result.repReward + ' rep');
+                Engine.logEvent('✅ Fulfilled royal commission for ' + kingdom.name + ': ' + comm.description + ' → +' + result.reward + 'g, +' + result.repReward + ' rep', null, 'my_actions');
             }
             openRoyalCommissionsPanel(kingdomId); // refresh
         } else {

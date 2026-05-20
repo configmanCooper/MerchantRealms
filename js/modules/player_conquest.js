@@ -33,7 +33,7 @@
 
     function freeFromConquestServitude(message) {
         player.conquestServitude.active = false;
-        Engine.logEvent(message || (player.fullName + ' has been freed from conquest servitude!'));
+        Engine.logEvent(message || (player.fullName + ' has been freed from conquest servitude!'), null, 'my_actions');
         grantXP(50, 'freedom');
     }
 
@@ -104,7 +104,7 @@
                     var contestedSite = unvisitedSites[Math.floor(Math.random() * unvisitedSites.length)];
                     var contestedTown = Engine.findTown(contestedSite);
                     if (contestedTown) {
-                        Engine.logEvent('⚠️ ' + rival.name + ' is claiming the holy site in ' + contestedTown.name + '! Visit it before they desecrate it!');
+                        Engine.logEvent('⚠️ ' + rival.name + ' is claiming the holy site in ' + contestedTown.name + '! Visit it before they desecrate it!', null, 'my_actions');
                     }
                 }
             }
@@ -130,13 +130,13 @@
             player.skills.divine_favor = true;
             player.skills.blessed_merchant = true;
             player.skills.prophets_tongue = true;
-            Engine.logEvent(player.fullName + ' has completed their holy pilgrimage! Divine powers unlocked.');
+            Engine.logEvent(player.fullName + ' has completed their holy pilgrimage! Divine powers unlocked.', null, 'my_actions');
             grantXP(100, 'pilgrimage complete');
             // Clear bankruptcy state if this was a priest-path bankruptcy
             if (player.bankruptcy && player.bankruptcy.active && player.bankruptcy.type === 'priest') {
                 player.bankruptcy.active = false;
                 player.bankruptcy.completedDay = Engine.getDay();
-                Engine.logEvent('📜 ' + player.fullName + '\'s bankruptcy debt forgiven through completion of the holy pilgrimage.');
+                Engine.logEvent('📜 ' + player.fullName + '\'s bankruptcy debt forgiven through completion of the holy pilgrimage.', null, 'my_actions');
             }
         }
     }
@@ -167,7 +167,7 @@
         if (player.shipwrecked.active && !player.shipwrecked.finalChoiceAvailable) {
             if (player.shipwrecked.languageSkill >= 100 && player.shipwrecked.resonanceSitesVisited >= 5) {
                 player.shipwrecked.finalChoiceAvailable = true;
-                Engine.logEvent('🌟 The artifact thrums with power. All sea chart fragments assembled. ' + player.fullName + ' must now choose: OPEN the artifact or SEAL its power within.');
+                Engine.logEvent('🌟 The artifact thrums with power. All sea chart fragments assembled. ' + player.fullName + ' must now choose: OPEN the artifact or SEAL its power within.', null, 'my_actions');
             }
         }
         
@@ -238,7 +238,7 @@
             player.skills.world_traveler = true;
             player.skills.diplomatic_immunity = true;
             player.skills.exotic_knowledge = true;
-            Engine.logEvent(player.fullName + ' has fully integrated into society! Unique abilities unlocked.');
+            Engine.logEvent(player.fullName + ' has fully integrated into society! Unique abilities unlocked.', null, 'my_actions');
             grantXP(80, 'full integration');
         }
     }
@@ -298,7 +298,7 @@
                     }
                     if (stolenFans > 0) {
                         rival.fans += stolenFans;
-                        Engine.logEvent('🎵 ' + rival.name + ' performed in your town and stole ' + stolenFans + ' of your fans!');
+                        Engine.logEvent('🎵 ' + rival.name + ' performed in your town and stole ' + stolenFans + ' of your fans!', null, 'my_actions');
                     }
                 }
             }
@@ -321,7 +321,7 @@
             for (var mk = 0; mk < kingdoms.length; mk++) {
                 if ((player.musician.fame[kingdoms[mk].id] || 0) >= 80) {
                     player.musician.legacyOffered = true;
-                    Engine.logEvent('🌟 ' + player.fullName + ' has reached legendary fame in ' + kingdoms[mk].name + '! A choice awaits: retire and build a Music School, or continue as a Legendary Bard.');
+                    Engine.logEvent('🌟 ' + player.fullName + ' has reached legendary fame in ' + kingdoms[mk].name + '! A choice awaits: retire and build a Music School, or continue as a Legendary Bard.', null, 'my_actions');
                     break;
                 }
             }
@@ -346,7 +346,7 @@
                 for (var ki = 0; ki < kingdoms.length; ki++) {
                     player.reputation[kingdoms[ki].id] = Math.min(100, (player.reputation[kingdoms[ki].id] || 50) + 50);
                 }
-                Engine.logEvent(player.fullName + ' retires as Hero of Ages! Legendary status achieved.');
+                Engine.logEvent(player.fullName + ' retires as Hero of Ages! Legendary status achieved.', null, 'military');
                 grantXP(200, 'hero of ages');
             }
         }
@@ -360,7 +360,7 @@
         if (milRankIdx >= 5 && (player.militaryLeader.victoriesAsLeader || 0) >= 10) {
             if (!player.militaryLeader.decisiveBattleAvailable) {
                 player.militaryLeader.decisiveBattleAvailable = true;
-                Engine.logEvent('⚔️ ' + player.fullName + ' is now eligible for the DECISIVE BATTLE — the path to becoming Hero of the Ages!');
+                Engine.logEvent('⚔️ ' + player.fullName + ' is now eligible for the DECISIVE BATTLE — the path to becoming Hero of the Ages!', null, 'military');
             }
         }
     }
@@ -381,7 +381,7 @@
             var currentGen = player.generation || 1;
             if (currentGen !== (s.royaltiesGeneration || 1)) {
                 s.royaltiesActive = false;
-                Engine.logEvent('📖 The royalties from the Great Book have ended with the passing of its author.');
+                Engine.logEvent('📖 The royalties from the Great Book have ended with the passing of its author.', null, 'my_actions');
             } else {
                 // Weekly royalties: base 20g + 5g per specialization knowledge (capped at 100g/week)
                 var baseRoyalty = 20;
@@ -424,7 +424,7 @@
         player.pilgrim.donations += donations;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.give_sermon || 5);
         var sermonQuality = sermonSkill >= 80 ? 'powerful' : (sermonSkill >= 40 ? 'compelling' : 'modest');
-        Engine.logEvent(player.fullName + ' gave a ' + sermonQuality + ' sermon. ' + converts + ' new followers! ' + donations + 'g in donations.');
+        Engine.logEvent(player.fullName + ' gave a ' + sermonQuality + ' sermon. ' + converts + ' new followers! ' + donations + 'g in donations.', null, 'my_actions');
         grantXP(3, 'sermon');
         return { success: true, message: sermonQuality.charAt(0).toUpperCase() + sermonQuality.slice(1) + ' sermon! ' + converts + ' converts, ' + donations + 'g donations. (Skill: ' + sermonSkill + '%)' };
     }
@@ -484,7 +484,7 @@
             eventMsg = ' ⭐ Miracle! A sign appeared at the shrine — ' + miracleFollowers + ' people witnessed it and joined your faith!';
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_holy_site || 10);
-        Engine.logEvent(player.fullName + ' visited the holy site in ' + town.name + '.');
+        Engine.logEvent(player.fullName + ' visited the holy site in ' + town.name + '.', null, 'my_actions');
         grantXP(20, 'holy site');
         checkPilgrimGoals();
         return { success: true, message: 'Holy site visited! +20 XP, +5 rep. Sites: ' + player.pilgrim.visitedSites.length + '/' + player.pilgrim.holySites.length + eventMsg };
@@ -541,7 +541,7 @@
         player.pilgrim.templeBuilt = true;
         player.pilgrim.templeTownId = tid;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build_temple || 30);
-        Engine.logEvent(player.fullName + ' built a temple in ' + town.name + '!');
+        Engine.logEvent(player.fullName + ' built a temple in ' + town.name + '!', null, 'my_actions');
         grantXP(50, 'build temple');
         checkPilgrimGoals();
         return { success: true, message: 'Temple built in ' + town.name + '! 🏛️' };
@@ -579,12 +579,12 @@
             
             if (rival.strength <= 0) {
                 player.pilgrim.rivalDefeated = true;
-                Engine.logEvent('🏆 ' + player.fullName + ' has defeated ' + rival.preacherName + ' in a great theological debate! ' + rival.name + ' disbands!');
+                Engine.logEvent('🏆 ' + player.fullName + ' has defeated ' + rival.preacherName + ' in a great theological debate! ' + rival.name + ' disbands!', null, 'my_actions');
                 grantXP(50, 'defeated rival faith');
                 return { success: true, message: 'You defeated ' + rival.preacherName + '! Their followers (' + stolenBack + ') join your cause. ' + rival.name + ' is no more!' };
             }
             
-            Engine.logEvent('⚡ ' + player.fullName + ' won a theological debate against ' + rival.preacherName + '! Gained ' + stolenBack + ' followers.');
+            Engine.logEvent('⚡ ' + player.fullName + ' won a theological debate against ' + rival.preacherName + '! Gained ' + stolenBack + ' followers.', null, 'my_actions');
             grantXP(20, 'won debate');
             return { success: true, message: 'You won the debate! Gained ' + stolenBack + ' followers. Rival weakened to ' + rival.strength + ' strength.' };
         } else {
@@ -592,7 +592,7 @@
             var lost = Math.min(player.pilgrim.followers, Math.floor(Math.random() * 5) + 2);
             player.pilgrim.followers = Math.max(0, player.pilgrim.followers - lost);
             rival.strength = Math.min(100, rival.strength + 10);
-            Engine.logEvent('😔 ' + rival.preacherName + ' bested ' + player.fullName + ' in debate. Lost ' + lost + ' followers.');
+            Engine.logEvent('😔 ' + rival.preacherName + ' bested ' + player.fullName + ' in debate. Lost ' + lost + ' followers.', null, 'my_actions');
             return { success: false, message: 'You lost the debate. -' + lost + ' followers. The rival grows stronger.' };
         }
     }
@@ -664,7 +664,7 @@
         
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.visit_resonance || 20);
         grantXP(25, 'resonance site');
-        Engine.logEvent('✨ ' + player.fullName + ' discovered ' + site.name + '! Vision: "' + site.vision + '"');
+        Engine.logEvent('✨ ' + player.fullName + ' discovered ' + site.name + '! Vision: "' + site.vision + '"', null, 'my_actions');
         
         var remaining = 5 - player.shipwrecked.resonanceSitesVisited;
         return { success: true, message: '✨ ' + site.name + '! Vision: "' + site.vision + '" Sea chart fragment ' + player.shipwrecked.seaChartFragments + '/5.' + (remaining > 0 ? ' ' + remaining + ' sites remain.' : ' All fragments collected!') };
@@ -760,7 +760,7 @@
         player.skills.bridge_between_worlds = true;
         
         grantXP(150, 'opened artifact');
-        Engine.logEvent('🏛️ ' + player.fullName + ' OPENED the artifact and founded an Embassy in ' + town.name + '! A bridge between two worlds!');
+        Engine.logEvent('🏛️ ' + player.fullName + ' OPENED the artifact and founded an Embassy in ' + town.name + '! A bridge between two worlds!', null, 'my_actions');
         
         return { success: true, message: '🏛️ Embassy founded in ' + town.name + '! 10 potions/day, own bank, +2 social rank, town is indestructible, diplomatic immunity, homeland NPCs arrived. Warp available (30-day cooldown).' };
     }
@@ -796,7 +796,7 @@
         player.skills.seal_of_ages = true;
         player.skills.world_traveler = true;
         
-        Engine.logEvent('⚡ ' + player.fullName + ' SEALED the artifact and absorbed its power! +25% speed, +25% rep gains, -25% disease/death risk, +10 year lifespan, one-time death reversal.');
+        Engine.logEvent('⚡ ' + player.fullName + ' SEALED the artifact and absorbed its power! +25% speed, +25% rep gains, -25% disease/death risk, +10 year lifespan, one-time death reversal.', null, 'my_actions');
         
         return { success: true, message: '⚡ POWER ABSORBED! +25% travel speed, +500 XP, +25% relationship gains, -25% disease/injury/death, +10 year lifespan. If you die, you may reverse death ONCE (bonuses removed except skills).' };
     }
@@ -831,7 +831,7 @@
         }
         
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
-        Engine.logEvent('🌀 ' + player.fullName + ' warped to the Embassy in ' + (player.shipwrecked.embassy.townName || 'embassy town') + '!');
+        Engine.logEvent('🌀 ' + player.fullName + ' warped to the Embassy in ' + (player.shipwrecked.embassy.townName || 'embassy town') + '!', null, 'my_actions');
         return { success: true, message: '🌀 Warped to Embassy in ' + (player.shipwrecked.embassy.townName || 'embassy town') + '! Next warp in 30 days.' };
     }
     
@@ -914,7 +914,7 @@
             player.maxAge = (player.maxAge || 80) - 10;
         }
         
-        Engine.logEvent('💫 ' + player.fullName + ' has been brought back from death by the artifact\'s residual power! But the power is spent — bonuses removed.');
+        Engine.logEvent('💫 ' + player.fullName + ' has been brought back from death by the artifact\'s residual power! But the power is spent — bonuses removed.', null, 'my_actions');
         return { success: true, message: '💫 Death reversed! You live again, but artifact bonuses are gone. Only your earned skills remain.' };
     }
 
@@ -1130,7 +1130,7 @@
                 player.reputation[town.kingdomId] = Math.min(100, (player.reputation[town.kingdomId] || 50) + 20);
             }
             grantXP(50, 'legendary concert');
-            Engine.logEvent('🌟 ' + player.fullName + ' gave a LEGENDARY Grand Concert in ' + town.name + '! The crowd erupted in pure joy!');
+            Engine.logEvent('🌟 ' + player.fullName + ' gave a LEGENDARY Grand Concert in ' + town.name + '! The crowd erupted in pure joy!', null, 'my_actions');
             return { success: true, message: '🌟 LEGENDARY! Earned ' + earnings + 'g, +2 fame everywhere, ' + Math.min(newFanCount, potentialFans.length) + ' new fans!' };
         } else if (roll < successChance) {
             // Good performance
@@ -1155,7 +1155,7 @@
                 player.musician.fame[town.kingdomId] = Math.max(0, (player.musician.fame[town.kingdomId] || 0) - fameLoss);
                 player.reputation[town.kingdomId] = Math.max(0, (player.reputation[town.kingdomId] || 50) - 5);
             }
-            Engine.logEvent('😬 ' + player.fullName + '\'s Grand Concert in ' + town.name + ' was a disaster. The crowd booed.');
+            Engine.logEvent('😬 ' + player.fullName + '\'s Grand Concert in ' + town.name + ' was a disaster. The crowd booed.', null, 'my_actions');
             grantXP(5, 'flop concert');
             return { success: false, message: 'Concert flopped! Lost ' + fameLoss + ' fame in ' + (town.name || 'this kingdom') + ', -5 rep. 200g wasted.' };
         }
@@ -1240,7 +1240,7 @@
             // If rival has no fans left, they're defeated
             if (rival.fans <= 0) {
                 rival.defeated = true;
-                Engine.logEvent('🏆 ' + player.fullName + ' defeated ' + rival.name + ' in a legendary music duel! The rival has retired in shame.');
+                Engine.logEvent('🏆 ' + player.fullName + ' defeated ' + rival.name + ' in a legendary music duel! The rival has retired in shame.', null, 'my_actions');
                 grantXP(30, 'defeated rival musician');
                 return { success: true, message: '🏆 VICTORY! ' + resultMsg + ' ' + rival.name + ' is defeated and retires! +' + actualGained + ' fans.' };
             }
@@ -1250,7 +1250,7 @@
                 player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + 0.5);
             }
             grantXP(15, 'won duel');
-            Engine.logEvent('🎵 ' + player.fullName + ' won a music duel against ' + rival.name + '!');
+            Engine.logEvent('🎵 ' + player.fullName + ' won a music duel against ' + rival.name + '!', null, 'my_actions');
             return { success: true, message: 'You won! ' + resultMsg + ' Gained ' + actualGained + ' fans, +0.5 fame.' };
         } else {
             // LOSE — lose fame in this town's kingdom
@@ -1298,7 +1298,7 @@
                     lastRepairDay: Engine.getDay()
                 });
             }
-            Engine.logEvent('🎵 ' + player.fullName + ' founded a legendary Music School in ' + (town ? town.name : 'town') + '! Students flock from across the land.');
+            Engine.logEvent('🎵 ' + player.fullName + ' founded a legendary Music School in ' + (town ? town.name : 'town') + '! Students flock from across the land.', null, 'my_actions');
             grantXP(100, 'music school');
             return { success: true, message: '🏫 Music School founded in ' + (town ? town.name : 'town') + '! Earns passive income. You can send children here for instrument skills. Merchant career unlocked!' };
         } else if (choice === 'legendary_bard') {
@@ -1311,7 +1311,7 @@
             player.skills.legendary_bard = true;
             // Legendary bards get: free inn stays, +50% all performance income, can perform at any court regardless of fame
             player.musician.musicSkill = 100;
-            Engine.logEvent('🌟 ' + player.fullName + ' chose the life of a Legendary Bard! Their music echoes across all kingdoms.');
+            Engine.logEvent('🌟 ' + player.fullName + ' chose the life of a Legendary Bard! Their music echoes across all kingdoms.', null, 'my_actions');
             grantXP(100, 'legendary bard');
             return { success: true, message: '🌟 You are now a Legendary Bard! 100 music skill, +50% income, court access everywhere, free inn stays. Continue your endless journey!' };
         }
@@ -1489,7 +1489,7 @@
             grantXP(20, 'battle victory');
             
             var victoryMsg = '⚔️ VICTORY in ' + battleType + ' against ' + enemyK.name + '! Tactic: ' + tactic + '. Earned ' + goldReward + 'g, +5 kingdom strength.';
-            Engine.logEvent(player.fullName + ' won a ' + battleType + ' against ' + enemyK.name + ' using ' + tactic + ' tactics!');
+            Engine.logEvent(player.fullName + ' won a ' + battleType + ' against ' + enemyK.name + ' using ' + tactic + ' tactics!', null, 'military');
             
             // Check decisive battle eligibility
             if (rankIdx >= 5 && (player.militaryLeader.victoriesAsLeader || 0) >= 10) {
@@ -1508,7 +1508,7 @@
             }
             
             grantXP(8, 'battle defeat');
-            Engine.logEvent(player.fullName + ' lost a ' + battleType + ' against ' + enemyK.name + '.');
+            Engine.logEvent(player.fullName + ' lost a ' + battleType + ' against ' + enemyK.name + '.', null, 'military');
             return { success: false, message: '💀 DEFEAT in ' + battleType + ' against ' + enemyK.name + '. Tactic: ' + tactic + '. Kingdom lost 3 military strength.' + (injuryChance > 0.15 ? ' You were injured!' : '') };
         }
     }
@@ -1567,7 +1567,7 @@
         player.reputation[player.militaryKingdomId] = Math.min(100, (player.reputation[player.militaryKingdomId] || 50) + 8);
         grantXP(20, 'war council');
         
-        Engine.logEvent(player.fullName + ' advised the War Council: ' + chosen.name + ' against ' + (enemyK ? enemyK.name : 'the enemy') + '!');
+        Engine.logEvent(player.fullName + ' advised the War Council: ' + chosen.name + ' against ' + (enemyK ? enemyK.name : 'the enemy') + '!', null, 'military');
         return { success: true, message: '📋 War Council: Advised "' + chosen.name + '" — ' + chosen.desc + '. +8 reputation.' };
     }
 
@@ -1657,7 +1657,7 @@
             playerK.militaryStrength = (playerK.militaryStrength || 50) + 30;
             
             grantXP(200, 'Hero of the Ages');
-            Engine.logEvent('⚔️👑 ' + player.fullName + ' won a DECISIVE BATTLE against ' + (enemyK ? enemyK.name : 'the enemy') + ' and earned the legendary title: HERO OF THE AGES!');
+            Engine.logEvent('⚔️👑 ' + player.fullName + ' won a DECISIVE BATTLE against ' + (enemyK ? enemyK.name : 'the enemy') + ' and earned the legendary title: HERO OF THE AGES!', null, 'military');
             
             return { success: true, message: '⚔️👑 HERO OF THE AGES! ' + phaseLog.join(', ') + '. Won ' + playerScore + '-' + enemyScore + '! Earned ' + heroGold + 'g, +2 social rank, 4 legendary skills, max reputation. Your name will echo through history!' };
         } else {
@@ -1669,7 +1669,7 @@
                 inflictRandomInjury('decisive battle');
             }
             
-            Engine.logEvent(player.fullName + ' attempted a decisive battle against ' + (enemyK ? enemyK.name : 'the enemy') + ' but was repelled.');
+            Engine.logEvent(player.fullName + ' attempted a decisive battle against ' + (enemyK ? enemyK.name : 'the enemy') + ' but was repelled.', null, 'military');
             return { success: false, message: '💀 Decisive battle FAILED. ' + phaseLog.join(', ') + '. Lost ' + playerScore + '-' + enemyScore + '. Regroup and try again when ready.' };
         }
     }
@@ -1706,7 +1706,7 @@
             if (player.militaryLeader.rank === 'general') {
                 player.militaryLeader.generalSinceDay = Engine.getDay();
             }
-            Engine.logEvent(player.fullName + ' has been promoted to ' + ranks[currentIdx + 1].name + '!');
+            Engine.logEvent(player.fullName + ' has been promoted to ' + ranks[currentIdx + 1].name + '!', null, 'military');
         }
     }
 
@@ -1844,7 +1844,7 @@
         if (valid.indexOf(spec) === -1) return { success: false, message: 'Invalid specialization. Choose: history, economics, or natural_science.' };
         player.scholar.specialization = spec;
         var labels = { history: 'History', economics: 'Economics', natural_science: 'Natural Science' };
-        Engine.logEvent('📚 ' + player.fullName + ' has chosen to specialize in ' + labels[spec] + '!');
+        Engine.logEvent('📚 ' + player.fullName + ' has chosen to specialize in ' + labels[spec] + '!', null, 'my_actions');
         grantXP(15, 'specialization');
         return { success: true, message: 'You now specialize in ' + labels[spec] + '! Related studies give bonus knowledge.' };
     }

@@ -283,7 +283,7 @@
                 town.lastMaintenanceDay = Engine.getDay();
             } else {
                 town.maintenancePaid = false;
-                Engine.logEvent('⚠️ You cannot afford ' + Math.ceil(dailyCost) + 'g maintenance for outpost "' + town.name + '"!');
+                Engine.logEvent('⚠️ You cannot afford ' + Math.ceil(dailyCost) + 'g maintenance for outpost "' + town.name + '"!', null, 'my_business');
             }
 
             // Player outpost abandonment
@@ -292,7 +292,7 @@
                 if (daysSince >= cfg.abandonDaysNoMaintenance) {
                     town.abandoned = true;
                     town.abandonedDay = Engine.getDay();
-                    Engine.logEvent('💀 Your outpost "' + town.name + '" has been abandoned due to ' + daysSince + ' days without maintenance!');
+                    Engine.logEvent('💀 Your outpost "' + town.name + '" has been abandoned due to ' + daysSince + ' days without maintenance!', null, 'my_business');
                     player.outposts.splice(i, 1);
                     i--;
                 }
@@ -543,7 +543,7 @@
         inv.stone = (inv.stone || 0) - c.stone;
         inv.wood = (inv.wood || 0) - c.wood;
         town.walls = nextLevel;
-        Engine.logEvent('🏰 ' + town.name + ' walls upgraded to level ' + nextLevel + '!');
+        Engine.logEvent('🏰 ' + town.name + ' walls upgraded to level ' + nextLevel + '!', null, 'my_business');
         return { success: true, message: '🏰 Walls upgraded to level ' + nextLevel + '!' };
     }
 
@@ -582,7 +582,7 @@
             inv[matId2] = (inv[matId2] || 0) - cost[matId2];
         }
         town.isPort = true;
-        Engine.logEvent('⚓ Docks built at ' + town.name + '! The outpost is now a port.');
+        Engine.logEvent('⚓ Docks built at ' + town.name + '! The outpost is now a port.', null, 'my_business');
         return { success: true, message: '⚓ Docks built! ' + town.name + ' is now a port.' };
     }
 
@@ -1055,10 +1055,10 @@
                 player.inventory[shelterUsed] = (player.inventory[shelterUsed] || 0) - 1;
                 if (player.inventory[shelterUsed] <= 0) delete player.inventory[shelterUsed];
             }
-            Engine.logEvent('🎉 ' + npc.firstName + ' ' + npc.lastName + ' has agreed to move to your outpost "' + town.name + '"!');
+            Engine.logEvent('🎉 ' + npc.firstName + ' ' + npc.lastName + ' has agreed to move to your outpost "' + town.name + '"!', null, 'my_business');
             return { success: true, message: '🎉 ' + npc.firstName + ' agreed to move! (' + Math.round(chance * 100) + '% chance)' + (shelterUsed ? ' Gave them a ' + shelterUsed.replace(/_/g, ' ') + '.' : ''), chance: chance };
         } else {
-            Engine.logEvent('😔 ' + npc.firstName + ' ' + npc.lastName + ' declined to move to outpost "' + town.name + '".');
+            Engine.logEvent('😔 ' + npc.firstName + ' ' + npc.lastName + ' declined to move to outpost "' + town.name + '".', { _noToast: true }, 'my_business');
             return { success: false, message: '😔 ' + npc.firstName + ' declined. (' + Math.round(chance * 100) + '% chance)' + (goldIncentive > 0 ? ' Gold spent.' : ''), chance: chance };
         }
     }
@@ -1222,7 +1222,7 @@
         if (!player.landOwned) player.landOwned = {};
         player.landOwned[town.id] = town.landPlots || 4;
 
-        Engine.logEvent('🏘️ Your outpost "' + town.name + '" has been officially recognized as a village by the crown! The king paid you ' + payment + 'g.');
+        Engine.logEvent('🏘️ Your outpost "' + town.name + '" has been officially recognized as a village by the crown! The king paid you ' + payment + 'g.', null, 'my_business');
         unlockAchievement('village_maker');
         return { success: true, message: '🏘️ ' + town.name + ' is now a village! King paid ' + payment + 'g. You have 80 town reputation.' };
     }

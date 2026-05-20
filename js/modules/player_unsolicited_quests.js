@@ -594,7 +594,8 @@
                     }
                 }
             }
-            _logEvent('A political marriage strengthens the alliance between noble houses.', { kingdomId: marriageKingdomId, _noToast: true }, marriageKingdomId ? 'my_kingdom' : 'my_actions');
+            // v9p33river377: this resolves a player quest, so keep it under My Actions instead of kingdom-wide news.
+            _logEvent('A political marriage strengthens the alliance between noble houses.', { kingdomId: marriageKingdomId, _noToast: true }, 'my_actions');
         }
     });
 
