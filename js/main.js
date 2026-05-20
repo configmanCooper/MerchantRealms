@@ -2010,6 +2010,11 @@ window.Game = (function () {
                         // Pass event category so notification filter can suppress non-player toasts
                         // Pass _skipEventLog=true to prevent circular toast→logEvent→processEvents→toast loop
                         var evtCategory = event.category || 'local_town';
+                        // v9p33river369: local_town events only show if player is in that town
+                        if (evtCategory === 'local_town' && event.townId) {
+                            var _pTownId = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
+                            if (_pTownId && event.townId !== _pTownId) continue;
+                        }
                         UI.toast(msg, toastType, evtCategory, true);
                     }
                     emit('eventOccurred', event);

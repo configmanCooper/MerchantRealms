@@ -8953,6 +8953,11 @@ window.UI = (function () {
 
         var filteredEvents = allEvents.filter(function(e) {
             var cat = e.category || inferCategoryFromMessage(e);
+            // v9p33river369: local_town events only show if player is in that town
+            if (cat === 'local_town' && e.townId) {
+                var _pTown = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
+                if (_pTown && e.townId !== _pTown) return false;
+            }
             // Tab filter
             if (activeCats && !activeCats.includes(cat)) return false;
             // In "all" tab, use user's notification filter preferences (but NOT the day-suppress or skill-gate)
