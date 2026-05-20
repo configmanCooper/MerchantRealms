@@ -4985,6 +4985,14 @@ function clickTown(townId) {
     // Single-arg passthrough handlers (data-id)
     UI.registerAction('showTownPeople', function(_t, d) { UI.showTownPeople(d.id); });
     UI.registerAction('openTownQuests', function(_t, d) { UI.openTownQuests(d.id); });
+    // v9p33river372: open townspeople Quests tab from event detail
+    UI.registerAction('openTownQuestsTab', function() {
+        var townId = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
+        if (!townId) { UI.toast('You must be in a town.', 'warning'); return; }
+        UI.closeModal();
+        UI.showTownPeople(townId);
+        setTimeout(function() { if (UI._switchTownTab) UI._switchTownTab('quests'); }, 50);
+    });
     UI.registerAction('openFestivalPanel', function(_t, d) { UI.openFestivalPanel(d.kingdom, d.festival); });
     UI.registerAction('openKingdomLawsPanel', function(_t, d) { UI.openKingdomLawsPanel(d.id); });
     UI.registerAction('openKingActionLog', function(_t, d) { UI.openKingActionLog(d.id); });
