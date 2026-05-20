@@ -5912,6 +5912,18 @@
             // Move personal guards to player's new town
             _moveGuardsToPlayer();
 
+            // v9p33river362: Sync children townId on travel arrival
+            if (player._childrenTravelWith && player.childrenIds && player.childrenIds.length > 0) {
+                for (var _cci = 0; _cci < player.childrenIds.length; _cci++) {
+                    try {
+                        var _childNpc = Engine.findPerson(player.childrenIds[_cci]);
+                        if (_childNpc && _childNpc.alive !== false) {
+                            _childNpc.townId = player.townId;
+                        }
+                    } catch(_eChild) {}
+                }
+            }
+
             // Clear street trading cache so new town gets fresh offers
             player._streetTradesCache = null;
             player._streetTradesDay = 0;

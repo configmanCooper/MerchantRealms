@@ -380,12 +380,11 @@
 
         // Listener's relationship with owner drops too
         // (simulated — set a flag the AI can pick up)
-        if (owner) {
+        if (owner && listener) {
             try {
-                if (owner._npcRelationships) {
-                    if (!owner._npcRelationships[listenerPersonId]) owner._npcRelationships[listenerPersonId] = 50;
-                    owner._npcRelationships[listenerPersonId] = Math.max(0, (owner._npcRelationships[listenerPersonId] || 50) - 15);
-                }
+                if (!listener._npcRelationships) listener._npcRelationships = {};
+                if (!listener._npcRelationships[owner.id]) listener._npcRelationships[owner.id] = 50;
+                listener._npcRelationships[owner.id] = Math.max(0, (listener._npcRelationships[owner.id] || 50) - 15);
             } catch(e) {}
         }
 

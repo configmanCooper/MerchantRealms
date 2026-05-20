@@ -127,7 +127,8 @@
         if (player.relationships) {
             for (var rid in player.relationships) {
                 if (rid === player.spouseId) continue;
-                if ((player.relationships[rid].level || 0) < 65) continue;
+                var _pRel = player.relationships[rid];
+                if (!_pRel || (_pRel.level || 0) < 65) continue;
                 var p = _findPerson(rid); if (!p || p.alive === false) continue;
                 if (p.sex !== pSex) continue; // same gender as player
                 candidates.push(p);

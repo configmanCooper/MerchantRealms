@@ -96,13 +96,24 @@
 
     function _basePrice(resId) {
         try {
-            if (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES[resId]) return RESOURCE_TYPES[resId].basePrice || 5;
+            if (typeof RESOURCE_TYPES !== 'undefined') {
+                // RESOURCE_TYPES is keyed by UPPERCASE, look up by lowercase id
+                var rt = Object.values(RESOURCE_TYPES);
+                for (var i = 0; i < rt.length; i++) {
+                    if (rt[i].id === resId) return rt[i].basePrice || 5;
+                }
+            }
         } catch (e) {}
         return 5;
     }
     function _resName(resId) {
         try {
-            if (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES[resId]) return RESOURCE_TYPES[resId].name || resId;
+            if (typeof RESOURCE_TYPES !== 'undefined') {
+                var rt = Object.values(RESOURCE_TYPES);
+                for (var i = 0; i < rt.length; i++) {
+                    if (rt[i].id === resId) return rt[i].name || resId;
+                }
+            }
         } catch (e) {}
         return resId;
     }

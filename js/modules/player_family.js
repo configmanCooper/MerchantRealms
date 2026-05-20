@@ -124,7 +124,8 @@
             } else if (_pRankForKC >= 3) {
                 var _hasNobleIntro = false;
                 for (var _nIntId in player.relationships) {
-                    if (player.relationships[_nIntId].level >= 50) {
+                    var _nIntRel = player.relationships[_nIntId];
+                    if (_nIntRel && _nIntRel.level >= 50) {
                         var _nIntPerson = Engine.findPerson ? Engine.findPerson(_nIntId) : null;
                         if (_nIntPerson && getNPCSocialRank(_nIntPerson) >= 4) { _hasNobleIntro = true; break; }
                     }
