@@ -2198,19 +2198,38 @@ function showPersonDetail(person) {
                 html += `<div class="detail-section"><h3>💕 Courtship</h3>
                     <div style="display:flex;flex-direction:column;gap:3px;">`;
 
-                for (const activity of DATING_ACTIVITIES) {
-                    const meetsMin = !activity.minRelationship || rel.level >= activity.minRelationship;
-                    const canAfford = !activity.cost || (Player.gold >= activity.cost);
-                    const disabled = !meetsMin || !canAfford;
-                    const disabledAttr = disabled ? 'disabled style="opacity:0.5;cursor:not-allowed;font-size:0.7rem;padding:4px 8px;"' : 'style="font-size:0.7rem;padding:4px 8px;"';
-                    let tooltip = activity.description || '';
-                    if (!meetsMin) tooltip += ` (Need relationship ${activity.minRelationship}+)`;
-                    if (!canAfford) tooltip += ` (Need ${activity.cost}g)`;
-                    html += `<button class="btn-medieval" data-action="dateAction" data-id="${person.id}" data-val="${activity.id}" ${disabledAttr} title="${tooltip}">
-                        ${activity.name}${activity.cost ? ' (' + activity.cost + 'g)' : ' (Free)'}</button>`;
+                // v9p33river364: courtship gating — spouse always sees activities, others need proposal accepted
+                var _courtshipAccepted = isSpouse || (Player.courtshipAccepted && Player.courtshipAccepted[person.id]);
+                if (_courtshipAccepted) {
+                    for (const activity of DATING_ACTIVITIES) {
+                        const meetsMin = !activity.minRelationship || rel.level >= activity.minRelationship;
+                        const canAfford = !activity.cost || (Player.gold >= activity.cost);
+                        const disabled = !meetsMin || !canAfford;
+                        const disabledAttr = disabled ? 'disabled style="opacity:0.5;cursor:not-allowed;font-size:0.7rem;padding:4px 8px;"' : 'style="font-size:0.7rem;padding:4px 8px;"';
+                        let tooltip = activity.description || '';
+                        if (!meetsMin) tooltip += ` (Need relationship ${activity.minRelationship}+)`;
+                        if (!canAfford) tooltip += ` (Need ${activity.cost}g)`;
+                        html += `<button class="btn-medieval" data-action="dateAction" data-id="${person.id}" data-val="${activity.id}" ${disabledAttr} title="${tooltip}">
+                            ${activity.name}${activity.cost ? ' (' + activity.cost + 'g)' : ' (Free)'}</button>`;
+                    }
+                } else {
+                    // Show propose courtship button
+                    var _cdDay = (Player.courtshipCooldowns && Player.courtshipCooldowns[person.id]) || 0;
+                    var _cGateDay = 0; try { _cGateDay = Engine.getDay(); } catch(e) {}
+                    var _onCooldown = _cdDay > _cGateDay;
+                    var _canPropose = rel.level >= 20 && !_onCooldown;
+                    if (_onCooldown) {
+                        html += `<div class="text-dim" style="font-size:0.7rem;">💔 Courtship proposal rejected. Try again in ${_cdDay - _cGateDay} days.</div>`;
+                    } else if (rel.level < 20) {
+                        html += `<button class="btn-medieval" disabled style="opacity:0.5;cursor:not-allowed;font-size:0.7rem;padding:4px 8px;" title="Need relationship 20+ to propose courtship">
+                            💕 Propose Courtship (Need relationship 20+)</button>`;
+                    } else {
+                        html += `<button class="btn-medieval" data-action="proposeCourtship" data-id="${person.id}" style="font-size:0.7rem;padding:4px 8px;">
+                            💕 Propose Courtship</button>`;
+                    }
                 }
 
-                // Propose button
+                // Propose marriage button
                 if (rel.level >= 60 && !person.spouseId && !playerSpouseId) {
                     html += `<button id="btnPropose" class="btn-medieval" data-action="proposeTo" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;margin-top:4px;">
                         💍 Propose Marriage</button>`;
@@ -4942,6 +4961,66 @@ function clickTown(townId) {
     UI.registerAction('openNobleLoanDialog', function(_t, d) { UI.openNobleLoanDialog(d.id); });
     UI.registerAction('openRecruitToOutpostDialog', function(_t, d) { UI.openRecruitToOutpostDialog(d.id, d.val); });
     UI.registerAction('proposeTo', function(_t, d) { UI.proposeTo(d.id); });
+    // v9p33river364: courtship gating — propose courtship with acceptance formula
+    UI.registerAction('proposeCourtship', function(_t, d) {
+        var personId = d.id;
+        if (!personId) return;
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        if (!person) return;
+        var rel = Player.getRelationship ? Player.getRelationship(personId) : { level: 0 };
+        if (rel.level < 20) { UI.toast('Need relationship 20+ to propose courtship.', 'warning'); return; }
+        var curDay = 0; try { curDay = Engine.getDay(); } catch(e) {}
+        var cd = (Player.courtshipCooldowns && Player.courtshipCooldowns[personId]) || 0;
+        if (cd > curDay) { UI.toast('Courtship cooldown active. Try again in ' + (cd - curDay) + ' days.', 'warning'); return; }
+
+        // Acceptance formula: 20% base + bonuses - penalties
+        var chance = 20;
+        // Relationship bonus: +0.5% per point above 20
+        chance += Math.max(0, rel.level - 20) * 0.5;
+        // Player social rank bonus: +5% per step above NPC
+        var playerMaxRank = 0;
+        try {
+            var pSt = Player.state || Player;
+            if (pSt && pSt.socialRank) { for (var _rk in pSt.socialRank) { if ((pSt.socialRank[_rk] || 0) > playerMaxRank) playerMaxRank = pSt.socialRank[_rk]; } }
+        } catch(e) {}
+        var npcRank = 0;
+        if (person.socialRank) { for (var _nk in person.socialRank) { if ((person.socialRank[_nk] || 0) > npcRank) npcRank = person.socialRank[_nk]; } }
+        if (!npcRank && person.occupation === 'noble') npcRank = 4;
+        var rankDiff = playerMaxRank - npcRank;
+        if (rankDiff > 0) chance += rankDiff * 5;
+        else if (rankDiff < 0) chance += rankDiff * 10; // -10% per step below
+        // Charisma skill bonus
+        try {
+            var pSkills = (Player.state || Player).skills || {};
+            if (pSkills.charisma) chance += Math.min(15, pSkills.charisma * 3);
+            if (pSkills.charm) chance += Math.min(10, pSkills.charm * 2);
+        } catch(e) {}
+        // Penalty if NPC has spouse
+        if (person.spouseId) chance -= 15;
+        // Clamp
+        chance = Math.max(1, Math.min(98, Math.round(chance)));
+
+        var rng = null;
+        try { rng = Engine.getRng(); } catch(e) {}
+        var roll = rng ? rng.randInt(1, 100) : (Math.floor(Math.random() * 100) + 1);
+        var accepted = roll <= chance;
+
+        if (accepted) {
+            var pState = Player.state || Player;
+            if (!pState.courtshipAccepted) pState.courtshipAccepted = {};
+            pState.courtshipAccepted[personId] = true;
+            UI.toast((person.firstName || 'They') + ' agrees to courtship! 💕', 'success');
+            try { Player.modifyRelationship(personId, 5); } catch(e) {}
+        } else {
+            var pState2 = Player.state || Player;
+            if (!pState2.courtshipCooldowns) pState2.courtshipCooldowns = {};
+            pState2.courtshipCooldowns[personId] = curDay + 7;
+            UI.toast((person.firstName || 'They') + ' politely declines your courtship proposal. (' + chance + '% chance)', 'warning');
+        }
+        // Refresh NPC detail
+        try { UI.showPersonDetail(personId); } catch(e) {}
+    });
     UI.registerAction('hirePerson', function(_t, d) { UI.hirePerson(d.id); });
     UI.registerAction('stealFromPerson', function(_t, d) { UI.stealFromPerson(d.id); });
     // v9p33river197: jailbreak action — d.id = target NPC id, d.val = town id

@@ -6209,20 +6209,47 @@
         var bldBudget = catBudget(buildingWeight);
         if (bldBudget > 50 && rng.chance(0.25 + effectivePressure * 0.35)) {
             var bldSpent = 0;
-            // Prioritize: clinics/hospitals > economic buildings > defensive buildings
+            // Prioritize: wells/medical > economic buildings > defensive buildings
             var buildPriorities = [];
+            var smartKing = p.intelligence === 'brilliant' || p.intelligence === 'clever';
+            var lowWaterTownCount = 0;
+            for (var lwti = 0; lwti < territories.length; lwti++) {
+                var lwTown = findTown(territories[lwti]);
+                if (!lwTown || !lwTown.market || !lwTown.market.supply) continue;
+                if ((lwTown.market.supply.water || 0) < 50) lowWaterTownCount++;
+            }
             for (var bti = 0; bti < territories.length; bti++) {
                 var bTown = findTown(territories[bti]);
                 if (!bTown) continue;
+                var bBuildings = bTown.buildings || [];
                 var maxSlots = (CONFIG.TOWN_CATEGORIES[bTown.category] || {}).maxBuildingSlots || 10;
-                if (bTown.buildings.length >= maxSlots) continue;
+                if (bBuildings.length >= maxSlots) continue;
                 var hasTypes = {};
-                for (var bhi = 0; bhi < bTown.buildings.length; bhi++) {
-                    hasTypes[bTown.buildings[bhi].type] = true;
+                var wellCount = 0;
+                for (var bhi = 0; bhi < bBuildings.length; bhi++) {
+                    var bType = bBuildings[bhi].type;
+                    hasTypes[bType] = true;
+                    if (bType === 'well') wellCount++;
+                }
+
+                var townPop = bTown.population || 0;
+                var waterSupply = (bTown.market && bTown.market.supply) ? (bTown.market.supply.water || 0) : 0;
+                var lowWater = waterSupply < 50;
+                var proactiveWellNeed = (wellCount * 75) < (townPop * 1.2);
+                if (lowWater || proactiveWellNeed) {
+                    var wellShortage = Math.max(0, Math.ceil((townPop * 1.2) / 75) - wellCount);
+                    var waterPriority = lowWater ? 125 : (smartKing ? 105 : 92);
+                    if (waterSupply <= 0) waterPriority += 20;
+                    else if (waterSupply < 20) waterPriority += 12;
+                    if (proactiveWellNeed) waterPriority += smartKing ? 15 : 8;
+                    if (wellCount === 0) waterPriority += 12;
+                    if (wellShortage > 1) waterPriority += Math.min(18, wellShortage * 6);
+                    if (lowWater && lowWaterTownCount > 1) waterPriority += 8 + Math.min(12, (lowWaterTownCount - 1) * 4);
+                    buildPriorities.push({ town: bTown, type: 'well', priority: waterPriority });
                 }
 
                 // Medical buildings — high priority if population > 100
-                if ((bTown.population || 0) > 100 && !hasTypes['clinic'] && !hasTypes['hospital']) {
+                if (townPop > 100 && !hasTypes['clinic'] && !hasTypes['hospital']) {
                     buildPriorities.push({ town: bTown, type: 'clinic', priority: 100 });
                 }
                 if ((bTown.population || 0) > 300 && hasTypes['clinic'] && !hasTypes['hospital']) {

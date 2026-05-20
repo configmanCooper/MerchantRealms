@@ -211,7 +211,14 @@
             if (have < q.params.quantity) return { ok: false, reason: 'Need ' + q.params.quantity + ' ' + q.params.resourceName + ' (you have ' + have + ').' };
             return { ok: true };
         },
-        consume: function(q) { _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId); }
+        consume: function(q) {
+            _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId);
+            // v9p33river364: boost NPC business — delivered goods enter town supply
+            var t = _findTown(q.params.townId);
+            if (t && t.market && t.market.supply) {
+                t.market.supply[q.params.resourceId] = (t.market.supply[q.params.resourceId] || 0) + Math.floor(q.params.quantity * 0.5);
+            }
+        }
     });
 
     _def({ id: 'em_deliver_to_partner', audience: 'merchant', forPlayerRank: 'any', weight: 9,
@@ -235,7 +242,14 @@
             if (have < q.params.quantity) return { ok: false, reason: 'Need ' + q.params.quantity + ' ' + q.params.resourceName + '.' };
             return { ok: true };
         },
-        consume: function(q) { _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId); }
+        consume: function(q) {
+            _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId);
+            // v9p33river364: delivered goods enter destination town market
+            var t = _findTown(q.params.townId);
+            if (t && t.market && t.market.supply) {
+                t.market.supply[q.params.resourceId] = (t.market.supply[q.params.resourceId] || 0) + Math.floor(q.params.quantity * 0.5);
+            }
+        }
     });
 
     _def({ id: 'em_donate_gold', audience: 'merchant', forPlayerRank: 'any', weight: 5,
@@ -253,10 +267,14 @@
             if ((player.gold || 0) < q.params.amount) return { ok: false, reason: 'You need ' + q.params.amount + 'g (you have ' + Math.floor(player.gold || 0) + 'g).' };
             return { ok: true };
         },
-        consume: function(q) { player.gold = Math.max(0, (player.gold || 0) - q.params.amount); }
+        consume: function(q) {
+            player.gold = Math.max(0, (player.gold || 0) - q.params.amount);
+            var npc = _findPerson(q.npcId); var t = npc ? _findTown(npc.townId) : null;
+            if (t) t.gold = (t.gold || 0) + Math.floor(q.params.amount * 0.3);
+        }
     });
 
-    _def({ id: 'em_marry_child', audience: 'merchant', forPlayerRank: 'any', weight: 1, rare: true,
+    _def({ id: 'em_marry_child',audience: 'merchant', forPlayerRank: 'any', weight: 1, rare: true,
         generate: function(npc, rng) {
             if (player.spouseId) return null;
             var sex = (player.sex === 'M') ? 'F' : 'M';
@@ -273,7 +291,10 @@
             if (player.spouseId === q.params.childId) return { ok: true };
             return { ok: false, reason: 'Marry ' + q.params.childName + ' first.' };
         },
-        consume: function(q) {}
+        consume: function(q) {
+            // v9p33river364: marriage blessing improves family standing
+            _logEvent('A marriage blessed by the merchant house brings good fortune.', null, 'world_events');
+        }
     });
 
     _def({ id: 'em_build_warehouse', audience: 'merchant', forPlayerRank: 'any', weight: 3,
@@ -296,7 +317,14 @@
             }
             return { ok: false, reason: 'Build a ' + q.params.buildingType + ' in ' + q.params.townName + ' first.' };
         },
-        consume: function(q) {}
+        consume: function(q) {
+            // v9p33river364: warehouse benefits town storage capacity
+            var t = _findTown(q.params.townId);
+            if (t) {
+                t.storageCapacity = (t.storageCapacity || 500) + 200;
+                _logEvent('A new warehouse in ' + q.params.townName + ' expanded storage capacity.', null, 'world_events');
+            }
+        }
     });
 
     // ── NOBLE QUESTS (commoner or noble player) ──
@@ -306,23 +334,57 @@
             var other = _findOtherNobleInKingdom(kId, npc.id, rng); if (!other) return null;
             var otherTown = _findTown(other.townId); var npcTown = _findTown(npc.townId);
             if (!otherTown || !npcTown || otherTown.id === npcTown.id) return null;
+            var purposes = ['alliance', 'trade_deal', 'warning', 'invitation', 'petition'];
+            var purpose = purposes[rng.randInt(0, purposes.length - 1)];
+            var purposeText = { alliance: 'a diplomatic alliance proposal', trade_deal: 'a trade agreement', warning: 'an urgent warning', invitation: 'an invitation to a banquet', petition: 'a petition for the king' };
             return {
-                params: { targetTownId: otherTown.id, targetTownName: otherTown.name, targetNobleId: other.id, targetNobleName: ((other.firstName||'') + ' ' + (other.lastName||'')).trim() },
-                dialog: 'I have a sealed letter for ' + (other.firstName||'a fellow noble') + ' in ' + otherTown.name + '. Deliver it personally. And discreetly.',
+                params: { targetTownId: otherTown.id, targetTownName: otherTown.name, targetNobleId: other.id, targetNobleName: ((other.firstName||'') + ' ' + (other.lastName||'')).trim(), purpose: purpose, senderId: npc.id },
+                dialog: 'I have a sealed letter for ' + (other.firstName||'a fellow noble') + ' in ' + otherTown.name + '. It concerns ' + (purposeText[purpose] || 'important matters') + '. Deliver it personally.',
                 objectives: ['Deliver the letter to ' + ((other.firstName||'') + ' ' + (other.lastName||'')).trim() + ' in ' + otherTown.name],
                 timeLimitDays: rng.randInt(20, 35),
                 rewards: { gold: rng.randInt(300, 700), rel: rng.randInt(12, 22) }
             };
         },
         check: function(q) {
-            // Player must be in the target town to deliver
             if (player.townId !== q.params.targetTownId) return { ok: false, reason: 'Travel to ' + q.params.targetTownName + ' to deliver the letter.' };
             return { ok: true };
         },
         consume: function(q) {
-            // Mark as delivered
-            if (!q.progress) q.progress = {};
-            q.progress.delivered = true;
+            var purpose = q.params.purpose || 'alliance';
+            var sender = _findPerson(q.params.senderId);
+            var target = _findPerson(q.params.targetNobleId);
+            if (sender && target) {
+                if (!target._npcRelationships) target._npcRelationships = {};
+                if (!sender._npcRelationships) sender._npcRelationships = {};
+                var oldRel = target._npcRelationships[sender.id] || 0;
+                if (purpose === 'alliance') {
+                    target._npcRelationships[sender.id] = Math.min(100, oldRel + 15);
+                    sender._npcRelationships[target.id] = Math.min(100, (sender._npcRelationships[target.id] || 0) + 10);
+                    _logEvent('The letter strengthened the alliance between ' + (sender.firstName||'') + ' and ' + (target.firstName||'') + '.', null, 'world_events');
+                } else if (purpose === 'trade_deal') {
+                    var targetTown = _findTown(q.params.targetTownId);
+                    var senderTown = _findTown(sender.townId);
+                    if (targetTown && senderTown && targetTown.market && senderTown.market) {
+                        targetTown.tradeDealBonus = (targetTown.tradeDealBonus || 0) + 0.05;
+                        senderTown.tradeDealBonus = (senderTown.tradeDealBonus || 0) + 0.05;
+                    }
+                    target._npcRelationships[sender.id] = Math.min(100, oldRel + 10);
+                    _logEvent('A trade deal between ' + (senderTown ? senderTown.name : 'towns') + ' and ' + (targetTown ? targetTown.name : 'towns') + ' was established.', null, 'world_events');
+                } else if (purpose === 'warning') {
+                    target._npcRelationships[sender.id] = Math.min(100, oldRel + 20);
+                    var tTown = _findTown(q.params.targetTownId);
+                    if (tTown) tTown.security = Math.min(100, (tTown.security || 50) + 10);
+                    _logEvent('The warning was heeded — ' + (tTown ? tTown.name : 'the town') + ' increased security.', null, 'world_events');
+                } else if (purpose === 'invitation') {
+                    target._npcRelationships[sender.id] = Math.min(100, oldRel + 8);
+                    try { Player.modifyRelationship(q.params.targetNobleId, 5); } catch(e) {}
+                    _logEvent((target.firstName||'The noble') + ' was pleased by the invitation.', null, 'world_events');
+                } else if (purpose === 'petition') {
+                    target._npcRelationships[sender.id] = Math.min(100, oldRel + 5);
+                    try { Player.modifyRelationship(q.params.targetNobleId, 3); } catch(e) {}
+                    _logEvent('The petition was delivered. Political matters are in motion.', null, 'world_events');
+                }
+            }
         }
     });
 
@@ -345,7 +407,12 @@
             if (have < q.params.quantity) return { ok: false, reason: 'Need ' + q.params.quantity + ' ' + q.params.resourceName + '.' };
             return { ok: true };
         },
-        consume: function(q) { _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId); }
+        consume: function(q) {
+            _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId);
+            // v9p33river364: luxury goods boost noble's banquet — town happiness
+            var t = _findTown(q.params.townId);
+            if (t) { t.happiness = Math.min(100, (t.happiness || 50) + 3); }
+        }
     });
 
     _def({ id: 'nb_donate_treasury', audience: 'noble', forPlayerRank: 'any', weight: 6,
@@ -363,7 +430,16 @@
             if ((player.gold || 0) < q.params.amount) return { ok: false, reason: 'Need ' + q.params.amount + 'g (you have ' + Math.floor(player.gold || 0) + 'g).' };
             return { ok: true };
         },
-        consume: function(q) { player.gold = Math.max(0, (player.gold || 0) - q.params.amount); }
+        consume: function(q) {
+            player.gold = Math.max(0, (player.gold || 0) - q.params.amount);
+            // v9p33river364: donation goes to kingdom treasury
+            var npc = _findPerson(q.npcId);
+            var kId = npc ? _npcKingdomId(npc) : null;
+            if (kId) {
+                var kingdom = _findKingdom(kId);
+                if (kingdom) kingdom.gold = (kingdom.gold || 0) + q.params.amount;
+            }
+        }
     });
 
     _def({ id: 'nb_supply_militia', audience: 'noble', forPlayerRank: 'any', weight: 6,
@@ -385,7 +461,13 @@
             if (have < q.params.quantity) return { ok: false, reason: 'Need ' + q.params.quantity + ' ' + q.params.resourceName + '.' };
             return { ok: true };
         },
-        consume: function(q) { _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId); }
+        consume: function(q) {
+            _consumePlayerGoods(q.params.resourceId, q.params.quantity, q.params.townId);
+            // v9p33river364: military goods boost town security
+            var t = _findTown(q.params.townId);
+            if (t) { t.security = Math.min(100, (t.security || 50) + 8); }
+            _logEvent('The militia in ' + q.params.townName + ' has been re-equipped.', null, 'world_events');
+        }
     });
 
     _def({ id: 'nb_build_road', audience: 'noble', forPlayerRank: 'any', weight: 2,
@@ -437,7 +519,14 @@
             }
             return { ok: false, reason: 'Build a road between ' + q.params.fromTownName + ' and ' + q.params.toTownName + '.' };
         },
-        consume: function(q) {}
+        consume: function(q) {
+            // v9p33river364: road boosts kingdom reputation + trade between towns
+            var fromTown = _findTown(q.params.fromTownId);
+            var toTown = _findTown(q.params.toTownId);
+            if (fromTown) { fromTown.tradeDealBonus = (fromTown.tradeDealBonus || 0) + 0.1; }
+            if (toTown) { toTown.tradeDealBonus = (toTown.tradeDealBonus || 0) + 0.1; }
+            _logEvent('A new road between ' + q.params.fromTownName + ' and ' + q.params.toTownName + ' strengthens trade routes.', null, 'world_events');
+        }
     });
 
     _def({ id: 'nb_unique_citizenship', audience: 'noble', forPlayerRank: 'any', weight: 1, rare: true,
@@ -481,7 +570,20 @@
             if (player.spouseId === q.params.childId) return { ok: true };
             return { ok: false, reason: 'Marry ' + q.params.childName + ' first.' };
         },
-        consume: function(q) {}
+        consume: function(q) {
+            // v9p33river364: political marriage forges alliance between houses
+            var npc = _findPerson(q.params.npcId);
+            if (npc) {
+                var kId = _npcKingdomId(npc);
+                if (kId) {
+                    var kingdom = _findKingdom(kId);
+                    if (kingdom && kingdom.king) {
+                        try { Player.modifyRelationship(kingdom.king, 10); } catch(e) {}
+                    }
+                }
+            }
+            _logEvent('A political marriage strengthens the alliance between noble houses.', null, 'world_events');
+        }
     });
 
     // ── Generation ──
@@ -709,7 +811,7 @@
     function _failUnsolicitedQuest(idx, reason) {
         var q = player._activeUnsolicitedQuests[idx];
         if (!q) return;
-        try { Player.modifyRelationship(q.npcId, -6); } catch (e) {}
+        try { Player.modifyRelationship(q.npcId, -10); } catch (e) {}
         player._activeUnsolicitedQuests.splice(idx, 1);
         _logEvent('📜 Quest from ' + q.npcName + ' failed (' + (reason || 'expired') + ').', null, 'my_actions');
         _toast('Quest failed (' + (reason || 'expired') + ')', 'warning');

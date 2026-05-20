@@ -130,6 +130,8 @@
         spouseRelHighDays: 0,   // days spouse relationship stayed >= 90
         heirTraits: [],         // permanent heir traits from regency
         dateProgress: {},       // personId → { traitProgress: 0, quirkProgress: 0 }
+        courtshipAccepted: {},  // personId → true — NPC agreed to courtship
+        courtshipCooldowns: {}, // personId → day — cooldown after rejection
         _npcInteractions: {},   // personId → { day: N, count: N } — daily interaction cooldowns
         _giftCooldowns: {},     // personId → day — 1 gift per NPC per day
         investigatorCaught: {}, // personId → count (0, 1, or 2 = permanent rejection)
@@ -1216,6 +1218,8 @@
         player.spouseRelHighDays = 0;
         player.heirTraits = [];
         player.dateProgress = {};
+        player.courtshipAccepted = {};
+        player.courtshipCooldowns = {};
         player._npcInteractions = {};
         player.investigatorCaught = {};
         player.weddingPlan = null;
@@ -19335,6 +19339,8 @@
             spouseRelHighDays: player.spouseRelHighDays || 0,
             heirTraits: structuredClone(player.heirTraits || []),
             dateProgress: structuredClone(player.dateProgress || {}),
+            courtshipAccepted: structuredClone(player.courtshipAccepted || {}),
+            courtshipCooldowns: structuredClone(player.courtshipCooldowns || {}),
             _npcInteractions: structuredClone(player._npcInteractions || {}),
             // NPC relationship systems
             _npcMemoryEvents: structuredClone(player._npcMemoryEvents || {}),
@@ -19347,6 +19353,8 @@
             _keptSecretIds: structuredClone(player._keptSecretIds || []),
             _lastUnsolicitedFavorDay: player._lastUnsolicitedFavorDay || 0,
             _favorHistory: structuredClone(player._favorHistory || []),
+            // v9p33river364: rival system
+            _rivalLastActionDay: player._rivalLastActionDay || 0,
             _nobleVoteSupport: structuredClone(player._nobleVoteSupport || {}),
             _territoryProtection: structuredClone(player._territoryProtection || {}),
             _relationshipTiers: structuredClone(player._relationshipTiers || {}),
@@ -19974,6 +19982,8 @@
         player.spouseRelHighDays = data.spouseRelHighDays || 0;
         player.heirTraits = data.heirTraits || [];
         player.dateProgress = data.dateProgress || {};
+        player.courtshipAccepted = data.courtshipAccepted || {};
+        player.courtshipCooldowns = data.courtshipCooldowns || {};
         player._npcInteractions = data._npcInteractions || {};
         // NPC relationship systems
         player._npcMemoryEvents = data._npcMemoryEvents || {};
@@ -19986,6 +19996,7 @@
         player._keptSecretIds = data._keptSecretIds || [];
         player._lastUnsolicitedFavorDay = data._lastUnsolicitedFavorDay || 0;
         player._favorHistory = data._favorHistory || [];
+        player._rivalLastActionDay = data._rivalLastActionDay || 0;
         player._lastFavorInfo = null; // transient
         player._nobleVoteSupport = data._nobleVoteSupport || {};
         player._territoryProtection = data._territoryProtection || {};
@@ -24486,16 +24497,26 @@
         }
 
         const rel = player.relationships[personId];
+        // v9p33river364: 50% penalty on relationship GAINS with rivals/enemies
+        if (amount > 0 && rel.level <= -20) {
+            amount *= 0.50;
+        }
         var oldLevel = rel.level;
-        rel.level = Math.max(0, Math.min(100, rel.level + amount));
+        rel.level = Math.max(-50, Math.min(100, rel.level + amount));
         if (type) rel.type = type;
         // Update type label based on level thresholds
-        if (rel.type !== 'spouse' && rel.type !== 'child' && rel.type !== 'rival' && rel.type !== 'romantic') {
-            for (const lvl of CONFIG.RELATIONSHIP_LEVELS) {
-                if (rel.level >= lvl.min && rel.level < lvl.max) {
-                    if (rel.level >= 20 && rel.type === 'acquaintance') rel.type = 'friend';
-                    if (rel.level >= 60) rel.type = 'close_friend';
-                    break;
+        if (rel.type !== 'spouse' && rel.type !== 'child' && rel.type !== 'romantic') {
+            if (rel.level <= -40) rel.type = 'enemy';
+            else if (rel.level <= -20) rel.type = 'rival';
+            else {
+                // Clear rival/enemy label if relationship recovered
+                if (rel.type === 'rival' || rel.type === 'enemy') rel.type = 'acquaintance';
+                for (const lvl of CONFIG.RELATIONSHIP_LEVELS) {
+                    if (rel.level >= lvl.min && rel.level < lvl.max) {
+                        if (rel.level >= 20 && rel.type === 'acquaintance') rel.type = 'friend';
+                        if (rel.level >= 60) rel.type = 'close_friend';
+                        break;
+                    }
                 }
             }
         }
@@ -41215,6 +41236,8 @@
         get spouseRelHighDays() { return player.spouseRelHighDays || 0; },
         get heirTraits() { return player.heirTraits || []; },
         get dateProgress() { return player.dateProgress || {}; },
+        get courtshipAccepted() { return player.courtshipAccepted || {}; },
+        get courtshipCooldowns() { return player.courtshipCooldowns || {}; },
         get investigatorCaught() { return player.investigatorCaught || {}; },
         // Crown & Royal Advisor state
         get isRoyalAdvisorFromKing() { return player.isRoyalAdvisorFromKing || false; },
