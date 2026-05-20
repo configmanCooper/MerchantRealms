@@ -464,6 +464,41 @@ window.UI = (function () {
         registerAction('openCaravanDialog', function() { UI.openCaravanDialog(); });
         registerAction('openCharacterDialog', function() { openCharacterDialog(); });
         registerAction('charTabSwitch', function(_t, d) { if (d.id) _applyCharTab(d.id); });
+        registerAction('turnInUnsolicitedQuest', function(_t, d) {
+            var quest = null;
+            var result = { success: false, message: 'Quest unavailable.' };
+            try {
+                var active = Player.getActiveUnsolicitedQuests ? Player.getActiveUnsolicitedQuests() : [];
+                for (var qi = 0; qi < active.length; qi++) {
+                    if (active[qi] && active[qi].id === d.id) { quest = active[qi]; break; }
+                }
+                if (d.id && Player.attemptCompleteUnsolicitedQuest) result = Player.attemptCompleteUnsolicitedQuest(d.id);
+            } catch (e) {
+                result = { success: false, message: (e && e.message) ? e.message : 'Could not turn in quest.' };
+            }
+            toast(result.message || 'Could not turn in quest.', result.success ? 'success' : 'warning');
+            _refreshQuestPanels(quest && quest.npcId ? quest.npcId : null);
+        });
+        registerAction('completeTownQuestFromTracker', function(_t, d) {
+            var result = { success: false, message: 'Quest unavailable.' };
+            try {
+                if (d.id && Player.completeTownQuest) result = Player.completeTownQuest(d.id);
+            } catch (e) {
+                result = { success: false, message: (e && e.message) ? e.message : 'Could not complete town quest.' };
+            }
+            if (!result.success) toast(result.message || 'Could not complete town quest.', 'warning');
+            _refreshQuestPanels();
+        });
+        registerAction('completeKingdomQuestFromTracker', function(_t, d) {
+            var result = { success: false, message: 'Quest unavailable.' };
+            try {
+                if (d.id && Player.completeKingdomQuest) result = Player.completeKingdomQuest(d.id, d.kingdom || undefined);
+            } catch (e) {
+                result = { success: false, message: (e && e.message) ? e.message : 'Could not complete kingdom quest.' };
+            }
+            toast(result.message || (result.success ? 'Quest completed.' : 'Could not complete kingdom quest.'), result.success ? 'success' : 'warning');
+            _refreshQuestPanels();
+        });
         registerAction('openMapView', function() { openMapView(); });
         registerAction('openEventLog', function() { openEventLog(); });
         registerAction('openSettings', function() { openSettings(); });
@@ -1872,9 +1907,27 @@ window.UI = (function () {
         var npc = null;
         try { npc = Engine.getPerson(offer.npcId); } catch(e) {}
         var portrait = (npc && typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(npc) : '';
+        var rankIdx = 0;
+        var rankDef = (typeof CONFIG !== 'undefined' && CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[0]) ? CONFIG.SOCIAL_RANKS[0] : { icon: '', name: 'Peasant' };
+        var rel = null;
+        try {
+            if (npc && typeof Player !== 'undefined' && Player.getNPCSocialRank) rankIdx = Player.getNPCSocialRank(npc) || 0;
+            if (typeof CONFIG !== 'undefined' && CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx]) rankDef = CONFIG.SOCIAL_RANKS[rankIdx];
+        } catch(e) {}
+        try { if (npc && typeof Player !== 'undefined' && Player.getRelationship) rel = Player.getRelationship(npc.id); } catch(e) {}
+        var relText = rel ? (Math.floor(rel.level || 0) + (rel.type ? ' (' + String(rel.type).replace(/_/g, ' ') + ')' : '')) : 'None';
+        var npcIdAttr = escapeHtml(String((offer && offer.npcId) || (npc && npc.id) || ''));
         var html = '<div style="max-width:480px;padding:6px;">';
         if (portrait) html += '<div style="text-align:center;font-size:2.4em;margin-bottom:4px;">' + portrait + '</div>';
-        html += '<div style="text-align:center;font-weight:bold;color:#d4af37;margin-bottom:6px;">' + escapeHtml(offer.npcName || 'A noble') + '</div>';
+        html += '<div style="text-align:center;margin-bottom:6px;">';
+        if (npcIdAttr) {
+            html += '<button type="button" data-action="showPersonDetailAndCloseModal" data-id="' + npcIdAttr + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:1.05em;cursor:pointer;text-decoration:underline;">' + escapeHtml(offer.npcName || 'A noble') + '</button>';
+        } else {
+            html += '<div style="font-weight:bold;color:#d4af37;">' + escapeHtml(offer.npcName || 'A noble') + '</div>';
+        }
+        html += '<span style="font-size:0.85em;color:#cfc7b0;margin-left:6px;">' + (rankDef.icon || '') + ' ' + escapeHtml(rankDef.name || 'Peasant') + '</span>';
+        html += '<div style="font-size:0.85em;color:#cfc7b0;margin-top:4px;">Relationship: ' + escapeHtml(relText) + '</div>';
+        html += '</div>';
         html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(155,89,182,0.10);border-left:3px solid #9b59b6;border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">"' + escapeHtml(offer.dialog) + '"</div>';
         html += '<div style="font-weight:bold;color:#d4af37;margin-top:8px;">Objectives:</div><ul style="margin:4px 0 8px 18px;">';
         for (var i = 0; i < (offer.objectives || []).length; i++) {
@@ -1885,14 +1938,14 @@ window.UI = (function () {
         var rewParts = [];
         if (rew.gold) rewParts.push(rew.gold + ' gold');
         if (rew.rel) rewParts.push('+' + rew.rel + ' relationship');
-        if (rew.unique) rewParts.push('Special reward: ' + String(rew.unique.type).replace(/_/g, ' '));
+        if (rew.unique) rewParts.push('Special reward: ' + escapeHtml(String(rew.unique.type).replace(/_/g, ' ')));
         html += '<div style="font-weight:bold;color:#d4af37;margin-top:6px;">Reward:</div>';
         html += '<div style="margin:2px 0 6px 6px;color:#eee;">' + (rewParts.join(' • ') || '—') + '</div>';
         html += '<div style="color:#bbb;font-size:0.85em;margin-bottom:8px;">Time limit: ' + offer.timeLimitDays + ' days</div>';
         html += '</div>';
         var footer = '<button class="btn-medieval" data-action="acceptUnsolicitedOffer" style="background:rgba(85,168,104,0.3);margin-right:8px;">Accept Quest</button>' +
                      '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
-        openModal('📜 ' + escapeHtml(offer.npcName) + ' approaches you', html, footer);
+        openModal('📜 ' + (offer.npcName || 'A noble') + ' approaches you', html, footer);
     }
 
     // v9p33river358: Spouse confrontation popup
@@ -6920,6 +6973,240 @@ window.UI = (function () {
         return html;
     }
 
+    function _isCharacterDialogOpen() {
+        var overlay = document.getElementById('modalOverlay');
+        return !!(overlay && !overlay.classList.contains('hidden') && document.getElementById('char-tab-bar'));
+    }
+
+    function _refreshQuestPanels(personId) {
+        if (_isCharacterDialogOpen()) {
+            try { openCharacterDialog(); } catch (e) {}
+        }
+        var panelEl = document.getElementById('rightPanel');
+        var targetId = personId || selectedPersonId;
+        if (!targetId || selectedPersonId !== targetId || !panelEl || panelEl.classList.contains('hidden')) return;
+        try {
+            var refreshPerson = Engine.findPerson ? Engine.findPerson(targetId) : (Engine.getPerson ? Engine.getPerson(targetId) : null);
+            if (refreshPerson && UI.showPersonDetail) UI.showPersonDetail(refreshPerson);
+        } catch (e) {}
+    }
+
+    function _formatUnsolicitedQuestRewardText(rewards) {
+        var parts = [];
+        var unique = rewards && rewards.unique ? rewards.unique : null;
+        if (rewards && rewards.gold) parts.push(formatGold(rewards.gold) + 'g');
+        if (rewards && rewards.rel) parts.push('+' + rewards.rel + ' relationship');
+        if (unique && unique.type) parts.push('Special: ' + escapeHtml(String(unique.type).replace(/_/g, ' ')));
+        return parts.join(' • ') || '—';
+    }
+
+    function _getUnsolicitedQuestTurnInTown(q) {
+        if (!q) return null;
+        // Check explicit town params (delivery quests use townId, courier uses targetTownId)
+        var tid = (q.params && q.params.townId) || (q.params && q.params.targetTownId) || null;
+        if (tid) {
+            var paramTownName = (q.params && (q.params.townName || q.params.targetTownName)) || '';
+            if (!paramTownName) {
+                try {
+                    var paramTown = Engine.findTown ? Engine.findTown(tid) : null;
+                    if (paramTown) paramTownName = paramTown.name;
+                } catch (e) {}
+            }
+            return { id: tid, name: paramTownName || tid };
+        }
+        try {
+            var npc = q.npcId ? (Engine.findPerson ? Engine.findPerson(q.npcId) : null) : null;
+            if (npc && npc.townId) {
+                var npcTown = Engine.findTown ? Engine.findTown(npc.townId) : null;
+                return { id: npc.townId, name: (npcTown && npcTown.name) || npc.townId };
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function _canTurnInUnsolicitedQuestHere(q) {
+        if (!q || Player.traveling) return false;
+        var turnTown = _getUnsolicitedQuestTurnInTown(q);
+        if (!turnTown || !turnTown.id) return true;
+        return Player.townId === turnTown.id;
+    }
+
+    function _formatTownQuestNeedText(q) {
+        if (!q) return '—';
+        if (q.isPerformance) return 'Bring an instrument and perform.';
+        var res = null;
+        try { res = q.resource ? findResource(q.resource) : null; } catch (e) {}
+        var resText = res ? ((res.icon || '') + ' ' + escapeHtml(res.name || q.resource)) : escapeHtml(String(q.resource || 'Unknown'));
+        return resText + ' ×' + Math.max(0, Math.floor(Number(q.quantity) || 0));
+    }
+
+    function _formatTownQuestRewardText(q, town) {
+        if (!q) return '—';
+        var parts = [];
+        if (!q.isPerformance) {
+            if (q.donateOnly) {
+                parts.push('Donation only');
+                parts.push('+' + Math.max(0, Math.floor(Number(q.bigRepBoost) || 0)) + ' town rep');
+            } else {
+                var res = null;
+                try { res = q.resource ? findResource(q.resource) : null; } catch (e) {}
+                var unitPrice = (town && town.market && town.market.prices && q.resource) ? (town.market.prices[q.resource] || 0) : 0;
+                if (!unitPrice) unitPrice = (res && res.basePrice) || 5;
+                parts.push(formatGold(Math.floor((Number(q.quantity) || 0) * unitPrice)) + 'g');
+                parts.push('+' + Math.max(0, Math.floor(Number(q.smallRepBoost) || 0)) + ' town rep');
+            }
+        } else {
+            parts.push('+' + Math.max(0, Math.floor(Number(q.smallRepBoost) || 0)) + ' town rep');
+        }
+        return parts.join(' • ') || '—';
+    }
+
+    function _formatKingdomQuestNeedText(q) {
+        if (!q) return '—';
+        if (q.description) return escapeHtml(q.description);
+        var req = q.requirements || {};
+        var parts = [];
+        var deliver = req.deliver || {};
+        for (var resId in deliver) {
+            var res = null;
+            try { res = findResource(resId); } catch (e) {}
+            var resText = res ? ((res.icon || '') + ' ' + escapeHtml(res.name || resId)) : escapeHtml(String(resId));
+            parts.push(resText + ' ×' + deliver[resId]);
+        }
+        if (req.gold) parts.push('Contribute ' + formatGold(req.gold) + 'g');
+        if (req.action && req.action.type) {
+            var actionText = String(req.action.type).replace(/_/g, ' ');
+            if (req.action.goldTarget) actionText += ' (' + formatGold(req.action.goldTarget) + 'g)';
+            parts.push(escapeHtml(capitalize(actionText)));
+        }
+        return parts.join(' • ') || 'Directive in progress';
+    }
+
+    function _formatKingdomQuestRewardText(q) {
+        if (!q || !q.rewards) return '—';
+        var parts = [];
+        if (q.rewards.gold) parts.push(formatGold(q.rewards.gold) + 'g');
+        if (q.rewards.kingdomRep) parts.push('+' + q.rewards.kingdomRep + ' kingdom rep');
+        if (q.rewards.kingRelationship) parts.push('+' + q.rewards.kingRelationship + ' king rel');
+        if (q.rewards.special) parts.push('Special: ' + escapeHtml(String(q.rewards.special)));
+        return parts.join(' • ') || '—';
+    }
+
+    function _buildCharacterQuestsSectionHtml() {
+        var html = '<div class="detail-section" data-char-tab="quests"><h3>📜 Quest Tracker</h3>';
+        var day = 0;
+        try { day = Engine.getDay ? Engine.getDay() : 0; } catch (e) {}
+
+        html += '<div style="margin-bottom:14px;">';
+        html += '<div style="font-size:0.9rem;color:var(--gold);margin-bottom:6px;">NPC Quests</div>';
+        var unsolicited = [];
+        try { unsolicited = Player.getActiveUnsolicitedQuests ? Player.getActiveUnsolicitedQuests() : []; } catch (e) { unsolicited = []; }
+        if (!unsolicited.length) {
+            html += '<div class="text-dim">No active NPC quests</div>';
+        } else {
+            for (var ui = 0; ui < unsolicited.length; ui++) {
+                var uq = unsolicited[ui];
+                if (!uq) continue;
+                var uqTurnTown = _getUnsolicitedQuestTurnInTown(uq);
+                var uqCanTurnIn = _canTurnInUnsolicitedQuestHere(uq);
+                var uqDaysLeft = Math.max(0, (uq.deadlineDay || 0) - day);
+                html += '<div style="border:1px solid rgba(212,175,55,0.25);border-radius:6px;padding:8px 10px;margin-bottom:8px;background:rgba(212,175,55,0.06);">';
+                html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:4px;">';
+                html += '<div><button type="button" class="btn-medieval" data-action="showPersonDetail" data-id="' + escapeHtml(String(uq.npcId || '')) + '" style="background:none;border:none;padding:0;color:#d4af37;font-size:0.85rem;font-weight:bold;text-align:left;">' + escapeHtml(uq.npcName || 'Unknown NPC') + '</button></div>';
+                html += '<div style="font-size:0.72rem;color:' + (uqDaysLeft <= 5 ? '#c85050' : '#999') + ';white-space:nowrap;">⏱️ ' + uqDaysLeft + 'd</div>';
+                html += '</div>';
+                html += '<div style="font-size:0.78rem;color:#ddd;margin-bottom:4px;">' + (uq.objectives || []).map(function(obj) { return escapeHtml(obj); }).join('<br>') + '</div>';
+                html += '<div style="font-size:0.75rem;color:#cfc7b0;margin-bottom:4px;">Reward: ' + _formatUnsolicitedQuestRewardText(uq.rewards || {}) + '</div>';
+                if (uqCanTurnIn) {
+                    html += '<button class="btn-medieval" data-action="turnInUnsolicitedQuest" data-id="' + escapeHtml(String(uq.id || '')) + '" style="font-size:0.74rem;padding:4px 10px;">Turn In</button>';
+                } else if (uqTurnTown && uqTurnTown.name) {
+                    html += '<div style="font-size:0.72rem;color:#888;">Turn in at ' + escapeHtml(uqTurnTown.name) + '.</div>';
+                }
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+
+        html += '<div style="margin-bottom:14px;">';
+        html += '<div style="font-size:0.9rem;color:var(--gold);margin-bottom:6px;">Town Quests</div>';
+        var townQuests = [];
+        try { townQuests = Player.getActiveQuests ? Player.getActiveQuests() : []; } catch (e) { townQuests = []; }
+        if (!townQuests.length) {
+            html += '<div class="text-dim">No active town quests</div>';
+        } else {
+            for (var ti = 0; ti < townQuests.length; ti++) {
+                var tq = townQuests[ti];
+                if (!tq) continue;
+                var tqTown = null;
+                try { tqTown = Engine.findTown ? Engine.findTown(tq.townId) : null; } catch (e) {}
+                var tqTownName = (tqTown && tqTown.name) || tq.townId || 'Unknown town';
+                var tqDaysLeft = Math.max(0, (tq.expiresDay || 0) - day);
+                var tqCanTurnIn = !Player.traveling && tq.townId && Player.townId === tq.townId;
+                var tqType = tq.title || capitalize(String(tq.type || tq.typeId || 'quest').replace(/_/g, ' '));
+                html += '<div style="border:1px solid rgba(120,160,220,0.22);border-radius:6px;padding:8px 10px;margin-bottom:8px;background:rgba(120,160,220,0.05);">';
+                html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:4px;">';
+                html += '<div style="font-size:0.85rem;font-weight:bold;color:#9dc1ff;">' + escapeHtml(tqType) + '</div>';
+                html += '<div style="font-size:0.72rem;color:' + (tqDaysLeft <= 5 ? '#c85050' : '#999') + ';white-space:nowrap;">⏱️ ' + tqDaysLeft + 'd</div>';
+                html += '</div>';
+                html += '<div style="font-size:0.76rem;color:#bbb;margin-bottom:3px;">Town: ' + escapeHtml(tqTownName) + '</div>';
+                html += '<div style="font-size:0.78rem;color:#ddd;margin-bottom:3px;">Need: ' + _formatTownQuestNeedText(tq) + '</div>';
+                html += '<div style="font-size:0.75rem;color:#cfc7b0;margin-bottom:4px;">Reward: ' + _formatTownQuestRewardText(tq, tqTown) + '</div>';
+                if (tqCanTurnIn) {
+                    html += '<button class="btn-medieval" data-action="completeTownQuestFromTracker" data-id="' + escapeHtml(String(tq.id || '')) + '" style="font-size:0.74rem;padding:4px 10px;">Turn In</button>';
+                } else {
+                    html += '<div style="font-size:0.72rem;color:#888;">Travel to ' + escapeHtml(tqTownName) + ' to turn this in.</div>';
+                }
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+
+        html += '<div>'; 
+        html += '<div style="font-size:0.9rem;color:var(--gold);margin-bottom:6px;">Kingdom Quests</div>';
+        var kingdomActive = [];
+        try {
+            var kingdomMap = (Player.state && Player.state.kingdomQuests) || {};
+            for (var kid in kingdomMap) {
+                var kqEntry = kingdomMap[kid];
+                var kqList = (kqEntry && Array.isArray(kqEntry.active)) ? kqEntry.active : [];
+                for (var kai = 0; kai < kqList.length; kai++) {
+                    if (kqList[kai]) kingdomActive.push(kqList[kai]);
+                }
+            }
+        } catch (e) { kingdomActive = []; }
+        if (!kingdomActive.length) {
+            html += '<div class="text-dim">No active kingdom quests</div>';
+        } else {
+            for (var ki = 0; ki < kingdomActive.length; ki++) {
+                var kq = kingdomActive[ki];
+                if (!kq) continue;
+                var kingdom = null;
+                try { kingdom = Engine.findKingdom ? Engine.findKingdom(kq.kingdomId) : null; } catch (e) {}
+                var kingdomName = (kingdom && kingdom.name) || kq.kingdomId || 'Unknown kingdom';
+                var kqDaysLeft = Math.max(0, (kq.expiresDay || 0) - day);
+                var kqCheck = { complete: false, remaining: '' };
+                try { kqCheck = Player.checkKingdomQuestProgress ? Player.checkKingdomQuestProgress(kq.id, kq.kingdomId) : kqCheck; } catch (e) {}
+                html += '<div style="border:1px solid rgba(165,120,220,0.24);border-radius:6px;padding:8px 10px;margin-bottom:8px;background:rgba(165,120,220,0.05);">';
+                html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:4px;">';
+                html += '<div style="font-size:0.85rem;font-weight:bold;color:#d7b7ff;">' + escapeHtml(kq.title || 'Directive') + '</div>';
+                html += '<div style="font-size:0.72rem;color:' + (kqDaysLeft <= 5 ? '#c85050' : '#999') + ';white-space:nowrap;">⏱️ ' + kqDaysLeft + 'd</div>';
+                html += '</div>';
+                html += '<div style="font-size:0.76rem;color:#bbb;margin-bottom:3px;">Kingdom: ' + escapeHtml(kingdomName) + '</div>';
+                html += '<div style="font-size:0.78rem;color:#ddd;margin-bottom:3px;">Need: ' + _formatKingdomQuestNeedText(kq) + '</div>';
+                html += '<div style="font-size:0.75rem;color:#cfc7b0;margin-bottom:4px;">Reward: ' + _formatKingdomQuestRewardText(kq) + '</div>';
+                if (kqCheck && kqCheck.complete) {
+                    html += '<button class="btn-medieval" data-action="completeKingdomQuestFromTracker" data-id="' + escapeHtml(String(kq.id || '')) + '" data-kingdom="' + escapeHtml(String(kq.kingdomId || '')) + '" style="font-size:0.74rem;padding:4px 10px;">Turn In</button>';
+                } else if (kqCheck && kqCheck.remaining) {
+                    html += '<div style="font-size:0.72rem;color:#888;">' + escapeHtml(kqCheck.remaining) + '</div>';
+                }
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }
+
     function openCharacterDialog() {
         if (typeof Player === 'undefined') return;
 
@@ -6969,6 +7256,7 @@ window.UI = (function () {
         let html = `<div id="char-tab-bar" style="display:flex;gap:6px;margin:-4px -4px 10px;padding:6px 4px 8px;border-bottom:1px solid rgba(255,255,255,0.08);position:sticky;top:0;background:#1e160c;z-index:5;">
             <button class="btn-medieval" data-action="charTabSwitch" data-id="character" style="font-size:0.85rem;padding:6px 18px;flex:1;">👤 Character</button>
             <button class="btn-medieval" data-action="charTabSwitch" data-id="equipment" style="font-size:0.85rem;padding:6px 18px;flex:1;">🎒 Equipment</button>
+            <button class="btn-medieval" data-action="charTabSwitch" data-id="quests" style="font-size:0.85rem;padding:6px 18px;flex:1;">📜 Quests</button>
         </div>
         <div class="detail-section">
             <h3>Identity</h3>
@@ -7067,6 +7355,8 @@ window.UI = (function () {
             }
             html += '</div>';
         }
+
+        html += _buildCharacterQuestsSectionHtml();
 
         // Equipment section — market-based with quality tiers
         var weaponDisplay = 'None';

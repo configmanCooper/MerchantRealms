@@ -22,6 +22,14 @@
         return s.charAt(0).toUpperCase() + s.slice(1);
     }
 
+    function _formatUnsolicitedQuestRewardText(rewards) {
+        var parts = [];
+        if (rewards && rewards.gold) parts.push(formatGold(rewards.gold) + 'g');
+        if (rewards && rewards.rel) parts.push('+' + rewards.rel + ' relationship');
+        if (rewards && rewards.unique && rewards.unique.type) parts.push('Special: ' + escapeHtml(String(rewards.unique.type).replace(/_/g, ' ')));
+        return parts.join(' • ') || '—';
+    }
+
     // Right-panel DOM helpers (replaces el.rightPanel* from parent closure)
     function _rpEl()      { return document.getElementById('rightPanel'); }
     function _rpTitleEl() { return document.getElementById('rightPanelTitle'); }
@@ -1362,10 +1370,14 @@ function showPersonDetail(person) {
     const occ = person.occupation || 'none';
     const occInfo = OCCUPATIONS[occ.toUpperCase()] || { name: occ };
     let townName = 'Unknown';
+    let townNamePlain = 'Unknown';
     let townObj = null;
     try {
         townObj = Engine.getTown(person.townId);
-        if (townObj) townName = townObj.name;
+        if (townObj) {
+            townName = townObj.name;
+            townNamePlain = townObj.name;
+        }
     } catch (e) { /* no-op */ }
 
     // v9p33river265: detect if target is currently jailed
@@ -1440,6 +1452,35 @@ function showPersonDetail(person) {
             <span class="value" style="color:#d4a017;">📍 Traveling to ${_wtDest ? _wtDest.name : '?'} (~${_wtDaysLeft} days left)</span></div>`;
     }
     html += `</div>`;
+
+    try {
+        var _npcActiveQuests = Player.activeUnsolicitedQuestsForNpc ? Player.activeUnsolicitedQuestsForNpc(person.id) : [];
+        if (_npcActiveQuests && _npcActiveQuests.length) {
+            html += '<div class="detail-section" style="border:1px solid #d4af37;background:rgba(212,175,55,0.07);">';
+            html += '<h3 style="color:#d4af37;">📜 Active Quests</h3>';
+            for (var _nqi = 0; _nqi < _npcActiveQuests.length; _nqi++) {
+                var _nq = _npcActiveQuests[_nqi];
+                if (!_nq) continue;
+                var _nqDaysLeft = Math.max(0, (_nq.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
+                html += '<div style="border:1px solid rgba(212,175,55,0.22);border-radius:6px;padding:8px 10px;margin-bottom:' + (_nqi < _npcActiveQuests.length - 1 ? '8px' : '0') + ';background:rgba(0,0,0,0.12);">';
+                html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;"><b>Objectives:</b></div><ul style="font-size:0.82em;margin:2px 0 6px 16px;padding:0;">';
+                for (var _nqj = 0; _nqj < (_nq.objectives || []).length; _nqj++) {
+                    html += '<li>' + escapeHtml(_nq.objectives[_nqj]) + '</li>';
+                }
+                html += '</ul>';
+                html += '<div style="font-size:0.82em;color:#d4af37;margin-bottom:4px;"><b>Reward:</b> ' + _formatUnsolicitedQuestRewardText(_nq.rewards || {}) + '</div>';
+                html += '<div style="font-size:0.78em;color:' + (_nqDaysLeft < 7 ? '#c85050' : '#999') + ';margin-bottom:6px;">Time remaining: ' + _nqDaysLeft + ' days</div>';
+                // v9p33river363: per-quest turn-in location (courier uses targetTownId)
+                var _nqTurnTownId = (_nq.params && (_nq.params.targetTownId || _nq.params.townId)) || person.townId;
+                var _nqCanTurnIn = !Player.traveling && Player.townId === _nqTurnTownId;
+                var _nqTurnTownName = (_nq.params && (_nq.params.targetTownName || _nq.params.townName)) || townNamePlain;
+                html += '<button class="btn-medieval" data-action="turnInUnsolicitedQuest" data-id="' + escapeHtml(String(_nq.id || '')) + '"' + (_nqCanTurnIn ? '' : ' disabled') + ' style="background:rgba(85,168,104,0.25);">Turn In Quest</button>';
+                if (!_nqCanTurnIn) html += '<div style="font-size:0.72em;color:#888;margin-top:4px;">Be in ' + escapeHtml(_nqTurnTownName) + ' to turn this in.</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+    } catch (e) {}
 
     // ── Elite Merchant Info ──
     if (person.isEliteMerchant) {
@@ -1896,22 +1937,7 @@ function showPersonDetail(person) {
                     html += '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
                     html += '</div></div>';
                 }
-                // Active quests in progress for this NPC
-                var _uqActive = Player.activeUnsolicitedQuestsForNpc ? Player.activeUnsolicitedQuestsForNpc(person.id) : [];
-                for (var _uqAi = 0; _uqAi < _uqActive.length; _uqAi++) {
-                    var _uqA = _uqActive[_uqAi];
-                    var _uqDeadline = _uqA.deadlineDay - (Engine.getDay ? Engine.getDay() : 0);
-                    html += '<div class="detail-section" style="border:1px solid #d4af37;background:rgba(212,175,55,0.07);">';
-                    html += '<h3 style="color:#d4af37;">⚒️ Active Quest</h3>';
-                    html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;"><b>Objectives:</b></div><ul style="font-size:0.82em;margin:2px 0 6px 16px;padding:0;">';
-                    for (var _uqOj = 0; _uqOj < _uqA.objectives.length; _uqOj++) {
-                        html += '<li>' + escapeHtml(_uqA.objectives[_uqOj]) + '</li>';
-                    }
-                    html += '</ul>';
-                    html += '<div style="font-size:0.78em;color:' + (_uqDeadline < 7 ? '#c85050' : '#999') + ';margin-bottom:6px;">Time remaining: ' + Math.max(0, _uqDeadline) + ' days</div>';
-                    html += '<button class="btn-medieval" data-action="attemptCompleteUnsolicitedQuest" data-id="' + _uqA.id + '" style="background:rgba(85,168,104,0.25);">Turn In Quest</button>';
-                    html += '</div>';
-                }
+                // Active quests from this NPC are rendered near the basic info section.
             }
         } catch (_uqe) { /* defensive */ }
 

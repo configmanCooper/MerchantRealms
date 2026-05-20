@@ -5939,6 +5939,11 @@
                 StoryMode.onPlayerAction('arrive_town', { townId: player.townId, townName: town ? town.name : '' });
             }
 
+            // v9p33river363: fire unsolicited quest arrival hooks
+            if (Player.onPlayerArrival_unsolicited) {
+                try { Player.onPlayerArrival_unsolicited(player.townId); } catch (e) {}
+            }
+
             // Auto-pause on arrival so the player can decide what to do
             if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
 

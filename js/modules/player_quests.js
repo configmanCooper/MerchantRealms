@@ -486,6 +486,8 @@
     function completeTownQuest(questId, donate) {
         _sync();
         if (!player.activeQuests) return { success: false, message: 'No active quests.' };
+        // v9p33river363: reject if traveling or not in quest town
+        if (player.traveling) return { success: false, message: 'Cannot complete quests while traveling.' };
         var idx = -1;
         for (var i = 0; i < player.activeQuests.length; i++) {
             if (player.activeQuests[i].id === questId) { idx = i; break; }
@@ -493,6 +495,7 @@
         if (idx === -1) return { success: false, message: 'Quest not found in active quests.' };
 
         var quest = player.activeQuests[idx];
+        if (quest.townId && player.townId !== quest.townId) return { success: false, message: 'You must be in the quest town to turn this in.' };
         var town = null;
         try { town = Engine.findTown(quest.townId); } catch(e) { town = null; }
         if (!town) return { success: false, message: 'Quest town no longer exists; cannot complete this quest.' }; // v9p33river333: missing towns made rewards inconsistent.

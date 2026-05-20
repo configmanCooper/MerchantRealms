@@ -90,9 +90,9 @@
     }
 
     // ── Resources & helpers ──
-    var DELIVERY_GOODS = ['bread','meat','fish','wine','ale','cloth','silk','iron','tools','leather','planks','bricks','stone','spices','honey','salt','eggs','vegetables'];
+    var DELIVERY_GOODS = ['bread','meat','fish','wine','ale','cloth','silk','iron','tools','leather','planks','bricks','stone','honey','salt','eggs','vegetables'];
     var MILITARY_GOODS = ['swords','bows','arrows','armor','bandages'];
-    var LUXURY_GOODS = ['wine','silk','spices','jewelry'];
+    var LUXURY_GOODS = ['wine','silk','jewelry'];
 
     function _basePrice(resId) {
         try {
@@ -309,25 +309,20 @@
             return {
                 params: { targetTownId: otherTown.id, targetTownName: otherTown.name, targetNobleId: other.id, targetNobleName: ((other.firstName||'') + ' ' + (other.lastName||'')).trim() },
                 dialog: 'I have a sealed letter for ' + (other.firstName||'a fellow noble') + ' in ' + otherTown.name + '. Deliver it personally. And discreetly.',
-                objectives: ['Travel to ' + otherTown.name + ' to deliver the letter'],
+                objectives: ['Deliver the letter to ' + ((other.firstName||'') + ' ' + (other.lastName||'')).trim() + ' in ' + otherTown.name],
                 timeLimitDays: rng.randInt(20, 35),
                 rewards: { gold: rng.randInt(300, 700), rel: rng.randInt(12, 22) }
             };
         },
         check: function(q) {
-            if (!q.progress || !q.progress.delivered) return { ok: false, reason: 'Travel to ' + q.params.targetTownName + ' to deliver the letter (open detail pane there).' };
+            // Player must be in the target town to deliver
+            if (player.townId !== q.params.targetTownId) return { ok: false, reason: 'Travel to ' + q.params.targetTownName + ' to deliver the letter.' };
             return { ok: true };
         },
-        consume: function(q) {},
-        onArrival: function(q, townId) {
-            if (townId === q.params.targetTownId) {
-                if (!q.progress) q.progress = {};
-                if (!q.progress.delivered) {
-                    q.progress.delivered = true;
-                    return { advance: true, msg: '✉️ Letter delivered. Return to the sender for your reward.' };
-                }
-            }
-            return null;
+        consume: function(q) {
+            // Mark as delivered
+            if (!q.progress) q.progress = {};
+            q.progress.delivered = true;
         }
     });
 
