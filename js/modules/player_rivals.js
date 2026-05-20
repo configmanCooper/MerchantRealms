@@ -58,8 +58,14 @@
               if (targets.length === 0) return false;
               var rng = _rng(); if (!rng) return false;
               var bld = targets[rng.randInt(0, targets.length - 1)];
-              // Damage building condition
-              bld.condition = Math.max(0, (bld.condition || 100) - rng.randInt(15, 30));
+              // Damage building condition (string progression: new → used → breaking → destroyed)
+              var condOrder = ['destroyed', 'breaking', 'used', 'new'];
+              var curIdx = condOrder.indexOf(bld.condition || 'new');
+              if (curIdx < 0) curIdx = 3; // default to 'new'
+              if (curIdx > 0) {
+                  bld.condition = condOrder[curIdx - 1];
+                  if (bld.condition === 'destroyed') bld.active = false;
+              }
               return true;
           }
         },
@@ -121,7 +127,13 @@
         { id: 'remote_sabotage', label: 'remote sabotage', minRel: -20,
           desc: function(npc, bld) { return (npc.firstName || 'A rival') + ' damaged your ' + (bld.type || 'building') + ' in ' + (bld.townName || 'a town') + '!'; },
           effect: function(npc, bld) {
-              bld.condition = Math.max(0, (bld.condition || 100) - 10);
+              var condOrder = ['destroyed', 'breaking', 'used', 'new'];
+              var curIdx = condOrder.indexOf(bld.condition || 'new');
+              if (curIdx < 0) curIdx = 3;
+              if (curIdx > 0) {
+                  bld.condition = condOrder[curIdx - 1];
+                  if (bld.condition === 'destroyed') bld.active = false;
+              }
               return true;
           }
         },
@@ -250,13 +262,6 @@
                 for (var bi = 0; bi < blds.length; bi++) {
                     if (blds[bi] && blds[bi].townId === rival.npc.townId) {
                         remoteBlds.push(blds[bi]);
-                    }
-                }
-                // Also check caravans at that location
-                var caravans = player.caravans || [];
-                for (var ci = 0; ci < caravans.length; ci++) {
-                    if (caravans[ci] && caravans[ci].currentTownId === rival.npc.townId) {
-                        remoteBlds.push(caravans[ci]);
                     }
                 }
                 if (remoteBlds.length === 0) continue;

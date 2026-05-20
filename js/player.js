@@ -15454,6 +15454,15 @@
         if (!person) return { success: false, message: 'Person not found.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
 
+        // v9p33river364: courtship gating — must have courtship accepted or be spouse
+        var isSpouse = player.spouseId === personId;
+        if (!isSpouse) {
+            if (!player.courtshipAccepted) player.courtshipAccepted = {};
+            if (!player.courtshipAccepted[personId]) {
+                return { success: false, message: 'You must propose courtship first.' };
+            }
+        }
+
         // Check investigator rejection
         if ((player.investigatorCaught[personId] || 0) >= 2) {
             return { success: false, message: 'This person will never speak to you again.' };
