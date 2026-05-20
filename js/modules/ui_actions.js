@@ -3454,7 +3454,11 @@ function _showSiegeEntryPopup(townId, optionId, town) {
     var combatSkillBonus = 0;
     if (typeof Player !== 'undefined' && Player.hasSkill) {
         if (Player.hasSkill('combat_trained')) combatSkillBonus += 10;
-        if (Player.hasSkill('tactical_leader')) combatSkillBonus += 5;
+        // v9p33river351: 'tactical_leader' doesn't exist in config.js
+        // SKILLS. Real higher-tier combat skills are battle_hardened
+        // (config.js:3576) and combat_proficiency (config.js:3586).
+        // Either adds the +5 leader bonus.
+        if (Player.hasSkill('battle_hardened') || Player.hasSkill('combat_proficiency')) combatSkillBonus += 5;
     }
 
     var html = '<div style="max-width:480px;">';
@@ -3621,7 +3625,9 @@ function _showRevoltEntryPopup(townId, optionId, town) {
     var combatSkillBonus = 0;
     if (typeof Player !== 'undefined' && Player.hasSkill) {
         if (Player.hasSkill('combat_trained')) combatSkillBonus += 10;
-        if (Player.hasSkill('tactical_leader')) combatSkillBonus += 5;
+        // v9p33river351: 'tactical_leader' doesn't exist; use real
+        // skills (same fix as siege panel above).
+        if (Player.hasSkill('battle_hardened') || Player.hasSkill('combat_proficiency')) combatSkillBonus += 5;
     }
 
     var html = '<div style="text-align:center;margin-bottom:12px;">';

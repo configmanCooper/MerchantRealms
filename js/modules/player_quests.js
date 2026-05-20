@@ -3220,7 +3220,11 @@
                 Game.advanceTicks(10);
             }
             // Pay: 8-15g based on farming skill
-            var farmSkill = Player.hasSkill('farming') || Player.hasSkill('advanced_farming');
+            // v9p33river351: was checking 'farming' / 'advanced_farming'
+            // which don't exist in SKILLS. Farming-adjacent player skills
+            // are animal_husbandry (config.js:3545) and soil_knowledge
+            // (config.js:3599). Use those — either grants the bonus pay.
+            var farmSkill = Player.hasSkill('animal_husbandry') || Player.hasSkill('soil_knowledge');
             var harvestPay = farmSkill ? (12 + (rng ? Math.floor(rng.random() * 4) : 2)) : (8 + (rng ? Math.floor(rng.random() * 4) : 1));
             player.gold += harvestPay;
             Player.modifyRelationship(personId, 2.0);
@@ -3248,7 +3252,11 @@
                 Game.advanceTicks(20);
             }
             // Pay: 15-25g + trade XP
-            var merchantSkill = Player.hasSkill('merchant_discount') || Player.hasSkill('trade_routes');
+            // v9p33river351: was checking 'merchant_discount' / 'trade_routes'
+            // which don't exist. Real commerce-tree skills are haggler /
+            // master_haggler (config.js:3487-3488) and trade_network
+            // (config.js:3482). Use those — any of them grants the bonus.
+            var merchantSkill = Player.hasSkill('haggler') || Player.hasSkill('master_haggler') || Player.hasSkill('trade_network');
             var caravanPay = merchantSkill ? (20 + (rng ? Math.floor(rng.random() * 6) : 3)) : (15 + (rng ? Math.floor(rng.random() * 6) : 2));
             player.gold += caravanPay;
             Player.modifyRelationship(personId, 2.0);

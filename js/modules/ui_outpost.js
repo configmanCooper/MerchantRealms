@@ -1443,6 +1443,11 @@
                 const reqsMet = skill.requires.every(r => playerSkills[r]);
                 const costAffordable = sp >= skill.cost;
                 const isRepeatable = !!skill.repeatable;
+                // v9p33river351: any skill that has accumulated _skillProgress
+                // is being learned through labor.
+                var _workProgress = (Player.state && Player.state._skillProgress && Player.state._skillProgress[skill.id]) || 0;
+                var _workTarget = (typeof CONFIG !== 'undefined' && CONFIG.WORK_EARNED_SKILL_SHIFTS) ? CONFIG.WORK_EARNED_SKILL_SHIFTS : 30;
+                var _hasWorkProgress = _workProgress > 0 && !isUnlocked;
 
                 let stateClass = 'skill-locked';
                 let stateLabel = '🔒';
@@ -1455,12 +1460,20 @@
                 } else if (canUnlock) {
                     stateClass = 'skill-available';
                     stateLabel = '';
+                } else if (_hasWorkProgress) {
+                    stateLabel = '🛠️';
                 }
 
                 // Show dynasty bank info for dynasty_founder
                 let extraInfo = '';
                 if (skill.id === 'dynasty_founder' && Player.dynastySPBank > 0) {
                     extraInfo = '<div style="font-size:0.72rem;color:#ffd700;margin-top:2px;">🏰 Bank: ' + Player.dynastySPBank + ' SP</div>';
+                }
+                // v9p33river351: show work-progress meter for any partially
+                // earned-by-work skill.
+                if (_hasWorkProgress) {
+                    var _pct = Math.min(100, Math.round((_workProgress / _workTarget) * 100));
+                    extraInfo += '<div style="font-size:0.72rem;color:#88c8ff;margin-top:2px;">🛠️ Learning by work: ' + _workProgress + '/' + _workTarget + ' shifts (' + _pct + '%)</div>';
                 }
 
                 const reqNames = skill.requires.map(r => SKILLS[r] ? SKILLS[r].name : r).join(', ');

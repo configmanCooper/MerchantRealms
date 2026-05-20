@@ -226,7 +226,8 @@
             // v9p33river305: building catalog uses 'mining' (see
             // player_building_mgmt.js:67) but this branch only matched
             // 'mine'. Accept both so mining skill bonuses actually apply.
-            if (hasSkill('mining_efficiency')) mult += 0.15;
+            if (hasSkill('master_foreman')) mult += 0.20;
+            else if (hasSkill('foreman')) mult += 0.10;
         } else if (bt.category === 'processing' || bt.category === 'finished') {
             if (hasSkill('efficient_builder')) mult += 0.15;
             if (hasSkill('master_foreman')) mult += 0.20;
@@ -247,21 +248,33 @@
     function _gainProductionSkill(bt) {
         _sync();
         if (!player.skills) player.skills = {};
+        // v9p33river351: working enough shifts unlocks the canonical
+        // production skill for that category — bypasses prereqs and the
+        // SP cost. Same skill ID as the SP-purchasable version, so the
+        // production bonus, abilities, and UI rendering all work
+        // identically once unlocked.
+        //   farm        → soil_knowledge    (industry)
+        //   mining/mine → foreman           (industry)
+        //   processing  → efficient_builder (industry)
+        //   finished    → efficient_builder (industry)
         var skillKey = null;
         if (bt.category === 'farm') skillKey = 'soil_knowledge';
-        // v9p33river305: same 'mining' vs 'mine' fix as mult check above.
-        else if (bt.category === 'mining' || bt.category === 'mine') skillKey = 'mining_efficiency';
+        else if (bt.category === 'mining' || bt.category === 'mine') skillKey = 'foreman';
         else if (bt.category === 'processing' || bt.category === 'finished') skillKey = 'efficient_builder';
 
         if (skillKey && !Player.hasSkill(skillKey)) {
             // Track progress toward unlocking the skill
             if (!player._skillProgress) player._skillProgress = {};
             player._skillProgress[skillKey] = (player._skillProgress[skillKey] || 0) + 1;
-            // Unlock after 30 shifts
-            if (player._skillProgress[skillKey] >= 30) {
+            var unlockAt = (typeof CONFIG !== 'undefined' && CONFIG.WORK_EARNED_SKILL_SHIFTS) ? CONFIG.WORK_EARNED_SKILL_SHIFTS : 30;
+            if (player._skillProgress[skillKey] >= unlockAt) {
                 player.skills[skillKey] = true;
                 if (typeof UI !== 'undefined' && UI.toast) {
-                    UI.toast('🎓 Learned skill: ' + skillKey.replace(/_/g, ' ') + '!', 'success');
+                    var _label = (typeof SKILLS !== 'undefined' && SKILLS[skillKey]) ? (SKILLS[skillKey].icon + ' ' + SKILLS[skillKey].name) : skillKey.replace(/_/g, ' ');
+                    UI.toast('🎓 Learned skill through hard work: ' + _label + '!', 'success');
+                }
+                if (typeof Engine !== 'undefined' && Engine.logEvent) {
+                    Engine.logEvent('🎓 ' + (player.fullName || 'You') + ' mastered ' + (SKILLS && SKILLS[skillKey] ? SKILLS[skillKey].name : skillKey) + ' from ' + unlockAt + ' shifts of hard labor.');
                 }
             }
         }

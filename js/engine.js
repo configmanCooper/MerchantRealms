@@ -29432,7 +29432,11 @@
             case 'perform': {
                 var canPerform = false;
                 try {
-                    canPerform = (Player.hasSkill && Player.hasSkill('music')) ||
+                    // v9p33river351: was checking 'music' skill which doesn't
+                    // exist. Canonical social-branch skill is 'musician'
+                    // (config.js:3558) — the UI gate at ui_actions.js:4618
+                    // already used 'musician'.
+                    canPerform = (Player.hasSkill && Player.hasSkill('musician')) ||
                         (Player.inventory && (Player.inventory.lute || Player.inventory.flute || Player.inventory.drum || Player.inventory.instrument));
                 } catch(e) {}
                 if (!canPerform) {
