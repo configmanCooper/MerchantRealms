@@ -3988,6 +3988,14 @@
             // Skill: silver_tongue_dark required (player parity)
             if (!emHasSkill(em, 'silver_tongue_dark')) return false;
             var rivals = world.people.filter(function(p) { return p.alive && p.isEliteMerchant && p.id !== em.id && p.townId === town.id; });
+            // v9p33river356: if this EM is hostile/rival toward the player AND
+            // the player is in the same town, the player joins the rivals
+            // pool — hostile EMs may now spread rumors against you.
+            try {
+                if (typeof Player !== 'undefined' && Player.state && Player.state.townId === town.id && Engine.isPlayerRival && Engine.isPlayerRival(em)) {
+                    rivals.push({ id: 'player', firstName: Player.state.firstName || 'the player', lastName: Player.state.lastName || '', reputation: Player.state.reputation, _isPlayer: true });
+                }
+            } catch (e) {}
             if (rivals.length === 0) return false;
             var target = rivals[Math.floor(rng.random() * rivals.length)];
             var detection = _calcActorDetection(em, town, 0.10);
@@ -3998,8 +4006,20 @@
                 logEvent('⚖️ ' + em.firstName + ' caught spreading malicious rumors about ' + target.firstName + ' in ' + town.name + ' — fined ' + fine + 'g.', { type: 'em_scheme_rumors_caught', townId: town.id });
             } else {
                 var repLoss = 4 + Math.floor(rng.random() * 5);
-                if (target.reputation && kingdom) target.reputation[kingdom.id] = Math.max(0, (target.reputation[kingdom.id] || 50) - repLoss);
-                logEvent('🤫 Whispers about ' + target.firstName + ' ' + (target.lastName || '') + ' damage their reputation in ' + town.name + ' (-' + repLoss + ').', { type: 'em_scheme_rumors_success', townId: town.id });
+                if (target._isPlayer) {
+                    // Hit player kingdom reputation
+                    try {
+                        if (Player.state.reputation && kingdom) {
+                            Player.state.reputation[kingdom.id] = Math.max(0, (Player.state.reputation[kingdom.id] || 50) - repLoss);
+                        }
+                    } catch (e) {}
+                    // Record a memory on the EM so the player can reference it back.
+                    try { Engine.recordPlayerSchemeAgainst && Engine.recordPlayerSchemeAgainst(em, 'spread_rumors'); } catch (e) {}
+                    logEvent('🤫 Whispers spread by ' + em.firstName + ' damage your reputation in ' + town.name + ' (-' + repLoss + ').', { type: 'em_scheme_rumors_vs_player', townId: town.id });
+                } else if (target.reputation && kingdom) {
+                    target.reputation[kingdom.id] = Math.max(0, (target.reputation[kingdom.id] || 50) - repLoss);
+                    logEvent('🤫 Whispers about ' + target.firstName + ' ' + (target.lastName || '') + ' damage their reputation in ' + town.name + ' (-' + repLoss + ').', { type: 'em_scheme_rumors_success', townId: town.id });
+                }
             }
             return true;
         }

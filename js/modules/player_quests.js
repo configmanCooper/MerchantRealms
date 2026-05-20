@@ -4040,7 +4040,7 @@
     // saves small. Only stored on elite merchants and nobles —
     // ordinary townsfolk don't track this.
     // ────────────────────────────────────────────────────────
-    var NPC_MEMORY_CAP = 16;
+    var NPC_MEMORY_CAP = 20;
 
     function _npcQualifiesForMemory(person) {
         if (!person) return false;
@@ -4051,6 +4051,16 @@
                 if ((person.socialRank[_kk] || 0) >= 4) return true;
             }
         }
+        // v9p33river356: family members (parents, siblings, spouse,
+        // children) also remember things now, so personal dialog can
+        // reference shared history.
+        try {
+            var p = Player.state || {};
+            if (p.spouseId && p.spouseId === person.id) return true;
+            if (p.parentIds && p.parentIds.indexOf(person.id) >= 0) return true;
+            if (p.siblingIds && p.siblingIds.indexOf(person.id) >= 0) return true;
+            if (p.childrenIds && p.childrenIds.indexOf(person.id) >= 0) return true;
+        } catch (e) {}
         return false;
     }
 
@@ -4077,6 +4087,77 @@
         if (!person || !person._playerMemories) return [];
         return person._playerMemories.slice();
     }
+
+    // ────────────────────────────────────────────────────────
+    // v9p33river356: NPC question / player answer system
+    // NPCs occasionally ask the player something during the
+    // Interact modal. Each question has 3-4 answer options
+    // (truth, lie, deflect, brag, etc.) with different
+    // relationship effects + memory side-effects. Honest NPCs
+    // are more likely to catch lies and react badly; cold or
+    // selfish NPCs may reward bluster.
+    // ────────────────────────────────────────────────────────
+    function answerNpcQuestion(personId, qDef, optionIdx) {
+        _sync();
+        var person = Engine.findPerson(personId);
+        if (!person) return { success: false, message: 'Person not found.' };
+        if (!qDef || !qDef.options || optionIdx == null || optionIdx < 0 || optionIdx >= qDef.options.length) {
+            return { success: false, message: 'Invalid answer.' };
+        }
+        var opt = qDef.options[optionIdx];
+
+        // Personality-driven outcome: honest NPCs detect lies
+        var pers = person.personality || {};
+        var honest = (pers.honesty || 50);
+        var intel = (pers.intelligence || 50);
+        var caughtChance = 0;
+        if (opt.kind === 'lie') {
+            // Base 30% caught; +1% per point of honesty above 50; +0.7% per point of intelligence above 50
+            caughtChance = 0.30 + Math.max(0, (honest - 50)) * 0.012 + Math.max(0, (intel - 50)) * 0.008;
+            caughtChance = Math.min(0.85, caughtChance);
+        }
+        var caught = (opt.kind === 'lie') && Math.random() < caughtChance;
+
+        var gain = (opt.relGain || 0);
+        if (caught) gain = (opt.relIfCaught != null) ? opt.relIfCaught : Math.min(gain - 6, -3);
+
+        // Apply
+        if (gain !== 0) {
+            try { Player.modifyRelationship(personId, gain); } catch (e) {}
+        }
+        // Record memory of the answer
+        var memKind = caught ? 'caught_lying' : (opt.kind || 'answered_question');
+        var memSent = caught ? 'negative' : (gain >= 1 ? 'positive' : (gain <= -1 ? 'negative' : 'neutral'));
+        try { recordNpcMemory(person, memKind, qDef.summary || 'a question', { sentiment: memSent }); } catch (e) {}
+
+        // Notoriety adjustment for serious lies caught
+        if (caught && (opt.notorietyIfCaught || 0) > 0) {
+            try { player.notoriety = (player.notoriety || 0) + opt.notorietyIfCaught; } catch (e) {}
+        }
+
+        var reactionPool = caught ? (opt.reactionsCaught || []) : (opt.reactions || []);
+        var reaction = reactionPool.length ? reactionPool[Math.floor(Math.random() * reactionPool.length)] : '';
+
+        // Q&A cooldown for this NPC: one question per 7 days
+        if (!player._npcQuestionCooldowns) player._npcQuestionCooldowns = {};
+        var day = 0; try { day = Engine.getDay(); } catch (e) {}
+        player._npcQuestionCooldowns[personId] = day;
+
+        return {
+            success: true,
+            caught: caught,
+            gain: gain,
+            reaction: reaction
+        };
+    }
+
+    function npcQuestionCooldownDay(personId) {
+        if (!player._npcQuestionCooldowns) return 0;
+        return player._npcQuestionCooldowns[personId] || 0;
+    }
+
+    Player.answerNpcQuestion = answerNpcQuestion;
+    Player.npcQuestionCooldownDay = npcQuestionCooldownDay;
 
     Player.recordNpcMemory = recordNpcMemory;
     Player.getNpcMemories = getNpcMemories;

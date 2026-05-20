@@ -19282,6 +19282,11 @@
             _flatterCooldown: player._flatterCooldown || 0,
             _whisperCooldowns: structuredClone(player._whisperCooldowns || {}),
             _boostCooldowns: structuredClone(player._boostCooldowns || {}),
+            // v9p33river356: persist NPC observation snapshot and Q&A
+            // cooldowns so save/load does not re-fire all observation
+            // events or reset per-NPC question 7-day cooldowns.
+            _observerLastSnapshot: player._observerLastSnapshot ? structuredClone(player._observerLastSnapshot) : null,
+            _npcQuestionCooldowns: structuredClone(player._npcQuestionCooldowns || {}),
             militaryRankProgress: player.militaryRankProgress || 0,
             militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
             _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
@@ -19879,6 +19884,9 @@
         player._flatterCooldown = data._flatterCooldown || 0;
         player._whisperCooldowns = data._whisperCooldowns || {};
         player._boostCooldowns = data._boostCooldowns || {};
+        // v9p33river356: restore NPC observation snapshot and Q&A cooldowns.
+        player._observerLastSnapshot = data._observerLastSnapshot || null;
+        player._npcQuestionCooldowns = data._npcQuestionCooldowns || {};
         player.militaryRankProgress = data.militaryRankProgress || 0;
         player.militaryPendingEvent = data.militaryPendingEvent || null;
         player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;

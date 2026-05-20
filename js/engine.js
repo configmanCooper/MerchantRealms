@@ -32003,6 +32003,14 @@
             if (!_rFF || _d % 7 === 0) Engine.tickOutpostFires();
             if (!_rFF || _d % 7 === 0) Engine.tickOutpostDesertion();
             if (!_rFF || _d % 7 === 0) Engine.tickOutpostDisease();
+
+            // v9p33river356: scan for noticeable player state changes
+            // (jail, new buildings, new caravans, rank promotions) and
+            // record memories on relevant NPCs. Every 3 days, since
+            // most observable events are not time-critical.
+            if (Engine.tickNpcObservations && (!_rFF || _d % 9 === 0) && _d % 3 === 0) {
+                try { Engine.tickNpcObservations(); } catch (_eObs) { /* defensive */ }
+            }
             if (!_rFF || _d % 7 === 0) Engine.tickEliteMerchantOutposts();
             if (!_rFF || _d % 3 === 0) tickWorkerEconomy();
             if (!_rFF || _d % 5 === 0) tickTravelDemand();

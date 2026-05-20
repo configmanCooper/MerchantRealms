@@ -4465,9 +4465,379 @@ window.UI = (function () {
             '<span style="color:var(--gold,#ffd700);font-weight:bold;">' + fn + ':</span> ' + line + '</div>';
     }
 
-    // Expose for the click handler.
-    UI._buildInteractionResponse = _buildInteractionResponse;
-    UI._renderInteractionDialog = _renderInteractionDialog;
+    // ────────────────────────────────────────────────────────
+    // v9p33river356: NPC Question / Player Answer system
+    // Each question is shaped:
+    //   { id, summary, askFor: function(ctx) -> string (the line) | null,
+    //     options: [ { label, kind: 'truth'|'lie'|'deflect'|'brag'|'evade',
+    //                  relGain, relIfCaught, notorietyIfCaught,
+    //                  reactions: [...], reactionsCaught: [...] }, ... ] }
+    // askFor returns null when the question doesn't apply to this NPC.
+    // ────────────────────────────────────────────────────────
+    var _QUESTION_POOL = [
+
+        // Generic — any qualifying NPC, any tier
+        {
+            id: 'q_where_been',
+            summary: 'where you have been lately',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'Where have you been keeping yourself, ' + ctx.playerName + '? I have not seen you around.';
+            },
+            options: [
+                { label: 'Tell the truth (work and travel)', kind: 'truth', relGain: 3,
+                  reactions: [
+                      'Honest as always. I appreciate that about you.',
+                      'A busy man, then. I can respect that.',
+                      'A real answer. Increasingly rare in this town.'
+                  ]
+                },
+                { label: 'Bend the truth ("Just business")', kind: 'lie', relGain: 1, relIfCaught: -5,
+                  reactions: [
+                      '*nods* Mm. Business.',
+                      'Whatever you say.'
+                  ],
+                  reactionsCaught: [
+                      '*narrow look* That is what you SAY. I have heard otherwise.',
+                      'Hm. Word travels faster than you think.',
+                      '*flat* Lying about something that small. Why?'
+                  ]
+                },
+                { label: 'Deflect ("Here and there")', kind: 'deflect', relGain: 0,
+                  reactions: [
+                      '*small smile* As cryptic as ever.',
+                      'Mm. Fine, keep your secrets.',
+                      '*shrugs* Mystery suits some people.'
+                  ]
+                }
+            ]
+        },
+
+        // EM / noble — wealth question
+        {
+            id: 'q_doing_well',
+            summary: 'how well you are doing',
+            askFor: function(ctx) {
+                if (!ctx.npcIsEM && ctx.npcRank < 4 && !ctx.npcIsKing) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'I have to ask — how is the purse, ' + ctx.playerName + '? Honest answer.';
+            },
+            options: [
+                { label: 'Honest about your gold', kind: 'truth', relGain: 4,
+                  reactions: [
+                      '*nods* Refreshing. Most lie either up or down.',
+                      'A merchant who tells the truth about coin. We should do business properly sometime.',
+                      'Mm. I will remember that.'
+                  ]
+                },
+                { label: 'Brag a little', kind: 'brag', relGain: 2, relIfCaught: -4,
+                  reactions: [
+                      '*chuckles* Hah. A bit of swagger never hurt anyone.',
+                      'Mm. We will see if the numbers match the boast.'
+                  ],
+                  reactionsCaught: [
+                      '*flat* No. You are nowhere near that. Try again.',
+                      'I have eyes in the market. Do not stretch the truth with me.'
+                  ]
+                },
+                { label: 'Downplay ("Just getting by")', kind: 'lie', relGain: 0, relIfCaught: -3,
+                  reactions: [
+                      'Mm. Hard times for all of us, then.',
+                      '*sympathetic nod* Coin runs through the fingers, does it not.'
+                  ],
+                  reactionsCaught: [
+                      '*amused* You? Just getting by? I know what you sold last week.',
+                      'Modest. Maybe TOO modest.'
+                  ]
+                },
+                { label: 'Deflect ("That is my business")', kind: 'deflect', relGain: -1,
+                  reactions: [
+                      '*nods* Fair enough. A merchant guards his ledger.',
+                      'Hmph. Suit yourself.'
+                  ]
+                }
+            ]
+        },
+
+        // Jail-related — only fires if NPC has a 'jailed' memory of you
+        {
+            id: 'q_about_jail',
+            summary: 'your run-in with the law',
+            askFor: function(ctx) {
+                if (!ctx.hasMemoryKind || !ctx.hasMemoryKind('jailed')) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'I heard about your night in the cells. What ACTUALLY happened?';
+            },
+            options: [
+                { label: 'Admit you were guilty', kind: 'truth', relGain: 2,
+                  reactions: [
+                      'Mm. At least you own it.',
+                      '*nods grimly* Honest about it, at least.',
+                      'A man who admits his sins is harder to use against himself. Wise.'
+                  ]
+                },
+                { label: 'Insist it was a setup', kind: 'lie', relGain: 1, relIfCaught: -6, notorietyIfCaught: 2,
+                  reactions: [
+                      '*sympathetic* Justice misses the mark more often than people admit.',
+                      'Hmm. Whoever it was, watch your back.'
+                  ],
+                  reactionsCaught: [
+                      '*flat* A setup. Sure. Save it for the magistrate.',
+                      '*sighs* You cannot lie your way out of a public record, ' + 'friend' + '.'
+                  ]
+                },
+                { label: 'Deflect ("Not worth discussing")', kind: 'deflect', relGain: -1,
+                  reactions: [
+                      '*shrugs* Have it your way.',
+                      'Mm. Some doors are best closed.'
+                  ]
+                }
+            ]
+        },
+
+        // Family — mother/father caring question
+        {
+            id: 'q_taking_care',
+            summary: 'whether you are taking care of yourself',
+            askFor: function(ctx) {
+                if (ctx.family !== 'mother' && ctx.family !== 'father') return null;
+                return 'Look at me. Are you actually taking care of yourself out there?';
+            },
+            options: [
+                { label: 'Honestly, yes', kind: 'truth', relGain: 3,
+                  reactions: [
+                      '*relieved* Good. That is all I want to hear.',
+                      '*nods* You look it. Mostly.'
+                  ]
+                },
+                { label: 'Reassure them ("Doing fine")', kind: 'lie', relGain: 1, relIfCaught: -2,
+                  reactions: [
+                      '*pats your arm* Good. Now eat something.',
+                      '*soft smile* If you say so.'
+                  ],
+                  reactionsCaught: [
+                      '*sharp look* Do not lie to me about your own health. I am your ' + 'parent.',
+                      'You think I cannot tell? Sit down. We are going to talk properly.'
+                  ]
+                },
+                { label: 'Be honest — you are struggling', kind: 'truth', relGain: 5,
+                  reactions: [
+                      '*serious nod* Then you stay here tonight. I will not hear otherwise.',
+                      '*hugs you* Why did you wait so long to tell me?'
+                  ]
+                }
+            ]
+        },
+
+        // Spouse — where have you been
+        {
+            id: 'q_spouse_late',
+            summary: 'why you have been gone so long',
+            askFor: function(ctx) {
+                if (ctx.family !== 'spouse') return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'You have been gone for days. Tell me — what kept you?';
+            },
+            options: [
+                { label: 'The honest truth about your work', kind: 'truth', relGain: 4,
+                  reactions: [
+                      '*sighs* I just wanted to hear it from you. Thank you.',
+                      'I worry when I do not know. Tell me sooner next time.'
+                  ]
+                },
+                { label: 'Soften it ("Nothing dramatic")', kind: 'lie', relGain: 0, relIfCaught: -8,
+                  reactions: [
+                      '*nods slowly* All right.',
+                      '*long pause* If you say so.'
+                  ],
+                  reactionsCaught: [
+                      '*hurt* I am not stupid, ' + 'love' + '. Why would you lie about this?',
+                      '*cold* I would rather a difficult truth than a comfortable lie.'
+                  ]
+                },
+                { label: 'Apologize and promise to be home more', kind: 'deflect', relGain: 2,
+                  reactions: [
+                      '*holds your hand* I just want to see you. That is all.',
+                      'Promises are easy. Try keeping this one.'
+                  ]
+                }
+            ]
+        },
+
+        // Noble — political loyalty test
+        {
+            id: 'q_loyalty',
+            summary: 'where your loyalty lies',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'Tell me plainly — where does your loyalty really lie?';
+            },
+            options: [
+                { label: 'With this kingdom', kind: 'truth', relGain: 3,
+                  reactions: [
+                      '*nods* The crown remembers names like yours.',
+                      'Good. We have enough fence-sitters as it is.'
+                  ]
+                },
+                { label: 'With profit, honestly', kind: 'truth', relGain: 1,
+                  reactions: [
+                      '*small smile* At least you say it aloud.',
+                      'Hmph. A merchant\'s heart. I can work with that.'
+                  ]
+                },
+                { label: 'With my family alone', kind: 'truth', relGain: 2,
+                  reactions: [
+                      '*nods slowly* A respectable answer.',
+                      'Mm. Hard to fault that, in this age.'
+                  ]
+                },
+                { label: 'Whichever way the wind blows', kind: 'brag', relGain: -3, relIfCaught: -5,
+                  reactions: [
+                      '*flat* I will remember that you said that.',
+                      'Honest, at least. And unsettling.'
+                  ]
+                }
+            ]
+        },
+
+        // EM — competing business
+        {
+            id: 'q_undercutting',
+            summary: 'whether you are undercutting them',
+            askFor: function(ctx) {
+                if (!ctx.npcIsEM) return null;
+                if (!ctx.hasCompetingBusiness) return null;
+                return 'Word is your shop is undercutting mine. Care to tell me your side?';
+            },
+            options: [
+                { label: 'Admit it — business is business', kind: 'truth', relGain: -2,
+                  reactions: [
+                      '*long look* At least you do not hide behind smiles.',
+                      'Mm. Then we know where we stand.'
+                  ]
+                },
+                { label: 'Deny it entirely', kind: 'lie', relGain: 1, relIfCaught: -10,
+                  reactions: [
+                      'Hmph. Then someone is lying to me. I will look into it.',
+                      '*considers* All right. We will see.'
+                  ],
+                  reactionsCaught: [
+                      '*cold* I have receipts. Do not waste my time with denials.',
+                      '*flat* You are not the only merchant with eyes in the market.'
+                  ]
+                },
+                { label: 'Offer to coordinate prices', kind: 'deflect', relGain: 4,
+                  reactions: [
+                      '*nods* Now that is a productive answer. Let us talk.',
+                      'A reasonable man. Good.'
+                  ]
+                }
+            ]
+        }
+
+    ];
+
+    // Fix the q_about_jail truth-admit relGain (closures don't bind ctx at definition time)
+    (function _fixupQ(){
+        for (var i = 0; i < _QUESTION_POOL.length; i++) {
+            if (_QUESTION_POOL[i].id === 'q_about_jail') {
+                _QUESTION_POOL[i].options[0].relGain = 2; // moderate admit-truth gain
+            }
+        }
+    })();
+
+    // Build a context with extra hooks for question askFor predicates.
+    function _questionContext(person) {
+        var ctx = _interactionPickerContext(person);
+        var p = (typeof Player !== 'undefined') ? Player.state : null;
+        // Memory inspection helper
+        ctx.hasMemoryKind = function(kind) {
+            try {
+                var mems = Player.getNpcMemories ? Player.getNpcMemories(person.id) : [];
+                for (var i = 0; i < mems.length; i++) if (mems[i] && mems[i].kind === kind) return true;
+            } catch (e) {}
+            return false;
+        };
+        // Competing business detection (simple proxy)
+        ctx.hasCompetingBusiness = false;
+        try {
+            if (p && p.buildings && person) {
+                var typesByTown = {};
+                for (var bi = 0; bi < p.buildings.length; bi++) {
+                    var pb = p.buildings[bi];
+                    if (!pb) continue;
+                    if (!typesByTown[pb.townId]) typesByTown[pb.townId] = {};
+                    typesByTown[pb.townId][pb.type] = true;
+                }
+                var w = (Engine.getWorld && Engine.getWorld()) || null;
+                if (w) for (var ti = 0; ti < w.towns.length; ti++) {
+                    var t = w.towns[ti];
+                    if (!t.buildings) continue;
+                    var here = typesByTown[t.id];
+                    if (!here) continue;
+                    for (var bj = 0; bj < t.buildings.length; bj++) {
+                        var b = t.buildings[bj];
+                        if (b.ownerId === person.id && here[b.type]) { ctx.hasCompetingBusiness = true; break; }
+                    }
+                    if (ctx.hasCompetingBusiness) break;
+                }
+            }
+        } catch (e) {}
+        return ctx;
+    }
+
+    function _maybeGenerateQuestion(person) {
+        // Gating
+        if (!person) return null;
+        // Must qualify for memory (EM/noble/family)
+        try { if (!Player.npcQualifiesForMemory || !Player.npcQualifiesForMemory(person)) return null; } catch (e) { return null; }
+        // Per-NPC cooldown — 1 question per 7 days
+        try {
+            var cdDay = Player.npcQuestionCooldownDay ? Player.npcQuestionCooldownDay(person.id) : 0;
+            var today = (Engine.getDay && Engine.getDay()) || 0;
+            if (cdDay && today - cdDay < 7) return null;
+        } catch (e) {}
+        // 20% base chance
+        if (Math.random() > 0.20) return null;
+
+        var ctx = _questionContext(person);
+        // Pick a random qualifying question
+        var qualifying = [];
+        for (var i = 0; i < _QUESTION_POOL.length; i++) {
+            var q = _QUESTION_POOL[i];
+            try {
+                var line = q.askFor ? q.askFor(ctx) : null;
+                if (line) qualifying.push({ q: q, line: line });
+            } catch (e) {}
+        }
+        if (!qualifying.length) return null;
+        var pick = qualifying[Math.floor(Math.random() * qualifying.length)];
+        return { def: pick.q, line: pick.line };
+    }
+
+    function _renderQuestionBanner(person, generated) {
+        if (!generated) return '';
+        var fn = (person && person.firstName) || 'They';
+        var html = '';
+        html += '<div id="npcQuestionBanner" style="padding:10px 12px;margin-bottom:10px;background:rgba(155,89,182,0.12);border-left:3px solid #9b59b6;border-radius:0 6px 6px 0;color:var(--text-secondary,#ccc);">';
+        html += '<div style="font-style:italic;margin-bottom:8px;"><span style="color:#9b59b6;font-weight:bold;">' + fn + ':</span> "' + generated.line + '"</div>';
+        html += '<div id="npcQuestionOptions" style="display:flex;flex-direction:column;gap:5px;">';
+        for (var i = 0; i < generated.def.options.length; i++) {
+            var opt = generated.def.options[i];
+            html += '<button class="npc-question-option" data-person="' + person.id + '" data-qid="' + generated.def.id + '" data-oidx="' + i + '" ' +
+                    'style="text-align:left;padding:6px 10px;background:rgba(0,0,0,0.25);border:1px solid #555;border-radius:4px;color:#eee;cursor:pointer;font-size:0.85em;">' +
+                    escapeHtml(opt.label) +
+                    '</button>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function _questionDefById(id) {
+        for (var i = 0; i < _QUESTION_POOL.length; i++) if (_QUESTION_POOL[i].id === id) return _QUESTION_POOL[i];
+        return null;
+    }
 
     function _getNpcGreeting(person, personName) {
         if (!person) return '';
@@ -4888,6 +5258,17 @@ window.UI = (function () {
         }
         html += '</div>'; // close npcInteractionRelBadge
 
+        // v9p33river356: optionally inject a question banner that
+        // hides the interactions list until the player answers.
+        var _generatedQ = null;
+        try { _generatedQ = _maybeGenerateQuestion(person); } catch(e) {}
+        if (_generatedQ) {
+            html += _renderQuestionBanner(person, _generatedQ);
+        }
+        // Wrap the interactions list so we can hide it while the
+        // question is up.
+        html += '<div id="npcInteractionList"' + (_generatedQ ? ' style="display:none;"' : '') + '>';
+
         var cooldownCount = 0;
         for (var i = 0; i < interactions.length; i++) {
             var inter = interactions[i];
@@ -4961,9 +5342,52 @@ window.UI = (function () {
             html += '</div></div>';
         }
 
-        html += '</div>';
+        html += '</div>';        // close npcInteractionList wrapper (v9p33river356)
+        html += '</div>';        // close max-width:420px wrapper
 
         openModal('💬 Interact with ' + personName, html, '');
+
+        // v9p33river356: wire NPC question option clicks if a question is up.
+        var qOpts = document.querySelectorAll('.npc-question-option');
+        for (var qi = 0; qi < qOpts.length; qi++) {
+            qOpts[qi].addEventListener('click', function() {
+                var pid = this.getAttribute('data-person');
+                var qid = this.getAttribute('data-qid');
+                var oidx = parseInt(this.getAttribute('data-oidx'), 10);
+                if (!pid || !qid || isNaN(oidx)) return;
+                var qDef = _questionDefById(qid);
+                if (!qDef) return;
+                var res = Player.answerNpcQuestion ? Player.answerNpcQuestion(pid, qDef, oidx) : null;
+                if (!res || !res.success) {
+                    toast((res && res.message) || 'Cannot answer right now.', 'warning');
+                    return;
+                }
+                // Render the NPC's reaction in place of the option buttons,
+                // then reveal the interaction list after a beat.
+                var personObj = null;
+                try { personObj = Engine.getPerson(pid); } catch(e) {}
+                var fn = (personObj && personObj.firstName) || 'They';
+                var banner = document.getElementById('npcQuestionBanner');
+                if (banner) {
+                    var reactionLine = res.reaction || (res.caught ? '*flat stare*' : '*nods slowly*');
+                    var color = res.caught ? '#c85050' : (res.gain >= 1 ? '#55a868' : '#888');
+                    banner.innerHTML =
+                        '<div style="font-style:italic;color:var(--text-secondary,#ccc);">' +
+                        '<span style="color:' + color + ';font-weight:bold;">' + fn + ':</span> "' + escapeHtml(reactionLine) + '"' +
+                        '</div>' +
+                        '<div style="margin-top:6px;font-size:0.75em;color:' + color + ';">' +
+                        (res.caught ? '⚠️ Caught lying — ' : '') +
+                        'Relationship ' + (res.gain >= 0 ? '+' : '') + res.gain +
+                        '</div>';
+                }
+                // Refresh relationship badge in place.
+                var badgeEl = document.getElementById('npcInteractionRelBadge');
+                if (badgeEl && personObj) badgeEl.innerHTML = _renderRelTierBadge(personObj.id);
+                // Show interactions list.
+                var listEl = document.getElementById('npcInteractionList');
+                if (listEl) listEl.style.display = '';
+            });
+        }
 
         var btns = document.querySelectorAll('.social-interaction-btn');
         for (var b = 0; b < btns.length; b++) {
@@ -4986,8 +5410,8 @@ window.UI = (function () {
                         var personObj = Engine.getPerson(pid);
                         // Swap dialog line
                         var dlgEl = document.getElementById('npcInteractionDialog');
-                        if (dlgEl && personObj && UI._renderInteractionDialog) {
-                            dlgEl.innerHTML = UI._renderInteractionDialog(personObj, iid, result);
+                        if (dlgEl && personObj) {
+                            dlgEl.innerHTML = _renderInteractionDialog(personObj, iid, result);
                         }
                         // Refresh relationship tier badge
                         var badge = document.getElementById('npcInteractionRelBadge');
