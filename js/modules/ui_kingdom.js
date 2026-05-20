@@ -496,7 +496,12 @@
             var person = Engine.findPerson(m.npcId);
             // Handle synthetic deceased IDs (e.g., 'deceased_parent_1')
             var isSyntheticDead = m.npcId && m.npcId.startsWith('deceased_parent_');
-            if (isSyntheticDead || (person && !person.alive)) {
+            // v9p33river354: also honor an explicit deceased flag stamped
+            // on the familyMembers entry itself by killPerson, so even if
+            // the NPC record was pruned from world.people the panel still
+            // correctly shows "Deceased" rather than "Records Missing".
+            var stampedDead = !!m.deceased;
+            if (isSyntheticDead || stampedDead || (person && !person.alive)) {
                 deceasedMembers.push(m);
             } else if (person && person.alive) {
                 livingMembers.push(m);

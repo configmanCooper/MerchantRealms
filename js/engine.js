@@ -7889,6 +7889,24 @@
                 }
             }
             if (_isPlayerFamily) {
+                // v9p33river354: stamp death info directly onto the
+                // player's familyMembers entry so the family panel can
+                // still show "Deceased" even if the NPC record later
+                // gets pruned from world.people (e.g., via the
+                // referenced-dead save filter losing track of them).
+                try {
+                    if (Player.state.familyMembers) {
+                        for (var _fmd = 0; _fmd < Player.state.familyMembers.length; _fmd++) {
+                            var _fmEntry = Player.state.familyMembers[_fmd];
+                            if (_fmEntry && _fmEntry.npcId === p.id) {
+                                _fmEntry.deceased = true;
+                                _fmEntry.deathDay = world.day || 0;
+                                _fmEntry.deathCause = cause || 'unknown';
+                                break;
+                            }
+                        }
+                    }
+                } catch (_efm) { /* defensive */ }
                 // Snapshot inheritance data BEFORE inheritance code clears it
                 var _deathSnap = {
                     personId: p.id,
@@ -33564,7 +33582,16 @@
                             if (_ps.relationships) for (var _rid in _ps.relationships) _addId(_rid);
                             if (_ps.familyMembers) for (var _fmi = 0; _fmi < _ps.familyMembers.length; _fmi++) {
                                 var _fm = _ps.familyMembers[_fmi];
-                                _addId(typeof _fm === 'string' ? _fm : (_fm && _fm.id));
+                                // v9p33river354: family entries use `npcId`
+                                // (see player.js:17582, 39860, etc.), not
+                                // `id`. The previous lookup silently dropped
+                                // grandparents/aunts/uncles from the saved
+                                // people array when they were only tracked
+                                // via familyMembers (and not parentIds or
+                                // any living NPC's relationship map), making
+                                // the family panel show "Records Missing"
+                                // for relatives who actually died.
+                                _addId(typeof _fm === 'string' ? _fm : (_fm && (_fm.npcId || _fm.id)));
                             }
                         }
                     } catch (_e) {}
