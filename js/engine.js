@@ -24116,7 +24116,7 @@
                 lastRentDay: null
             };
             em.rentalProperties.push(rentalProp);
-            logEvent('≡ƒÅÿ∩╕Å ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.');
+            logEvent('🏠 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.', { type: 'infrastructure', townId: emTown.id }, 'local_town');
         }
     }
 
@@ -25631,7 +25631,7 @@
                     type: 'fashion_shift', kingdomId: _fk.id,
                     cause: 'Cultural tastes are changing in ' + _fk.name + '.',
                     effects: ['Demand for ' + _fashionName + ' goods increases', 'Savvy merchants can profit from the shift']
-                });
+                }, 'world_economy');
             }
 
             // Apply fashion demand bonus to kingdom towns (additive, not multiplicative, to prevent runaway)
