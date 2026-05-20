@@ -967,7 +967,7 @@
                         var inspLaw = CONFIG.SPECIAL_LAWS.find(function(l) { return l.id === 'random_inspections'; });
                         if (inspLaw) {
                             k.laws.specialLaws.push(inspLaw);
-                            logEvent('📜 ' + k.name + ' enacted Random Inspections law — guards will inspect merchants for contraband.', { category: 'laws' });
+                            logEvent('📜 ' + k.name + ' enacted Random Inspections law — guards will inspect merchants for contraband.', { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
                         }
                     }
                 }
@@ -975,7 +975,7 @@
                 // Consider repealing: treasury too low or lenient king
                 if (k.gold < 500 || justiceIsLow) {
                     k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'random_inspections'; });
-                    logEvent('📜 ' + k.name + ' repealed Random Inspections law — inspections cease.', { category: 'laws' });
+                    logEvent('📜 ' + k.name + ' repealed Random Inspections law — inspections cease.', { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -1278,7 +1278,7 @@
                     if (typeof UI !== 'undefined' && UI.toast) {
                         UI.toast('🔍 Random inspection! Guards found ' + caughtQty + ' ' + itemLabel + (isBanned ? ' (BANNED)' : ' (no permit)') + '. Confiscated! Fine: ' + pFine + 'g' + (pJail > 0 ? ', Jail: ' + pJail + 'd' : ''), 'danger');
                     }
-                    logEvent('🔍 Random inspection in ' + town.name + ': guards found ' + caughtQty + ' ' + itemLabel + ' on ' + (pState.fullName || 'the player') + '. Goods confiscated.', { category: 'crime' });
+                    logEvent('🔍 Random inspection in ' + town.name + ': guards found ' + caughtQty + ' ' + itemLabel + ' on ' + (pState.fullName || 'the player') + '. Goods confiscated.', { type: 'random_inspection', kingdomId: k.id, townId: town.id }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -1309,7 +1309,7 @@
                     }
                     em.gold = Math.max(0, (em.gold || 0) - emFine);
                     k.gold += emFine;
-                    logEvent('🔍 Random inspection in ' + town.name + ': guards caught ' + (em.firstName || 'a merchant') + ' with contraband ' + emCaughtItem.replace(/_/g, ' ') + '. Fined ' + emFine + 'g.', { category: 'crime' });
+                    logEvent('🔍 Random inspection in ' + town.name + ': guards caught ' + (em.firstName || 'a merchant') + ' with contraband ' + emCaughtItem.replace(/_/g, ' ') + '. Fined ' + emFine + 'g.', { type: 'random_inspection', kingdomId: k.id, townId: town.id }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -1373,7 +1373,7 @@
                 // If kingdom can't afford, they cancel it
                 if (k.gold < 0) {
                     k.laws.kingdomTransport = false;
-                    logEvent('📢 ' + k.name + ' can no longer afford public transport services.', { type: 'law_change', kingdomId: k.id });
+                    logEvent('📢 ' + k.name + ' can no longer afford public transport services.', { type: 'law_change', kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -1678,10 +1678,10 @@
         // 1. Absorption — neighbor has 60+ relations
         if (bestRelation >= 60 && bestNeighbor) {
             logEvent(`🏰 ${bestNeighbor.name} absorbs the collapsing towns of ${k.name}.`, {
-                type: 'kingdom_absorption',
+                type: 'kingdom_absorption', kingdomId: k.id, absorbingKingdomId: bestNeighbor.id,
                 cause: 'Strong diplomatic ties allow peaceful absorption',
                 effects: ['Towns transfer to ' + bestNeighbor.name, 'Citizens gain stability', 'Former king retires']
-            });
+            }, _eventKingdomCategory(k.id));
             const townIds = [...k.territories];
             for (const townId of townIds) {
                 const town = findTown(townId);
@@ -1711,7 +1711,7 @@
                 newKing: _revLeaderName,
                 newKingId: prominentNPC.id,
                 effects: ['New king installed', 'Debts wiped', 'Kingdom restarts with minimal treasury']
-            });
+            }, _eventKingdomCategory(k.id));
             if (oldKing && oldKing.alive) {
                 oldKing.occupation = 'laborer';
                 if (oldKing.socialRank) oldKing.socialRank[k.id] = 0;
@@ -1762,10 +1762,10 @@
             wealthyElite.gold -= bailoutAmount;
             k.gold += bailoutAmount;
             logEvent(`💰 ${wealthyElite.firstName} ${wealthyElite.lastName} bails out ${k.name} with ${bailoutAmount}g!`, {
-                type: 'merchant_bailout',
+                type: 'merchant_bailout', kingdomId: k.id,
                 cause: 'Wealthy merchant saves kingdom from total collapse',
                 effects: ['Kingdom survives', 'Merchant gains huge political influence', 'Economy slowly recovers']
-            });
+            }, _eventKingdomCategory(k.id));
             k._bankruptDays = 0;
             k._collapseTriggered = false;
             k.happiness = Math.max(20, k.happiness);
@@ -1775,10 +1775,10 @@
         // 4. Fragmentation — kingdom splits
         if (k.territories.size >= 4) {
             logEvent(`💔 ${k.name} fragments! Towns break away to form a new kingdom.`, {
-                type: 'kingdom_fragmentation',
+                type: 'kingdom_fragmentation', kingdomId: k.id,
                 cause: 'No one can hold the kingdom together',
                 effects: ['Kingdom splits into smaller territories', 'New political entities emerge']
-            });
+            }, _eventKingdomCategory(k.id));
             // Transfer half the towns to the strongest neighbor
             const townIds = [...k.territories];
             const halfCount = Math.floor(townIds.length / 2);
@@ -1806,6 +1806,7 @@
     function triggerKingdomCollapse(k) {
         logEvent(`👑💀 The Kingdom of ${k.name} has COLLAPSED! Towns declare independence!`, {
             type: 'kingdom_collapse',
+            kingdomId: k.id,
             cause: k.name + ' has been bankrupt too long and its people have lost all faith in the crown.',
             effects: [
                 'All towns declare independence',
@@ -1814,7 +1815,7 @@
                 'Trade routes become unsafe',
                 'A power vacuum emerges in the region'
             ]
-        }, 'sensitive_intel');
+        }, _eventKingdomCategory(k.id));
 
         // All towns become independent (assigned to strongest neighbor or none)
         const townIds = [...k.territories];
@@ -1842,7 +1843,7 @@
             if (bestK) {
                 town.kingdomId = bestK.id;
                 bestK.territories.add(townId);
-                logEvent(`${town.name} has been absorbed by ${bestK.name}.`);
+                logEvent(`${town.name} has been absorbed by ${bestK.name}.`, { townId: town.id, kingdomId: bestK.id, formerKingdomId: k.id }, _eventKingdomCategory(bestK.id));
             }
             // If no neighbor, town stays with collapsed kingdom (weakened state)
 

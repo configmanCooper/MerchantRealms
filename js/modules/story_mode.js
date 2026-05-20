@@ -866,7 +866,7 @@ var StoryMode = (function () {
         // v9p33river301: Engine.addLogEntry doesn't exist — the engine API
         // is logEvent(msg, details, category).
         if (typeof Engine !== 'undefined' && Engine.logEvent) {
-            Engine.logEvent(msg, null, 'story');
+            Engine.logEvent(msg, null, 'my_actions');
         }
     }
 

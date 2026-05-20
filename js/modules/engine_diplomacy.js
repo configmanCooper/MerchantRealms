@@ -262,9 +262,7 @@
             if (dayNow - post.postedDay > 30) {
                 var refund = remaining * post.payPerSoldier;
                 k.gold = (k.gold || 0) + refund;
-                var isPlayerK = false;
-                try { isPlayerK = _isPlayerKingOf(k); } catch(e) {}
-                logEvent('📜 Recruitment posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' filled). ' + refund + 'g refunded.', null, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+                logEvent('📜 Recruitment posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 k._recruitmentPostings.splice(pi, 1);
                 continue;
             }
@@ -349,10 +347,8 @@
 
             // Notify periodically when recruits join
             if (filledThisTick > 0 && (post.slotsFilled % 5 === 0 || post.slotsFilled >= post.slotsTotal)) {
-                var isPlayerK2 = false;
-                try { isPlayerK2 = _isPlayerKingOf(k); } catch(e) {}
                 var pctFilled = Math.round(post.slotsFilled / post.slotsTotal * 100);
-                logEvent('🎖️ ' + (post.isConscription ? 'Conscription' : 'Recruitment') + ': ' + post.slotsFilled + '/' + post.slotsTotal + ' (' + pctFilled + '% filled)', null, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
+                logEvent('🎖️ ' + (post.isConscription ? 'Conscription' : 'Recruitment') + ': ' + post.slotsFilled + '/' + post.slotsTotal + ' (' + pctFilled + '% filled)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
 
             // Complete posting
@@ -378,8 +374,7 @@
                 var refundPerSlot = post.weeklyPay * 2;
                 var refund = remaining * refundPerSlot;
                 k.gold = (k.gold || 0) + refund;
-                var isP = false; try { isP = _isPlayerKingOf(k); } catch(e) {}
-                logEvent('📋 Employee posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' ' + post.type + 's filled). ' + refund + 'g refunded.', null, isP ? 'my_kingdom' : 'foreign_kingdoms');
+                logEvent('📋 Employee posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' ' + post.type + 's filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 k._employeePostings.splice(pi, 1);
                 continue;
             }
@@ -453,9 +448,8 @@
             }
 
             if (filledThisTick > 0) {
-                var isP2 = false; try { isP2 = _isPlayerKingOf(k); } catch(e) {}
                 var tLabel = post.type === 'procurer' ? 'Procurer' : post.type === 'guard' ? 'Guard' : 'Royal Guard';
-                logEvent('👤 ' + tLabel + ' hiring: ' + post.slotsFilled + '/' + post.slotsTotal + ' filled', null, isP2 ? 'my_kingdom' : 'foreign_kingdoms');
+                logEvent('👤 ' + tLabel + ' hiring: ' + post.slotsFilled + '/' + post.slotsTotal + ' filled', { kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
             if (post.slotsFilled >= post.slotsTotal) k._employeePostings.splice(pi, 1);
         }
@@ -523,8 +517,7 @@
         // Clean up completed orders
         for (var oi = k._procurementOrders.length - 1; oi >= 0; oi--) {
             if (k._procurementOrders[oi].remaining <= 0) {
-                var isP = false; try { isP = _isPlayerKingOf(k); } catch(e) {}
-                logEvent('✅ Procurement order fulfilled: ' + k._procurementOrders[oi].goodId + ' (' + k._procurementOrders[oi].filled + ' total)', null, isP ? 'my_kingdom' : 'foreign_kingdoms');
+                logEvent('✅ Procurement order fulfilled: ' + k._procurementOrders[oi].goodId + ' (' + k._procurementOrders[oi].filled + ' total)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 k._procurementOrders.splice(oi, 1);
             }
         }
@@ -557,8 +550,7 @@
                         if (person2) { person2.occupation = 'unemployed'; person2.employerId = null; }
                     } catch(e) {}
                     lists[li].splice(ei, 1);
-                    var isP = false; try { isP = _isPlayerKingOf(k); } catch(e) {}
-                    logEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), null, isP ? 'my_kingdom' : 'foreign_kingdoms');
+                    logEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -704,19 +696,16 @@
     function _tickSoldierTransfers(k) {
         if (!k._soldierTransfers || k._soldierTransfers.length === 0) return;
         var dayNow = world.day;
-        var isPlayerK = false;
-        try { isPlayerK = _isPlayerKingOf(k); } catch(e) {}
-
         for (var si = k._soldierTransfers.length - 1; si >= 0; si--) {
             var tr = k._soldierTransfers[si];
             if (dayNow >= tr.arrivalDay) {
                 var toTown = findTown(tr.toTownId);
                 if (toTown && toTown.kingdomId === k.id) {
                     toTown.garrison = (toTown.garrison || 0) + tr.count;
-                    logEvent('🏰 ' + tr.count + ' soldiers arrived at ' + toTown.name + '.', null, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+                    logEvent('🏰 ' + tr.count + ' soldiers arrived at ' + toTown.name + '.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 } else {
                     // Town changed hands during transfer — soldiers lost
-                    logEvent('⚠️ ' + tr.count + ' soldiers arrived at a town no longer controlled. They dispersed.', null, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
+                    logEvent('⚠️ ' + tr.count + ' soldiers arrived at a town no longer controlled. They dispersed.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
                 k._soldierTransfers.splice(si, 1);
             }
@@ -2530,7 +2519,7 @@
             var wasteAmount = Math.min(200, Math.floor(k.gold * 0.1));
             k.gold -= wasteAmount;
             logEvent('\uD83E\uDD34 The foolish ruler of ' + k.name + ' wastes ' + wasteAmount + 'g on a vanity project.',  {
-                type: 'vanity_project', cause: 'Poor judgment by dim ruler',
+                type: 'vanity_project', kingdomId: k.id, cause: 'Poor judgment by dim ruler',
                 effects: ['Treasury -' + wasteAmount + 'g', 'No benefit to the kingdom']
             }, _eventKingdomCategory(k.id));
         }
@@ -2544,7 +2533,7 @@
             if (candidates.length > 0) {
                 const target = rng.pick(candidates);
                 k.nationalizedIndustries.push(target);
-                logEvent(`👑 ${k.name} has nationalized all ${target} operations! NPC-owned ${target}s can no longer produce.`, null, _eventKingdomCategory(k.id));
+                logEvent(`👑 ${k.name} has nationalized all ${target} operations! NPC-owned ${target}s can no longer produce.`, { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 // Kingdom builds nationalized buildings in towns that lack them
                 for (const townId of k.territories) {
                     const town = findTown(townId);
@@ -3026,7 +3015,7 @@
         // Expire any finished tournament (lasts 30 days)
         if (k.tournament && k.tournament.active && (world.day - k.tournament.startDay) > 30) {
             k.tournament.active = false;
-            logEvent(`🏟️ The royal tournament in ${k.name} has concluded.`, null, _eventKingdomCategory(k.id));
+            logEvent(`🏟️ The royal tournament in ${k.name} has concluded.`, { kingdomId: k.id, townId: k.tournament.townId }, _eventKingdomCategory(k.id));
         }
         // Kings can sponsor new tournaments when not at war, treasury > 1000g, no active tournament
         // H-3: Only if treasury > 12 months of upkeep (festivals/tournaments are lowest priority)
@@ -3057,7 +3046,7 @@
                     };
                     boostKingdomHappiness(k, 5);
                     logEvent(`🏟️ The ruler of ${k.name} has announced a Royal Tournament in ${capitalTown.name}! Entry fee: ${entryFee}g.`,  {
-                        type: 'tournament', cause: 'Royal decree',
+                        type: 'tournament', kingdomId: k.id, townId: capitalTown.id, cause: 'Royal decree',
                         effects: ['Fighters from across the land gather', 'Kingdom happiness +5', 'Grand prizes for the champion']
                     }, _eventKingdomCategory(k.id));
                     logKingAction(k, '🏟️ Sponsored a royal tournament');
@@ -3334,7 +3323,7 @@
                     distributeConstructionWages(town.id, wallConfig.cost, rng);
                     var _wallBuildDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade) ? CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade.build : 30;
                     town._wallConstruction = { targetLevel: nextLevel, completeDay: world.day + _wallBuildDays, name: wallConfig.name };
-                    logEvent(`${kingdom_name(k)} begins building ${wallConfig.name} around ${town.name}!`, null, _eventKingdomCategory(k.id));
+                    logEvent(`${kingdom_name(k)} begins building ${wallConfig.name} around ${town.name}!`, { kingdomId: k.id, townId: town.id }, _eventKingdomCategory(k.id));
                 }
             }
 
@@ -3491,7 +3480,7 @@
                             fortressWallsMaxHP: _fwCfg2.maxHP || 600
                         });
                         logEvent('🏰 ' + kingdom_name(k) + ' begins constructing fortress walls at ' + _fwTown.name + '!',  {
-                            type: 'construction_project', townId: _fwTown.id
+                            type: 'construction_project', kingdomId: k.id, townId: _fwTown.id
                         }, _eventKingdomCategory(k.id));
                         logKingAction(k, '🏰 Ordered fortress wall construction at ' + _fwTown.name);
                         break;
@@ -5261,7 +5250,7 @@
             if (wastedGold > 0 && kingdom.gold > wastedGold + 500) {
                 kingdom.gold -= wastedGold;
                 logEvent('\uD83E\uDD34 The foolish ruler of ' + kingdom.name + ' wastes ' + wastedGold + 'g on royal frivolity!',  {
-                    type: 'royal_frivolity', cause: 'Poor judgment by dim ruler',
+                    type: 'royal_frivolity', kingdomId: kingdom.id, cause: 'Poor judgment by dim ruler',
                     effects: ['Treasury -' + wastedGold + 'g', 'Gold wasted on pointless vanity projects']
                 }, _eventKingdomCategory(kingdom.id));
             }
@@ -5999,7 +5988,7 @@
                     if (surplus.length > 0 && kingdom.laws.tradeTariff > 0.02) {
                         kingdom.laws.tradeTariff = Math.max(0.02, kingdom.laws.tradeTariff - 0.01);
                         logEvent(`📊 ${kingdom.name} lowers trade tariffs to attract imports of scarce goods.`,  {
-                            type: 'economic_strategy', cause: 'Market intelligence: goods needed from abroad',
+                            type: 'economic_strategy', kingdomId: kingdom.id, cause: 'Market intelligence: goods needed from abroad',
                             effects: [`Tariffs reduced to ${Math.round(kingdom.laws.tradeTariff * 100)}%`]
                         }, _eventKingdomCategory(kingdom.id));
                     }
@@ -7086,9 +7075,9 @@
                     if (currentProd < quota.minPerSeason) {
                         town.happiness = Math.max(0, (town.happiness || 50) + (CONFIG.KING_QUOTA_HAPPINESS_PENALTY || -5));
                         logEvent(`⚠️ ${town.name} fails to meet ${quota.good} production quota. Happiness drops.`,  {
-                            type: 'quota_failure', cause: `Produced ${currentProd} of ${quota.minPerSeason} required`,
+                            type: 'quota_failure', kingdomId: k.id, townId: town.id, cause: `Produced ${currentProd} of ${quota.minPerSeason} required`,
                             effects: [`Happiness penalty: ${CONFIG.KING_QUOTA_HAPPINESS_PENALTY || -5}`]
-                        }, 'foreign_kingdoms');
+                        }, _eventKingdomCategory(k.id));
                     }
                 }
             }
@@ -7311,7 +7300,7 @@
                     discount: _disc, expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
                 });
                 logEvent('👑 ' + kingdom.name + ' offers cheap land in ' + (strat.townName || '?') + ' for ' + (strat.buildingName || '?') + ' builders!',  {
-                    type: 'economic_strategy', cause: (strat.good || 'goods') + ' deficit',
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: strat.townId, cause: (strat.good || 'goods') + ' deficit',
                     effects: [Math.round(_disc * 100) + '% discount on land']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
@@ -7324,7 +7313,7 @@
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
                 logEvent('📜 ' + kingdom.name + ' seeks ' + _goodName + ' producers in ' + (strat.townName || '?') + ' — ' + (strat.reward || 50) + 'g bounty!',  {
-                    type: 'economic_strategy', effects: [(strat.reward || 50) + 'g reward']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: strat.townId, effects: [(strat.reward || 50) + 'g reward']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'trade_subsidy':
@@ -7336,7 +7325,7 @@
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
                 logEvent('💰 ' + kingdom.name + ' subsidizes ' + _goodName + ' imports — ' + (strat.bonusPerUnit || 2) + 'g bonus per unit!',  {
-                    type: 'economic_strategy', effects: ['Merchants get +' + (strat.bonusPerUnit || 2) + 'g per ' + _goodName + ' sold']
+                    type: 'economic_strategy', kingdomId: kingdom.id, effects: ['Merchants get +' + (strat.bonusPerUnit || 2) + 'g per ' + _goodName + ' sold']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'tax_holiday':
@@ -7345,7 +7334,7 @@
                     expiresDay: day + (CONFIG.KING_TAX_HOLIDAY_DURATION || 180)
                 });
                 logEvent('🎉 ' + kingdom.name + ' declares a tax holiday in ' + (strat.townName || '?') + '!',  {
-                    type: 'economic_strategy', effects: ['No property tax for new buildings']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: strat.townId, effects: ['No property tax for new buildings']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'immigration':
@@ -7355,7 +7344,7 @@
                     expiresDay: day + (CONFIG.KING_SUBSIDY_DURATION || 180)
                 });
                 logEvent('🏘️ ' + kingdom.name + ' offers immigration bonuses for ' + (strat.townName || '?') + '!',  {
-                    type: 'economic_strategy', effects: [(CONFIG.KING_IMMIGRATION_BONUS || 50) + 'g per settler']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: strat.townId, effects: [(CONFIG.KING_IMMIGRATION_BONUS || 50) + 'g per settler']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'supply_gap_building': {
@@ -7369,7 +7358,7 @@
                     builtDay: day, condition: 'new', lastRepairDay: 0
                 });
                 logEvent('🏭 ' + kingdom.name + ' builds a ' + _sgBt.name + ' in ' + _sgTown.name + '!',  {
-                    type: 'economic_strategy', effects: ['New ' + _sgBt.name + ' in ' + _sgTown.name, 'Treasury -' + _sgBt.cost + 'g']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: _sgTown.id, effects: ['New ' + _sgBt.name + ' in ' + _sgTown.name, 'Treasury -' + _sgBt.cost + 'g']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             }
@@ -7380,14 +7369,14 @@
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
                 logEvent('🚫 ' + kingdom.name + ' restricts export of ' + _goodName + ' to protect domestic supply!',  {
-                    type: 'economic_strategy', effects: [_goodName + ' cannot be exported']
+                    type: 'economic_strategy', kingdomId: kingdom.id, effects: [_goodName + ' cannot be exported']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             case 'tariff_adjustment':
                 if (kingdom.laws && kingdom.laws.tradeTariff > 0.02) {
                     kingdom.laws.tradeTariff = Math.max(0.02, kingdom.laws.tradeTariff - 0.01);
                     logEvent('📊 ' + kingdom.name + ' lowers trade tariffs to ' + Math.round(kingdom.laws.tradeTariff * 100) + '%.',  {
-                        type: 'economic_strategy', effects: ['Tariffs reduced']
+                        type: 'economic_strategy', kingdomId: kingdom.id, effects: ['Tariffs reduced']
                     }, _eventKingdomCategory(kingdom.id));
                 }
                 break;
@@ -7404,7 +7393,7 @@
                 });
                 _flTown.happiness = Math.max(0, (_flTown.happiness || 50) + (CONFIG.KING_FORCED_LABOR_HAPPINESS || -10));
                 logEvent('⛓️ ' + kingdom.name + ' conscripts laborers in ' + _flTown.name + ' to build a ' + _flBt.name + '!',  {
-                    type: 'economic_strategy', effects: [_flBt.name + ' built at half cost', 'Happiness drops']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: _flTown.id, effects: [_flBt.name + ' built at half cost', 'Happiness drops']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             }
@@ -7422,7 +7411,7 @@
                 }
                 var _asBt = BUILDING_TYPES ? BUILDING_TYPES[strat.buildingType] : null;
                 logEvent('👑 ' + kingdom.name + ' seizes a ' + (_asBt ? _asBt.name : strat.buildingType) + ' in ' + _asTown.name + '!',  {
-                    type: 'economic_strategy', effects: ['Building transferred to crown', 'Happiness drops']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: _asTown.id, effects: ['Building transferred to crown', 'Happiness drops']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             }
@@ -7435,7 +7424,7 @@
                 _resInfo = findResourceById(strat.good);
                 _goodName = _resInfo ? _resInfo.name : strat.good;
                 logEvent('⚒️ ' + kingdom.name + ' sets production quotas for ' + _goodName + ' in ' + (strat.townName || '?') + '.',  {
-                    type: 'economic_strategy', effects: ['Minimum production mandated']
+                    type: 'economic_strategy', kingdomId: kingdom.id, townId: strat.townId, effects: ['Minimum production mandated']
                 }, _eventKingdomCategory(kingdom.id));
                 break;
             default:
@@ -7592,7 +7581,7 @@
                     stagingTownName: fromT.name
                 });
                 var _ml = _propMounted ? ' (🐴 mounted)' : '';
-                logEvent('⚔️ ' + soldiers + (_propMounted ? ' mounted cavalry' : ' soldiers') + ' march from ' + fromT.name + ' to attack ' + tgtT.name + '!' + _ml, null, 'foreign_kingdoms');
+                logEvent('⚔️ ' + soldiers + (_propMounted ? ' mounted cavalry' : ' soldiers') + ' march from ' + fromT.name + ' to attack ' + tgtT.name + '!' + _ml, { kingdomId: kingdom.id, townId: tgtT.id, fromTownId: fromT.id }, _eventKingdomCategory(kingdom.id));
                 break;
 
             case 'recruit':
@@ -7612,7 +7601,7 @@
                     payPerSoldier: costPer, reservedGold: totalCost,
                     postedDay: world.day, isConscription: false
                 });
-                logEvent('📜 Recruitment posting for ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g. NPCs will enlist over time.', null, 'foreign_kingdoms');
+                logEvent('📜 Recruitment posting for ' + cnt + ' soldiers at ' + recTown.name + '. Cost: ' + totalCost + 'g. NPCs will enlist over time.', { kingdomId: kingdom.id, townId: recTown.id }, _eventKingdomCategory(kingdom.id));
                 break;
 
             case 'supply':
@@ -7627,7 +7616,7 @@
                 if (!supTown.market.supply) supTown.market.supply = {};
                 supTown.market.supply[good] = (supTown.market.supply[good] || 0) + qty;
                 var _resInfo = findResourceById ? findResourceById(good) : null;
-                logEvent('🗡️ Procured ' + qty + ' ' + (_resInfo ? _resInfo.name : good) + ' at ' + supTown.name + '. Cost: ' + supCost + 'g.', null, 'foreign_kingdoms');
+                logEvent('🗡️ Procured ' + qty + ' ' + (_resInfo ? _resInfo.name : good) + ' at ' + supTown.name + '. Cost: ' + supCost + 'g.', { kingdomId: kingdom.id, townId: supTown.id }, _eventKingdomCategory(kingdom.id));
                 break;
 
             case 'build_ships':
@@ -7645,7 +7634,7 @@
                     mission: null,
                     builtDay: world.day
                 });
-                logEvent('⛵ New warship built at ' + shipTown.name + ' for ' + shipCost + 'g.', null, 'foreign_kingdoms');
+                logEvent('⛵ New warship built at ' + shipTown.name + ' for ' + shipCost + 'g.', { kingdomId: kingdom.id, townId: shipTown.id }, _eventKingdomCategory(kingdom.id));
                 break;
 
             case 'fortify':
@@ -7664,7 +7653,7 @@
                     reservedGold: 5 * (CONFIG.SOLDIER_RECRUIT_COST || 50),
                     postedDay: world.day, isConscription: false
                 });
-                logEvent('🏰 ' + fortTown.name + ' being fortified! Recruitment posted for 5 soldiers. Cost: ' + fortCost + 'g.', null, 'foreign_kingdoms');
+                logEvent('🏰 ' + fortTown.name + ' being fortified! Recruitment posted for 5 soldiers. Cost: ' + fortCost + 'g.', { kingdomId: kingdom.id, townId: fortTown.id }, _eventKingdomCategory(kingdom.id));
                 break;
 
             default:

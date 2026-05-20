@@ -1518,7 +1518,7 @@
                 goodsMsg = ` + ${qty} ${res ? res.name : resId}`;
             }
             grantXP(10, 'Robbed traveler');
-            Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.', null, 'local_town');
+            Engine.logEvent('A traveler was robbed on the road near ' + town.name + '.', null, 'my_actions');
         }
 
         var caughtMsg = '';

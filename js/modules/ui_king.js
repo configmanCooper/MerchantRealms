@@ -2658,7 +2658,7 @@
         }
 
         var nobleName = noble.firstName + ' ' + noble.lastName;
-        Engine.logEvent('📜 ' + (Player.state.sex === 'F' ? 'Queen' : 'King') + ' ' + Player.state.fullName + ' has ordered ' + nobleName + ' to ' + dir.title.toLowerCase() + '.', null, 'my_kingdom');
+        Engine.logEvent('📜 ' + (Player.state.sex === 'F' ? 'Queen' : 'King') + ' ' + Player.state.fullName + ' has ordered ' + nobleName + ' to ' + dir.title.toLowerCase() + '.', { type: 'royal_directive', kingdomId: kingdomId, nobleId: nobleId }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId) ? 'my_kingdom' : 'foreign_kingdoms');
         toast('📜 ' + nobleName + ' has been assigned: ' + dir.title, 'success');
         openKingPanel('nobility');
     }
@@ -2891,7 +2891,7 @@
             Player.state.deathCause = 'executed by rebels';
             Player.state.isKing = false;
             Player.state.alive = false;
-            Engine.logEvent('💀 ' + Player.state.fullName + ' surrendered and was executed by the rebels.', null, 'my_kingdom');
+            Engine.logEvent('💀 ' + Player.state.fullName + ' surrendered and was executed by the rebels.', { type: 'player_revolt_outcome', kingdomId: kingdomId }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId) ? 'my_kingdom' : 'foreign_kingdoms');
             if (Player.handlePlayerDeath) Player.handlePlayerDeath();
         } else if (choice === 'fight') {
             var rng = Engine.getRng();
@@ -2902,14 +2902,14 @@
                 if (kingdom) {
                     kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 10);
                 }
-                Engine.logEvent('⚔️ ' + Player.state.fullName + ' crushed the rebellion! The crown is secure.', null, 'my_kingdom');
+                Engine.logEvent('⚔️ ' + Player.state.fullName + ' crushed the rebellion! The crown is secure.', { type: 'player_revolt_outcome', kingdomId: kingdomId }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId) ? 'my_kingdom' : 'foreign_kingdoms');
                 toast('⚔️ You crushed the rebellion!', 'success', 'critical');
             } else {
                 // Defeated
                 Player.state.deathCause = 'killed in revolt';
                 Player.state.isKing = false;
                 Player.state.alive = false;
-                Engine.logEvent('💀 ' + Player.state.fullName + ' was killed fighting the rebels.', null, 'my_kingdom');
+                Engine.logEvent('💀 ' + Player.state.fullName + ' was killed fighting the rebels.', { type: 'player_revolt_outcome', kingdomId: kingdomId }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId) ? 'my_kingdom' : 'foreign_kingdoms');
                 if (Player.handlePlayerDeath) Player.handlePlayerDeath();
             }
         }

@@ -4587,7 +4587,7 @@
         player.guards = player.guards.filter(function(g) {
             var _gp = g.personId ? Engine.findPerson(g.personId) : null;
             if (_gp && !_gp.alive) {
-                Engine.logEvent('⚔️ Guard ' + (g.name || 'Unknown') + ' has died and been dismissed.', null, "military");
+                Engine.logEvent('⚔️ Guard ' + (g.name || 'Unknown') + ' has died and been dismissed.', null, "my_actions");
                 return false;
             }
             return true;
@@ -7488,7 +7488,7 @@
             if (!window._godInvincible) {
                 player.alive = false;
                 var cause = player.deathCause || 'unknown causes';
-                Engine.logEvent(player.fullName + ' has died from ' + cause + ' with no heir. The legacy ends.', null, "error_alerts");
+                Engine.logEvent(player.fullName + ' has died from ' + cause + ' with no heir. The legacy ends.', null, "my_actions");
                 // Show defeat screen immediately — don't wait for checkEndConditions tick
                 if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
                 if (typeof UI !== 'undefined' && UI.showLoseScreen) {
@@ -8178,18 +8178,18 @@
         switch (directive.directiveType) {
             case 'supply_warfront':
                 kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(5, 12));
-                Engine.logEvent('📜 ' + nobleName + ' has delivered military supplies to the front lines. Military strength increased.', { _noToast: true }, "my_kingdom");
+                Engine.logEvent('📜 ' + nobleName + ' has delivered military supplies to the front lines. Military strength increased.', { _noToast: true }, "military");
                 break;
             case 'recruit_soldiers':
                 kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(3, 8));
-                Engine.logEvent('📜 ' + nobleName + ' has recruited new soldiers for the army.', { _noToast: true }, "my_kingdom");
+                Engine.logEvent('📜 ' + nobleName + ' has recruited new soldiers for the army.', { _noToast: true }, "military");
                 break;
             case 'fortify_border':
                 kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(4, 10));
-                Engine.logEvent('📜 ' + nobleName + ' has fortified border defenses.', { _noToast: true }, "my_kingdom");
+                Engine.logEvent('📜 ' + nobleName + ' has fortified border defenses.', { _noToast: true }, "military");
                 break;
             case 'scout_enemy':
-                Engine.logEvent('📜 ' + nobleName + ' has returned with intelligence on enemy movements.', { _noToast: true }, "my_kingdom");
+                Engine.logEvent('📜 ' + nobleName + ' has returned with intelligence on enemy movements.', { _noToast: true }, "military");
                 break;
             case 'plague_response':
                 // Reduce plague in random town
@@ -8198,14 +8198,14 @@
                     if (_pTowns.length > 0) {
                         var _pt = _pTowns[rng.randInt(0, _pTowns.length - 1)];
                         _pt.plagueActive = false;
-                        Engine.logEvent('📜 ' + nobleName + ' delivered medical aid to ' + _pt.name + '. The plague has been contained!', { _noToast: true }, "my_kingdom");
+                        Engine.logEvent('📜 ' + nobleName + ' delivered medical aid to ' + _pt.name + '. The plague has been contained!', { _noToast: true }, "illness");
                     } else {
-                        Engine.logEvent('📜 ' + nobleName + ' delivered medical supplies across the kingdom.', { _noToast: true }, "my_kingdom");
+                        Engine.logEvent('📜 ' + nobleName + ' delivered medical supplies across the kingdom.', { _noToast: true }, "illness");
                     }
-                } catch (e) { Engine.logEvent('📜 ' + nobleName + ' completed medical directive.', { _noToast: true }, "my_kingdom"); }
+                } catch (e) { Engine.logEvent('📜 ' + nobleName + ' completed medical directive.', { _noToast: true }, "illness"); }
                 break;
             case 'quarantine_towns':
-                Engine.logEvent('📜 ' + nobleName + ' has enforced quarantine measures. Plague spread slowed.', { _noToast: true }, "my_kingdom");
+                Engine.logEvent('📜 ' + nobleName + ' has enforced quarantine measures. Plague spread slowed.', { _noToast: true }, "illness");
                 break;
             case 'food_relief':
                 kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.randInt(3, 8));
@@ -8881,7 +8881,7 @@
         if (player.gold < amount) return { success: false, message: 'You only have ' + Math.floor(player.gold) + 'g.' };
         player.gold -= amount;
         kingdom.gold = (kingdom.gold || 0) + amount;
-        Engine.logEvent('💰 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' donated ' + amount + 'g to the kingdom treasury.', null, 'my_actions');
+        Engine.logEvent('💰 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' donated ' + amount + 'g to the kingdom treasury.', null, 'my_kingdom');
         return { success: true, message: 'Donated ' + amount + 'g to the treasury. Kingdom treasury: ' + Math.floor(kingdom.gold) + 'g.' };
     }
 
@@ -8895,7 +8895,7 @@
         player.gold += amount;
         // Withdrawing from treasury hurts happiness slightly
         if (kingdom.happiness != null) kingdom.happiness = Math.max(0, kingdom.happiness - Math.ceil(amount / 200));
-        Engine.logEvent('🏦 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' withdrew ' + amount + 'g from the kingdom treasury.', null, 'my_actions');
+        Engine.logEvent('🏦 ' + (player.sex === 'F' ? 'Queen' : 'King') + ' ' + player.fullName + ' withdrew ' + amount + 'g from the kingdom treasury.', null, 'my_kingdom');
         return { success: true, message: 'Withdrew ' + amount + 'g. Treasury: ' + Math.floor(kingdom.gold) + 'g.' };
     }
 
@@ -9888,13 +9888,13 @@
                 pPerson.perceivedKingLoyalty = Math.max(0, pPerson.perceivedKingLoyalty - 8);
             }
             player._whisperCooldowns[targetNobleId] = Engine.getDay();
-            Engine.logEvent('🚨 ' + targetName + ' discovered you were spreading rumors about them!', null, 'my_kingdom');
+            Engine.logEvent('🚨 ' + targetName + ' discovered you were spreading rumors about them!', null, 'political_intrigue');
             return { success: false, message: targetName + ' caught you slandering them! Your relationship and standing both dropped.' };
         }
 
         target.perceivedKingLoyalty = Math.max(5, target.perceivedKingLoyalty - drop);
         player._whisperCooldowns[targetNobleId] = Engine.getDay();
-        Engine.logEvent('🗣️ You successfully planted doubts about ' + targetName + '\'s loyalty with the king.', null, 'my_kingdom');
+        Engine.logEvent('🗣️ You successfully planted doubts about ' + targetName + '\'s loyalty with the king.', null, 'political_intrigue');
         return { success: true, message: 'Whispered against ' + targetName + '. Their perceived loyalty dropped by ~' + drop + '.' };
     }
 
@@ -10193,7 +10193,7 @@
                     message: plotDescs[plotType]
                 });
 
-                Engine.logEvent('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', null, 'my_kingdom');
+                Engine.logEvent('🕵️ Court Warning: ' + reporterName + ' reports suspicious activity by ' + suspectName + '!', null, 'political_intrigue');
                 break; // Only one report per check
             }
         }
@@ -10248,7 +10248,7 @@
         });
 
         if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 10);
-        Engine.logEvent('👑 ' + kingdom.name + ' and ' + target.name + ' establish a trade agreement! (+10 relations)', null, "foreign_kingdoms");
+        Engine.logEvent('👑 ' + kingdom.name + ' and ' + target.name + ' establish a trade agreement! (+10 relations)', null, "my_kingdom");
         autoJournalCapture('king', 'I established a trade agreement with ' + target.name + '. Commerce will flow between our kingdoms for 90 days.', { mood: 'content' });
         return { success: true, message: 'Trade agreement established with ' + target.name + ' for 90 days! Relations +10.' };
     }
@@ -10288,7 +10288,7 @@
         Engine.logEvent('🕊️ ' + kingdom.name + ' and ' + target.name + ' sign a non-aggression pact! (270 days)', {
             type: 'non_aggression_pact', kingdoms: [kingdom.id, target.id],
             effects: ['Neither may declare war for 270 days', 'Relations +5 both ways']
-        }, "foreign_kingdoms");
+        }, "my_kingdom");
         autoJournalCapture('king', 'I signed a non-aggression pact with ' + target.name + '. Peace shall hold for 270 days.', { mood: 'content' });
         return { success: true, message: 'Non-aggression pact signed with ' + target.name + ' for 270 days! Relations +5.' };
     }
@@ -10326,7 +10326,7 @@
         Engine.logEvent('🛡️ Mutual Defense Pact: ' + kingdom.name + ' and ' + target.name + ' pledge to defend each other if attacked.', {
             type: 'mutual_defense_pact', kingdoms: [kingdom.id, target.id],
             effects: ['If one is attacked, the other joins the defense', 'Pact lasts ' + duration + ' days', 'Relations +5']
-        }, "foreign_kingdoms");
+        }, "my_kingdom");
         autoJournalCapture('king', 'I forged a mutual defense pact with ' + target.name + '. If either of us is attacked, the other will come to our aid.', { mood: 'content' });
         return { success: true, message: 'Mutual defense pact signed with ' + target.name + ' for ' + duration + ' days! Relations +5.' };
     }
@@ -10363,7 +10363,7 @@
         Engine.logEvent('🤝 Border Accord: ' + kingdom.name + ' and ' + target.name + ' open their borders to free passage.', {
             type: 'border_accord', kingdoms: [kingdom.id, target.id],
             effects: ['Citizens may cross borders freely', 'Accord lasts ' + duration + ' days', 'Relations +3']
-        }, "foreign_kingdoms");
+        }, "my_kingdom");
         autoJournalCapture('king', 'I signed a border accord with ' + target.name + '. Our peoples may now cross freely.', { mood: 'content' });
         return { success: true, message: 'Border accord signed with ' + target.name + ' for ' + duration + ' days! Relations +3.' };
     }
@@ -10444,7 +10444,7 @@
             delete kingdom._conspiracy;
             Engine.logEvent('👑 King orders mass arrests! ' + arrested + ' conspirators are imprisoned.', {
                 type: 'conspiracy_arrest', kingdomId: kingdom.id
-            }, 'my_kingdom');
+            }, 'political_intrigue');
             autoJournalCapture('king', 'I ordered the arrest of all ' + arrested + ' conspirators. The plot is foiled.', { mood: 'stern' });
             return { success: true, message: arrested + ' conspirators arrested and imprisoned for 30 days. Conspiracy dissolved.' };
         } else if (action === 'execute_ringleader') {
@@ -10468,7 +10468,7 @@
                 }
                 Engine.logEvent('⚔️ King executes ' + lName + ' for treason! The other nobles tremble.', {
                     type: 'conspiracy_execution', kingdomId: kingdom.id
-                }, 'my_kingdom');
+                }, 'political_intrigue');
                 autoJournalCapture('king', 'I had ' + lName + ' executed for treason. Let this be a warning to any who would plot against the crown.', { mood: 'ruthless' });
                 return { success: true, message: lName + ' executed for treason. Nobles now fear the crown (+20 fear, -5 loyalty).' };
             }
@@ -10481,7 +10481,7 @@
                 }
             }
             delete kingdom._conspiracy;
-            Engine.logEvent('👑 King shows mercy — all conspirators are pardoned!', { type: 'conspiracy_pardoned', kingdomId: kingdom.id }, 'my_kingdom');
+            Engine.logEvent('👑 King shows mercy — all conspirators are pardoned!', { type: 'conspiracy_pardoned', kingdomId: kingdom.id }, 'political_intrigue');
             autoJournalCapture('king', 'I chose mercy and pardoned the conspirators. I hope this generosity will inspire loyalty.', { mood: 'merciful' });
             return { success: true, message: 'All conspirators pardoned. Loyalty improved, but ambitious nobles may see weakness.' };
         }
@@ -10532,7 +10532,7 @@
             loyaltyFail: -3
         });
 
-        Engine.logEvent('👑 ' + nobleName + ' departs as diplomatic envoy to ' + target.name + '. (returns in ' + duration + ' days)', null, "foreign_kingdoms");
+        Engine.logEvent('👑 ' + nobleName + ' departs as diplomatic envoy to ' + target.name + '. (returns in ' + duration + ' days)', null, "my_kingdom");
         autoJournalCapture('king', 'I sent ' + nobleName + ' as a diplomatic envoy to ' + target.name + '. May their mission strengthen our bonds.', { mood: 'hopeful' });
         return { success: true, message: nobleName + ' sent as envoy to ' + target.name + '. Returns in ' + duration + ' days.' };
     }
@@ -10899,7 +10899,7 @@
                 if (_tk) targetName = _tk.name;
             } catch(e) {}
             kingdom.exportRestrictions.push(data.good);
-            Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'my_actions');
+            Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'my_kingdom');
             return { success: true, message: 'Export ban set: ' + data.good + ' to ' + targetName + '.' };
         }
         if (action === 'export_unban') {
@@ -10908,7 +10908,7 @@
             var _eubIdx = kingdom.exportRestrictions.indexOf(data.good);
             if (_eubIdx < 0) return { success: false, message: 'No ban found for ' + data.good + '.' };
             kingdom.exportRestrictions.splice(_eubIdx, 1);
-            Engine.logEvent('✅ Export ban lifted: ' + data.good, null, 'my_actions');
+            Engine.logEvent('✅ Export ban lifted: ' + data.good, null, 'my_kingdom');
             return { success: true, message: 'Export ban lifted for ' + data.good + '.' };
         }
         if (action === 'set_bounty') {
@@ -10939,7 +10939,7 @@
                 createdDay: _bToday,
                 expiresDay: _bToday + (CONFIG.KING_SUBSIDY_DURATION || 90),
             });
-            Engine.logEvent('🏭 Production bounty set for ' + data.good + '.', null, 'my_actions');
+            Engine.logEvent('🏭 Production bounty set for ' + data.good + '.', null, 'my_kingdom');
             return { success: true, message: 'Production bounty set for ' + data.good + '. Cost: 100g/season.' };
         }
         if (action === 'remove_bounty') {
@@ -10950,7 +10950,7 @@
             }
             if (bIdx < 0) return { success: false, message: 'No bounty for ' + data.good + '.' };
             kingdom.productionBounties.splice(bIdx, 1);
-            Engine.logEvent('❌ Production bounty removed: ' + data.good, null, 'my_actions');
+            Engine.logEvent('❌ Production bounty removed: ' + data.good, null, 'my_kingdom');
             return { success: true, message: 'Bounty removed for ' + data.good + '.' };
         }
         if (action === 'set_subsidy') {
@@ -10972,7 +10972,7 @@
                 unitsPaid: 0,
                 expiresDay: _today + 90,
             });
-            Engine.logEvent('💸 Trade subsidy set for ' + data.good + '.', null, 'my_actions');
+            Engine.logEvent('💸 Trade subsidy set for ' + data.good + '.', null, 'my_kingdom');
             return { success: true, message: 'Subsidy set for ' + data.good + '. Cost: 150g/season.' };
         }
         if (action === 'remove_subsidy') {
@@ -10983,7 +10983,7 @@
             }
             if (sIdx < 0) return { success: false, message: 'No subsidy for ' + data.good + '.' };
             kingdom.tradeSubsidies.splice(sIdx, 1);
-            Engine.logEvent('❌ Trade subsidy removed: ' + data.good, null, 'my_actions');
+            Engine.logEvent('❌ Trade subsidy removed: ' + data.good, null, 'my_kingdom');
             return { success: true, message: 'Subsidy removed for ' + data.good + '.' };
         }
         if (action === 'set_land_subsidy') {
@@ -11016,7 +11016,7 @@
             var tName = data.townId;
             try { var _lt = Engine.findTown(data.townId); if (_lt) tName = _lt.name; } catch(e) {}
             var bldgLabel = _lsBldg === 'all' ? 'all buildings' : _lsBldg.replace(/_/g, ' ');
-            Engine.logEvent('🏡 Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Building costs -25%.', null, 'my_actions');
+            Engine.logEvent('🏡 Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Building costs -25%.', null, 'my_kingdom');
             return { success: true, message: 'Land subsidy set in ' + tName + ' for ' + bldgLabel + '. Cost: 200g/season.' };
         }
         if (action === 'remove_land_subsidy') {
@@ -11029,7 +11029,7 @@
             }
             if (lIdx < 0) return { success: false, message: 'No land subsidy for this town.' };
             kingdom.landSubsidies.splice(lIdx, 1);
-            Engine.logEvent('❌ Land subsidy removed.', null, 'my_actions');
+            Engine.logEvent('❌ Land subsidy removed.', null, 'my_kingdom');
             return { success: true, message: 'Land subsidy removed.' };
         }
         return { success: false, message: 'Unknown economic order: ' + action };
@@ -11984,7 +11984,7 @@
         player.politicalCapitalResetDay = Engine.getDay();
 
         const advKingdom = Engine.findKingdom(kingdomId);
-        Engine.logEvent(`${player.fullName} becomes Royal Advisor of ${advKingdom ? advKingdom.name : 'the kingdom'} with special privileges!`, null, "my_actions");
+        Engine.logEvent(`${player.fullName} becomes Royal Advisor of ${advKingdom ? advKingdom.name : 'the kingdom'} with special privileges!`, null, "my_kingdom");
         autoJournalCapture('rank', 'I have been appointed Royal Advisor of ' + (advKingdom ? advKingdom.name : 'the kingdom') + '! The king himself seeks my counsel. I stand at the pinnacle of power.', { mood: 'triumphant' });
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('👑 You are now a Royal Advisor with special benefits!', 'achievement', 'my_actions');
@@ -12045,7 +12045,7 @@
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
                     if (target && (!kingdom.atWar || !kingdom.atWar.has(target.id))) {
-                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers war with ${target.name}.`, null, "my_kingdom");
+                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers war with ${target.name}.`, null, "military");
                         // Shift relations negatively
                         kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 40);
                     }
@@ -12055,13 +12055,13 @@
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
                     if (target && kingdom.atWar && kingdom.atWar.has(target.id)) {
-                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} seeks peace with ${target.name}.`, null, "my_kingdom");
+                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} seeks peace with ${target.name}.`, null, "military");
                         kingdom.relations[target.id] = Math.min(0, (kingdom.relations[target.id] || -50) + 30);
                     }
                 }
                 break;
             case 'build_walls':
-                Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} fortifies its towns.`, null, "my_kingdom");
+                Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} fortifies its towns.`, null, "military");
                 // King prioritizes wall building next decision cycle
                 break;
             case 'change_law':
@@ -12244,7 +12244,7 @@
                 }; })(target),
                 execute: (function(t) { return function() {
                     kingdom.relations[t.id] = Math.max(-100, (kingdom.relations[t.id] || 0) - 40);
-                    Engine.logEvent('⚔️ On the Royal Advisor\'s urging, ' + kingdom.name + ' moves toward war with ' + t.name + '.', null, "my_kingdom");
+                    Engine.logEvent('⚔️ On the Royal Advisor\'s urging, ' + kingdom.name + ' moves toward war with ' + t.name + '.', null, "military");
                 }; })(target)
             });
         }
@@ -12269,7 +12269,7 @@
                     }; })(enemy),
                     execute: (function(eId, e) { return function() {
                         kingdom.relations[eId] = Math.min(0, (kingdom.relations[eId] || -50) + 30);
-                        Engine.logEvent('🕊️ On the Royal Advisor\'s counsel, ' + kingdom.name + ' seeks peace with ' + e.name + '.', null, "my_kingdom");
+                        Engine.logEvent('🕊️ On the Royal Advisor\'s counsel, ' + kingdom.name + ' seeks peace with ' + e.name + '.', null, "military");
                     }; })(enemyId, enemy)
                 });
             });
@@ -12450,7 +12450,7 @@
             execute: function() {
                 if (!kingdom.laws) kingdom.laws = {};
                 kingdom.laws.conscription = !kingdom.laws.conscription;
-                Engine.logEvent('⚔️ ' + kingdom.name + (kingdom.laws.conscription ? ' enacts conscription!' : ' ends conscription.'), null, "my_kingdom");
+                Engine.logEvent('⚔️ ' + kingdom.name + (kingdom.laws.conscription ? ' enacts conscription!' : ' ends conscription.'), null, "military");
             }
         });
 
@@ -12485,10 +12485,10 @@
                 if (subChoice && subChoice !== '_all') {
                     var targetTown = Engine.findTown(subChoice);
                     if (targetTown) {
-                        Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding in ' + targetTown.name + '.', null, "my_kingdom");
+                        Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding in ' + targetTown.name + '.', null, "illness");
                     }
                 } else {
-                    Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.', null, "my_kingdom");
+                    Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.', null, "illness");
                 }
             }
         });
@@ -12516,7 +12516,7 @@
                 return opts;
             })(),
             execute: function(subChoice) {
-                if (!subChoice) { Engine.logEvent('🔒 No town specified for quarantine.', null, "my_kingdom"); return; }
+                if (!subChoice) { Engine.logEvent('🔒 No town specified for quarantine.', null, "illness"); return; }
                 var targetTown = Engine.findTown(subChoice);
                 if (!targetTown) return;
                 targetTown.quarantined = true;
@@ -12535,7 +12535,7 @@
                     startDay: Engine.getDay(), expiresDay: Engine.getDay() + 45,
                     costPerDay: 8
                 });
-                Engine.logEvent('🔒 ' + kingdom.name + ' quarantines ' + targetTown.name + ' on the Royal Advisor\'s advice.', null, "my_kingdom");
+                Engine.logEvent('🔒 ' + kingdom.name + ' quarantines ' + targetTown.name + ' on the Royal Advisor\'s advice.', null, "illness");
             }
         });
         actions.push({
@@ -12567,7 +12567,7 @@
                 return opts;
             })(),
             execute: function(subChoice) {
-                if (!subChoice) { Engine.logEvent('⚓ No port specified.', null, "my_kingdom"); return; }
+                if (!subChoice) { Engine.logEvent('⚓ No port specified.', null, "illness"); return; }
                 var targetTown = Engine.findTown(subChoice);
                 if (!targetTown) return;
                 targetTown.portClosed = true;
@@ -12579,7 +12579,7 @@
                     startDay: Engine.getDay(), expiresDay: Engine.getDay() + 30,
                     costPerDay: 5
                 });
-                Engine.logEvent('⚓ On the Royal Advisor\'s advice, ' + kingdom.name + ' closes the port at ' + targetTown.name + '.', null, "my_kingdom");
+                Engine.logEvent('⚓ On the Royal Advisor\'s advice, ' + kingdom.name + ' closes the port at ' + targetTown.name + '.', null, "illness");
             }
         });
 
@@ -12599,7 +12599,7 @@
                 return m;
             },
             execute: function() {
-                Engine.logEvent('🗡️ ' + kingdom.name + ' begins stockpiling weapons on the Royal Advisor\'s advice.', null, "my_kingdom");
+                Engine.logEvent('🗡️ ' + kingdom.name + ' begins stockpiling weapons on the Royal Advisor\'s advice.', null, "military");
             }
         });
         actions.push({
@@ -12616,7 +12616,7 @@
                 return m;
             },
             execute: function() {
-                Engine.logEvent('🪖 ' + kingdom.name + ' launches a recruitment drive on the Royal Advisor\'s advice.', null, "my_kingdom");
+                Engine.logEvent('🪖 ' + kingdom.name + ' launches a recruitment drive on the Royal Advisor\'s advice.', null, "military");
             }
         });
         actions.push({
@@ -17369,7 +17369,7 @@
             player.regencyMode = false;
             player.regencyData = null;
             player.deathCause = 'Heir died during regency — the legacy ends';
-            Engine.logEvent('The heir has died during regency. The legacy ends.', null, "error_alerts");
+            Engine.logEvent('The heir has died during regency. The legacy ends.', null, "my_actions");
             player.alive = false;
             if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
             if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
@@ -18370,7 +18370,7 @@
                 player.reputation[kId] = Math.max(0, (player.reputation[kId] || 50) - 10);
                 // v9p33river366: use canonical kingdom.king and a per-order reason tag.
                 if (k.king) modifyRelationship(k.king, -20, undefined, 'defied_order_' + (order.issuedDay || (Engine.getDay ? Engine.getDay() : 0)));
-                Engine.logEvent('👑 You failed to respond to the king\'s order to lead the army. The king is displeased.', null, "my_kingdom");
+                Engine.logEvent('👑 You failed to respond to the king\'s order to lead the army. The king is displeased.', null, "military");
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('👑 The king is furious that you ignored his order! -10 kingdom rep, -20 king relationship.', 'danger', 'kingdom');
                 player._pendingArmyLeaderOrder = null;
             }
@@ -18407,7 +18407,7 @@
             issuedDay: day,
             kingdomId: kId
         };
-        Engine.logEvent('👑 The king orders you to lead the army attacking ' + (targetTown ? targetTown.name : 'the enemy') + '!', null, "my_kingdom");
+        Engine.logEvent('👑 The king orders you to lead the army attacking ' + (targetTown ? targetTown.name : 'the enemy') + '!', null, "military");
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('👑 Royal Order: Lead the army to ' + (targetTown ? targetTown.name : 'battle') + '! (' + targetArmy.soldiers + ' soldiers)', 'warning', 'kingdom');
         }
@@ -21063,7 +21063,7 @@
                 var fine = Math.floor((player.gold || 0) * 0.25);
                 if (fine < 10) fine = 10;
                 deductGoldOrDebt(fine, 'kingdom', destKingdom.id, destKingdom.name, 'Illegal border crossing fine');
-                Engine.logEvent('⚠️ You were caught trying to cross the border illegally! Jailed for 20 days and fined ' + fine + 'g.', null, "error_alerts");
+                Engine.logEvent('⚠️ You were caught trying to cross the border illegally! Jailed for 20 days and fined ' + fine + 'g.', null, "travel_events");
                 return { allowed: false, caught: true, message: 'Caught crossing closed border! Jailed 20 days, fined ' + fine + 'g.' };
             }
             Engine.logEvent('🏃 You slipped across the border undetected!', null, "travel_events");
@@ -21971,7 +21971,7 @@
         // Safety net: if health reached 0 from any source, trigger death (unless god mode invincible)
         if (player.alive && player.health <= 0 && !window._godInvincible) {
             if (!player.deathCause) player.deathCause = 'Health reached zero';
-            Engine.logEvent('💀 ' + player.fullName + ' has died. ' + (player.deathCause || 'Health depleted.'), null, "error_alerts");
+            Engine.logEvent('💀 ' + player.fullName + ' has died. ' + (player.deathCause || 'Health depleted.'), null, "my_actions");
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('☠️ ' + (player.deathCause || 'Health reached zero') + '!', 'danger', 'critical');
             handlePlayerDeath();
             return;
@@ -22422,12 +22422,12 @@
             player.jailedUntilDay += extraDays;
             if (player.gold >= extraFine) {
                 player.gold -= extraFine;
-                Engine.logEvent('⛓️ ' + player.fullName + ' was caught trying to escape! +' + extraDays + ' days, fined ' + extraFine + 'g.', null, "error_alerts");
+                Engine.logEvent('⛓️ ' + player.fullName + ' was caught trying to escape! +' + extraDays + ' days, fined ' + extraFine + 'g.', null, "my_actions");
                 return { success: false, message: '⛓️ Caught! Sentence extended by ' + extraDays + ' days and fined ' + extraFine + 'g. (' + Math.round(baseChance * 100) + '% chance)' };
             } else {
                 var additionalDays = rng.randInt(3, 10);
                 player.jailedUntilDay += additionalDays;
-                Engine.logEvent('⛓️ ' + player.fullName + ' was caught trying to escape! +' + (extraDays + additionalDays) + ' days (couldn\'t pay fine).', null, "error_alerts");
+                Engine.logEvent('⛓️ ' + player.fullName + ' was caught trying to escape! +' + (extraDays + additionalDays) + ' days (couldn\'t pay fine).', null, "my_actions");
                 return { success: false, message: '⛓️ Caught! Can\'t afford ' + extraFine + 'g fine — sentence extended by ' + (extraDays + additionalDays) + ' days. (' + Math.round(baseChance * 100) + '% chance)' };
             }
         }
@@ -22751,8 +22751,8 @@
                     player.reputation[enemyKingdomId] = 0;
                     if (!player.criminalRecord[enemyKingdomId]) player.criminalRecord[enemyKingdomId] = {};
                     player.criminalRecord[enemyKingdomId]['treason'] = (player.criminalRecord[enemyKingdomId]['treason'] || 0) + 1;
-                    Engine.logEvent('⚖️ ' + player.fullName + ' has been charged with HIGH TREASON by ' + (enemyK ? enemyK.name : enemyKingdomId) + ' for selling arms to the enemy!', null, "error_alerts");
-                    Engine.logEvent('💀 As a noble of ' + (enemyK ? enemyK.name : 'the kingdom') + ', ' + player.fullName + ' is sentenced to EXECUTION for treason!', null, "error_alerts");
+                    Engine.logEvent('⚖️ ' + player.fullName + ' has been charged with HIGH TREASON by ' + (enemyK ? enemyK.name : enemyKingdomId) + ' for selling arms to the enemy!', null, "military");
+                    Engine.logEvent('💀 As a noble of ' + (enemyK ? enemyK.name : 'the kingdom') + ', ' + player.fullName + ' is sentenced to EXECUTION for treason!', null, "military");
                     autoJournalCapture('crime', 'I was caught selling weapons to the enemy. My own kingdom has sentenced me to death for treason.', { mood: 'desperate' });
                     // Execute the player
                     if (typeof Engine !== 'undefined' && Engine.killPerson) {
@@ -22765,7 +22765,7 @@
                     return; // Player is dead
                 }
 
-                Engine.logEvent(player.fullName + ' was caught selling war materials to ' + (kingdom.name || kingdom.id) + ' during wartime!', null, "error_alerts");
+                Engine.logEvent(player.fullName + ' was caught selling war materials to ' + (kingdom.name || kingdom.id) + ' during wartime!', null, "military");
             }
         }
     }
@@ -23716,7 +23716,7 @@
             // Trigger player death
             player.deathDay = day;
             player.deathCause = 'Executed by the new ruler of ' + kName;
-            Engine.logEvent('💀 ' + player.fullName + ' was executed by the new ruler of ' + kName + '.', null, "error_alerts");
+            Engine.logEvent('💀 ' + player.fullName + ' was executed by the new ruler of ' + kName + '.', null, "my_kingdom");
             handlePlayerDeath();
 
         } else if (fate === 'jail_seize') {
@@ -27452,7 +27452,7 @@
         // Check untouchable skill
         const rng = Engine.getRng();
         if (hasSkill('untouchable') && rng && rng.chance(0.25)) {
-            Engine.logEvent(`${player.fullName} was caught but charges were dropped in ${town.name}!`, null, "error_alerts");
+            Engine.logEvent(`${player.fullName} was caught but charges were dropped in ${town.name}!`, null, "my_actions");
             const normalRevenue = Math.floor(basePrice * qty);
             player.gold += normalRevenue;
             player.stats.totalGoldEarned += normalRevenue;
@@ -27509,7 +27509,7 @@
                 }
                 var _revId = (revokedLicense && revokedLicense.resourceId) || revokedLicense;
                 const res = Object.values(RESOURCE_TYPES).find(r => r.id === _revId);
-                Engine.logEvent(`${kingdom.name} has revoked ${player.fullName}'s license for ${res ? res.name : _revId}!`, null, "error_alerts");
+                Engine.logEvent(`${kingdom.name} has revoked ${player.fullName}'s license for ${res ? res.name : _revId}!`, null, "my_actions");
             }
         }
 
@@ -27521,7 +27521,7 @@
         if (offense >= CONFIG.PENALTY_CONFISCATE_AT) msg += ' Goods confiscated.';
         if (jailDays > 0) msg += ` Jailed ${jailDays} days.`;
 
-        Engine.logEvent(`${player.fullName} was caught trading restricted ${resName} in ${town.name}! Offense #${offense}.`, null, "error_alerts");
+        Engine.logEvent(`${player.fullName} was caught trading restricted ${resName} in ${town.name}! Offense #${offense}.`, null, "my_actions");
         return { success: false, message: msg, caught: true };
     }
 
@@ -27762,7 +27762,7 @@
                     if (typeof UI !== 'undefined' && UI.toast) {
                         UI.toast('💀 A criminal faction demands protection money: ' + CONFIG.PROTECTION_RACKET_FEE + 'g/season.', 'danger', 'my_business');
                     }
-                    Engine.logEvent('A criminal organization has demanded protection money from ' + player.fullName + '.', null, "error_alerts");
+                    Engine.logEvent('A criminal organization has demanded protection money from ' + player.fullName + '.', null, "my_business");
                 }
             }
         }
@@ -27864,7 +27864,7 @@
 
         // Diplomatic Immunity — charm guards into leaving
         if (hasSkill('diplomatic_immunity') && rng.chance(0.4)) {
-            Engine.logEvent(player.fullName + ' talked the guards out of seizing goods with diplomatic charm.', null, "error_alerts");
+            Engine.logEvent(player.fullName + ' talked the guards out of seizing goods with diplomatic charm.', null, "my_business");
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🕊️ Your diplomatic connections convinced the guards to move along!', 'success', 'forced_requisition');
             }
@@ -27908,7 +27908,7 @@
             player.inventory[targetRes] -= seizeQty;
             if (player.inventory[targetRes] <= 0) delete player.inventory[targetRes];
             kingdom.gold = (kingdom.gold || 0) + Math.floor(seizeValue * 0.5);
-            Engine.logEvent('⚠️ Guards in ' + town.name + ' seized ' + seizeQty + ' ' + resName + ' under Forced Requisition!', null, "error_alerts");
+            Engine.logEvent('⚠️ Guards in ' + town.name + ' seized ' + seizeQty + ' ' + resName + ' under Forced Requisition!', null, "my_business");
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('⚠️ Guards seized ' + seizeQty + ' ' + resName + '!', 'danger', 'forced_requisition');
             }
@@ -27925,7 +27925,7 @@
         player.inventory[targetRes] = (player.inventory[targetRes] || 0) - seizeQty;
         if (player.inventory[targetRes] <= 0) delete player.inventory[targetRes];
         if (kingdom) kingdom.gold = (kingdom.gold || 0) + Math.floor(seizeQty * resPrice * 0.5);
-        Engine.logEvent('⚠️ Guards seized ' + seizeQty + ' ' + resName + ' under Forced Requisition.', null, "error_alerts");
+        Engine.logEvent('⚠️ Guards seized ' + seizeQty + ' ' + resName + ' under Forced Requisition.', null, "my_business");
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('⚠️ Guards seized ' + seizeQty + ' ' + resName + '!', 'danger', 'forced_requisition');
         }
@@ -28088,7 +28088,7 @@
             player.stats.totalGoldSpent += fine;
             // Fine goes to kingdom coffers
             kingdom.gold = (kingdom.gold || 0) + fine;
-            Engine.logEvent('🐴⚠️ ' + player.fullName + ' was fined ' + fine + 'g in ' + kingdom.name + ' for owning horses without a permit!', null, "error_alerts");
+            Engine.logEvent('🐴⚠️ ' + player.fullName + ' was fined ' + fine + 'g in ' + kingdom.name + ' for owning horses without a permit!', null, "my_actions");
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🐴 Fined ' + fine + 'g — no horse permit!', 'error');
         } else {
             _applyHorsePermitJail(kingdom);
@@ -28100,7 +28100,7 @@
         var jailDays = cfg ? (cfg.jailDays || 30) : 30;
         if (hasSkill('jail_break')) jailDays = Math.max(5, Math.floor(jailDays * 0.5));
         player.jailedUntilDay = Engine.getDay() + jailDays;
-        Engine.logEvent('🐴🔒 ' + player.fullName + ' was jailed for ' + jailDays + ' days in ' + kingdom.name + ' for owning horses without a permit and refusing/unable to pay the fine.', null, "error_alerts");
+        Engine.logEvent('🐴🔒 ' + player.fullName + ' was jailed for ' + jailDays + ' days in ' + kingdom.name + ' for owning horses without a permit and refusing/unable to pay the fine.', null, "my_actions");
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('🐴🔒 Jailed for ' + jailDays + ' days — no horse permit & no gold for fine!', 'error');
     }
 
@@ -30788,7 +30788,7 @@
                     player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _stPenalty);
                 }
                 offers.splice(buyIndex, 1);
-                Engine.logEvent(player.fullName + ' was caught buying banned ' + offer.resourceName + ' on the street! Fined ' + actualFine + 'g.', null, "error_alerts");
+                Engine.logEvent(player.fullName + ' was caught buying banned ' + offer.resourceName + ' on the street! Fined ' + actualFine + 'g.', null, "my_actions");
                 return { success: false, message: 'Caught buying banned goods! Fined ' + actualFine + 'g. Goods confiscated.', caught: true };
             }
         }
@@ -31604,7 +31604,7 @@
             player.criminalRecord[_sbKid]['sabotage'] = (player.criminalRecord[_sbKid]['sabotage'] || 0) + 1;
 
             if (typeof Engine !== 'undefined' && Engine.logEvent) {
-                Engine.logEvent('🚨 ' + (player.firstName || 'Player') + ' was caught destroying a bridge! Fined ' + actualFine + 'g and sentenced to ' + jailDays + ' days in jail.', null, "error_alerts");
+                Engine.logEvent('🚨 ' + (player.firstName || 'Player') + ' was caught destroying a bridge! Fined ' + actualFine + 'g and sentenced to ' + jailDays + ' days in jail.', null, "my_actions");
             }
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🚨 CAUGHT! You were caught destroying the bridge! Fined ' + actualFine + 'g, jailed for ' + jailDays + ' days, reputation damaged in all kingdoms.', 'danger');
@@ -32743,7 +32743,7 @@
                         road.safe = true;
                         var fromT = Engine.findTown(road.fromTownId);
                         var toT = Engine.findTown(road.toTownId);
-                        Engine.logEvent('⚔️ Soldiers cleared bandits from the road between ' + (fromT ? fromT.name : '?') + ' and ' + (toT ? toT.name : '?') + '!', null, "my_kingdom");
+                        Engine.logEvent('⚔️ Soldiers cleared bandits from the road between ' + (fromT ? fromT.name : '?') + ' and ' + (toT ? toT.name : '?') + '!', null, "military");
                     }
                 }
                 break;
@@ -32815,7 +32815,7 @@
                         if (!targetK.relations) targetK.relations = {};
                         kingdom.relations[td.targetKingdomId] = Math.min(100, (kingdom.relations[td.targetKingdomId] || 0) + 30);
                         targetK.relations[petition.kingdomId] = Math.min(100, (targetK.relations[petition.kingdomId] || 0) + 30);
-                        Engine.logEvent('🤝 Trade agreement established between ' + kingdom.name + ' and ' + targetK.name + '!', null, "foreign_kingdoms");
+                        Engine.logEvent('🤝 Trade agreement established between ' + kingdom.name + ' and ' + targetK.name + '!', null, "my_kingdom");
                     }
                 }
                 break;
@@ -33129,7 +33129,7 @@
                 dna.tasks[ti].completed = true;
                 dna.completed++;
                 anyCompleted = true;
-                Engine.logEvent('🕵️ Double agent task completed: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', null, 'my_actions');
+                Engine.logEvent('🕵️ Double agent task completed: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', null, 'political_intrigue');
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Task complete: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', 'success', 'schemes');
             }
         }
@@ -33238,7 +33238,7 @@
             '• -10 ' + targetKingdom.name + ' reputation\n' +
             '• Banned from ' + targetKingdom.name + ' for 90 days';
 
-        Engine.logEvent('🎭 ' + player.fullName + ' revealed as a double agent! Fled to ' + sponsor.name + ' with ' + reward + 'g reward.', null, 'my_actions');
+        Engine.logEvent('🎭 ' + player.fullName + ' revealed as a double agent! Fled to ' + sponsor.name + ' with ' + reward + 'g reward.', null, 'political_intrigue');
 
         player.doubleNobleAgent = null;
         player._dnaTaskProgress = null;
@@ -36215,16 +36215,16 @@
         if (failures === 1) {
             // Warning only — first offense is lenient
             player.indentured.contractDays += 7;
-            Engine.logEvent('⚠️ Your master scolds you for failing your task. 7 days added as warning. (' + failures + ' failure)', null, "error_alerts");
+            Engine.logEvent('⚠️ Your master scolds you for failing your task. 7 days added as warning. (' + failures + ' failure)', null, "my_actions");
         } else if (failures === 2) {
             // Mild penalty + hunger
             player.indentured.contractDays += 20;
             if (player.hunger !== undefined) player.hunger = Math.max(0, player.hunger - 10);
-            Engine.logEvent('😠 Your master is displeased. 20 days added, rations reduced. (' + failures + ' consecutive failures)', null, "error_alerts");
+            Engine.logEvent('😠 Your master is displeased. 20 days added, rations reduced. (' + failures + ' consecutive failures)', null, "my_actions");
         } else if (failures === 3) {
             // Moderate penalty
             player.indentured.contractDays += 60;
-            Engine.logEvent('😡 Your master is angry! 60 days added to contract. (' + failures + ' consecutive failures)', null, "error_alerts");
+            Engine.logEvent('😡 Your master is angry! 60 days added to contract. (' + failures + ' consecutive failures)', null, "my_actions");
         } else if (failures === 4) {
             // Serious penalty + gold confiscation
             player.indentured.contractDays += 120;
@@ -36233,7 +36233,7 @@
                 player.gold -= confiscated;
                 if (master) master.gold = (master.gold || 0) + confiscated;
             }
-            Engine.logEvent('🔥 ' + (master ? master.firstName : 'Your master') + ' confiscates ' + confiscated + 'g and adds 120 days! (' + failures + ' consecutive failures)', null, "error_alerts");
+            Engine.logEvent('🔥 ' + (master ? master.firstName : 'Your master') + ' confiscates ' + confiscated + 'g and adds 120 days! (' + failures + ' consecutive failures)', null, "my_actions");
         } else if (failures === 5) {
             // Beating (depends on personality) or severe punishment
             player.indentured.contractDays += 180;
@@ -36241,10 +36241,10 @@
                 player.injured = true;
                 player.injuryDaysLeft = (player.injuryDaysLeft || 0) + 15;
                 player.fatigue = Math.min(100, (player.fatigue || 0) + 30);
-                Engine.logEvent('💀 Your master sent thugs to teach you a lesson! You\'re injured. (' + failures + ' consecutive failures)', null, "error_alerts");
+                Engine.logEvent('💀 Your master sent thugs to teach you a lesson! You\'re injured. (' + failures + ' consecutive failures)', null, "combat");
             } else {
                 player.jailedUntilDay = day + 15;
-                Engine.logEvent('🔒 Your master had you thrown in jail for 15 days! (' + failures + ' consecutive failures)', null, "error_alerts");
+                Engine.logEvent('🔒 Your master had you thrown in jail for 15 days! (' + failures + ' consecutive failures)', null, "my_actions");
             }
         } else if (failures === 6) {
             // Sold to harsher master OR severe beating
@@ -36258,16 +36258,16 @@
                     player.indentured.masterId = newMaster.id;
                     player.indentured.contractDays += CONFIG.DAYS_PER_SEASON; // 1 extra year (was 2)
                     player.indentured.masterRelationship = 20;
-                    Engine.logEvent('⛓️ Your master sold your contract to ' + newMaster.firstName + ' ' + newMaster.lastName + '! 1 year added! (' + failures + ' consecutive failures)', null, "error_alerts");
+                    Engine.logEvent('⛓️ Your master sold your contract to ' + newMaster.firstName + ' ' + newMaster.lastName + '! 1 year added! (' + failures + ' consecutive failures)', null, "my_actions");
                 } else {
                     player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
-                    Engine.logEvent('⛓️ Your master extended your contract by 1 year! (' + failures + ' consecutive failures)', null, "error_alerts");
+                    Engine.logEvent('⛓️ Your master extended your contract by 1 year! (' + failures + ' consecutive failures)', null, "my_actions");
                 }
             } else {
                 player.indentured.contractDays += 270;
                 player.injured = true;
                 player.injuryDaysLeft = (player.injuryDaysLeft || 0) + 10;
-                Engine.logEvent('💀 Your master had you beaten and added 9 months to your contract! (' + failures + ' consecutive failures)', null, "error_alerts");
+                Engine.logEvent('💀 Your master had you beaten and added 9 months to your contract! (' + failures + ' consecutive failures)', null, "combat");
             }
         } else if (failures >= 7) {
             // Execution risk (depends on personality)
@@ -36288,19 +36288,19 @@
                     grantXP(40, 'survived execution');
                 } else if (!window._godInvincible) {
                     player.deathCause = 'Executed by indentured master for persistent defiance';
-                    Engine.logEvent('☠️ Your master had you executed for persistent defiance. Game Over. (' + failures + ' consecutive failures)', null, "error_alerts");
+                    Engine.logEvent('☠️ Your master had you executed for persistent defiance. Game Over. (' + failures + ' consecutive failures)', null, "my_actions");
                     handlePlayerDeath();
                 }
             } else if (isHarsh) {
                 player.jailedUntilDay = day + 60;
                 player.indentured.contractDays += 540; // 1.5 years (was 3)
-                Engine.logEvent('🔒 Your master turned you over to the authorities! 60 days jail + 1.5 years added! (' + failures + ' consecutive failures)', null, "error_alerts");
+                Engine.logEvent('🔒 Your master turned you over to the authorities! 60 days jail + 1.5 years added! (' + failures + ' consecutive failures)', null, "my_actions");
             } else {
                 player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                 player.indentured.masterRelationship = 0;
                 var confiscated2 = Math.floor(player.gold * 0.5);
                 if (confiscated2 > 0) player.gold -= confiscated2;
-                Engine.logEvent('😤 Your master has lost all patience. 1 year added, half your gold confiscated. (' + failures + ' consecutive failures)', null, "error_alerts");
+                Engine.logEvent('😤 Your master has lost all patience. 1 year added, half your gold confiscated. (' + failures + ' consecutive failures)', null, "my_actions");
             }
             // Reset consecutive count to avoid infinite escalation beyond 7
             // but keep it high so next failure is still severe
@@ -36660,12 +36660,12 @@
 
             // Warning at day 3
             if (player.bankruptDays === 3) {
-                Engine.logEvent('⚠️ WARNING: You have been in debt for 3 days. If you remain broke for 4 more days, the kingdom will intervene!', null, "error_alerts");
+                Engine.logEvent('⚠️ WARNING: You have been in debt for 3 days. If you remain broke for 4 more days, the kingdom will intervene!', null, "my_actions");
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Debt warning! 4 days until bankruptcy.', 'warning', 'critical');
             }
             // Warning at day 5
             if (player.bankruptDays === 5) {
-                Engine.logEvent('⚠️ CRITICAL: 2 days until bankruptcy! Find gold immediately!', null, "error_alerts");
+                Engine.logEvent('⚠️ CRITICAL: 2 days until bankruptcy! Find gold immediately!', null, "my_actions");
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 2 days until bankruptcy!', 'danger', 'critical');
             }
 
@@ -36710,7 +36710,7 @@
             player.gold += returnedGold;
             player.bankruptDays = 0;
 
-            Engine.logEvent('💸 BANKRUPTCY! The kingdom has seized all your assets. You received ' + returnedGold + 'g (25% of value) in compensation.', null, "error_alerts");
+            Engine.logEvent('💸 BANKRUPTCY! The kingdom has seized all your assets. You received ' + returnedGold + 'g (25% of value) in compensation.', null, "my_actions");
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('💸 Assets seized! ' + returnedGold + 'g returned.', 'danger', 'critical');
             }
@@ -36718,7 +36718,7 @@
             if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(1);
         } else {
             // Phase 2: No assets — show choice dialog
-            Engine.logEvent('💸 BANKRUPTCY! You own nothing and cannot pay your debts. The kingdom demands you choose your fate.', null, "error_alerts");
+            Engine.logEvent('💸 BANKRUPTCY! You own nothing and cannot pay your debts. The kingdom demands you choose your fate.', null, "my_actions");
 
             var choices = getBankruptcyChoices();
 
@@ -40952,7 +40952,7 @@
                 } else {
                     player.notoriety = (player.notoriety || 0) + 3;
                     player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
-                    Engine.logEvent('🚔 You were caught trying to steal your contract! 1 year added to your servitude!', null, "error_alerts");
+                    Engine.logEvent('🚔 You were caught trying to steal your contract! 1 year added to your servitude!', null, "my_actions");
                     return { success: false, message: 'Caught! 1 year added to your contract and notoriety increased.' };
                 }
             }
@@ -40981,7 +40981,7 @@
                 } else {
                     player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                     player.notoriety = (player.notoriety || 0) + 2;
-                    Engine.logEvent('🚔 ' + player.fullName + ' was caught fleeing! 1 year added to contract!', null, "error_alerts");
+                    Engine.logEvent('🚔 ' + player.fullName + ' was caught fleeing! 1 year added to contract!', null, "my_actions");
                     return { success: false, message: 'Caught! 1 year added to your contract.' };
                 }
             }
@@ -41057,7 +41057,7 @@
                 } else {
                     player.notoriety = (player.notoriety || 0) + 8;
                     player.indentured.contractDays += CONFIG.DAYS_PER_SEASON * 2;
-                    Engine.logEvent('🚔 The guards saw through your scheme! You\'re in serious trouble — 2 years added!', null, "error_alerts");
+                    Engine.logEvent('🚔 The guards saw through your scheme! You\'re in serious trouble — 2 years added!', null, "political_intrigue");
                     return { success: false, message: 'Failed! 2 years added to contract. Notoriety greatly increased.' };
                 }
             }
@@ -41086,7 +41086,7 @@
                     // Master survives, suspects you
                     player.indentured.contractDays += CONFIG.DAYS_PER_SEASON;
                     player.notoriety = (player.notoriety || 0) + 4;
-                    Engine.logEvent('😡 Your master survived the illness and suspects foul play! 1 year added to contract!', null, "error_alerts");
+                    Engine.logEvent('😡 Your master survived the illness and suspects foul play! 1 year added to contract!', null, "political_intrigue");
                     return { success: false, message: 'Your master survived and suspects you. 1 year added!' };
                 }
             }

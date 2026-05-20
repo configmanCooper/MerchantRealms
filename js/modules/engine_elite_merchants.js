@@ -1470,7 +1470,7 @@
                     _isMedical: true,
                 });
 
-                logEvent('⚕️ ' + k.name + ' dispatched medical supplies from ' + bestSource.name + ' to ' + crisis.town.name + ' (' + totalSent + ' units).', { type: 'kingdom_medical', kingdomId: k.id, townId: crisis.town.id, _noToast: true }, 'my_kingdom');
+                logEvent('⚕️ ' + k.name + ' dispatched medical supplies from ' + bestSource.name + ' to ' + crisis.town.name + ' (' + totalSent + ' units).', { type: 'kingdom_medical', kingdomId: k.id, townId: crisis.town.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms'));
             }
         }
     }
@@ -3676,14 +3676,14 @@
         em.socialRank[kId] = currentRank + 1;
         if (!em.rankSince) em.rankSince = {};
         em.rankSince[kId] = world.day;
-        logEvent(em.firstName + ' ' + (em.lastName || '') + ' has been elevated to ' + nextRank.name + '!', { _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
+        logEvent(em.firstName + ' ' + (em.lastName || '') + ' has been elevated to ' + nextRank.name + '!', { kingdomId: kId, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
         grantEmXp(em, 50, 'rank_up');
 
         // Becoming a Minor Noble makes an elite merchant a noble
         if (currentRank + 1 >= 4 && em.occupation !== 'noble') {
             em.occupation = 'noble';
             em.wealthClass = 'upper';
-            logEvent('🏰 ' + em.firstName + ' ' + (em.lastName || '') + ' has entered the aristocracy!', { _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
+            logEvent('🏰 ' + em.firstName + ' ' + (em.lastName || '') + ' has entered the aristocracy!', { kingdomId: kId, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
             // Kingdom grants 4 personal guards
             if (!em.guards) em.guards = [];
             var guardsToAdd = Math.min(4, 4 - em.guards.length);
@@ -3695,7 +3695,7 @@
                     kingdomPaid: true
                 });
             }
-            logEvent('🛡️ ' + em.firstName + ' ' + (em.lastName || '') + ' has been granted ' + guardsToAdd + ' guards by the kingdom.', { _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
+            logEvent('🛡️ ' + em.firstName + ' ' + (em.lastName || '') + ' has been granted ' + guardsToAdd + ' guards by the kingdom.', { kingdomId: kId, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms'));
         }
     }
 

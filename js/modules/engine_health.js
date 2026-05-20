@@ -1189,22 +1189,22 @@
                 var _hasBandageWs = _mbTown.buildings.some(function(b) { return b.type === 'bandage_workshop'; });
                 if (!_hasHerbGarden && kingdom.gold >= 200) {
                     if (kingdomBuild(kingdom, _mbTown, 'herb_garden', rng)) {
-                        logEvent('🌿 ' + kingdom.name + ' built an herb garden in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, 'my_kingdom'); break;
+                        logEvent('🌿 ' + kingdom.name + ' built an herb garden in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
                     }
                 }
                 if (!_hasApoth && _hasHerbGarden && kingdom.gold >= 500) {
                     if (kingdomBuild(kingdom, _mbTown, 'apothecary', rng)) {
-                        logEvent('⚗️ ' + kingdom.name + ' built an apothecary in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, 'my_kingdom'); break;
+                        logEvent('⚗️ ' + kingdom.name + ' built an apothecary in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
                     }
                 }
                 if (!_hasBandageWs && kingdom.gold >= 300) {
                     if (kingdomBuild(kingdom, _mbTown, 'bandage_workshop', rng)) {
-                        logEvent('🩹 ' + kingdom.name + ' built a bandage workshop in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, 'my_kingdom'); break;
+                        logEvent('🩹 ' + kingdom.name + ' built a bandage workshop in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
                     }
                 }
                 if (_hasApoth && !_hasAdvApoth && (_mbTown.category === 'city' || _mbTown.category === 'capital_city') && kingdom.gold >= 900) {
                     if (kingdomBuild(kingdom, _mbTown, 'advanced_apothecary', rng)) {
-                        logEvent('🧬 ' + kingdom.name + ' built an advanced apothecary in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, 'my_kingdom'); break;
+                        logEvent('🧬 ' + kingdom.name + ' built an advanced apothecary in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
                     }
                 }
             }

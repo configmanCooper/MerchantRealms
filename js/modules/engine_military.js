@@ -178,7 +178,7 @@
                 var _roadWp = findTerrainPath(roadTarget.x, roadTarget.y, outpost.x, outpost.y, 'land');
                 // v9p33river333: don't create empty/impossible road records when terrain routing fails.
                 if (!_roadWp || !_roadWp.waypoints || _roadWp.waypoints.length < 2) {
-                    logEvent('⚠️ Could not build a road from ' + roadTarget.name + ' to outpost \"' + outpost.name + '\" — no valid land path.', null, 'my_business');
+                    logEvent('⚠️ Could not build a road from ' + roadTarget.name + ' to outpost \"' + outpost.name + '\" — no valid land path.', null, 'military');
                 } else {
                     var _rpWaypoints = _roadWp.waypoints;
                     var _rpBridges = createBridgeObjects(_rpWaypoints);
@@ -198,14 +198,14 @@
                     banditThreat: 15,
                     isDirtTrack: true,
                     });
-                    logEvent('🛤️ A road has been built from ' + roadTarget.name + ' to outpost "' + outpost.name + '".', null, 'my_business');
+                    logEvent('🛤️ A road has been built from ' + roadTarget.name + ' to outpost "' + outpost.name + '".', null, 'military');
                 }
             }
         }
 
         logEvent('⛺ A new outpost "' + outpost.name + '" has been established in the wilderness by ' +
             (opts.founderType === 'player' ? 'you' : 'an enterprising merchant') + '!' +
-            (!opts.buildWithRoad ? ' (No road — offroad access only)' : ''), null, 'my_business');
+            (!opts.buildWithRoad ? ' (No road — offroad access only)' : ''), null, 'military');
 
         return { success: true, message: 'Outpost "' + outpost.name + '" established!', outpost: outpost, nearestSettlement: nearestSettlement, distance: Math.floor(nearestSettleDist) };
     }
@@ -290,7 +290,7 @@
                 if (daysSinceUpkeep >= cfg.abandonDaysNoMaintenance) {
                     outpost.abandoned = true;
                     outpost.abandonedDay = world.day;
-                    logEvent('💀 The outpost "' + outpost.name + '" has been abandoned due to lack of maintenance.', null, 'my_business');
+                    logEvent('💀 The outpost "' + outpost.name + '" has been abandoned due to lack of maintenance.', null, 'military');
                     continue;
                 }
             }
@@ -325,7 +325,7 @@
                 }
                 if (stolenItems.length > 0) {
                     logEvent('🦹 Thieves raided outpost "' + outpost.name + '" and stole ' + stolenItems.join(', ') +
-                        ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'my_business');
+                        ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'military');
                 }
             }
 
@@ -339,10 +339,10 @@
                 var bld = outpost.buildings[bIdx];
                 if (bld.condition === 'new') {
                     bld.condition = 'used';
-                    logEvent('⚠️ A building at outpost "' + outpost.name + '" suffered weather damage.', { townId: outpost.townId || null }, 'my_business');
+                    logEvent('⚠️ A building at outpost "' + outpost.name + '" suffered weather damage.', { townId: outpost.townId || null }, 'military');
                 } else if (bld.condition === 'used') {
                     bld.condition = 'breaking';
-                    logEvent('⚠️ A building at outpost "' + outpost.name + '" is breaking down!', { townId: outpost.townId || null }, 'my_business');
+                    logEvent('⚠️ A building at outpost "' + outpost.name + '" is breaking down!', { townId: outpost.townId || null }, 'military');
                 }
             }
 
@@ -444,7 +444,7 @@
                             _healed++;
                         }
                     }
-                    if (_healed > 0) logEvent('🏥 Clinic at "' + outpost.name + '" healed ' + _healed + ' resident(s).', { _noToast: true }, 'my_business');
+                    if (_healed > 0) logEvent('🏥 Clinic at "' + outpost.name + '" healed ' + _healed + ' resident(s).', { _noToast: true }, 'military');
                 }
 
                 // ── Watchtower: reduce theft further (already applied above in theft section) ──
@@ -501,7 +501,7 @@
                                     if (_nearestTown) _leaveNpc.townId = _nearestTown.id;
                                     _leaveNpc.occupation = 'unemployed';
                                     _leaveNpc.employerId = null;
-                                    logEvent('😞 ' + _leaveNpc.firstName + ' ' + _leaveNpc.lastName + ' left outpost "' + outpost.name + '" due to poor conditions.', { _noToast: true }, 'my_business');
+                                    logEvent('😞 ' + _leaveNpc.firstName + ' ' + _leaveNpc.lastName + ' left outpost "' + outpost.name + '" due to poor conditions.', { _noToast: true }, 'military');
                                 }
                                 outpost.population = outpost.outpostResidents.length;
                                 outpost._npcDissatisfaction = Math.max(0, outpost._npcDissatisfaction - 30);
@@ -532,7 +532,7 @@
                             if (_bIdx >= 0) outpost.buildings.splice(_bIdx, 1);
                             outpost.usedLandPlots = Math.max(0, (outpost.usedLandPlots || 0) - 1);
                             var _btDef = typeof BUILDING_TYPES !== 'undefined' ? BUILDING_TYPES[(_umBld.type || '').toUpperCase()] : null;
-                            logEvent('🏚️ ' + (_btDef ? _btDef.name : _umBld.type) + ' at "' + outpost.name + '" collapsed from neglect and reverted to empty land.', null, 'my_business');
+                            logEvent('🏚️ ' + (_btDef ? _btDef.name : _umBld.type) + ' at "' + outpost.name + '" collapsed from neglect and reverted to empty land.', null, 'military');
                         } else if (_degradeDays % 7 === 0 && _degradeDays > 0) {
                             // Periodically warn
                             if (_umBld.condition === 'new') _umBld.condition = 'used';
@@ -571,7 +571,7 @@
                                 _attractedNpc.townId = outpost.id;
                                 outpost.outpostResidents.push(_attractedNpc.id);
                                 outpost.population = outpost.outpostResidents.length;
-                                logEvent('🏠 ' + _attractedNpc.firstName + ' ' + _attractedNpc.lastName + ' has moved to outpost "' + outpost.name + '"!', { _noToast: true }, 'my_business');
+                                logEvent('🏠 ' + _attractedNpc.firstName + ' ' + _attractedNpc.lastName + ' has moved to outpost "' + outpost.name + '"!', { _noToast: true }, 'military');
                             }
                         }
                     }
@@ -618,7 +618,7 @@
             if (numGuards >= raiderCount) {
                 logEvent('⚔️🛡️ Bandits attacked outpost "' + outpost.name + '" but were repelled by the guards!',  {
                     type: 'outpost_defense', townId: outpost.id, icon: '⚔️'
-                }, 'my_business');
+                }, 'military');
                 continue;
             }
 
@@ -694,7 +694,7 @@
             if (stolenItems.length > 0) msg += ' Stolen: ' + stolenItems.slice(0, 5).join(', ') + ' (~' + Math.floor(totalStolenValue) + 'g).';
             if (injuredNames.length > 0) msg += ' Injured: ' + injuredNames.join(', ') + '.';
             if (stolenItems.length === 0 && injuredNames.length === 0) msg += ' They found little of value.';
-            logEvent(msg,  { type: 'outpost_raid', townId: outpost.id, icon: '🦹' }, 'my_business');
+            logEvent(msg,  { type: 'outpost_raid', townId: outpost.id, icon: '🦹' }, 'military');
         }
     }
 
@@ -782,7 +782,7 @@
                 var msg = '🔥 Fire at outpost "' + outpost.name + '"! ' + bName + ' is damaged (now ' + bld.condition + ').';
                 if (lostItems.length > 0) msg += ' Lost: ' + lostItems.slice(0, 4).join(', ') + '.';
                 msg += ' Repairs will take ' + pauseDays + ' days.';
-                logEvent(msg,  { type: 'outpost_fire', townId: outpost.id, icon: '🔥' }, 'my_business');
+                logEvent(msg,  { type: 'outpost_fire', townId: outpost.id, icon: '🔥' }, 'military');
                 break; // Only one fire per outpost per day
             }
         }
@@ -885,7 +885,7 @@
                 var reason = hungerDesertion > moraleDesertion ? 'hunger' : 'poor morale';
                 logEvent('😞💨 ' + worker.firstName + ' ' + worker.lastName + ' deserted outpost "' + outpost.name + '" due to ' + reason + '.',  {
                     type: 'outpost_desertion', townId: outpost.id, icon: '😞'
-                }, 'my_business');
+                }, 'military');
                 break; // max one desertion per outpost per day to avoid cascading
             }
         }
@@ -969,7 +969,7 @@
                 logEvent('🤒🏥 Disease outbreak at outpost "' + outpost.name + '"! ' + illnessName + ' has infected ' + infected + ' resident(s): ' +
                     infectedNames.join(', ') + '.' + (hasClinic ? ' The clinic is treating patients.' : ' No clinic available!'),  {
                     type: 'outpost_disease', townId: outpost.id, icon: '🤒'
-                }, 'my_business');
+                }, 'military');
             }
         }
     }
@@ -1158,11 +1158,11 @@
                     compensationMsg = ' The founder received ' + compensation + 'g in compensation.';
                 }
                 logEvent('👑 The kingdom of ' + kingdom.name + ' has annexed outpost "' + outpost.name +
-                    '" as a new village through peaceful negotiation.' + compensationMsg, null, 'my_business');
+                    '" as a new village through peaceful negotiation.' + compensationMsg, null, 'military');
             } else if (annexMethod === 'seize') {
                 // No compensation — king just takes it
                 logEvent('⚔️ The kingdom of ' + kingdom.name + ' has seized outpost "' + outpost.name +
-                    '" by royal decree! The founder receives nothing.', null, 'my_business');
+                    '" by royal decree! The founder receives nothing.', null, 'military');
             } else if (annexMethod === 'tax_heavily') {
                 // Partial compensation but heavy ongoing tax
                 var partialComp = Math.floor((outpost.totalInvested || 500) * 0.5);
@@ -1171,7 +1171,7 @@
                     compensationMsg = ' The founder received only ' + partialComp + 'g.';
                 }
                 logEvent('💰 The kingdom of ' + kingdom.name + ' has absorbed outpost "' + outpost.name +
-                    '" and imposed heavy taxes on its trade.' + compensationMsg, null, 'my_business');
+                    '" and imposed heavy taxes on its trade.' + compensationMsg, null, 'military');
             }
 
             // Spawn some villagers to populate the new village

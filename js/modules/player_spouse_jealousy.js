@@ -514,7 +514,7 @@
             if (killed) {
                 try { Engine.killPerson && Engine.killPerson(target, 'jealous_spouse'); } catch(e) {}
                 if (target.alive === false) {
-                    _logEvent('☠️ ' + (target.firstName||'A person') + ' was found dead — your spouse\'s jealousy claimed a life.', null, 'critical');
+                    _logEvent('☠️ ' + (target.firstName||'A person') + ' was found dead — your spouse\'s jealousy claimed a life.', null, 'my_actions');
                     _toast('☠️ Your spouse killed ' + (target.firstName||'them') + '!', 'warning');
                 } else {
                     _logEvent('🗡️ ' + spouse.firstName + ' attempted violence against ' + (target.firstName||'them') + ' but the target survived.', null, 'my_actions');

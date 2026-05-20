@@ -1476,7 +1476,7 @@
         repGain = Math.min(repGain, 8); // Cap at +8 max per donation
         dt.count++;
         modifyKingdomReputation(kingdomId, repGain);
-        Engine.logEvent('Donated ' + cost + 'g to ' + kingdom.name + '. Reputation +' + repGain.toFixed(1) + '.', null, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
+        Engine.logEvent('Donated ' + cost + 'g to ' + kingdom.name + '. Reputation +' + repGain.toFixed(1) + '.', { kingdomId: kingdomId }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('💰 Donated ' + cost + 'g to ' + kingdom.name + '! Rep +' + repGain.toFixed(1), 'success');
         }

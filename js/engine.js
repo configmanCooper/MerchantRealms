@@ -6185,7 +6185,7 @@
                         if (_wb.waterRemaining <= 0) {
                             _wb.waterRemaining = 0;
                             _wb.depleted = true;
-                            logEvent('🪣 A well in ' + town.name + ' has run dry!', { type: 'infrastructure', townId: town.id }, 'local_town');
+                            logEvent('🪣 A well in ' + town.name + ' has run dry!', { type: 'infrastructure', townId: town.id, kingdomId: town.kingdomId }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
                         }
                         // Owner gets revenue from water sold to market
                         if (_wb.ownerId && _wb.ownerId !== 'player') {
@@ -8682,7 +8682,7 @@
             logEvent('⚠️ ' + kingdom.name + ' does not recognize female succession! The throne is contested.', {
                 type: 'succession_crisis',
                 kingdomId: kingdom.id
-            }, 'my_kingdom');
+            }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
         } else if (newKing.age < CONFIG.COMING_OF_AGE) {
             crisisSeverity = 'major'; // child heir = regency contest
         }
@@ -9575,7 +9575,7 @@
                                 type: 'reparation_payment',
                                 effects: [payer.name + ' treasury: ' + Math.floor(payer.gold) + 'g', 'Remaining: ' + (rep.totalAmount - rep.paid) + 'g'],
                                 kingdoms: [rep.payer, rep.receiver]
-                            }, 'economy');
+                            }, 'military');
                         } else {
                             // Failed to pay — treaty violation
                             treaty.violations.push({ day: world.day, type: 'missed_reparation', by: rep.payer });
@@ -10992,7 +10992,7 @@
             type: 'succession_crisis', severity: severity,
             kingdomId: kingdom.id,
             effects: ['Happiness -' + happinessDrop, 'Trade disrupted', pretenders.length + ' pretenders']
-        }, 'my_kingdom');
+        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
 
         // Toast for succession crisis (major/extreme only)
         if (typeof UI !== 'undefined' && UI.toast && world.day > 2 && severity !== 'minor') {
@@ -11031,7 +11031,7 @@
                         logEvent('💀 ' + loser.name + '\'s claim to the throne of ' + k.name + ' has collapsed.', {
                             type: 'succession_crisis',
                             kingdomId: k.id
-                        }, 'my_kingdom');
+                        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                     }
                 }
             }
@@ -11093,7 +11093,7 @@
         logEvent('✅ The succession crisis in ' + k.name + ' has been resolved.', {
             type: 'succession_crisis',
             kingdomId: k.id
-        }, 'my_kingdom');
+        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
     }
 
     // ============================================================
@@ -11944,7 +11944,7 @@
         if (response === 'agree') {
             // Player agrees — execute decision (no rep/relationship reward for supporting)
             if (typeof pd._executeFn === 'function') pd._executeFn();
-            logEvent('✅ You agreed with the king\'s decision: ' + pd.description, null, 'my_kingdom');
+            logEvent('✅ You agreed with the king\'s decision: ' + pd.description, null, 'my_actions');
             // Remove from queue
             for (var ri = k.pendingKingDecisions.length - 1; ri >= 0; ri--) {
                 if (k.pendingKingDecisions[ri].id === decisionId) { k.pendingKingDecisions.splice(ri, 1); break; }
@@ -11990,7 +11990,7 @@
 
         if (swayed) {
             // King is swayed — decision NOT executed
-            logEvent('🛡️ ' + kingTitle + ' heeded your counsel and reconsidered: ' + pd.description, null, 'my_kingdom');
+            logEvent('🛡️ ' + kingTitle + ' heeded your counsel and reconsidered: ' + pd.description, null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🛡️ The king accepted your counsel!', 'success', 'my_kingdom');
             }
@@ -12012,7 +12012,7 @@
         } else {
             // King was not swayed — execute decision anyway
             if (typeof pd._executeFn === 'function') pd._executeFn();
-            logEvent('❌ ' + kingTitle + ' considered your objection but proceeded: ' + pd.description, null, 'my_kingdom');
+            logEvent('❌ ' + kingTitle + ' considered your objection but proceeded: ' + pd.description, null, 'my_actions');
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('❌ The king was not swayed.', 'warning', 'my_kingdom');
             }
@@ -13403,7 +13403,7 @@
                     kingName: _kingName,
                     happiness: Math.round(h),
                     effects: ['Tax collection halted 30 days', revoltDamage + 'g in damages', 'Happiness drops further']
-                }, 'my_kingdom');
+                }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
             }
 
         // ── REBELLION (happiness < 18) ──
@@ -13451,7 +13451,7 @@
                         targetKingId: king.id,
                         happiness: Math.round(h),
                         effects: ['King\'s life at risk', 'Kingdom stability threatened']
-                    }, 'my_kingdom');
+                    }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                     // Check if king is the player
                     var _isPlayerKing = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
                     if (_isPlayerKing) {
@@ -13477,7 +13477,7 @@
                             newKing: _newKingName,
                             newKingId: k.king,
                             effects: ['New king installed', 'Policies may change']
-                        }, 'my_kingdom');
+                        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                         Engine.boostKingdomHappiness(k, 15); // New king brings hope
                     } else {
                         logEvent('🛡️ The coup in ' + k.name + ' has failed. The king purges dissenters.', {
@@ -13486,7 +13486,7 @@
                             survivedKing: _coupKingName,
                             survivedKingId: king.id,
                             effects: ['Happiness drops further', 'Purges follow']
-                        }, 'my_kingdom');
+                        }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                         Engine.boostKingdomHappiness(k, -8);
                     }
                 }
@@ -13529,7 +13529,7 @@
                     logEvent('💀 ' + k.name + ' is on the brink of total collapse! Bankrupt and in rebellion!', {
                         type: 'kingdom_collapse_warning', kingdomId: k.id, cause: 'Bankruptcy + rebellion',
                         effects: ['Kingdom may fragment', 'Towns may declare independence']
-                    }, 'my_kingdom');
+                    }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                     // Trigger economic collapse if the function exists
                     if (typeof Engine.triggerEconomicCollapse === 'function') {
                         Engine.triggerEconomicCollapse(k);
@@ -14077,7 +14077,7 @@
             nobleParticipants: _noblePartNames,
             cause: 'Low town happiness (' + Math.round(town.happiness || 0) + '%) — citizens rise against ' + k.name,
             effects: ['Town blocked during revolt', 'Trade halted', 'Citizens take cover']
-        }, 'my_kingdom');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms'));
 
         // Notify player if they are in this town or are king of this kingdom
         if (typeof Player !== 'undefined' && Player.state) {
@@ -14519,6 +14519,7 @@
             type: 'town_revolt_win',
             town: town.name,
             townId: town.id,
+            kingdomId: newKingdomId,
             newKingdom: groupName,
             newKingdomId: newKingdomId,
             parentKingdom: parentK ? parentK.name : 'unknown',
@@ -14534,7 +14535,7 @@
             cause: 'Revolt in ' + town.name + ' against ' + (parentK ? parentK.name : 'the crown'),
             effects: ['New kingdom created', 'At war with ' + (parentK ? parentK.name : 'parent'), 'Town independence',
                 _goldPlunder > 0 ? 'Plundered ' + _goldPlunder + 'g' : 'No gold plundered']
-        }, 'my_kingdom');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && (Player.citizenshipKingdomId === newKingdomId || Player.citizenshipKingdomId === (parentK ? parentK.id : null)) ? 'my_kingdom' : 'foreign_kingdoms'));
 
         // Check if parent kingdom has 0 towns — eliminate if so
         // v9p33river293: previously this only LOGGED the loss but never
@@ -14548,7 +14549,7 @@
                 kingdom: parentK.name,
                 kingdomId: parentK.id,
                 cause: 'Lost last town to revolt'
-            }, 'my_kingdom');
+            }, typeof Player !== 'undefined' && (Player.citizenshipKingdomId === parentK.id || Player.citizenshipKingdomId === newKingdomId) ? 'my_kingdom' : 'foreign_kingdoms');
             try { eliminateKingdom(parentK, newKingdom); } catch (_eEK) { /* defensive — never crash a revolt */ }
         }
 
@@ -14669,8 +14670,8 @@
                     killPerson(rebel, _isNobleParticipant ? 'revolt_treason_execution' : 'revolt_suppression');
                     if (_isNobleParticipant) {
                         logEvent('⚔️ Noble ' + rebel.name + ' executed for treason after revolt in ' + town.name, {
-                            type: 'noble_revolt_execution', noble: rebel.name, town: town.name
-                        }, 'my_kingdom');
+                            type: 'noble_revolt_execution', noble: rebel.name, town: town.name, townId: town.id, kingdomId: k ? k.id : null
+                        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === (k ? k.id : null) ? 'my_kingdom' : 'foreign_kingdoms'));
                     }
                 } else {
                     if (rebel.happiness != null) rebel.happiness = Math.max(0, rebel.happiness - 20);
@@ -14691,8 +14692,8 @@
                             }
                         }
                         logEvent('🔗 Noble ' + rebel.name + ' stripped of rank for revolt participation in ' + town.name, {
-                            type: 'noble_revolt_stripped', noble: rebel.name, town: town.name
-                        }, 'my_kingdom');
+                            type: 'noble_revolt_stripped', noble: rebel.name, town: town.name, townId: town.id, kingdomId: k ? k.id : null
+                        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === (k ? k.id : null) ? 'my_kingdom' : 'foreign_kingdoms'));
                     }
                 }
             }
@@ -14735,7 +14736,7 @@
             durationDays: revolt.daysElapsed || 0,
             cause: revolt.groupName + ' failed to overcome ' + (k ? k.name + "'s" : 'the') + ' defenders in ' + town.name,
             effects: ['Revolt cooldown ' + cooldownDays + ' days', 'Rebels punished', 'Order restored']
-        }, 'my_kingdom');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === (k ? k.id : null) ? 'my_kingdom' : 'foreign_kingdoms'));
 
         // Notify player
         if (typeof Player !== 'undefined' && Player.state) {
@@ -15400,7 +15401,7 @@
                             'Kingdom happiness drops further (-10)',
                             'Tax infrastructure must be rebuilt'
                         ]
-                    }, 'my_kingdom');
+                    }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                 }
             }
         }
@@ -16576,7 +16577,7 @@
                                 builtDay: world.day, condition: 'new',
                                 waterCapacity: _newCap, waterRemaining: _newCap, depleted: false
                             });
-                            logEvent('🪣 ' + k.name + ' digs a new well in ' + town.name + ' (-' + wellCost + 'g).', { type: 'infrastructure', townId: town.id }, 'local_town');
+                            logEvent('🪣 ' + k.name + ' digs a new well in ' + town.name + ' (-' + wellCost + 'g).', { type: 'infrastructure', townId: town.id, kingdomId: town.kingdomId }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
                         }
                     }
 
@@ -16595,7 +16596,7 @@
                             builtDay: world.day, condition: 'new',
                             waterCapacity: _newCap3, waterRemaining: _newCap3, depleted: false
                         });
-                        logEvent('🪣 ' + k.name + ' proactively digs an extra well in ' + town.name + ' (-' + wellCost + 'g).', { type: 'infrastructure', townId: town.id }, 'local_town');
+                        logEvent('🪣 ' + k.name + ' proactively digs an extra well in ' + town.name + ' (-' + wellCost + 'g).', { type: 'infrastructure', townId: town.id, kingdomId: town.kingdomId }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
                     }
                 }
 
@@ -20049,7 +20050,7 @@
                         k.gold -= ransomCost;
                         delete leader._jailed;
                         leader.occupation = null;
-                        logEvent('👑 ' + (k.name || 'The kingdom') + ' paid ' + ransomCost + 'g ransom for ' + leaderName + '.', null, 'my_kingdom');
+                        logEvent('👑 ' + (k.name || 'The kingdom') + ' paid ' + ransomCost + 'g ransom for ' + leaderName + '.', { kingdomId: k.id, townId: town.id }, 'military');
                     }
                 }
             }
@@ -21803,8 +21804,8 @@
         town.kingdomId = newK.id;
 
         logEvent('⚔️ ' + townName + ' is now under the control of ' + newKingdomName + '!', {
-            type: 'town_captured', townId: town.id, newKingdomId: newK.id
-        }, 'my_kingdom');
+            type: 'town_captured', townId: town.id, kingdomId: newK.id, newKingdomId: newK.id, oldKingdomId: oldK ? oldK.id : null
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && (Player.citizenshipKingdomId === newK.id || Player.citizenshipKingdomId === (oldK ? oldK.id : null)) ? 'my_kingdom' : 'foreign_kingdoms'));
     }
 
     // ========================================================
@@ -21908,7 +21909,7 @@
                             'A Royal Production Permit is required to trade banned goods',
                             'Prices for ' + good + ' increase significantly (~95% premium)',
                             'Smuggling becomes more profitable but risky'
-                        ], kingdomId: kingdom.id}, 'world_economy');
+                        ], kingdomId: kingdom.id}, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
                 }
             } else {
                 // Should we unban?
@@ -21921,7 +21922,7 @@
                 if (rng.chance(Math.min(0.6, unbanChance))) {
                     currentBanned = currentBanned.filter(g => g !== good);
                     changed = true;
-                    logEvent(kingdom.name + ' has lifted the ban on ' + good + '.', { kingdomId: kingdom.id, _noToast: true }, 'world_economy');
+                    logEvent(kingdom.name + ' has lifted the ban on ' + good + '.', { kingdomId: kingdom.id, _noToast: true }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
                 }
             }
         }
@@ -21934,11 +21935,11 @@
             if (!luxBanned && isAustere && rng.chance(0.15 * moodBanMult)) {
                 currentBanned.push(luxGood);
                 changed = true;
-                logEvent(kingdom.name + ' has banned trade in ' + luxGood + '!', { kingdomId: kingdom.id, _noToast: true }, 'world_economy');
+                logEvent(kingdom.name + ' has banned trade in ' + luxGood + '!', { kingdomId: kingdom.id, _noToast: true }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
             } else if (luxBanned && !isAustere && rng.chance(0.20 * moodUnbanMult)) {
                 currentBanned = currentBanned.filter(g => g !== luxGood);
                 changed = true;
-                logEvent(kingdom.name + ' has lifted the ban on ' + luxGood + '.', { kingdomId: kingdom.id, _noToast: true }, 'world_economy');
+                logEvent(kingdom.name + ' has lifted the ban on ' + luxGood + '.', { kingdomId: kingdom.id, _noToast: true }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
             }
         }
 
@@ -22580,7 +22581,7 @@
                 const age = day - (bld.lastRepairDay || bld.builtDay);
                 if (age >= 3600 && bld.condition !== 'destroyed') {
                     bld.condition = 'destroyed';    // ~10 years
-                    logEvent(`A ${bld.type} in ${town.name} has collapsed from neglect!`, { type: 'infrastructure', townId: town.id }, 'local_town');
+                    logEvent(`A ${bld.type} in ${town.name} has collapsed from neglect!`, { type: 'infrastructure', townId: town.id, kingdomId: town.kingdomId }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
                 } else if (age >= 2160 && bld.condition !== 'breaking' && bld.condition !== 'destroyed') {
                     bld.condition = 'breaking';      // ~6 years
                 } else if (age >= 1080 && bld.condition === 'new') {
@@ -23884,7 +23885,7 @@
                     rtcNewCamp.tents.push({ tentIndex: _rnti, occupantId: null, occupantType: null, rentStartDay: null, lastRentDay: null });
                 }
                 rtcTown.buildings.push(rtcNewCamp);
-                logEvent('⛺ Homeless citizens of ' + rtcTown.name + ' pooled ' + rtcTotalCost + 'g (land: ' + rtcLandCost + 'g + build: ' + rtcBuildCost + 'g) and built a tent camp under the Right to Camps law.', { type: 'infrastructure', townId: rtcTown.id }, 'local_town');
+                logEvent('⛺ Homeless citizens of ' + rtcTown.name + ' pooled ' + rtcTotalCost + 'g (land: ' + rtcLandCost + 'g + build: ' + rtcBuildCost + 'g) and built a tent camp under the Right to Camps law.', { type: 'infrastructure', townId: rtcTown.id, kingdomId: rtcTown.kingdomId }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === rtcTown.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === rtcTown.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
             }
         }
     }
@@ -24093,7 +24094,7 @@
                 lastRentDay: null
             };
             em.rentalProperties.push(rentalProp);
-            logEvent('🏠 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.', { type: 'infrastructure', townId: emTown.id }, 'local_town');
+            logEvent('🏠 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.', { type: 'infrastructure', townId: emTown.id, kingdomId: emTown.kingdomId, _noToast: true }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === emTown.id) ? 'local_town' : 'npc_activity');
         }
     }
 
@@ -24598,6 +24599,7 @@
         logEvent(`🌊 Devastating flood hits ${town.name}! Buildings destroyed, lives lost.`, {
             type: 'flood',
             townId: town.id,
+            kingdomId: town.kingdomId,
             cause: 'Heavy rains have caused rivers to overflow.',
             effects: [
                 'Buildings damaged or destroyed',
@@ -24605,7 +24607,7 @@
                 'Rebuilding will require wood and stone',
                 'Food supplies reduced by 30%'
             ]
-        }, 'local_town');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
     }
 
     function triggerFire(town) {
@@ -24650,6 +24652,7 @@
         logEvent(`🔥 A great fire sweeps through ${town.name}!` + waterNote, {
             type: 'fire',
             townId: town.id,
+            kingdomId: town.kingdomId,
             cause: 'A fire has broken out, possibly from a forge or kitchen accident.',
             effects: [
                 'Buildings may be damaged or destroyed',
@@ -24658,7 +24661,7 @@
                 'Stored goods reduced by ' + Math.round(goodsLoss * 100) + '%',
                 waterMitigation > 0 ? 'Water supply reduced fire damage by ' + Math.round(waterMitigation * 100) + '%' : 'No water reserves to fight the fire!'
             ]
-        }, 'local_town');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
     }
 
     function triggerPlague(town) {
@@ -24799,6 +24802,7 @@
         logEvent(`⛏️ Mine collapse in ${town.name}! Workers trapped, production halted.`, {
             type: 'mine_collapse',
             townId: town.id,
+            kingdomId: town.kingdomId,
             cause: 'Structural failure in the mines near ' + town.name + '.',
             effects: [
                 'Mine buildings damaged',
@@ -24806,7 +24810,7 @@
                 'Town prosperity reduced by 10',
                 'Mining production halted temporarily'
             ]
-        }, 'local_town');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
     }
 
     function triggerResourceDiscovery(town) {
@@ -24837,7 +24841,7 @@
             }
         }
 
-        logEvent(`⛏️ A rich vein of ore discovered near ${town.name}! Prospectors flood in.`, { type: 'infrastructure', townId: town.id }, 'local_town');
+        logEvent(`⛏️ A rich vein of ore discovered near ${town.name}! Prospectors flood in.`, { type: 'infrastructure', townId: town.id, kingdomId: town.kingdomId }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === town.kingdomId ? 'my_kingdom' : 'foreign_kingdoms'));
     }
 
     // ========================================================
@@ -24994,7 +24998,7 @@
                 'Smuggling becomes profitable but risky',
                 'Prices of goods from the other kingdom rise sharply'
             ],
-            kingdoms: [kingdom1.id, kingdom2.id], kingdomId: kingdom1.id}, 'world_economy');
+            kingdoms: [kingdom1.id, kingdom2.id], kingdomId: kingdom1.id}, typeof Player !== 'undefined' && (Player.citizenshipKingdomId === kingdom1.id || Player.citizenshipKingdomId === kingdom2.id) ? 'my_kingdom' : 'foreign_kingdoms');
     }
 
     function liftEmbargo(kingdom1, kingdom2) {
@@ -25012,7 +25016,7 @@
                 'Merchants can freely travel between the kingdoms',
                 'Prices should stabilize over time'
             ],
-            kingdoms: [kingdom1.id, kingdom2.id], kingdomId: kingdom1.id}, 'world_economy');
+            kingdoms: [kingdom1.id, kingdom2.id], kingdomId: kingdom1.id}, typeof Player !== 'undefined' && (Player.citizenshipKingdomId === kingdom1.id || Player.citizenshipKingdomId === kingdom2.id) ? 'my_kingdom' : 'foreign_kingdoms');
     }
 
     function hasEmbargo(kingdom1Id, kingdom2Id) {
@@ -25547,7 +25551,7 @@
                 
                 const resInfo = findResourceById(goodId);
                 const goodName = resInfo ? resInfo.name : goodId;
-                logEvent(k.name + " has developed a taste for " + goodName + "!", { kingdomId: k.id }, 'world_economy');
+                logEvent(k.name + " has developed a taste for " + goodName + "!", { kingdomId: k.id }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                 break;
             }
         }
@@ -25573,7 +25577,7 @@
                     trend.spreadTo.push(k.id);
                     const resInfo = findResourceById(trend.goodId);
                     const goodName = resInfo ? resInfo.name : trend.goodId;
-                    logEvent("The " + goodName + " craze has spread to " + k.name + "!", { kingdomId: k.id }, 'world_economy');
+                    logEvent("The " + goodName + " craze has spread to " + k.name + "!", { kingdomId: k.id }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
                 }
             }
         }
@@ -25606,7 +25610,7 @@
                     type: 'fashion_shift', kingdomId: _fk.id,
                     cause: 'Cultural tastes are changing in ' + _fk.name + '.',
                     effects: ['Demand for ' + _fashionName + ' goods increases', 'Savvy merchants can profit from the shift']
-                }, 'world_economy');
+                }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === _fk.id ? 'my_kingdom' : 'foreign_kingdoms');
             }
 
             // Apply fashion demand bonus to kingdom towns (additive, not multiplicative, to prevent runaway)
@@ -27046,7 +27050,7 @@
                 pPerson.perceivedKingLoyalty = Math.min(98, pPerson.perceivedKingLoyalty + boost);
                 pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 2);
                 result = { success: true, message: 'You formally addressed the king and made a favorable impression. (+' + boost + ' perceived loyalty)' };
-                logEvent('🎙️ You spoke before the court and addressed the king directly.', null, 'my_kingdom');
+                logEvent('🎙️ You spoke before the court and addressed the king directly.', null, 'my_actions');
                 break;
             }
             case 'petition_king': {
@@ -27171,7 +27175,7 @@
                 } else {
                     result = { success: true, message: 'Your petition for ' + pType.name + ' was DENIED. (' + Math.round(chance * 100) + '% chance)' };
                 }
-                logEvent('📜 Court petition for ' + pType.name + ' — ' + (petSuccess ? 'GRANTED ✅' : 'DENIED ❌') + ' (' + Math.round(chance * 100) + '%)', null, 'my_kingdom');
+                logEvent('📜 Court petition for ' + pType.name + ' — ' + (petSuccess ? 'GRANTED ✅' : 'DENIED ❌') + ' (' + Math.round(chance * 100) + '%)', null, 'my_actions');
                 break;
             }
             case 'observe_nobles': {
@@ -27200,7 +27204,7 @@
                 if ((_obP.ambition || 50) > 70) msg += ' They seem quite ambitious.';
                 if ((_obP.honesty || 50) < 30) msg += ' You sense dishonesty in their words.';
                 result = { success: true, message: msg };
-                logEvent('👁️ You carefully observed ' + obName + ' during court proceedings.', null, 'my_kingdom');
+                logEvent('👁️ You carefully observed ' + obName + ' during court proceedings.', null, 'my_actions');
                 break;
             }
             case 'network_nobles': {
@@ -27221,7 +27225,7 @@
                 if (!pPerson._nobleRelationships) pPerson._nobleRelationships = {};
                 pPerson._nobleRelationships[target.id] = Math.min(100, (pPerson._nobleRelationships[target.id] || 0) + rng.randInt(2, 6));
                 result = { success: true, message: 'You networked with ' + tName + ' and improved your relationship.' };
-                logEvent('🤝 You made connections with ' + tName + ' at court.', null, 'my_kingdom');
+                logEvent('🤝 You made connections with ' + tName + ' at court.', null, 'my_actions');
                 break;
             }
             default:
@@ -29694,7 +29698,7 @@
 
         logEvent('🎊 A Grand Festival has been declared in ' + town.name + '! The people rejoice!', {
             type: 'festival_started', kingdomId: k.id, townId: town.id, festivalType: type
-        }, 'my_kingdom');
+        }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === town.id) ? 'local_town' : (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms'));
 
         return festival;
     }
@@ -32446,7 +32450,7 @@
             k._conspiracy.strength += 15; // player brings significant strength
             logEvent('🤫 You have secretly joined the ' + k._conspiracy.type + ' conspiracy in ' + k.name + '.', {
                 type: 'conspiracy_joined', kingdomId: k.id
-            }, 'my_kingdom');
+            }, 'my_actions');
             return { success: true, message: 'You have joined the ' + k._conspiracy.type + ' plot against the king of ' + k.name + '.' };
         },
 
@@ -32486,7 +32490,7 @@
             };
             logEvent('🤫 You have formed a secret ' + type + ' conspiracy with ' + noble.firstName + ' in ' + k.name + '.', {
                 type: 'conspiracy_formed', kingdomId: k.id
-            }, 'my_kingdom');
+            }, 'my_actions');
             return { success: true, message: 'You and ' + noble.firstName + ' have begun plotting a ' + type + ' against the king of ' + k.name + '.' };
         },
 
@@ -32530,8 +32534,8 @@
             }
 
             logEvent('🔥 You secretly pledge ' + goldAmount + 'g to support dissidents in ' + town.name + '.', {
-                type: 'player_revolt_support', townId: townId, kingdom: k.name, gold: goldAmount
-            }, 'my_kingdom');
+                type: 'player_revolt_support', townId: townId, kingdomId: k.id, kingdom: k.name, gold: goldAmount
+            }, 'my_actions');
 
             return { success: true, message: 'You pledge ' + goldAmount + 'g to the rebels in ' + town.name + '. If they revolt, your support will strengthen them.' };
         },

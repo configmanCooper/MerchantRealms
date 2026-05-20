@@ -285,7 +285,7 @@
                     // Nanny leaves
                     var nName = player._activeNanny.name || 'The nanny';
                     player._activeNanny = null;
-                    _logEvent('👶 ' + nName + ' has left — you could not afford their wages.', null, 'critical');
+                    _logEvent('👶 ' + nName + ' has left — you could not afford their wages.', null, 'my_actions');
                     _toast(nName + ' left because you could not pay. Your children are unattended!', 'warning');
                 }
             }
@@ -297,7 +297,7 @@
             // Reminder when 30 days reach
             if (!arr.pickupReminderSent && day >= arr.endDay) {
                 arr.pickupReminderSent = true;
-                _logEvent('👨‍👩‍👧 Your 30 days with ' + arr.npcName + ' are up — come pick up the children.', null, 'critical');
+                _logEvent('👨‍👩‍👧 Your 30 days with ' + arr.npcName + ' are up — come pick up the children.', null, 'my_actions');
                 _toast(arr.npcName + ' is expecting you to pick up the children.', 'warning');
             }
             // After endDay, relationship decays 1/day
@@ -310,7 +310,7 @@
                 if (rel < FAMILY_DEGRADE_REL_THRESHOLD) {
                     if (!arr.abandoned) {
                         arr.abandoned = true;
-                        _logEvent('👨‍👩‍👧 ' + arr.npcName + ' refuses to watch your children any longer. They are now unattended!', null, 'critical');
+                        _logEvent('👨‍👩‍👧 ' + arr.npcName + ' refuses to watch your children any longer. They are now unattended!', null, 'my_actions');
                         _toast(arr.npcName + ' has stopped watching your children!', 'warning');
                     }
                 }
@@ -334,7 +334,7 @@
         // v9p33river366: preserve a day-0 risk timestamp so abandonment time accumulates correctly.
         if (player._kidsAtRiskSince == null) {
             player._kidsAtRiskSince = day;
-            _logEvent('⚠️ Your children are UNATTENDED. Get to them or arrange care.', null, 'critical');
+            _logEvent('⚠️ Your children are UNATTENDED. Get to them or arrange care.', null, 'my_actions');
             _toast('Your children are unattended!', 'warning');
         }
 
@@ -346,7 +346,7 @@
             // Pick one child to lose
             var unfortunate = kids[Math.floor(Math.random() * kids.length)];
             try { Engine.killPerson && Engine.killPerson(unfortunate, 'neglect'); } catch(e) {}
-            _logEvent('💀 Your unattended child ' + (unfortunate.firstName||'') + ' has died.', null, 'critical');
+            _logEvent('💀 Your unattended child ' + (unfortunate.firstName||'') + ' has died.', null, 'my_actions');
             _toast('💀 Your child ' + (unfortunate.firstName||'') + ' died of neglect.', 'warning');
         }
     }
