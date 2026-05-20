@@ -32042,6 +32042,14 @@
                 if (Player.tickSpouseAssassinations) {
                     try { Player.tickSpouseAssassinations(); } catch (_eSa) { /* defensive */ }
                 }
+                // v9p33river361: deferred spouse confrontations (daily)
+                if (Player.tickDeferredConfrontations && !_rFF) {
+                    try { Player.tickDeferredConfrontations(); } catch (_eDc) { /* defensive */ }
+                }
+                // v9p33river361: passive monthly lover detection
+                if (Player.tickPassiveLoverDetection) {
+                    try { Player.tickPassiveLoverDetection(); } catch (_ePl) { /* defensive */ }
+                }
                 if (Player.tickSpouseMisbehavior && _d % 14 === 0) {
                     try { Player.tickSpouseMisbehavior(); } catch (_eSm) { /* defensive */ }
                 }

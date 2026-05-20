@@ -19299,6 +19299,8 @@
             _spouseAnger: player._spouseAnger ? structuredClone(player._spouseAnger) : null,
             _spouseRevealHistory: structuredClone(player._spouseRevealHistory || {}),
             _lastSpouseMisbehavior: player._lastSpouseMisbehavior || 0,
+            _pendingCourtingDetections: structuredClone(player._pendingCourtingDetections || []),
+            _lastPassiveLoverCheck: player._lastPassiveLoverCheck || 0,
             _activeNanny: player._activeNanny ? structuredClone(player._activeNanny) : null,
             _familyChildArrangement: player._familyChildArrangement ? structuredClone(player._familyChildArrangement) : null,
             _childrenTravelWith: !!player._childrenTravelWith,
@@ -19922,6 +19924,8 @@
         player._spouseAnger = data._spouseAnger || null;
         player._spouseRevealHistory = data._spouseRevealHistory || {};
         player._lastSpouseMisbehavior = data._lastSpouseMisbehavior || 0;
+        player._pendingCourtingDetections = data._pendingCourtingDetections || [];
+        player._lastPassiveLoverCheck = data._lastPassiveLoverCheck || 0;
         player._activeNanny = data._activeNanny || null;
         player._familyChildArrangement = data._familyChildArrangement || null;
         player._childrenTravelWith = !!data._childrenTravelWith;

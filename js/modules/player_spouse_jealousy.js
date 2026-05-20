@@ -45,11 +45,24 @@
 
     var SILENT_TREATMENT_DAYS = 30;
 
+    var LOVER_DATE_PROGRESS_THRESHOLD = 50; // same threshold as player_secrets
+
     function _ensureState() {
         _sync();
         if (!player._spouseAnger) player._spouseAnger = null;          // { until, reasons }
         if (!player._spouseRevealHistory) player._spouseRevealHistory = {}; // map: lover -> day
         if (!player._lastSpouseMisbehavior) player._lastSpouseMisbehavior = 0;
+        if (!player._pendingCourtingDetections) player._pendingCourtingDetections = []; // deferred to next day
+        if (!player._lastPassiveLoverCheck) player._lastPassiveLoverCheck = 0; // day of last monthly scan
+    }
+
+    function _isLover(personId) {
+        if (!player.relationships || !player.relationships[personId]) return false;
+        var rel = player.relationships[personId];
+        if ((rel.level || 0) < 60) return false;
+        var dp = player.dateProgress && player.dateProgress[personId];
+        if (!dp) return false;
+        return ((dp.traitProgress || 0) + (dp.quirkProgress || 0)) >= LOVER_DATE_PROGRESS_THRESHOLD;
     }
 
     // ──────────────────────────────────────────────────────────
@@ -91,7 +104,11 @@
         if ((sp.honesty || 50) >= 70) detectChance += 0.03;
 
         if (Math.random() < detectChance) {
-            _executeJealousyEvent(spouse, lover, false);
+            // Defer confrontation to next day instead of triggering immediately
+            player._pendingCourtingDetections.push({
+                loverId: targetPersonId,
+                detectedDay: day
+            });
         }
     }
 
@@ -308,6 +325,95 @@
         _logEvent('💔 ' + spouse.firstName + ' found out about your affair' + (paranoid ? ' (suspicion)' : '') + '.', null, 'my_actions');
     }
 
+    // ──────────────────────────────────────────────────────────
+    // Deferred confrontation tick: fires on the day AFTER the
+    // courting action was detected (at most one per day).
+    // ──────────────────────────────────────────────────────────
+    function tickDeferredConfrontations() {
+        _ensureState();
+        if (!player.spouseId) return;
+        if (!player._pendingCourtingDetections || player._pendingCourtingDetections.length === 0) return;
+        var day = _getDay();
+        var spouse = _findPerson(player.spouseId);
+        if (!spouse || spouse.alive === false) {
+            player._pendingCourtingDetections = [];
+            return;
+        }
+        // Process at most one confrontation per day (oldest first)
+        for (var i = 0; i < player._pendingCourtingDetections.length; i++) {
+            var det = player._pendingCourtingDetections[i];
+            if (det.detectedDay >= day) continue; // wait until next day
+            var lover = _findPerson(det.loverId);
+            player._pendingCourtingDetections.splice(i, 1);
+            if (!lover) continue; // lover gone
+            _executeJealousyEvent(spouse, lover, false);
+            return; // one per day
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Passive monthly lover detection: spouse has a chance each
+    // month of discovering each existing lover even without the
+    // player taking a new courting action.
+    //   5% if spouse in same town as lover
+    //   2% if spouse in same kingdom as lover
+    //   1% if in different kingdoms
+    // ──────────────────────────────────────────────────────────
+    function tickPassiveLoverDetection() {
+        _ensureState();
+        if (!player.spouseId) return;
+        var day = _getDay();
+        // Run once every 30 days
+        if (player._lastPassiveLoverCheck && (day - player._lastPassiveLoverCheck) < 30) return;
+        player._lastPassiveLoverCheck = day;
+
+        var spouse = _findPerson(player.spouseId);
+        if (!spouse || spouse.alive === false) return;
+        // Already angry? Skip — one confrontation at a time
+        if (player._spouseAnger) return;
+
+        var spouseTownId = spouse.townId;
+        var spouseTown = _findTown(spouseTownId);
+        var spouseKid = spouseTown ? spouseTown.kingdomId : null;
+
+        // Collect all lovers (rel 60+ with at least 3 courtship interactions = dateProgress >= 50)
+        var lovers = [];
+        if (player.relationships) {
+            for (var rid in player.relationships) {
+                if (rid === player.spouseId) continue;
+                if (!_isLover(rid)) continue;
+                var p = _findPerson(rid);
+                if (!p || p.alive === false) continue;
+                lovers.push(p);
+            }
+        }
+        if (!lovers.length) return;
+
+        for (var li = 0; li < lovers.length; li++) {
+            var lover = lovers[li];
+            var loverTownId = lover.townId;
+            var loverTown = _findTown(loverTownId);
+            var loverKid = loverTown ? loverTown.kingdomId : null;
+
+            var sameTown = spouseTownId && loverTownId && spouseTownId === loverTownId;
+            var sameKingdom = spouseKid && loverKid && spouseKid === loverKid;
+
+            var chance;
+            if (sameTown) chance = 0.05;
+            else if (sameKingdom) chance = 0.02;
+            else chance = 0.01;
+
+            if (Math.random() < chance) {
+                // Defer to next day
+                player._pendingCourtingDetections.push({
+                    loverId: lover.id,
+                    detectedDay: day
+                });
+                return; // at most one detection per monthly check
+            }
+        }
+    }
+
     // Check if the player is currently locked out of spouse interactions.
     function isSpouseAngry() {
         _ensureState();
@@ -494,6 +600,8 @@
     Player.recordCourtingAction = recordCourtingAction;
     Player.tickSpouseMisbehavior = tickSpouseMisbehavior;
     Player.tickSpouseAssassinations = tickSpouseAssassinations;
+    Player.tickDeferredConfrontations = tickDeferredConfrontations;
+    Player.tickPassiveLoverDetection = tickPassiveLoverDetection;
     Player.maybeParanoidSpouseCheck = _maybeParanoidCheck;
     Player.isSpouseAngry = isSpouseAngry;
     Player.canAnnulMarriage = canAnnulMarriage;
