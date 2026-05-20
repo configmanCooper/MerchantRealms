@@ -9619,7 +9619,53 @@ window.UI = (function () {
 
         html += '</div>';
 
-        openModal('\uD83D\uDCCB Event Details', html, '<button class="btn-action" data-action="closeModal">Close</button>');
+        // v9p33river375: show as sub-overlay so the event log stays open underneath
+        _showEventDetailOverlay(html, event);
+    }
+
+    function _showEventDetailOverlay(html, event) {
+        // Remove any existing event detail overlay
+        var existing = document.getElementById('eventDetailOverlay');
+        if (existing) existing.remove();
+
+        var overlay = document.createElement('div');
+        overlay.id = 'eventDetailOverlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+        var panel = document.createElement('div');
+        panel.style.cssText = 'background:var(--bg-dark, #1a1410);border:2px solid var(--gold, #d4af37);border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;padding:20px;box-shadow:0 8px 32px rgba(0,0,0,0.7);';
+        panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid rgba(255,215,0,0.2);padding-bottom:8px;"><h2 style="margin:0;font-size:1.1rem;color:var(--gold,#d4af37);">📋 Event Details</h2><span id="eventDetailClose" style="cursor:pointer;font-size:1.4rem;color:var(--text-dim,#999);padding:4px 8px;">✕</span></div>' + html + '<div style="margin-top:16px;text-align:right;"><button class="btn-action" id="eventDetailCloseBtn">Close</button></div>';
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+
+        // Close handlers
+        var closeOverlay = function() { var el = document.getElementById('eventDetailOverlay'); if (el) el.remove(); };
+        document.getElementById('eventDetailClose').onclick = closeOverlay;
+        document.getElementById('eventDetailCloseBtn').onclick = closeOverlay;
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeOverlay(); });
+
+        // Wire up data-action buttons inside the overlay
+        panel.addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            var action = btn.getAttribute('data-action');
+            if (action === 'clickTown') {
+                closeOverlay();
+                var townId = btn.getAttribute('data-id');
+                if (townId && UI.clickTown) UI.clickTown(townId);
+            } else if (action === 'openTownQuestsTab') {
+                closeOverlay();
+                closeModal();
+                var _tId = (typeof Player !== 'undefined' && Player.state) ? Player.state.townId : null;
+                if (_tId) { showTownPeople(_tId); setTimeout(function() { if (UI._switchTownTab) UI._switchTownTab('quests'); }, 50); }
+            } else if (action === 'toggleNotifFilter') {
+                var key = btn.getAttribute('data-id');
+                if (key && typeof Player !== 'undefined' && Player.toggleNotifFilter) Player.toggleNotifFilter(key);
+            } else if (action === 'setNotifFilterAndShowEventDetail') {
+                var fKey = btn.getAttribute('data-key');
+                var fVal = btn.getAttribute('data-val');
+                if (fKey && typeof Player !== 'undefined' && Player.setNotifFilter) Player.setNotifFilter(fKey, fVal);
+            }
+        });
     }
 
     // ═══════════════════════════════════════════════════════════
