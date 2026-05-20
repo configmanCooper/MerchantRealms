@@ -126,11 +126,7 @@
                             t.market.supply[fid] = (t.market.supply[fid] || 0) + run.food[fid];
                         }
                     }
-                    try {
-                        var fromName = (_findTown(run.fromTownId) || {}).name || 'a neighbor';
-                        var goodLabel = run.water ? (run.food ? 'food and water' : 'water') : 'food';
-                        Engine.logEvent && Engine.logEvent('🧺 A subsistence convoy from ' + fromName + ' has reached ' + t.name + ' with ' + goodLabel + '.', { type: 'subsistence_arrival', townId: t.id }, 'local_town');
-                    } catch (e) {}
+                    // v9p33river368: removed subsistence convoy arrival notification (too noisy)
                 } else {
                     pending.push(run);
                 }
