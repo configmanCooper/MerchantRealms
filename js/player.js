@@ -19127,6 +19127,12 @@
             sex: player.sex,
             fullName: player.fullName,
             age: player.age,
+            // v9p33river352: persist character appearance — these were being
+            // restored in deserializePlayer but never written here, so the
+            // player's portrait reset to null after every save/load.
+            portrait: player.portrait || null,
+            skinTone: player.skinTone || 0,
+            faceType: player.faceType || 0,
             alive: player.alive,
             spouseId: player.spouseId,
             childrenIds: [...player.childrenIds],
@@ -19243,6 +19249,9 @@
             forgedKingdomDocs: structuredClone(player.forgedKingdomDocs || {}), // v9p33river329: persist kingdom-scoped forged docs.
             doubleAgentActive: player.doubleAgentActive ? structuredClone(player.doubleAgentActive) : null,
             doubleNobleAgent: player.doubleNobleAgent ? structuredClone(player.doubleNobleAgent) : null,
+            // v9p33river352: double noble agent task progress was being
+            // wiped on save/load, freezing the mission in place.
+            _dnaTaskProgress: structuredClone(player._dnaTaskProgress || {}),
             nobleIntrigues: structuredClone(player.nobleIntrigues || {}),
             _discoveredSecrets: structuredClone(player._discoveredSecrets || []),
             _schemeCooldowns: structuredClone(player._schemeCooldowns || {}),
@@ -19258,6 +19267,10 @@
             notorietyReduction: player.notorietyReduction ? structuredClone(player.notorietyReduction) : null,
             // v9p33river305: gift cooldowns and military progress also missing
             _giftCooldowns: structuredClone(player._giftCooldowns || {}),
+            // v9p33river352: persist these previously-missing cooldown maps.
+            _streetGoodsRequestDay: player._streetGoodsRequestDay || 0,
+            _outpostRecruitCooldowns: structuredClone(player._outpostRecruitCooldowns || {}),
+            _doctorPersuasionCooldown: player._doctorPersuasionCooldown || 0,
             militaryRankProgress: player.militaryRankProgress || 0,
             militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
             _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
@@ -19747,7 +19760,9 @@
         player.introductions = data.introductions || {};
         player.introductionCooldowns = data.introductionCooldowns || {};
         player.adviseCooldown = data.adviseCooldown || 0;
-        player._doctorPersuasionCooldown = 0; // Reset on load — cooldowns are session-only
+        // v9p33river352: previously hard-reset to 0 ("session-only") which
+        // let players bypass a 7-day failure cooldown by reloading.
+        player._doctorPersuasionCooldown = data._doctorPersuasionCooldown || 0;
         player.jailedUntilDay = data.jailedUntilDay || 0;
         player.debts = data.debts || [];
         player._lastDebtEnforcementDay = data._lastDebtEnforcementDay || 0;
@@ -19824,6 +19839,9 @@
         player.forgedKingdomDocs = data.forgedKingdomDocs || {}; // v9p33river329: restore kingdom-scoped forged docs.
         player.doubleAgentActive = data.doubleAgentActive || null;
         player.doubleNobleAgent = data.doubleNobleAgent || null;
+        // v9p33river352: restore double noble agent task progress so a
+        // save/load mid-mission no longer erases accumulated work.
+        player._dnaTaskProgress = data._dnaTaskProgress || {};
         player.nobleIntrigues = data.nobleIntrigues || {};
         player._discoveredSecrets = data._discoveredSecrets || [];
         player._schemeCooldowns = data._schemeCooldowns || {};
@@ -19838,6 +19856,9 @@
         player._nobleDossier = data._nobleDossier || {};
         player.notorietyReduction = data.notorietyReduction || null;
         player._giftCooldowns = data._giftCooldowns || {};
+        // v9p33river352: restore previously-missing per-action cooldowns.
+        player._streetGoodsRequestDay = data._streetGoodsRequestDay || 0;
+        player._outpostRecruitCooldowns = data._outpostRecruitCooldowns || {};
         player.militaryRankProgress = data.militaryRankProgress || 0;
         player.militaryPendingEvent = data.militaryPendingEvent || null;
         player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;
