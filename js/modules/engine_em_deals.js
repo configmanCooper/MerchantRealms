@@ -110,6 +110,12 @@
         return (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
     }
 
+    function _getPlayerTownId(ps) {
+        if (!ps) return null;
+        // v9p33river367: Player.state uses townId; currentTownId only exists on petition simulations.
+        return ps.townId || ps.currentTownId || null;
+    }
+
     function _getPlayerRelationship(personId) {
         if (typeof Player !== 'undefined' && Player.getRelationship) {
             return Player.getRelationship(personId) || { level: 0, type: 'acquaintance' };
@@ -126,7 +132,7 @@
     function _playerInTown(townId) {
         var ps = _getPlayerState();
         if (!ps) return false;
-        return ps.currentTownId === townId;
+        return _getPlayerTownId(ps) === townId;
     }
 
     function _findBuildingInTown(townId, buildingId) {
@@ -543,14 +549,15 @@
         var ps = _getPlayerState();
         var playerBuildingRef = null;
         var playerBuildingTown = null;
-        if (ps && ps.currentTownId) {
-            var pTown = findTown(ps.currentTownId);
+        var playerTownId = _getPlayerTownId(ps);
+        if (ps && playerTownId) {
+            var pTown = findTown(playerTownId);
             if (pTown && pTown.buildings) {
                 for (var pbi = 0; pbi < pTown.buildings.length; pbi++) {
                     if (pTown.buildings[pbi].ownerId === 'player') {
                         var _pb = pTown.buildings[pbi];
                         playerBuildingRef = _pb.id || (_pb.type + '_' + pbi);
-                        playerBuildingTown = ps.currentTownId;
+                        playerBuildingTown = playerTownId;
                         break;
                     }
                 }
@@ -588,7 +595,7 @@
                     good: offeredGood,
                     qty: scaledOfferedQty,
                     buildingId: playerBuildingRef,
-                    townId: playerBuildingTown || (ps ? ps.currentTownId : null)
+                    townId: playerBuildingTown || _getPlayerTownId(ps)
                 },
                 playerGives: {
                     good: desiredGood,

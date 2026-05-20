@@ -84,9 +84,11 @@
                 var pType = (typeof PETITION_TYPES !== 'undefined') ? PETITION_TYPES.find(function(t) { return t.id === p.typeId; }) : null;
                 var statusIcon = p.status === 'approved' ? '✅' : (p.status === 'cancelled' ? '🚫' : '❌');
                 var statusColor = p.status === 'approved' ? '#4c4' : (p.status === 'cancelled' ? '#aaa' : '#f44');
+                // v9p33river367: history entries from legacy saves can lack signatures.
+                var _pastSigs = Array.isArray(p.signatures) ? p.signatures : [];
                 html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #333;font-size:0.85em;">';
                 html += '<span>' + (pType ? pType.icon : '📜') + ' ' + (pType ? pType.name : p.typeId) + '</span>';
-                html += '<span style="color:' + statusColor + ';">' + statusIcon + ' ' + p.status + ' (' + p.signatures.length + ' sigs)</span>';
+                html += '<span style="color:' + statusColor + ';">' + statusIcon + ' ' + p.status + ' (' + _pastSigs.length + ' sigs)</span>';
                 html += '</div>';
             }
         }
@@ -159,9 +161,12 @@
             var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
             var kTowns = towns.filter(function(t) { return t.kingdomId === playerKingdomId; });
             for (var i = 0; i < kTowns.length; i++) {
+                // v9p33river367: names go through data-* attrs; backslash-escaping apostrophes
+                // leaks into dataset values and still leaves other HTML chars unescaped.
+                var _townName = kTowns[i].name || kTowns[i].id;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-townid="' + kTowns[i].id + '" data-townname="' + kTowns[i].name.replace(/'/g, "\\'") + '">';
-                html += '🏘️ ' + kTowns[i].name;
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-townid="' + kTowns[i].id + '" data-townname="' + escapeHtml(_townName) + '">';
+                html += '🏘️ ' + escapeHtml(_townName);
                 html += '</button>';
             }
         } else if (pt.targetType === 'town_pair') {
@@ -273,8 +278,8 @@
                 if (ft.kingdomId !== playerKingdomId && tt.kingdomId !== playerKingdomId) continue;
                 var rName = ft.name + ' ↔ ' + tt.name;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-roadindex="' + i + '" data-roadname="' + rName.replace(/'/g, "\\'") + '">';
-                html += '🛤️ ' + rName;
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-roadindex="' + i + '" data-roadname="' + escapeHtml(rName) + '">';
+                html += '🛤️ ' + escapeHtml(rName);
                 html += '</button>';
             }
         } else if (pt.targetType === 'kingdom') {
@@ -282,18 +287,20 @@
             var kingdoms = (typeof Engine !== 'undefined' && Engine.getKingdoms) ? Engine.getKingdoms() : [];
             for (var i = 0; i < kingdoms.length; i++) {
                 if (kingdoms[i].id === playerKingdomId) continue;
+                var _targetKingdomName = kingdoms[i].name || kingdoms[i].id;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-targetkingdomid="' + kingdoms[i].id + '" data-targetkingdomname="' + kingdoms[i].name.replace(/'/g, "\\'") + '">';
-                html += '👑 ' + kingdoms[i].name;
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-targetkingdomid="' + kingdoms[i].id + '" data-targetkingdomname="' + escapeHtml(_targetKingdomName) + '">';
+                html += '👑 ' + escapeHtml(_targetKingdomName);
                 html += '</button>';
             }
         } else if (pt.targetType === 'resource') {
             html += '<h4 style="color:#ccc;">Select a Resource:</h4>';
             var resources = (typeof RESOURCES !== 'undefined') ? RESOURCES : [];
             for (var i = 0; i < resources.length; i++) {
+                var _resourceName = resources[i].name || resources[i].id;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-resourceid="' + resources[i].id + '" data-resourcename="' + resources[i].name.replace(/'/g, "\\'") + '">';
-                html += (resources[i].icon || '📦') + ' ' + resources[i].name;
+                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-resourceid="' + resources[i].id + '" data-resourcename="' + escapeHtml(_resourceName) + '">';
+                html += (resources[i].icon || '📦') + ' ' + escapeHtml(_resourceName);
                 html += '</button>';
             }
         }
@@ -1786,7 +1793,7 @@
 
         var p = town.prosperity || 0;
         var html = '<div style="max-height:400px;overflow-y:auto;">';
-        html += '<h3 style="margin:0 0 8px;color:var(--gold);">📊 ' + (town.name || 'Town') + ' Prosperity: ' + p.toFixed(1) + '/100</h3>';
+        html += '<h3 style="margin:0 0 8px;color:var(--gold);">📊 ' + escapeHtml(town.name || 'Town') + ' Prosperity: ' + p.toFixed(1) + '/100</h3>';
 
         var barColor = p > 70 ? '#55a868' : p > 40 ? '#ccb44c' : '#c44e52';
         html += '<div style="background:#333;border-radius:4px;height:12px;margin-bottom:12px;"><div style="background:' + barColor + ';height:100%;width:' + p + '%;border-radius:4px;"></div></div>';
@@ -1796,9 +1803,12 @@
         var positives = [];
         var negatives = [];
 
+        // v9p33river367: outposts/minor towns can lack a market; keep the panel working.
+        var _prosperitySupply = (town.market && town.market.supply) || {};
+        var _prosperityDemand = (town.market && town.market.demand) || {};
         var totalSupply = 0, totalDemand = 0;
-        for (var rid in (town.market.supply || {})) { totalSupply += (town.market.supply[rid] || 0); }
-        for (var rid2 in (town.market.demand || {})) { totalDemand += (town.market.demand[rid2] || 0); }
+        for (var rid in _prosperitySupply) { totalSupply += (_prosperitySupply[rid] || 0); }
+        for (var rid2 in _prosperityDemand) { totalDemand += (_prosperityDemand[rid2] || 0); }
         if (totalSupply > totalDemand * 0.8) positives.push({ name: 'Good supply coverage', value: '+' + ((totalSupply / Math.max(1, totalDemand)) * 2).toFixed(1) });
         else negatives.push({ name: 'Supply shortage', value: '-' + ((1 - totalSupply / Math.max(1, totalDemand)) * 3).toFixed(1) });
 

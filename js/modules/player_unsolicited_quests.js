@@ -155,6 +155,17 @@
         }
     }
 
+    function _countPlayerBuildingsInTown(townId, buildingType) {
+        if (!player.buildings || !player.buildings.length || !townId) return 0;
+        var count = 0;
+        for (var i = 0; i < player.buildings.length; i++) {
+            var b = player.buildings[i];
+            if (!b || b.townId !== townId) continue;
+            if (!buildingType || b.type === buildingType) count++;
+        }
+        return count;
+    }
+
     function _findOtherNobleInKingdom(kId, excludeId, rng) {
         var w = _getWorld(); if (!w) return null;
         var c = w.people.filter(function(p) {
@@ -301,8 +312,10 @@
     _def({ id: 'em_build_warehouse', audience: 'merchant', forPlayerRank: 'any', weight: 3,
         generate: function(npc, rng) {
             var t = _findTown(npc.townId); if (!t) return null;
+            var existingCount = _countPlayerBuildingsInTown(npc.townId, 'warehouse');
             return {
-                params: { townId: npc.townId, townName: t.name, buildingType: 'warehouse' },
+                // v9p33river367: track the starting count so pre-existing warehouses don't auto-complete the quest.
+                params: { townId: npc.townId, townName: t.name, buildingType: 'warehouse', startingCount: existingCount },
                 dialog: 'Storage in ' + t.name + ' is at a premium. Build a warehouse here and I will pay you for the trouble. You keep ownership.',
                 objectives: ['Construct a warehouse in ' + t.name + ' (you keep ownership)'],
                 timeLimitDays: rng.randInt(40, 70),
@@ -310,12 +323,8 @@
             };
         },
         check: function(q) {
-            // Player must own a warehouse in target town
-            if (!player.buildings) return { ok: false, reason: 'No buildings.' };
-            for (var i = 0; i < player.buildings.length; i++) {
-                var b = player.buildings[i];
-                if (b && b.townId === q.params.townId && b.type === q.params.buildingType) return { ok: true };
-            }
+            var builtCount = _countPlayerBuildingsInTown(q.params.townId, q.params.buildingType);
+            if (builtCount > (q.params.startingCount || 0)) return { ok: true };
             return { ok: false, reason: 'Build a ' + q.params.buildingType + ' in ' + q.params.townName + ' first.' };
         },
         consume: function(q) {
@@ -924,7 +933,13 @@
             player._activeUnsolicitedQuests.splice(idx, 1);
             return { success: false, message: 'Quest definition missing.' };
         }
-        var check = def.check(q);
+        var check;
+        try {
+            // v9p33river367: stale/corrupted quest params should fail cleanly instead of crashing turn-in.
+            check = def.check(q);
+        } catch (e) {
+            return { success: false, message: 'This quest cannot be completed right now.' };
+        }
         if (!check.ok) return { success: false, message: check.reason };
         // Consume + award
         try { def.consume(q); } catch (e) {}

@@ -49,9 +49,10 @@
         var html = '<div style="font-family:\'Merriweather\',Georgia,serif;">';
 
         // Header
+        // v9p33river367: player/world names render into modal HTML; escape them.
         html += '<div style="text-align:center;padding:8px;background:linear-gradient(135deg,rgba(212,168,67,0.25),rgba(139,69,19,0.25));border:1px solid rgba(212,168,67,0.4);border-radius:8px;margin-bottom:10px;">';
-        html += '<div style="font-size:1.1rem;color:#d4a843;">👑 ' + (p.sex === 'F' ? 'Queen' : 'King') + ' ' + p.fullName + '</div>';
-        html += '<div style="font-size:0.8rem;color:#b8a070;">' + kingdom.name + ' — Day ' + (Engine.getDay() - ks.coronationDay || 0) + ' of reign</div>';
+        html += '<div style="font-size:1.1rem;color:#d4a843;">👑 ' + (p.sex === 'F' ? 'Queen' : 'King') + ' ' + escapeHtml(p.fullName || '') + '</div>';
+        html += '<div style="font-size:0.8rem;color:#b8a070;">' + escapeHtml(kingdom.name || 'Kingdom') + ' — Day ' + (Engine.getDay() - ks.coronationDay || 0) + ' of reign</div>';
         html += '<div style="font-size:0.85rem;color:#e0c58a;margin-top:4px;">💰 Treasury: ' + formatGold(kingdom.gold || 0) + '</div>';
         html += '</div>';
 
@@ -1360,7 +1361,7 @@
         html += _kingAdvisorSection(kingdom, ks);
 
         // Nobles list
-        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;margin-top:10px;">🏰 Nobles of ' + kingdom.name + '</div>';
+        html += '<div style="font-size:0.85rem;color:#d4a843;margin-bottom:6px;margin-top:10px;">🏰 Nobles of ' + escapeHtml(kingdom.name || 'the kingdom') + '</div>';
         html += '<div style="max-height:200px;overflow-y:auto;">';
         try {
             var _nobles = [];
@@ -2853,7 +2854,7 @@
         var fightChance = Math.round(Math.max(10, Math.min(80, 60 - intensity * 40)));
         var html = '<div style="text-align:center;font-family:\'Merriweather\',Georgia,serif;">';
         html += '<div style="font-size:1.2rem;color:#c44e52;margin-bottom:10px;">⚔️ REVOLUTION!</div>';
-        html += '<div style="font-size:0.85rem;color:#ddd;margin-bottom:12px;">The people of ' + kingdom.name + ' have risen against you! Rebels storm the palace.</div>';
+        html += '<div style="font-size:0.85rem;color:#ddd;margin-bottom:12px;">The people of ' + escapeHtml(kingdom.name || 'your kingdom') + ' have risen against you! Rebels storm the palace.</div>';
         html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:15px;">You must decide your fate:</div>';
 
         // Fight
@@ -2922,7 +2923,7 @@
         var html = '<div style="font-family:\'Merriweather\',Georgia,serif;">';
         html += '<div style="text-align:center;background:rgba(0,0,0,0.3);padding:8px;border-radius:6px;margin-bottom:10px;">';
         html += '<div style="font-size:1rem;color:#d4a843;">👑 Succession Election</div>';
-        html += '<div style="font-size:0.8rem;color:#ddd;">The king of ' + kingdom.name + ' has died with no blood heir.</div>';
+        html += '<div style="font-size:0.8rem;color:#ddd;">The king of ' + escapeHtml(kingdom.name || 'the kingdom') + ' has died with no blood heir.</div>';
         html += '<div style="font-size:0.75rem;color:#aaa;">The nobles must vote for a new ruler.</div>';
         html += '</div>';
 

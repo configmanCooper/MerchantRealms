@@ -454,35 +454,46 @@ function getDetectionColor(pct) {
 var _nobilityTab = 'status'; // 'status' or 'intrigue'
 
 function openNobilityDialog() {
-    var playerRank = 0;
+    // v9p33river367: use active kingdom (Player.citizenshipKingdomId set in Character UI)
     var citizenKingdomId = Player.citizenshipKingdomId || '';
+    var playerRank = 0;
     if (citizenKingdomId && Player.socialRank) {
         playerRank = Player.socialRank[citizenKingdomId] || 0;
     }
-    if (Player.socialRank) {
-        for (var _nk in Player.socialRank) {
-            if ((Player.socialRank[_nk] || 0) > playerRank) {
-                playerRank = Player.socialRank[_nk];
-                citizenKingdomId = _nk;
-            }
-        }
-    }
     if (playerRank < 4) {
-        // Also check if player has foreign noble status in any kingdom (can attend feasts/courts)
-        var _hasForeignNoble = false;
-        try {
-            var _allKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
-            for (var _fni = 0; _fni < _allKingdoms.length; _fni++) {
-                var _fnStatus = Player.getForeignNobleStatus ? Player.getForeignNobleStatus(_allKingdoms[_fni].id) : false;
-                if (_fnStatus === 'foreign_noble' || _fnStatus === 'foreign_minor_noble') {
-                    _hasForeignNoble = true;
-                    break;
+        // Check foreign noble status in the active kingdom
+        var _fnActive = citizenKingdomId && Player.getForeignNobleStatus ? Player.getForeignNobleStatus(citizenKingdomId) : false;
+        if (!(_fnActive === 'foreign_noble' || _fnActive === 'foreign_minor_noble')) {
+            // Active kingdom doesn't qualify — check any kingdom with rank 4+
+            var _foundNobleK = false;
+            if (Player.socialRank) {
+                for (var _nk in Player.socialRank) {
+                    if ((Player.socialRank[_nk] || 0) >= 4) {
+                        citizenKingdomId = _nk;
+                        playerRank = Player.socialRank[_nk];
+                        _foundNobleK = true;
+                        break;
+                    }
                 }
             }
-        } catch (e) {}
-        if (!_hasForeignNoble) {
-            toast('You must be at least a Minor Noble to access this panel.', 'warning');
-            return;
+            if (!_foundNobleK) {
+                // Check foreign noble in any kingdom
+                try {
+                    var _allKingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
+                    for (var _fni = 0; _fni < _allKingdoms.length; _fni++) {
+                        var _fnCheck = Player.getForeignNobleStatus ? Player.getForeignNobleStatus(_allKingdoms[_fni].id) : false;
+                        if (_fnCheck === 'foreign_noble' || _fnCheck === 'foreign_minor_noble') {
+                            citizenKingdomId = _allKingdoms[_fni].id;
+                            _foundNobleK = true;
+                            break;
+                        }
+                    }
+                } catch (e) {}
+            }
+            if (!_foundNobleK) {
+                toast('You must be at least a Minor Noble to access this panel.', 'warning');
+                return;
+            }
         }
     }
 
@@ -698,7 +709,8 @@ function openNobilityDialog() {
     // Check for wars affecting foreign noble status
     for (var _wi = 0; _wi < kingdoms.length; _wi++) {
         var _wk = kingdoms[_wi];
-        if (_wk.id !== citizenKingdomId && _wk.atWar && _wk.warTarget === citizenKingdomId) {
+        // v9p33river367: atWar is an array (serialized from Set), not warTarget
+        if (_wk.id !== citizenKingdomId && _wk.atWar && _wk.atWar.indexOf(citizenKingdomId) >= 0) {
             alerts.push({ icon: '⚔️', text: _wk.name + ' is at war with your kingdom!', color: '#c44e52' });
         }
     }

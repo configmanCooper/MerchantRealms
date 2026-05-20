@@ -4942,7 +4942,8 @@
         if (hasSkill('expert_navigator')) speedMult *= 1.20;
         if (hasSkill('cartographer')) speedMult *= 1.10;
         if (hasSkill('fleet_admiral')) speedMult *= 1.10;
-        if ((player.skills && player.skills.combat || 0) >= 50) speedMult *= 1.05;
+        // v9p33river367: use real combat skill IDs (not numeric player.skills.combat)
+        if (hasSkill('combat_trained') || hasSkill('battle_hardened')) speedMult *= 1.05;
         if (hasSkill('road_knowledge')) speedMult *= 1.05;
 
         var effectiveDist = totalDist / speedMult;
@@ -5052,7 +5053,8 @@
         if (hasSkill('expert_navigator')) skillBonus += 0.15;
         if (hasSkill('cartographer')) skillBonus += 0.10;
         if (hasSkill('fleet_admiral')) skillBonus += 0.05;
-        if ((player.skills && player.skills.combat || 0) >= 50) skillBonus += 0.05;
+        // v9p33river367: use real combat skill IDs (not numeric player.skills.combat)
+        if (hasSkill('combat_trained') || hasSkill('battle_hardened')) skillBonus += 0.05;
 
         // Ship condition affects risk
         var ship = player.ships ? player.ships.find(function(s) { return s.id === player.offSeaShipId; }) : null;
@@ -5163,7 +5165,8 @@
         // Skill reductions
         if (hasSkill('expert_navigator')) deathChance -= 0.15;
         if (hasSkill('field_medic')) deathChance -= 0.10;
-        if ((player.skills && player.skills.combat || 0) >= 30) deathChance -= 0.05;
+        // v9p33river367: use real combat skill IDs (not numeric player.skills.combat)
+        if (hasSkill('combat_trained') || hasSkill('battle_hardened')) deathChance -= 0.05;
         if (hasSkill('cartographer')) deathChance -= 0.05;
         // Larger ships are safer
         var shipType = CONFIG.SHIP_TYPES[ship.type];
@@ -9829,10 +9832,10 @@
         var rng = Engine.getRng();
         if (pPerson.perceivedKingLoyalty == null) pPerson.perceivedKingLoyalty = pPerson.kingLoyalty || 50;
         var boost = 4 + Math.floor(rng.random() * 7); // +4 to +10
-        // Charisma/diplomacy skill bonus
-        var dipSkill = (player.skills && player.skills.diplomacy) ? 1.3 : 1.0;
+        // v9p33river367: use real skills — court_etiquette / charming (not nonexistent 'diplomacy')
+        var dipSkill = (hasSkill('court_etiquette') || hasSkill('charming')) ? 1.3 : 1.0;
         boost = Math.round(boost * dipSkill);
-        // Risk: honest king may see through it (5% base, reduced by diplomacy)
+        // Risk: honest king may see through it (5% base, reduced by social skills)
         var detectChance = 0.05 / dipSkill;
         if (rng.chance(detectChance)) {
             // King sees through flattery — perceived drops slightly
@@ -9871,10 +9874,10 @@
         var rng = Engine.getRng();
         if (target.perceivedKingLoyalty == null) target.perceivedKingLoyalty = target.kingLoyalty || 50;
         var drop = 3 + Math.floor(rng.random() * 6); // -3 to -8
-        // Intrigue skill bonus
-        var intrigueSkill = (player.skills && player.skills.intrigue) ? 1.4 : 1.0;
+        // v9p33river367: use real skills — shadow_dealings / silver_tongue_dark (not nonexistent 'intrigue')
+        var intrigueSkill = (hasSkill('shadow_dealings') || hasSkill('silver_tongue_dark')) ? 1.4 : 1.0;
         drop = Math.round(drop * intrigueSkill);
-        // Risk: 10% base chance of being caught
+        // Risk: 10% base chance of being caught (reduced by intrigue skills)
         var caughtChance = 0.10 / intrigueSkill;
         if (rng.chance(caughtChance)) {
             // Caught! Target's relationship drops, player perceived drops
@@ -17829,6 +17832,11 @@
         player.revealedTraits = {};
         player.spouseRelHighDays = 0;
         player.dateProgress = {};
+        // v9p33river367: heirs must not inherit the deceased ruler's romance
+        // state/cooldowns/one-shot courtship triggers.
+        player.courtshipAccepted = {};
+        player._negRelTriggers = {};
+        player.courtshipCooldowns = {};
         player.investigatorCaught = {};
         player.weddingPlan = null;
         player.weddingMemory = null;

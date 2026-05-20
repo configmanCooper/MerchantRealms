@@ -9,6 +9,18 @@
 
     var player;
     function _sync() { player = Player.state; }
+
+    function _isNobleContact(person) {
+        if (!person) return false;
+        if (person.isKing || person.isNoble || person.occupation === 'noble') return true;
+        if (person.socialRank) {
+            for (var _nk in person.socialRank) {
+                if ((person.socialRank[_nk] || 0) >= 4) return true;
+            }
+        }
+        return false;
+    }
+    // v9p33river367: noble interaction/gossip systems must honor socialRank nobles too.
     // ========================================================
     // §16B TOWN QUESTS SYSTEM
     // ========================================================
@@ -2540,7 +2552,7 @@
         }
 
         // Noble favor requests — show if this noble has an active request
-        if (relLevel >= 20 && (person.occupation === 'noble' || person.isNoble)) {
+        if (relLevel >= 20 && _isNobleContact(person)) {
             var favorRequests = [];
             try { favorRequests = Player.getNobleFavorRequests ? Player.getNobleFavorRequests() : []; } catch(e) {}
             for (var fri = 0; fri < favorRequests.length; fri++) {
@@ -2622,7 +2634,7 @@
         var dialogues = [];
         if (relLevel < 30) return dialogues;
         var occ = person.occupation || '';
-        if (occ !== 'noble' && !person.isNoble) return dialogues;
+        if (!_isNobleContact(person)) return dialogues;
 
         var pers = person.personality || {};
         var fn = person.firstName || 'Noble';
@@ -2785,7 +2797,7 @@
         if (occ === 'innkeeper' || occ === 'barkeep' || occ === 'tavern_keeper') return 'Ask about town gossip, visiting travelers, and local rumors';
         if (occ === 'doctor' || occ === 'healer' || occ === 'herbalist') return 'Ask about disease outbreaks, medicinal herbs, and health concerns';
         if (occ === 'scholar' || occ === 'priest' || occ === 'teacher' || occ === 'monk') return 'Ask about historical knowledge, local lore, and scholarly news';
-        if (occ === 'noble' || person.isNoble) return 'Ask about court politics, noble scandals, and kingdom affairs';
+        if (_isNobleContact(person)) return 'Ask about court politics, noble scandals, and kingdom affairs';
         if (occ === 'blacksmith' || occ === 'carpenter' || occ === 'baker' || occ === 'craftsman') return 'Ask about material availability, supply shortages, and craft guild news';
         return null;
     }
@@ -2878,7 +2890,7 @@
             return (innMsgs[detailLevel] || innMsgs.vague)[rng ? Math.floor(rng.random() * 2) : 0];
         }
 
-        if (occ === 'noble' || person.isNoble) {
+        if (_isNobleContact(person)) {
             var nobleMsgs = {
                 vague: [
                     fn + ' makes vague comments about court politics. Hard to tell what\'s real.',

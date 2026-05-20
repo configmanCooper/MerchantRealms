@@ -12712,9 +12712,12 @@
 
             // Food shortage: check bread/food supply
             const foodTypes = ['bread', 'meat', 'fish', 'wheat', 'eggs'];
+            // v9p33river367: happiness tick runs for every town, including
+            // outposts/junctions that may not have a market.
+            const marketSupply = (town.market && town.market.supply) ? town.market.supply : {};
             let totalFood = 0;
             for (const f of foodTypes) {
-                totalFood += (town.market.supply[f] || 0);
+                totalFood += (marketSupply[f] || 0);
             }
             const foodDemand = (town.population || 10) * 0.5;
             if (totalFood < foodDemand) {
@@ -12775,7 +12778,8 @@
             // (Tax bonus/penalty handled above in C1 tax section — 10% neutral)
 
             // Festival afterglow: +2/day for 15 days after festival
-            if (town._festivalDay && (world.day - town._festivalDay) < 15) {
+            // v9p33river367: day 0 is a valid event day; truthy checks skip it.
+            if (town._festivalDay != null && (world.day - town._festivalDay) < 15) {
                 happinessDelta += 2.0;
             }
 
@@ -12794,7 +12798,8 @@
             }
 
             // Revolt success happiness boost: +30 for 30 days, +15 for 31-90 days
-            if (town._revoltSuccessDay) {
+            // v9p33river367: day 0 is a valid revolt-success day.
+            if (town._revoltSuccessDay != null) {
                 var _revoltAge = world.day - town._revoltSuccessDay;
                 if (_revoltAge <= 30) {
                     happinessDelta += 2.0; // sustained boost during first month (+30 was applied at revolt, this maintains it)

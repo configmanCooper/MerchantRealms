@@ -2134,15 +2134,17 @@
     function _findTownBuildingIndex(buildingId, townId) {
         var town = Engine.findTown(townId);
         if (!town || !town.buildings) return -1;
-        // Try by id first
-        var idx = town.buildings.findIndex(function(b) { return b.id && b.id === buildingId; });
+        // v9p33river367: demolition targets must resolve the exact building,
+        // not the first player-owned building of the same type.
+        var idx = town.buildings.findIndex(function(b) {
+            return b && ((b.id && b.id === buildingId) || (b._id && b._id === buildingId));
+        });
         if (idx >= 0) return idx;
-        // Fallback: find by player building type match
-        var pBld = Player.state && Player.state.buildings ? Player.state.buildings.find(function(b) { return b.id === buildingId; }) : null;
-        if (pBld) {
-            idx = town.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === pBld.type; });
-        }
-        return idx;
+        var pBld = Player.state && Player.state.buildings ? Player.state.buildings.find(function(b) {
+            return b && ((b.id && b.id === buildingId) || (b._id && b._id === buildingId));
+        }) : null;
+        if (pBld) return _findPlayerTownBuildingIndex(town, pBld);
+        return -1;
     }
 
     function demolishBuildingUI(buildingId, townId) {

@@ -11,6 +11,18 @@
     var toast = UI.toast;
     var formatGold = UI.formatGold;
 
+    // v9p33river367: tolerate missing top-level RESOURCE_TYPES by falling back
+    // to CONFIG.ITEMS, which is the canonical lowercase mirror.
+    function _findTradeResource(goodId) {
+        var source = (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES) ? RESOURCE_TYPES : ((typeof CONFIG !== 'undefined' && CONFIG.ITEMS) ? CONFIG.ITEMS : null);
+        if (!source) return null;
+        if (source[goodId]) return source[goodId];
+        for (var rk in source) {
+            if (source[rk] && source[rk].id === goodId) return source[rk];
+        }
+        return null;
+    }
+
     // ── EM TRADE DIALOG ──
     // Trade goods from EM inventory with relationship-based discounts
     function openEMTrade(emId) {
@@ -63,12 +75,7 @@
             for (var i = 0; i < invKeys.length; i++) {
                 var goodId = invKeys[i];
                 var qty = inv[goodId];
-                var res = typeof RESOURCE_TYPES !== 'undefined' ? RESOURCE_TYPES[goodId] : null;
-                if (!res) {
-                    for (var rk in RESOURCE_TYPES) {
-                        if (RESOURCE_TYPES[rk].id === goodId) { res = RESOURCE_TYPES[rk]; break; }
-                    }
-                }
+                var res = _findTradeResource(goodId);
                 var resName = res ? ((res.icon || '') + ' ' + res.name) : goodId;
                 var basePrice = res ? (res.basePrice || 10) : 10;
                 // Check local market price too
@@ -258,8 +265,7 @@
         // Relationship boost for trading
         if (Player.modifyRelationship) Player.modifyRelationship(emId, 1);
 
-        var res = typeof RESOURCE_TYPES !== 'undefined' ? RESOURCE_TYPES[goodId] : null;
-        if (!res) { for (var rk in RESOURCE_TYPES) { if (RESOURCE_TYPES[rk].id === goodId) { res = RESOURCE_TYPES[rk]; break; } } }
+        var res = _findTradeResource(goodId);
         var resName = res ? res.name : goodId;
         toast('✅ Bought ' + qty + ' ' + resName + ' for ' + formatGold(totalCost), 'success');
 

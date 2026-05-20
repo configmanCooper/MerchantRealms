@@ -3,7 +3,13 @@
     if (!Player) throw new Error("Player must be loaded before player_dark_deeds.js");
 
     var player;
-    function _sync() { player = Player.state; }
+    function _sync() {
+        player = Player.state;
+        // v9p33river367: legacy/inherited saves may omit relationships or
+        // inventory, but multiple dark-deed paths read both directly.
+        if (player && !player.relationships) player.relationships = {};
+        if (player && !player.inventory) player.inventory = {};
+    }
 
     // Aliases for Player functions
     var hasSkill = Player.hasSkill;
@@ -970,7 +976,10 @@
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(0.25, town);
         // v9p33river212: independent rolls
-        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(personId));
+        // v9p33river367: building sabotage targets a building owner, not an
+        // undefined personId local. Use the building owner when present.
+        var _sabotageOwnerId = (bld.ownerId && bld.ownerId !== 'player') ? bld.ownerId : null;
+        var _o = _rollSchemeOutcome(detection, rng, _nobleSuccessMult(_sabotageOwnerId));
         var caught = _o.caught;
         var successful = _o.successful;
 
@@ -1153,8 +1162,10 @@
         if (!isInTown(townId)) return { success: false, message: 'You must be in the town.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
+        // v9p33river367: outposts/junctions may lack a market or supply map.
+        if (!town.market || !town.market.supply) return { success: false, message: 'No market here.' };
         qty = Math.min(qty, 20);
-        const available = (town.market && town.market.supply[resourceId]) || 0;
+        const available = town.market.supply[resourceId] || 0;
         if (available < qty) return { success: false, message: `Only ${available} available in market.` };
 
         const w = Engine.getWorld ? Engine.getWorld() : null;
@@ -1375,6 +1386,9 @@
         if ((player.inventory.tools || 0) < 1) return { success: false, message: 'Need 1 tools to break in.' };
         const town = Engine.findTown(townId);
         if (!town) return { success: false, message: 'Town not found.' };
+        // v9p33river367: warehouse heists target market stock; minor towns can
+        // exist without a market/supply map.
+        if (!town.market || !town.market.supply) return { success: false, message: 'No market warehouses here.' };
 
         player.inventory.tools -= 1;
         const w = Engine.getWorld ? Engine.getWorld() : null;
@@ -1847,7 +1861,9 @@
             // profile for blackmail. Now records the actual offense.
             recordCorruptAction('blackmail', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'blackmail');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(10);
-            var _nnResult = _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'blackmailing a noble');
+            // v9p33river367: only direct crimes against nobles should add
+            // noble notoriety/punishment.
+            var _nnResult = _isNoble ? _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'blackmailing a noble') : null;
             var _nnMsg = _nnResult && _nnResult.punished ? ' ' + _nnResult.message : '';
             Engine.logEvent(`${player.fullName} was exposed trying to blackmail ${person.firstName}!`);
             caughtMsg = `🚨 CAUGHT! Reputation -20, relationship with ${person.firstName} destroyed.` + _nnMsg;
@@ -1903,13 +1919,12 @@
         }
         if (caught) {
             const kingdom = _rumorKingdomId && Engine.findKingdom ? Engine.findKingdom(_rumorKingdomId) : null;
-            // v9p33river323: caught rumor-spreading was being recorded
-            // and punished as 'forgery' / 'blackmail' crime profiles.
-            // Now uses the canonical 'spread_rumors' crime id (or
-            // 'fraud' fallback) for both penalty + record.
-            applyCorruptPenalty(town, kingdom, 0, 10, 0, false, 'fraud');
+            // v9p33river367: CONFIG.CRIME_TYPES has no 'fraud' or
+            // 'spread_rumors' entry here; use the existing forgery profile for
+            // both punishment and criminal-record escalation.
+            applyCorruptPenalty(town, kingdom, 0, 10, 0, false, 'forgery');
             if (player.relationships[targetMerchantId]) player.relationships[targetMerchantId].level = 0;
-            recordCorruptAction('spread_rumors', true, _rumorKingdomId, 'fraud');
+            recordCorruptAction('spread_rumors', true, _rumorKingdomId, 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(5);
             caughtMsg = '🚨 CAUGHT! Reputation -10. Target knows you spread rumors.';
         } else {
@@ -2366,7 +2381,8 @@
     function checkMarketManipulator() {
         _sync();
         const town = Engine.findTown(player.townId);
-        if (!town || !town.market) return;
+        // v9p33river367: outposts can have a market object without a supply map.
+        if (!town || !town.market || !town.market.supply) return;
         for (const resKey in RESOURCE_TYPES) {
             const res = RESOURCE_TYPES[resKey];
             const totalSupply = town.market.supply[res.id] || 0;
@@ -2928,14 +2944,15 @@
         if (!town || player.traveling || isJailed()) return actions;
 
         const kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+        // v9p33river367: minor towns/outposts may omit town.buildings.
+        var _townBuildings = town.buildings || [];
 
         // Sabotage tab — requires shadow_dealings or arsonist_skill
         if (hasSkill('shadow_dealings') || hasSkill('arsonist_skill')) {
-
         // Build list of buildings with owner info for the dropdown
         var _sabBuildingList = [];
-        for (let i = 0; i < town.buildings.length; i++) {
-            const bld = town.buildings[i];
+        for (let i = 0; i < _townBuildings.length; i++) {
+            const bld = _townBuildings[i];
             const bt = Engine.findBuildingType ? Engine.findBuildingType(bld.type) : null;
             var ownerName = 'Town';
             if (bld.ownerId === 'player') {
@@ -2949,7 +2966,7 @@
         }
 
         // Single sabotage entry with building dropdown
-        if (town.buildings.length > 0) {
+        if (_townBuildings.length > 0) {
             actions.push({
                 id: 'sabotage_building', tab: 'sabotage',
                 name: 'Sabotage Building',
@@ -2984,7 +3001,7 @@
         }
 
         // Single arson entry with building dropdown
-        if (town.buildings.length > 0) {
+        if (_townBuildings.length > 0) {
             let baseDetect = 0.40;
             if (hasSkill('arsonist_skill')) baseDetect *= 0.5;
             actions.push({
@@ -3030,7 +3047,7 @@
 
         // Warehouse Heist — steal from NPC-owned warehouses/buildings
         if (hasSkill('shadow_dealings') || hasSkill('discrete')) {
-            var npcBuildings = town.buildings.filter(function(b) { return b.ownerId && b.ownerId !== 'player'; });
+            var npcBuildings = _townBuildings.filter(function(b) { return b.ownerId && b.ownerId !== 'player'; });
             if (npcBuildings.length > 0) {
                 actions.push({
                     id: 'warehouse_heist', tab: 'sabotage',
@@ -4661,7 +4678,9 @@
         var caughtMsg = '';
         if (caught) {
             var kingdom = Engine.findKingdom ? Engine.findKingdom(town ? town.kingdomId : null) : null;
-            var fine = applyCorruptPenalty(town, kingdom, 400, 20, 8, false, 'sabotage');
+            // v9p33river367: planting evidence is falsifying evidence, so its
+            // punishment must match the forgery crime record below.
+            var fine = applyCorruptPenalty(town, kingdom, 400, 20, 8, false, 'forgery');
             recordCorruptAction('plant_evidence', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'forgery');
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(15);
             if (player.relationships[npcId]) player.relationships[npcId].level = 0;

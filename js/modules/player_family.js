@@ -3351,6 +3351,11 @@
         player.revealedTraits = {};
         player.spouseRelHighDays = 0;
         player.dateProgress = {};
+        // v9p33river367: heirs must not inherit the deceased ruler's romance
+        // state/cooldowns/one-shot courtship triggers.
+        player.courtshipAccepted = {};
+        player._negRelTriggers = {};
+        player.courtshipCooldowns = {};
         player.investigatorCaught = {};
         player.weddingPlan = null;
         player.weddingMemory = null;

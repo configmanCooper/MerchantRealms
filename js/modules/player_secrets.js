@@ -160,9 +160,38 @@
         return rel ? (rel.level || 0) : 0;
     }
 
+    function _getNpcMaxRank(person) {
+        if (!person || !person.socialRank || typeof person.socialRank !== 'object') return 0;
+        var maxRank = 0;
+        for (var k in person.socialRank) {
+            if ((person.socialRank[k] || 0) > maxRank) maxRank = person.socialRank[k] || 0;
+        }
+        return maxRank;
+    }
+
+    function _isKingPerson(person) {
+        if (!person) return false;
+        if (person.isKing) return true;
+        if (_getNpcMaxRank(person) >= 7) return true;
+        var w = _getWorld();
+        if (w && Array.isArray(w.kingdoms)) {
+            for (var i = 0; i < w.kingdoms.length; i++) {
+                if (w.kingdoms[i] && w.kingdoms[i].king === person.id) return true;
+            }
+        }
+        return false;
+    }
+
+    function _isNoblePerson(person) {
+        if (!person) return false;
+        if (_isKingPerson(person)) return true;
+        // v9p33river367: nobles are canonically identified by socialRank, not just flags/occupation.
+        return !!(person.isNoble || person.occupation === 'noble' || _getNpcMaxRank(person) >= 4);
+    }
+
     function _getSecretPool(person) {
-        if (person.isKing) return KING_SECRETS;
-        if (person.isNoble || person.occupation === 'noble') return NOBLE_SECRETS;
+        if (_isKingPerson(person)) return KING_SECRETS;
+        if (_isNoblePerson(person)) return NOBLE_SECRETS;
         if (person.isEliteMerchant) return EM_SECRETS;
         return NORMAL_SECRETS;
     }
@@ -260,7 +289,7 @@
             npcName: ((person.firstName || '') + ' ' + (person.lastName || '')).trim(),
             templateId: template.id,
             type: template.type,
-            category: person.isKing ? 'king' : (person.isNoble || person.occupation === 'noble') ? 'noble' : person.isEliteMerchant ? 'elite_merchant' : 'normal',
+            category: _isKingPerson(person) ? 'king' : _isNoblePerson(person) ? 'noble' : person.isEliteMerchant ? 'elite_merchant' : 'normal',
             text: secretText,
             keepRel: template.keepRel || KEEP_REL_BOOST,
             shareL: template.shareL || SHARE_REL_LISTENER,
@@ -420,7 +449,7 @@
         switch (secret.uniqueEffect) {
             case 'may_arrest':
                 // If shared with a noble or the king, owner may get arrested
-                if (listener.isNoble || listener.isKing || listener.occupation === 'noble') {
+                if (_isNoblePerson(listener)) {
                     if (Math.random() < 0.4 && owner) {
                         owner._jailedUntilDay = day + 30;
                         return '⚖️ ' + (owner.firstName || 'The secret owner') + ' has been arrested!';
@@ -430,7 +459,7 @@
 
             case 'king_punish':
                 // If shared with the king, the noble owner gets punished
-                if (listener.isKing && owner) {
+                if (_isKingPerson(listener) && owner) {
                     // Heavy relationship hit between king and noble
                     try {
                         if (listener._npcRelationships) {
@@ -455,14 +484,14 @@
                     return '👑 The king is furious with ' + (owner.firstName || 'the noble') + '.';
                 }
                 // If shared with another noble, they lose trust in the owner
-                if ((listener.isNoble || listener.occupation === 'noble') && owner) {
+                if (_isNoblePerson(listener) && owner) {
                     return '🏰 ' + (listener.firstName || 'The noble') + ' will not forget what you told them about ' + (owner.firstName || 'them') + '.';
                 }
                 return null;
 
             case 'treason_accusation':
                 // Sharing with king or noble — owner faces treason charges
-                if ((listener.isKing || listener.isNoble || listener.occupation === 'noble') && owner) {
+                if (_isNoblePerson(listener) && owner) {
                     if (Math.random() < 0.3) {
                         owner._jailedUntilDay = day + 90;
                         try { Player.modifyRelationship(secret.npcId, -20, undefined, String(shareReasonBase || 'shared_secret') + '_treason'); } catch(e) {} // additional hit
@@ -474,7 +503,7 @@
 
             case 'strip_title':
                 // If shared with king — noble may lose their title
-                if (listener.isKing && owner && owner.socialRank && typeof owner.socialRank === 'object') {
+                if (_isKingPerson(listener) && owner && owner.socialRank && typeof owner.socialRank === 'object') {
                     for (var sk in owner.socialRank) {
                         if ((owner.socialRank[sk] || 0) >= 4) {
                             owner.socialRank[sk] = 0;
@@ -488,7 +517,7 @@
 
             case 'revolt_seed':
                 // King secrets shared with nobles — may cause unrest
-                if ((listener.isNoble || listener.occupation === 'noble') && owner && owner.isKing) {
+                if (_isNoblePerson(listener) && owner && _isKingPerson(owner)) {
                     // Lower noble's loyalty to the kingdom
                     try {
                         var t = _findTown(listener.townId);
@@ -505,7 +534,7 @@
 
             case 'succession_crisis':
                 // King's legitimacy secret shared with anyone important
-                if ((listener.isNoble || listener.occupation === 'noble' || listener.isEliteMerchant) && owner && owner.isKing) {
+                if ((_isNoblePerson(listener) || listener.isEliteMerchant) && owner && _isKingPerson(owner)) {
                     try {
                         var t2 = _findTown(listener.townId);
                         if (t2 && t2.kingdomId) {
@@ -558,7 +587,7 @@
                             var count = 0;
                             for (var pi = 0; pi < w.people.length && count < 10; pi++) {
                                 var p = w.people[pi];
-                                if (p && p.alive && (p.isNoble || p.occupation === 'noble') && p.id !== owner.id) {
+                                if (p && p.alive && _isNoblePerson(p) && p.id !== owner.id) {
                                     var pt = _findTown(p.townId);
                                     if (pt && pt.kingdomId === kId) {
                                         if (!p._npcRelationships) p._npcRelationships = {};
@@ -575,7 +604,7 @@
 
             case 'may_fine':
                 // Tax fraud — fine may be imposed
-                if ((listener.isNoble || listener.isKing) && owner) {
+                if (_isNoblePerson(listener) && owner) {
                     var fineAmount = 200 + Math.floor(Math.random() * 300);
                     owner.gold = Math.max(0, (owner.gold || 0) - fineAmount);
                     return '💰 ' + (owner.firstName || 'They') + ' has been fined ' + fineAmount + 'g for tax fraud.';

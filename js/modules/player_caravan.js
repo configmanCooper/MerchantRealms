@@ -1741,7 +1741,10 @@
                 logCaravan(caravan, '💰 Sold ' + sellQty + ' ' + resName + ' for ' + revenue + 'g at ' + townName + '.' + _tariffMsg);
                 // Track cross-kingdom caravan trade for story mode
                 if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
-                    var _originId = caravan.route[0];
+                    // v9p33river367: caravan.route stores segment objects here,
+                    // not raw town ids. Resolve the origin town consistently.
+                    var _originSeg = caravan.route[0];
+                    var _originId = caravan.fromTownId || (_originSeg && _originSeg.fromTownId) || _originSeg;
                     var _originTown = Engine.findTown(_originId);
                     if (_originTown && _originTown.kingdomId && town.kingdomId && _originTown.kingdomId !== town.kingdomId) {
                         StoryMode.onPlayerAction('caravan_trade_complete', { goldValue: grossRevenue, fromKingdom: _originTown.kingdomId, toKingdom: town.kingdomId });

@@ -242,6 +242,8 @@
             if (!outpost.outpostResidents) outpost.outpostResidents = [];
             if (!outpost.outpostHousing) outpost.outpostHousing = [];
             if (!outpost.outpostUpgrades) outpost.outpostUpgrades = [];
+            // v9p33river367: legacy outposts can be missing buildings entirely.
+            if (!outpost.buildings) outpost.buildings = [];
             if (outpost.landPlots == null) outpost.landPlots = cfg.startingLandPlots || 4;
             if (outpost.usedLandPlots == null) outpost.usedLandPlots = 0;
             if (outpost.outpostStorage == null) outpost.outpostStorage = cfg.baseStorageCapacity || 200;
@@ -428,8 +430,13 @@
                     for (var _si = 0; _si < world.people.length && _healed < 2; _si++) {
                         var _sp = world.people[_si];
                         if (_sp.townId !== outpost.id || !_sp.alive) continue;
-                        if (_sp.illnesses && _sp.illnesses.length > 0) {
-                            _sp.illnesses.shift(); // remove one illness
+                        if (_sp.sick && (_sp.illness || (_sp.illnesses && _sp.illnesses.length > 0))) {
+                            // v9p33river367: NPC illness state is primarily singular (illness), with legacy array backups.
+                            _sp.sick = false;
+                            _sp.illness = null;
+                            _sp.illnessSeverity = null;
+                            _sp.illnessDay = 0;
+                            if (_sp.illnesses) _sp.illnesses = [];
                             _healed++;
                         } else if (_sp.injured) {
                             _sp.injured = false;

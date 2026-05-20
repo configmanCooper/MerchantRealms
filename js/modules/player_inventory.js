@@ -8,6 +8,22 @@
 
     var player;
     function _sync() { player = Player.state; }
+    function _findOwnedTownBuildingIndex(town, bld) {
+        if (!town || !town.buildings || !bld) return -1;
+        if (bld.id) {
+            var _idIdx = town.buildings.findIndex(function(tb) { return tb.id && tb.id === bld.id; });
+            if (_idIdx !== -1) return _idIdx;
+        }
+        // v9p33river367: when town copies lack an id, match more than just
+        // type so seizures don't hit the wrong same-type building.
+        return town.buildings.findIndex(function(tb) {
+            return tb.ownerId === 'player' &&
+                tb.type === bld.type &&
+                (tb.level || 1) === (bld.level || 1) &&
+                (tb.builtDay || 0) === (bld.builtDay || 0) &&
+                (tb.condition || 'new') === (bld.condition || 'new');
+        });
+    }
 
     // ── Player helpers (defined in player.js, accessed via Player) ──
     var hasSkill = function(skillId) { return Player.hasSkill(skillId); };
@@ -1386,7 +1402,7 @@
                     bld.active = false;
                     const town = Engine.findTown(bld.townId);
                     if (town) {
-                        const idx = town.buildings.findIndex(b => b.ownerId === 'player' && b.type === bld.type);
+                        const idx = _findOwnedTownBuildingIndex(town, bld);
                         if (idx !== -1) town.buildings[idx].ownerId = null;
                     }
                 }
@@ -1410,7 +1426,7 @@
                     bld.active = false;
                     const town = Engine.findTown(bld.townId);
                     if (town) {
-                        const idx = town.buildings.findIndex(b => b.ownerId === 'player' && b.type === bld.type);
+                        const idx = _findOwnedTownBuildingIndex(town, bld);
                         if (idx !== -1) town.buildings[idx].ownerId = null;
                     }
                     player.buildings = player.buildings.filter(b => b.active);
@@ -1768,7 +1784,7 @@
                     seizedBuildings[sbi].active = false;
                     var sTown = Engine.findTown(seizedBuildings[sbi].townId);
                     if (sTown) {
-                        var sIdx = sTown.buildings.findIndex(function(b) { return b.ownerId === 'player' && b.type === seizedBuildings[sbi].type; });
+                        var sIdx = _findOwnedTownBuildingIndex(sTown, seizedBuildings[sbi]);
                         if (sIdx !== -1) sTown.buildings[sIdx].ownerId = null;
                     }
                 }
