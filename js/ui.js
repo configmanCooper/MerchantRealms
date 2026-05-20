@@ -1895,6 +1895,31 @@ window.UI = (function () {
         openModal('📜 ' + escapeHtml(offer.npcName) + ' approaches you', html, footer);
     }
 
+    // v9p33river358: Spouse confrontation popup
+    function openSpouseConfrontation(info) {
+        if (!info) return;
+        var html = '<div style="max-width:480px;padding:6px;">';
+        html += '<div style="text-align:center;font-size:2em;margin-bottom:4px;">💔</div>';
+        html += '<div style="text-align:center;font-weight:bold;color:#c85050;margin-bottom:6px;">' + escapeHtml(info.spouseName || 'Your spouse') + ' has confronted you</div>';
+        html += '<div style="padding:10px 12px;margin-bottom:8px;background:rgba(200,80,80,0.10);border-left:3px solid #c85050;border-radius:0 6px 6px 0;font-style:italic;color:#ddd;">' + escapeHtml(info.openingLine || '') + '</div>';
+        if (info.reactionLine) {
+            html += '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(0,0,0,0.2);font-style:italic;color:#ccc;">' + escapeHtml(info.reactionLine) + '</div>';
+        }
+        html += '<div style="margin-top:8px;font-weight:bold;color:#d4af37;">Consequences:</div>';
+        html += '<ul style="margin:4px 0 8px 18px;color:#eee;font-size:0.9em;">';
+        var cons = info.consequences || [];
+        for (var i = 0; i < cons.length; i++) {
+            html += '<li>' + escapeHtml(cons[i]) + '</li>';
+        }
+        html += '</ul>';
+        if (info.paranoid) {
+            html += '<div style="font-size:0.78em;color:#aaa;margin-top:8px;">(They have misread an innocent friendship. There is nothing you could have done differently.)</div>';
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="closeModal">Acknowledge</button>';
+        openModal('💔 ' + (info.paranoid ? 'Accusation' : 'Confrontation'), html, footer);
+    }
+
     function openModal(title, bodyHtml, footerHtml) {
         // Block opening non-encounter modals while encounter decision pending
         // v9p33river215: skip the funeral-lock while the player is in jail —
@@ -19526,6 +19551,7 @@ window.UI = (function () {
         showLoseScreen,
         closeModal,
         openModal,
+        openSpouseConfrontation,
         openUnsolicitedQuestOffer,
         formatGold,
         escapeHtml,

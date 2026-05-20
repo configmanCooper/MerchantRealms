@@ -19295,6 +19295,15 @@
             _lastUnsolicitedSeenTownId: player._lastUnsolicitedSeenTownId || null,
             _nextUnsolicitedQuestId: player._nextUnsolicitedQuestId || 1,
             _guaranteedProposals: structuredClone(player._guaranteedProposals || {}),
+            // v9p33river358: spouse jealousy + childcare state.
+            _spouseAnger: player._spouseAnger ? structuredClone(player._spouseAnger) : null,
+            _spouseRevealHistory: structuredClone(player._spouseRevealHistory || {}),
+            _lastSpouseMisbehavior: player._lastSpouseMisbehavior || 0,
+            _activeNanny: player._activeNanny ? structuredClone(player._activeNanny) : null,
+            _familyChildArrangement: player._familyChildArrangement ? structuredClone(player._familyChildArrangement) : null,
+            _childrenTravelWith: !!player._childrenTravelWith,
+            _lastNannyChargeDay: player._lastNannyChargeDay || 0,
+            _kidsAtRiskSince: player._kidsAtRiskSince || null,
             militaryRankProgress: player.militaryRankProgress || 0,
             militaryPendingEvent: player.militaryPendingEvent ? structuredClone(player.militaryPendingEvent) : null,
             _militaryProvisionQuality: player._militaryProvisionQuality || 0.7,
@@ -19903,6 +19912,15 @@
         player._lastUnsolicitedSeenTownId = data._lastUnsolicitedSeenTownId || null;
         player._nextUnsolicitedQuestId = data._nextUnsolicitedQuestId || 1;
         player._guaranteedProposals = data._guaranteedProposals || {};
+        // v9p33river358: restore spouse jealousy + childcare state.
+        player._spouseAnger = data._spouseAnger || null;
+        player._spouseRevealHistory = data._spouseRevealHistory || {};
+        player._lastSpouseMisbehavior = data._lastSpouseMisbehavior || 0;
+        player._activeNanny = data._activeNanny || null;
+        player._familyChildArrangement = data._familyChildArrangement || null;
+        player._childrenTravelWith = !!data._childrenTravelWith;
+        player._lastNannyChargeDay = data._lastNannyChargeDay || 0;
+        player._kidsAtRiskSince = data._kidsAtRiskSince || null;
         player.militaryRankProgress = data.militaryRankProgress || 0;
         player.militaryPendingEvent = data.militaryPendingEvent || null;
         player._militaryProvisionQuality = data._militaryProvisionQuality != null ? data._militaryProvisionQuality : 0.7;

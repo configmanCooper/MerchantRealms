@@ -1263,6 +1263,13 @@
             msg += ' Getting to know them better... (progress: ' + Math.min(99, Math.max(dp.traitProgress, dp.quirkProgress)) + '%)';
         }
         grantXP(2, 'date');
+        // v9p33river358: jealousy hook — if married and the date target
+        // is not the spouse, roll detection chance based on locations.
+        try {
+            if (Player.recordCourtingAction && personId !== player.spouseId) {
+                Player.recordCourtingAction(personId);
+            }
+        } catch(_eJ) { /* defensive */ }
         return { success: true, message: msg, reveal: reveal };
     }
 

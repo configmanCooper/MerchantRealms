@@ -594,6 +594,15 @@
                 if (m.role === 'spouse' || m.npcId === Player.spouseId) {
                     html += '<button class="btn-action btn-small" style="background:#5a2a5a;" data-action="openSpousePanel">💍 Spouse Panel</button>';
                 }
+                // v9p33river358: ask to watch kids (only if player has young dependents)
+                try {
+                    var _ccS = Player.getChildcareStatus ? Player.getChildcareStatus() : null;
+                    if (_ccS && _ccS.hasKids && !(Player.state && Player.state._familyChildArrangement) &&
+                        m.role !== 'spouse' && m.npcId !== Player.spouseId &&
+                        (person.age || 0) >= 18) {
+                        html += '<button class="btn-action btn-small" data-action="askFamilyToCareForKids" data-id="' + m.npcId + '" style="background:#3a5a8a;">👶 Watch Kids (30d)</button>';
+                    }
+                } catch (_eAfk) {}
                 html += '</div>';
                 html += '</div></div>';
             }
@@ -699,6 +708,44 @@
         }
 
         html += '</div>';
+
+        // v9p33river358: Childcare section
+        try {
+            var _ccStatus = Player.getChildcareStatus ? Player.getChildcareStatus() : { hasKids: false };
+            if (_ccStatus.hasKids) {
+                html += '<div style="margin-top:14px;padding:10px;background:rgba(60,90,140,0.10);border:1px solid #3a5a8a;border-radius:6px;">';
+                html += '<div style="color:#7ab5e0;font-weight:bold;margin-bottom:6px;">👶 Childcare</div>';
+                html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;">' + _ccStatus.count + ' dependent child' + (_ccStatus.count !== 1 ? 'ren' : '') + ': ' + _ccStatus.kidNames.join(', ') + '</div>';
+                var _careLabel = {
+                    spouse: '💍 Spouse: ' + _ccStatus.spouse,
+                    nanny: '👶 Nanny in ' + (_ccStatus.nanny || 'town'),
+                    family: '👨‍👩‍👧 Family: ' + _ccStatus.family,
+                    player: '🧑 You (with them or in same town)',
+                    none: '⚠️ NO CAREGIVER — Kids are at risk!'
+                }[_ccStatus.primaryCaregiver] || '?';
+                var _careColor = _ccStatus.kidsAtRisk ? '#c85050' : '#7ab5e0';
+                html += '<div style="font-size:0.82em;color:' + _careColor + ';margin-bottom:8px;">Current care: ' + _careLabel + '</div>';
+                // Buttons
+                html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+                if (Player.state && Player.state._activeNanny) {
+                    html += '<button class="btn-action btn-small" data-action="dismissNanny">Dismiss Nanny</button>';
+                } else {
+                    html += '<button class="btn-action btn-small" data-action="hireNanny">Hire Nanny (100g/wk)</button>';
+                }
+                var _twWith = !!(Player.state && Player.state._childrenTravelWith);
+                html += '<button class="btn-action btn-small" data-action="toggleChildrenTravelWith">' + (_twWith ? '🧒 Stop bringing kids with you' : '🧒 Bring kids with you when traveling') + '</button>';
+                if (Player.state && Player.state._familyChildArrangement) {
+                    var _arr = Player.state._familyChildArrangement;
+                    var _dayNow = (Engine.getDay && Engine.getDay()) || 0;
+                    var _remaining = (_arr.endDay || 0) - _dayNow;
+                    html += '<div style="font-size:0.8em;color:#aaa;width:100%;margin-top:4px;">Family arrangement with <b>' + escapeHtml(_arr.npcName||'family') + '</b>: ' +
+                            (_remaining > 0 ? (_remaining + ' days left.') : ('Past due! Pick them up.')) + '</div>';
+                    html += '<button class="btn-action btn-small" data-action="pickupKidsFromFamily">Pick Up Children</button>';
+                }
+                html += '</div>';
+                html += '</div>';
+            }
+        } catch (_eCcUi) { /* defensive */ }
 
         openModal('👨‍👩‍👧‍👦 Family', html);
     }
@@ -967,6 +1014,30 @@
         }
 
         html += '</div>'; // end main container
+
+        // v9p33river358: annulment options (only for nobles or citizens)
+        try {
+            var _canDirect = Player.canAnnulMarriage && Player.canAnnulMarriage();
+            var _maxRank = 0;
+            if (Player.state && Player.state.socialRank) {
+                for (var _krk in Player.state.socialRank) if ((Player.state.socialRank[_krk]||0) > _maxRank) _maxRank = Player.state.socialRank[_krk];
+            }
+            var _canPetition = _maxRank >= 1;
+            if (_canDirect || _canPetition) {
+                html += '<div style="margin-top:14px;padding:10px;background:rgba(120,40,40,0.10);border:1px solid #6a3a3a;border-radius:6px;">';
+                html += '<div style="color:#d97b7b;font-weight:bold;margin-bottom:6px;">⚖️ Annulment</div>';
+                if (_canDirect) {
+                    var _cost = Player.annulmentGoldCost ? Player.annulmentGoldCost() : 10000;
+                    html += '<button class="btn-medieval" data-action="requestAnnulment" style="font-size:12px;background:rgba(200,80,80,0.18);">Annul (Noble Privilege, ' + _cost + 'g)</button> ';
+                }
+                if (_canPetition) {
+                    html += '<button class="btn-medieval" data-action="petitionKingForAnnulment" style="font-size:12px;background:rgba(120,80,160,0.18);">Petition King for Annulment</button>';
+                }
+                html += '<div style="font-size:0.72rem;color:#aaa;margin-top:6px;">Annulment ends the marriage. Petitioning the king is hard to get approved.</div>';
+                html += '</div>';
+            }
+        } catch (e) {}
+
         openModal('💍 Spouse — ' + status.name, html);
     }
 
@@ -985,6 +1056,13 @@
     }
 
     function spouseInteraction(action) {
+        // Silent treatment — spouse refuses interaction (annulment exempt)
+        if (Player.isSpouseAngry && Player.isSpouseAngry()) {
+            var anger = Player.state._spouseAnger;
+            var daysLeft = anger && anger.until ? Math.max(0, anger.until - (Engine.getDay ? Engine.getDay() : 0)) : '?';
+            toast('Your spouse refuses to speak to you. (' + daysLeft + ' days remaining)', 'warning');
+            return;
+        }
         var result;
         switch (action) {
             case 'spend_time':

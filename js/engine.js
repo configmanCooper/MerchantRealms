@@ -7794,7 +7794,7 @@
         // v9p33river244: 'poisoned' cause and isKing/isNoble status also bypass
         // — poisoning is deliberate, and royals/nobles are real political
         // actors who can die from assassination regardless of their age.
-        if (cause !== 'old age' && cause !== 'natural causes' && cause !== 'god_mode' && cause !== 'poisoned' && !p.isKing && !p.isNoble) {
+        if (cause !== 'old age' && cause !== 'natural causes' && cause !== 'god_mode' && cause !== 'poisoned' && cause !== 'neglect' && !p.isKing && !p.isNoble) {
             const isPlayerChild = p.id && p.id.startsWith('p_child_');
             const isPlayerSpouse = p.spouseId === 'player';
             const isUnderAge = p.age != null && p.age < CONFIG.COMING_OF_AGE;
@@ -32034,6 +32034,19 @@
                 }
                 if (Player.tryGenerateDailyUnsolicitedOffer && !_rFF) {
                     try { Player.tryGenerateDailyUnsolicitedOffer(); } catch (_eUq2) { /* defensive */ }
+                }
+                // v9p33river358: spouse + childcare ticks
+                if (Player.tickChildcare) {
+                    try { Player.tickChildcare(); } catch (_eCc) { /* defensive */ }
+                }
+                if (Player.tickSpouseAssassinations) {
+                    try { Player.tickSpouseAssassinations(); } catch (_eSa) { /* defensive */ }
+                }
+                if (Player.tickSpouseMisbehavior && _d % 14 === 0) {
+                    try { Player.tickSpouseMisbehavior(); } catch (_eSm) { /* defensive */ }
+                }
+                if (Player.maybeParanoidSpouseCheck && _d % 14 === 0) {
+                    try { Player.maybeParanoidSpouseCheck(); } catch (_ePs) { /* defensive */ }
                 }
             }
             if (!_rFF || _d % 7 === 0) Engine.tickEliteMerchantOutposts();

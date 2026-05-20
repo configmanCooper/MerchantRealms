@@ -4640,6 +4640,12 @@ const SPOUSE_QUIRKS = [
     { id: 'names_children', name: 'Names the Children', icon: '✍️', positive: false, effect: 'Insists on naming children — you get no say', heirEffect: 'No effect', workerMod: 0, workerDesc: 'No worker effect' },
     { id: 'keeps_maiden_name', name: 'Keeps Maiden Name', icon: '💁', positive: false, effect: 'Refuses to take your last name on marriage', heirEffect: 'No effect', workerMod: 0, workerDesc: 'No worker effect' },
     { id: 'secret_beneficiary', name: 'Secret Beneficiary', icon: '🤐', positive: false, effect: 'On death, 90% of gold and buildings go to a secret NPC instead of you', heirEffect: 'Reduced inheritance', rare: true, workerMod: 0, workerDesc: 'No worker effect' },
+    // v9p33river358: jealousy / childcare quirks
+    { id: 'vengeful', name: 'Vengeful', icon: '😤', positive: false, effect: 'If they catch you cheating, they walk out — the marriage is dissolved.', heirEffect: 'No effect', rare: true, workerMod: -0.05, workerDesc: '-5% output (holds grudges)' },
+    { id: 'murderous', name: 'Murderous', icon: '🗡️', positive: false, effect: 'If they catch you cheating, they may try to assassinate the lover (may succeed, may be caught).', heirEffect: 'No effect', rare: true, workerMod: -0.05, workerDesc: '-5% output (volatile)' },
+    { id: 'paranoid', name: 'Paranoid', icon: '👁️', positive: false, effect: 'Occasionally misreads your high same-gender friendships as cheating.', heirEffect: 'No effect', rare: true, workerMod: -0.04, workerDesc: '-4% output (suspicious of coworkers)' },
+    { id: 'vindictive', name: 'Vindictive', icon: '🔥', positive: false, effect: 'If they catch you cheating, they sabotage your buildings and spread rumors.', heirEffect: 'No effect', workerMod: -0.05, workerDesc: '-5% output (creates drama)' },
+    { id: 'negligent_parent', name: 'Negligent Parent', icon: '🚷', positive: false, effect: 'Will not look after the children — you must arrange care yourself.', heirEffect: 'Children grow up colder', rare: true, workerMod: 0, workerDesc: 'No worker effect' },
 ];
 
 // ============================================================

@@ -4811,6 +4811,44 @@ function clickTown(townId) {
         } catch(e) {}
     });
 
+    // v9p33river358: spouse + childcare actions
+    UI.registerAction('requestAnnulment', function() {
+        if (!confirm('Annul your marriage? This costs gold and is permanent.')) return;
+        var r = Player.requestAnnulment ? Player.requestAnnulment() : { success: false, message: 'Unavailable.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        try { UI.openSpousePanel(); } catch(e) {}
+    });
+    UI.registerAction('petitionKingForAnnulment', function() {
+        if (!confirm('Petition the king for an annulment? Approval is unlikely.')) return;
+        var r = Player.petitionKingForAnnulment ? Player.petitionKingForAnnulment() : { success: false, message: 'Unavailable.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        try { UI.openSpousePanel(); } catch(e) {}
+    });
+    UI.registerAction('hireNanny', function() {
+        var r = Player.hireNanny ? Player.hireNanny() : { success: false, message: 'Unavailable.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        try { UI.openFamilyPanel(); } catch(e) {}
+    });
+    UI.registerAction('dismissNanny', function() {
+        var r = Player.dismissNanny ? Player.dismissNanny() : { success: false, message: 'Unavailable.' };
+        UI.toast(r.message, r.success ? 'success' : 'info');
+        try { UI.openFamilyPanel(); } catch(e) {}
+    });
+    UI.registerAction('toggleChildrenTravelWith', function() {
+        var r = Player.toggleChildrenTravelWith ? Player.toggleChildrenTravelWith() : { success: false };
+        try { UI.openFamilyPanel(); } catch(e) {}
+    });
+    UI.registerAction('askFamilyToCareForKids', function(_t, d) {
+        var r = Player.askFamilyToCareForKids ? Player.askFamilyToCareForKids(d.id) : { success: false, message: 'Unavailable.' };
+        UI.toast(r.message || (r.success ? 'Arrangement made.' : 'Cannot arrange.'), r.success ? 'success' : 'warning');
+        try { UI.openFamilyPanel(); } catch(e) {}
+    });
+    UI.registerAction('pickupKidsFromFamily', function() {
+        var r = Player.pickupKidsFromFamily ? Player.pickupKidsFromFamily() : { success: false, message: 'Unavailable.' };
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        try { UI.openFamilyPanel(); } catch(e) {}
+    });
+
     UI.registerAction('takeHorseFromWorker',function(_t, d) { var r = Player.takeHorseFromWorker(d.id); UI.toast(r.message, r.success ? 'success' : 'warning'); if (r.success) { try { var p = Engine.findPerson(d.id); if (p) UI.showPersonDetail(p); } catch(e) {} } });
     UI.registerAction('requestSignature', function(_t, d) { var r = Player.requestSignature(d.id, d.val); UI.toast(r.message, r.signed ? 'success' : 'warning'); try { var p = Engine.getPerson(d.val); if (p) UI.showPersonDetail(p); } catch(e) {} });
     UI.registerAction('interviewNpcForQuestUI', function(_t, d) {
