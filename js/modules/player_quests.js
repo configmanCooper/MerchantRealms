@@ -3121,7 +3121,15 @@
         msg += giftDiscoverMsg;
 
         Player.grantXP(2, 'social_interaction');
-        return { success: true, message: msg, gain: gain };
+        // v9p33river355: record this interaction as a memory on
+        // elite merchants and nobles so it can surface in later
+        // dialog. Sentiment is positive for >=1 gain, negative for
+        // a clear loss, neutral otherwise.
+        try {
+            var _memSent = gain >= 1 ? 'positive' : (gain <= -1 ? 'negative' : 'neutral');
+            recordNpcMemory(person, 'interaction', interaction.name, { sentiment: _memSent });
+        } catch (_eMem) { /* defensive */ }
+        return { success: true, message: msg, gain: gain, interactionId: interactionId };
     }
 
     // ── Special Interaction Handlers ─────────────────────────
@@ -4024,6 +4032,55 @@
     Player.interviewNpcForQuest = interviewNpcForQuest;
     Player.askNpcAboutCriminal = askNpcAboutCriminal;
     Player.attemptCaptureCriminal = attemptCaptureCriminal;
+
+    // ────────────────────────────────────────────────────────
+    // §NPC-MEM: Player Memory tracking for Elite Merchants & Nobles
+    // Records significant interactions so they can be referenced
+    // back to the player in later dialog. Capped per NPC to keep
+    // saves small. Only stored on elite merchants and nobles —
+    // ordinary townsfolk don't track this.
+    // ────────────────────────────────────────────────────────
+    var NPC_MEMORY_CAP = 16;
+
+    function _npcQualifiesForMemory(person) {
+        if (!person) return false;
+        if (person.isEliteMerchant) return true;
+        if (person.isKing) return true;
+        if (person.socialRank) {
+            for (var _kk in person.socialRank) {
+                if ((person.socialRank[_kk] || 0) >= 4) return true;
+            }
+        }
+        return false;
+    }
+
+    function recordNpcMemory(personId, kind, summary, opts) {
+        var person = (typeof personId === 'string') ? Engine.findPerson(personId) : personId;
+        if (!_npcQualifiesForMemory(person)) return;
+        if (!person._playerMemories) person._playerMemories = [];
+        var day = 0;
+        try { day = Engine.getDay(); } catch(e) {}
+        person._playerMemories.push({
+            kind: kind || 'event',
+            day: day,
+            summary: String(summary || ''),
+            sentiment: (opts && opts.sentiment) || 'neutral'
+        });
+        // Cap to keep saves bounded
+        while (person._playerMemories.length > NPC_MEMORY_CAP) {
+            person._playerMemories.shift();
+        }
+    }
+
+    function getNpcMemories(personId) {
+        var person = (typeof personId === 'string') ? Engine.findPerson(personId) : personId;
+        if (!person || !person._playerMemories) return [];
+        return person._playerMemories.slice();
+    }
+
+    Player.recordNpcMemory = recordNpcMemory;
+    Player.getNpcMemories = getNpcMemories;
+    Player.npcQualifiesForMemory = _npcQualifiesForMemory;
 
     // NPC Interactions
     Player.getAvailableInteractions = getAvailableInteractions;

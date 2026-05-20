@@ -4027,6 +4027,448 @@ window.UI = (function () {
     }
 
     // NPC greeting based on rank comparison, personality, AND relationship level
+    // ────────────────────────────────────────────────────────
+    // v9p33river355: Per-action interaction response system
+    // Replaces the "What do you want?" greeting line in the
+    // Interact modal with a contextual in-character response when
+    // the player clicks Small Talk / Tell a Joke / Discuss Business
+    // / Compliment / Ask for Advice / Share a Drink. Variants are
+    // selected by family role, relationship tier, NPC personality,
+    // NPC occupation, rank gap, and (when applicable) a recent
+    // memory of past player interactions (elite merchants & nobles
+    // only — see Player.recordNpcMemory in modules/player_quests.js).
+    // ────────────────────────────────────────────────────────
+    function _interactionPickerContext(person) {
+        var ctx = {};
+        var ps = (typeof Player !== 'undefined') ? Player.state : null;
+        ctx.playerName = ps ? (ps.firstName || 'friend') : 'friend';
+        ctx.npcFirst = (person && person.firstName) || 'they';
+        ctx.npcOcc = (person && person.occupation) || '';
+        ctx.npcIsEM = !!(person && person.isEliteMerchant);
+        ctx.npcIsKing = !!(person && person.isKing);
+
+        ctx.family = null;
+        if (ps && person) {
+            if (ps.spouseId === person.id) ctx.family = 'spouse';
+            else if (ps.parentIds && ps.parentIds.indexOf(person.id) !== -1) {
+                ctx.family = (person.sex === 'F') ? 'mother' : 'father';
+            } else if (ps.childrenIds && ps.childrenIds.indexOf(person.id) !== -1) {
+                ctx.family = (person.sex === 'F') ? 'daughter' : 'son';
+            } else if (ps.siblingIds && ps.siblingIds.indexOf(person.id) !== -1) {
+                ctx.family = (person.sex === 'F') ? 'sister' : 'brother';
+            }
+        }
+
+        var rel = 0;
+        try {
+            if (Player.getRelationship) {
+                var r = Player.getRelationship(person.id);
+                rel = r ? (r.level || 0) : 0;
+            }
+        } catch (e) {}
+        ctx.rel = rel;
+        ctx.relTier = (rel >= 80) ? 'trusted'
+                    : (rel >= 60) ? 'close'
+                    : (rel >= 40) ? 'friend'
+                    : (rel >= 20) ? 'friendly'
+                    : (rel >= 0)  ? 'neutral'
+                    : (rel >= -20) ? 'cool' : 'hostile';
+
+        var npcRank = 0;
+        if (person && person.socialRank) {
+            for (var kId in person.socialRank) {
+                if ((person.socialRank[kId] || 0) > npcRank) npcRank = person.socialRank[kId];
+            }
+        }
+        if (npcRank === 0 && person && person.occupation === 'noble') npcRank = 4;
+        if (person && person.isKing) npcRank = 7;
+        ctx.npcRank = npcRank;
+        var playerRank = 0;
+        if (ps && ps.socialRank) {
+            for (var pk in ps.socialRank) {
+                if ((ps.socialRank[pk] || 0) > playerRank) playerRank = ps.socialRank[pk];
+            }
+        }
+        ctx.playerRank = playerRank;
+        var gap = npcRank - playerRank;
+        ctx.rankGap = (gap >= 3) ? 'far_above'
+                    : (gap >= 1) ? 'above'
+                    : (gap === 0) ? 'equal'
+                    : (gap >= -2) ? 'below' : 'far_below';
+
+        var pers = (person && person.personality) || {};
+        ctx.warm = (pers.warmth || 50) >= 60;
+        ctx.cold = (pers.warmth || 50) <= 40;
+        ctx.ambitious = (pers.ambition || 50) >= 60;
+        ctx.honest = (pers.honesty || 50) >= 60;
+        ctx.smart = (pers.intelligence || 50) >= 60;
+
+        ctx.townName = '';
+        ctx.kingdomName = '';
+        try {
+            var t = Engine.findTown(person.townId);
+            if (t) {
+                ctx.townName = t.name || '';
+                var k = Engine.findKingdom(t.kingdomId);
+                if (k) ctx.kingdomName = k.name || '';
+            }
+        } catch (e) {}
+
+        return ctx;
+    }
+
+    function _interactionMemorySnippet(person, ctx) {
+        try {
+            if (!Player.getNpcMemories) return null;
+            var memories = Player.getNpcMemories(person.id);
+            if (!memories || !memories.length) return null;
+            var day = 0;
+            try { day = Engine.getDay(); } catch(e) {}
+            var recent = [];
+            // Skip the very latest entry (which IS the current interaction).
+            for (var i = 0; i < memories.length - 1; i++) {
+                var m = memories[i];
+                if (day - (m.day || 0) <= 120) recent.push(m);
+            }
+            if (!recent.length) return null;
+            var m2 = recent[Math.floor(Math.random() * recent.length)];
+            var ago = Math.max(1, day - (m2.day || 0));
+            var agoText = ago < 7 ? 'a few days ago' : ago < 30 ? 'a couple weeks back' : ago < 90 ? 'a while ago' : 'some time ago';
+            if (m2.kind === 'favorite_gift') {
+                return 'I have not forgotten that ' + m2.summary + ' you brought me ' + agoText + '.';
+            }
+            if (m2.kind === 'hated_gift') {
+                return 'And that ' + m2.summary + ' you tried to fob off on me ' + agoText + ' — I have not forgotten THAT either.';
+            }
+            if (m2.kind === 'gift') {
+                return 'The ' + m2.summary + ' from ' + agoText + ' was a kind gesture.';
+            }
+            if (m2.kind === 'interaction') {
+                if (m2.sentiment === 'positive') {
+                    return 'Our ' + String(m2.summary || 'last chat').toLowerCase() + ' ' + agoText + ' was a pleasure.';
+                }
+                if (m2.sentiment === 'negative') {
+                    return 'I am still chewing on that ' + String(m2.summary || 'conversation').toLowerCase() + ' we had ' + agoText + '.';
+                }
+                return null;
+            }
+            return null;
+        } catch (e) { return null; }
+    }
+
+    var _INTERACTION_RESPONSES = {
+
+        small_talk: function(ctx) {
+            var out = [];
+            if (ctx.family === 'mother') {
+                out.push('*smiles warmly* Oh ' + ctx.playerName + ', it is good to see you. Are you eating enough?');
+                out.push('Come in, come in. The kettle is on. Sit and tell me about your week.');
+                out.push('*hugs you* My child. I worry about you out there.');
+                if (ctx.cold) out.push('Mm. You only visit when you want something, do you not?');
+            } else if (ctx.family === 'father') {
+                out.push('*claps your shoulder* There you are. Sit. Tell me how things stand.');
+                out.push('Good to see you on your feet. Your mother frets when you do not visit.');
+                out.push('*nods approvingly* A solid handshake. That is half of what the world judges you on.');
+                if (ctx.cold) out.push('*grunts* You here for a reason, or just to fill the chair?');
+            } else if (ctx.family === 'brother') {
+                out.push('*grins* Look who finally remembered they have a brother. Sit.');
+                out.push('Trouble or just bored? Either way, glad you are here.');
+                out.push('I was about to walk over to find you. Saved me the trip.');
+            } else if (ctx.family === 'sister') {
+                out.push('*smiles* About time. I was beginning to think the town swallowed you.');
+                out.push('Tell me everything. Spare no details. I have time today.');
+                out.push('Sit. I made too much bread again. You can take some home.');
+            } else if (ctx.family === 'spouse') {
+                if (ctx.rel >= 60) out.push('*lights up* There you are, my love. How was the day?');
+                else out.push('Oh. Hello. You are home, then.');
+            } else if (ctx.family === 'son' || ctx.family === 'daughter') {
+                out.push('*hugs* I missed you. Are you taking care of yourself?');
+                out.push('Look at you. Standing taller every time I see you.');
+            } else if (ctx.rankGap === 'far_above') {
+                if (ctx.npcIsKing) {
+                    out.push('Speak plainly. We have no time for empty pleasantries today.');
+                    out.push('*regards you for a long moment* And what brings you before my court?');
+                } else {
+                    out.push('Brief, please. I have correspondence to attend to.');
+                    out.push('A pleasant day, is it? Mm. Speak.');
+                    out.push('Make it quick, ' + ctx.playerName + '. The hour grows short.');
+                }
+            } else if (ctx.relTier === 'trusted') {
+                out.push('*beams* My old friend. Sit, sit. The world feels lighter when you are about.');
+                out.push('Ah, ' + ctx.playerName + '. Whatever foul thing the day has been, you have just improved it.');
+                out.push('Come closer. You always have a story worth hearing.');
+            } else if (ctx.relTier === 'close') {
+                out.push('Always good to see your face. What is the news?');
+                out.push('Sit a moment. I would enjoy the company.');
+                out.push('*claps you on the shoulder* You picked a good day to drop by.');
+            } else if (ctx.relTier === 'friend') {
+                out.push('Good to see you. What is on your mind today?');
+                out.push('Hello there. Pleasant weather for it, is it not?');
+                out.push('Ah, hello. What word from the town?');
+            } else if (ctx.relTier === 'friendly') {
+                out.push('Hello again. How are you?');
+                out.push('Good day to you. Anything interesting happening?');
+                out.push('Hm? Oh, hello. Did you need something?');
+            } else if (ctx.relTier === 'neutral') {
+                if (ctx.warm) out.push('Hello there. Lovely day, would you not say?');
+                else out.push('Yes? What can I do for you?');
+                out.push('*nods* Hello. The weather has been holding.');
+            } else if (ctx.relTier === 'cool') {
+                out.push('*stiffly* Hello. Was there something specific?');
+                out.push('Hmm. I suppose we can talk briefly.');
+                out.push('*flat tone* What is the weather, then. Or whatever else you wish to say.');
+            } else {
+                out.push('*coldly* Make it brief.');
+                out.push('I have nothing pleasant to say. Pick your words carefully.');
+            }
+            if (ctx.relTier === 'neutral' || ctx.relTier === 'friendly' || ctx.relTier === 'friend') {
+                if (ctx.npcOcc === 'farmer') out.push('The rain has been kind this season. Could use a little more, though.');
+                else if (ctx.npcOcc === 'fisher') out.push('The boats came back heavy this morning. A small mercy.');
+                else if (ctx.npcOcc === 'guard' || ctx.npcOcc === 'soldier') out.push('Quiet patrol today, thank the gods. Long may it last.');
+                else if (ctx.npcOcc === 'baker') out.push('I have been on my feet since before dawn. But the bread is good today.');
+                else if (ctx.npcOcc === 'merchant') out.push('Prices are jittery. Hard to plan a season with the markets like this.');
+                else if (ctx.npcOcc === 'innkeeper' || ctx.npcOcc === 'barkeep' || ctx.npcOcc === 'tavern_keeper') out.push('Slow morning, busy night. Same as every day.');
+            }
+            return out;
+        },
+
+        tell_joke: function(ctx) {
+            var out = [];
+            if (ctx.cold && ctx.relTier !== 'trusted') {
+                out.push('*stares* That is supposed to be funny.');
+                out.push('Mm. I will laugh at my own pace, thank you.');
+                out.push('*sighs* You should keep your day job.');
+            } else if (ctx.warm) {
+                out.push('*bursts out laughing* Oh, that one is going around the tavern tonight!');
+                out.push('*snorts* You always have a fresh one. Where do you find them?');
+                out.push('*wipes eye* I needed that. Truly.');
+                out.push('*chuckles* Tell me you have one more like that.');
+            } else if (ctx.relTier === 'trusted' || ctx.relTier === 'close') {
+                out.push('*laughs* Only you could get away with that one.');
+                out.push('*grins* Saving that one for the next dinner. Mind if I steal it?');
+            } else if (ctx.rankGap === 'far_above') {
+                if (ctx.npcIsKing) out.push('*one eyebrow raised* The court jester is not in today, ' + ctx.playerName + '. But noted.');
+                else out.push('Hm. That has the shape of a jest. I shall consider it later.');
+                out.push('*polite chuckle* Quite. Quite.');
+            } else {
+                out.push('*small smile* Not bad.');
+                out.push('Heh. I have heard worse this week.');
+                out.push('*grins faintly* Mm. Cheeky.');
+                out.push('*shakes head* I do not know whether to laugh or sigh.');
+            }
+            if (ctx.family === 'father') out.push('*chuckles* You always did love a bad joke. Like your old man.');
+            if (ctx.family === 'mother') out.push('*shakes head smiling* Oh, you. Where do you get these?');
+            if (ctx.family === 'brother' || ctx.family === 'sister') out.push('*laughs* That is the worst one yet. Tell me another.');
+            return out;
+        },
+
+        discuss_business: function(ctx) {
+            var out = [];
+            // Occupation-specific business talk takes priority for this action.
+            if (ctx.npcIsEM) {
+                out.push('Ah — talk of trade. Margins in ' + (ctx.kingdomName || 'this kingdom') + ' are thinner than they look. The smart play this season is volume, not premium.');
+                out.push('Funny you should ask. I have been moving goods between ' + (ctx.townName || 'here') + ' and the coast — the routes are crowded but the prices reward patience.');
+                out.push('My caravans are running. My buildings are running. My competitors are nervous. That is the only report worth giving.');
+                if (ctx.relTier === 'trusted' || ctx.relTier === 'close') {
+                    out.push('Between us — I am eyeing a new warehouse contract. The right partner could make a killing.');
+                    out.push('I will tell you what I would not tell another merchant: ' + (ctx.townName || 'this town') + ' is about to be very hungry for iron. Stockpile now.');
+                }
+            } else if (ctx.npcOcc === 'merchant') {
+                out.push('Prices are rising on bread and cloth this month. Whoever is hoarding ought to sell now before the bottom falls out.');
+                out.push('The market in ' + (ctx.townName || 'this town') + ' has been hungry for tools all spring. I cannot stock fast enough.');
+                out.push('A caravan came through last week with spices priced like rubies. Robbery, I tell you. But people pay.');
+                out.push('If you are buying, buy at dawn. Vendors are softer before the morning rush.');
+            } else if (ctx.npcOcc === 'farmer') {
+                out.push('Talk of business with a farmer? Ha. We talk of rain. And rats. And whether the wheat is going to hold.');
+                out.push('Bushels are down this year. Whoever brings in a heavy harvest will name their price by harvest moon.');
+                out.push('A good farm needs three things: hands, weather, and luck. I have two of those.');
+            } else if (ctx.npcOcc === 'fisher') {
+                out.push('The catch has been thin out east. I am thinking of paying for a bigger net before the season turns.');
+                out.push('Fish is fish. Sell while it is fresh or pay the salt-man to make it last. There is no third path.');
+            } else if (ctx.npcOcc === 'guard' || ctx.npcOcc === 'soldier') {
+                out.push('Business? My business is keeping ' + (ctx.townName || 'this place') + ' from coming apart. Yours, I imagine, is somewhat different.');
+                out.push('Watch the gate tax. It crept up two coppers last month and nobody bothered to announce it.');
+            } else if (ctx.npcOcc === 'baker') {
+                out.push('Grain is up, ovens still burn the same wood, and people still want bread. The arithmetic does not care for any of us.');
+                out.push('I would buy flour in bulk if I had the storage. If you have a warehouse with space, we should talk.');
+            } else if (ctx.npcOcc === 'innkeeper' || ctx.npcOcc === 'barkeep' || ctx.npcOcc === 'tavern_keeper') {
+                out.push('Travelers spend, locals nurse a single mug. Both fund my roof. Both annoy me equally.');
+                out.push('Wine is up, ale is steady. If a caravan brings real southern wine I will pay a premium — within reason.');
+            } else if (ctx.npcRank >= 4) {
+                out.push('Business is the affair of guildsmen and merchants. We discuss prosperity. They are not the same.');
+                out.push('If you mean the kingdom market — the trade tax is doing its slow work. The smart houses adjusted months ago.');
+                out.push('Tell me what you trade. Then I can tell you whether it is worth my time.');
+            } else {
+                out.push('I am no man of figures. But folk have been complaining about the price of cloth. Make of that what you will.');
+                out.push('Times are tight for ordinary people. Whatever the merchants tell themselves.');
+                out.push('My only business is keeping the lamp lit. Whatever yours is, I wish you well at it.');
+            }
+            // Family or rank flavor adjustments
+            if (ctx.family === 'father') out.push('*nods slowly* Coin is coin. But do not lose your name for it. I will not say that twice.');
+            if (ctx.family === 'mother') out.push('You and your numbers. Just promise me you are not in over your head.');
+            if (ctx.cold) out.push('*shrugs* Why are you asking ME? Find a guild master.');
+            return out;
+        },
+
+        compliment: function(ctx) {
+            var out = [];
+            var pers = (ctx && ctx.honest != null) ? ctx : {};
+            if (ctx.honest && ctx.relTier !== 'trusted' && ctx.relTier !== 'close') {
+                out.push('*narrow look* Mm. Save the flattery for someone it works on.');
+                out.push('Is that an opening for something? Out with it.');
+                out.push('*flat* I have heard prettier lies, but yours is acceptable.');
+            } else if (ctx.warm) {
+                out.push('*blushes* Oh — well, that is kind of you to say.');
+                out.push('*laughs* You charmer. Keep talking like that and I will start believing it.');
+                out.push('Pfft. Now you are just trying to soften me up. ...It is working.');
+            } else if (ctx.relTier === 'trusted' || ctx.relTier === 'close') {
+                out.push('*smiles* You always know what to say. I will take it.');
+                out.push('Coming from you, that means something. Thank you.');
+            } else if (ctx.rankGap === 'far_above') {
+                if (ctx.npcIsKing) out.push('Well-said, ' + ctx.playerName + '. We appreciate a courteous tongue.');
+                else out.push('Hm. Polished words. I will give you that.');
+                out.push('*nods graciously* Noted, ' + ctx.playerName + '. Noted.');
+            } else if (ctx.relTier === 'cool' || ctx.relTier === 'hostile') {
+                out.push('*coldly* Save it.');
+                out.push('Try harder if you want it to land.');
+            } else {
+                out.push('*small smile* That is generous of you to say.');
+                out.push('Heh. You are a charmer, are you not?');
+                out.push('*nods* Kind of you. I will not forget it.');
+            }
+            if (ctx.family === 'mother') out.push('*beams* You sweet thing. You always know what to say to your mother.');
+            if (ctx.family === 'father') out.push('*gruff* All right, all right. No need to lay it on so thick.');
+            if (ctx.family === 'spouse' && ctx.rel >= 60) out.push('*smiles* You say the sweetest things. Come here.');
+            return out;
+        },
+
+        ask_advice: function(ctx) {
+            var out = [];
+            // Occupation-flavored advice takes priority — that is what the player is paying attention to.
+            if (ctx.npcIsEM) {
+                out.push('Advice? Three things. One: never buy at peak. Two: always know your buyer before your seller. Three: pay your caravan guards better than your rivals do.');
+                out.push('If you must take a partner, take one who needs you more than you need them. Anything else is a trap.');
+                out.push('When markets shake, the patient eat. When markets boom, the patient EAT WELL.');
+                out.push('I have made my money four times. Three times I lost it again. The fourth time I learned to keep some buried where I could not get at it on a bad day.');
+                if (ctx.relTier === 'trusted' || ctx.relTier === 'close') {
+                    out.push('Between us: the next decade belongs to whoever owns the warehouses, not the goods. Mark me.');
+                }
+            } else if (ctx.npcOcc === 'merchant') {
+                out.push('Buy when the wagons roll in, sell when the wagons roll out. Simplest rule in the trade.');
+                out.push('Never trust a buyer who refuses to haggle. Either they are desperate or they are setting you up.');
+                out.push('Track three prices in every town: bread, cloth, and iron. They tell you everything before the criers do.');
+            } else if (ctx.npcOcc === 'farmer') {
+                out.push('Watch the swallows. They are honest about the weather in a way almanacs are not.');
+                out.push('Never plant your last seed. Keep some back, always. The years that ruin you are the ones you did not see coming.');
+                out.push('Good soil, patient hands, and an honest cart-driver. That is a fortune in this life.');
+            } else if (ctx.npcOcc === 'fisher') {
+                out.push('Read the sky. If the gulls are flying inland, your boat should be moored, not out.');
+                out.push('A fish in the basket beats two in the next net. Sell early when the price is fair.');
+            } else if (ctx.npcOcc === 'guard' || ctx.npcOcc === 'soldier') {
+                out.push('Walk softly at night, hand near your purse, eyes on the alleys. Most trouble in this world telegraphs itself before it lands.');
+                out.push('If a stranger asks where you are headed, lie. There is no upside to honesty there.');
+                out.push('A short sword is more honest than a long one. So is a clear conscience.');
+            } else if (ctx.npcOcc === 'baker' || ctx.npcOcc === 'innkeeper' || ctx.npcOcc === 'barkeep' || ctx.npcOcc === 'tavern_keeper') {
+                out.push('Feed people first. Their loyalty follows their bellies. That has never failed me.');
+                out.push('Smile through any guest, no matter the hour. Coins do not care if you are tired.');
+            } else if (ctx.npcRank >= 4) {
+                out.push('Court is a game of patience and posture. Watch who the king laughs with, not who he speaks to. The first is the real council.');
+                out.push('Cultivate one rival. Just one. It sharpens you. More than that is wasteful.');
+                out.push('Never put your name to a letter you would not be content to read in court.');
+                if (ctx.npcIsKing) {
+                    out.push('Rule with mercy first, sword last, and you will rule longest. Reverse the order and you will rule the shortest.');
+                    out.push('Take counsel widely. Act narrowly. That is the whole craft.');
+                }
+            } else if (ctx.smart) {
+                out.push('Pay attention to what people DO, not what they say. The mouth lies. The hands do not.');
+                out.push('Most problems are smaller in the morning. Sleep on a decision when you can.');
+            } else {
+                out.push('Trust your own gut over a stranger\'s smile.');
+                out.push('Save coin when you can. The years are long, and lean ones come uninvited.');
+                out.push('Be kind to the people who serve your meals. The world treats you better when they like you.');
+            }
+            if (ctx.family === 'mother') out.push('*sets down her cup* Eat well. Sleep enough. Marry someone who laughs easily. That is all the advice I have for anyone.');
+            if (ctx.family === 'father') out.push('*long pause* You make your name with the work nobody is watching. Not the work everybody sees.');
+            if (ctx.cold) out.push('*shrugs* You want advice — go pay an advisor. I have none for free.');
+            return out;
+        },
+
+        share_drink: function(ctx) {
+            var out = [];
+            if (ctx.warm) {
+                out.push('*lifts mug* To good company. May the cask never run dry.');
+                out.push('*grins* Now THAT is how you start a conversation. To your health, ' + ctx.playerName + '.');
+                out.push('*clinks* You spoil me. One drink turns into three, you know.');
+            } else if (ctx.cold && ctx.relTier !== 'trusted') {
+                out.push('*sips suspiciously* What are you after.');
+                out.push('Hm. Generous. We shall see whether it sweetens me.');
+                out.push('*reluctantly raises mug* ...Cheers, I suppose.');
+            } else if (ctx.relTier === 'trusted' || ctx.relTier === 'close') {
+                out.push('*beams* Now this is how the day should end. To us.');
+                out.push('*clinks* You and I have shared worse drinks for worse reasons. This one is welcome.');
+            } else if (ctx.rankGap === 'far_above') {
+                if (ctx.npcIsKing) out.push('*signals for a goblet* A toast, then. To loyal subjects. *drinks*');
+                else out.push('*considers, then raises glass* Very well. To pleasant company.');
+            } else {
+                out.push('*takes the mug* Kindness for kindness. To your health.');
+                out.push('*drinks* Not bad. Not bad at all.');
+                out.push('*nods* Cheers. And thank you.');
+            }
+            if (ctx.family === 'father') out.push('*pours generously* About time you bought your old man a drink. I taught you to drink, after all.');
+            if (ctx.family === 'mother') out.push('*sighs happily* I do not say no to a glass with my own child. Sit down properly.');
+            if (ctx.family === 'brother' || ctx.family === 'sister') out.push('*grins* Now we are talking. Round two is on me.');
+            return out;
+        },
+
+        ask_gossip: function(ctx) {
+            return [
+                'Lean in. You did not hear this from me...',
+                '*lowers voice* I should not say. But you are not the worst person to hear it.',
+                'Word in the market is something is brewing. Take it for what it is worth.',
+                'Hmf. People talk. I am one of them.'
+            ];
+        }
+    };
+
+    function _buildInteractionResponse(person, interactionId, result) {
+        if (!person) return null;
+        var ctx = _interactionPickerContext(person);
+        var pool = _INTERACTION_RESPONSES[interactionId] ? _INTERACTION_RESPONSES[interactionId](ctx) : [];
+        if (!pool || !pool.length) {
+            // Generic fallback so the dialog always changes
+            pool = [
+                '*nods* Understood.',
+                'Mm. Go on.',
+                'I hear you.',
+                'Very well.'
+            ];
+        }
+        var pick = pool[Math.floor(Math.random() * pool.length)];
+        // Optionally append a memory snippet (elite merchants & nobles, ~35% chance)
+        var memSuffix = '';
+        try {
+            if (Player.npcQualifiesForMemory && Player.npcQualifiesForMemory(person)) {
+                if (Math.random() < 0.35) {
+                    var snip = _interactionMemorySnippet(person, ctx);
+                    if (snip) memSuffix = ' ' + snip;
+                }
+            }
+        } catch (e) {}
+        return '"' + pick + memSuffix + '"';
+    }
+
+    function _renderInteractionDialog(person, interactionId, result) {
+        var line = _buildInteractionResponse(person, interactionId, result);
+        if (line == null) return '';
+        var fn = (person && person.firstName) || 'They';
+        return '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(255,215,0,0.06);border-left:3px solid rgba(255,215,0,0.3);border-radius:0 6px 6px 0;font-style:italic;color:var(--text-secondary,#ccc);font-size:0.9em;">' +
+            '<span style="color:var(--gold,#ffd700);font-weight:bold;">' + fn + ':</span> ' + line + '</div>';
+    }
+
+    // Expose for the click handler.
+    UI._buildInteractionResponse = _buildInteractionResponse;
+    UI._renderInteractionDialog = _renderInteractionDialog;
+
     function _getNpcGreeting(person, personName) {
         if (!person) return '';
         var pers = person.personality || {};
@@ -4415,10 +4857,17 @@ window.UI = (function () {
         html += '<h3 style="margin:0 0 8px;color:#ffd700">💬 Interact with ' + personName + '</h3>';
 
         // NPC greeting based on rank and personality
+        // v9p33river355: wrap in an addressable container so per-action
+        // dialog responses can replace the greeting line without
+        // closing the modal.
+        html += '<div id="npcInteractionDialog" data-person="' + personId + '">';
         html += _getNpcGreeting(person, personName);
+        html += '</div>';
 
         // Relationship tier badge
         var _pRel = Player.state && Player.state.relationships && Player.state.relationships[personId];
+        // v9p33river355: wrap so the click handler can refresh the badge in place.
+        html += '<div id="npcInteractionRelBadge">';
         if (_pRel) {
             var _rlvl = Math.round(_pRel.level || 0);
             var _tName = 'Acquaintance', _tColor = '#888', _tIcon = '👤';
@@ -4437,6 +4886,7 @@ window.UI = (function () {
             if (_rlvl < 100) html += '<span style="font-size:0.6rem;color:#888;">→ ' + _nextTier + '</span>';
             html += '</div>';
         }
+        html += '</div>'; // close npcInteractionRelBadge
 
         var cooldownCount = 0;
         for (var i = 0; i < interactions.length; i++) {
@@ -4523,18 +4973,33 @@ window.UI = (function () {
                 if (!pid || !iid) return;
                 var result = Player.interactWithNPC(pid, iid);
                 if (result && result.success) {
-                    toast(result.message, 'success');
                     window._tutorialSocialInteracted = true;
                     if (iid === 'small_talk') window._tutorialSmallTalkDone = true;
-                    // Story mode: track NPC talk
                     if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
                         Player.state.storyMode._talkedToNPC = true;
                         if (typeof StoryMode !== 'undefined' && StoryMode.tick) StoryMode.tick(Player.state);
                     }
-                    closeModal();
+                    // v9p33river355: do NOT close the modal — replace the
+                    // intro greeting with the NPC's per-action response and
+                    // refresh the relationship widget in place.
                     try {
-                        var p = Engine.getPerson(pid);
-                        if (p) UI.showPersonDetail(p);
+                        var personObj = Engine.getPerson(pid);
+                        // Swap dialog line
+                        var dlgEl = document.getElementById('npcInteractionDialog');
+                        if (dlgEl && personObj && UI._renderInteractionDialog) {
+                            dlgEl.innerHTML = UI._renderInteractionDialog(personObj, iid, result);
+                        }
+                        // Refresh relationship tier badge
+                        var badge = document.getElementById('npcInteractionRelBadge');
+                        if (badge && personObj) {
+                            badge.innerHTML = _renderRelTierBadge(personObj.id);
+                        }
+                        // Quick subtle toast confirming the gain (no modal close)
+                        if (result.gain != null) {
+                            var _gs = result.gain >= 0 ? '+' : '';
+                            toast(_gs + result.gain.toFixed(1) + ' relationship with ' + (personObj ? personObj.firstName : 'them'),
+                                result.gain >= 1 ? 'success' : (result.gain <= -1 ? 'warning' : 'info'));
+                        }
                     } catch(e) {}
                 } else {
                     toast((result && result.message) || 'Cannot interact right now.', 'warning');
@@ -4548,6 +5013,28 @@ window.UI = (function () {
                 this.style.filter = '';
             });
         }
+    }
+
+    // v9p33river355: helper used by the in-place modal refresh.
+    function _renderRelTierBadge(personId) {
+        var _pRel = Player.state && Player.state.relationships && Player.state.relationships[personId];
+        if (!_pRel) return '';
+        var _rlvl = Math.round(_pRel.level || 0);
+        var _tName = 'Acquaintance', _tColor = '#888', _tIcon = '👤';
+        if (_rlvl >= 80) { _tName = 'Trusted'; _tColor = '#9b59b6'; _tIcon = '💜'; }
+        else if (_rlvl >= 60) { _tName = 'Close Friend'; _tColor = '#55a868'; _tIcon = '💚'; }
+        else if (_rlvl >= 40) { _tName = 'Friend'; _tColor = '#d4a843'; _tIcon = '💛'; }
+        else if (_rlvl >= 20) { _tName = 'Friendly'; _tColor = '#5dade2'; _tIcon = '🤝'; }
+        var _nextTier = _rlvl >= 80 ? 100 : _rlvl >= 60 ? 80 : _rlvl >= 40 ? 60 : _rlvl >= 20 ? 40 : 20;
+        var _prevTier = _rlvl >= 80 ? 80 : _rlvl >= 60 ? 60 : _rlvl >= 40 ? 40 : _rlvl >= 20 ? 20 : 0;
+        var _tierProg = Math.round(((_rlvl - _prevTier) / (_nextTier - _prevTier)) * 100);
+        var html = '<div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;padding:4px 8px;background:rgba(0,0,0,0.2);border-radius:4px;border-left:3px solid ' + _tColor + ';">';
+        html += '<span style="font-size:0.75rem;color:' + _tColor + ';font-weight:bold;">' + _tIcon + ' ' + _tName + '</span>';
+        html += '<span style="font-size:0.65rem;color:#888;">❤️ ' + _rlvl + '/100</span>';
+        html += '<div style="flex:1;background:rgba(255,255,255,0.1);border-radius:3px;height:5px;overflow:hidden;"><div style="background:' + _tColor + ';height:100%;width:' + _tierProg + '%;border-radius:3px;"></div></div>';
+        if (_rlvl < 100) html += '<span style="font-size:0.6rem;color:#888;">→ ' + _nextTier + '</span>';
+        html += '</div>';
+        return html;
     }
 
     function usePerk(personId, perkId) {

@@ -24785,6 +24785,16 @@
         grantXP(XP_REWARDS.GIFT, 'gift');
         player.achievementStats.giftsGiven = (player.achievementStats.giftsGiven || 0) + 1;
         var gainStr = gain >= 0 ? '+' + gain : '' + gain;
+        // v9p33river355: record a gift memory on elite merchants and
+        // nobles so it can surface in later dialog.
+        try {
+            if (Player.recordNpcMemory) {
+                var _gMemSent = gain >= 5 ? 'positive' : (gain <= -3 ? 'negative' : 'neutral');
+                var _gMemKind = (prefs.favoriteGift === resourceId) ? 'favorite_gift' :
+                                (prefs.hatedGift === resourceId) ? 'hated_gift' : 'gift';
+                Player.recordNpcMemory(person, _gMemKind, qty + ' ' + res.name, { sentiment: _gMemSent });
+            }
+        } catch (_eGMem) { /* defensive */ }
         return { success: true, message: 'Gave ' + qty + ' ' + res.name + ' to ' + person.firstName + '. Relationship ' + gainStr + '.' + prefMessage };
     }
 
