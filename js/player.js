@@ -131,6 +131,7 @@
         heirTraits: [],         // permanent heir traits from regency
         dateProgress: {},       // personId → { traitProgress: 0, quirkProgress: 0 }
         courtshipAccepted: {},  // personId → true — NPC agreed to courtship
+        _negRelTriggers: {},    // personId_triggerId → true — one-time negative relationship triggers
         courtshipCooldowns: {}, // personId → day — cooldown after rejection
         _npcInteractions: {},   // personId → { day: N, count: N } — daily interaction cooldowns
         _giftCooldowns: {},     // personId → day — 1 gift per NPC per day
@@ -1219,6 +1220,7 @@
         player.heirTraits = [];
         player.dateProgress = {};
         player.courtshipAccepted = {};
+        player._negRelTriggers = {};
         player.courtshipCooldowns = {};
         player._npcInteractions = {};
         player.investigatorCaught = {};
@@ -19349,6 +19351,7 @@
             heirTraits: structuredClone(player.heirTraits || []),
             dateProgress: structuredClone(player.dateProgress || {}),
             courtshipAccepted: structuredClone(player.courtshipAccepted || {}),
+            _negRelTriggers: structuredClone(player._negRelTriggers || {}),
             courtshipCooldowns: structuredClone(player.courtshipCooldowns || {}),
             _npcInteractions: structuredClone(player._npcInteractions || {}),
             // NPC relationship systems
@@ -19992,6 +19995,7 @@
         player.heirTraits = data.heirTraits || [];
         player.dateProgress = data.dateProgress || {};
         player.courtshipAccepted = data.courtshipAccepted || {};
+        player._negRelTriggers = data._negRelTriggers || {};
         player.courtshipCooldowns = data.courtshipCooldowns || {};
         player._npcInteractions = data._npcInteractions || {};
         // NPC relationship systems
@@ -24435,10 +24439,11 @@
         return player.relationships[personId] || { level: 0, type: 'acquaintance' };
     }
 
-    function modifyRelationship(personId, amount, type) {
+    function modifyRelationship(personId, amount, type, reason) {
         if (!player.relationships[personId]) {
             player.relationships[personId] = { level: 0, type: type || 'acquaintance' };
         }
+        if (!player._negRelTriggers) player._negRelTriggers = {};
         // Apply charming/charismatic skill (only for gains)
         if (amount > 0 && type !== 'spouse' && type !== 'child') {
             if (hasSkill('charismatic')) amount *= 1.50;
@@ -24505,13 +24510,23 @@
             } catch(e) {}
         }
 
-        const rel = player.relationships[personId];
+        var rel = player.relationships[personId];
+        var _negRelKey = null;
+        if (amount < 0 && reason) {
+            _negRelKey = personId + '_' + reason;
+            if (player._negRelTriggers[_negRelKey]) return;
+            player._negRelTriggers[_negRelKey] = true;
+        }
         // v9p33river364: 50% penalty on relationship GAINS with rivals/enemies
         if (amount > 0 && rel.level <= -20) {
             amount *= 0.50;
         }
         var oldLevel = rel.level;
-        rel.level = Math.max(-50, Math.min(100, rel.level + amount));
+        var newLevel = rel.level + amount;
+        if (amount < 0 && newLevel < 0 && !reason) {
+            newLevel = 0;
+        }
+        rel.level = Math.max(-50, Math.min(100, newLevel));
         if (type) rel.type = type;
         // Update type label based on level thresholds
         if (rel.type !== 'spouse' && rel.type !== 'child' && rel.type !== 'romantic') {
@@ -24559,6 +24574,39 @@
         // ── Relationship Tier Milestones ──
         if (rel.level > oldLevel) {
             _checkRelationshipTierMilestone(personId, oldLevel, rel.level);
+        }
+    }
+
+    function checkCompetitorRivalry() {
+        if (!player || !player.buildings || !player.buildings.length) return;
+        if (!player._negRelTriggers) player._negRelTriggers = {};
+        var playerTownTypes = {};
+        for (var _crPi = 0; _crPi < player.buildings.length; _crPi++) {
+            var _crPb = player.buildings[_crPi];
+            if (!_crPb || !_crPb.townId || !_crPb.type) continue;
+            if (_crPb.active === false || _crPb.condition === 'destroyed' || _crPb.condition === 'under_construction') continue;
+            if (!playerTownTypes[_crPb.townId]) playerTownTypes[_crPb.townId] = {};
+            playerTownTypes[_crPb.townId][_crPb.type] = true;
+        }
+        for (var _crTownId in playerTownTypes) {
+            var _crTown = Engine.findTown ? Engine.findTown(_crTownId) : null;
+            if (!_crTown || !_crTown.buildings || !_crTown.buildings.length) continue;
+            var _crSeenOwners = {};
+            for (var _crBi = 0; _crBi < _crTown.buildings.length; _crBi++) {
+                var _crBld = _crTown.buildings[_crBi];
+                if (!_crBld || !_crBld.type || !playerTownTypes[_crTownId][_crBld.type]) continue;
+                if (!_crBld.ownerId || _crBld.ownerId === 'player' || _crBld.ownerId === (player.id || 'player')) continue;
+                if (_crBld.condition === 'destroyed' || _crBld.condition === 'under_construction') continue;
+                if (_crSeenOwners[_crBld.ownerId]) continue;
+                var _crReason = 'competitor_' + _crTownId;
+                var _crTriggerKey = _crBld.ownerId + '_' + _crReason;
+                _crSeenOwners[_crBld.ownerId] = true;
+                if (player._negRelTriggers[_crTriggerKey]) continue;
+                var _crNpc = Engine.findPerson ? Engine.findPerson(_crBld.ownerId) : null;
+                if (!_crNpc || _crNpc.alive === false) continue;
+                if (!_crNpc.isEliteMerchant && getNPCSocialRank(_crNpc) < 4) continue;
+                modifyRelationship(_crNpc.id, -8, undefined, _crReason);
+            }
         }
     }
 
@@ -41655,6 +41703,7 @@
         // Relationships & courtship
         getRelationship,
         modifyRelationship,
+        checkCompetitorRivalry,
         modifyReputation: modifyKingdomReputation,
         modifyTownReputation,
         getRelationshipLabel,

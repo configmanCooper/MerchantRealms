@@ -227,13 +227,7 @@
                 runs.push(run);
                 town._subsistenceLastDispatchDay = day;
                 try {
-                    var lblParts = [];
-                    if (run.food) {
-                        var fSum = 0; for (var fid2 in run.food) fSum += run.food[fid2];
-                        lblParts.push(fSum + ' food');
-                    }
-                    if (run.water) lblParts.push(run.water + ' water');
-                    Engine.logEvent && Engine.logEvent('🥖 Hungry townsfolk from ' + town.name + ' dispatched runners to ' + best.neighbor.name + ' (' + lblParts.join(' + ') + ', arriving day ' + run.eta + ').', { type: 'subsistence_dispatch', townId: town.id, fromTownId: best.neighbor.id }, 'local_town');
+                    // v9p33river365: removed noisy dispatch log events per user request
                 } catch (e) {}
             }
         }

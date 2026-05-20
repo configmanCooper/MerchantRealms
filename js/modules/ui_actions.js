@@ -1937,6 +1937,26 @@ function showPersonDetail(person) {
                     html += '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
                     html += '</div></div>';
                 }
+                var _uqPendingAny = Player.getPendingUnsolicitedOffer ? Player.getPendingUnsolicitedOffer() : ((Player.state && Player.state._pendingUnsolicitedOffer) || null);
+                var _uqCanRequest = !_uqPendingAny;
+                if (_uqCanRequest) {
+                    var _uqIsQuestNpc = !!person.isEliteMerchant;
+                    if (!_uqIsQuestNpc && person.socialRank && typeof person.socialRank === 'object') {
+                        for (var _uqSrk in person.socialRank) {
+                            if ((person.socialRank[_uqSrk] || 0) >= 4) { _uqIsQuestNpc = true; break; }
+                        }
+                    }
+                    if (!_uqIsQuestNpc && person.occupation === 'noble') _uqIsQuestNpc = true;
+                    var _uqDay = Engine.getDay ? Engine.getDay() : 0;
+                    var _uqCd = (Player.state && Player.state._unsolicitedNpcCooldowns && Player.state._unsolicitedNpcCooldowns[person.id]) || 0;
+                    if (!_uqIsQuestNpc || rel.level < 40 || (_uqCd && (_uqDay - _uqCd) < 60)) _uqCanRequest = false;
+                }
+                if (_uqCanRequest) {
+                    html += '<div class="detail-section" style="border:1px solid rgba(212,175,55,0.28);background:rgba(212,175,55,0.06);">';
+                    html += '<h3 style="color:#d4af37;">📜 Quest Request</h3>';
+                    html += '<button class="btn-medieval" data-action="requestNpcQuest" data-id="' + escapeHtml(String(person.id || '')) + '" style="background:rgba(212,175,55,0.18);border-color:rgba(212,175,55,0.38);">📜 Request Quest</button>';
+                    html += '</div>';
+                }
                 // Active quests from this NPC are rendered near the basic info section.
             }
         } catch (_uqe) { /* defensive */ }
@@ -4846,6 +4866,15 @@ function clickTown(townId) {
             if (pid) UI.showPersonDetail(Engine.getPerson(pid));
         } catch(e) {}
         try { UI.closeModal && UI.closeModal(); } catch(e) {}
+    });
+    UI.registerAction('requestNpcQuest', function(_t, d) {
+        var personId = d.id;
+        var generated = Player.generateQuestFromNpc ? Player.generateQuestFromNpc(personId) : false;
+        if (!generated) UI.toast('No quest is available from this NPC right now.', 'warning');
+        try {
+            var person = Engine.findPerson(personId);
+            if (person) UI.showPersonDetail(person);
+        } catch(e) {}
     });
     UI.registerAction('attemptCompleteUnsolicitedQuest', function(_t, d) {
         var res = Player.attemptCompleteUnsolicitedQuest ? Player.attemptCompleteUnsolicitedQuest(d.id) : { success: false, message: 'Unavailable.' };

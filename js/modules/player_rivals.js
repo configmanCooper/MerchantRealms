@@ -41,7 +41,7 @@
               // -5 reputation in the kingdom
               var kId = _npcKingdomId(npc);
               if (kId) {
-                  try { Player.modifyRelationship(npc.id, -3); } catch(e) {}
+                  try { Player.modifyRelationship(npc.id, -3, undefined, 'rival_false_accusation'); } catch(e) {}
                   // Lower relationship with other nobles in that kingdom
                   _spreadReputationDamage(kId, npc, 3, 5);
               }
@@ -189,7 +189,7 @@
             var affected = Math.min(count, nobles.length);
             for (var ai = 0; ai < affected; ai++) {
                 var idx = rng.randInt(0, nobles.length - 1);
-                try { Player.modifyRelationship(nobles[idx].id, -amount); } catch(e) {}
+                try { Player.modifyRelationship(nobles[idx].id, -amount, undefined, 'rival_false_accusation_' + instigator.id); } catch(e) {}
                 nobles.splice(idx, 1);
                 if (nobles.length === 0) break;
             }

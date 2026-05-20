@@ -2444,7 +2444,7 @@
         let sizeCategory = getTownCategory(expectedPop);
         if (town && town.isCapital) sizeCategory = 'capital_city';
         var startingWaterNeed = Math.ceil(expectedPop * 0.2);
-        var targetWellCount = Math.max(1, Math.ceil(startingWaterNeed / 15));
+        var targetWellCount = Math.max(1, Math.ceil(startingWaterNeed / 25));
         if (sizeCategory === 'city' || sizeCategory === 'capital_city') targetWellCount += 1;
         if (sizeCategory === 'city') targetWellCount += rng.randInt(0, 1);
         else if (sizeCategory === 'capital_city') targetWellCount += rng.randInt(0, 2);
@@ -16582,7 +16582,7 @@
 
                     // Priority 2: Proactive — build extra well if low wells or high pop with few wells
                     var townPop = town.population || 0;
-                    var wellsNeeded = Math.max(1, Math.ceil(townPop / 250)); // 1 well per 250 people
+                    var wellsNeeded = Math.max(1, Math.ceil(townPop / 125)); // 1 well per 125 people (25 water/day / 0.2 per pop)
                     if (_activeWells < wellsNeeded && _lowWells > 0 && k.gold >= wellCost * 1.5 && rng.chance(0.05 + kingIntelligence / 500)) {
                         k.gold -= wellCost;
                         var _fertR3 = town.soilFertilityRating || 50;
@@ -32068,6 +32068,9 @@
                 // v9p33river364: rival/enemy hostile actions daily tick
                 if (Player.tickRivalActions && !_rFF) {
                     try { Player.tickRivalActions(); } catch (_eRv) { /* defensive */ }
+                }
+                if (Player.checkCompetitorRivalry && !_rFF && _d % 7 === 0) {
+                    try { Player.checkCompetitorRivalry(); } catch(e) {}
                 }
             }
             if (!_rFF || _d % 7 === 0) Engine.tickEliteMerchantOutposts();

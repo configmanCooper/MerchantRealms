@@ -1,8 +1,8 @@
 // ============================================================
 // Merchant Realms — Unsolicited Quests Module
 // v9p33river357: Elite merchants and nobles may reach out to
-// the player with quests. Triggered by daily presence (~2% per
-// eligible NPC in town) or town entry (~5%), modulated by
+// the player with quests. Triggered by daily presence (~1% per
+// eligible NPC in town) or town entry (~2.5%), modulated by
 // relationship. At most one offer per day; cannot offer while
 // an unresolved offer is pending. Quest button also appears on
 // the NPC detail pane.
@@ -17,6 +17,7 @@
 //   Player.tickActiveUnsolicitedQuests()              // called daily, expires/fails
 //   Player.attemptCompleteUnsolicitedQuest(questId)
 //   Player.unsolicitedOfferForNpc(npcId)              // for detail-pane button
+//   Player.generateQuestFromNpc(personId)             // manual request from detail pane
 // ============================================================
 (function(Player) {
     "use strict";
@@ -35,8 +36,8 @@
     function _toast(msg, type) { try { if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, type || 'info'); } catch(e) {} }
 
     // ── Constants ──
-    var BASE_DAILY_CHANCE = 0.02;
-    var BASE_ENTRY_CHANCE = 0.05;
+    var BASE_DAILY_CHANCE = 0.01;
+    var BASE_ENTRY_CHANCE = 0.025;
     var NPC_COOLDOWN_DAYS = 60;
     var MAX_ACTIVE = 6;
 
@@ -811,7 +812,7 @@
     function _failUnsolicitedQuest(idx, reason) {
         var q = player._activeUnsolicitedQuests[idx];
         if (!q) return;
-        try { Player.modifyRelationship(q.npcId, -10); } catch (e) {}
+        try { Player.modifyRelationship(q.npcId, -10, undefined, 'quest_fail_' + q.id); } catch (e) {}
         player._activeUnsolicitedQuests.splice(idx, 1);
         _logEvent('📜 Quest from ' + q.npcName + ' failed (' + (reason || 'expired') + ').', null, 'my_actions');
         _toast('Quest failed (' + (reason || 'expired') + ')', 'warning');
@@ -880,6 +881,24 @@
         } catch (e) {}
     }
 
+    function generateQuestFromNpc(personId) {
+        _ensureState();
+        if (!personId) return false;
+        var npc = _findPerson(personId);
+        var day = _getDay();
+        if (!npc || npc.alive === false) return false;
+        if (!(_isEliteMerchant(npc) || _isNoble(npc))) return false;
+        if (!_canTalkToNpc(npc.id)) return false;
+        if (_relLevel(npc.id) < 40) return false;
+        if (player._pendingUnsolicitedOffer) return false;
+        if ((player._activeUnsolicitedQuests || []).length >= MAX_ACTIVE) return false;
+        if (!player.townId || player.traveling || npc.townId !== player.townId) return false;
+        if (player.jailedUntilDay && player.jailedUntilDay > day) return false;
+        var cd = (player._unsolicitedNpcCooldowns && player._unsolicitedNpcCooldowns[npc.id]) || 0;
+        if (cd && day - cd < NPC_COOLDOWN_DAYS) return false;
+        return _generateOfferFromNpc(npc);
+    }
+
     // ── Detail-pane helpers ──
     function unsolicitedOfferForNpc(npcId) {
         _ensureState();
@@ -917,6 +936,7 @@
     Player.getActiveUnsolicitedQuests = getActiveUnsolicitedQuests;
     Player.tickActiveUnsolicitedQuests = tickActiveUnsolicitedQuests;
     Player.attemptCompleteUnsolicitedQuest = attemptCompleteUnsolicitedQuest;
+    Player.generateQuestFromNpc = generateQuestFromNpc;
     Player.unsolicitedOfferForNpc = unsolicitedOfferForNpc;
     Player.activeUnsolicitedQuestsForNpc = activeQuestsForNpc;
     Player.onPlayerArrival_unsolicited = onPlayerArrival;

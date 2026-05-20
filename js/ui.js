@@ -5714,7 +5714,21 @@ window.UI = (function () {
                         }
                     } catch(e) {}
                 } else {
-                    toast((result && result.message) || 'Cannot interact right now.', 'warning');
+                    // v9p33river365: show failure message in dialog area instead of toast
+                    var failMsg = (result && result.message) || 'Cannot interact right now.';
+                    try {
+                        var _failPerson = Engine.getPerson(pid);
+                        var _failDlg = document.getElementById('npcInteractionDialog');
+                        if (_failDlg && _failPerson) {
+                            _failDlg.innerHTML = '<div style="margin:8px 0;padding:8px 12px;background:rgba(200,150,50,0.15);border-left:3px solid #d4af37;border-radius:4px;">' +
+                                '<span style="color:#d4af37;font-style:italic;">' + (_failPerson.firstName || 'They') + ': </span>' +
+                                '<span style="color:#ccc;">"' + failMsg.replace(/.*says:\s*"?/i, '').replace(/"$/, '') + '"</span></div>';
+                        } else {
+                            toast(failMsg, 'warning');
+                        }
+                    } catch(e) {
+                        toast(failMsg, 'warning');
+                    }
                 }
             });
             // Hover effect

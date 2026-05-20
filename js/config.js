@@ -2073,7 +2073,7 @@ const BUILDING_TYPES = {
     },
     HUNTING_LODGE:    { id: 'hunting_lodge',    name: 'Hunting Lodge',   cost: 250,  workers: 2, produces: 'hide',           consumes: {},                          rate: 4, category: 'harvest',    storage: 50, materials: { wood: 15 } },
     // --- Water & Beverage Buildings ---
-    WELL:             { id: 'well',             name: 'Well',            cost: 2000, workers: 0, produces: 'water',          consumes: {},                          rate: 15, category: 'civic',     storage: 50, materials: { stone: 10, wood: 5 }, icon: '🪣', description: 'Draws fresh water. Free water for townsfolk. Water supply depends on local soil fertility.', noLandRequired: true },
+    WELL:             { id: 'well',             name: 'Well',            cost: 2000, workers: 0, produces: 'water',          consumes: {},                          rate: 25, category: 'civic',     storage: 50, materials: { stone: 10, wood: 5 }, icon: '🪣', description: 'Draws fresh water. Free water for townsfolk. Water supply depends on local soil fertility.', noLandRequired: true },
     CISTERN:          { id: 'cistern',          name: 'Cistern',         cost: 200,  workers: 0, produces: 'water',          consumes: {},                          rate: 8,  category: 'civic',     storage: 40, materials: { stone: 15, bricks: 10, clay: 5 }, icon: '🏛️', description: 'Stores rainwater. Supplements well output.' },
     BREWERY:          { id: 'brewery',          name: 'Brewery',         cost: 400,  workers: 3, produces: 'ale',            consumes: { wheat: 3, water: 2 },      rate: 6,  category: 'finished',  storage: 60, materials: { wood: 15, stone: 10, bricks: 5 }, icon: '🍺', description: 'Brews ale from wheat and water.',
         canProduce: ['ale', 'mead', 'cider'],
@@ -3976,8 +3976,8 @@ const WELL_CAPACITY_CONFIG = {
     MIN_FERTILITY_CAPACITY: 10000,    // low fertility (rating ~5)
     MAX_FERTILITY_CAPACITY: 40000,    // high fertility (rating ~100)
     RANDOM_VARIANCE: 0.25,            // +/- 25% random per well
-    // How much water is consumed per unit produced (rate 15 = 15 water/day)
-    DAILY_DRAW_RATE: 15,              // water units consumed from well per day per production cycle
+    // How much water is consumed per unit produced (rate 25 = 25 water/day)
+    DAILY_DRAW_RATE: 25,              // water units consumed from well per day per production cycle
     PLAYER_DRAW_COST: 2,              // water units consumed per player draw
     LOW_WATER_THRESHOLD: 0.15,        // below 15% capacity = "running low" for king AI
     REPLACEMENT_COST: 2000,           // gold for kingdom to dig a new well

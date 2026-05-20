@@ -6235,9 +6235,9 @@
                 var townPop = bTown.population || 0;
                 var waterSupply = (bTown.market && bTown.market.supply) ? (bTown.market.supply.water || 0) : 0;
                 var lowWater = waterSupply < 50;
-                var proactiveWellNeed = (wellCount * 75) < (townPop * 1.2);
+                var proactiveWellNeed = (wellCount * 125) < (townPop * 1.2);
                 if (lowWater || proactiveWellNeed) {
-                    var wellShortage = Math.max(0, Math.ceil((townPop * 1.2) / 75) - wellCount);
+                    var wellShortage = Math.max(0, Math.ceil((townPop * 1.2) / 125) - wellCount);
                     var waterPriority = lowWater ? 125 : (smartKing ? 105 : 92);
                     if (waterSupply <= 0) waterPriority += 20;
                     else if (waterSupply < 20) waterPriority += 12;
