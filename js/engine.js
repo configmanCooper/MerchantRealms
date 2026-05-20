@@ -22109,7 +22109,7 @@
             m.includes('coup') || m.includes('border dispute') || m.includes('trade agreement') ||
             m.includes('white peace') || m.includes('sues for peace') || m.includes('surrenders') ||
             m.includes('nationalized') || m.includes('elevated to') || m.includes('claimant') ||
-            m.includes('throne') || m.includes('tent camp') || m.includes('no tent camps') ||
+            m.includes('throne') || m.includes('no tent camps') ||
             m.includes('the king of') || m.includes('shelter the homeless') ||
             m.includes('displeased') || m.includes('personal commission')) {
             return isMyKingdom() ? 'my_kingdom' : 'foreign_kingdoms';
@@ -23907,7 +23907,7 @@
                     rtcNewCamp.tents.push({ tentIndex: _rnti, occupantId: null, occupantType: null, rentStartDay: null, lastRentDay: null });
                 }
                 rtcTown.buildings.push(rtcNewCamp);
-                logEvent('Γ¢║ Homeless citizens of ' + rtcTown.name + ' pooled ' + rtcTotalCost + 'g (land: ' + rtcLandCost + 'g + build: ' + rtcBuildCost + 'g) and built a tent camp under the Right to Camps law.');
+                logEvent('⛺ Homeless citizens of ' + rtcTown.name + ' pooled ' + rtcTotalCost + 'g (land: ' + rtcLandCost + 'g + build: ' + rtcBuildCost + 'g) and built a tent camp under the Right to Camps law.', { type: 'infrastructure', townId: rtcTown.id }, 'local_town');
             }
         }
     }
