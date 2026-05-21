@@ -257,16 +257,17 @@
         if (role === 'family') {
             if (player.spouseId) {
                 p = _findPerson(player.spouseId);
-                if (p && p.alive !== false && (!ctx.town || p.townId === ctx.town.id)) list.push(p);
+                if (p && p.alive !== false && (p.age == null || p.age >= 18) && (!ctx.town || p.townId === ctx.town.id)) list.push(p);
             }
             for (i = 0; i < player.childrenIds.length; i++) {
                 p = _findPerson(player.childrenIds[i]);
-                if (p && p.alive !== false && (!ctx.town || p.townId === ctx.town.id)) list.push(p);
+                if (p && p.alive !== false && (p.age == null || p.age >= 18) && (!ctx.town || p.townId === ctx.town.id)) list.push(p);
             }
             return list.length ? list[rng.randInt(0, list.length - 1)] : null;
         }
         for (i = 0; i < people.length; i++) {
             p = people[i];
+            if (p.age != null && p.age < 18) continue;
             rank = ctx.kingdomId && p.socialRank ? (p.socialRank[ctx.kingdomId] || 0) : 0;
             if (role === 'noble' && rank < 4) continue;
             if (role === 'king' && !((ctx.kingdom && ctx.kingdom.king === p.id) || rank >= 6)) continue;
@@ -276,7 +277,11 @@
             p = _findPerson(ctx.kingdom.king);
             if (p && p.alive !== false) list.push(p);
         }
-        if (!list.length) list = people.slice();
+        if (!list.length) {
+            for (i = 0; i < people.length; i++) {
+                if (people[i].age == null || people[i].age >= 18) list.push(people[i]);
+            }
+        }
         return list.length ? list[rng.randInt(0, list.length - 1)] : null;
     }
 
