@@ -2862,15 +2862,20 @@ function _nobilityRequestBuilding(townId) {
 }
 
 // Helper: Propose law from nobility panel
+// v9p33river385: use Engine.getProposableLaws() instead of CONFIG.SPECIAL_LAWS
+// so the IDs match what Engine.proposeLaw() expects.
 function _nobilityProposeLaw(kingdomId) {
-    var specialLaws = CONFIG.SPECIAL_LAWS || [];
+    var proposable = Engine.getProposableLaws ? Engine.getProposableLaws(kingdomId) : [];
+    if (!proposable.length) { toast('No laws available to propose.', 'warning'); return; }
     var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Propose a new law for the kingdom (costs 1 political capital):</div>';
     html += '<div style="max-height:350px;overflow-y:auto;">';
-    for (var i = 0; i < specialLaws.length; i++) {
-        var law = specialLaws[i];
+    for (var i = 0; i < proposable.length; i++) {
+        var law = proposable[i];
+        var chanceColor = law.chance >= 60 ? '#8f8' : law.chance >= 30 ? '#ff8' : '#f88';
+        var affordTag = (law.requiresGold > 0 && !law.canAfford) ? ' <span style="color:#f66;">(treasury too low)</span>' : '';
         html += '<button class="btn-medieval" data-action="proposeLawAction" data-id="' + kingdomId + '" data-val="' + law.id + '" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
-        html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong></span><br>';
-        html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + (law.desc || '') + '</span>';
+        html += '<span>' + (law.icon || '📜') + ' <strong>' + law.name + '</strong> <span style="color:' + chanceColor + ';font-size:0.65rem;">(' + law.chance + '% chance)</span>' + affordTag + '</span><br>';
+        html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + (law.description || '') + '</span>';
         html += '</button>';
     }
     html += '</div>';

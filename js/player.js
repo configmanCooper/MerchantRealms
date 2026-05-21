@@ -8680,6 +8680,9 @@
         var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === lawId; });
         if (!lawDef) return { success: false, message: 'Unknown law.' };
         kingdom.laws.specialLaws.push({ id: lawId, enactedDay: Engine.getDay() });
+        // v9p33river385: sync side-effect state for laws that need it
+        if (lawId === 'immigration_policy') kingdom.immigrationPolicy = 'closed';
+        if (lawId === 'conscription_law') { kingdom.laws.conscription = true; }
         Engine.logEvent('👑 Royal Decree: ' + (lawDef.name || lawId) + ' enacted in ' + kingdom.name + '.', null, "my_kingdom");
         player.kingState.decreesIssued = (player.kingState.decreesIssued || 0) + 1;
         autoJournalCapture('king', 'I enacted the law "' + (lawDef.name || lawId) + '" in ' + kingdom.name + '. May it serve the realm well.', { mood: 'proud' });
@@ -8696,6 +8699,9 @@
         }
         if (idx < 0) return { success: false, message: 'Law not currently enacted.' };
         kingdom.laws.specialLaws.splice(idx, 1);
+        // v9p33river385: sync side-effect state for laws that need it
+        if (lawId === 'immigration_policy') kingdom.immigrationPolicy = 'open';
+        if (lawId === 'conscription_law') { kingdom.laws.conscription = false; }
         var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === lawId; });
         Engine.logEvent('👑 Royal Decree: ' + (lawDef ? lawDef.name : lawId) + ' repealed in ' + kingdom.name + '.', null, "my_kingdom");
         autoJournalCapture('king', 'I repealed the law "' + (lawDef ? lawDef.name : lawId) + '" in ' + kingdom.name + '.', { mood: 'reflective' });
@@ -12443,13 +12449,25 @@
                 var isConscripting = kingdom.laws && kingdom.laws.conscription;
                 if (atWar && !isConscripting) m.push({ name: 'War demands soldiers', val: 0.30 });
                 if (!atWar && isConscripting) m.push({ name: 'Peace — no need for conscription', val: 0.25 });
-                if (kp.ambition === 'conquering' && !isConscripting) m.push({ name: 'Warlike king', val: 0.20 });
+                if ((kp.ambition === 'ambitious' || kp.militarism === 'warlike') && !isConscripting) m.push({ name: 'Warlike king', val: 0.20 });
                 if (happiness < 30 && isConscripting) m.push({ name: 'People are suffering', val: 0.15 });
                 return m;
             },
             execute: function() {
                 if (!kingdom.laws) kingdom.laws = {};
+                // v9p33river385: sync both kingdom.laws.conscription AND the
+                // conscription_law special law so all checks agree.
                 kingdom.laws.conscription = !kingdom.laws.conscription;
+                if (!kingdom.laws.specialLaws) kingdom.laws.specialLaws = [];
+                if (kingdom.laws.conscription) {
+                    var hasIt = false;
+                    for (var cli = 0; cli < kingdom.laws.specialLaws.length; cli++) {
+                        if (kingdom.laws.specialLaws[cli].id === 'conscription_law') { hasIt = true; break; }
+                    }
+                    if (!hasIt) kingdom.laws.specialLaws.push({ id: 'conscription_law', enactedDay: Engine.getDay() });
+                } else {
+                    kingdom.laws.specialLaws = kingdom.laws.specialLaws.filter(function(l) { return l.id !== 'conscription_law'; });
+                }
                 Engine.logEvent('⚔️ ' + kingdom.name + (kingdom.laws.conscription ? ' enacts conscription!' : ' ends conscription.'), null, "military");
             }
         });
