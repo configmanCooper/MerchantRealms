@@ -4760,7 +4760,7 @@ CONFIG.GUILD_LOAN = {
 const DATING_ACTIVITIES = [
     { id: 'walk', name: '🚶 Walk Through Town', cost: 0, timeHours: 2, relationshipGain: 3, revealsTraitLevel: 'vague', dateProgress: 18, description: 'A leisurely stroll together' },
     { id: 'meal', name: '🍽️ Share a Meal', cost: 10, timeHours: 3, relationshipGain: 5, revealsTraitLevel: 'vague', dateProgress: 20, description: 'Enjoy food and conversation' },
-    { id: 'gift', name: '🎁 Give a Thoughtful Gift', cost: 25, timeHours: 1, relationshipGain: 8, revealsTraitLevel: 'none', dateProgress: 0, description: 'Show you care with a meaningful gift' },
+    { id: 'gift', name: '🎁 Give a Thoughtful Gift', cost: 25, timeHours: 1, relationshipGain: 8, revealsTraitLevel: 'none', dateProgress: 15, description: 'Show you care with a meaningful gift' },
     { id: 'deep_talk', name: '💬 Deep Conversation', cost: 0, timeHours: 4, relationshipGain: 4, revealsTraitLevel: 'specific', dateProgress: 30, minRelationship: 30, description: 'Share thoughts and learn about each other' },
     { id: 'adventure', name: '⚔️ Adventure Together', cost: 50, timeHours: 8, relationshipGain: 12, revealsTraitLevel: 'specific', dateProgress: 35, minRelationship: 40, description: 'Face danger together and see their true nature' },
     { id: 'lavish_date', name: '👑 Lavish Evening', cost: 100, timeHours: 6, relationshipGain: 15, revealsTraitLevel: 'exact', dateProgress: 45, minRelationship: 50, description: 'Spare no expense for a memorable night' },
