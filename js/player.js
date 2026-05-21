@@ -8988,7 +8988,7 @@
         if (kingdom._activeFeast) return { success: false, message: 'Cannot hold court while a feast is in progress.' };
         if (kingdom._pendingFeast) return { success: false, message: 'Cannot hold court while a feast is being planned.' };
         // If court already active with unresolved cases, reopen it
-        if (kingdom._courtSession && kingdom._courtSession.cases.some(function(c) { return !c.resolved; })) {
+        if (kingdom._courtSession && kingdom._courtSession.cases && kingdom._courtSession.cases.some(function(c) { return !c.resolved; })) { // v9p33river389: guard legacy court sessions missing cases
             return { success: true, message: 'Court is already in session!', openCourt: true, kingdomId: player.kingState.kingdomId };
         }
         // If court already pending, show status
@@ -12240,8 +12240,8 @@
                     var rel = kingdom.relations ? (kingdom.relations[t.id] || 0) : 0;
                     if (rel < -50) m.push({ name: 'Poor relations', val: 0.25 });
                     else if (rel > 30) m.push({ name: 'Good relations (reluctant)', val: -0.30 });
-                    if (kp.ambition === 'expansionist' || kp.ambition === 'conquering') m.push({ name: 'Ambitious king', val: 0.25 });
-                    else if (kp.ambition === 'content' || kp.ambition === 'peaceful') m.push({ name: 'Peaceful king', val: -0.30 });
+                    if (kp.ambition === 'ambitious' || kp.militarism === 'warlike') m.push({ name: 'Ambitious king', val: 0.25 }); // v9p33river389: expansionist/conquering are invalid
+                    else if (kp.ambition === 'content' || kp.ambition === 'lazy') m.push({ name: 'Peaceful king', val: -0.30 }); // v9p33river389: peaceful is invalid ambition
                     if (kp.courage === 'brave') m.push({ name: 'Brave king', val: 0.10 });
                     else if (kp.courage === 'cowardly') m.push({ name: 'Cowardly king', val: -0.20 });
                     if (treasury > 15000) m.push({ name: 'War chest ready', val: 0.10 });
@@ -12266,11 +12266,11 @@
                     baseChance: 0.35,
                     modifiers: (function(e) { return function() {
                         var m = [];
-                        if (kp.ambition === 'peaceful' || kp.ambition === 'content') m.push({ name: 'Peaceful king', val: 0.25 });
-                        else if (kp.ambition === 'conquering') m.push({ name: 'Conquering king (wants to fight)', val: -0.30 });
+                        if (kp.ambition === 'content' || kp.ambition === 'lazy') m.push({ name: 'Peaceful king', val: 0.25 }); // v9p33river389: peaceful not valid ambition
+                        else if (kp.ambition === 'ambitious' || kp.militarism === 'warlike') m.push({ name: 'Warlike king (wants to fight)', val: -0.30 }); // v9p33river389: conquering not valid
                         if (happiness < 30) m.push({ name: 'War-weary populace', val: 0.20 });
                         if (treasury < 2000) m.push({ name: 'War is too expensive', val: 0.20 });
-                        if (kp.temperament === 'merciful') m.push({ name: 'Merciful king', val: 0.15 });
+                        if (kp.temperament === 'kind') m.push({ name: 'Kind king', val: 0.15 }); // v9p33river389: merciful not valid temperament
                         return m;
                     }; })(enemy),
                     execute: (function(eId, e) { return function() {
@@ -12610,8 +12610,8 @@
             modifiers: function() {
                 var m = [];
                 if (atWar) m.push({ name: 'War demands weapons', val: 0.30 });
-                if (kp.ambition === 'conquering' || kp.ambition === 'expansionist') m.push({ name: 'Military-minded king', val: 0.15 });
-                if (kp.ambition === 'peaceful') m.push({ name: 'Peaceful king (wasteful)', val: -0.15 });
+                if (kp.militarism === 'warlike' || kp.militarism === 'aggressive') m.push({ name: 'Military-minded king', val: 0.15 }); // v9p33river389: conquering/expansionist are invalid ambition
+                if (kp.militarism === 'peaceful') m.push({ name: 'Peaceful king (wasteful)', val: -0.15 }); // v9p33river389: peaceful is militarism, not ambition
                 if (treasury > 10000) m.push({ name: 'Can afford it', val: 0.10 });
                 else if (treasury < 3000) m.push({ name: 'Low treasury', val: -0.20 });
                 return m;
@@ -14195,7 +14195,7 @@
                 } else {
                     var _haPickQ = _haRng ? _haRng.pick(_haUnrQuirks) : _haUnrQuirks[0];
                     revealed.quirks.push(_haPickQ);
-                    var _qDef = (typeof CONFIG !== 'undefined' && CONFIG.QUIRKS && CONFIG.QUIRKS[_haPickQ]) || { name: _haPickQ };
+                    var _qDef = (typeof SPOUSE_QUIRKS !== 'undefined') ? (SPOUSE_QUIRKS.find(function(q) { return q.id === _haPickQ; }) || { name: _haPickQ }) : { name: _haPickQ }; // v9p33river389: CONFIG.QUIRKS doesn't exist, use SPOUSE_QUIRKS
                     message = person.firstName + ' shares a quirk: ' + _qDef.name + '.';
                 }
                 Engine.logEvent('\u{1FA9E} ' + message, { _noToast: true }, "my_actions");
@@ -18646,13 +18646,14 @@
             var trait = '';
             if (kingPerson) {
                 trait = kingPerson.trait || '';
-                // Also map personality.* fields to legacy trait strings
-                if (!trait && kingPerson.personality) {
-                    var kp = kingPerson.personality;
-                    if (kp.temperament === 'tyrant' || kp.temperament === 'cruel') trait = 'tyrant';
+                // v9p33river389: NPC personality is numeric (warmth/ambition/etc), not string enums.
+                // Use kingdom.kingPersonality which has the correct string enum fields.
+                if (!trait && kingdom.kingPersonality) {
+                    var kp = kingdom.kingPersonality;
+                    if (kp.temperament === 'cruel' || kp.temperament === 'stern') trait = 'tyrant';
                     else if (kp.greed === 'greedy' || kp.greed === 'corrupt') trait = 'stingy';
-                    else if (kp.temperament === 'kind' || kp.temperament === 'benevolent') trait = 'kind';
-                    else if (kp.temperament === 'warlike' || kp.temperament === 'strategic') trait = 'military';
+                    else if (kp.temperament === 'kind' || kp.temperament === 'fair') trait = 'kind';
+                    else if (kp.militarism === 'warlike' || kp.militarism === 'aggressive') trait = 'military';
                 }
             }
             if (trait === 'tyrant' || trait === 'cruel' || trait === 'corrupt') {
@@ -22407,6 +22408,7 @@
 
         // Set cooldown regardless of outcome
         player._jailEscapeCooldownUntil = _today + 90;
+        var kingdom = Engine.findKingdom(player.citizenshipKingdomId);
 
         if (rng.chance(baseChance)) {
             // Escaped!
@@ -22416,10 +22418,35 @@
             player._jailEscaped = true;
             Engine.logEvent('🔓 ' + player.fullName + ' escaped from jail!', null, "my_actions");
             unlockAchievement('jailbreak');
+            // v9p33river389: Jail escape almost always triggers a manhunt within 1-2 days.
+            // Guards discover the escape quickly — 90% base chance of immediate manhunt.
+            var _escKingdomId = player.citizenshipKingdomId || (kingdom ? kingdom.id : null);
+            if (_escKingdomId) {
+                var _escRng = Engine.getRng();
+                if (_escRng && _escRng.chance(0.90)) {
+                    if (!player.activeManhunts) player.activeManhunts = {};
+                    var _escDay = Engine.getDay ? Engine.getDay() : 0;
+                    var _escDur = _escRng.randInt(14, 45);
+                    player.activeManhunts[_escKingdomId] = {
+                        crimeId: 'jail_escape',
+                        schemeId: 'jail_escape',
+                        severity: 'moderate',
+                        startDay: _escDay,
+                        untilDay: _escDay + _escDur,
+                        originTownId: player.townId || null
+                    };
+                    if (!player.criminalRecord) player.criminalRecord = {};
+                    if (!player.criminalRecord[_escKingdomId]) player.criminalRecord[_escKingdomId] = {};
+                    player.criminalRecord[_escKingdomId]['jail_escape'] = (player.criminalRecord[_escKingdomId]['jail_escape'] || 0) + 1;
+                    var _escKName = kingdom ? kingdom.name : 'the kingdom';
+                    Engine.logEvent('🚨 WANTED! ' + _escKName + ' has launched a manhunt for escaped prisoner ' + player.fullName + '!', null, "my_actions");
+                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚨 WANTED! ' + _escKName + ' is hunting you for escaping jail (' + _escDur + 'd).', 'danger', 'critical');
+                }
+            }
             return { success: true, message: '🔓 You escaped from jail! Lay low — if caught, penalties will be severe.' };
         } else {
             // Caught trying to escape
-            var kingdom = Engine.findKingdom(player.citizenshipKingdomId);
+            // v9p33river389: reuse the jail kingdom resolved before the escape roll.
             var extraDays = rng.randInt(5, 20);
             var extraFine = rng.randInt(50, 300);
             // Kingdom personality affects punishment

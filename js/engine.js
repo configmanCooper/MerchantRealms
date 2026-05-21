@@ -27112,7 +27112,7 @@
         // Fair/just kings hold court more often
         if (_kp.justice === 'just' || _kp.temperament === 'fair') { _courtBaseMin -= 5; _courtBaseMax -= 10; }
         // Stern/harsh kings hold court less
-        if (_kp.temperament === 'harsh' || _kp.temperament === 'tyrannical') { _courtBaseMin += 5; _courtBaseMax += 10; }
+        if (_kp.temperament === 'stern' || _kp.temperament === 'cruel') { _courtBaseMin += 5; _courtBaseMax += 10; } // v9p33river389: harsh/tyrannical not valid temperament
         // During wartime, hold court more to address petitions
         if (k.atWar && k.atWar.size > 0) { _courtBaseMin -= 5; _courtBaseMax -= 10; }
         // Low happiness → king should hold court to help

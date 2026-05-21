@@ -1511,7 +1511,7 @@
 
     function _describeCondition(cond, fromName, toName) {
         var locName = cond.location === 'source' ? fromName : toName;
-        var resObj = cond.good ? (CONFIG.RESOURCES ? CONFIG.RESOURCES[Object.keys(CONFIG.RESOURCES).find(function(k) { return CONFIG.RESOURCES[k].id === cond.good; })] : null) : null;
+        var resObj = cond.good ? ((typeof RESOURCE_TYPES !== 'undefined') ? Object.values(RESOURCE_TYPES).find(function(r) { return r.id === cond.good; }) : null) : null; // v9p33river389: CONFIG.RESOURCES doesn't exist
         var goodName = resObj ? resObj.name : (cond.good || '');
         if (cond.type === 'no_supply') return '📦 Disband if no <b>' + goodName + '</b> at <b>' + locName + '</b>';
         if (cond.type === 'storage_full') return '🏭 Disband if all building storage full at <b>' + locName + '</b>';

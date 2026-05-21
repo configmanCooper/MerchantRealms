@@ -4795,7 +4795,7 @@
                 // Harsh/stern/paranoid kings punish nobles periodically
                 var _h1PunishChance = 0.02; // base 2%
                 if (_h1Pers.temperament === 'stern' || _h1Pers.temperament === 'cruel') _h1PunishChance += 0.08;
-                if (_h1Pers.justice === 'draconian' || _h1Pers.justice === 'harsh') _h1PunishChance += 0.06;
+                if (_h1Pers.justice === 'corrupt' || _h1Pers.justice === 'pragmatic') _h1PunishChance += 0.06; // v9p33river389: draconian/harsh not valid justice
                 if (_h1Mood === 'paranoid') _h1PunishChance += 0.10;
                 if (_h1Mood === 'wrathful') _h1PunishChance += 0.12;
                 // Generous/kind kings almost never punish randomly

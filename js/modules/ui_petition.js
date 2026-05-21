@@ -295,7 +295,7 @@
             }
         } else if (pt.targetType === 'resource') {
             html += '<h4 style="color:#ccc;">Select a Resource:</h4>';
-            var resources = (typeof RESOURCES !== 'undefined') ? RESOURCES : [];
+            var resources = (typeof RESOURCE_TYPES !== 'undefined') ? Object.values(RESOURCE_TYPES) : []; // v9p33river389: RESOURCES doesn't exist, use RESOURCE_TYPES
             for (var i = 0; i < resources.length; i++) {
                 var _resourceName = resources[i].name || resources[i].id;
                 html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
