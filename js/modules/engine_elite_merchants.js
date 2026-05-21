@@ -44,6 +44,22 @@
     var buyBlastingPowderFromKingdom = Engine.buyBlastingPowderFromKingdom;
     var _storeBackgroundGossip = function(type, msg, meta) { if (Engine.storeBackgroundGossip) Engine.storeBackgroundGossip(type, msg, meta); };
 
+    function _bridgeNPCRelationship(personA, personBId, delta, reason) {
+        if (typeof Engine !== 'undefined' && Engine.modifyNPCRelationship) {
+            Engine.modifyNPCRelationship(personA, personBId, delta, reason);
+            return true;
+        }
+        return false;
+    }
+
+    function _legacyRelationshipType(level) {
+        if (level <= -50) return 'enemy';
+        if (level <= -20) return 'rival';
+        if (level < 40) return 'acquaintance';
+        if (level < 80) return 'friend';
+        return 'ally';
+    }
+
     // ── Functions that MUST be newly exported from engine.js ──
     // These are internal engine.js functions not currently on window.Engine.
     // engine.js must add exports for each before this module can work.
@@ -110,6 +126,7 @@
             }
         }
         npc._eliteFieldsInit = false;
+        if (typeof Engine !== 'undefined' && Engine.initNPCRelationships) Engine.initNPCRelationships(npc);
         return npc;
     }
 
@@ -208,6 +225,7 @@
         world.people.push(person);
         if (town) town.population++;
         if (world._alivePopCount != null) world._alivePopCount++;
+        if (typeof Engine !== 'undefined' && Engine.initNPCRelationships) Engine.initNPCRelationships(person);
         return person;
     }
 
@@ -1857,13 +1875,16 @@
                         for (var ek in (em.socialRank || {})) { if ((em.socialRank[ek] || 0) > emRank) emRank = em.socialRank[ek]; }
                         if (lnRank - emRank > 1) continue; // can't talk to someone 2+ ranks above
                         // Build relationship
-                        if (!em._nobleRelationships) em._nobleRelationships = {};
-                        var currentRel = em._nobleRelationships[ln.id] || 0;
                         var relGain = rng.randFloat(0.5, 2.0);
                         if ((em.personality || {}).social > 55) relGain += 0.5;
-                        em._nobleRelationships[ln.id] = Math.min(100, currentRel + relGain);
-                        if (!ln._nobleRelationships) ln._nobleRelationships = {};
-                        ln._nobleRelationships[em.id] = Math.min(100, (ln._nobleRelationships[em.id] || 0) + relGain * 0.5);
+                        if (_bridgeNPCRelationship(em, ln.id, relGain, 'noble_conversation')) {
+                            _bridgeNPCRelationship(ln, em.id, relGain * 0.5, 'noble_conversation');
+                        } else {
+                            if (!em._nobleRelationships) em._nobleRelationships = {};
+                            em._nobleRelationships[ln.id] = Math.min(100, (em._nobleRelationships[ln.id] || 0) + relGain);
+                            if (!ln._nobleRelationships) ln._nobleRelationships = {};
+                            ln._nobleRelationships[em.id] = Math.min(100, (ln._nobleRelationships[em.id] || 0) + relGain * 0.5);
+                        }
                         break; // one conversation per tick
                     }
                 }
@@ -3585,14 +3606,13 @@
             });
             for (var ti = 0; ti < Math.min(targets.length, 2); ti++) {
                 var target = targets[ti];
+                var gain = Math.floor(personality.social * 0.1 + rng.random() * 5);
+                if (_bridgeNPCRelationship(em, target.id, gain, 'elite_social_ai')) continue;
                 if (!em.relationships[target.id] || typeof em.relationships[target.id] === 'number') {
                     em.relationships[target.id] = { level: em.relationships[target.id] || 10, type: 'acquaintance' };
                 }
-                var rel = em.relationships[target.id];
-                var gain = Math.floor(personality.social * 0.1 + rng.random() * 5);
-                rel.level = Math.min(100, rel.level + gain);
-                if (rel.level >= 60) rel.type = 'friend';
-                if (rel.level >= 85) rel.type = 'ally';
+                em.relationships[target.id].level = Math.min(100, em.relationships[target.id].level + gain);
+                em.relationships[target.id].type = _legacyRelationshipType(em.relationships[target.id].level);
             }
         }
 
@@ -5390,8 +5410,10 @@
                 if ((rivalInv[rGood] || 0) < 20) continue; // Not cornering
                 // Rival has a lot of this good — consider undercutting
                 if (preferredGoods.indexOf(rGood) >= 0 && (em.npcMerchantInventory[rGood] || 0) > 0) {
+                    var undercutChance = 0.3;
+                    if (em._rivalUndercutTarget && em._rivalUndercutTarget === rival.id) undercutChance = Math.min(0.95, undercutChance * 1.3);
                     // Sell some of this good to undercut the rival
-                    if (town.market && rng.chance(0.3)) {
+                    if (town.market && rng.chance(undercutChance)) {
                         var underQty = Math.min(em.npcMerchantInventory[rGood] || 0, rng.randInt(2, 5));
                         var underPrice = Math.floor((town.market.prices[rGood] || 10) * 0.85); // 15% below market
                         if (underQty > 0 && underPrice > 0) {
@@ -6976,24 +6998,38 @@
                     });
                     if (townPeople.length > 0) {
                         var introduced = rng.pick(townPeople);
-                        if (!em.relationships[introduced.id]) {
-                            em.relationships[introduced.id] = { level: 15, type: 'acquaintance' };
+                        var introDelta = (!em.relationships[introduced.id]) ? 15 : 10;
+                        var reverseDelta = (!introduced.relationships || !introduced.relationships[em.id]) ? 10 : 8;
+                        if (_bridgeNPCRelationship(em, introduced.id, introDelta, 'relationship_introduction')) {
+                            _bridgeNPCRelationship(introduced, em.id, reverseDelta, 'relationship_introduction');
                         } else {
-                            em.relationships[introduced.id].level = Math.min(100, em.relationships[introduced.id].level + 10);
-                        }
-                        if (!introduced.relationships) introduced.relationships = {};
-                        if (!introduced.relationships[em.id]) {
-                            introduced.relationships[em.id] = { level: 10, type: 'acquaintance' };
-                        } else {
-                            introduced.relationships[em.id].level = Math.min(100, introduced.relationships[em.id].level + 8);
+                            if (!em.relationships[introduced.id]) {
+                                em.relationships[introduced.id] = { level: 15, type: 'acquaintance' };
+                            } else {
+                                em.relationships[introduced.id].level = Math.min(100, em.relationships[introduced.id].level + 10);
+                                em.relationships[introduced.id].type = _legacyRelationshipType(em.relationships[introduced.id].level);
+                            }
+                            if (!introduced.relationships) introduced.relationships = {};
+                            if (!introduced.relationships[em.id]) {
+                                introduced.relationships[em.id] = { level: 10, type: 'acquaintance' };
+                            } else {
+                                introduced.relationships[em.id].level = Math.min(100, introduced.relationships[em.id].level + 8);
+                                introduced.relationships[em.id].type = _legacyRelationshipType(introduced.relationships[em.id].level);
+                            }
                         }
                         favorGiven = true;
                     }
                 } else if (favorRoll < 90) {
                     // Relationship boost: mutual relationship grows from interaction
-                    rel.level = Math.min(100, rel.level + 2);
-                    if (npc.relationships && npc.relationships[em.id]) {
-                        npc.relationships[em.id].level = Math.min(100, npc.relationships[em.id].level + 2);
+                    if (_bridgeNPCRelationship(em, relId, 2, 'relationship_favor')) {
+                        _bridgeNPCRelationship(npc, em.id, 2, 'relationship_favor');
+                    } else {
+                        rel.level = Math.min(100, rel.level + 2);
+                        rel.type = _legacyRelationshipType(rel.level);
+                        if (npc.relationships && npc.relationships[em.id]) {
+                            npc.relationships[em.id].level = Math.min(100, npc.relationships[em.id].level + 2);
+                            npc.relationships[em.id].type = _legacyRelationshipType(npc.relationships[em.id].level);
+                        }
                     }
                     favorGiven = true;
                 }

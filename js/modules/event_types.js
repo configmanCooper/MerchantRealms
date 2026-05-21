@@ -206,6 +206,81 @@
         }
     });
 
+    registerBatch({
+        NPC_BECAME_FRIENDS: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' became friends.';
+            }
+        },
+        NPC_BECAME_RIVALS: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' became rivals.';
+            }
+        },
+        NPC_BECAME_ENEMIES: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' became enemies.';
+            }
+        },
+        NPC_BECAME_ALLIES: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' became allies.';
+            }
+        },
+        NPC_LOVERS_FORMED: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' became lovers.';
+            }
+        },
+        NPC_BIZ_PARTNERSHIP: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' entered a business partnership.';
+            }
+        },
+        NPC_DENOUNCED: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' denounced ' + p.personBName + '.';
+            }
+        },
+        NPC_RIVALRY_ENDED: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return 'The rivalry between ' + p.personAName + ' and ' + p.personBName + ' cooled.';
+            }
+        },
+        NPC_FRIENDSHIP_ENDED: {
+            category: 'npc_activity',
+            subcategory: 'social',
+            hidden: true,
+            render: function(p) {
+                return p.personAName + ' and ' + p.personBName + ' drifted apart.';
+            }
+        }
+    });
+
     // ──────────────────────────────────────────
     //  PLAYER ACTIONS — Court & Politics
     // ──────────────────────────────────────────

@@ -5178,6 +5178,7 @@
             }
             person._faction = _factions[_fIdx];
             people.push(person);
+            if (typeof Engine !== 'undefined' && Engine.initNPCRelationships) Engine.initNPCRelationships(person);
             var town = kTowns.find(function(t) { return t.id === townId; });
             if (town) town.population = (town.population || 0) + 1;
             return person;
@@ -7807,6 +7808,7 @@
 
         // Add newborn people
         for (const np of newPeople) world.people.push(np);
+        if (typeof Engine !== 'undefined' && Engine.tickNPCSocial) Engine.tickNPCSocial();
     }
 
     function removeWorkerFromBuilding(p) {
