@@ -4857,6 +4857,9 @@ CONFIG.ACTION_TICK_COSTS = {
     ask_family_advice: 2, borrow_family_connections: 3, family_celebration: 15,
     give_family_gift: 2, invite_family_live: 2, family_business: 5, confide_family: 3,
     ask_family_caretake: 2,
+    // v9p33river400: conquest-mode actions (were falling back silently)
+    build_temple: 30, challenge_rival: 10, visit_resonance: 20, grand_concert: 60,
+    music_duel: 10, engage_battle: 30, war_council: 15, decisive_battle: 60,
     // Special start actions
     give_sermon: 5, visit_holy_site: 10, convert_npc: 3, bless_npc: 2,
     tell_exotic_story: 3, teach_foreign_craft: 10, establish_trading_post: 15,

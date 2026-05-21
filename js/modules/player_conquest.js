@@ -925,7 +925,9 @@
         if (player.townId !== townId) return { success: false, message: 'You must be in this town.' };
         var rng = Engine.getRng();
         var gold = Math.floor(5 + (player.musician.musicSkill / 100) * 15);
-        if (hasSkill('musician')) gold = Math.floor(gold * 1.5);
+        // v9p33river400: legendary_bard doubles income, musician gives 1.5x (bug #10)
+        if (hasSkill('legendary_bard')) gold = Math.floor(gold * 2.0);
+        else if (hasSkill('musician')) gold = Math.floor(gold * 1.5);
         player.gold += gold;
         player.stats.totalGoldEarned += gold;
         player.musician.totalPerformances++;
@@ -940,7 +942,7 @@
         // Fame boost
         var town = Engine.findTown(townId);
         if (town && town.kingdomId) {
-            var fameGain = hasSkill('musician') ? 0.15 : 0.12;
+            var fameGain = hasSkill('legendary_bard') ? 0.20 : hasSkill('musician') ? 0.15 : 0.12;
             player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + fameGain);
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.perform_tavern || 8);
@@ -954,7 +956,8 @@
         if (player.townId !== townId) return { success: false, message: 'You must be in this town.' };
         var rng = Engine.getRng();
         var gold = rng.randInt(2, 8);
-        if (hasSkill('musician')) gold = Math.floor(gold * 1.5);
+        if (hasSkill('legendary_bard')) gold = Math.floor(gold * 2.0);
+        else if (hasSkill('musician')) gold = Math.floor(gold * 1.5);
         player.gold += gold;
         player.stats.totalGoldEarned += gold;
         player.musician.totalPerformances++;
@@ -966,7 +969,7 @@
         }
         var town = Engine.findTown(townId);
         if (town && town.kingdomId) {
-            var streetFameGain = hasSkill('musician') ? 0.08 : 0.06;
+            var streetFameGain = hasSkill('legendary_bard') ? 0.12 : hasSkill('musician') ? 0.08 : 0.06;
             player.musician.fame[town.kingdomId] = Math.min(100, (player.musician.fame[town.kingdomId] || 0) + streetFameGain);
         }
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.street_performance || 5);
@@ -1047,7 +1050,9 @@
     function performAtCourt(kingdomId) {
         _sync();
         if (!player.musician) return { success: false, message: 'Not a musician.' };
-        if ((player.musician.fame[kingdomId] || 0) < 30) return { success: false, message: 'Need 30+ fame in this kingdom.' };
+        // v9p33river400: legendary_bard grants court access at 15 fame instead of 30 (bug #10)
+        var fameReq = hasSkill('legendary_bard') ? 15 : 30;
+        if ((player.musician.fame[kingdomId] || 0) < fameReq) return { success: false, message: 'Need ' + fameReq + '+ fame in this kingdom.' };
         var day = Engine.getDay();
         if (player.musician.lastCourtPerformance[kingdomId] && day - player.musician.lastCourtPerformance[kingdomId] < 30) {
             return { success: false, message: 'Must wait 30 days between court performances.' };
@@ -1180,7 +1185,8 @@
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.music_duel || 10);
         
         // 3-round duel — each round, pick a different instrument
-        var instruments = ['lute', 'flute', 'drum', 'harp', 'fiddle', 'pipes'];
+        // v9p33river400: removed invalid fiddle/pipes, added hurdy_gurdy (matches INSTRUMENT_IDS)
+        var instruments = ['lute', 'flute', 'drum', 'harp', 'hurdy_gurdy'];
         var rng = Engine.getRng();
         var playerWins = 0;
         var rivalWins = 0;
@@ -1875,7 +1881,13 @@
         }
         var pct = rel >= 75 ? 0.50 : (rel >= 60 ? 0.30 : 0.10);
         var amount = Math.floor((person.gold || 0) * pct);
-        if (amount <= 0) return { success: false, message: member.name + ' says: "You know I\'d help you if I could..."' };
+        if (amount <= 0) {
+            // v9p33river400: set cooldown + penalty even when NPC has no gold (was exploitable)
+            person._lastFamilyMoneyDay = day;
+            modifyRelationship(npcId, -3);
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_family_money || 2);
+            return { success: false, message: member.name + ' says: "You know I\'d help you if I could..." (-3 relationship)' };
+        }
         person.gold -= amount;
         player.gold += amount;
         player.stats.totalGoldEarned += amount;
@@ -1903,6 +1915,14 @@
             return player.employees.includes(m.npcId);
         });
         if (alreadyWorking) return { success: false, message: 'A family member is already working for you.' };
+        // v9p33river400: clean up prior employment before assigning
+        if (person.employerId && person.employerId !== 'player') {
+            var prevEmployer = Engine.findPerson(person.employerId);
+            if (prevEmployer && prevEmployer.employees) {
+                var eIdx = prevEmployer.employees.indexOf(person.id);
+                if (eIdx >= 0) prevEmployer.employees.splice(eIdx, 1);
+            }
+        }
         person.employerId = 'player';
         player.employees.push(person.id);
         person._familyWorkStartDay = Engine.getDay();
@@ -2130,6 +2150,8 @@
         var ht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === houseInTown.type; });
         var maxOcc = ht ? ht.maxOccupants : 2;
         if (houseInTown.occupants.length >= maxOcc) return { success: false, message: 'House is full.' };
+        // v9p33river400: check for duplicate before pushing (bug #7)
+        if (houseInTown.occupants.indexOf(npcId) >= 0) return { success: false, message: member.name + ' already lives here.' };
         person.townId = player.townId;
         houseInTown.occupants.push(npcId);
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.invite_family_live || 2);
@@ -2172,18 +2194,26 @@
         return { success: true, message: member.name + ' shares: "' + secret + '" +3 relationship.' };
     }
 
-    function askFamilyToCaretake() {
+    function askFamilyToCaretake(npcId) {
         _sync();
-        if (player.familyMembers.length === 0) return { success: false, message: 'No family.' };
-        var available = player.familyMembers.find(function(m) {
-            var p = Engine.findPerson(m.npcId);
-            return p && p.alive && p.townId === player.townId;
-        });
-        if (!available) return { success: false, message: 'No family member in town.' };
-        var rel = (player.relationships[available.npcId] && player.relationships[available.npcId].level) || 0;
-        var cost = rel >= 60 ? 0 : 5;
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_family_caretake || 2);
-        return { success: true, message: available.name + ' agrees to caretake.' + (cost > 0 ? ' Cost: ' + cost + 'g/day.' : ' Free!') };
+        if (!player.familyMembers || player.familyMembers.length === 0) return { success: false, message: 'No family.' };
+        // v9p33river400: delegate to real childcare system (bug #9)
+        if (typeof Player !== 'undefined' && Player.askFamilyToCareForKids) {
+            var targetId = npcId;
+            if (!targetId) {
+                // Pick first available family member in town
+                var available = player.familyMembers.find(function(m) {
+                    var p = Engine.findPerson(m.npcId);
+                    return p && p.alive && p.townId === player.townId;
+                });
+                if (!available) return { success: false, message: 'No family member in town.' };
+                targetId = available.npcId;
+            }
+            var result = Player.askFamilyToCareForKids(targetId);
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_family_caretake || 2);
+            return result;
+        }
+        return { success: false, message: 'Childcare system not available.' };
     }
 
     // Shipwrecked price modifier (called from trade functions)
@@ -2201,6 +2231,47 @@
     function hasArtifactLuckBonus() {
         _sync();
         return player.shipwrecked && player.shipwrecked.artifactKept && player.inventory.exotic_artifact > 0;
+    }
+
+    // v9p33river400: family worker expiry — was never cleaned up (bug #6)
+    // Also: family business profit tick (bug #8)
+    function tickFamilyWorkers() {
+        _sync();
+        if (!player.familyMembers) return;
+        var day = Engine.getDay();
+
+        // Family worker 30-day expiry
+        if (player.employees) {
+            for (var fi = player.employees.length - 1; fi >= 0; fi--) {
+                var empId = player.employees[fi];
+                var person = Engine.findPerson(empId);
+                if (!person || !person._isFamilyWorker) continue;
+                var startDay = person._familyWorkStartDay || 0;
+                if (day - startDay >= 30) {
+                    person.employerId = null;
+                    person._isFamilyWorker = false;
+                    delete person._familyWorkStartDay;
+                    player.employees.splice(fi, 1);
+                    Engine.logEvent((person.firstName || 'A family member') + '\'s 30-day work period has ended.', null, 'my_actions');
+                }
+            }
+        }
+
+        // Family business daily profit (60/40 split, ~2-8g/day based on investment)
+        if (day % 7 === 0) {
+            for (var bi = 0; bi < player.familyMembers.length; bi++) {
+                var mem = player.familyMembers[bi];
+                var bPerson = Engine.findPerson(mem.npcId);
+                if (!bPerson || !bPerson.alive || !bPerson._familyBusinessActive) continue;
+                var investment = bPerson._familyBusinessInvestment || 0;
+                var weeklyProfit = Math.max(1, Math.floor(investment * 0.03));
+                var playerShare = Math.floor(weeklyProfit * 0.6);
+                var sibShare = weeklyProfit - playerShare;
+                player.gold += playerShare;
+                player.stats.totalGoldEarned += playerShare;
+                bPerson.gold = (bPerson.gold || 0) + sibShare;
+            }
+        }
     }
 
     // ── Export to Player ──
@@ -2267,6 +2338,7 @@
     Player.familyBusiness = familyBusiness;
     Player.confideInFamily = confideInFamily;
     Player.askFamilyToCaretake = askFamilyToCaretake;
+    Player.tickFamilyWorkers = tickFamilyWorkers;
     Player.getShipwreckedPriceModifier = getShipwreckedPriceModifier;
     Player.hasArtifactLuckBonus = hasArtifactLuckBonus;
 

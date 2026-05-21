@@ -40442,7 +40442,8 @@
         };
 
         // Generate 3 rival musicians
-        var rivalInstruments = ['lute', 'flute', 'drum', 'harp', 'fiddle', 'pipes'];
+        // v9p33river400: removed invalid fiddle/pipes, added hurdy_gurdy (matches INSTRUMENT_IDS)
+        var rivalInstruments = ['lute', 'flute', 'drum', 'harp', 'hurdy_gurdy'];
         var rivalFirstNames = ['Bard Finnegan', 'Minstrel Cordelia', 'Troubadour Aleron', 'Songstress Vivienne', 'Piper Rowan', 'Fiddler Gareth'];
         var rng2 = Engine.getRng();
         for (var ri = 0; ri < 3; ri++) {
@@ -40761,6 +40762,8 @@
         if (player.musician && (player.musician.active || player.musician.legacyChoice)) tickMusician();
         if (player.militaryLeader && player.militaryLeader.active) tickMilitaryLeader();
         if (player.scholar && (player.scholar.active || player.scholar.royaltiesActive)) tickScholar();
+        // v9p33river400: family worker expiry + business profit tick
+        if (player.familyMembers && player.familyMembers.length > 0 && typeof Player.tickFamilyWorkers === 'function') Player.tickFamilyWorkers();
         // Story Mode tick
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined') {
             StoryMode.tick(player);
