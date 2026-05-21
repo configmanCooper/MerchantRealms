@@ -1487,6 +1487,117 @@
         return result;
     }
 
+    // v9p33river388: Social healing offer from talk-to-person dialog
+    function offerHealNpc(personId) {
+        _sync();
+        if (!player) return { success: false, message: 'No player state.' };
+        if (!player.inventory) player.inventory = {};
+
+        var npc = null;
+        try { npc = Engine.findPerson(personId); } catch(e) {}
+        if (!npc || !npc.alive) return { success: false, message: 'Person not found.' };
+
+        // Must be sick or injured
+        var hasInjury = npc.injured || (npc.injuries && npc.injuries.length > 0);
+        var hasIllness = npc.sick || (npc.illnesses && npc.illnesses.length > 0);
+        if (!hasInjury && !hasIllness) return { success: false, message: (npc.firstName || 'They') + ' is not sick or injured.' };
+
+        // Must have medical skill
+        if (!hasSkill('field_medic') && !hasSkill('doctor')) {
+            return { success: false, message: 'Need Field Medic or Doctor skill.' };
+        }
+
+        // Cooldown check (3-day)
+        if (!player._healOfferCooldowns) player._healOfferCooldowns = {};
+        var today = 0;
+        try { today = Engine.getDay(); } catch(e) {}
+        var lastOffer = player._healOfferCooldowns[personId] || 0;
+        if (lastOffer && today - lastOffer < 3) {
+            return { success: false, message: 'They declined recently. Try again in ' + (3 - (today - lastOffer)) + ' day(s).' };
+        }
+
+        // Must have medical supplies
+        var supplyOrder = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
+        var usedSupply = null;
+
+        // Try to match the specific condition first
+        var requiredProduct = null;
+        if (npc.injuries && npc.injuries.length > 0) {
+            var injType = npc.injuries[0].type || npc.injuries[0].id;
+            for (var _it = 0; _it < INJURY_TYPES.length; _it++) {
+                if (INJURY_TYPES[_it].id === injType) { requiredProduct = INJURY_TYPES[_it].product; break; }
+            }
+        } else if (npc.illnesses && npc.illnesses.length > 0) {
+            var illType = npc.illnesses[0].type || npc.illnesses[0].id;
+            for (var _il = 0; _il < ILLNESS_TYPES.length; _il++) {
+                if (ILLNESS_TYPES[_il].id === illType) { requiredProduct = ILLNESS_TYPES[_il].product; break; }
+            }
+        }
+
+        if (requiredProduct && player.inventory[requiredProduct] && player.inventory[requiredProduct] > 0) {
+            usedSupply = requiredProduct;
+        } else {
+            for (var si = 0; si < supplyOrder.length; si++) {
+                if (player.inventory[supplyOrder[si]] && player.inventory[supplyOrder[si]] > 0) {
+                    usedSupply = supplyOrder[si]; break;
+                }
+            }
+        }
+        if (!usedSupply) return { success: false, message: 'Need medical supplies.' };
+
+        // Acceptance roll
+        var acceptChance = 0.50;
+        var relLevel = 0;
+        try {
+            var rel = Player.getRelationship ? Player.getRelationship(personId) : null;
+            if (rel) relLevel = rel.level || 0;
+        } catch(e) {}
+        if (relLevel >= 20) acceptChance += 0.30;
+        var npcHealth = (typeof npc.health === 'number') ? npc.health : 100;
+        if (npcHealth < 50) acceptChance += 0.20;
+        // Family always accepts
+        if (player.spouseId === personId ||
+            (player.parentIds && player.parentIds.indexOf(personId) !== -1) ||
+            (player.childrenIds && player.childrenIds.indexOf(personId) !== -1) ||
+            (player.siblingIds && player.siblingIds.indexOf(personId) !== -1)) {
+            acceptChance = 1.0;
+        }
+
+        var rng = Engine.getRng ? Engine.getRng() : { random: function() { return Math.random(); } };
+        var accepted = rng.random() < acceptChance;
+
+        if (accepted) {
+            // Consume supply
+            player.inventory[usedSupply]--;
+            if (player.inventory[usedSupply] <= 0) delete player.inventory[usedSupply];
+
+            // Heal the NPC (same logic as treatCompanion)
+            if (npc.injuries && npc.injuries.length > 0) {
+                npc.injuries.shift();
+                if (npc.injuries.length === 0) { npc.injured = false; npc.injurySeverity = null; npc.injuryType = null; }
+            } else if (npc.illnesses && npc.illnesses.length > 0) {
+                npc.illnesses.shift();
+                if (npc.illnesses.length === 0) { npc.sick = false; npc.illness = null; }
+            } else {
+                if (npc.injured) { npc.injured = false; npc.injurySeverity = null; npc.injuryType = null; }
+                else if (npc.sick) { npc.sick = false; npc.illness = null; }
+            }
+            npc.health = Math.min((npc.health || 50) + 25, 100);
+
+            // Relationship boost (+10 for social healing)
+            modifyRelationship(personId, 10);
+            grantXP(6, 'medical');
+
+            Engine.logEvent('💊 ' + player.fullName + ' offered healing to ' + (npc.firstName || 'an NPC') + ' using ' + usedSupply.replace(/_/g, ' ') + '. They accepted gratefully.', null, 'social');
+
+            return { success: true, accepted: true, message: 'They accepted your treatment!' };
+        }
+
+        // Rejected — set 3-day cooldown
+        player._healOfferCooldowns[personId] = today;
+        return { success: true, accepted: false, message: (npc.firstName || 'They') + ' declined your offer. Try again in 3 days.' };
+    }
+
     // -- Exports --
     Player._applyConditionHealthHit = _applyConditionHealthHit;
     Player.inflictRandomInjury = inflictRandomInjury;
@@ -1500,6 +1611,7 @@
     Player.getMedicalFacilities = getMedicalFacilities;
     Player.selfTreat = selfTreat;
     Player.treatOther = treatOther;
+    Player.offerHealNpc = offerHealNpc;
     Player.treatCompanion = function(targetType, targetId, method) {
         var result = treatCompanion(targetType, targetId, method);
         if (result && result.success && player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {

@@ -4392,6 +4392,59 @@ window.UI = (function () {
             }
         } catch (e) {}
 
+        // NPC health state
+        ctx.npcSick = !!(person.sick || (person.illnesses && person.illnesses.length > 0));
+        ctx.npcInjured = !!(person.injured || (person.injuries && person.injuries.length > 0));
+        ctx.npcIllnessName = '';
+        if (person.illness) ctx.npcIllnessName = person.illness;
+        else if (person.illnesses && person.illnesses.length > 0) ctx.npcIllnessName = person.illnesses[0].name || person.illnesses[0].type || 'illness';
+
+        // Recently married (within 30 days)
+        ctx.npcRecentlyMarried = false;
+        try {
+            var _day = Engine.getDay ? Engine.getDay() : 0;
+            if (person._marriedDay && typeof person._marriedDay === 'number' && _day - person._marriedDay <= 30) {
+                ctx.npcRecentlyMarried = true;
+            }
+        } catch(e) {}
+
+        // Kingdom at war
+        ctx.atWar = false;
+        ctx.warEnemyName = '';
+        try {
+            var _wars = Engine.getActiveWars ? Engine.getActiveWars() : {};
+            var _npcK = null;
+            if (t) _npcK = t.kingdomId;
+            for (var _wid in _wars) {
+                var _w = _wars[_wid];
+                if (_w && _npcK && (_w.kingdomA === _npcK || _w.kingdomB === _npcK)) {
+                    ctx.atWar = true;
+                    var _enemyKId = _w.kingdomA === _npcK ? _w.kingdomB : _w.kingdomA;
+                    try { var _ek = Engine.findKingdom(_enemyKId); if (_ek) ctx.warEnemyName = _ek.name; } catch(e2) {}
+                    break;
+                }
+            }
+        } catch(e) {}
+
+        // Recent laws (enacted within 7 days, only those with enactedDay)
+        ctx.recentLawNames = [];
+        try {
+            if (k && k.laws && k.laws.specialLaws) {
+                var _today = Engine.getDay ? Engine.getDay() : 0;
+                for (var _li = 0; _li < k.laws.specialLaws.length; _li++) {
+                    var _sl = k.laws.specialLaws[_li];
+                    if (_sl && typeof _sl.enactedDay === 'number' && _today - _sl.enactedDay <= 7) {
+                        ctx.recentLawNames.push(_sl.name || _sl.id);
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // NPC type flags
+        ctx.npcIsNoble = !!(ctx.npcRank >= 4);
+        ctx.frugal = (pers.frugality || 50) >= 60;
+        ctx.loyal = (pers.loyalty || 50) >= 60;
+
         return ctx;
     }
 
@@ -4507,6 +4560,44 @@ window.UI = (function () {
                 else if (ctx.npcOcc === 'merchant') out.push('Prices are jittery. Hard to plan a season with the markets like this.');
                 else if (ctx.npcOcc === 'innkeeper' || ctx.npcOcc === 'barkeep' || ctx.npcOcc === 'tavern_keeper') out.push('Slow morning, busy night. Same as every day.');
             }
+            // v9p33river388: contextual life-state dialog
+            if (ctx.npcSick) {
+                out.push('*coughs* Forgive me — I am not at my best today. This ' + (ctx.npcIllnessName || 'illness') + ' has me dragging.');
+                out.push('*sniffles* Please, keep your distance a bit. I would hate to pass this on.');
+                out.push('*wearily* I should be in bed, honestly. But the world does not stop for the sick.');
+            }
+            if (ctx.npcInjured) {
+                out.push('*winces* Careful — I took a knock recently. Still healing.');
+                out.push('*adjusts bandage* Do not mind me. Just a scratch. ...A deep scratch.');
+            }
+            if (ctx.npcRecentlyMarried) {
+                out.push('*beams* Have you heard? I am recently wed! Life is good, ' + ctx.playerName + '.');
+                out.push('*glowing* Married life suits me, I think. My spouse would say the same — I hope.');
+            }
+            if (ctx.atWar) {
+                out.push('*glances around* The war weighs on everyone. ' + (ctx.warEnemyName ? ctx.warEnemyName + ' will not back down easily.' : 'I hope it ends soon.'));
+                out.push('Have you seen the soldiers marching? Dark times, ' + ctx.playerName + '. Dark times.');
+                if (ctx.warm) out.push('I pray for the families of the soldiers. War takes more than lives — it takes futures.');
+            }
+            if (ctx.recentLawNames.length > 0) {
+                out.push('Did you hear about the new law? "' + ctx.recentLawNames[0] + '" — everyone has an opinion.');
+                out.push('The crown passed "' + ctx.recentLawNames[0] + '" recently. I wonder how long before we feel the effects.');
+            }
+            if (ctx.npcIsNoble && !ctx.family) {
+                out.push('Court has been... interesting lately. The usual intrigues and alliances.');
+                out.push('*adjusts collar* One must always be seen in the right company. You understand.');
+            }
+            if (ctx.npcIsEM && !ctx.family) {
+                out.push('Business never sleeps, ' + ctx.playerName + '. I have three caravans on the road as we speak.');
+                out.push('The merchant life — always calculating, always watching the horizon for the next opportunity.');
+            }
+            if (ctx.ambitious && !ctx.family && ctx.relTier !== 'hostile') {
+                out.push('I have plans, ' + ctx.playerName + '. Big plans. But they require patience.');
+                out.push('This town is just the beginning for me. I intend to be remembered.');
+            }
+            if (ctx.frugal && !ctx.family) {
+                out.push('I have been saving every copper. You never know when lean times will come.');
+            }
             return out;
         },
 
@@ -4537,6 +4628,23 @@ window.UI = (function () {
             if (ctx.family === 'father') out.push('*chuckles* You always did love a bad joke. Like your old man.');
             if (ctx.family === 'mother') out.push('*shakes head smiling* Oh, you. Where do you get these?');
             if (ctx.family === 'brother' || ctx.family === 'sister') out.push('*laughs* That is the worst one yet. Tell me another.');
+            if (ctx.npcSick) {
+                out.push('*weak laugh followed by coughing* Ow. Do not make me laugh — it hurts to laugh right now.');
+                out.push('*pained smile* That was good. I needed that, sick as I am.');
+            }
+            if (ctx.atWar) {
+                out.push('*dark chuckle* We could use more laughter with the war on. Keep them coming.');
+                out.push('Ha! The soldiers could use a jester like you at the front.');
+            }
+            if (ctx.npcRecentlyMarried) {
+                out.push('*laughs* I will tell that one to my new spouse tonight! They will love it.');
+            }
+            if (ctx.npcIsNoble) {
+                out.push('*polite laugh* Careful with humor at court. The wrong joke before the wrong lord can end careers.');
+            }
+            if (ctx.ambitious) {
+                out.push('*grins* Humor opens doors that gold cannot. Remember that.');
+            }
             return out;
         },
 
@@ -4585,6 +4693,26 @@ window.UI = (function () {
             if (ctx.family === 'father') out.push('*nods slowly* Coin is coin. But do not lose your name for it. I will not say that twice.');
             if (ctx.family === 'mother') out.push('You and your numbers. Just promise me you are not in over your head.');
             if (ctx.cold) out.push('*shrugs* Why are you asking ME? Find a guild master.');
+            if (ctx.atWar) {
+                out.push('War drives prices mad. Iron and weapons are worth their weight in gold — everything else is uncertain.');
+                out.push('The ' + (ctx.warEnemyName || 'enemy') + ' conflict has every trade route on edge. Caravans are risky business right now.');
+                if (ctx.npcIsEM) out.push('Between us, there is money to be made in wartime — if you have the stomach for it and the right supply chains.');
+            }
+            if (ctx.recentLawNames.length > 0) {
+                out.push('This new "' + ctx.recentLawNames[0] + '" law has merchants buzzing. Some say opportunity, some say ruin.');
+            }
+            if (ctx.npcSick) {
+                out.push('*coughs* Forgive me — hard to talk shop when your head is swimming. Come back when I am well?');
+            }
+            if (ctx.npcRecentlyMarried) {
+                if (ctx.npcIsEM) out.push('My new spouse is already asking about the accounts. Married life and merchant life — they blend together.');
+            }
+            if (ctx.frugal) {
+                out.push('I keep my margins thin and my savings thick. That is the secret to lasting in this trade.');
+            }
+            if (ctx.ambitious) {
+                out.push('Small deals bore me. I am looking for something that changes the game entirely.');
+            }
             return out;
         },
 
@@ -4617,6 +4745,25 @@ window.UI = (function () {
             if (ctx.family === 'mother') out.push('*beams* You sweet thing. You always know what to say to your mother.');
             if (ctx.family === 'father') out.push('*gruff* All right, all right. No need to lay it on so thick.');
             if (ctx.family === 'spouse' && ctx.rel >= 60) out.push('*smiles* You say the sweetest things. Come here.');
+            if (ctx.npcSick) {
+                out.push('*small smile despite the pallor* That is kind of you to say — especially when I look like death warmed over.');
+            }
+            if (ctx.npcRecentlyMarried) {
+                out.push('*blushes* My spouse says the same thing! Marriage has been good to me, I think.');
+            }
+            if (ctx.npcIsNoble) {
+                out.push('*inclines head* Flattery is the currency of court. But yours feels... sincere. I appreciate that.');
+                out.push('How gracious. One hears so many hollow words at court — yours stand out.');
+            }
+            if (ctx.npcIsEM) {
+                out.push('*chuckles* A compliment before a business proposal? I see you, ' + ctx.playerName + '. But I will take it.');
+            }
+            if (ctx.atWar) {
+                out.push('Kind words are precious when the kingdom is at war. Thank you, truly.');
+            }
+            if (ctx.ambitious) {
+                out.push('*pleased* Someone who sees my potential. I knew I liked you, ' + ctx.playerName + '.');
+            }
             return out;
         },
 
@@ -4668,6 +4815,34 @@ window.UI = (function () {
             if (ctx.family === 'mother') out.push('*sets down her cup* Eat well. Sleep enough. Marry someone who laughs easily. That is all the advice I have for anyone.');
             if (ctx.family === 'father') out.push('*long pause* You make your name with the work nobody is watching. Not the work everybody sees.');
             if (ctx.cold) out.push('*shrugs* You want advice — go pay an advisor. I have none for free.');
+            if (ctx.atWar) {
+                if (ctx.npcIsNoble || ctx.npcIsKing) {
+                    out.push('In wartime, keep your gold close and your friends closer. Allegiances shift faster than the front lines.');
+                } else {
+                    out.push('My advice? Stay out of the way of marching armies. That is all the wisdom I have during a war.');
+                }
+            }
+            if (ctx.npcSick) {
+                out.push('*coughs* My best advice right now? Take care of your health. You do not appreciate it until it is gone.');
+            }
+            if (ctx.npcRecentlyMarried) {
+                out.push('*smiles warmly* Best advice I ever got? Find someone who makes the hard days bearable. I finally did.');
+            }
+            if (ctx.recentLawNames.length > 0) {
+                if (ctx.npcIsEM || ctx.npcRank >= 4) {
+                    out.push('With this new "' + ctx.recentLawNames[0] + '" law — adapt quickly. The merchants who move first always profit most from change.');
+                }
+            }
+            if (ctx.npcIsNoble && !ctx.npcIsKing) {
+                out.push('At court, silence is underrated. Let others reveal their hand first — then play yours.');
+                out.push('Never refuse an invitation from the king. And never arrive last. Impressions are everything.');
+            }
+            if (ctx.honest) {
+                out.push('An honest life is harder but you sleep better. I have tried both ways.');
+            }
+            if (ctx.loyal) {
+                out.push('Loyalty is everything. Find people worth being loyal to, and never betray them. That is the whole of it.');
+            }
             return out;
         },
 
@@ -4695,16 +4870,60 @@ window.UI = (function () {
             if (ctx.family === 'father') out.push('*pours generously* About time you bought your old man a drink. I taught you to drink, after all.');
             if (ctx.family === 'mother') out.push('*sighs happily* I do not say no to a glass with my own child. Sit down properly.');
             if (ctx.family === 'brother' || ctx.family === 'sister') out.push('*grins* Now we are talking. Round two is on me.');
+            if (ctx.npcSick) {
+                out.push('*sips weakly* I probably should not be drinking, but... one will not hurt. To better health.');
+                out.push('*takes a tentative sip* The warmth helps, actually. Thank you, ' + ctx.playerName + '.');
+            }
+            if (ctx.atWar) {
+                out.push('*raises mug* To the end of this war. May it come swiftly and with mercy.');
+                out.push('*drinks deeply* In wartime, every drink might be the last. So make them count.');
+            }
+            if (ctx.npcRecentlyMarried) {
+                out.push('*raises glass* To my new spouse! And to good friends like you, ' + ctx.playerName + '.');
+            }
+            if (ctx.npcIsNoble) {
+                out.push('*swirls wine* A fine vintage. The cellars at court are well-stocked, at least.');
+            }
+            if (ctx.npcIsEM) {
+                out.push('*clinks* I do my best deals over drinks. Something about ale loosens the tongue — and the purse strings.');
+            }
+            if (ctx.ambitious) {
+                out.push('*raises glass* To ambition! May our cups be as full as our aspirations.');
+            }
             return out;
         },
 
         ask_gossip: function(ctx) {
-            return [
-                'Lean in. You did not hear this from me...',
-                '*lowers voice* I should not say. But you are not the worst person to hear it.',
-                'Word in the market is something is brewing. Take it for what it is worth.',
-                'Hmf. People talk. I am one of them.'
-            ];
+            var out = [];
+            out.push('Lean in. You did not hear this from me...');
+            out.push('*lowers voice* I should not say. But you are not the worst person to hear it.');
+            out.push('Word in the market is something is brewing. Take it for what it is worth.');
+            out.push('Hmf. People talk. I am one of them.');
+            if (ctx.npcIsEM) {
+                out.push('*whispers* I heard a certain merchant is about to go bankrupt. Their warehouses are emptying fast.');
+                out.push('Between us — there is a trade deal forming between two houses. If you position yourself right...');
+            }
+            if (ctx.npcIsNoble) {
+                out.push('*glances around* The court is buzzing. Someone has the king\'s ear, and it is not who you think.');
+                out.push('*whispers* A certain noble has been meeting with foreign emissaries. Draw your own conclusions.');
+            }
+            if (ctx.atWar) {
+                out.push('*hushed* They say the enemy is weaker than they look. Or stronger. Depends who you ask.');
+                out.push('I heard the generals are arguing about strategy. That never ends well for the soldiers.');
+            }
+            if (ctx.recentLawNames.length > 0) {
+                out.push('That new "' + ctx.recentLawNames[0] + '" law? I heard the king had to twist arms to get it passed.');
+            }
+            if (ctx.npcSick) {
+                out.push('*coughs* I would tell you more but my head is pounding. Come back when I can think straight.');
+            }
+            if (ctx.warm) {
+                out.push('*leans in conspiratorially* You know I cannot resist a good story. Here is what I heard...');
+            }
+            if (ctx.cold) {
+                out.push('*flat* Gossip is for the idle. But since you asked... fine.');
+            }
+            return out;
         }
     };
 
@@ -5010,6 +5229,233 @@ window.UI = (function () {
                       '*nods* Now that is a productive answer. Let us talk.',
                       'A reasonable man. Good.'
                   ]
+                }
+            ]
+        },
+
+        // v9p33river388: expanded question pool
+        // War opinion
+        {
+            id: 'q_war_opinion',
+            summary: 'the ongoing war',
+            askFor: function(ctx) {
+                if (!ctx.atWar) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'What do you make of this war' + (ctx.warEnemyName ? ' with ' + ctx.warEnemyName : '') + ', ' + ctx.playerName + '?';
+            },
+            options: [
+                { label: 'Support the war effort fully', kind: 'truth', relGain: 2,
+                  reactions: ['*nods firmly* Good. We need people with resolve.', 'Spoken like a true patriot. The kingdom needs more like you.']
+                },
+                { label: 'Express doubts about the war', kind: 'truth', relGain: 1,
+                  reactions: ['*sighs* You are not the only one with doubts. But we press on.', 'Mm. Honest, at least. War is rarely clean.']
+                },
+                { label: 'Say you profit from it', kind: 'brag', relGain: -2, relIfCaught: -6,
+                  reactions: ['*cold stare* At least you are honest about your nature.', 'War profiteering. I will remember that about you.'],
+                  reactionsCaught: ['*disgusted* People are dying, and you count coins. Charming.']
+                },
+                { label: 'Change the subject', kind: 'deflect', relGain: 0,
+                  reactions: ['*shrugs* Fair enough. Not everyone wants to discuss the front lines.']
+                }
+            ]
+        },
+
+        // Recent law opinion
+        {
+            id: 'q_new_law',
+            summary: 'the new law',
+            askFor: function(ctx) {
+                if (!ctx.recentLawNames || ctx.recentLawNames.length === 0) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'This "' + ctx.recentLawNames[0] + '" law — what is your take on it, honestly?';
+            },
+            options: [
+                { label: 'Support it publicly', kind: 'truth', relGain: 2,
+                  reactions: ['*nods* A supporter. Good to know where you stand.', 'The crown will be pleased to hear it.']
+                },
+                { label: 'Criticize it carefully', kind: 'truth', relGain: 1,
+                  reactions: ['*raises eyebrow* Bold. But not without merit.', 'Mm. Dissent is healthy — in moderation.']
+                },
+                { label: 'Claim you helped draft it', kind: 'brag', relGain: 0, relIfCaught: -5,
+                  reactions: ['*impressed* I had no idea you were involved!'],
+                  reactionsCaught: ['*flat* You did not. I was at the reading. Do not lie to me about things I witnessed.']
+                },
+                { label: 'Plead ignorance', kind: 'deflect', relGain: -1,
+                  reactions: ['*surprised* You have not heard? It is the talk of the town.', 'Hm. I suppose not everyone follows politics.']
+                }
+            ]
+        },
+
+        // Noble court question
+        {
+            id: 'q_court_ambitions',
+            summary: 'your ambitions at court',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4) return null;
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'Between us — do you have designs on a higher title, ' + ctx.playerName + '?';
+            },
+            options: [
+                { label: 'Admit your ambitions openly', kind: 'truth', relGain: 3,
+                  reactions: ['*nods approvingly* Ambition is nothing to hide. I can respect that.', '*smiles* Good. The timid never rise. I may be able to help you — in time.']
+                },
+                { label: 'Deny any aspirations', kind: 'lie', relGain: 0, relIfCaught: -4,
+                  reactions: ['*skeptical* Mm. If you say so.', 'Content with your lot? How... unusual.'],
+                  reactionsCaught: ['*laughs* Please. I have seen you working the court. Do not pretend to me.']
+                },
+                { label: 'Turn the question back on them', kind: 'deflect', relGain: 1,
+                  reactions: ['*chuckles* Clever. Turning my own question against me. I see you.', '*amused* Touché. Perhaps we are more alike than I thought.']
+                }
+            ]
+        },
+
+        // EM trade strategy
+        {
+            id: 'q_trade_strategy',
+            summary: 'your business strategy',
+            askFor: function(ctx) {
+                if (!ctx.npcIsEM) return null;
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'Merchant to merchant — what is your approach? Volume or margins?';
+            },
+            options: [
+                { label: 'Volume — sell more at lower prices', kind: 'truth', relGain: 2,
+                  reactions: ['*nods* A man of the people. Risky, but it builds a base.', 'Interesting. We could complement each other nicely.']
+                },
+                { label: 'Margins — premium goods, premium prices', kind: 'truth', relGain: 2,
+                  reactions: ['*approving nod* Quality over quantity. I can respect that philosophy.', 'A luxury merchant, then. There is always room at the top — if you can get there.']
+                },
+                { label: 'Whatever makes the most gold', kind: 'truth', relGain: 1,
+                  reactions: ['*chuckles* An opportunist. The market rewards flexibility.', 'Pragmatic. I can work with pragmatic.']
+                },
+                { label: 'Deflect ("Trade secrets")', kind: 'deflect', relGain: -1,
+                  reactions: ['*amused* Fair. I would not share mine either.', '*shrugs* Cannot blame a merchant for guarding their edge.']
+                }
+            ]
+        },
+
+        // Personal — sick NPC question
+        {
+            id: 'q_npc_sick',
+            summary: 'their health',
+            askFor: function(ctx) {
+                if (!ctx.npcSick && !ctx.npcInjured) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return null; // NPCs ask about YOUR health instead
+            },
+            options: []
+        },
+
+        // Family — marriage plans (for unmarried siblings)
+        {
+            id: 'q_marriage_plans',
+            summary: 'your plans for marriage',
+            askFor: function(ctx) {
+                if (ctx.family !== 'mother' && ctx.family !== 'father' && ctx.family !== 'brother' && ctx.family !== 'sister') return null;
+                return 'So... any plans to settle down? Have you found someone special?';
+            },
+            options: [
+                { label: 'Honestly, yes', kind: 'truth', relGain: 4,
+                  reactions: ['*delighted* Tell me everything! Who is it?', '*beams* I knew it! You have that look about you.']
+                },
+                { label: 'Not yet — too busy', kind: 'truth', relGain: 1,
+                  reactions: ['*sighs* Work, work, work. There is more to life, you know.', '*nods* I understand. But do not wait too long.']
+                },
+                { label: 'Deflect ("Let us not talk about that")', kind: 'deflect', relGain: -1,
+                  reactions: ['*concerned look* All right. But I worry about you being alone.', '*backs off* Fine. But the offer to help stands.']
+                }
+            ]
+        },
+
+        // Ambitious NPC probes your wealth
+        {
+            id: 'q_wealth_probe',
+            summary: 'how much gold you have',
+            askFor: function(ctx) {
+                if (!ctx.ambitious) return null;
+                if (ctx.family) return null;
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool' || ctx.relTier === 'neutral') return null;
+                return 'I have been curious — how deep are your pockets, really? A man of your reputation must be doing well.';
+            },
+            options: [
+                { label: 'Give a rough honest estimate', kind: 'truth', relGain: 3,
+                  reactions: ['*whistles* Not bad. Not bad at all.', '*nods* Respectable. I had you pegged about right.']
+                },
+                { label: 'Exaggerate significantly', kind: 'brag', relGain: 1, relIfCaught: -5,
+                  reactions: ['*impressed* Well then! I should be nicer to you.'],
+                  reactionsCaught: ['*flat* I have friends in the counting houses. Do not inflate your numbers to me.']
+                },
+                { label: 'Deflect ("Enough to sleep at night")', kind: 'deflect', relGain: 0,
+                  reactions: ['*chuckles* Cryptic. I can appreciate that.']
+                }
+            ]
+        },
+
+        // Warm NPC offers support
+        {
+            id: 'q_need_help',
+            summary: 'whether you need any help',
+            askFor: function(ctx) {
+                if (!ctx.warm) return null;
+                if (ctx.family) return null;
+                if (ctx.relTier !== 'friend' && ctx.relTier !== 'close' && ctx.relTier !== 'trusted') return null;
+                return 'You look like you have the weight of the world on you. Is there anything I can do?';
+            },
+            options: [
+                { label: 'Appreciate the offer but decline', kind: 'truth', relGain: 2,
+                  reactions: ['*warm smile* The offer stands. Always.', '*nods* You know where to find me if that changes.']
+                },
+                { label: 'Admit you could use advice', kind: 'truth', relGain: 4,
+                  reactions: ['*sits down* Tell me everything. I am listening.', '*puts hand on your shoulder* That is what friends are for.']
+                },
+                { label: 'Brush it off ("I am fine")', kind: 'deflect', relGain: -1,
+                  reactions: ['*unconvinced* If you say so. But I can tell.', '*sighs* Stubborn as always.']
+                }
+            ]
+        },
+
+        // Cold NPC tests your character
+        {
+            id: 'q_cold_test',
+            summary: 'what you would do in a hard situation',
+            askFor: function(ctx) {
+                if (!ctx.cold) return null;
+                if (ctx.family) return null;
+                if (ctx.relTier === 'hostile') return null;
+                return 'Hypothetical: a friend owes you gold but falls on hard times. Do you collect, or forgive the debt?';
+            },
+            options: [
+                { label: 'Forgive the debt — friendship matters more', kind: 'truth', relGain: 1,
+                  reactions: ['*surprised* Soft answer. I did not expect that from you.', '*grudging respect* Hm. Generous. Perhaps TOO generous.']
+                },
+                { label: 'Collect — a debt is a debt', kind: 'truth', relGain: 3,
+                  reactions: ['*nods* Now THAT is the right answer. Sentiment is a luxury.', '*approving* Good. You understand how the world works.']
+                },
+                { label: 'Work out a payment plan', kind: 'truth', relGain: 2,
+                  reactions: ['*considers* Pragmatic. I can respect pragmatic.', 'Mm. The compromise answer. Tells me you are a negotiator.']
+                }
+            ]
+        },
+
+        // Honest NPC confrontation
+        {
+            id: 'q_honest_confrontation',
+            summary: 'an honest question about your character',
+            askFor: function(ctx) {
+                if (!ctx.honest) return null;
+                if (ctx.family) return null;
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'I will ask you straight because I hate dancing around things — are you a good person, ' + ctx.playerName + '?';
+            },
+            options: [
+                { label: 'Yes, I try to be', kind: 'truth', relGain: 3,
+                  reactions: ['*studies your face* I believe you. Do not make me wrong.', '*nods slowly* That is the right answer. Keep trying.']
+                },
+                { label: 'No one is truly good', kind: 'truth', relGain: 1,
+                  reactions: ['*dark laugh* Philosophy. Not what I asked, but I take your point.', '*sighs* You may be right. But I hoped for better.']
+                },
+                { label: 'Define "good"', kind: 'deflect', relGain: 0,
+                  reactions: ['*rolls eyes* See, THIS is why I hesitate to ask questions.', '*amused despite themselves* Fair point. Slippery, but fair.']
                 }
             ]
         }
@@ -5621,9 +6067,127 @@ window.UI = (function () {
         }
 
         html += '</div>';        // close npcInteractionList wrapper (v9p33river356)
+
+        // v9p33river388: Offer to Heal button
+        try {
+            var _healAvail = false;
+            var _healReason = '';
+            if (person && (person.sick || person.injured || (person.illnesses && person.illnesses.length > 0) || (person.injuries && person.injuries.length > 0))) {
+                var _hasHealSkill = (typeof Player !== 'undefined' && Player.hasSkill && (Player.hasSkill('field_medic') || Player.hasSkill('doctor')));
+                if (_hasHealSkill) {
+                    // Check if player has any medical supply
+                    var _healSupplies = ['bandages', 'herbal_remedy', 'healing_tonic', 'herbal_poultice', 'splint', 'fever_tonic', 'antidote'];
+                    var _hasSupply = false;
+                    var _ps3 = Player.state;
+                    if (_ps3 && _ps3.inventory) {
+                        for (var _hsi = 0; _hsi < _healSupplies.length; _hsi++) {
+                            if ((_ps3.inventory[_healSupplies[_hsi]] || 0) > 0) { _hasSupply = true; break; }
+                        }
+                    }
+                    if (_hasSupply) {
+                        // Check cooldown
+                        var _healCD = (_ps3 && _ps3._healOfferCooldowns && _ps3._healOfferCooldowns[personId]) || 0;
+                        var _healToday = (Engine.getDay && Engine.getDay()) || 0;
+                        if (_healCD && _healToday - _healCD < 3) {
+                            _healReason = 'They declined recently. Try again in ' + (3 - (_healToday - _healCD)) + ' day(s).';
+                        } else {
+                            _healAvail = true;
+                        }
+                    } else {
+                        _healReason = 'You need medical supplies (bandages, remedies, etc.)';
+                    }
+                } else {
+                    _healReason = 'Requires Field Medic or Doctor skill';
+                }
+
+                var _healBtnBg = _healAvail ? '#1a3a2a' : '#2a2020';
+                var _healBtnBorder = _healAvail ? '#2ecc71' : '#555';
+                var _healBtnOpacity = _healAvail ? '1' : '0.5';
+                var _healBtnCursor = _healAvail ? 'pointer' : 'not-allowed';
+                var _condLabel = (person.sick || (person.illnesses && person.illnesses.length > 0))
+                    ? ('🤒 ' + (person.illness || (person.illnesses && person.illnesses[0] && (person.illnesses[0].name || person.illnesses[0].type)) || 'Sick'))
+                    : ('🩹 ' + ((person.injuries && person.injuries[0] && person.injuries[0].name) || 'Injured'));
+
+                html += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #333;">';
+                html += '<div style="font-size:0.8em;color:#2ecc71;font-weight:bold;margin-bottom:4px;">💊 MEDICAL</div>';
+                html += '<div class="offer-heal-btn" data-person="' + personId + '" ';
+                html += 'style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin:4px 0;';
+                html += 'border:1px solid ' + _healBtnBorder + ';border-radius:6px;background:' + _healBtnBg + ';';
+                html += 'cursor:' + _healBtnCursor + ';opacity:' + _healBtnOpacity + ';transition:background 0.15s">';
+                html += '<span style="font-size:1.4em">💊</span>';
+                html += '<div style="flex:1">';
+                html += '<div style="font-weight:bold;color:#eee">Offer to Heal</div>';
+                html += '<div style="font-size:0.82em;color:#aaa">Condition: ' + _condLabel + '</div>';
+                if (!_healAvail && _healReason) {
+                    html += '<div style="font-size:0.78em;color:#999;margin-top:2px">⚠️ ' + _healReason + '</div>';
+                }
+                html += '</div></div></div>';
+            }
+        } catch(e) {}
         html += '</div>';        // close max-width:420px wrapper
 
         openModal('💬 Interact with ' + personName, html, '');
+
+        // v9p33river388: wire Offer to Heal button
+        var _healBtn = document.querySelector('.offer-heal-btn');
+        if (_healBtn) {
+            _healBtn.addEventListener('click', function() {
+                var _hpid = this.getAttribute('data-person');
+                if (!_hpid) return;
+                if (this.style.opacity === '0.5') return; // disabled
+                var _hres = Player.offerHealNpc ? Player.offerHealNpc(_hpid) : null;
+                if (!_hres) { toast('Cannot offer healing right now.', 'warning'); return; }
+                if (_hres.success) {
+                    if (_hres.accepted) {
+                        // Show positive dialog
+                        var _hPerson = null;
+                        try { _hPerson = Engine.getPerson(_hpid); } catch(e) {}
+                        var _hfn = (_hPerson && _hPerson.firstName) || 'They';
+                        var _hDlg = document.getElementById('npcInteractionDialog');
+                        if (_hDlg) {
+                            var _hReactions = [
+                                '*eyes widen* You... you would do that for me? Thank you, ' + (Player.state ? Player.state.firstName : 'friend') + '. Truly.',
+                                '*relieved sigh* I was suffering in silence. Thank you — I will not forget this kindness.',
+                                '*grabs your hand* Bless you. I was afraid to ask for help. This means more than you know.',
+                                '*tearful* I did not think anyone cared enough to help. Thank you, friend.'
+                            ];
+                            var _hPick = _hReactions[Math.floor(Math.random() * _hReactions.length)];
+                            _hDlg.innerHTML = '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(46,204,64,0.1);border-left:3px solid #2ecc71;border-radius:0 6px 6px 0;font-style:italic;color:#ccc;font-size:0.9em;">' +
+                                '<span style="color:#2ecc71;font-weight:bold;">' + _hfn + ':</span> "' + _hPick + '"</div>';
+                        }
+                        toast('💚 +10 relationship! ' + _hfn + ' accepted your treatment.', 'success');
+                        // Disable the button
+                        this.style.opacity = '0.5';
+                        this.style.cursor = 'not-allowed';
+                        // Refresh badge
+                        var _hBadge = document.getElementById('npcInteractionRelBadge');
+                        if (_hBadge && _hPerson) _hBadge.innerHTML = _renderRelTierBadge(_hPerson.id);
+                    } else {
+                        // Declined
+                        var _hPerson2 = null;
+                        try { _hPerson2 = Engine.getPerson(_hpid); } catch(e) {}
+                        var _hfn2 = (_hPerson2 && _hPerson2.firstName) || 'They';
+                        var _hDeclines = [
+                            '*waves hand* I appreciate the offer, but I will manage on my own.',
+                            '*shakes head* Not from you. No offense — I just prefer the town healer.',
+                            '*stiffly* I am fine. Thank you for the concern, but I will handle it.',
+                            '*proud* I do not need charity. But... thank you for asking.'
+                        ];
+                        var _hDPick = _hDeclines[Math.floor(Math.random() * _hDeclines.length)];
+                        var _hDlg2 = document.getElementById('npcInteractionDialog');
+                        if (_hDlg2) {
+                            _hDlg2.innerHTML = '<div style="padding:8px 12px;margin-bottom:10px;background:rgba(200,150,50,0.1);border-left:3px solid #d4af37;border-radius:0 6px 6px 0;font-style:italic;color:#ccc;font-size:0.9em;">' +
+                                '<span style="color:#d4af37;font-weight:bold;">' + _hfn2 + ':</span> "' + _hDPick + '"</div>';
+                        }
+                        toast(_hfn2 + ' declined your offer. Try again in 3 days.', 'info');
+                        this.style.opacity = '0.5';
+                        this.style.cursor = 'not-allowed';
+                    }
+                } else {
+                    toast((_hres && _hres.message) || 'Cannot heal right now.', 'warning');
+                }
+            });
+        }
 
         // v9p33river356: wire NPC question option clicks if a question is up.
         var qOpts = document.querySelectorAll('.npc-question-option');
@@ -5686,6 +6250,58 @@ window.UI = (function () {
 
                 var result = Player.interactWithNPC(pid, iid);
                 if (result && result.success) {
+                    // v9p33river388: per-interaction question chance (~15%)
+                    try {
+                        var _qPerson = Engine.getPerson(pid);
+                        if (_qPerson && Math.random() < 0.15) {
+                            var _qGenerated = _maybeGenerateQuestion(_qPerson);
+                            if (_qGenerated) {
+                                // Show question instead of normal dialog
+                                var _qDlg = document.getElementById('npcInteractionDialog');
+                                if (_qDlg) _qDlg.innerHTML = _renderQuestionBanner(_qPerson, _qGenerated);
+                                // Hide interaction list while question is up
+                                var _qList = document.getElementById('npcInteractionList');
+                                if (_qList) _qList.style.display = 'none';
+                                // Wire question click handlers
+                                var _qOpts2 = document.querySelectorAll('.npc-question-option');
+                                for (var _qi2 = 0; _qi2 < _qOpts2.length; _qi2++) {
+                                    _qOpts2[_qi2].addEventListener('click', function() {
+                                        var _qpid = this.getAttribute('data-person');
+                                        var _qqid = this.getAttribute('data-qid');
+                                        var _qoidx = parseInt(this.getAttribute('data-oidx'), 10);
+                                        if (!_qpid || !_qqid || isNaN(_qoidx)) return;
+                                        var _qqDef = _questionDefById(_qqid);
+                                        if (!_qqDef) return;
+                                        var _qres = Player.answerNpcQuestion ? Player.answerNpcQuestion(_qpid, _qqDef, _qoidx) : null;
+                                        if (_qres && _qres.success) {
+                                            var _qpObj = null;
+                                            try { _qpObj = Engine.getPerson(_qpid); } catch(e) {}
+                                            var _qfn = (_qpObj && _qpObj.firstName) || 'They';
+                                            var _qBanner = document.getElementById('npcQuestionBanner');
+                                            if (_qBanner) {
+                                                var _qReact = _qres.reaction || '*nods*';
+                                                _qBanner.innerHTML = '<div style="padding:8px 12px;font-style:italic;color:#ccc;"><span style="color:#9b59b6;font-weight:bold;">' + _qfn + ':</span> "' + _qReact + '"</div>';
+                                            }
+                                            var _qList2 = document.getElementById('npcInteractionList');
+                                            if (_qList2) _qList2.style.display = '';
+                                            var _qBadge = document.getElementById('npcInteractionRelBadge');
+                                            if (_qBadge && _qpObj) _qBadge.innerHTML = _renderRelTierBadge(_qpObj.id);
+                                        }
+                                    });
+                                }
+                                // Still process the interaction gain toast
+                                if (result.gain != null) {
+                                    var _qgs = result.gain >= 0 ? '+' : '';
+                                    toast(_qgs + result.gain.toFixed(1) + ' relationship with ' + (_qPerson ? _qPerson.firstName : 'them'),
+                                        result.gain >= 1 ? 'success' : (result.gain <= -1 ? 'warning' : 'info'));
+                                }
+                                // Refresh badge
+                                var _qBadgeR = document.getElementById('npcInteractionRelBadge');
+                                if (_qBadgeR && _qPerson) _qBadgeR.innerHTML = _renderRelTierBadge(_qPerson.id);
+                                return; // Skip normal dialog rendering
+                            }
+                        }
+                    } catch(e) {}
                     window._tutorialSocialInteracted = true;
                     if (iid === 'small_talk') window._tutorialSmallTalkDone = true;
                     if (typeof Player !== 'undefined' && Player.state && Player.state.storyMode) {
