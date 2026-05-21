@@ -281,7 +281,7 @@
         k.taxRevenue = (k.taxRevenue || 0) + totalPropertyTax;
         if (totalPropertyTax > 0) recordKingdomTransaction(k, 'income', totalPropertyTax, 'Monthly property taxes', 'property_tax');
         if (totalPropertyTax > 50) {
-            logEvent(`📜 ${k.name} collects ${totalPropertyTax}g in property taxes.`, {
+            Engine.logHiddenEvent(`📜 ${k.name} collects ${totalPropertyTax}g in property taxes.`, {
                 type: 'property_tax', kingdomId: k.id, cause: 'Monthly property tax collection', effects: [], _noToast: true
             }, _eventKingdomCategory(k.id));
         }
@@ -326,7 +326,7 @@
         k.taxRevenue = (k.taxRevenue || 0) + totalIncomeTax;
         if (totalIncomeTax > 0) recordKingdomTransaction(k, 'income', totalIncomeTax, 'Seasonal income taxes', 'income_tax');
         if (totalIncomeTax > 100) {
-            logEvent(`📜 ${k.name} collects ${totalIncomeTax}g in seasonal income taxes.`, {
+            Engine.logHiddenEvent(`📜 ${k.name} collects ${totalIncomeTax}g in seasonal income taxes.`, {
                 type: 'income_tax', kingdomId: k.id, cause: 'Seasonal income tax assessment', effects: [], _noToast: true
             }, _eventKingdomCategory(k.id));
         }
@@ -453,7 +453,7 @@
                     }
                     if (_bsSoldItems > 0) {
                         recordKingdomTransaction(k, 'income', _bsSoldGold, 'Sold ' + _bsSoldItems + ' surplus military items', 'stockpile_sale');
-                        logEvent('🏰 ' + k.name + ' sells ' + _bsSoldItems + ' surplus military items for ' + _bsSoldGold + 'g.', {
+                        Engine.logHiddenEvent('🏰 ' + k.name + ' sells ' + _bsSoldItems + ' surplus military items for ' + _bsSoldGold + 'g.', {
                             type: 'stockpile_sale', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Treasury bolstered'], _noToast: true
                         }, _eventKingdomCategory(k.id));
                         _bsActionsTaken++;
@@ -494,7 +494,7 @@
                 // 7. Reduce guard budget (if high)
                 if ((k.guardBudget || 0.15) > 0.05 && rng.chance(0.3) && _bsActionsTaken < 3) {
                     k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
-                    logEvent('🏰 ' + k.name + ' reduces guard spending.', {
+                    Engine.logHiddenEvent('🏰 ' + k.name + ' reduces guard spending.', {
                         type: 'budget_cut', kingdomId: k.id, cause: 'Budget sustainability', effects: ['Fewer guards hired'], _noToast: true
                     }, _eventKingdomCategory(k.id));
                     _bsActionsTaken++;
@@ -601,7 +601,7 @@
             // 4. Reduce guard budget
             if (actionsTaken < 2 && (k.guardBudget || 0.15) > 0.05 && rng.chance(0.3)) {
                 k.guardBudget = Math.max(0.05, (k.guardBudget || 0.15) - 0.05);
-                logEvent(`🏰 ${k.name} reduces guard spending.`, {
+                Engine.logHiddenEvent(`🏰 ${k.name} reduces guard spending.`, {
                     type: 'budget_cut', kingdomId: k.id, cause: 'Financial austerity', effects: ['Fewer guards hired', 'Town security may decrease'], _noToast: true
                 }, _eventKingdomCategory(k.id));
                 actionsTaken++;
@@ -634,7 +634,7 @@
                     }
                 }
                 if (soldItems > 0) {
-                    logEvent(`🏰 ${k.name} sells surplus military equipment (${soldItems} items) to raise funds.`, {
+                    Engine.logHiddenEvent(`🏰 ${k.name} sells surplus military equipment (${soldItems} items) to raise funds.`, {
                         type: 'stockpile_sale', kingdomId: k.id, cause: 'Financial need', effects: ['Military reserves reduced', 'Treasury bolstered'], _noToast: true
                     }, _eventKingdomCategory(k.id));
                 }

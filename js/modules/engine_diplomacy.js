@@ -17,6 +17,7 @@
 
     // ── Already-exported Engine utilities ──
     var logEvent = function(msg, details, category) { Engine.logEvent(msg, details, category); };
+    var logHiddenEvent = function(msg, details, category) { Engine.logHiddenEvent(msg, details, category); };
     var findTown = function(id) { return Engine.findTown(id); };
     var findKingdom = function(id) { return Engine.findKingdom(id); };
     var findPerson = function(id) { return Engine.findPerson(id); };
@@ -262,7 +263,7 @@
             if (dayNow - post.postedDay > 30) {
                 var refund = remaining * post.payPerSoldier;
                 k.gold = (k.gold || 0) + refund;
-                logEvent('📜 Recruitment posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                logHiddenEvent('📜 Recruitment posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 k._recruitmentPostings.splice(pi, 1);
                 continue;
             }
@@ -348,7 +349,7 @@
             // Notify periodically when recruits join
             if (filledThisTick > 0 && (post.slotsFilled % 5 === 0 || post.slotsFilled >= post.slotsTotal)) {
                 var pctFilled = Math.round(post.slotsFilled / post.slotsTotal * 100);
-                logEvent('🎖️ ' + (post.isConscription ? 'Conscription' : 'Recruitment') + ': ' + post.slotsFilled + '/' + post.slotsTotal + ' (' + pctFilled + '% filled)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                logHiddenEvent('🎖️ ' + (post.isConscription ? 'Conscription' : 'Recruitment') + ': ' + post.slotsFilled + '/' + post.slotsTotal + ' (' + pctFilled + '% filled)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
 
             // Complete posting
@@ -374,7 +375,7 @@
                 var refundPerSlot = post.weeklyPay * 2;
                 var refund = remaining * refundPerSlot;
                 k.gold = (k.gold || 0) + refund;
-                logEvent('📋 Employee posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' ' + post.type + 's filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                logHiddenEvent('📋 Employee posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' ' + post.type + 's filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 k._employeePostings.splice(pi, 1);
                 continue;
             }
@@ -449,7 +450,7 @@
 
             if (filledThisTick > 0) {
                 var tLabel = post.type === 'procurer' ? 'Procurer' : post.type === 'guard' ? 'Guard' : 'Royal Guard';
-                logEvent('👤 ' + tLabel + ' hiring: ' + post.slotsFilled + '/' + post.slotsTotal + ' filled', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                Engine.logHiddenEvent('👤 ' + tLabel + ' hiring: ' + post.slotsFilled + '/' + post.slotsTotal + ' filled', { kingdomId: k.id }, _eventKingdomCategory(k.id));
             }
             if (post.slotsFilled >= post.slotsTotal) k._employeePostings.splice(pi, 1);
         }
@@ -517,7 +518,7 @@
         // Clean up completed orders
         for (var oi = k._procurementOrders.length - 1; oi >= 0; oi--) {
             if (k._procurementOrders[oi].remaining <= 0) {
-                logEvent('✅ Procurement order fulfilled: ' + k._procurementOrders[oi].goodId + ' (' + k._procurementOrders[oi].filled + ' total)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                Engine.logHiddenEvent('✅ Procurement order fulfilled: ' + k._procurementOrders[oi].goodId + ' (' + k._procurementOrders[oi].filled + ' total)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 k._procurementOrders.splice(oi, 1);
             }
         }
@@ -550,7 +551,7 @@
                         if (person2) { person2.occupation = 'unemployed'; person2.employerId = null; }
                     } catch(e) {}
                     lists[li].splice(ei, 1);
-                    logEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                    logHiddenEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
             }
         }
@@ -702,10 +703,10 @@
                 var toTown = findTown(tr.toTownId);
                 if (toTown && toTown.kingdomId === k.id) {
                     toTown.garrison = (toTown.garrison || 0) + tr.count;
-                    logEvent('🏰 ' + tr.count + ' soldiers arrived at ' + toTown.name + '.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                    Engine.logHiddenEvent('🏰 ' + tr.count + ' soldiers arrived at ' + toTown.name + '.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 } else {
                     // Town changed hands during transfer — soldiers lost
-                    logEvent('⚠️ ' + tr.count + ' soldiers arrived at a town no longer controlled. They dispersed.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                    Engine.logHiddenEvent('⚠️ ' + tr.count + ' soldiers arrived at a town no longer controlled. They dispersed.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
                 }
                 k._soldierTransfers.splice(si, 1);
             }
@@ -5900,7 +5901,7 @@
                     if (kingdom.militaryStockpile && kingdom.militaryStockpile[strat.good] !== undefined) {
                         kingdom.militaryStockpile[strat.good] += toBuy;
                     }
-                    logEvent(`📦 ${kingdom.name} stockpiles ${toBuy} ${strat.good} from ${strat.townName} at low prices.`, {
+                    Engine.logHiddenEvent(`📦 ${kingdom.name} stockpiles ${toBuy} ${strat.good} from ${strat.townName} at low prices.`, {
                         type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.good} priced below market value`,
                         effects: [`${toBuy} units purchased for ${cost}g`, 'Strategic reserves increased']
                     }, _eventKingdomCategory(kingdom.id));
@@ -7058,7 +7059,7 @@
                     migrant.needs.happiness = Math.min(100, (migrant.needs.happiness || 30) + 20);
                     targetTown.population++;
                     if (oldTown && oldTown.population > 0) oldTown.population--;
-                    logEvent(`🚶 ${migrant.firstName} ${migrant.lastName} migrates to ${targetTown.name} in ${k.name}, drawn by the ${inc.bonus}g immigration bonus.`,  {
+                    Engine.logHiddenEvent(`🚶 ${migrant.firstName} ${migrant.lastName} migrates to ${targetTown.name} in ${k.name}, drawn by the ${inc.bonus}g immigration bonus.`,  {
                         type: 'immigration', cause: 'Kingdom immigration incentive',
                         effects: [`${targetTown.name} gains a citizen`, `Treasury pays ${inc.bonus}g`]
                     }, _eventKingdomCategory(k.id));

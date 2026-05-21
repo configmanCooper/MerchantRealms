@@ -15,6 +15,7 @@
 
     // ── Already-exported Engine utilities ──
     var logEvent = function(msg, details, category) { Engine.logEvent(msg, details, category); };
+    var logHiddenEvent = function(msg, details, category) { Engine.logHiddenEvent(msg, details, category); };
     var findTown = function(id) { return Engine.findTown(id); };
     var findKingdom = function(id) { return Engine.findKingdom(id); };
     var findPerson = function(id) { return Engine.findPerson(id); };
@@ -324,8 +325,14 @@
                     }
                 }
                 if (stolenItems.length > 0) {
-                    logEvent('🦹 Thieves raided outpost "' + outpost.name + '" and stole ' + stolenItems.join(', ') +
-                        ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'military');
+                    // v9p33river381: only show to player if it's their outpost
+                    if (outpost.founderType === 'player') {
+                        logEvent('🦹 Thieves raided outpost "' + outpost.name + '" and stole ' + stolenItems.join(', ') +
+                            ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'my_business');
+                    } else {
+                        logHiddenEvent('🦹 Thieves raided outpost "' + outpost.name + '" and stole ' + stolenItems.join(', ') +
+                            ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'military');
+                    }
                 }
             }
 

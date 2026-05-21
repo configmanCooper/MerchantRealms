@@ -7529,7 +7529,7 @@
                         emSpouse.spouseId = p.id;
                         initFamilyRelationship(p, emSpouse, 'spouse');
                         var emTown = findTown(p.townId);
-                        logEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + (emTown ? emTown.name : 'town') + '.', { _noToast: true }, 'npc_activity');
+                        logHiddenEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + (emTown ? emTown.name : 'town') + '.', { _noToast: true }, 'npc_activity');
                     }
                 }
             }
@@ -18562,7 +18562,7 @@
 
                 // Log notable migrations
                 if (person.isEliteMerchant || (person.gold || 0) > 500 || person.occupation === 'merchant') {
-                    logEvent(`${person.firstName} ${person.lastName} has migrated from ${town.name} to ${destTown.name}.`, {
+                    logHiddenEvent(`${person.firstName} ${person.lastName} has migrated from ${town.name} to ${destTown.name}.`, {
                         type: 'migration',
                         cause: 'Poor conditions in ' + town.name + ' drove ' + person.firstName + ' to seek a better life.',
                         effects: [
@@ -22262,6 +22262,13 @@
             world.eventLog.shift();
         }
         while (world.eventLog.length > 1000) world.eventLog.shift();
+    }
+
+    // v9p33river381: hidden event log for background simulation data (testing/debug only)
+    function logHiddenEvent(msg, details, category) {
+        if (!world._hiddenEvents) world._hiddenEvents = [];
+        world._hiddenEvents.push({ day: world.day, message: msg, details: details || null, category: category || 'npc_activity' });
+        while (world._hiddenEvents.length > 500) world._hiddenEvents.shift();
     }
 
     // ── World Chronicle: Yearly Kingdom Status Summary ──
@@ -32781,6 +32788,7 @@
         scoutEnemyStrength: scoutEnemyStrength,
         // computeMilitaryStrength — wrapper version at line ~22112 handles both id and object
         logEvent: logEvent,
+        logHiddenEvent: logHiddenEvent,
         storeBackgroundGossip: _storeBackgroundGossip,
         getBackgroundGossip: getBackgroundGossip,
         demolishBuilding: demolishBuilding,
