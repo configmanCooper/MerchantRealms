@@ -687,6 +687,31 @@
         return world._oceanMask;
     }
 
+    // v9p33river390: check if a town is near fresh water (rivers/lakes —
+    // water tiles NOT connected to the ocean). Towns near fresh water get
+    // natural daily water supply to support their population.
+    function _townHasFreshWaterNearby(town, proximity) {
+        if (!town || !world || !world.terrain) return false;
+        var mask = _getOceanMask();
+        var prox = proximity || 3;
+        var cols = world.gridCols;
+        var rows = world.gridRows;
+        var ttx = Math.floor((town.x || 0) / CONFIG.TILE_SIZE);
+        var tty = Math.floor((town.y || 0) / CONFIG.TILE_SIZE);
+        for (var dy = -prox; dy <= prox; dy++) {
+            for (var dx = -prox; dx <= prox; dx++) {
+                var cx = ttx + dx, cy = tty + dy;
+                if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) {
+                    var idx = cy * cols + cx;
+                    if (world.terrain[idx] === TERRAIN.WATER.id && (!mask || !mask[idx])) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     // v9p33river139: stricter port qualification — water within proximity
     // tiles AND that water must be ocean (connected to map edge), not a
     // lake or pond. Islands always pass.
@@ -6207,6 +6232,16 @@
                 }
             }
             town.market.supply.water = (town.market.supply.water || 0) + wellProduction;
+
+            // v9p33river390: Towns near fresh water (rivers/lakes, not ocean) get
+            // natural water supply sufficient to support the population.
+            if (town._hasFreshWater === undefined) {
+                town._hasFreshWater = _townHasFreshWaterNearby(town, 3);
+            }
+            if (town._hasFreshWater) {
+                var freshWaterSupply = Math.ceil(pop * 0.2);
+                town.market.supply.water = (town.market.supply.water || 0) + freshWaterSupply;
+            }
 
             // NPCs drink water daily (1 per 5 people)
             var waterNeeded = Math.ceil(pop * 0.2);
