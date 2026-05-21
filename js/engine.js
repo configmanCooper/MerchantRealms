@@ -32165,8 +32165,14 @@
                 if (Player.tickActiveUnsolicitedQuests) {
                     try { Player.tickActiveUnsolicitedQuests(); } catch (_eUq) { /* defensive */ }
                 }
+                if (Player.tickUnsolicitedEvents && !_rFF) {
+                    try { Player.tickUnsolicitedEvents(); } catch (_eUe) { /* defensive */ }
+                }
                 if (Player.tryGenerateDailyUnsolicitedOffer && !_rFF) {
                     try { Player.tryGenerateDailyUnsolicitedOffer(); } catch (_eUq2) { /* defensive */ }
+                }
+                if (Player.tryGenerateDailyUnsolicitedEvent && !_rFF) {
+                    try { Player.tryGenerateDailyUnsolicitedEvent(); } catch (_eUe2) { /* defensive */ }
                 }
                 // v9p33river358: spouse + childcare ticks
                 if (Player.tickChildcare) {

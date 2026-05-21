@@ -5952,6 +5952,9 @@
             if (Player.onPlayerArrival_unsolicited) {
                 try { Player.onPlayerArrival_unsolicited(player.townId); } catch (e) {}
             }
+            if (Player.tryGenerateEntryUnsolicitedEvent) {
+                try { Player.tryGenerateEntryUnsolicitedEvent(player.townId); } catch (e) {}
+            }
 
             // Auto-pause on arrival so the player can decide what to do
             if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
@@ -19367,6 +19370,14 @@
             _lastUnsolicitedSeenTownId: player._lastUnsolicitedSeenTownId || null,
             _nextUnsolicitedQuestId: player._nextUnsolicitedQuestId || 1,
             _guaranteedProposals: structuredClone(player._guaranteedProposals || {}),
+            // v9p33river399: unsolicited random event state.
+            _pendingUnsolicitedEvent: player._pendingUnsolicitedEvent ? structuredClone(player._pendingUnsolicitedEvent) : null,
+            _activeUnsolicitedEvents: structuredClone(player._activeUnsolicitedEvents || []),
+            _unsolicitedEventCooldowns: structuredClone(player._unsolicitedEventCooldowns || {}),
+            _lastUnsolicitedEventDay: player._lastUnsolicitedEventDay != null ? player._lastUnsolicitedEventDay : 0,
+            _lastUnsolicitedEventEntryDay: player._lastUnsolicitedEventEntryDay != null ? player._lastUnsolicitedEventEntryDay : 0,
+            _nextUnsolicitedEventId: player._nextUnsolicitedEventId || 1,
+            _unsolicitedEventCatCooldowns: structuredClone(player._unsolicitedEventCatCooldowns || {}),
             // v9p33river358: spouse jealousy + childcare state.
             _spouseAnger: player._spouseAnger ? structuredClone(player._spouseAnger) : null,
             _spouseRevealHistory: structuredClone(player._spouseRevealHistory || {}),
@@ -19998,6 +20009,14 @@
         player._lastUnsolicitedSeenTownId = data._lastUnsolicitedSeenTownId || null;
         player._nextUnsolicitedQuestId = data._nextUnsolicitedQuestId || 1;
         player._guaranteedProposals = data._guaranteedProposals || {};
+        // v9p33river399: restore unsolicited random event state.
+        player._pendingUnsolicitedEvent = data._pendingUnsolicitedEvent || null;
+        player._activeUnsolicitedEvents = data._activeUnsolicitedEvents || [];
+        player._unsolicitedEventCooldowns = data._unsolicitedEventCooldowns || {};
+        player._lastUnsolicitedEventDay = data._lastUnsolicitedEventDay != null ? data._lastUnsolicitedEventDay : 0;
+        player._lastUnsolicitedEventEntryDay = data._lastUnsolicitedEventEntryDay != null ? data._lastUnsolicitedEventEntryDay : 0;
+        player._nextUnsolicitedEventId = data._nextUnsolicitedEventId || 1;
+        player._unsolicitedEventCatCooldowns = data._unsolicitedEventCatCooldowns || {};
         // v9p33river358: restore spouse jealousy + childcare state.
         player._spouseAnger = data._spouseAnger || null;
         player._spouseRevealHistory = data._spouseRevealHistory || {};

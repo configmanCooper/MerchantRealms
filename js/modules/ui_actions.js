@@ -4914,6 +4914,20 @@ function clickTown(townId) {
     });
 
     // v9p33river358: spouse + childcare actions
+    // v9p33river401: unsolicited random event actions
+    UI.registerAction('unsolicitedEventChoice', function(_t, d) {
+        var instanceId = d.instanceId || d['instance-id'] || '';
+        var choiceIndex = parseInt(d.choiceIndex || d['choice-index'] || '0', 10);
+        var res = Player.handleUnsolicitedEventChoice ? Player.handleUnsolicitedEventChoice(instanceId, choiceIndex) : { success: false, message: 'Unavailable.' };
+        UI.toast(res.message || (res.success ? 'Done.' : 'Cannot choose.'), res.success ? 'success' : 'warning');
+        UI.closeModal();
+        try { if (UI._renderTownQuestsTab) UI._renderTownQuestsTab(); } catch(e) {}
+    });
+    UI.registerAction('dismissUnsolicitedEvent', function(_t, d) {
+        if (Player.dismissPendingUnsolicitedEvent) Player.dismissPendingUnsolicitedEvent();
+        UI.toast('Event dismissed.', 'info');
+        UI.closeModal();
+    });
     UI.registerAction('requestAnnulment', function() {
         if (!confirm('Annul your marriage? This costs gold and is permanent.')) return;
         var r = Player.requestAnnulment ? Player.requestAnnulment() : { success: false, message: 'Unavailable.' };

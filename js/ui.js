@@ -1267,6 +1267,9 @@ window.UI = (function () {
         // Check for pending succession election
         _checkPendingElection();
 
+        // v9p33river401: Check for pending unsolicited random events
+        _checkPendingUnsolicitedEvent();
+
         // Check for conquest events affecting player
         try { UI.checkConquestEvents(); } catch (e) { /* no-op */ }
 
@@ -1947,6 +1950,41 @@ window.UI = (function () {
         var footer = '<button class="btn-medieval" data-action="acceptUnsolicitedOffer" style="background:rgba(85,168,104,0.3);margin-right:8px;">Accept Quest</button>' +
                      '<button class="btn-medieval" data-action="declineUnsolicitedOffer" style="background:rgba(200,80,80,0.2);">Decline</button>';
         openModal('📜 ' + (offer.npcName || 'A noble') + ' approaches you', html, footer);
+    }
+
+    // v9p33river401: Unsolicited random event popup
+    function openUnsolicitedEventPopup(evt) {
+        if (!evt) return;
+        var html = '<div style="max-width:480px;padding:6px;">';
+        html += '<div style="text-align:center;font-size:2.4em;margin-bottom:4px;">' + (evt.icon || '🎲') + '</div>';
+        html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(100,149,237,0.10);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;color:#ddd;">' + escapeHtml(evt.text || '') + '</div>';
+        if (evt.choices && evt.choices.length) {
+            html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+            for (var ci = 0; ci < evt.choices.length; ci++) {
+                var ch = evt.choices[ci];
+                var btnStyle = ch.disabled ? 'opacity:0.45;cursor:not-allowed;' : '';
+                html += '<button class="btn-medieval" data-action="unsolicitedEventChoice" data-choice-index="' + ci + '" data-instance-id="' + escapeHtml(String(evt.instanceId || '')) + '" style="background:rgba(100,149,237,0.15);text-align:left;padding:8px 12px;' + btnStyle + '"' + (ch.disabled ? ' disabled' : '') + '>' + escapeHtml(ch.label || 'Choose');
+                if (ch.disabled && ch.disabledReason) html += ' <span style="font-size:0.8em;color:#c85050;">(' + escapeHtml(ch.disabledReason) + ')</span>';
+                html += '</button>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="dismissUnsolicitedEvent" data-instance-id="' + escapeHtml(String(evt.instanceId || '')) + '" style="background:rgba(200,80,80,0.2);">Dismiss</button>';
+        openModal((evt.icon || '🎲') + ' ' + (evt.title || 'Random Event'), html, footer);
+    }
+
+    // v9p33river401: Check for pending unsolicited events in update loop
+    var _lastShownUnsolicitedEventId = null;
+    function _checkPendingUnsolicitedEvent() {
+        try {
+            if (typeof Player === 'undefined' || !Player.getPendingUnsolicitedEvent) return;
+            var evt = Player.getPendingUnsolicitedEvent();
+            if (!evt) { _lastShownUnsolicitedEventId = null; return; }
+            if (evt.instanceId === _lastShownUnsolicitedEventId) return;
+            _lastShownUnsolicitedEventId = evt.instanceId;
+            openUnsolicitedEventPopup(evt);
+        } catch(e) {}
     }
 
     // v9p33river358: Spouse confrontation popup
@@ -7621,6 +7659,28 @@ window.UI = (function () {
                     if (quest.turnInReason) html += '<span style="font-size:0.74rem;color:#999;">' + escapeHtml(quest.turnInReason) + '</span>';
                     html += '</div>';
                 }
+                html += '</div>';
+            }
+        }
+
+        // v9p33river401: Random Events section
+        var activeEvents = [];
+        try { activeEvents = Player.getActiveUnsolicitedEvents ? Player.getActiveUnsolicitedEvents() : []; } catch (e) { activeEvents = []; }
+        if (activeEvents.length > 0) {
+            html += '<div style="font-size:0.9rem;color:#6495ed;margin:14px 0 6px 0;">🎲 Active Random Events</div>';
+            for (var rei = 0; rei < activeEvents.length; rei++) {
+                var revt = activeEvents[rei];
+                if (!revt) continue;
+                var evtDaysLeft = Math.max(0, (revt.dueDay || 0) - day);
+                var statusColor = revt.status === 'waiting' ? '#999' : revt.status === 'ready' ? '#55a868' : '#ddd';
+                var statusText = revt.status === 'waiting' ? '⏳ Waiting (' + evtDaysLeft + 'd)' : revt.status === 'ready' ? '✨ Ready' : revt.status;
+                html += '<div style="border:1px solid rgba(100,149,237,0.25);border-radius:6px;padding:10px;margin-bottom:10px;background:rgba(100,149,237,0.06);">';
+                html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px;">';
+                html += '<div style="font-weight:bold;color:#6495ed;font-size:0.88rem;">' + (revt.icon || '🎲') + ' ' + escapeHtml(revt.title || 'Random Event') + '</div>';
+                html += '<div style="font-size:0.72rem;color:' + statusColor + ';white-space:nowrap;">' + statusText + '</div>';
+                html += '</div>';
+                if (revt.summary) html += '<div style="padding:6px 10px;margin-bottom:6px;background:rgba(0,0,0,0.18);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;font-size:0.8rem;color:#ccc;">' + escapeHtml(revt.summary.substring(0, 120)) + (revt.summary.length > 120 ? '...' : '') + '</div>';
+                html += '<div style="font-size:0.72rem;color:#999;">Step ' + ((revt.stepIndex || 0) + 1) + ' • ' + escapeHtml(revt.category || 'event') + '</div>';
                 html += '</div>';
             }
         }
@@ -21506,6 +21566,7 @@ window.UI = (function () {
         openSpouseConfrontation,
         openFavorPopup,
         openUnsolicitedQuestOffer,
+        openUnsolicitedEventPopup,
         formatGold,
         escapeHtml,
         _clearBankruptcyLock: function() { _bankruptcyLock = false; },
