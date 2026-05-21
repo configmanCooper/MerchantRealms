@@ -5458,6 +5458,351 @@ window.UI = (function () {
                   reactions: ['*rolls eyes* See, THIS is why I hesitate to ask questions.', '*amused despite themselves* Fair point. Slippery, but fair.']
                 }
             ]
+        },
+
+        // ── v9p33river391: interaction-type-specific questions ──
+
+        // SMALL TALK questions
+        {
+            id: 'q_st_town_life',
+            summary: 'what you think of this town',
+            forInteraction: 'small_talk',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'So tell me — do you actually like living here, or are you just passing through?';
+            },
+            options: [
+                { label: 'I love it here', kind: 'truth', relGain: 3,
+                  reactions: ['*smiles* Good to hear. This place could use more people who care.', '*nods* It has its charms, does it not?']
+                },
+                { label: 'It is fine for now', kind: 'truth', relGain: 1,
+                  reactions: ['*shrugs* Fair enough. Not everyone puts down roots.', 'Mm. A temporary arrangement, then.']
+                },
+                { label: 'Honestly, I have seen better', kind: 'truth', relGain: 0,
+                  reactions: ['*chuckles* Have you not we all. But here we are.', '*defensive* Well, it is MY home. Give it a chance.']
+                }
+            ]
+        },
+        {
+            id: 'q_st_weather',
+            summary: 'the weather',
+            forInteraction: 'small_talk',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'What do you make of this weather? I cannot tell if the season is coming or going.';
+            },
+            options: [
+                { label: 'It has been nice, actually', kind: 'truth', relGain: 2,
+                  reactions: ['*nods* You are right. I should stop complaining and enjoy it.', 'Ha! An optimist. Refreshing.']
+                },
+                { label: 'Terrible — bad for business', kind: 'truth', relGain: 1,
+                  reactions: ['*sighs* You are not wrong. The roads are a mess.', 'Mm. Bad weather, bad harvests, bad moods. It all connects.']
+                },
+                { label: 'I do not really notice the weather', kind: 'deflect', relGain: 0,
+                  reactions: ['*stares* How? It is literally all around you.', '*laughs* Too busy counting coins to look up, eh?']
+                }
+            ]
+        },
+        {
+            id: 'q_st_news',
+            summary: 'any interesting news',
+            forInteraction: 'small_talk',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'Heard anything interesting lately? Travelers always carry the best stories.';
+            },
+            options: [
+                { label: 'Share a genuine piece of news', kind: 'truth', relGain: 3,
+                  reactions: ['*leans in* Really? That IS interesting. Tell me more.', '*nods appreciatively* I had not heard that. Thank you.']
+                },
+                { label: 'Make something up', kind: 'lie', relGain: 1, relIfCaught: -4,
+                  reactions: ['*wide eyes* You do not say! I must tell the others.'],
+                  reactionsCaught: ['*flat* That is nonsense and you know it. Do not waste my time with tall tales.']
+                },
+                { label: 'Nothing worth sharing', kind: 'deflect', relGain: 0,
+                  reactions: ['*shrugs* Quiet days, then. Sometimes those are best.', 'Hm. Keeping your cards close. I understand.']
+                }
+            ]
+        },
+        {
+            id: 'q_st_sleep',
+            summary: 'how you have been sleeping',
+            forInteraction: 'small_talk',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'You look a bit tired. Everything all right? Getting enough sleep?';
+            },
+            options: [
+                { label: 'Honestly, no — too much going on', kind: 'truth', relGain: 2,
+                  reactions: ['*sympathetic* I know that feeling. Take it easy when you can.', '*nods* The world does not stop turning, does it?']
+                },
+                { label: 'I am fine, just busy', kind: 'lie', relGain: 1,
+                  reactions: ['*unconvinced* Mm. If you say so.', 'Busy is better than bored, I suppose.']
+                },
+                { label: 'Sleep is for the lazy', kind: 'brag', relGain: 0,
+                  reactions: ['*laughs* Now that is the spirit. Dangerous spirit, but spirit.', '*amused* You will regret that philosophy eventually.']
+                }
+            ]
+        },
+
+        // DISCUSS BUSINESS questions
+        {
+            id: 'q_biz_prices',
+            summary: 'current market prices',
+            forInteraction: 'discuss_business',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'What do you think of the current prices? Are buyers getting a fair deal?';
+            },
+            options: [
+                { label: 'Prices are fair for what they are', kind: 'truth', relGain: 2,
+                  reactions: ['*nods* A balanced view. Most people only complain.', 'Mm. You have a merchant\'s eye for these things.']
+                },
+                { label: 'Everything is overpriced', kind: 'truth', relGain: 1,
+                  reactions: ['*sighs* I cannot argue. Margins are thin everywhere.', 'And yet people keep buying. Funny how that works.']
+                },
+                { label: 'I set my own prices — market be damned', kind: 'brag', relGain: 0, relIfCaught: -3,
+                  reactions: ['*raised eyebrow* Bold. Let us see how long that lasts.'],
+                  reactionsCaught: ['*flat* You charge market rate like everyone else. I have seen your stall.']
+                }
+            ]
+        },
+        {
+            id: 'q_biz_opportunity',
+            summary: 'what you are buying or selling',
+            forInteraction: 'discuss_business',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'Are you looking to buy or sell anything in particular right now?';
+            },
+            options: [
+                { label: 'Share what you are trading', kind: 'truth', relGain: 3,
+                  reactions: ['*interested* I might be able to help with that, actually.', '*nods* Good to know. I will keep an ear out.']
+                },
+                { label: 'Always buying, never enough', kind: 'truth', relGain: 1,
+                  reactions: ['*chuckles* A true merchant. The hunger never stops.', 'Mm. Ambition is a bottomless well.']
+                },
+                { label: 'That is confidential', kind: 'deflect', relGain: -1,
+                  reactions: ['*shrugs* Suit yourself. I was only making conversation.', '*amused* Trade secrets in a small town. How dramatic.']
+                }
+            ]
+        },
+        {
+            id: 'q_biz_competition',
+            summary: 'the competition',
+            forInteraction: 'discuss_business',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'How do you handle the competition? It seems like everyone is trying to undercut everyone else these days.';
+            },
+            options: [
+                { label: 'Quality over price — always', kind: 'truth', relGain: 2,
+                  reactions: ['*approving nod* The right approach. Cheap goods make cheap reputations.', 'Mm. I like that philosophy. Hold to it.']
+                },
+                { label: 'I just try to stay ahead', kind: 'truth', relGain: 1,
+                  reactions: ['*nods* That is all any of us can do.', 'The market rewards the persistent.']
+                },
+                { label: 'I crush them', kind: 'brag', relGain: -1, relIfCaught: -4,
+                  reactions: ['*wary look* Remind me not to get on your bad side.'],
+                  reactionsCaught: ['*flat* You have the same four customers as everyone else. Calm down.']
+                }
+            ]
+        },
+
+        // COMPLIMENT questions
+        {
+            id: 'q_comp_reputation',
+            summary: 'your own reputation',
+            forInteraction: 'compliment',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'You are too kind. But tell me honestly — what do people actually say about me when I am not around?';
+            },
+            options: [
+                { label: 'Only good things, truly', kind: 'truth', relGain: 3,
+                  reactions: ['*pleased* Well. That is nice to hear.', '*relieved smile* I worry sometimes. Thank you for saying that.']
+                },
+                { label: 'A mix — but mostly positive', kind: 'truth', relGain: 2,
+                  reactions: ['*nods* I appreciate the honesty. A mix is better than silence.', 'Mm. I suppose that is the best anyone can hope for.']
+                },
+                { label: 'Flatter them outrageously', kind: 'lie', relGain: 1, relIfCaught: -5,
+                  reactions: ['*beams* You are too generous!'],
+                  reactionsCaught: ['*narrows eyes* Now you are just laying it on thick. What do you want?']
+                }
+            ]
+        },
+        {
+            id: 'q_comp_drives',
+            summary: 'what motivates you',
+            forInteraction: 'compliment',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'Flattery is nice, but I am curious — what actually drives you, ' + ctx.playerName + '?';
+            },
+            options: [
+                { label: 'Family and stability', kind: 'truth', relGain: 3,
+                  reactions: ['*warm smile* A good answer. The world needs more of that.', '*nods approvingly* Noble motivations. I respect that.']
+                },
+                { label: 'Gold and adventure', kind: 'truth', relGain: 2,
+                  reactions: ['*chuckles* Honest! I can work with honest.', '*grins* At least you know yourself.']
+                },
+                { label: 'Power and influence', kind: 'truth', relGain: 1,
+                  reactions: ['*raised eyebrow* Ambitious. Be careful with that.', '*considers* At least you said it out loud. Most people hide it.']
+                },
+                { label: 'Deflect with humor', kind: 'deflect', relGain: 0,
+                  reactions: ['*laughs* Dodging the question. Classic.', '*amused* You are smoother than you look.']
+                }
+            ]
+        },
+
+        // ASK ADVICE questions
+        {
+            id: 'q_adv_trust',
+            summary: 'why you trust their judgment',
+            forInteraction: 'ask_advice',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'Before I advise you — why come to me? What makes you trust my judgment?';
+            },
+            options: [
+                { label: 'You have experience I lack', kind: 'truth', relGain: 4,
+                  reactions: ['*touched* That means more than you know. Ask away, then.', '*nods slowly* I will do my best to live up to that.']
+                },
+                { label: 'You seem wise', kind: 'truth', relGain: 2,
+                  reactions: ['*modest smile* Wise? I do not know about that. But I will try.', '*chuckles* Wise is generous. But I appreciate it.']
+                },
+                { label: 'I ask everyone — you are not special', kind: 'truth', relGain: -2,
+                  reactions: ['*flat* Well. Thanks for the honesty, I suppose.', '*hurt look* I see. Well, here is my advice anyway...']
+                }
+            ]
+        },
+        {
+            id: 'q_adv_tried',
+            summary: 'what you have tried so far',
+            forInteraction: 'ask_advice',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'What have you already tried? I do not want to tell you something you already know.';
+            },
+            options: [
+                { label: 'Explain honestly what you have attempted', kind: 'truth', relGain: 3,
+                  reactions: ['*nods* Good. Now I know where to start. Here is what I think...', '*listens carefully* All right. I see the problem. Try this instead...']
+                },
+                { label: 'Nothing yet — I wanted your opinion first', kind: 'truth', relGain: 2,
+                  reactions: ['*pleased* Smart. Better to ask before making mistakes.', 'Coming to me first? I am flattered. All right, listen carefully...']
+                },
+                { label: 'Brush off the question', kind: 'deflect', relGain: -1,
+                  reactions: ['*frowns* If you do not want to share, why are you asking for help?', 'Mm. Hard to help someone who will not open up.']
+                }
+            ]
+        },
+
+        // TELL JOKE questions
+        {
+            id: 'q_joke_funniest',
+            summary: 'the funniest thing that happened to you',
+            forInteraction: 'tell_joke',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'Ha! Your turn — what is the funniest thing that has happened to you recently?';
+            },
+            options: [
+                { label: 'Tell a genuinely funny story', kind: 'truth', relGain: 3,
+                  reactions: ['*laughing* That is brilliant! I am going to tell everyone that.', '*wiping tears* Oh, that is good. That is really good.']
+                },
+                { label: 'Make up an outrageous story', kind: 'lie', relGain: 2, relIfCaught: -2,
+                  reactions: ['*howling with laughter* No! That did NOT happen!'],
+                  reactionsCaught: ['*grinning* That is completely made up, is it not? Still funny though.']
+                },
+                { label: 'Nothing — my life is tragically unfunny', kind: 'deflect', relGain: 1,
+                  reactions: ['*pats your back* Stick with me. We will fix that.', '*laughs* THAT is the funniest thing you have said all day.']
+                }
+            ]
+        },
+        {
+            id: 'q_joke_charming',
+            summary: 'whether you were always this charming',
+            forInteraction: 'tell_joke',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
+                return 'Were you always this funny, or did you have to work at it?';
+            },
+            options: [
+                { label: 'Natural talent', kind: 'brag', relGain: 2, relIfCaught: -2,
+                  reactions: ['*laughs* Humble too, I see.', '*rolls eyes affectionately* Of course it is.'],
+                  reactionsCaught: ['*deadpan* I have met funnier rocks.']
+                },
+                { label: 'Years of embarrassing failures', kind: 'truth', relGain: 3,
+                  reactions: ['*chuckles* Now THAT I believe. The best comedians suffer most.', '*warm smile* Well, the practice paid off.']
+                },
+                { label: 'I just say what I think', kind: 'truth', relGain: 1,
+                  reactions: ['*nods* And that is exactly why it works.', 'Mm. Honesty IS funny when everyone else is performing.']
+                }
+            ]
+        },
+
+        // SHARE DRINK questions
+        {
+            id: 'q_drink_secret',
+            summary: 'something personal',
+            forInteraction: 'share_drink',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool' || ctx.relTier === 'neutral') return null;
+                return 'Over drinks — tell me something about yourself that most people do not know.';
+            },
+            options: [
+                { label: 'Share something genuine', kind: 'truth', relGain: 5,
+                  reactions: ['*quiet nod* Thank you for trusting me with that. Truly.', '*raises glass* To honesty. The rarest commodity in town.']
+                },
+                { label: 'Make up something dramatic', kind: 'lie', relGain: 2, relIfCaught: -6,
+                  reactions: ['*wide eyes* I had no idea... that is incredible.'],
+                  reactionsCaught: ['*puts down drink* Over DRINKS, you lie to me? Bad form.']
+                },
+                { label: 'Deflect ("I am an open book")', kind: 'deflect', relGain: 0,
+                  reactions: ['*laughs* No one is an open book. But I will let it go.', '*shrugs* Fine. Keep your mysteries.']
+                }
+            ]
+        },
+        {
+            id: 'q_drink_origins',
+            summary: 'what brought you here',
+            forInteraction: 'share_drink',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                return 'So what brought you to this part of the world? Everyone has a story.';
+            },
+            options: [
+                { label: 'Tell them honestly', kind: 'truth', relGain: 3,
+                  reactions: ['*nods thoughtfully* I can see that. This place suits you — or you suit it.', '*raises mug* To new beginnings, then.']
+                },
+                { label: 'Spin a dramatic tale', kind: 'lie', relGain: 1, relIfCaught: -3,
+                  reactions: ['*impressed* Now THAT is a story. You should write it down.'],
+                  reactionsCaught: ['*snorts* Pull the other one. I asked for your story, not a fairy tale.']
+                },
+                { label: 'Just drifting', kind: 'deflect', relGain: 1,
+                  reactions: ['*contemplative* A drifter. There is freedom in that, I suppose.', '*nods* Sometimes the best stories start that way.']
+                }
+            ]
+        },
+        {
+            id: 'q_drink_regrets',
+            summary: 'your biggest regret',
+            forInteraction: 'share_drink',
+            askFor: function(ctx) {
+                if (ctx.relTier !== 'friend' && ctx.relTier !== 'close' && ctx.relTier !== 'trusted') return null;
+                return '*leaning in over drinks* Be honest with me — do you have any regrets? Big ones?';
+            },
+            options: [
+                { label: 'Open up about a genuine regret', kind: 'truth', relGain: 5,
+                  reactions: ['*quiet nod* We all carry those. Thank you for sharing.', '*puts hand on your arm* That took courage to say. I respect that.']
+                },
+                { label: 'No regrets — I stand by every choice', kind: 'truth', relGain: 2,
+                  reactions: ['*impressed* Conviction. I wish I could say the same.', '*nods* Bold. I hope you mean it.']
+                },
+                { label: 'Change the subject', kind: 'deflect', relGain: -1,
+                  reactions: ['*understanding* Too heavy for drinking? Fair enough.', '*backs off* I overstepped. Another round?']
+                }
+            ]
         }
 
     ];
@@ -5511,25 +5856,33 @@ window.UI = (function () {
         return ctx;
     }
 
-    function _maybeGenerateQuestion(person) {
+    // v9p33river391: removed memory gate so any NPC can ask questions,
+    // reduced cooldown from 7 → 2 days, added interactionType filtering,
+    // added skipBaseRoll for post-interaction triggers (avoids double-roll).
+    function _maybeGenerateQuestion(person, opts) {
         // Gating
         if (!person) return null;
-        // Must qualify for memory (EM/noble/family)
-        try { if (!Player.npcQualifiesForMemory || !Player.npcQualifiesForMemory(person)) return null; } catch (e) { return null; }
-        // Per-NPC cooldown — 1 question per 7 days
+        var interactionType = (opts && opts.interactionType) || null;
+        var skipBaseRoll = (opts && opts.skipBaseRoll) || false;
+        // Per-NPC cooldown — 1 question per 2 days
         try {
             var cdDay = Player.npcQuestionCooldownDay ? Player.npcQuestionCooldownDay(person.id) : 0;
             var today = (Engine.getDay && Engine.getDay()) || 0;
-            if (cdDay && today - cdDay < 7) return null;
+            if (cdDay && today - cdDay < 2) return null;
         } catch (e) {}
-        // 20% base chance
-        if (Math.random() > 0.20) return null;
+        // 40% base chance (skipped when called from post-interaction trigger)
+        if (!skipBaseRoll && Math.random() > 0.40) return null;
 
         var ctx = _questionContext(person);
-        // Pick a random qualifying question
+        // Pick a random qualifying question, filtering by interaction type if given
         var qualifying = [];
         for (var i = 0; i < _QUESTION_POOL.length; i++) {
             var q = _QUESTION_POOL[i];
+            // If question is tied to specific interaction types, only include when matching
+            if (q.forInteraction) {
+                if (!interactionType) continue;
+                if (Array.isArray(q.forInteraction) ? q.forInteraction.indexOf(interactionType) < 0 : q.forInteraction !== interactionType) continue;
+            }
             try {
                 var line = q.askFor ? q.askFor(ctx) : null;
                 if (line) qualifying.push({ q: q, line: line });
@@ -6250,11 +6603,11 @@ window.UI = (function () {
 
                 var result = Player.interactWithNPC(pid, iid);
                 if (result && result.success) {
-                    // v9p33river388: per-interaction question chance (~15%)
+                    // v9p33river391: per-interaction question chance (~35%), with interaction type
                     try {
                         var _qPerson = Engine.getPerson(pid);
-                        if (_qPerson && Math.random() < 0.15) {
-                            var _qGenerated = _maybeGenerateQuestion(_qPerson);
+                        if (_qPerson && Math.random() < 0.35) {
+                            var _qGenerated = _maybeGenerateQuestion(_qPerson, { interactionType: iid, skipBaseRoll: true });
                             if (_qGenerated) {
                                 // Show question instead of normal dialog
                                 var _qDlg = document.getElementById('npcInteractionDialog');
