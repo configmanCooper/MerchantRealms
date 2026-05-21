@@ -1976,7 +1976,7 @@ window.UI = (function () {
             html += '<div style="text-align:center;margin-bottom:8px;">';
             if (portrait) html += '<div style="font-size:2em;margin-bottom:2px;">' + portrait + '</div>';
             if (npcIdAttr) {
-                html += '<button type="button" data-action="showPersonDetailAndCloseModal" data-id="' + npcIdAttr + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:1.05em;cursor:pointer;text-decoration:underline;">' + escapeHtml(npc.firstName || evt.npcName || 'Someone') + '</button>';
+                html += '<button type="button" data-action="showPersonDetailById" data-id="' + npcIdAttr + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:1.05em;cursor:pointer;text-decoration:underline;">' + escapeHtml(npc.firstName || evt.npcName || 'Someone') + '</button>';
             } else {
                 html += '<span style="font-weight:bold;color:#d4af37;">' + escapeHtml(npc.firstName || evt.npcName || 'Someone') + '</span>';
             }
