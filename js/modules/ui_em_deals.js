@@ -221,18 +221,19 @@
     }
 
     function _getStrategyGoods(strategy) {
+        // v9p33river399: removed invalid ids (weapons, shields, exotic_goods, instruments, books, art, clothes, furniture, pottery)
         var map = {
             food_monopoly: ['wheat', 'bread', 'flour', 'meat', 'poultry', 'eggs', 'fish', 'preserved_food'],
-            military_supplier: ['iron', 'steel', 'weapons', 'swords', 'bows', 'arrows', 'armor', 'shields', 'horses'],
-            luxury_trader: ['wine', 'jewelry', 'silk', 'perfume', 'spices', 'exotic_goods', 'instruments'],
+            military_supplier: ['iron', 'steel', 'swords', 'bows', 'arrows', 'armor', 'horses'],
+            luxury_trader: ['wine', 'jewelry', 'silk', 'perfume', 'spices'],
             diversified: [],
             political_climber: [],
-            war_profiteer: ['weapons', 'armor', 'horses', 'iron', 'steel'],
+            war_profiteer: ['swords', 'armor', 'horses', 'iron', 'steel'],
             land_baron: [],
             trade_network: [],
             medical_supplier: ['herbs', 'medicine', 'bandages'],
-            culture_trader: ['books', 'instruments', 'art', 'exotic_goods'],
-            retail_mogul: ['clothes', 'tools', 'furniture', 'pottery']
+            culture_trader: ['paper', 'ink', 'dye'],
+            retail_mogul: ['cloth', 'tools', 'leather', 'rope']
         };
         return map[strategy] || [];
     }

@@ -33207,6 +33207,10 @@
             // Add to military stockpile if applicable
             if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                 k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + deliverQty;
+            } else {
+                // v9p33river399: non-military goods go to goodsStockpile (was silently dropped)
+                if (!k.goodsStockpile) k.goodsStockpile = {};
+                k.goodsStockpile[order.resourceId] = (k.goodsStockpile[order.resourceId] || 0) + deliverQty;
             }
             k.gold -= actualPayment;
             const completed = order.qtyDelivered >= order.qty;

@@ -25049,7 +25049,8 @@
             if (r.id === 'water' || r.id === 'blasting_powder' || r.id === 'demolition_tools' || r.id === 'poison') continue;
             giftableIds.push(r.id);
             if (cat === 'luxury') luxuryIds.push(r.id);
-            if (cat === 'finished' || cat === 'processing') practicalIds.push(r.id);
+            // v9p33river399: category is 'processed', not 'processing'
+            if (cat === 'finished' || cat === 'processed') practicalIds.push(r.id);
             if (cat === 'farm' || cat === 'food' || r.id === 'bread' || r.id === 'ale' || r.id === 'wine' || r.id === 'meat' || r.id === 'fish' || r.id === 'cheese') {
                 foodIds.push(r.id);
             }

@@ -6463,7 +6463,8 @@
                 for (var iti = 0; iti < territories.length && expSpent < expBudget; iti++) {
                     var iTown = findTown(territories[iti]);
                     if (!iTown) continue;
-                    var popCap = ((CONFIG.TOWN_CATEGORIES[iTown.category] || {}).popCap) || (CONFIG.TOWN_POP_CAPS ? CONFIG.TOWN_POP_CAPS[iTown.category] : 200) || 200;
+                    // v9p33river399: was TOWN_POP_CAPS (plural) / TOWN_CATEGORIES.popCap; real key is TOWN_POP_CAP (singular)
+                    var popCap = (CONFIG.TOWN_POP_CAP && CONFIG.TOWN_POP_CAP[iTown.category]) || 200;
                     if ((iTown.population || 0) < popCap * 0.5) {
                         var immCost = 150;
                         if (immCost <= expBudget - expSpent && k.gold >= immCost) {
@@ -6587,7 +6588,8 @@
                     if (bump > 0.01) {
                         var resInfo = findResourceById(ifKey);
                         var basePrice = resInfo ? resInfo.basePrice : 10;
-                        var ceiling = basePrice * (CONFIG.PRICE_CEILING_MULT || 6.0);
+                        // v9p33river399: use CONFIG.PRICE_CONTROLS.maxPriceMultiplier (was nonexistent PRICE_CEILING_MULT)
+                        var ceiling = basePrice * ((CONFIG.PRICE_CONTROLS && CONFIG.PRICE_CONTROLS.maxPriceMultiplier) || 6.0);
                         ifTown.market.prices[ifKey] = Math.min(ceiling, currentPrice + bump);
                     }
                 }

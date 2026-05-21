@@ -2058,6 +2058,10 @@
                             collectTradeTax(k.id, _emActualPay, order.resourceId);
                             if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                                 k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + deliverQty;
+                            } else {
+                                // v9p33river399: non-military goods go to goodsStockpile (was silently dropped)
+                                if (!k.goodsStockpile) k.goodsStockpile = {};
+                                k.goodsStockpile[order.resourceId] = (k.goodsStockpile[order.resourceId] || 0) + deliverQty;
                             }
                             remaining = order.qty - order.qtyDelivered;
                         }
@@ -2080,6 +2084,10 @@
                                 k.gold -= _emActualPay2;
                                 if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                                     k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + buyQty;
+                                } else {
+                                    // v9p33river399: non-military goods go to goodsStockpile
+                                    if (!k.goodsStockpile) k.goodsStockpile = {};
+                                    k.goodsStockpile[order.resourceId] = (k.goodsStockpile[order.resourceId] || 0) + buyQty;
                                 }
                             }
                         }

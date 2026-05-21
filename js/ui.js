@@ -20924,7 +20924,8 @@ window.UI = (function () {
         }
 
         // ── MILITARY IMPACT ──
-        var milGoodsIds = ['weapons', 'armor', 'shields', 'swords', 'bows', 'arrows', 'crossbows', 'pikes', 'war_horses', 'horses', 'iron', 'steel'];
+        // v9p33river399: fixed invalid ids (weapons, shields, crossbows, pikes, war_horses); added quality variants
+        var milGoodsIds = ['swords', 'armor', 'bows', 'arrows', 'horses', 'iron', 'steel', 'swords_good', 'swords_excellent', 'armor_good', 'armor_excellent', 'bows_good', 'bows_excellent', 'arrows_good', 'arrows_excellent', 'bandages', 'blasting_powder'];
         var playerMilSales = 0;
         var tradeLog = p.tradeLog || [];
         for (var tli = 0; tli < tradeLog.length; tli++) {
@@ -21072,7 +21073,8 @@ window.UI = (function () {
         html += '</div></div>';
 
         // ── FOOD & SUPPLY CHAINS ──
-        var foodIds = ['grain', 'wheat', 'bread', 'flour', 'meat', 'fish', 'vegetables', 'fruit', 'cheese', 'milk', 'eggs', 'salt', 'sugar', 'honey', 'dried_fish', 'dried_meat', 'preserved_food', 'ale', 'wine', 'mead'];
+        // v9p33river399: fixed invalid ids (grain, fruit, cheese, milk, sugar, dried_fish, dried_meat); added poultry, grapes
+        var foodIds = ['wheat', 'bread', 'flour', 'meat', 'fish', 'vegetables', 'poultry', 'grapes', 'eggs', 'salt', 'honey', 'preserved_food', 'ale', 'wine', 'mead'];
         var playerFoodProd = 0;
         for (var fk in playerProduction) {
             if (foodIds.indexOf(fk) >= 0) playerFoodProd += playerProduction[fk];
