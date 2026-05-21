@@ -1955,10 +1955,35 @@ window.UI = (function () {
     }
 
     // v9p33river401: Unsolicited random event popup
+    // v9p33river404: NPC portrait, clickable name, rank, descriptive text
     function openUnsolicitedEventPopup(evt) {
         if (!evt) return;
+        var npc = null, portrait = '', rankIdx = 0, rankDef = null, rel = null, npcIdAttr = '';
+        if (evt.npcId) {
+            try { npc = Engine.getPerson(evt.npcId); } catch(e) {}
+        }
+        if (npc) {
+            try { portrait = (typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(npc) : ''; } catch(e) {}
+            try { if (typeof Player !== 'undefined' && Player.getNPCSocialRank) rankIdx = Player.getNPCSocialRank(npc) || 0; } catch(e) {}
+            try { if (typeof Player !== 'undefined' && Player.getRelationship) rel = Player.getRelationship(npc.id); } catch(e) {}
+            npcIdAttr = escapeHtml(String(npc.id));
+        }
+        rankDef = (typeof CONFIG !== 'undefined' && CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx]) ? CONFIG.SOCIAL_RANKS[rankIdx] : { icon: '', name: 'Peasant' };
+        var relText = rel ? (Math.floor(rel.level || 0) + (rel.type ? ' (' + String(rel.type).replace(/_/g, ' ') + ')' : '')) : '';
         var html = '<div style="max-width:480px;padding:6px;">';
         html += '<div style="text-align:center;font-size:2.4em;margin-bottom:4px;">' + (evt.icon || '🎲') + '</div>';
+        if (npc) {
+            html += '<div style="text-align:center;margin-bottom:8px;">';
+            if (portrait) html += '<div style="font-size:2em;margin-bottom:2px;">' + portrait + '</div>';
+            if (npcIdAttr) {
+                html += '<button type="button" data-action="showPersonDetailAndCloseModal" data-id="' + npcIdAttr + '" style="background:none;border:none;padding:0;color:#d4af37;font-weight:bold;font-size:1.05em;cursor:pointer;text-decoration:underline;">' + escapeHtml(npc.firstName || evt.npcName || 'Someone') + '</button>';
+            } else {
+                html += '<span style="font-weight:bold;color:#d4af37;">' + escapeHtml(npc.firstName || evt.npcName || 'Someone') + '</span>';
+            }
+            html += ' <span style="font-size:0.85em;color:#cfc7b0;">' + (rankDef.icon || '') + ' ' + escapeHtml(rankDef.name || '') + '</span>';
+            if (relText) html += '<div style="font-size:0.8em;color:#999;margin-top:2px;">Relationship: ' + escapeHtml(relText) + '</div>';
+            html += '</div>';
+        }
         html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(100,149,237,0.10);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;color:#ddd;">' + escapeHtml(evt.text || '') + '</div>';
         if (evt.choices && evt.choices.length) {
             html += '<div style="display:flex;flex-direction:column;gap:6px;">';
@@ -1974,6 +1999,35 @@ window.UI = (function () {
         html += '</div>';
         var footer = '<button class="btn-medieval" data-action="dismissUnsolicitedEvent" data-instance-id="' + escapeHtml(String(evt.instanceId || '')) + '" style="background:rgba(200,80,80,0.2);">Dismiss</button>';
         openModal((evt.icon || '🎲') + ' ' + (evt.title || 'Random Event'), html, footer);
+    }
+
+    // v9p33river404: Show event result after a choice is made
+    function openUnsolicitedEventResult(res) {
+        if (!res) return;
+        var html = '<div style="max-width:480px;padding:6px;">';
+        html += '<div style="text-align:center;font-size:2.4em;margin-bottom:6px;">' + (res.icon || '🎲') + '</div>';
+        html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(85,168,104,0.12);border-left:3px solid #55a868;border-radius:0 6px 6px 0;color:#ddd;font-style:italic;">' + escapeHtml(res.narrative || 'The matter is settled.') + '</div>';
+        if (res.effects && res.effects.length) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+            for (var ei = 0; ei < res.effects.length; ei++) {
+                var eff = res.effects[ei];
+                var badge = '', badgeColor = '#aaa';
+                if (eff.type === 'gold') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + 'g'; badgeColor = eff.delta > 0 ? '#d4af37' : '#c85050'; }
+                else if (eff.type === 'rep') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' reputation'; badgeColor = eff.delta > 0 ? '#55a868' : '#c85050'; }
+                else if (eff.type === 'rel') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' relationship'; badgeColor = eff.delta > 0 ? '#6495ed' : '#c85050'; }
+                else if (eff.type === 'energy') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' energy'; badgeColor = eff.delta > 0 ? '#e6c86e' : '#c85050'; }
+                else if (eff.type === 'item') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' ' + (eff.name || eff.id); badgeColor = eff.delta > 0 ? '#bb86fc' : '#c85050'; }
+                else if (eff.type === 'injury') { badge = '⚠ Injury!'; badgeColor = '#c85050'; }
+                if (badge) html += '<span style="display:inline-block;padding:3px 8px;border-radius:4px;font-size:0.85em;font-weight:bold;color:' + badgeColor + ';background:rgba(0,0,0,0.3);border:1px solid ' + badgeColor + ';">' + escapeHtml(badge) + '</span>';
+            }
+            html += '</div>';
+        }
+        if (res.continuesInDays != null && res.continuesInDays > 0) {
+            html += '<div style="padding:8px 12px;background:rgba(100,149,237,0.10);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;color:#6495ed;font-size:0.9em;margin-bottom:6px;">📋 This story continues in ' + res.continuesInDays + ' days. Track it in the Quests tab.</div>';
+        }
+        html += '</div>';
+        var footer = '<button class="btn-medieval" data-action="closeModal" style="background:rgba(85,168,104,0.2);">OK</button>';
+        openModal((res.icon || '🎲') + ' ' + (res.title || 'Event') + ' — Result', html, footer);
     }
 
     // v9p33river401: Check for pending unsolicited events in update loop
@@ -7667,6 +7721,7 @@ window.UI = (function () {
         }
 
         // v9p33river401: Random Events section
+        // v9p33river404: Enhanced with NPC name, town, category labels
         var activeEvents = [];
         try { activeEvents = Player.getActiveUnsolicitedEvents ? Player.getActiveUnsolicitedEvents() : []; } catch (e) { activeEvents = []; }
         if (activeEvents.length > 0) {
@@ -7676,14 +7731,26 @@ window.UI = (function () {
                 if (!revt) continue;
                 var evtDaysLeft = Math.max(0, (revt.dueDay || 0) - day);
                 var statusColor = revt.status === 'waiting' ? '#999' : revt.status === 'ready' ? '#55a868' : '#ddd';
-                var statusText = revt.status === 'waiting' ? '⏳ Waiting (' + evtDaysLeft + 'd)' : revt.status === 'ready' ? '✨ Ready' : revt.status;
+                var statusText = revt.status === 'waiting' ? '⏳ Next step in ' + evtDaysLeft + ' day' + (evtDaysLeft !== 1 ? 's' : '') : revt.status === 'ready' ? '✨ Ready — check now' : revt.status;
+                var evtNpc = revt.npcId ? (typeof Engine !== 'undefined' && Engine.getPerson ? Engine.getPerson(revt.npcId) : null) : null;
+                var evtPortrait = (evtNpc && typeof Player !== 'undefined' && Player.getPersonPortrait) ? Player.getPersonPortrait(evtNpc) : '';
+                var evtTown = revt.townId ? (typeof Engine !== 'undefined' && Engine.getTown ? Engine.getTown(revt.townId) : null) : null;
+                var evtCatLabel = (revt.category || 'event').charAt(0).toUpperCase() + (revt.category || 'event').slice(1);
                 html += '<div style="border:1px solid rgba(100,149,237,0.25);border-radius:6px;padding:10px;margin-bottom:10px;background:rgba(100,149,237,0.06);">';
                 html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px;">';
                 html += '<div style="font-weight:bold;color:#6495ed;font-size:0.88rem;">' + (revt.icon || '🎲') + ' ' + escapeHtml(revt.title || 'Random Event') + '</div>';
                 html += '<div style="font-size:0.72rem;color:' + statusColor + ';white-space:nowrap;">' + statusText + '</div>';
                 html += '</div>';
-                if (revt.summary) html += '<div style="padding:6px 10px;margin-bottom:6px;background:rgba(0,0,0,0.18);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;font-size:0.8rem;color:#ccc;">' + escapeHtml(revt.summary.substring(0, 120)) + (revt.summary.length > 120 ? '...' : '') + '</div>';
-                html += '<div style="font-size:0.72rem;color:#999;">Step ' + ((revt.stepIndex || 0) + 1) + ' • ' + escapeHtml(revt.category || 'event') + '</div>';
+                if (evtNpc) {
+                    html += '<div style="font-size:0.8rem;color:#cfc7b0;margin-bottom:4px;">';
+                    if (evtPortrait) html += evtPortrait + ' ';
+                    html += '<button type="button" data-action="showPersonDetailById" data-id="' + escapeHtml(String(evtNpc.id)) + '" style="background:none;border:none;padding:0;color:#d4af37;font-size:0.8rem;cursor:pointer;text-decoration:underline;">' + escapeHtml(evtNpc.firstName || 'Unknown') + '</button>';
+                    html += '</div>';
+                }
+                if (revt.summary) html += '<div style="padding:6px 10px;margin-bottom:6px;background:rgba(0,0,0,0.18);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;font-size:0.8rem;color:#ccc;">' + escapeHtml(revt.summary.substring(0, 150)) + (revt.summary.length > 150 ? '...' : '') + '</div>';
+                html += '<div style="font-size:0.72rem;color:#999;">Step ' + ((revt.stepIndex || 0) + 1) + ' • ' + escapeHtml(evtCatLabel);
+                if (evtTown && evtTown.name) html += ' • 📍 ' + escapeHtml(evtTown.name);
+                html += '</div>';
                 html += '</div>';
             }
         }
@@ -21572,6 +21639,7 @@ window.UI = (function () {
         openFavorPopup,
         openUnsolicitedQuestOffer,
         openUnsolicitedEventPopup,
+        openUnsolicitedEventResult,
         formatGold,
         escapeHtml,
         _clearBankruptcyLock: function() { _bankruptcyLock = false; },

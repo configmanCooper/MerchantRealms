@@ -378,204 +378,204 @@
         return 0;
     }
     function _sceneLead(def) {
-        if (def.category === 'trade') return def.title + ' ripples through {townName} like a rumor with teeth.';
-        if (def.category === 'social') return def.title + ' arrives with a blush, a laugh, or a dangerous pause.';
-        if (def.category === 'crime') return def.title + ' comes wrapped in shadow and bad ideas.';
-        if (def.category === 'war') return def.title + ' blows in on the taste of smoke.';
-        if (def.category === 'political') return def.title + ' slips beneath the doors of power.';
-        if (def.category === 'supernatural') return def.title + ' makes the air feel older than it should.';
-        if (def.category === 'skill') return def.title + ' beckons like a test set by a patient master.';
-        if (def.category === 'rank') return def.title + ' reminds everyone which rung of the ladder you stand upon.';
-        if (def.category === 'context') return def.title + ' grows straight out of {townName}\'s present troubles.';
-        return def.title + ' interrupts the ordinary clatter of {townName}.';
+        if (def.category === 'trade') return 'Word of a new opportunity reaches you in {townName}.';
+        if (def.category === 'social') return 'Something stirs the social currents of {townName}.';
+        if (def.category === 'crime') return 'Trouble is brewing in the shadows of {townName}.';
+        if (def.category === 'war') return 'The winds of conflict reach {townName}.';
+        if (def.category === 'political') return 'The corridors of power in {townName} are buzzing.';
+        if (def.category === 'supernatural') return 'Something strange is afoot in {townName}.';
+        if (def.category === 'skill') return 'A test of your abilities awaits in {townName}.';
+        if (def.category === 'rank') return 'Your standing in {townName} has drawn attention.';
+        if (def.category === 'context') return 'The people of {townName} are restless.';
+        return 'Something catches your eye in {townName}.';
     }
     function _rawStep(def, instance, ctx) {
         var step = instance.stepIndex || 0;
         var lead = _sceneLead(def);
         if (def.template === 'windfall') {
-            return { title: def.title, icon: def.icon, text: lead + ' A little fortune lies within reach, and fate waits to see what kind of soul {playerName} will prove to be.', choices: [
-                { id: 'pocket', label: 'Pocket the good fortune', effectKey: 'pocket' },
-                { id: 'share', label: 'Ask around for the rightful owner', effectKey: 'share' },
-                { id: 'leave', label: 'Leave it to fate and walk on', effectKey: 'leave' }
+            return { title: def.title, icon: def.icon, text: lead + ' While walking through {townName}, you stumble upon an unattended coin purse near the market square. It holds roughly {goldAmount} gold — clearly someone\'s hard-earned wages. Nobody is looking, but the market guard isn\'t far. What kind of person are you today?', choices: [
+                { id: 'pocket', label: 'Pocket the gold (+{goldAmount}g, risk to reputation)', effectKey: 'pocket' },
+                { id: 'share', label: 'Ask around for the owner (+reputation, +relationship)', effectKey: 'share' },
+                { id: 'leave', label: 'Walk away — not your problem (+energy)', effectKey: 'leave' }
             ] };
         }
         if (def.template === 'aid') {
-            return { title: def.title, icon: def.icon, text: lead + ' {npcName} needs a steady hand, a kind word, or at least someone brave enough to stop and listen.', choices: [
-                { id: 'help', label: 'Step in and help', effectKey: 'help' },
-                { id: 'refuse', label: 'Keep your distance', effectKey: 'refuse' },
-                { id: 'exploit', label: 'Turn the mess to your advantage', effectKey: 'exploit' }
+            return { title: def.title, icon: def.icon, text: lead + ' {npcName} is struggling with a difficult situation in {townName} and could use your help. Lending a hand would cost you time and effort, but the gratitude of the people here has a way of coming back around. Then again, there might be a less charitable way to turn this to your advantage.', choices: [
+                { id: 'help', label: 'Help {npcName} — costs energy, gains reputation & goodwill', effectKey: 'help' },
+                { id: 'refuse', label: 'Walk past without stopping (damages relationship)', effectKey: 'refuse' },
+                { id: 'exploit', label: 'Turn their misfortune into profit (+gold, -reputation)', effectKey: 'exploit' }
             ] };
         }
         if (def.template === 'trade_offer') {
-            return { title: def.title, icon: def.icon, text: lead + ' {npcName} murmurs that a bundle of {resourceName} can be had for {costGold} gold, but only if you answer before the moment cools.', choices: [
-                { id: 'buy', label: 'Buy the lot for {costGold}g', effectKey: 'buy', requires: { gold: 'costGold' } },
-                { id: 'pass', label: 'Let the offer pass', effectKey: 'pass' },
-                { id: 'report', label: 'Warn the market watch', effectKey: 'report' }
+            return { title: def.title, icon: def.icon, text: lead + ' {npcName} pulls you aside near the {townName} warehouse with an urgent offer: they have {itemQty} units of {resourceName} available at {costGold} gold — well below market price. The deal won\'t last; another buyer is already circling. You could also report the suspicious pricing to the market authorities.', choices: [
+                { id: 'buy', label: 'Buy {itemQty} {resourceName} for {costGold}g (+goods, +relationship)', effectKey: 'buy', requires: { gold: 'costGold' } },
+                { id: 'pass', label: 'Decline the offer (+energy, no risk)', effectKey: 'pass' },
+                { id: 'report', label: 'Report the deal to authorities (+reputation, -relationship)', effectKey: 'report' }
             ] };
         }
         if (def.template === 'social_scene') {
-            return { title: def.title, icon: def.icon, text: lead + ' {npcName} holds your gaze a heartbeat too long, and the world around you seems suddenly eager for scandal.', choices: [
-                { id: 'encourage', label: 'Lean into the moment', effectKey: 'encourage' },
-                { id: 'polite', label: 'Answer with grace and distance', effectKey: 'polite' },
-                { id: 'cruel', label: 'Cut the moment dead', effectKey: 'cruel' }
+            return { title: def.title, icon: def.icon, text: lead + ' {npcName} approaches you during a social gathering in {townName}. The conversation turns personal — they seem to be testing whether you\'re worth knowing better. The whole room is watching to see how you handle the attention. Your response will be remembered.', choices: [
+                { id: 'encourage', label: 'Engage warmly — strengthen the bond (+relationship, +reputation)', effectKey: 'encourage' },
+                { id: 'polite', label: 'Respond with polite distance (+modest relationship)', effectKey: 'polite' },
+                { id: 'cruel', label: 'Shut them down publicly (-relationship, -reputation)', effectKey: 'cruel' }
             ] };
         }
         if (def.template === 'crime_scene') {
-            return { title: def.title, icon: def.icon, text: lead + ' {npcName} offers a grin better suited to a knife than a smile and suggests there is profit in acting quickly.', choices: [
-                { id: 'join', label: 'Take the risky profit', effectKey: 'join' },
-                { id: 'refuse', label: 'Refuse the scheme', effectKey: 'refuse' },
-                { id: 'report_crime', label: 'Tip off the authorities', effectKey: 'report_crime' }
+            return { title: def.title, icon: def.icon, text: lead + ' {npcName} corners you in a quiet alley of {townName} and lays out a scheme: a quick job that could net you {goldAmount} gold, but it\'s not exactly legal. There\'s real money in it, real risk too. You could always tip off the guard instead — justice pays in reputation, not coin.', choices: [
+                { id: 'join', label: 'Take the shady deal (+{goldAmount}g, risk of injury, -reputation)', effectKey: 'join' },
+                { id: 'refuse', label: 'Refuse and walk away (no gain, no risk)', effectKey: 'refuse' },
+                { id: 'report_crime', label: 'Report {npcName} to the watch (+reputation, -relationship)', effectKey: 'report_crime' }
             ] };
         }
         if (def.template === 'skill_test') {
-            return { title: def.title, icon: def.icon, text: lead + ' Someone in {townName} lays down a test of nerve, wit, or craftsmanship and waits to see whether {playerName} will answer.', choices: [
-                { id: 'attempt', label: 'Attempt the challenge', effectKey: 'attempt' },
-                { id: 'bet_safe', label: 'Play it safe and learn what you can', effectKey: 'bet_safe' },
-                { id: 'pass', label: 'Decline without shame', effectKey: 'pass' }
+            return { title: def.title, icon: def.icon, text: lead + ' A challenge has been set in {townName} — a test of skill, nerve, or cunning with real stakes. Success could mean gold and glory; failure might leave bruises, literal or otherwise. You could also hang back, watch the competition, and learn something for free.', choices: [
+                { id: 'attempt', label: 'Accept the challenge (+gold if you succeed, risk of injury)', effectKey: 'attempt' },
+                { id: 'bet_safe', label: 'Watch and learn (+energy, +modest reputation)', effectKey: 'bet_safe' },
+                { id: 'pass', label: 'Walk away — you have nothing to prove', effectKey: 'pass' }
             ] };
         }
         if (def.template === 'delayed_notice') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} promises that if you involve yourself now, news will find you again in {waitDays} days.', choices: [
-                { id: 'accept', label: 'Get involved', effectKey: 'accept', nextStepIndex: 1 },
-                { id: 'decline', label: 'Decline and move on', effectKey: 'decline' },
-                { id: 'exploit', label: 'Twist the matter for quick coin', effectKey: 'exploit' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} seeks you out in {townName} with a proposition that requires patience. The matter is delicate — political, perhaps, or simply too tangled to resolve today. If you agree to get involved, {npcName} will bring you the outcome in {waitDays} days. Quick coin is also on the table if you\'d rather twist the situation now.', choices: [
+                { id: 'accept', label: 'Get involved — wait {waitDays} days for the outcome', effectKey: 'accept', nextStepIndex: 1 },
+                { id: 'decline', label: 'Decline — you have enough on your plate', effectKey: 'decline' },
+                { id: 'exploit', label: 'Exploit the situation for quick gold (+gold, -reputation)', effectKey: 'exploit' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'As promised, the echo of ' + def.title.toLowerCase() + ' returns to you. {npcName} arrives with the result and a choice of what sort of name you want made from it.', choices: [
-                { id: 'claim', label: 'Take the reward openly', effectKey: 'claim' },
-                { id: 'spread', label: 'Turn the tale toward goodwill', effectKey: 'spread' },
-                { id: 'withdraw', label: 'Quietly let the matter end', effectKey: 'withdraw' }
+            return { title: def.title, icon: def.icon, text: 'After {waitDays} days, {npcName} returns with news: the matter you agreed to support has played out. Your involvement is now public knowledge in {townName}, and people want to know what kind of person you are. You can claim credit openly, spin it as charity, or quietly step away.', choices: [
+                { id: 'claim', label: 'Claim the reward openly (+{rewardGold}g, +reputation)', effectKey: 'claim' },
+                { id: 'spread', label: 'Turn the tale into goodwill (+reputation, +relationship)', effectKey: 'spread' },
+                { id: 'withdraw', label: 'Quietly let the matter end (+energy)', effectKey: 'withdraw' }
             ] };
         }
         if (def.template === 'trade_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' A speculative deal in {resourceName} is whispered your way. Back it now, and in {waitDays} days the market will judge you.', choices: [
-                { id: 'commit', label: 'Commit {costGold}g to the venture', effectKey: 'commit', nextStepIndex: 1, requires: { gold: 'costGold' } },
-                { id: 'haggle', label: 'Commit less and haggle hard', effectKey: 'haggle', nextStepIndex: 1, requires: { gold: 'costGold' } },
-                { id: 'pass', label: 'Decline the risk', effectKey: 'pass' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' A speculative trade deal in {resourceName} is being whispered about in {townName}. {npcName} says the goods won\'t arrive for {waitDays} days, but early investors stand to profit. You can commit {costGold} gold now, haggle for better terms, or walk away from the risk entirely.', choices: [
+                { id: 'commit', label: 'Invest {costGold}g at full price (higher reward in {waitDays} days)', effectKey: 'commit', nextStepIndex: 1, requires: { gold: 'costGold' } },
+                { id: 'haggle', label: 'Haggle down the price (less risk, +relationship)', effectKey: 'haggle', nextStepIndex: 1, requires: { gold: 'costGold' } },
+                { id: 'pass', label: 'Too risky — decline the deal', effectKey: 'pass' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The venture matures. The {resourceName} arrives, the ledgers shake, and {npcName} asks how you want to end the bargain.', choices: [
-                { id: 'unload', label: 'Unload the goods for profit', effectKey: 'unload' },
-                { id: 'flip', label: 'Make a ruthless quick sale', effectKey: 'flip' },
-                { id: 'donate', label: 'Divert part of it to goodwill', effectKey: 'donate' }
+            return { title: def.title, icon: def.icon, text: 'The {resourceName} shipment has arrived in {townName}. Your investment has paid off — now it\'s time to decide how to cash in. You can sell at profit, flip ruthlessly for maximum gold, or donate a portion to build goodwill with the locals.', choices: [
+                { id: 'unload', label: 'Sell at fair profit (+{rewardGold}g, +{itemQty} {resourceName})', effectKey: 'unload' },
+                { id: 'flip', label: 'Ruthless quick sale (+maximum gold, -reputation)', effectKey: 'flip' },
+                { id: 'donate', label: 'Donate part of the goods (+reputation, lighter purse)', effectKey: 'donate' }
             ] };
         }
         if (def.template === 'romance_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} leaves no doubt that this is not small talk. A meeting in {waitDays} days hangs on whatever you say next.', choices: [
-                { id: 'encourage', label: 'Encourage the advance', effectKey: 'encourage', nextStepIndex: 1 },
-                { id: 'polite', label: 'Refuse gently', effectKey: 'polite' },
-                { id: 'cruel', label: 'Refuse with ice', effectKey: 'cruel' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} makes their interest unmistakable. This isn\'t idle flirtation — they\'re proposing a private meeting in {waitDays} days, somewhere away from prying eyes. Encouraging them means committing to that meeting; refusing now will sting, but a cold refusal will cut deeper.', choices: [
+                { id: 'encourage', label: 'Encourage {npcName} — agree to meet in {waitDays} days (+relationship)', effectKey: 'encourage', nextStepIndex: 1 },
+                { id: 'polite', label: 'Decline gently — spare their feelings (+modest relationship)', effectKey: 'polite' },
+                { id: 'cruel', label: 'Reject them coldly (-relationship, -reputation)', effectKey: 'cruel' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The promised rendezvous arrives under lantern light. {npcName} is waiting with a hopeful smile and just enough courage to be dangerous.', choices: [
-                { id: 'attend', label: 'Attend the rendezvous', effectKey: 'attend' },
-                { id: 'bring_gift', label: 'Attend with a gift of {costGold}g', effectKey: 'bring_gift', requires: { gold: 'costGold' } },
-                { id: 'stay_away', label: 'Do not appear', effectKey: 'stay_away' }
+            return { title: def.title, icon: def.icon, text: 'The appointed day arrives. {npcName} waits under lantern light in a quiet corner of {townName}, hoping you\'ll appear. You could simply show up, bring a gift to make an impression, or stand them up entirely — but that last choice won\'t be forgotten.', choices: [
+                { id: 'attend', label: 'Attend the meeting (+relationship, -energy)', effectKey: 'attend' },
+                { id: 'bring_gift', label: 'Attend with a {costGold}g gift (+strong relationship, +reputation)', effectKey: 'bring_gift', requires: { gold: 'costGold' } },
+                { id: 'stay_away', label: 'Don\'t show up (-relationship, they\'ll remember)', effectKey: 'stay_away' }
             ] };
         }
         if (def.template === 'investigation_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' A thread dangles before you. Tug it, and in {waitDays} days you may learn something worth coin, blood, or both.', choices: [
-                { id: 'investigate', label: 'Investigate quietly', effectKey: 'investigate', nextStepIndex: 1 },
-                { id: 'sell_secret', label: 'Sell the lead immediately', effectKey: 'sell_secret' },
-                { id: 'ignore', label: 'Leave the darkness sleeping', effectKey: 'ignore' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' Something suspicious is happening in {townName}, and you\'ve caught the thread. {npcName} may be involved. Digging deeper will cost you energy and take {waitDays} days, but the truth could be worth gold — or justice. You could also sell the lead now for quick coin, or pretend you never saw anything.', choices: [
+                { id: 'investigate', label: 'Investigate quietly — results in {waitDays} days (-energy)', effectKey: 'investigate', nextStepIndex: 1 },
+                { id: 'sell_secret', label: 'Sell the lead now (+gold, -reputation)', effectKey: 'sell_secret' },
+                { id: 'ignore', label: 'Ignore it — some doors are best left closed', effectKey: 'ignore' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The clue matures into something sharp. {npcName} now stands exposed in a way that could be profitable, righteous, or very foolish.', choices: [
-                { id: 'confront', label: 'Confront them directly', effectKey: 'confront' },
-                { id: 'report_crime', label: 'Hand the matter to the authorities', effectKey: 'report_crime' },
-                { id: 'pocket', label: 'Pocket what you can and vanish', effectKey: 'pocket' }
+            return { title: def.title, icon: def.icon, text: 'Your investigation has borne fruit. {npcName} is caught in something compromising, and you hold the proof. You can confront them directly — risky but rewarding — hand the evidence to the authorities, or quietly pocket what you can and disappear.', choices: [
+                { id: 'confront', label: 'Confront {npcName} (+reputation, -relationship, risk of injury)', effectKey: 'confront' },
+                { id: 'report_crime', label: 'Hand evidence to authorities (+reputation, -relationship)', effectKey: 'report_crime' },
+                { id: 'pocket', label: 'Pocket what you can and vanish (+gold)', effectKey: 'pocket' }
             ] };
         }
         if (def.template === 'war_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} begs for aid that may matter by the frontier. Your answer will come back to you in {waitDays} days, one way or another.', choices: [
-                { id: 'assist', label: 'Assist the war effort', effectKey: 'assist', nextStepIndex: 1 },
-                { id: 'profit', label: 'Help, but think of profit first', effectKey: 'profit', nextStepIndex: 1 },
-                { id: 'decline', label: 'Keep clear of the army', effectKey: 'decline' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' War is brewing near {townName}, and {npcName} begs for your aid. Soldiers need supplies, the frontier needs reinforcement, and the realm needs people willing to act. You can assist purely out of duty, help while profiting from the chaos, or stay clear of the army entirely. Results will come in {waitDays} days.', choices: [
+                { id: 'assist', label: 'Aid the war effort — selflessly (-energy, +reputation)', effectKey: 'assist', nextStepIndex: 1 },
+                { id: 'profit', label: 'Help, but think of profit first (+gold, -reputation)', effectKey: 'profit', nextStepIndex: 1 },
+                { id: 'decline', label: 'Stay out of it — war is not your business', effectKey: 'decline' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'A tired messenger returns from the front. Whatever you set in motion has borne fruit, and now the realm remembers your name.', choices: [
-                { id: 'accept_reward', label: 'Accept the reward', effectKey: 'accept_reward' },
-                { id: 'donate_reward', label: 'Donate the reward to the cause', effectKey: 'donate_reward' },
-                { id: 'ask_for_favor', label: 'Ask instead for favor and goodwill', effectKey: 'ask_for_favor' }
+            return { title: def.title, icon: def.icon, text: 'Word returns from the front. Whatever you set in motion has made a difference, and {kingdomName} remembers your name. A tired messenger offers you the choice of a material reward, a donation to the wounded, or a favor that may prove more valuable than gold.', choices: [
+                { id: 'accept_reward', label: 'Accept the reward (+{rewardGold}g, +reputation)', effectKey: 'accept_reward' },
+                { id: 'donate_reward', label: 'Donate the reward to the wounded (+strong reputation)', effectKey: 'donate_reward' },
+                { id: 'ask_for_favor', label: 'Ask for a favor instead (+relationship, +reputation)', effectKey: 'ask_for_favor' }
             ] };
         }
         if (def.template === 'political_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} speaks in careful half-sentences and asks whether you will back a move that could echo through {kingdomName} in {waitDays} days.', choices: [
-                { id: 'support', label: 'Support the maneuver', effectKey: 'support', nextStepIndex: 1 },
-                { id: 'leak', label: 'Sell the whisper to someone else', effectKey: 'leak' },
-                { id: 'decline', label: 'Stay above the scheme', effectKey: 'decline' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' {npcName} approaches you with a political scheme that could shift the balance of power in {kingdomName}. They speak in careful half-sentences — this is the kind of move that creates allies and enemies in equal measure. Support it and see results in {waitDays} days, sell the information, or stay above the intrigue.', choices: [
+                { id: 'support', label: 'Support {npcName}\'s maneuver (+reputation, +relationship)', effectKey: 'support', nextStepIndex: 1 },
+                { id: 'leak', label: 'Sell the information to the other side (+gold, -reputation)', effectKey: 'leak' },
+                { id: 'decline', label: 'Stay above the political scheme', effectKey: 'decline' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The court has shifted. Doors open, others slam, and {npcName} returns to ask what kind of victor you intend to be.', choices: [
-                { id: 'press_advantage', label: 'Press your advantage', effectKey: 'press_advantage' },
-                { id: 'take_gift', label: 'Take a discreet gift and be content', effectKey: 'take_gift' },
-                { id: 'step_back', label: 'Step back before envy wakes', effectKey: 'step_back' }
+            return { title: def.title, icon: def.icon, text: 'The political winds have shifted in {kingdomName}. Your involvement in {npcName}\'s scheme has paid off — doors are opening, others are closing. Now the question is whether you press your advantage ruthlessly, accept a quiet reward, or step back before the spotlight becomes dangerous.', choices: [
+                { id: 'press_advantage', label: 'Press your advantage (+{rewardGold}g, +reputation)', effectKey: 'press_advantage' },
+                { id: 'take_gift', label: 'Accept a quiet reward (+gold, -modest reputation)', effectKey: 'take_gift' },
+                { id: 'step_back', label: 'Step back — envy is a dangerous thing (+energy)', effectKey: 'step_back' }
             ] };
         }
         if (def.template === 'rank_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' Someone lower on the ladder kneels, bows, or at least performs the local equivalent, and asks what sort of ruler or notable you mean to be.', choices: [
-                { id: 'hear_them_out', label: 'Hear them out seriously', effectKey: 'hear_them_out', nextStepIndex: 1 },
-                { id: 'exact_toll', label: 'Demand tribute for your attention', effectKey: 'exact_toll', nextStepIndex: 1 },
-                { id: 'brush_aside', label: 'Brush them aside', effectKey: 'brush_aside' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' Your status in {townName} has attracted attention. Someone of lower standing approaches, either in genuine need or subtle flattery, and asks what kind of authority you intend to be. You can listen with sincerity, demand a tribute for your time, or dismiss them entirely. How you respond will define your reputation here.', choices: [
+                { id: 'hear_them_out', label: 'Hear their petition seriously (-energy, +reputation)', effectKey: 'hear_them_out', nextStepIndex: 1 },
+                { id: 'exact_toll', label: 'Demand tribute for your attention (+gold, -reputation)', effectKey: 'exact_toll', nextStepIndex: 1 },
+                { id: 'brush_aside', label: 'Dismiss them without a word (-reputation)', effectKey: 'brush_aside' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The matter ripens into a public answer. Eyes in {townName} watch to learn whether your station means mercy, greed, or simple exhaustion.', choices: [
-                { id: 'grant_mercy', label: 'Grant mercy', effectKey: 'grant_mercy' },
-                { id: 'take_tribute', label: 'Take tribute and settle it', effectKey: 'take_tribute' },
-                { id: 'close_case', label: 'Close the matter quietly', effectKey: 'close_case' }
+            return { title: def.title, icon: def.icon, text: 'The petition has ripened into a public matter. Eyes across {townName} watch to see how you\'ll settle it. Mercy will strengthen your name; taking tribute will fill your coffers; closing it quietly will preserve your energy for battles that matter more.', choices: [
+                { id: 'grant_mercy', label: 'Grant mercy (+strong reputation, +relationship)', effectKey: 'grant_mercy' },
+                { id: 'take_tribute', label: 'Take tribute and close the case (+{rewardGold}g, +reputation)', effectKey: 'take_tribute' },
+                { id: 'close_case', label: 'Close it quietly — no drama, no cost (+energy)', effectKey: 'close_case' }
             ] };
         }
         if (def.template === 'mystic_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' Whether trick, omen, or the boredom of the gods, something in the scene asks whether {playerName} still knows how to listen.', choices: [
-                { id: 'heed', label: 'Heed the omen', effectKey: 'heed', nextStepIndex: 1 },
-                { id: 'listen', label: 'Listen, but stay cautious', effectKey: 'listen', nextStepIndex: 1 },
-                { id: 'mock', label: 'Laugh it off', effectKey: 'mock' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' Something unexplainable has happened in {townName}. Whether it\'s an omen, a trick, or the boredom of forces beyond mortal understanding, the sign demands attention. You can heed it and see where it leads, listen cautiously while keeping your options open, or laugh it off as superstition.', choices: [
+                { id: 'heed', label: 'Heed the omen — follow it deeper (-energy)', effectKey: 'heed', nextStepIndex: 1 },
+                { id: 'listen', label: 'Listen cautiously — keep your options open (+reputation)', effectKey: 'listen', nextStepIndex: 1 },
+                { id: 'mock', label: 'Laugh it off — superstition holds no power here (-reputation)', effectKey: 'mock' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The omen returns after {waitDays} days, more insistent and far less willing to be ignored. Even daylight seems to lean in.', choices: [
-                { id: 'follow', label: 'Follow where it leads', effectKey: 'follow' },
-                { id: 'ward', label: 'Ward yourself and turn away', effectKey: 'ward', requires: { gold: 'costGold' } },
-                { id: 'refuse', label: 'Refuse the call', effectKey: 'refuse' }
+            return { title: def.title, icon: def.icon, text: 'After {waitDays} days, the omen returns — more insistent, more vivid. The pattern is undeniable now: faces repeat in crowds, footsteps echo where no one walks. You can follow the sign to its source, or purchase wards from a local healer to put the matter to rest.', choices: [
+                { id: 'follow', label: 'Follow the omen to its source (+gold, risk of injury)', effectKey: 'follow' },
+                { id: 'ward', label: 'Purchase protective wards for {costGold}g (+energy, peace of mind)', effectKey: 'ward', requires: { gold: 'costGold' } },
+                { id: 'refuse', label: 'Refuse the call — enough of this nonsense', effectKey: 'refuse' }
             ] };
         }
         if (def.template === 'skill_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' A challenge is set and judges are promised in {waitDays} days. You can enter now or spare yourself the embarrassment.', choices: [
-                { id: 'accept', label: 'Enter the challenge', effectKey: 'accept', nextStepIndex: 1 },
-                { id: 'bet_safe', label: 'Observe and prepare instead', effectKey: 'bet_safe' },
-                { id: 'decline', label: 'Decline the challenge', effectKey: 'decline' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' A formal challenge has been announced in {townName} — a competition of craft, wit, or endurance with judges arriving in {waitDays} days. Entering now means committing to perform when the time comes. You could also watch from the sidelines to learn, or simply decline.', choices: [
+                { id: 'accept', label: 'Enter the competition — perform in {waitDays} days', effectKey: 'accept', nextStepIndex: 1 },
+                { id: 'bet_safe', label: 'Watch from the sidelines and learn (+energy, +reputation)', effectKey: 'bet_safe' },
+                { id: 'decline', label: 'Decline — you have nothing to prove', effectKey: 'decline' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'Judgment day arrives. The crowd wants a winner, the masters want form, and your rivals want a story at your expense.', choices: [
-                { id: 'collect_prize', label: 'Collect your prize proudly', effectKey: 'collect_prize' },
-                { id: 'share_credit', label: 'Share credit with the others', effectKey: 'share_credit' },
-                { id: 'walk', label: 'Walk away before vanity bites', effectKey: 'walk' }
+            return { title: def.title, icon: def.icon, text: 'Judgment day arrives in {townName}. The crowd gathers, the judges take their seats, and your rivals eye you nervously. You performed well — the prize is yours to claim proudly, share credit with fellow competitors, or walk away humbly.', choices: [
+                { id: 'collect_prize', label: 'Collect your prize (+{rewardGold}g, +reputation)', effectKey: 'collect_prize' },
+                { id: 'share_credit', label: 'Share credit with others (+reputation, +relationship)', effectKey: 'share_credit' },
+                { id: 'walk', label: 'Walk away humbly (+energy)', effectKey: 'walk' }
             ] };
         }
         if (def.template === 'context_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' The town itself seems to beg for intervention. Act now, and in {waitDays} days the streets will tell you whether it mattered.', choices: [
-                { id: 'intervene', label: 'Intervene directly', effectKey: 'intervene', nextStepIndex: 1 },
-                { id: 'profit', label: 'Profit from the chaos', effectKey: 'profit', nextStepIndex: 1 },
-                { id: 'observe', label: 'Observe and keep your hands clean', effectKey: 'observe' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' A crisis is unfolding in {townName} that demands action. The streets buzz with rumor and worry, and {npcName} begs for someone with influence to step in. You can intervene directly, profit from the chaos, or observe from a safe distance. If you act, the consequences will become clear in {waitDays} days.', choices: [
+                { id: 'intervene', label: 'Intervene directly — spend energy to help (-energy, +reputation)', effectKey: 'intervene', nextStepIndex: 1 },
+                { id: 'profit', label: 'Profit from the chaos (+gold, -reputation)', effectKey: 'profit', nextStepIndex: 1 },
+                { id: 'observe', label: 'Watch from a safe distance (+energy, no commitment)', effectKey: 'observe' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The situation breaks one way or the other. {townName} remembers what you did, even if it does not remember kindly.', choices: [
-                { id: 'take_reward', label: 'Take what reward is offered', effectKey: 'take_reward' },
-                { id: 'reinvest', label: 'Reinvest the gain into the town', effectKey: 'reinvest', requires: { gold: 'costGold' } },
-                { id: 'leave', label: 'Leave before gratitude turns to requests', effectKey: 'leave' }
+            return { title: def.title, icon: def.icon, text: 'The situation in {townName} has resolved, one way or another. People remember what you did — or didn\'t do. A reward is offered for your involvement. You can take it, reinvest it back into {townName}, or leave before gratitude turns to requests for more favors.', choices: [
+                { id: 'take_reward', label: 'Take the offered reward (+{rewardGold}g)', effectKey: 'take_reward' },
+                { id: 'reinvest', label: 'Reinvest {costGold}g into {townName} (+strong reputation)', effectKey: 'reinvest', requires: { gold: 'costGold' } },
+                { id: 'leave', label: 'Leave before they ask for more (+energy)', effectKey: 'leave' }
             ] };
         }
         if (def.template === 'long_omen') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' The first sign is subtle, almost polite. The second will not be, if you invite it.', choices: [
-                { id: 'heed', label: 'Step toward the omen', effectKey: 'heed', nextStepIndex: 1 },
-                { id: 'mock', label: 'Spit in the eye of omens', effectKey: 'mock' }
+            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' The first sign is subtle — a strange dream, a symbol scratched into a doorframe, a bird that watches too long. It could be nothing. It could be the beginning of something ancient stirring beneath {townName}. Do you step toward it, or spit in the eye of superstition?', choices: [
+                { id: 'heed', label: 'Step toward the omen — see where it leads', effectKey: 'heed', nextStepIndex: 1 },
+                { id: 'mock', label: 'Dismiss the superstition (-reputation)', effectKey: 'mock' }
             ] };
-            if (step === 1) return { title: def.title, icon: def.icon, text: 'After {waitDays} days the dream ripens into a pattern. Faces repeat. Footsteps echo where nobody walks.', choices: [
-                { id: 'listen', label: 'Listen more carefully', effectKey: 'listen', nextStepIndex: 2 },
-                { id: 'refuse', label: 'Refuse the pattern', effectKey: 'refuse' }
+            if (step === 1) return { title: def.title, icon: def.icon, text: 'After {waitDays} days, the pattern sharpens. The same face appears in three different crowds. Footsteps echo in empty rooms. Whether real or imagined, the omen is growing bolder. You can listen more carefully, or cut the thread and refuse to follow it further.', choices: [
+                { id: 'listen', label: 'Listen more carefully — go deeper (+reputation)', effectKey: 'listen', nextStepIndex: 2 },
+                { id: 'refuse', label: 'Refuse the pattern — enough is enough', effectKey: 'refuse' }
             ] };
-            if (step === 2) return { title: def.title, icon: def.icon, text: 'After another {waitDays2} days the sign manifests in waking life. A choice must now become a deed.', choices: [
-                { id: 'follow', label: 'Follow the sign to its source', effectKey: 'follow', nextStepIndex: 3 },
-                { id: 'ward', label: 'Purchase wards and holy quiet', effectKey: 'ward', requires: { gold: 'costGold' } }
+            if (step === 2) return { title: def.title, icon: def.icon, text: 'After another {waitDays2} days, the omen manifests in waking life. The sign is unmistakable now — carved into stone, whispered by strangers, written in the stars above {townName}. A choice must become a deed. Follow it to the source, or purchase holy wards and bury the matter.', choices: [
+                { id: 'follow', label: 'Follow the sign to its source (+gold, risk of injury)', effectKey: 'follow', nextStepIndex: 3 },
+                { id: 'ward', label: 'Purchase wards for {costGold}g and end this', effectKey: 'ward', requires: { gold: 'costGold' } }
             ] };
-            if (step === 3) return { title: def.title, icon: def.icon, text: 'At the source of the omen you find not certainty, but leverage: fear, wonder, and a prize that may not love its owner.', choices: [
-                { id: 'claim', label: 'Claim what the omen offers', effectKey: 'claim', nextStepIndex: 4 },
-                { id: 'spread', label: 'Turn the omen into a public tale', effectKey: 'spread', nextStepIndex: 4 },
-                { id: 'withdraw', label: 'Withdraw while you still can', effectKey: 'withdraw' }
+            if (step === 3) return { title: def.title, icon: def.icon, text: 'At the source of the omen, you find not certainty but leverage: something valuable, something feared, and something that may not love its owner. The prize is yours to claim openly, spin into a public tale, or abandon while you still can.', choices: [
+                { id: 'claim', label: 'Claim what the omen offers (+{rewardGold}g, +reputation)', effectKey: 'claim', nextStepIndex: 4 },
+                { id: 'spread', label: 'Turn the omen into a public tale (+reputation, +relationship)', effectKey: 'spread', nextStepIndex: 4 },
+                { id: 'withdraw', label: 'Withdraw while you still can (+energy)', effectKey: 'withdraw' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The final echo fades. Only consequence remains, and whatever name the town chooses to give you after this.', choices: [
-                { id: 'take_reward', label: 'Take the last reward', effectKey: 'take_reward' },
-                { id: 'mark_secret', label: 'Keep the thing secret', effectKey: 'mark_secret' },
-                { id: 'leave', label: 'Leave the mystery buried', effectKey: 'leave' }
+            return { title: def.title, icon: def.icon, text: 'The final echo of the omen fades from {townName}. Only consequence remains — whatever name the town chooses to give you after all this. A last reward sits unclaimed, a last secret unspoken.', choices: [
+                { id: 'take_reward', label: 'Take the last reward (+{rewardGold}g)', effectKey: 'take_reward' },
+                { id: 'mark_secret', label: 'Keep the discovery secret (+relationship, +reputation)', effectKey: 'mark_secret' },
+                { id: 'leave', label: 'Leave the mystery buried (+energy)', effectKey: 'leave' }
             ] };
         }
         return { title: def.title, icon: def.icon, text: lead, choices: [{ id: 'leave', label: 'Move on', effectKey: 'leave' }] };
@@ -593,25 +593,91 @@
         if (!resourceId || !delta) return;
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + delta;
         if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
+        if (_outcome) _outcome.push({ type: 'item', id: resourceId, name: RESOURCE_NAMES[resourceId] || resourceId, delta: delta });
     }
     function _rep(kid, delta) {
-        if (delta && kid) try { Player.modifyReputation(kid, delta); } catch (e) {}
+        if (delta && kid) try { Player.modifyReputation(kid, delta); if (_outcome) _outcome.push({ type: 'rep', delta: delta }); } catch (e) {}
     }
     function _rel(pid, delta) {
-        if (delta && pid) try { Player.modifyRelationship(pid, delta); } catch (e) {}
+        if (delta && pid) try { Player.modifyRelationship(pid, delta); if (_outcome) _outcome.push({ type: 'rel', delta: delta, pid: pid }); } catch (e) {}
     }
     function _gold(delta) {
-        if (delta) try { Player.modifyGold(delta, 'unsolicited_event'); } catch (e) {}
+        if (delta) try { Player.modifyGold(delta, 'unsolicited_event'); if (_outcome) _outcome.push({ type: 'gold', delta: delta }); } catch (e) {}
     }
     function _energy(delta) {
-        if (delta) try { Player.modifyEnergy(delta); } catch (e) {}
+        if (delta) try { Player.modifyEnergy(delta); if (_outcome) _outcome.push({ type: 'energy', delta: delta }); } catch (e) {}
     }
     function _hazard(def, ctx) {
         var extra = _derivedExtra(def);
         if (extra.hazard && ctx && ctx.rng && ctx.rng.chance(0.15)) {
-            try { Player.inflictRandomInjury('unsolicited_event:' + def.id); } catch (e) {}
+            try { Player.inflictRandomInjury('unsolicited_event:' + def.id); if (_outcome) _outcome.push({ type: 'injury' }); } catch (e) {}
         }
     }
+    var _outcome = null;
+    var RESULT_NARRATIVES = {
+        pocket: 'You pocket the windfall quietly. No one seems to notice — or care.',
+        share: 'You share what you found. Kindness has its own rewards, and grateful nods follow you down the street.',
+        leave: 'You walk away. Some things are best left alone.',
+        help: 'You lend a hand where it matters. The effort shows, but so does the gratitude.',
+        refuse: 'You turn away without a word. Not every plea deserves an answer.',
+        exploit: 'You turn the situation to your advantage. Profit and conscience rarely share a bed.',
+        buy: 'The deal is struck. Goods change hands, and both parties walk away satisfied — mostly.',
+        pass: 'You let the moment pass. Tomorrow brings its own chances.',
+        report: 'You report what you saw. The authorities nod, but the person involved won\'t thank you.',
+        encourage: 'You lean into the moment. Something stirs that wasn\'t there before.',
+        polite: 'You handle it with quiet grace. Respect earned, no bridges burned.',
+        cruel: 'Your words cut deep. The warmth drains from the air.',
+        join: 'You throw in your lot. Risk and reward share the same dark alley.',
+        report_crime: 'You alert the watch. Justice served — though not everyone sees it that way.',
+        accept: 'You accept. The first step down an uncertain road has been taken.',
+        decline: 'You decline. Sometimes the wisest move is no move at all.',
+        claim: 'You claim the reward openly. Gold and a good name — today they come together.',
+        spread: 'You spread the tale widely. Goodwill travels faster than coin.',
+        withdraw: 'You quietly step back. The matter fades without a trace.',
+        commit: 'You commit your gold to the venture. For better or worse, the die is cast.',
+        haggle: 'You drive a harder bargain. Less risk, less reward, but the relationship survives.',
+        unload: 'You sell the goods at a tidy profit. The ledger balances nicely in your favor.',
+        flip: 'You make a ruthless sale. Maximum profit, minimum friends.',
+        donate: 'You donate to the cause. Your purse is lighter, your conscience isn\'t.',
+        attend: 'You attend as promised. Time and energy well spent — the bond deepens.',
+        bring_gift: 'You arrive bearing gifts. The gesture doesn\'t go unnoticed.',
+        stay_away: 'You don\'t show up. Some doors, once closed, stay that way.',
+        investigate: 'You dig deeper. The truth hides behind closed doors, but you\'re getting closer.',
+        sell_secret: 'You sell the information. Quick coin — but you\'ve burned a bridge you might need later.',
+        ignore: 'You let it lie. Some stones are best left unturned.',
+        confront: 'You confront them directly. Bold, dangerous, and undeniable.',
+        assist: 'You lend your strength to the cause. The effort costs you, but the realm remembers.',
+        profit: 'You help, but keep one eye on the ledger. War makes merchants of us all.',
+        accept_reward: 'You accept the reward graciously. Earned and deserved.',
+        donate_reward: 'You redirect the reward to those who need it more. A generous soul, they say.',
+        ask_for_favor: 'You ask for something more valuable than gold — goodwill and a favor owed.',
+        support: 'You back the play. Power shifts, and you\'ve chosen your side.',
+        leak: 'You sell the whisper to the highest bidder. Politics and profit intertwine.',
+        press_advantage: 'You press your advantage without mercy. The spoils go to the bold.',
+        take_gift: 'You accept a discreet gift. Quiet profit, quiet satisfaction.',
+        step_back: 'You step back before things get complicated. Wisdom, not cowardice.',
+        hear_them_out: 'You listen carefully. Understanding costs time, but repays in trust.',
+        exact_toll: 'You demand tribute for your time. Power has its privileges.',
+        brush_aside: 'You brush them aside without a second thought. Not everyone gets your attention.',
+        grant_mercy: 'You show mercy. The petitioner\'s relief is genuine — and so is the town\'s respect.',
+        take_tribute: 'You collect what\'s owed. Fair or not, power makes the rules.',
+        close_case: 'You close the matter quietly. No drama, no debt.',
+        heed: 'You heed the sign. Whether it\'s wisdom or folly, only time will tell.',
+        listen: 'You listen more carefully. The pattern sharpens into something you can almost name.',
+        mock: 'You laugh it off. Superstition has no hold on you — or so you hope.',
+        follow: 'You follow where the sign leads. Courage or curiosity — hard to tell the difference.',
+        ward: 'You purchase protection against the unknown. Better safe than cursed.',
+        attempt: 'You rise to the challenge. Win or lose, they\'ll remember your name.',
+        bet_safe: 'You play it safe and learn what you can. No glory, but no bruises either.',
+        collect_prize: 'You collect your prize with a proud grin. Well earned.',
+        share_credit: 'You share the credit. Humility wins more friends than boasting.',
+        walk: 'You walk away before vanity gets the better of you.',
+        intervene: 'You intervene directly. The situation bends to your will — at a cost.',
+        observe: 'You watch from a safe distance. Sometimes the best move is to do nothing.',
+        take_reward: 'You take what\'s offered. No shame in honest reward.',
+        reinvest: 'You pour your gains back into the town. Investment, not charity.',
+        mark_secret: 'You keep the secret close. Some knowledge is worth more unspoken.'
+    };
     var EVENT_DEFS = [
         {
             id: "found_coin_purse",
@@ -26235,6 +26301,10 @@
             title: _fill(raw.title || def.title, inst.params, ctx),
             icon: raw.icon || def.icon,
             text: _fill(raw.text, inst.params, ctx),
+            npcId: inst.npcId || null,
+            npcName: (inst.params && inst.params.npcName) || null,
+            category: def.category || 'common',
+            template: def.template || 'windfall',
             choices: []
         };
         for (i = 0; i < raw.choices.length; i++) {
@@ -26296,6 +26366,7 @@
 
     function handleUnsolicitedEventChoice(eventInstanceId, choiceIndex) {
         var inst, def, ctx, raw, choice, i, idx, delay, nextCopy, choiceId, reason;
+        var narrative, effects, continuesInDays;
         if (!_ensureState()) return { success: false, message: 'No player state.' };
         inst = player._pendingUnsolicitedEvent;
         if (!inst) return { success: false, message: 'No pending unsolicited event.' };
@@ -26328,34 +26399,48 @@
         inst.choiceHistory.push({ day: ctx.day, stepIndex: inst.stepIndex, choiceId: choice.id });
         inst.params.kingdomId = inst.kingdomId;
         inst.params.npcId = inst.npcId;
+        _outcome = [];
         try { def.applyEffect(choice.effectKey, inst.params, ctx); } catch (e) {}
+        narrative = RESULT_NARRATIVES[choice.effectKey] || 'The matter is settled.';
+        effects = _outcome ? _outcome.slice() : [];
+        _outcome = null;
+        continuesInDays = null;
         idx = _findActiveIndex(inst.id);
         if (choice.nextStepIndex == null) {
             if (idx >= 0) player._activeUnsolicitedEvents.splice(idx, 1);
             player._pendingUnsolicitedEvent = null;
             _log(def.icon + ' ' + def.title + ' resolves for ' + _playerName() + '.', { type: 'unsolicited_event_resolved', defId: def.id }, 'my_actions');
             _surfaceReadyActive();
-            return { success: true, message: 'Choice resolved.' };
-        }
-        inst.stepIndex = choice.nextStepIndex;
-        delay = _stepDelay(def, inst, choice.nextStepIndex);
-        if (idx >= 0) {
-            player._activeUnsolicitedEvents[idx] = _copy(inst);
-            player._activeUnsolicitedEvents[idx].status = delay > 0 ? 'waiting' : 'ready';
-            player._activeUnsolicitedEvents[idx].dueDay = ctx.day + delay;
-            nextCopy = _copy(player._activeUnsolicitedEvents[idx]);
         } else {
-            nextCopy = _copy(inst);
-            nextCopy.status = delay > 0 ? 'waiting' : 'ready';
-            nextCopy.dueDay = ctx.day + delay;
+            inst.stepIndex = choice.nextStepIndex;
+            delay = _stepDelay(def, inst, choice.nextStepIndex);
+            continuesInDays = delay > 0 ? delay : 0;
+            if (idx >= 0) {
+                player._activeUnsolicitedEvents[idx] = _copy(inst);
+                player._activeUnsolicitedEvents[idx].status = delay > 0 ? 'waiting' : 'ready';
+                player._activeUnsolicitedEvents[idx].dueDay = ctx.day + delay;
+                nextCopy = _copy(player._activeUnsolicitedEvents[idx]);
+            } else {
+                nextCopy = _copy(inst);
+                nextCopy.status = delay > 0 ? 'waiting' : 'ready';
+                nextCopy.dueDay = ctx.day + delay;
+            }
+            player._pendingUnsolicitedEvent = null;
+            if (delay > 0) {
+                _log(def.icon + ' ' + def.title + ' will return in ' + delay + ' days.', { type: 'unsolicited_event_waiting', defId: def.id }, 'my_actions');
+            } else {
+                player._pendingUnsolicitedEvent = _copy(nextCopy);
+            }
         }
-        player._pendingUnsolicitedEvent = null;
-        if (delay > 0) {
-            _log(def.icon + ' ' + def.title + ' will return in ' + delay + ' days.', { type: 'unsolicited_event_waiting', defId: def.id }, 'my_actions');
-        } else {
-            player._pendingUnsolicitedEvent = _copy(nextCopy);
-        }
-        return { success: true, message: delay > 0 ? 'Choice made. The story continues later.' : 'Choice made.' };
+        return {
+            success: true,
+            title: def.title,
+            icon: def.icon,
+            narrative: narrative,
+            effects: effects,
+            continuesInDays: continuesInDays,
+            message: continuesInDays > 0 ? 'The story continues in ' + continuesInDays + ' days.' : 'Choice resolved.'
+        };
     }
 
     Player.tryGenerateDailyUnsolicitedEvent = tryGenerateDailyUnsolicitedEvent;

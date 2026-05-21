@@ -4919,8 +4919,13 @@ function clickTown(townId) {
         var instanceId = d.instanceId || d['instance-id'] || '';
         var choiceIndex = parseInt(d.choiceIndex || d['choice-index'] || '0', 10);
         var res = Player.handleUnsolicitedEventChoice ? Player.handleUnsolicitedEventChoice(instanceId, choiceIndex) : { success: false, message: 'Unavailable.' };
-        UI.toast(res.message || (res.success ? 'Done.' : 'Cannot choose.'), res.success ? 'success' : 'warning');
-        UI.closeModal();
+        if (res.success && res.narrative) {
+            UI.closeModal();
+            setTimeout(function() { if (UI.openUnsolicitedEventResult) UI.openUnsolicitedEventResult(res); }, 80);
+        } else {
+            UI.toast(res.message || (res.success ? 'Done.' : 'Cannot choose.'), res.success ? 'success' : 'warning');
+            UI.closeModal();
+        }
         try { if (UI._renderTownQuestsTab) UI._renderTownQuestsTab(); } catch(e) {}
     });
     UI.registerAction('dismissUnsolicitedEvent', function(_t, d) {
