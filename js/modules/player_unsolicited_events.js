@@ -512,13 +512,13 @@
             ] };
         }
         if (def.template === 'rank_chain') {
-            if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' Your status in {townName} has attracted attention. Someone of lower standing approaches, either in genuine need or subtle flattery, and asks what kind of authority you intend to be. You can listen with sincerity, demand a tribute for your time, or dismiss them entirely. How you respond will define your reputation here.', choices: [
-                { id: 'hear_them_out', label: 'Hear their petition seriously (-energy, +reputation)', effectKey: 'hear_them_out', nextStepIndex: 1 },
+            if (step === 0) return { title: def.title, icon: def.icon, text: '{npcName} approaches you in {townName} with a matter that touches on rank and privilege. Whether it\'s a petition, a proposal, or a veiled power play, how you respond will shape how this town sees you. You can hear them out, demand something for your time, or dismiss the matter entirely.', choices: [
+                { id: 'hear_them_out', label: 'Hear {npcName} out seriously (-energy, +reputation)', effectKey: 'hear_them_out', nextStepIndex: 1 },
                 { id: 'exact_toll', label: 'Demand tribute for your attention (+gold, -reputation)', effectKey: 'exact_toll', nextStepIndex: 1 },
-                { id: 'brush_aside', label: 'Dismiss them without a word (-reputation)', effectKey: 'brush_aside' }
+                { id: 'brush_aside', label: 'Dismiss the matter entirely (-reputation)', effectKey: 'brush_aside' }
             ] };
-            return { title: def.title, icon: def.icon, text: 'The petition has ripened into a public matter. Eyes across {townName} watch to see how you\'ll settle it. Mercy will strengthen your name; taking tribute will fill your coffers; closing it quietly will preserve your energy for battles that matter more.', choices: [
-                { id: 'grant_mercy', label: 'Grant mercy (+strong reputation, +relationship)', effectKey: 'grant_mercy' },
+            return { title: def.title, icon: def.icon, text: 'The matter with {npcName} has become public knowledge in {townName}. People are watching to see how you handle it. Show mercy and your name will be praised; take tribute and your coffers will grow; or close the matter quietly and move on.', choices: [
+                { id: 'grant_mercy', label: 'Show mercy (+strong reputation, +relationship)', effectKey: 'grant_mercy' },
                 { id: 'take_tribute', label: 'Take tribute and close the case (+{rewardGold}g, +reputation)', effectKey: 'take_tribute' },
                 { id: 'close_case', label: 'Close it quietly — no drama, no cost (+energy)', effectKey: 'close_case' }
             ] };
