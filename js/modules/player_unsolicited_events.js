@@ -33,13 +33,13 @@
         context_chain: true,
         long_omen: true
     };
-    var FOOD_IDS = ['wheat', 'bread', 'meat', 'fish', 'vegetables', 'eggs', 'honey'];
-    var TRADE_IDS = ['bread', 'ale', 'wine', 'herbs', 'wood', 'planks', 'stone', 'bricks', 'iron', 'steel', 'tools', 'cloth', 'silk', 'wool', 'dye', 'jewelry', 'bandages', 'rope', 'candles', 'soap', 'glass', 'paper', 'ink', 'spices', 'tobacco', 'cotton', 'linen', 'fur'];
+    var FOOD_IDS = ['wheat', 'bread', 'meat', 'fish', 'vegetables', 'eggs', 'honey', 'poultry', 'grapes'];
+    var TRADE_IDS = ['bread', 'ale', 'wine', 'herbs', 'wood', 'planks', 'stone', 'bricks', 'iron', 'steel', 'tools', 'cloth', 'silk', 'wool', 'jewelry', 'bandages', 'rope', 'leather', 'hemp', 'hide', 'charcoal', 'perfume', 'pearls', 'furniture', 'saddles'];
     var WAR_IDS = ['swords', 'armor', 'bows', 'arrows', 'bandages', 'horses', 'iron', 'steel'];
-    var LUXURY_IDS = ['wine', 'silk', 'dye', 'jewelry', 'spices', 'tobacco', 'glass', 'ink'];
-    var CRAFT_IDS = ['wood', 'planks', 'stone', 'bricks', 'clay', 'iron_ore', 'iron', 'steel', 'tools', 'leather', 'cloth', 'wool', 'rope', 'candles', 'paper'];
+    var LUXURY_IDS = ['wine', 'silk', 'jewelry', 'perfume', 'fine_clothes', 'tapestry', 'gold_goblet', 'pearl_jewelry', 'pearls'];
+    var CRAFT_IDS = ['wood', 'planks', 'stone', 'bricks', 'clay', 'iron_ore', 'iron', 'steel', 'tools', 'leather', 'cloth', 'wool', 'rope', 'hemp', 'charcoal', 'hide'];
     var RESOURCE_NAMES = {
-        wheat: 'wheat', bread: 'bread', meat: 'meat', fish: 'fish', vegetables: 'vegetables', eggs: 'eggs', honey: 'honey', salt: 'salt', ale: 'ale', wine: 'wine', herbs: 'herbs', wood: 'wood', planks: 'planks', stone: 'stone', bricks: 'bricks', clay: 'clay', iron_ore: 'iron ore', iron: 'iron', steel: 'steel', tools: 'tools', leather: 'leather', cloth: 'cloth', silk: 'silk', wool: 'wool', dye: 'dye', jewelry: 'jewelry', swords: 'swords', armor: 'armor', bows: 'bows', arrows: 'arrows', bandages: 'bandages', horses: 'horses', rope: 'rope', candles: 'candles', soap: 'soap', pottery_clay: 'pottery clay', glass: 'glass', paper: 'paper', ink: 'ink', spices: 'spices', tobacco: 'tobacco', cotton: 'cotton', linen: 'linen', fur: 'fur'
+        wheat: 'wheat', bread: 'bread', meat: 'meat', fish: 'fish', vegetables: 'vegetables', eggs: 'eggs', honey: 'honey', salt: 'salt', ale: 'ale', wine: 'wine', herbs: 'herbs', wood: 'wood', planks: 'planks', stone: 'stone', bricks: 'bricks', clay: 'clay', iron_ore: 'iron ore', iron: 'iron', steel: 'steel', tools: 'tools', leather: 'leather', cloth: 'cloth', silk: 'silk', wool: 'wool', jewelry: 'jewelry', swords: 'swords', armor: 'armor', bows: 'bows', arrows: 'arrows', bandages: 'bandages', horses: 'horses', rope: 'rope', hemp: 'hemp', charcoal: 'charcoal', hide: 'hide', perfume: 'perfume', fine_clothes: 'fine clothes', tapestry: 'tapestry', gold_goblet: 'gold goblet', pearl_jewelry: 'pearl jewelry', pearls: 'pearls', poultry: 'poultry', grapes: 'grapes', furniture: 'furniture', saddles: 'saddles', gut_string: 'gut string'
     };
     var SPECIAL_TITLES = {
         lords_hunt: "Lord's Hunt",
@@ -289,12 +289,12 @@
         if (id.indexOf('grain') >= 0) return 'wheat';
         if (id.indexOf('silk') >= 0) return 'silk';
         if (id.indexOf('herb') >= 0) return 'herbs';
-        if (id.indexOf('spice') >= 0) return 'spices';
+        if (id.indexOf('spice') >= 0) return 'perfume';
         if (id.indexOf('wine') >= 0) return 'wine';
-        if (id.indexOf('candle') >= 0) return 'candles';
+        if (id.indexOf('candle') >= 0) return 'rope';
         if (id.indexOf('salt') >= 0) return 'salt';
         if (id.indexOf('horse') >= 0) return 'horses';
-        if (id.indexOf('paper') >= 0 || id.indexOf('scribe') >= 0) return 'paper';
+        if (id.indexOf('paper') >= 0 || id.indexOf('scribe') >= 0) return 'charcoal';
         if (id.indexOf('iron') >= 0) return 'iron';
         if (id.indexOf('tool') >= 0) return 'tools';
         if (id.indexOf('wood') >= 0 || id.indexOf('wagon') >= 0 || id.indexOf('bridge') >= 0) return 'wood';
@@ -601,7 +601,7 @@
         if (delta && pid) try { Player.modifyRelationship(pid, delta); } catch (e) {}
     }
     function _gold(delta) {
-        if (delta) try { Player.modifyGold(delta); } catch (e) {}
+        if (delta) try { Player.modifyGold(delta, 'unsolicited_event'); } catch (e) {}
     }
     function _energy(delta) {
         if (delta) try { Player.modifyEnergy(delta); } catch (e) {}
@@ -732,7 +732,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -856,7 +856,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -980,7 +980,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1104,7 +1104,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1228,7 +1228,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1352,7 +1352,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1476,7 +1476,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1600,7 +1600,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1724,7 +1724,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1848,7 +1848,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -1972,7 +1972,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2096,7 +2096,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2220,7 +2220,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2344,7 +2344,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2468,7 +2468,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2592,7 +2592,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2716,7 +2716,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2840,7 +2840,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -2964,7 +2964,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3088,7 +3088,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3212,7 +3212,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3336,7 +3336,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3460,7 +3460,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3584,7 +3584,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3708,7 +3708,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3832,7 +3832,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -3956,7 +3956,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4080,7 +4080,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4204,7 +4204,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4328,7 +4328,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4452,7 +4452,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4576,7 +4576,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4700,7 +4700,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4824,7 +4824,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -4948,7 +4948,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5072,7 +5072,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5196,7 +5196,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5320,7 +5320,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5444,7 +5444,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5568,7 +5568,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5692,7 +5692,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5816,7 +5816,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -5940,7 +5940,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6064,7 +6064,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6188,7 +6188,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6312,7 +6312,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6436,7 +6436,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6560,7 +6560,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6684,7 +6684,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6808,7 +6808,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -6932,7 +6932,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7056,7 +7056,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7180,7 +7180,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7304,7 +7304,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7428,7 +7428,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7552,7 +7552,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7676,7 +7676,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7800,7 +7800,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -7924,7 +7924,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8048,7 +8048,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8172,7 +8172,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8296,7 +8296,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8420,7 +8420,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8544,7 +8544,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8668,7 +8668,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8792,7 +8792,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -8916,7 +8916,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9040,7 +9040,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9164,7 +9164,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9288,7 +9288,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9412,7 +9412,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9536,7 +9536,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9660,7 +9660,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9784,7 +9784,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -9908,7 +9908,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10032,7 +10032,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10156,7 +10156,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10280,7 +10280,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10404,7 +10404,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10528,7 +10528,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10652,7 +10652,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10776,7 +10776,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -10900,7 +10900,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11024,7 +11024,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11148,7 +11148,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11272,7 +11272,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11396,7 +11396,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11520,7 +11520,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11644,7 +11644,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11768,7 +11768,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -11892,7 +11892,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12016,7 +12016,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12140,7 +12140,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12264,7 +12264,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12388,7 +12388,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12512,7 +12512,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12636,7 +12636,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12760,7 +12760,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -12884,7 +12884,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13008,7 +13008,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13132,7 +13132,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13256,7 +13256,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13380,7 +13380,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13504,7 +13504,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13628,7 +13628,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13752,7 +13752,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -13876,7 +13876,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14000,7 +14000,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14124,7 +14124,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14248,7 +14248,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14372,7 +14372,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14496,7 +14496,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14620,7 +14620,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14744,7 +14744,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14868,7 +14868,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -14992,7 +14992,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15116,7 +15116,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15240,7 +15240,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15364,7 +15364,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15488,7 +15488,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15612,7 +15612,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15736,7 +15736,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15860,7 +15860,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -15984,7 +15984,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16108,7 +16108,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16232,7 +16232,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16356,7 +16356,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16480,7 +16480,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16604,7 +16604,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16728,7 +16728,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16852,7 +16852,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -16976,7 +16976,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17100,7 +17100,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17224,7 +17224,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17348,7 +17348,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17472,7 +17472,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17596,7 +17596,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17720,7 +17720,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17844,7 +17844,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -17968,7 +17968,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18092,7 +18092,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18216,7 +18216,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18340,7 +18340,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18464,7 +18464,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18588,7 +18588,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18712,7 +18712,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18836,7 +18836,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -18960,7 +18960,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19084,7 +19084,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19208,7 +19208,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19332,7 +19332,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19456,7 +19456,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19580,7 +19580,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19704,7 +19704,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19828,7 +19828,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -19952,7 +19952,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20076,7 +20076,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20200,7 +20200,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20324,7 +20324,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20448,7 +20448,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20572,7 +20572,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20696,7 +20696,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20820,7 +20820,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -20944,7 +20944,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21068,7 +21068,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21192,7 +21192,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21316,7 +21316,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21440,7 +21440,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21564,7 +21564,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21688,7 +21688,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21812,7 +21812,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -21936,7 +21936,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22060,7 +22060,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22184,7 +22184,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22308,7 +22308,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22432,7 +22432,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22556,7 +22556,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22680,7 +22680,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22804,7 +22804,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -22928,7 +22928,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23052,7 +23052,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23176,7 +23176,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23300,7 +23300,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23424,7 +23424,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23548,7 +23548,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23672,7 +23672,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23796,7 +23796,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -23920,7 +23920,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24044,7 +24044,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24168,7 +24168,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24292,7 +24292,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24416,7 +24416,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24540,7 +24540,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24664,7 +24664,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24788,7 +24788,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -24912,7 +24912,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25036,7 +25036,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25160,7 +25160,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25284,7 +25284,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25408,7 +25408,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25532,7 +25532,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25656,7 +25656,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25780,7 +25780,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -25904,7 +25904,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -26028,7 +26028,7 @@
                     case 'reinvest': _gold(-params.costGold); _rep(kid, params.repAmount + 2); break;
                     case 'mark_secret': _rel(pid, Math.max(1, Math.floor(params.relAmount / 2))); _rep(kid, Math.max(1, Math.floor(params.repAmount / 2))); break;
                 }
-                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'buy' || effectKey === 'unload' || effectKey === 'take_reward' || effectKey === 'collect_prize')) {
+                if ((def.category === 'trade' || def.category === 'context' || def.category === 'skill') && (effectKey === 'take_reward' || effectKey === 'collect_prize')) {
                     _applyInventory(params.resourceId, Math.max(1, Math.floor(params.itemQty / 2)));
                 }
             }
@@ -26124,7 +26124,55 @@
     }
 
     function tryGenerateDailyUnsolicitedEvent() {
-        return _tryGenerate(DAILY_CHANCE);
+        var ch = window._godUeBoost ? 0.50 : DAILY_CHANCE;
+        return _tryGenerate(ch);
+    }
+    // God mode: force-fire an event, bypassing cooldowns and RNG
+    function _godForceUnsolicitedEvent() {
+        var ctx, defs, pool, def, instance;
+        if (!_ensureState()) return { success: false, reason: 'no player state' };
+        if (player._pendingUnsolicitedEvent) return { success: false, reason: 'pending event already exists (dismiss it first)' };
+        ctx = _buildContext();
+        if (!ctx.rng) return { success: false, reason: 'no RNG available' };
+        if (!ctx.town) return { success: false, reason: 'player not in a town (townId=' + (player.townId || 'null') + ')' };
+        defs = _eligibleDefs(ctx);
+        if (!defs.length) return { success: false, reason: 'no eligible events (all on cooldown or conditions not met)' };
+        pool = defs.slice();
+        while (pool.length) {
+            def = _weightedPick(pool, ctx.rng);
+            if (!def) break;
+            try { instance = def.generate(ctx); } catch (e) { instance = null; }
+            if (instance) {
+                _setTriggered(def, instance, ctx.day);
+                return { success: true, reason: 'fired: ' + def.title + ' (' + def.id + ')' };
+            }
+            pool.splice(pool.indexOf(def), 1);
+        }
+        return { success: false, reason: defs.length + ' eligible defs but all generate() returned null' };
+    }
+    // God mode: diagnostic info
+    function _godDiagUnsolicitedEvents() {
+        if (!_ensureState()) return { state: false };
+        var ctx = _buildContext();
+        var suppressed = _suppressed();
+        var hasPending = !!player._pendingUnsolicitedEvent;
+        var hasTown = !!(ctx && ctx.town);
+        var hasRng = !!(ctx && ctx.rng);
+        var day = _getDay();
+        var cooldownOk = (day - player._lastUnsolicitedEventDay) >= GLOBAL_COOLDOWN_DAYS;
+        var eligible = 0;
+        try { eligible = _eligibleDefs(ctx).length; } catch(e) {}
+        return {
+            state: true, day: day, suppressed: suppressed, hasPending: hasPending,
+            hasTown: hasTown, townId: player.townId || null,
+            hasRng: hasRng, cooldownOk: cooldownOk,
+            lastEventDay: player._lastUnsolicitedEventDay,
+            globalCooldown: GLOBAL_COOLDOWN_DAYS,
+            eligibleDefs: eligible,
+            totalDefs: EVENT_DEFS.length,
+            activeMulti: (player._activeUnsolicitedEvents || []).length,
+            boosted: !!window._godUeBoost
+        };
     }
     function tryGenerateEntryUnsolicitedEvent(townId) {
         var day;
@@ -26317,4 +26365,6 @@
     Player.handleUnsolicitedEventChoice = handleUnsolicitedEventChoice;
     Player.getActiveUnsolicitedEvents = getActiveUnsolicitedEvents;
     Player.dismissPendingUnsolicitedEvent = dismissPendingUnsolicitedEvent;
+    Player._godForceUnsolicitedEvent = _godForceUnsolicitedEvent;
+    Player._godDiagUnsolicitedEvents = _godDiagUnsolicitedEvents;
 })(window.Player);

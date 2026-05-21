@@ -744,6 +744,8 @@ window.UI = (function () {
         registerAction('_godModeSetRank', function() { UI._godModeSetRank(); });
         registerAction('_handler_9', function(b) { window._godBanditBoost=!window._godBanditBoost; b.textContent=window._godBanditBoost?'☠️ Bandits 95% ON':'☠️ Bandits 95% OFF'; b.style.background=window._godBanditBoost?'#8b4500':'#16305d'; b.style.borderColor=window._godBanditBoost?'#f84':'#48a'; UI.toast(window._godBanditBoost?'☠️ 95% daily bandit/pirate encounters!':'Bandit/pirate encounters normal', window._godBanditBoost?'warning':'info') });
         registerAction('_godToggleInvincible', function(b) { window._godInvincible=!window._godInvincible; b.textContent=window._godInvincible?'🛡️ Invincible ON':'🛡️ Invincible OFF'; b.style.background=window._godInvincible?'#8b0000':'#16305d'; b.style.borderColor=window._godInvincible?'#f44':'#48a'; UI.toast(window._godInvincible?'🛡️ INVINCIBLE — Cannot die or lose':'Invincibility OFF', window._godInvincible?'success':'info') });
+        registerAction('_godToggleUeBoost', function() { window._godUeBoost=!window._godUeBoost; UI.toast(window._godUeBoost?'🎲 Unsolicited events boosted to 50%/day':'🎲 Events back to normal 2%/day', window._godUeBoost?'success':'info'); });
+        registerAction('_godForceUe', function() { var r=Player._godForceUnsolicitedEvent?Player._godForceUnsolicitedEvent():{success:false,reason:'function not found'}; UI.toast('🎲 '+r.reason, r.success?'success':'warning'); var d=Player._godDiagUnsolicitedEvents?Player._godDiagUnsolicitedEvents():{}; console.log('[GodMode] UE diag:', d); });
         registerAction('_godSetGold', function() { var v=document.getElementById('gm-set-gold').value; if(v){var g=parseInt(v,10); if(!isNaN(g)&&isFinite(g)){Player.state.gold=Math.max(0,g); UI.toast('💰 Gold set to '+g,'success');}else{UI.toast('Invalid number','error');}} });
         registerAction('_handler_10', function() { Player.state.traveling=false;Player.state.travelProgress=0;Player.state.travelDestination=null;Player.state.travelRoute=null;Player.state.travelOrigin=null;Player.state.travelPaid=0;Player.state.travelMode=null;Player.state.travelBySea=false;Player.state.travelOffroad=false;Player.state.travelWaypoints=null;Player.state.travelDestCoords=null;Player.state.travelRestBonus=0;Player.state.travelTotalDist=0;UI.toast('🏠 Travel cancelled','success') });
         registerAction('_handler_11', function() { if(Player.state.jailedUntilDay){Player.state.jailedUntilDay=0;UI.toast('🔓 Freed from jail','success');}else{UI.toast('Not in jail','info');} });
@@ -1981,8 +1983,9 @@ window.UI = (function () {
             if (typeof Player === 'undefined' || !Player.getPendingUnsolicitedEvent) return;
             var evt = Player.getPendingUnsolicitedEvent();
             if (!evt) { _lastShownUnsolicitedEventId = null; return; }
-            if (evt.instanceId === _lastShownUnsolicitedEventId) return;
-            _lastShownUnsolicitedEventId = evt.instanceId;
+            var evtKey = evt.instanceId + '_' + (evt.stepIndex || 0);
+            if (evtKey === _lastShownUnsolicitedEventId) return;
+            _lastShownUnsolicitedEventId = evtKey;
             openUnsolicitedEventPopup(evt);
         } catch(e) {}
     }
@@ -19106,6 +19109,8 @@ window.UI = (function () {
         // Invincibility toggle
         html += '<br><button id="gm-invincible-btn" data-action="_godToggleInvincible" style="margin:2px; padding:3px 8px; background:' + (window._godInvincible ? '#8b0000' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godInvincible ? '#f44' : '#48a') + '; cursor:pointer;">' + (window._godInvincible ? '🛡️ Invincible ON' : '🛡️ Invincible OFF') + '</button> ';
         html += '<button id="gm-bandit-boost-btn" data-action="_handler_9" style="margin:2px; padding:3px 8px; background:' + (window._godBanditBoost ? '#8b4500' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godBanditBoost ? '#f84' : '#48a') + '; cursor:pointer;">' + (window._godBanditBoost ? '☠️ Bandits 95% ON' : '☠️ Bandits 95% OFF') + '</button> ';
+        html += '<button data-action="_godToggleUeBoost" style="margin:2px; padding:3px 8px; background:' + (window._godUeBoost ? '#8b4500' : '#16305d') + '; color:#fff; border:1px solid ' + (window._godUeBoost ? '#f84' : '#48a') + '; cursor:pointer;">' + (window._godUeBoost ? '🎲 Events 50% ON' : '🎲 Events 50% OFF') + '</button> ';
+        html += '<button data-action="_godForceUe" style="margin:2px; padding:3px 8px; background:#4a1650; color:#fff; border:1px solid #a4a; cursor:pointer;">🎲 Force Event</button> ';
 
         // Set rank (pre-select current rank)
         var _gmCurrentRank = 0;
