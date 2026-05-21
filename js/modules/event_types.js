@@ -1940,6 +1940,405 @@
             }
         }
     });
+
+    // ──────────────────────────────────────────
+    //  HEALTH, VITALS & ECONOMY EVENTS
+    // ──────────────────────────────────────────
+
+    registerBatch({
+        ILLNESS_SPREAD_ROAD: {
+            category: 'npc_activity',
+            subcategory: 'health',
+            hidden: true,
+            render: function(p) {
+                return '🦠 ' + p.illnessName + ' has spread along the road from ' + p.fromTownName + ' to ' + p.toTownName + '!';
+            }
+        },
+        ILLNESS_SPREAD_SEA: {
+            category: 'npc_activity',
+            subcategory: 'health',
+            hidden: true,
+            render: function(p) {
+                return '🦠 ' + p.illnessName + ' arrived by ship to ' + p.toTownName + ' from ' + p.fromTownName + '!';
+            }
+        },
+        KINGDOM_BUILT_HERB_GARDEN: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: true,
+            render: function(p) {
+                return '🌿 ' + p.kingdomName + ' built an herb garden in ' + p.townName + '.';
+            }
+        },
+        KINGDOM_BUILT_APOTHECARY: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: true,
+            render: function(p) {
+                return '⚗️ ' + p.kingdomName + ' built an apothecary in ' + p.townName + '.';
+            }
+        },
+        KINGDOM_BUILT_BANDAGE_WORKSHOP: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: true,
+            render: function(p) {
+                return '🩹 ' + p.kingdomName + ' built a bandage workshop in ' + p.townName + '.';
+            }
+        },
+        KINGDOM_BUILT_ADVANCED_APOTHECARY: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: true,
+            render: function(p) {
+                return '🧬 ' + p.kingdomName + ' built an advanced apothecary in ' + p.townName + '.';
+            }
+        },
+        EM_SUPPLY_SHIPMENT_ARRANGED: {
+            category: 'local_town',
+            subcategory: 'economy',
+            hidden: true,
+            render: function(p) {
+                return '🚛 ' + (p.emFirstName || 'A merchant') + ' has arranged a shipment of ' + p.qty + ' ' + p.inputId + ' from ' + p.fromTownName + ' to ' + p.toTownName + '.';
+            }
+        },
+        EM_DEAL_DELIVERED_PERSONAL: {
+            category: 'npc_activity',
+            subcategory: 'deals',
+            hidden: true,
+            render: function(p) {
+                return (p.emName || 'Elite Merchant') + ' delivered ' + p.qty + ' ' + p.good + ' personally.';
+            }
+        },
+        EM_DEAL_DISPATCHED_CARAVAN: {
+            category: 'npc_activity',
+            subcategory: 'deals',
+            hidden: true,
+            render: function(p) {
+                return (p.emName || 'Elite Merchant') + ' dispatched a caravan with ' + p.qty + ' ' + p.good + '.';
+            }
+        },
+        EM_DEAL_CANCELLED_BY_EM: {
+            category: 'npc_activity',
+            subcategory: 'deals',
+            hidden: true,
+            render: function(p) {
+                return (p.emName || 'Elite Merchant') + ' cancelled your trade deal — they can no longer fulfill it.';
+            }
+        }
+    });
+
+    registerBatch({
+        NPC_NOTABLE_ILLNESS_DEATH: {
+            category: 'npc_activity',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💀 ' + (p.roleTag || '') + p.firstName + ' ' + (p.lastName || '') + ' of ' + p.townName + ' died of ' + p.illnessName + '.';
+            }
+        },
+        NPC_NOTABLE_INJURY_DEATH: {
+            category: 'npc_activity',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💀 ' + (p.roleTag || '') + p.firstName + ' ' + (p.lastName || '') + ' of ' + p.townName + ' died from ' + p.injuryName + '.';
+            }
+        },
+        KINGDOM_HEALTH_MEASURES_LIFTED: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '✅ ' + p.kingdomName + ' lifted health measures in ' + p.townName + ' — sickness has subsided.';
+            }
+        },
+        KINGDOM_HEALTH_POLICY_RELAXED_TO_STANDARD: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '📉 ' + p.kingdomName + ' relaxed martial quarantine to standard quarantine in ' + p.townName + '.';
+            }
+        },
+        KINGDOM_HEALTH_POLICY_CONTINUE_MEDICAL_SUPPORT: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '📉 ' + p.kingdomName + ' lifted quarantine in ' + p.townName + ', continuing medical support.';
+            }
+        },
+        KINGDOM_PORT_CLOSED_HEALTH: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '⚓ ' + p.kingdomName + ' closed the port in ' + p.townName + ' to prevent plague spread by sea.';
+            }
+        },
+        KINGDOM_HEALTH_POLICY_ENACTED: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return p.policyLabel + ' enacted in ' + p.townName + ' by ' + p.kingdomName + '.';
+            }
+        },
+        KINGDOM_HEALTH_MEASURES_UNAFFORDABLE: {
+            category: resolveKingdomCategory,
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💸 ' + p.kingdomName + ' can no longer afford health measures — policies lifted.';
+            }
+        },
+        PLAYER_PLAGUE_KARMA_INFECTION: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '🦠 ' + (p.playerFullName || 'The player') + ' has fallen ill with plague — possibly the very plague they spread.';
+            }
+        },
+        PLAYER_DIED_STARVATION: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💀 ' + p.playerFullName + ' has died of starvation.';
+            }
+        },
+        PLAYER_DIED_VITAL_CAUSE: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💀 ' + p.playerFullName + ' died from ' + p.cause + '.';
+            }
+        },
+        PLAYER_COLLAPSED_EXHAUSTION: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' collapsed from exhaustion!';
+            }
+        },
+        PLAYER_EXHAUSTED_WARNING: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            template: '⚠️ You are exhausted! Click 🏕️ Camp to rest before you collapse.'
+        },
+        PLAYER_AUTO_REST: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💤 Auto-rest: ' + p.restName + (p.cost > 0 ? ' (' + p.cost + 'g)' : ' (free)');
+            }
+        },
+        PLAYER_RESTED_ENERGY: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' ' + p.restLabel + ' (' + p.actualTicks + ' ticks). Energy restored.';
+            }
+        },
+        PLAYER_DIED_DEHYDRATION: {
+            category: 'my_actions',
+            subcategory: 'health',
+            hidden: false,
+            render: function(p) {
+                return '💀 ' + p.playerFullName + ' has died of dehydration.';
+            }
+        },
+        SMUGGLING_IMMUNITY_CAUGHT: {
+            category: 'my_actions',
+            subcategory: 'smuggling',
+            hidden: false,
+            render: function(p) {
+                return '🔓 ' + p.playerFullName + ' was caught smuggling but is immune as ' + p.scopeLabel + '. (-' + p.repLoss + ' rep)';
+            }
+        },
+        SMUGGLING_TRIAL_BY_COMBAT_WON: {
+            category: 'my_actions',
+            subcategory: 'smuggling',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' won Trial by Combat and escaped punishment in ' + p.townName + '!';
+            }
+        },
+        SMUGGLING_CHARGES_DROPPED: {
+            category: 'my_actions',
+            subcategory: 'smuggling',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' was almost caught smuggling, but charges were dropped!';
+            }
+        },
+        SMUGGLING_BLOOD_PRICE_PAID: {
+            category: 'my_actions',
+            subcategory: 'smuggling',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' paid the Blood Price (' + p.bloodFine + 'g) to avoid jail in ' + p.townName + '.';
+            }
+        },
+        SMUGGLING_CAUGHT_JAILED: {
+            category: 'my_actions',
+            subcategory: 'smuggling',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' was caught smuggling ' + p.goodName + ' in ' + p.townName + '! Fined ' + p.fineAmount + 'g and jailed for ' + p.jailDays + ' days.';
+            }
+        },
+        SMUGGLING_SUCCESS: {
+            category: 'my_actions',
+            subcategory: 'smuggling',
+            hidden: false,
+            render: function(p) {
+                return p.playerFullName + ' successfully smuggled ' + p.goodName + ' in ' + p.townName + '.';
+            }
+        },
+        OUTPOST_MAINTENANCE_UNAFFORDABLE: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '⚠️ You cannot afford ' + p.dailyCost + 'g maintenance for outpost "' + p.townName + '"!';
+            }
+        },
+        OUTPOST_ABANDONED_MAINTENANCE: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '💀 Your outpost "' + p.townName + '" has been abandoned due to ' + p.daysSince + ' days without maintenance!';
+            }
+        },
+        OUTPOST_WALLS_UPGRADED: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '🏰 ' + p.townName + ' walls upgraded to level ' + p.nextLevel + '!';
+            }
+        },
+        OUTPOST_DOCKS_BUILT: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '⚓ Docks built at ' + p.townName + '! The outpost is now a port.';
+            }
+        },
+        OUTPOST_RECRUIT_SUCCESS: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '🎉 ' + p.npcFirstName + ' ' + p.npcLastName + ' has agreed to move to your outpost "' + p.townName + '"!';
+            }
+        },
+        OUTPOST_RECRUIT_DECLINED: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '😔 ' + p.npcFirstName + ' ' + p.npcLastName + ' declined to move to outpost "' + p.townName + '".';
+            }
+        },
+        OUTPOST_RECOGNIZED_VILLAGE: {
+            category: 'my_business',
+            subcategory: 'outpost',
+            hidden: false,
+            render: function(p) {
+                return '🏘️ Your outpost "' + p.townName + '" has been officially recognized as a village by the crown! The king paid you ' + p.payment + 'g.';
+            }
+        },
+        EM_DEAL_CANCELLED_BUILDING_LOST: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return 'Trade deal with ' + (p.emName || 'Elite Merchant') + ' cancelled — a deal building was lost or changed ownership.';
+            }
+        },
+        EM_DEAL_CANCELLED_MERCHANT_UNAVAILABLE: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            template: 'Trade deal cancelled — merchant no longer available.'
+        },
+        EM_DEAL_FULFILLED: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return (p.emName || 'Elite Merchant') + ' deal fulfilled — next delivery in ' + p.interval + ' days.';
+            }
+        },
+        EM_DEAL_BROKEN_BY_PLAYER_PENALTY: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return 'You failed to deliver ' + p.playerQty + ' ' + p.playerGood + ' to ' + (p.emName || 'the merchant') + '. Deal broken! You paid ' + p.penalty + ' gold as penalty.';
+            }
+        },
+        EM_DEAL_BROKEN_BY_EM: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return (p.emName || 'Elite Merchant') + ' repeatedly failed to deliver. Deal broken.';
+            }
+        },
+        EM_DEAL_MISSED_CONTINUES: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return (p.emName || 'Elite Merchant') + ' missed a delivery but the deal continues.';
+            }
+        },
+        EM_DEAL_CANCELLED_NON_DELIVERY: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return 'Trade deal with ' + (p.emName || 'Elite Merchant') + ' cancelled due to repeated non-delivery.';
+            }
+        },
+        EM_DEAL_PLAYER_DELIVERED: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return 'You delivered ' + p.qty + ' ' + p.good + ' to ' + (p.emName || 'the merchant') + '.';
+            }
+        },
+        EM_DEAL_ACCEPTED: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return 'You struck a trade deal with ' + (p.emName || 'an Elite Merchant') + ': you provide ' + p.playerQty + ' ' + p.playerGood + ' for ' + p.emQty + ' ' + p.emGood + ' every ' + p.interval + ' days.';
+            }
+        },
+        EM_DEAL_CANCELLED_BY_PLAYER: {
+            category: 'my_business',
+            subcategory: 'deals',
+            hidden: false,
+            render: function(p) {
+                return 'You cancelled your trade deal with ' + p.emName + '. They are displeased.';
+            }
+        }
+    });
+
     // ══════════════════════════════════════════
     //  EMIT FUNCTION
     // ══════════════════════════════════════════

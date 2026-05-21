@@ -84,7 +84,13 @@
                 deductGoodsFromPools(resourceId, qty);
                 player.stats.tradesCompleted++;
                 var scopeLabel = smugImmunity.scope === 'kingdom' ? 'Royal Advisor' : 'Lord of this town';
-                Engine.logEvent('🔓 ' + player.fullName + ' was caught smuggling but is immune as ' + scopeLabel + '. (-' + smugRepLoss + ' rep)', null, 'my_actions');
+                EventTypes.emit('SMUGGLING_IMMUNITY_CAUGHT', {
+                    playerFullName: player.fullName,
+                    scopeLabel: scopeLabel,
+                    repLoss: smugRepLoss,
+                    townId: town.id,
+                    kingdomId: kingdom.id
+                });
                 return { success: true, message: 'Caught smuggling, but your ' + scopeLabel + ' status grants immunity! (-' + smugRepLoss + ' rep). Sold for ' + normalRevenue + 'g.', totalRevenue: normalRevenue, immune: true };
             }
 
@@ -94,7 +100,12 @@
                 if (player.weapon) combatChance += (typeof player.weapon === 'object') ? (player.weapon.combatBonus * 0.5) : 0.10;
                 if (hasSkill('combat_proficiency')) combatChance += 0.10;
                 if (rng.chance(combatChance)) {
-                    Engine.logEvent(`${player.fullName} won Trial by Combat and escaped punishment in ${town.name}!`, null, 'my_actions');
+                    EventTypes.emit('SMUGGLING_TRIAL_BY_COMBAT_WON', {
+                        playerFullName: player.fullName,
+                        townName: town.name,
+                        townId: town.id,
+                        kingdomId: kingdom.id
+                    });
                     grantXP(XP_REWARDS.COMBAT_SURVIVE, 'trial_combat');
                     const normalRevenue = Math.floor(basePrice * qty);
                     player.gold += normalRevenue;
@@ -107,7 +118,11 @@
 
             // But check untouchable skill
             if (hasSkill('untouchable') && rng.chance(0.25)) {
-                Engine.logEvent(`${player.fullName} was almost caught smuggling, but charges were dropped!`, null, 'my_actions');
+                EventTypes.emit('SMUGGLING_CHARGES_DROPPED', {
+                    playerFullName: player.fullName,
+                    townId: town.id,
+                    kingdomId: kingdom.id
+                });
                 // Still sell at normal price
                 const normalRevenue = Math.floor(basePrice * qty);
                 player.gold += normalRevenue;
@@ -130,7 +145,13 @@
                 player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - _smugRepPenalty);
                 player.achievementStats.smuggleStreak = 0;
                 unlockAchievement('caught_ach');
-                Engine.logEvent(`${player.fullName} paid the Blood Price (${bloodFine}g) to avoid jail in ${town.name}.`, null, 'my_actions');
+                EventTypes.emit('SMUGGLING_BLOOD_PRICE_PAID', {
+                    playerFullName: player.fullName,
+                    bloodFine: bloodFine,
+                    townName: town.name,
+                    townId: town.id,
+                    kingdomId: kingdom.id
+                });
                 return { success: false, message: `Caught! Blood Price paid: ${bloodFine}g. No jail time.`, caught: true };
             }
 
@@ -144,7 +165,15 @@
             player.achievementStats.smuggleStreak = 0;
             unlockAchievement('caught_ach');
             unlockAchievement('jailbird');
-            Engine.logEvent(`${player.fullName} was caught smuggling ${findResource(resourceId)?.name || resourceId} in ${town.name}! Fined ${fineAmount}g and jailed for ${jailDays} days.`, null, 'my_actions');
+            EventTypes.emit('SMUGGLING_CAUGHT_JAILED', {
+                playerFullName: player.fullName,
+                goodName: (findResource(resourceId) && findResource(resourceId).name) || resourceId,
+                townName: town.name,
+                fineAmount: fineAmount,
+                jailDays: jailDays,
+                townId: town.id,
+                kingdomId: kingdom.id
+            });
             return { success: false, message: `Caught smuggling! Fined ${fineAmount}g, goods confiscated, jailed ${jailDays} days.`, caught: true };
         } else {
             // Successful smuggle - black market premium
@@ -171,7 +200,13 @@
             // Double agent check
             if (isPlayerCitizenOf(kingdom.id)) unlockAchievement('double_agent');
             addTradeLog(resourceId, qty, smugglePrice, town.id, 'smuggle');
-            Engine.logEvent(`${player.fullName} successfully smuggled ${findResource(resourceId)?.name || resourceId} in ${town.name}.`, null, 'my_actions');
+            EventTypes.emit('SMUGGLING_SUCCESS', {
+                playerFullName: player.fullName,
+                goodName: (findResource(resourceId) && findResource(resourceId).name) || resourceId,
+                townName: town.name,
+                townId: town.id,
+                kingdomId: kingdom.id
+            });
             return { success: true, message: `Smuggled ${qty} ${findResource(resourceId)?.name || resourceId} for ${totalRevenue}g (black market)!`, totalRevenue, smuggled: true };
         }
     }

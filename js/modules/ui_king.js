@@ -496,7 +496,15 @@
         html += '<div style="background:rgba(0,0,0,0.1);padding:6px;border-radius:4px;margin-bottom:4px;">';
         html += '<div style="font-size:0.75rem;color:#ddd;margin-bottom:4px;">🚫 Ban/Unban Goods</div>';
         var _bannedGoods = (kingdom.laws && kingdom.laws.bannedGoods) || [];
-        var _tradeGoods = (typeof CONFIG !== 'undefined' && CONFIG.TRADE_GOODS) ? CONFIG.TRADE_GOODS : [];
+        var _tradeGoods = [];
+        // v9p33river395: build goods list from RESOURCE_TYPES
+        if (typeof RESOURCE_TYPES !== 'undefined') {
+            for (var _rtk in RESOURCE_TYPES) {
+                if (RESOURCE_TYPES.hasOwnProperty(_rtk) && RESOURCE_TYPES[_rtk].id) {
+                    _tradeGoods.push(RESOURCE_TYPES[_rtk]);
+                }
+            }
+        }
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
         html += '<select id="_roBanGood" style="font-size:0.65rem;padding:2px 4px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:3px;max-width:120px;">';
         if (_tradeGoods.length > 0) {

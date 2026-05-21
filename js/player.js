@@ -5004,11 +5004,11 @@
     function _getOffSeaPirateChance(originTownId) {
         var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
         var portRoutes = seaRoutes.filter(function(r) { return r.fromTownId === originTownId || r.toTownId === originTownId; });
-        if (portRoutes.length === 0) return (CONFIG.SEA_ENCOUNTER_BASE_CHANCE || 0.08) * (CONFIG.OFFSEA_PIRATE_MODIFIER || 1.10);
+        if (portRoutes.length === 0) return (CONFIG.ENCOUNTER_SEA_BASE_CHANCE || 0.08) * (CONFIG.OFFSEA_PIRATE_MODIFIER || 1.10);
         var totalChance = 0;
         for (var i = 0; i < portRoutes.length; i++) {
             // Use route safety — unsafe routes have higher pirate chance
-            totalChance += portRoutes[i].safe === false ? 0.15 : (CONFIG.SEA_ENCOUNTER_BASE_CHANCE || 0.08);
+            totalChance += portRoutes[i].safe === false ? 0.15 : (CONFIG.ENCOUNTER_SEA_BASE_CHANCE || 0.08);
         }
         var avgChance = totalChance / portRoutes.length;
         return avgChance * (CONFIG.OFFSEA_PIRATE_MODIFIER || 1.10);
@@ -14282,7 +14282,7 @@
                 var aidGold = _aidRng.randInt(50, 150);
                 player.gold += aidGold;
                 // Also give some resources
-                var aidResources = ['grain', 'bread', 'tools'];
+                var aidResources = ['wheat', 'bread', 'tools'];
                 var aidRes = aidResources[Math.floor(Math.random() * aidResources.length)];
                 var aidQty = _aidRng.randInt(3, 8);
                 player.inventory[aidRes] = (player.inventory[aidRes] || 0) + aidQty;
@@ -25343,13 +25343,13 @@
         if (type === 'ambitious') {
             options = ['jewelry', 'silk', 'fine_clothes', 'wine', 'tapestry', 'perfume', 'pearls', 'furniture'];
         } else if (type === 'frugal') {
-            options = ['grain', 'tools', 'cloth', 'planks', 'iron_ingot', 'rope', 'leather', 'bread'];
+            options = ['wheat', 'tools', 'cloth', 'planks', 'iron', 'rope', 'leather', 'bread'];
         } else if (type === 'intellectual') {
             options = ['pearls', 'perfume', 'silk', 'jewelry', 'wine', 'harp'];
         } else if (type === 'charitable') {
-            options = ['grain', 'bread', 'meat', 'fish', 'clothes', 'cloth', 'ale'];
+            options = ['wheat', 'bread', 'meat', 'fish', 'clothes', 'cloth', 'ale'];
         } else {
-            options = ['grain', 'tools', 'cloth', 'wine', 'jewelry', 'iron_ingot'];
+            options = ['wheat', 'tools', 'cloth', 'wine', 'jewelry', 'iron'];
         }
         return options[rng ? Math.floor(rng.random() * options.length) : 0];
     }
@@ -32303,6 +32303,7 @@
         if (!npc || !npc.alive) return { signed: false, chance: 0, message: 'Person not found or not alive.' };
         if (npc.townId !== player.townId) return { signed: false, chance: 0, message: 'That person is not in your current town.' };
         if (npc.kingdomId !== petition.kingdomId) return { signed: false, chance: 0, message: 'That person is not a citizen of the petition\'s kingdom.' };
+        if (!petition.signatures) petition.signatures = [];
         if (petition.signatures.includes(npcId)) return { signed: false, chance: 0, message: npc.firstName + ' has already signed this petition.' };
 
         // Per-NPC daily limit: can ask each NPC twice per day
@@ -32414,6 +32415,7 @@
             }
 
             // Tick petitioners
+            if (!petition.petitioners) petition.petitioners = [];
             for (var ti = 0; ti < petition.petitioners.length; ti++) {
                 var ptr = petition.petitioners[ti];
                 if (!ptr.active) continue;
@@ -32434,7 +32436,7 @@
                     var eligible = world.people.filter(function(p) {
                         return p.alive && p.townId === ptr.currentTownId &&
                                p.kingdomId === petition.kingdomId &&
-                               !petition.signatures.includes(p.id);
+                               !(petition.signatures || []).includes(p.id);
                     });
                     if (eligible.length === 0) break;
                     var npc = eligible[Math.floor(Math.random() * eligible.length)];
@@ -32702,8 +32704,10 @@
         petition.submittedDay = Engine.getDay();
 
         // Fire all petitioners
-        for (var i = 0; i < petition.petitioners.length; i++) {
-            petition.petitioners[i].active = false;
+        if (petition.petitioners) {
+            for (var i = 0; i < petition.petitioners.length; i++) {
+                petition.petitioners[i].active = false;
+            }
         }
 
         var estimate = getPetitionChanceEstimate(petitionId);
@@ -33037,8 +33041,10 @@
         var petition = player.petitions.find(function(p) { return p.id === petitionId; });
         if (!petition || petition.status !== 'active') return { success: false, message: 'Petition not found or not active.' };
         petition.status = 'cancelled';
-        for (var i = 0; i < petition.petitioners.length; i++) {
-            petition.petitioners[i].active = false;
+        if (petition.petitioners) {
+            for (var i = 0; i < petition.petitioners.length; i++) {
+                petition.petitioners[i].active = false;
+            }
         }
         Engine.logEvent('📜 You cancelled your petition.', null, "my_kingdom");
         return { success: true, message: 'Petition cancelled.' };

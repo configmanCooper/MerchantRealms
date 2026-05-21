@@ -368,7 +368,7 @@
             html += '<div style="position:absolute;left:' + (CONFIG.PETITION_GOOD_CHANCE_PCT * 4) + '%;top:0;bottom:0;border-left:2px dashed #cc4;" title="15% good"></div>';
             html += '</div>';
             html += '<div style="font-size:0.8em;color:#aaa;margin-top:4px;">';
-            html += petition.signatures.length + ' signatures (' + estimate.totalWeightedSignatures + ' weighted) — ' + sigPct + '% of ' + estimate.kingdomPop + ' population';
+            html += (petition.signatures || []).length + ' signatures (' + estimate.totalWeightedSignatures + ' weighted) — ' + sigPct + '% of ' + estimate.kingdomPop + ' population';
             html += '</div>';
             if (estimate.signaturesNeeded5pct > 0) {
                 html += '<div style="color:#f88;font-size:0.8em;">Need ' + estimate.signaturesNeeded5pct + ' more weighted signatures for minimum chance (' + CONFIG.PETITION_MIN_SIGNATURES_PCT + '%)</div>';
@@ -404,7 +404,7 @@
                 var townNpcs = world.people.filter(function(p) {
                     return p.alive && p.townId === Player.townId &&
                            p.kingdomId === petition.kingdomId &&
-                           !petition.signatures.includes(p.id) &&
+                           !(petition.signatures || []).includes(p.id) &&
                            (_askCounts[p.id] || 0) < 2;
                 });
                 if (townNpcs.length === 0) {
@@ -431,7 +431,7 @@
             // Petitioner management
             html += '<div style="background:rgba(40,40,40,0.8);border:1px solid #555;border-radius:4px;padding:8px;margin-bottom:10px;">';
             html += '<h4 style="color:#ddd;margin:0 0 5px;">🏃 Petitioners</h4>';
-            var activePtrs = petition.petitioners.filter(function(pt) { return pt.active; });
+            var activePtrs = (petition.petitioners || []).filter(function(pt) { return pt.active; });
             if (activePtrs.length > 0) {
                 for (var pi = 0; pi < activePtrs.length; pi++) {
                     var ptr = activePtrs[pi];

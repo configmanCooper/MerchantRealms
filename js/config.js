@@ -696,6 +696,7 @@ const CONFIG = {
     OFFROAD_SPEED_MULTIPLIER: 0.25,        // Off-road travel is 1/4 road speed
     OFFSEA_SPEED_MULTIPLIER: 0.5,          // Off-sea travel is 1/2 sea route speed
     OFFSEA_PIRATE_MODIFIER: 1.10,          // +10% pirate risk vs route average
+    WORK_EARNED_SKILL_SHIFTS: 30,          // shifts needed to learn a skill through work
     OFFSEA_LANDING_DAMAGE_MIN: 10,         // Min hull damage on failed landing
     OFFSEA_LANDING_DAMAGE_MAX: 30,         // Max hull damage on failed landing
     OFFSEA_DEATH_BASE_CHANCE: 0.60,        // 60% death on shipwreck

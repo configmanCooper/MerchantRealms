@@ -171,8 +171,15 @@
                     // Light log only when player owns a building in the same town (to avoid spam)
                     try {
                         var pState = (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
-                        if (pState && pState.townId === town.id && Engine.logEvent) {
-                            Engine.logEvent('🚛 ' + (em.firstName || 'A merchant') + ' has arranged a shipment of ' + take + ' ' + inputId + ' from ' + best.neighbor.name + ' to ' + town.name + '.', { type: 'em_supply_shipment', townId: town.id }, 'local_town');
+                        if (pState && pState.townId === town.id && typeof EventTypes !== 'undefined' && EventTypes.emit) {
+                            EventTypes.emit('EM_SUPPLY_SHIPMENT_ARRANGED', {
+                                emFirstName: em.firstName,
+                                qty: take,
+                                inputId: inputId,
+                                fromTownName: best.neighbor.name,
+                                toTownName: town.name,
+                                townId: town.id
+                            });
                         }
                     } catch (e) {}
                     // Only one input shortage handled per building per scout

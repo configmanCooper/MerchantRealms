@@ -223,7 +223,10 @@
                 player.health = Math.max(0, (player.health || 100) - (HUNGER_CONFIG.STARVING_HEALTH_LOSS || 1));
                 if (player.health <= 0 && player.alive && !window._godInvincible) {
                     player.deathCause = 'starvation';
-                    Engine.logEvent('💀 ' + player.fullName + ' has died of starvation.', null, 'illness');
+                    EventTypes.emit('PLAYER_DIED_STARVATION', {
+                        playerFullName: player.fullName,
+                        deathCause: 'starvation'
+                    });
                     if (typeof UI !== 'undefined' && UI.toast) {
                         UI.toast('💀 You have died of starvation!', 'danger', 'critical');
                     }
@@ -250,7 +253,11 @@
                     player.health = Math.max(0, (player.health || 100) - vitalDrain);
                     if (player.health <= 0 && player.alive && !window._godInvincible) {
                         var cause = (player.hunger < 10 && player.thirst < 10) ? 'starvation and dehydration' : (player.hunger < 10 ? 'starvation' : 'dehydration');
-                        Engine.logEvent('💀 ' + player.fullName + ' died from ' + cause + '.', null, 'illness');
+                        EventTypes.emit('PLAYER_DIED_VITAL_CAUSE', {
+                            playerFullName: player.fullName,
+                            cause: cause,
+                            deathCause: cause
+                        });
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast('💀 Died from ' + cause + '!', 'danger', 'critical');
                         player.deathCause = cause;
                         player.alive = false;
@@ -354,7 +361,9 @@
                     player.injuries.push({ type: 'exhaustion_collapse', severity: 'minor', dayOccurred: Engine.getDay(), treated: false });
                     _applyConditionHealthHit('minor');
                 }
-                Engine.logEvent(player.fullName + ' collapsed from exhaustion!', null, 'illness');
+                EventTypes.emit('PLAYER_COLLAPSED_EXHAUSTION', {
+                    playerFullName: player.fullName
+                });
                 return { blocked: true, message: '💫 You collapsed from exhaustion!' + (injuryChance ? ' You injured yourself in the fall.' : '') };
             }
         }
@@ -448,7 +457,7 @@
             if ((player.energy || 0) < 10 && !player.resting) {
                 if (!player._campPromptNeeded) {
                     player._campPromptNeeded = true;
-                    Engine.logEvent('⚠️ You are exhausted! Click 🏕️ Camp to rest before you collapse.', null, 'illness');
+                    EventTypes.emit('PLAYER_EXHAUSTED_WARNING');
                     // v9p33river96: pause IMMEDIATELY so the rest UI isn't skipped
                     // at high game speed (60x can drain the rest of energy and
                     // arrive at the destination before the UI gets to render).
@@ -466,7 +475,11 @@
             if (best) {
                 var result = restForTicks(best.id, 8);
                 if (result && result.success) {
-                    Engine.logEvent('💤 Auto-rest: ' + best.name + (best.cost > 0 ? ' (' + best.cost + 'g)' : ' (free)'), { _noToast: true }, 'illness');
+                    EventTypes.emit('PLAYER_AUTO_REST', {
+                        restName: best.name,
+                        cost: best.cost || 0,
+                        _noToast: true
+                    });
                 }
             }
         }
@@ -1070,7 +1083,11 @@
 
         var icon = isTravelRest ? '🏕️' : isRoadsideRest ? '🌙' : locationId === 'outside' ? '🌙' : locationId === 'inn_room' ? '🏨' : locationId === 'tavern' ? '🍻' : locationId === 'barracks' ? '⚔️' : '🏠';
         var restLabel = wasTraveling ? 'camped' : 'rested';
-        Engine.logEvent(player.fullName + ' ' + restLabel + ' (' + actualTicks + ' ticks). Energy restored.', null, 'illness');
+        EventTypes.emit('PLAYER_RESTED_ENERGY', {
+            playerFullName: player.fullName,
+            restLabel: restLabel,
+            actualTicks: actualTicks
+        });
         return { success: true, message: messages.join(' ') + ' ' + icon };
     }
 
@@ -1213,7 +1230,10 @@
                     player.health = Math.max(0, (player.health || 100) - 2);
                     if (player.health <= 0 && player.alive && !window._godInvincible) {
                         player.deathCause = 'dehydration';
-                        Engine.logEvent('💀 ' + player.fullName + ' has died of dehydration.', null, 'illness');
+                        EventTypes.emit('PLAYER_DIED_DEHYDRATION', {
+                            playerFullName: player.fullName,
+                            deathCause: 'dehydration'
+                        });
                         if (typeof UI !== 'undefined' && UI.toast) {
                             UI.toast('💀 You have died of dehydration!', 'danger', 'critical');
                         }

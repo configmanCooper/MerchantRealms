@@ -185,11 +185,11 @@
             if (!_dealBuildingsValid(deal)) {
                 deal.status = 'cancelled_buildings';
                 var em0 = findPerson(deal.emId);
-                logEvent(
-                    'Trade deal with ' + ((em0 && em0.name) || 'Elite Merchant') + ' cancelled — a deal building was lost or changed ownership.',
-                    { dealId: deal.id, emId: deal.emId },
-                    'my_business'
-                );
+                EventTypes.emit('EM_DEAL_CANCELLED_BUILDING_LOST', {
+                    dealId: deal.id,
+                    emId: deal.emId,
+                    emName: em0 && em0.name
+                });
                 continue;
             }
 

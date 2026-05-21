@@ -747,17 +747,14 @@ function openNobilityDialog() {
         var _commDelivered = commission.delivered || 0;
         var _commProgress = _commQty > 0 ? Math.min(100, Math.floor((_commDelivered / _commQty) * 100)) : 0;
 
-        // Resolve resource name from CONFIG.GOODS (keys are uppercase, id is lowercase)
+        // v9p33river395: Resolve resource name from CONFIG.ITEMS (lowercase-keyed mirror of RESOURCE_TYPES)
         var _itemName = _commItem;
-        if (CONFIG.GOODS) {
+        if (CONFIG.ITEMS && CONFIG.ITEMS[_commItem]) {
+            _itemName = (CONFIG.ITEMS[_commItem].icon || '') + ' ' + CONFIG.ITEMS[_commItem].name;
+        } else if (typeof RESOURCE_TYPES !== 'undefined') {
             var _gKey = _commItem.toUpperCase();
-            if (CONFIG.GOODS[_gKey] && CONFIG.GOODS[_gKey].name) {
-                _itemName = (CONFIG.GOODS[_gKey].icon || '') + ' ' + CONFIG.GOODS[_gKey].name;
-            } else {
-                // Fallback: search by id field
-                for (var _gk in CONFIG.GOODS) {
-                    if (CONFIG.GOODS[_gk].id === _commItem) { _itemName = (CONFIG.GOODS[_gk].icon || '') + ' ' + CONFIG.GOODS[_gk].name; break; }
-                }
+            if (RESOURCE_TYPES[_gKey] && RESOURCE_TYPES[_gKey].name) {
+                _itemName = (RESOURCE_TYPES[_gKey].icon || '') + ' ' + RESOURCE_TYPES[_gKey].name;
             }
         }
         // Final fallback: prettify the raw id
