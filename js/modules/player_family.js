@@ -1214,16 +1214,26 @@
             player.stats.totalGoldSpent += activity.cost;
         }
 
+        // v9p33river392: courtship activities primarily build courtshipBonding,
+        // with greatly reduced regular relationship gain.
         var relGain = activity.relationshipGain;
         if (person.quirks && person.quirks.indexOf('stubborn') >= 0) {
             relGain = Math.floor(relGain * 0.75);
         }
+        // Courtship activities give only 25% of normal relationship gain
+        var isCourtship = !!(player.courtshipAccepted && player.courtshipAccepted[personId]);
+        if (isCourtship && rel.type !== 'spouse') {
+            relGain = Math.max(1, Math.round(relGain * 0.25));
+        }
         modifyRelationship(personId, relGain, rel.type === 'spouse' ? 'spouse' : undefined);
 
         if (!player.dateProgress[personId]) {
-            player.dateProgress[personId] = { traitProgress: 0, quirkProgress: 0 };
+            player.dateProgress[personId] = { traitProgress: 0, quirkProgress: 0, courtshipBonding: 0 };
         }
         var dp = player.dateProgress[personId];
+        // v9p33river392: update courtshipBonding — this was missing from player_family.js
+        if (dp.courtshipBonding === undefined) dp.courtshipBonding = 0;
+        dp.courtshipBonding = Math.min(100, dp.courtshipBonding + (activity.dateProgress || 0) * 0.5);
         var progress = activity.dateProgress || 0;
 
         if (person.quirks && person.quirks.indexOf('secretive') >= 0) {
@@ -1262,6 +1272,10 @@
 
         var totalProgress = dp.traitProgress + dp.quirkProgress;
         var msg = activity.name + ': Relationship +' + relGain + '.';
+        // v9p33river392: show courtship progress in message
+        if (isCourtship && rel.type !== 'spouse') {
+            msg += ' Courtship bond: ' + Math.round(dp.courtshipBonding) + '%.';
+        }
         if (activity.cost > 0) msg += ' Cost: ' + activity.cost + 'g.';
         if (reveal && reveal.message) {
             msg += ' ' + reveal.message;
