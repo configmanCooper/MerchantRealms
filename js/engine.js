@@ -1271,8 +1271,9 @@
                 // applied. Now uses string-aware checks per the canonical
                 // kingPersonality schema (engine.js:1156-1167).
                 var kp = kingdom.kingPersonality || {};
-                var justiceHarsh = (kp.justice === 'strict' || kp.justice === 'harsh');
-                var justiceLenient = (kp.justice === 'lenient' || kp.justice === 'corrupt');
+                // v9p33river386: canonical justice values are just/pragmatic/corrupt
+                var justiceHarsh = (kp.justice === 'just');
+                var justiceLenient = (kp.justice === 'corrupt');
                 var temperamentVolatile = (kp.temperament === 'volatile' || kp.temperament === 'cruel');
                 var greedyKing = (kp.greed === 'greedy' || kp.greed === 'rapacious');
                 var generousKing = (kp.generosity === 'generous' || kp.generosity === 'lavish');
@@ -2300,7 +2301,8 @@
             var _baseGoods = 10 + rng.randInt(0, 10);
 
             // Warlike/ambitious kings: more military
-            if (_kp.ambition === 'warlike' || _kp.ambition === 'ambitious' || _kp.militarism === 'aggressive') {
+            // v9p33river386: warlike is a militarism value, not ambition
+            if (_kp.militarism === 'warlike' || _kp.ambition === 'ambitious' || _kp.militarism === 'aggressive') {
                 _baseMil = Math.floor(_baseMil * 1.6);
                 _ks.militaryStockpile.swords = (_ks.militaryStockpile.swords || 0) + _baseMil;
                 _ks.militaryStockpile.armor = (_ks.militaryStockpile.armor || 0) + Math.floor(_baseMil * 0.7);
@@ -2315,10 +2317,11 @@
             }
 
             // Generous kings: more food stockpile; greedy kings: more trade goods
-            if (_kp.temperament === 'generous' || _kp.values === 'people_first') {
+            // v9p33river386: generous/greedy are generosity/greed fields, not temperament
+            if (_kp.generosity === 'generous') {
                 _baseFood = Math.floor(_baseFood * 1.5);
             }
-            if (_kp.temperament === 'greedy' || _kp.values === 'wealth') {
+            if (_kp.greed === 'greedy' || _kp.greed === 'corrupt') {
                 _baseGoods = Math.floor(_baseGoods * 1.5);
             }
 
@@ -9835,7 +9838,8 @@
         }
 
         // Ambitious or greedy kings: economic dominance
-        if (p.temperament === 'greedy' || p.courage === 'brave') {
+        // v9p33river386: greedy is stored in p.greed, not p.temperament
+        if (p.greed === 'greedy' || p.greed === 'corrupt' || p.courage === 'brave') {
             goals.push({ type: 'economic_dominance', targetGoldRatio: 2.0, achieved: false });
         }
 
@@ -28670,7 +28674,7 @@
         var nobles = world.people.filter(function(p) {
             return p.alive && p.socialRank && p.socialRank[k.id] >= 4 && p.socialRank[k.id] <= 7;
         });
-        var foreignKingdoms = getKingdoms().filter(function(fk) { return fk.id !== k.id; });
+        var foreignKingdoms = (world.kingdoms || []).filter(function(fk) { return fk.id !== k.id; });
 
         var courtTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
         var courtTown = courtTownId ? findTown(courtTownId) : null;
