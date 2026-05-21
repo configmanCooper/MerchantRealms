@@ -399,10 +399,10 @@
 
         if (kp) {
             // Harsh/tyrannical kings jail more and fine higher
-            if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') {
+            if (kp.temperament === 'cruel' || kp.temperament === 'stern') {
                 baseFine = Math.floor(baseFine * 1.5);
                 baseJailDays = Math.floor(baseJailDays * 1.5);
-            } else if (kp.temperament === 'merciful' || kp.temperament === 'kind') {
+            } else if (kp.temperament === 'kind') {
                 baseFine = Math.floor(baseFine * 0.6);
                 baseJailDays = Math.max(1, Math.floor(baseJailDays * 0.5));
             }
@@ -417,7 +417,7 @@
             baseFine = Math.floor(baseFine * 1.3);
             baseJailDays += 2;
             // High-justice kings punish bribery even harder
-            if (kp && typeof kp.justice === 'number' && kp.justice >= 70) {
+            if (kp && kp.justice === 'just') {
                 baseFine = Math.floor(baseFine * 1.5);
                 baseJailDays = Math.floor(baseJailDays * 1.5);
             }

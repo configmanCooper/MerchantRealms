@@ -2917,7 +2917,7 @@
     }
 
     function _getRandomTradableGood(rng) {
-        var goods = ['grain', 'wool', 'iron', 'leather', 'cloth', 'salt', 'spices', 'wine', 'ale', 'tools', 'fish', 'meat', 'pottery', 'rope', 'planks'];
+        var goods = ['wheat', 'wool', 'iron', 'leather', 'cloth', 'salt', 'spices', 'wine', 'ale', 'tools', 'fish', 'meat', 'rope', 'planks'];
         return goods[rng ? Math.floor(rng.random() * goods.length) : 0];
     }
 

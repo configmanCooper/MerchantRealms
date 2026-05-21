@@ -567,9 +567,16 @@
             }
             if (_isNotable) {
                 var _roleTag = person.isKing ? '👑 King ' : person.isNoble ? '🏰 Noble ' : person.isEliteMerchant ? '💰 Elite Merchant ' : '';
-                logEvent('💀 ' + _roleTag + person.firstName + ' ' + (person.lastName || '') + ' of ' + (_dTown ? _dTown.name : 'unknown') + ' died of ' + _dIllName + '.', {
-                    type: 'npc_illness_death', townId: person.townId
-                }, 'illness');
+                EventTypes.emit('NPC_NOTABLE_ILLNESS_DEATH', {
+                    roleTag: _roleTag,
+                    firstName: person.firstName,
+                    lastName: person.lastName,
+                    townName: _dTown ? _dTown.name : 'unknown',
+                    illnessName: _dIllName,
+                    townId: person.townId,
+                    kingdomId: _dTown && _dTown.kingdomId,
+                    personId: person.id
+                });
             }
             // Non-notable deaths are silent — no notification
         }
@@ -660,9 +667,16 @@
                 }
                 if (_isNotable) {
                     var _roleTag = person.isKing ? '👑 King ' : person.isNoble ? '🏰 Noble ' : person.isEliteMerchant ? '💰 Elite Merchant ' : '';
-                    logEvent('💀 ' + _roleTag + person.firstName + ' ' + (person.lastName || '') + ' of ' + (_injTown ? _injTown.name : 'unknown') + ' died from ' + (person.injuryName || 'severe injuries') + '.', {
-                        type: 'npc_injury_death', townId: person.townId
-                    }, 'illness');
+                    EventTypes.emit('NPC_NOTABLE_INJURY_DEATH', {
+                        roleTag: _roleTag,
+                        firstName: person.firstName,
+                        lastName: person.lastName,
+                        townName: _injTown ? _injTown.name : 'unknown',
+                        injuryName: person.injuryName || 'severe injuries',
+                        townId: person.townId,
+                        kingdomId: _injTown && _injTown.kingdomId,
+                        personId: person.id
+                    });
                 }
             }
         }
@@ -869,9 +883,14 @@
                                     // actual illness. Use the illness name
                                     // for accurate cross-town spread logs.
                                     var _illName = (illDef.name || illId || 'Illness');
-                                    logEvent('🦠 ' + _illName + ' has spread along the road from ' + town.name + ' to ' + nTown.name + '!', {
-                                        type: 'plague_spread', townId: neighborId
-                                    }, 'illness');
+                                    EventTypes.emit('ILLNESS_SPREAD_ROAD', {
+                                        illnessName: _illName,
+                                        fromTownName: town.name,
+                                        toTownName: nTown.name,
+                                        townId: neighborId,
+                                        fromTownId: town.id,
+                                        kingdomId: nTown.kingdomId
+                                    });
                                 }
                             }
                         }
@@ -916,10 +935,15 @@
                                     var seaTarget = seaHealthy[rng.randInt(0, seaHealthy.length - 1)];
                                     infectNPC(seaTarget, illId, rng, day, 'sea_spread');
                                 }
-                                logEvent('🦠 ' + (illDef.name || illId) + ' arrived by ship to ' + seaTown.name + ' from ' + town.name + '!',  {
-                                    type: 'illness_spread', townId: seaNeighborId
-                                ,
-                                _noToast: true}, 'illness');
+                                EventTypes.emit('ILLNESS_SPREAD_SEA', {
+                                    illnessName: illDef.name || illId,
+                                    fromTownName: town.name,
+                                    toTownName: seaTown.name,
+                                    townId: seaNeighborId,
+                                    fromTownId: town.id,
+                                    kingdomId: seaTown.kingdomId,
+                                    _noToast: true
+                                });
                             }
                         }
                     }
@@ -1009,9 +1033,12 @@
                     if (rPol.townId === ts.town.id && rPol.active) {
                         rPol.active = false;
                         rPol.expiresDay = day;
-                        logEvent('✅ ' + kingdom.name + ' lifted health measures in ' + ts.town.name + ' — sickness has subsided.', {
-                            type: 'health_policy_lifted', townId: ts.town.id, kingdomId: kingdom.id
-                        }, 'illness');
+                        EventTypes.emit('KINGDOM_HEALTH_MEASURES_LIFTED', {
+                            kingdomName: kingdom.name,
+                            townName: ts.town.name,
+                            townId: ts.town.id,
+                            kingdomId: kingdom.id
+                        });
                     }
                 }
                 continue;
@@ -1027,17 +1054,23 @@
                             dPol.type = 'quarantine_town';
                             dPol.expiresDay = day + 30;
                             dPol.costPerDay = 8; // v9p33river329: downgrade cost with the policy type.
-                            logEvent('📉 ' + kingdom.name + ' relaxed martial quarantine to standard quarantine in ' + ts.town.name + '.', {
-                                type: 'health_policy_relaxed', townId: ts.town.id, kingdomId: kingdom.id
-                            }, 'illness');
+                            EventTypes.emit('KINGDOM_HEALTH_POLICY_RELAXED_TO_STANDARD', {
+                                kingdomName: kingdom.name,
+                                townName: ts.town.name,
+                                townId: ts.town.id,
+                                kingdomId: kingdom.id
+                            });
                         } else if (dPol.type === 'quarantine_town' && ts.plagueRatio < 0.01) {
                             // Downgrade to just medical funding
                             dPol.type = 'medical_funding';
                             dPol.expiresDay = day + 30;
                             dPol.costPerDay = 10; // v9p33river329: don't keep quarantine pricing after downgrade.
-                            logEvent('📉 ' + kingdom.name + ' lifted quarantine in ' + ts.town.name + ', continuing medical support.', {
-                                type: 'health_policy_relaxed', townId: ts.town.id, kingdomId: kingdom.id
-                            }, 'illness');
+                            EventTypes.emit('KINGDOM_HEALTH_POLICY_CONTINUE_MEDICAL_SUPPORT', {
+                                kingdomName: kingdom.name,
+                                townName: ts.town.name,
+                                townId: ts.town.id,
+                                kingdomId: kingdom.id
+                            });
                         }
                     }
                 }
@@ -1086,9 +1119,12 @@
                         type: 'close_port', townId: ts.town.id, active: true,
                         startDay: day, expiresDay: day + 45, costPerDay: 3
                     });
-                    logEvent('⚓ ' + kingdom.name + ' closed the port in ' + ts.town.name + ' to prevent plague spread by sea.', {
-                        type: 'health_policy', townId: ts.town.id, kingdomId: kingdom.id
-                    }, 'illness');
+                    EventTypes.emit('KINGDOM_PORT_CLOSED_HEALTH', {
+                        kingdomName: kingdom.name,
+                        townName: ts.town.name,
+                        townId: ts.town.id,
+                        kingdomId: kingdom.id
+                    });
                 }
             }
 
@@ -1120,7 +1156,13 @@
                                 tsRef.town.happiness = Math.max(0, (tsRef.town.happiness || 50) - bp.happinessPenalty);
                             }
                             var _pn = { medical_funding: '🏥 medical funding', public_hygiene: '🧹 public hygiene measures', quarantine_town: '🔒 quarantine', martial_quarantine: '⚔️ martial quarantine', close_port: '⚓ port closure' };
-                            logEvent((_pn[bp.type] || bp.type) + ' enacted in ' + tsRef.town.name + ' by ' + kRef.name + '.', { type: 'health_policy', townId: tsRef.town.id, kingdomId: kRef.id }, 'illness');
+                            EventTypes.emit('KINGDOM_HEALTH_POLICY_ENACTED', {
+                                policyLabel: _pn[bp.type] || bp.type,
+                                townName: tsRef.town.name,
+                                townId: tsRef.town.id,
+                                kingdomName: kRef.name,
+                                kingdomId: kRef.id
+                            });
                         }; })(kingdom, bestPolicy, ts)
                     });
                 } else {
@@ -1149,9 +1191,13 @@
                     martial_quarantine: '⚔️ martial quarantine',
                     close_port: '⚓ port closure'
                 };
-                logEvent((policyNames[bestPolicy.type] || bestPolicy.type) + ' enacted in ' + ts.town.name + ' by ' + kingdom.name + '.', {
-                    type: 'health_policy', townId: ts.town.id, kingdomId: kingdom.id
-                }, 'illness');
+                EventTypes.emit('KINGDOM_HEALTH_POLICY_ENACTED', {
+                    policyLabel: policyNames[bestPolicy.type] || bestPolicy.type,
+                    townName: ts.town.name,
+                    townId: ts.town.id,
+                    kingdomName: kingdom.name,
+                    kingdomId: kingdom.id
+                });
                 } // close else (non-RA path)
             }
         }
@@ -1168,9 +1214,10 @@
                     kingdom.gold = 0;
                     cPol.active = false;
                     cPol.expiresDay = day;
-                    logEvent('💸 ' + kingdom.name + ' can no longer afford health measures — policies lifted.', {
-                        type: 'health_policy_expired', kingdomId: kingdom.id
-                    }, 'illness');
+                    EventTypes.emit('KINGDOM_HEALTH_MEASURES_UNAFFORDABLE', {
+                        kingdomName: kingdom.name,
+                        kingdomId: kingdom.id
+                    });
                 }
             }
         }
@@ -1189,22 +1236,46 @@
                 var _hasBandageWs = _mbTown.buildings.some(function(b) { return b.type === 'bandage_workshop'; });
                 if (!_hasHerbGarden && kingdom.gold >= 200) {
                     if (kingdomBuild(kingdom, _mbTown, 'herb_garden', rng)) {
-                        logEvent('🌿 ' + kingdom.name + ' built an herb garden in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
+                        EventTypes.emit('KINGDOM_BUILT_HERB_GARDEN', {
+                            kingdomName: kingdom.name,
+                            kingdomId: kingdom.id,
+                            townName: _mbTown.name,
+                            townId: _mbTown.id,
+                            _noToast: true
+                        }); break;
                     }
                 }
                 if (!_hasApoth && _hasHerbGarden && kingdom.gold >= 500) {
                     if (kingdomBuild(kingdom, _mbTown, 'apothecary', rng)) {
-                        logEvent('⚗️ ' + kingdom.name + ' built an apothecary in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
+                        EventTypes.emit('KINGDOM_BUILT_APOTHECARY', {
+                            kingdomName: kingdom.name,
+                            kingdomId: kingdom.id,
+                            townName: _mbTown.name,
+                            townId: _mbTown.id,
+                            _noToast: true
+                        }); break;
                     }
                 }
                 if (!_hasBandageWs && kingdom.gold >= 300) {
                     if (kingdomBuild(kingdom, _mbTown, 'bandage_workshop', rng)) {
-                        logEvent('🩹 ' + kingdom.name + ' built a bandage workshop in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
+                        EventTypes.emit('KINGDOM_BUILT_BANDAGE_WORKSHOP', {
+                            kingdomName: kingdom.name,
+                            kingdomId: kingdom.id,
+                            townName: _mbTown.name,
+                            townId: _mbTown.id,
+                            _noToast: true
+                        }); break;
                     }
                 }
                 if (_hasApoth && !_hasAdvApoth && (_mbTown.category === 'city' || _mbTown.category === 'capital_city') && kingdom.gold >= 900) {
                     if (kingdomBuild(kingdom, _mbTown, 'advanced_apothecary', rng)) {
-                        logEvent('🧬 ' + kingdom.name + ' built an advanced apothecary in ' + _mbTown.name + '.', { type: 'kingdom_build', kingdomId: kingdom.id, townId: _mbTown.id, _noToast: true }, (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id) ? 'my_kingdom' : 'foreign_kingdoms'); break;
+                        EventTypes.emit('KINGDOM_BUILT_ADVANCED_APOTHECARY', {
+                            kingdomName: kingdom.name,
+                            kingdomId: kingdom.id,
+                            townName: _mbTown.name,
+                            townId: _mbTown.id,
+                            _noToast: true
+                        }); break;
                     }
                 }
             }
@@ -2357,7 +2428,9 @@
                         }
                         if (_karmaApplied) {
                             if (typeof UI !== 'undefined' && UI.toast) UI.toast('🦠 Karma — you\'ve caught the plague you spread!', 'danger', 'health');
-                            logEvent('🦠 ' + (Player.fullName || 'The player') + ' has fallen ill with plague — possibly the very plague they spread.', null, 'illness');
+                            EventTypes.emit('PLAYER_PLAGUE_KARMA_INFECTION', {
+                                playerFullName: Player.fullName || 'The player'
+                            });
                             // Don't keep rolling — one karma hit is enough.
                             Player.state._plagueSelfRiskUntil = 0;
                         }

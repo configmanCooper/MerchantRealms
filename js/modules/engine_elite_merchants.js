@@ -577,11 +577,11 @@
 
     const STRATEGY_GOODS = {
         food_monopoly:     ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
-        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
+        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
         luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture', 'fine_clothes', 'cloth', 'drum', 'lute', 'harp'],
         diversified:       ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
-        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'weapons', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
+        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
         culture_trader:    ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy', 'gut_string', 'cloth', 'silk', 'fine_clothes', 'clothes', 'wool', 'dye'],

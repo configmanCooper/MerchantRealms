@@ -203,7 +203,9 @@
             var em = findPerson(deal.emId);
             if (!em) {
                 deal.status = 'cancelled_by_em';
-                logEvent('Trade deal cancelled — merchant no longer available.', { dealId: deal.id }, 'my_business');
+                EventTypes.emit('EM_DEAL_CANCELLED_MERCHANT_UNAVAILABLE', {
+                    dealId: deal.id
+                });
                 continue;
             }
 
@@ -221,11 +223,12 @@
                 deal.gracePeriodEnd = null;
                 deal.missedCount = 0;
                 deal.nextDeliveryDay = world.day + deal.interval;
-                logEvent(
-                    (em.name || 'Elite Merchant') + ' deal fulfilled — next delivery in ' + deal.interval + ' days.',
-                    { dealId: deal.id, emId: deal.emId },
-                    'my_business'
-                );
+                EventTypes.emit('EM_DEAL_FULFILLED', {
+                    dealId: deal.id,
+                    emId: deal.emId,
+                    emName: em.name,
+                    interval: deal.interval
+                });
             } else if (deal.emDelivered && !deal.playerDelivered) {
                 // EM delivered but player did not
                 deal.missedCount = (deal.missedCount || 0) + 1;
@@ -242,43 +245,45 @@
                     if (ps.gold < 0) ps.gold = 0;
                 }
 
-                logEvent(
-                    'You failed to deliver ' + deal.playerGives.qty + ' ' + deal.playerGives.good +
-                    ' to ' + (em.name || 'the merchant') + '. Deal broken! You paid ' + penalty + ' gold as penalty.',
-                    { dealId: deal.id, emId: deal.emId, penalty: penalty },
-                    'my_business'
-                );
+                EventTypes.emit('EM_DEAL_BROKEN_BY_PLAYER_PENALTY', {
+                    dealId: deal.id,
+                    emId: deal.emId,
+                    emName: em && em.name,
+                    playerQty: deal.playerGives.qty,
+                    playerGood: deal.playerGives.good,
+                    penalty: penalty
+                });
             } else if (!deal.emDelivered && deal.playerDelivered) {
                 // EM failed to deliver but player did — EM broke deal
                 deal.missedCount = (deal.missedCount || 0) + 1;
                 if (deal.missedCount >= PROACTIVE_CANCEL_THRESHOLD) {
                     deal.status = 'broken_by_em';
-                    logEvent(
-                        (em.name || 'Elite Merchant') + ' repeatedly failed to deliver. Deal broken.',
-                        { dealId: deal.id, emId: deal.emId },
-                        'my_business'
-                    );
+                    EventTypes.emit('EM_DEAL_BROKEN_BY_EM', {
+                        dealId: deal.id,
+                        emId: deal.emId,
+                        emName: em.name
+                    });
                 } else {
                     // Grace: advance to next period, EM gets another chance
                     deal.emDelivered = false;
                     deal.playerDelivered = false;
                     deal.nextDeliveryDay = world.day + deal.interval;
-                    logEvent(
-                        (em.name || 'Elite Merchant') + ' missed a delivery but the deal continues.',
-                        { dealId: deal.id, emId: deal.emId },
-                        'my_business'
-                    );
+                    EventTypes.emit('EM_DEAL_MISSED_CONTINUES', {
+                        dealId: deal.id,
+                        emId: deal.emId,
+                        emName: em.name
+                    });
                 }
             } else {
                 // Neither delivered — both missed, advance
                 deal.missedCount = (deal.missedCount || 0) + 1;
                 if (deal.missedCount >= PROACTIVE_CANCEL_THRESHOLD) {
                     deal.status = 'cancelled_by_em';
-                    logEvent(
-                        'Trade deal with ' + (em.name || 'Elite Merchant') + ' cancelled due to repeated non-delivery.',
-                        { dealId: deal.id, emId: deal.emId },
-                        'my_business'
-                    );
+                    EventTypes.emit('EM_DEAL_CANCELLED_NON_DELIVERY', {
+                        dealId: deal.id,
+                        emId: deal.emId,
+                        emName: em.name
+                    });
                 } else {
                     deal.emDelivered = false;
                     deal.playerDelivered = false;
@@ -391,11 +396,13 @@
             _deductEMInventory(em, goodId, qty);
             deal.emDelivered = true;
             deal.emDeliveryMethod = 'personal';
-            logEvent(
-                (em.name || 'Elite Merchant') + ' delivered ' + qty + ' ' + goodId + ' personally.',
-                { dealId: deal.id, emId: em.id, good: goodId, qty: qty },
-                'npc_activity'
-            );
+            EventTypes.emit('EM_DEAL_DELIVERED_PERSONAL', {
+                dealId: deal.id,
+                emId: em.id,
+                emName: em.name,
+                good: goodId,
+                qty: qty
+            });
         } else {
             // Caravan delivery
             // v9p33river333: confirm the caravan can route before consuming inventory/marking delivered.
@@ -425,11 +432,13 @@
                 dealId: deal.id
             });
 
-            logEvent(
-                (em.name || 'Elite Merchant') + ' dispatched a caravan with ' + qty + ' ' + goodId + '.',
-                { dealId: deal.id, emId: em.id, good: goodId, qty: qty },
-                'npc_activity'
-            );
+            EventTypes.emit('EM_DEAL_DISPATCHED_CARAVAN', {
+                dealId: deal.id,
+                emId: em.id,
+                emName: em.name,
+                good: goodId,
+                qty: qty
+            });
         }
     }
 
@@ -474,11 +483,13 @@
         deal.playerDelivered = true;
 
         var em = findPerson(deal.emId);
-        logEvent(
-            'You delivered ' + qty + ' ' + goodId + ' to ' + ((em && em.name) || 'the merchant') + '.',
-            { dealId: deal.id, good: goodId, qty: qty },
-            'my_business'
-        );
+        EventTypes.emit('EM_DEAL_PLAYER_DELIVERED', {
+            dealId: deal.id,
+            emId: deal.emId,
+            emName: em && em.name,
+            good: goodId,
+            qty: qty
+        });
 
         return { success: true, message: 'Delivered ' + qty + ' ' + goodId + ' successfully.' };
     }
@@ -663,13 +674,16 @@
 
         _modifyRelationship(emId, RELATIONSHIP_DEAL_ACCEPT);
 
-        logEvent(
-            'You struck a trade deal with ' + (em.name || 'an Elite Merchant') + ': you provide ' +
-            deal.playerGives.qty + ' ' + deal.playerGives.good + ' for ' +
-            deal.emGives.qty + ' ' + deal.emGives.good + ' every ' + deal.interval + ' days.',
-            { dealId: dealId, emId: emId },
-            'my_business'
-        );
+        EventTypes.emit('EM_DEAL_ACCEPTED', {
+            dealId: dealId,
+            emId: emId,
+            emName: em.name,
+            playerQty: deal.playerGives.qty,
+            playerGood: deal.playerGives.good,
+            emQty: deal.emGives.qty,
+            emGood: deal.emGives.good,
+            interval: deal.interval
+        });
 
         return { success: true, message: 'Deal accepted!', dealId: dealId };
     }
@@ -695,18 +709,18 @@
         if (cancelledBy === 'player') {
             deal.status = 'broken_by_player';
             _modifyRelationship(deal.emId, RELATIONSHIP_PLAYER_CANCEL);
-            logEvent(
-                'You cancelled your trade deal with ' + emName + '. They are displeased.',
-                { dealId: dealId, emId: deal.emId },
-                'my_business'
-            );
+            EventTypes.emit('EM_DEAL_CANCELLED_BY_PLAYER', {
+                dealId: dealId,
+                emId: deal.emId,
+                emName: emName
+            });
         } else {
             deal.status = 'cancelled_by_em';
-            logEvent(
-                emName + ' cancelled your trade deal — they can no longer fulfill it.',
-                { dealId: dealId, emId: deal.emId },
-                'npc_activity'
-            );
+            EventTypes.emit('EM_DEAL_CANCELLED_BY_EM', {
+                dealId: dealId,
+                emId: deal.emId,
+                emName: emName
+            });
         }
 
         return { success: true, message: 'Deal cancelled.' };

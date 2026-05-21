@@ -27074,7 +27074,7 @@
             var approved = false;
             switch (pType) {
                 case 'tax_relief':
-                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.70 * _courtMoodPetMod) :
+                    approved = (kPers.temperament === 'kind') ? rng.chance(0.70 * _courtMoodPetMod) :
                                (kPers.greed === 'generous') ? rng.chance(0.60 * _courtMoodPetMod) : rng.chance(0.30 * _courtMoodPetMod);
                     if (approved) { k.happiness = Math.min(100, (k.happiness || 50) + 1); happinessBonus += 1; }
                     break;
@@ -27103,7 +27103,7 @@
                     }
                     break;
                 case 'festival_request':
-                    approved = (kPers.warmth === 'compassionate' || kPers.warmth === 'kind') ? rng.chance(0.80 * _courtMoodPetMod) : rng.chance(0.35 * _courtMoodPetMod);
+                    approved = (kPers.temperament === 'kind') ? rng.chance(0.80 * _courtMoodPetMod) : rng.chance(0.35 * _courtMoodPetMod);
                     if (approved) happinessBonus += 2;
                     break;
             }
@@ -27527,7 +27527,7 @@
                         var _sfk = rng.pick(_scForeignK); _scCase.foreignKingdomName = _sfk.name;
                         _scCase.desc = _scCase.desc.replace(/\{foreignKingdom\}/g, _sfk.name);
                     } else { _scCase.desc = _scCase.desc.replace(/\{foreignKingdom\}/g, 'a neighboring kingdom'); }
-                    var _scGoods = ['grain', 'iron', 'cloth', 'wine', 'timber', 'salt', 'spices'];
+                    var _scGoods = ['wheat', 'iron', 'cloth', 'wine', 'wood', 'salt', 'spices'];
                     _scCase.good = rng.pick(_scGoods); _scCase.desc = _scCase.desc.replace(/\{good\}/g, _scCase.good);
                     pc.cases.push(_scCase);
                 }
@@ -27798,11 +27798,11 @@
             var _feastBaseMin = 45, _feastBaseMax = 90; // tighter range (was 60-120)
             var _fkp = k.kingPersonality || {};
             // Warm/compassionate kings feast more
-            if (_fkp.warmth === 'compassionate' || _fkp.warmth === 'kind') { _feastBaseMin -= 10; _feastBaseMax -= 20; }
+            if (_fkp.temperament === 'kind') { _feastBaseMin -= 10; _feastBaseMax -= 20; }
             // Generous kings feast more
             if (_fkp.greed === 'generous') { _feastBaseMin -= 10; _feastBaseMax -= 15; }
             // Miserly kings feast less
-            if (_fkp.greed === 'miserly' || _fkp.greed === 'greedy') { _feastBaseMin += 15; _feastBaseMax += 20; }
+            if (_fkp.generosity === 'miserly' || _fkp.greed === 'greedy') { _feastBaseMin += 15; _feastBaseMax += 20; }
             // Low happiness → hold feast to boost morale
             if ((k.happiness || 50) < 40) { _feastBaseMin -= 10; _feastBaseMax -= 15; }
             // Wealthy kingdoms feast more often
@@ -28772,7 +28772,7 @@
                 caseObj.desc = caseObj.desc.replace(/\{foreignKingdom\}/g, 'a neighboring kingdom');
             }
 
-            var goods = ['grain', 'iron', 'cloth', 'wine', 'timber', 'salt', 'spices'];
+            var goods = ['wheat', 'iron', 'cloth', 'wine', 'wood', 'salt', 'spices'];
             caseObj.good = rng.pick(goods);
             caseObj.desc = caseObj.desc.replace(/\{good\}/g, caseObj.good);
 

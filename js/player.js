@@ -12378,8 +12378,8 @@
             baseChance: 0.35,
             modifiers: function() {
                 var m = [];
-                if (kp.temperament === 'cruel' || kp.temperament === 'tyrannical') m.push({ name: 'Authoritarian king', val: 0.20 });
-                else if (kp.temperament === 'merciful') m.push({ name: 'Merciful king dislikes bans', val: -0.15 });
+                if (kp.temperament === 'cruel' || kp.temperament === 'stern') m.push({ name: 'Authoritarian king', val: 0.20 });
+                else if (kp.temperament === 'kind') m.push({ name: 'Kind king dislikes bans', val: -0.15 });
                 return m;
             },
             needsSubChoice: 'good',

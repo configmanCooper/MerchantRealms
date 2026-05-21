@@ -999,7 +999,7 @@
                         var _treatyRoll = rng.random();
                         if (_treatyRoll < 0.40) {
                             // TRADE AGREEMENT — deals with goods, tariffs, timed period
-                            var _tradeGoods = ['grain', 'cloth', 'iron', 'wood', 'fish', 'spices', 'salt', 'wine'];
+                            var _tradeGoods = ['wheat', 'cloth', 'iron', 'wood', 'fish', 'spices', 'salt', 'wine'];
                             var _tradeGood = rng.pick(_tradeGoods);
                             var _tradeDuration = rng.randInt(90, 360); // 3 months to 1 year
                             var _tariffReduction = rng.randInt(10, 40); // percentage tariff reduction

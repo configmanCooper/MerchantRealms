@@ -1579,7 +1579,7 @@
         var stolenMsg = [];
         var totalValue = 0;
         if (successful) {
-            const possibleGoods = ['wheat', 'iron', 'cloth', 'wine', 'tools', 'weapons', 'armor', 'silk', 'spices', 'jewelry'];
+            const possibleGoods = ['wheat', 'iron', 'cloth', 'wine', 'tools', 'swords', 'armor', 'silk', 'spices', 'jewelry'];
             const numGoods = 2 + Math.floor(Math.random() * 3); // 2-4 types
             for (let g = 0; g < numGoods; g++) {
                 const resId = possibleGoods[Math.floor(Math.random() * possibleGoods.length)];
@@ -4094,11 +4094,11 @@
             // King's personality decides the immediate punishment.
             var kp = targetK.kingPersonality || {};
             var choice;
-            if (kp.temperament === 'cruel' || kp.greed === 'corrupt' || kp.justice === 'cruel') {
+            if (kp.temperament === 'cruel' || kp.greed === 'corrupt' || kp.justice === 'corrupt') {
                 choice = 'execute';
-            } else if (kp.temperament === 'kind' || kp.justice === 'just' || kp.justice === 'merciful') {
+            } else if (kp.temperament === 'kind' || kp.justice === 'just') {
                 choice = 'jail';
-            } else if (kp.ambition === 'ambitious' || kp.courage === 'paranoid') {
+            } else if (kp.ambition === 'ambitious' || kp.courage === 'cautious') {
                 // Paranoid/ambitious kings are quick to remove threats.
                 choice = (rng && rng.chance(0.6)) ? 'execute' : 'exile';
             } else {
