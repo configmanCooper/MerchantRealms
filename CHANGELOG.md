@@ -4,6 +4,24 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [EventSystem] - v9p33river376 → v9p33river381 — event system overhaul + courtship bonding (6 commits)
+
+### Added — Event System
+- **Comprehensive event categorization (v376–v380)** — all ~1700 logEvent calls given explicit categories; 3 independent audit sweeps fixed 227+ miscategorizations across 15 files
+- **Notification filter enforcement (v379)** — `Player.shouldShowNotification()` gates toasts by category/subcategory filters, skill requirements, tutorial suppression, and smart military mode
+- **Toast click → event detail overlay (v375)** — clicking a toast opens the event log and highlights that event's detail panel
+- **Hidden event log (v381)** — `logHiddenEvent()` stores low-value background simulation events in `world._hiddenEvents` (capped 500) for debug/testing; 19 noise event types moved (NPC marriage/migration, kingdom payroll/hiring/procurement, soldier transfers, tax collection, guard spending, surplus sales, recruitment progress)
+- **Dynamic kingdom category routing** — events auto-categorize as `my_kingdom` or `foreign_kingdoms` based on `Player.citizenshipKingdomId`
+- **`inferEventCategory()` improved** — better keyword matching for bankruptcy, treasury, soldier pay, trade bans, and other kingdom events
+
+### Added — Courtship Bonding System (v379)
+- **Courtship bonding meter (0–100)** — accumulates from dating activities (Walk +5.4, Meal +6, Deep Talk +9, Adventure +10.5, Lavish +13.5)
+- **Marriage acceptance modifier** — bonding 0 = −30%, bonding 50 = 0%, bonding 100 = +10% (piecewise linear)
+- **Progress bar in NPC detail courtship section** + factor shown in marriage proposal breakdown
+
+### Added — NPC Detail Auto-Refresh (v379)
+- NPC detail panel auto-refreshes when relationship points change while panel is open
+
 ## [BugFixes4] - v9p33river331 → v9p33river349 — third bug-triage sprint + dark-deeds expansion (19 commits)
 
 The post-BugFixes3 marathon. Mix of large verification batches, gameplay expansions (3 new schemes, 1 reworked equip slot, cross-kingdom petition refinements, royal favors and quest rewards actually taking effect), and follow-up bug passes. Per-commit detail: `git log BugFixes3..BugFixes4`.
