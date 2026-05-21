@@ -1288,7 +1288,7 @@ function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
             ];
             for (var _ca = 0; _ca < _courtActions.length; _ca++) {
                 var _act = _courtActions[_ca];
-                html += '<button class="btn-medieval" data-action="doCourtAction" data-id="' + _act.id + '" style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.9rem;">';
+                html += '<button class="btn-medieval" data-action="doCourtAction" data-id="' + _act.id + '" data-kingdom-id="' + citizenKingdomId + '" style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.9rem;">';
                 html += _act.icon + ' <b>' + _act.label + '</b> <span style="color:#3a2a10;font-size:0.8rem;">— ' + _act.desc + '</span>';
                 html += '</button>';
             }
@@ -3355,7 +3355,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
         openNobilityDialog();
     });
     UI.registerAction('doCourtAction', function(_t, d) {
-        var kId = Player.citizenshipKingdomId;
+        var kId = d.kingdomId || Player.citizenshipKingdomId;
         if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
         // Intercept petition_king to show selection UI
         if (d.id === 'petition_king') {

@@ -1103,7 +1103,8 @@
         npc.health = Math.min((npc.health || 50) + 40, 100);
         if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
         _payHealthcareRevenue(town, cost);
-        Engine.logEvent('🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).', null, 'illness');
+        var _hospMsg = '🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).';
+        Engine.logEvent(_hospMsg, { _noToast: true }, 'illness');
     }
 
     // Tick hospitalized companions — release them when treatment duration is over

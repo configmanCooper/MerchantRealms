@@ -9456,6 +9456,9 @@ window.UI = (function () {
                 { key: 'laws', label: '📋 Law Changes' },
                 { key: 'taxes', label: '💰 Tax Changes' },
                 { key: 'king', label: '👑 King & Court' },
+                { key: 'feast_actions', label: '🎪 Feast Actions' },
+                { key: 'court_actions', label: '⚖️ Court Actions' },
+                { key: 'diplomacy', label: '🤝 Diplomacy & Trade' },
                 { key: 'festivals', label: '🎉 Festivals & Events' },
                 { key: 'commissions', label: '📜 Royal Commissions' },
                 { key: 'political', label: '🏛️ Political Events' },
@@ -9470,6 +9473,8 @@ window.UI = (function () {
                 { key: 'wars', label: '⚔️ Wars & Conflicts' },
                 { key: 'laws', label: '📋 Law Changes' },
                 { key: 'diplomacy', label: '🤝 Diplomacy & Treaties' },
+                { key: 'feast_actions', label: '🎪 Feast Actions' },
+                { key: 'court_actions', label: '⚖️ Court Actions' },
                 { key: 'political', label: '🏛️ Political Events' },
             ]},
             { key: 'world_economy', label: '📈 World Economy', subs: [

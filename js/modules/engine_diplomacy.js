@@ -263,7 +263,7 @@
             if (dayNow - post.postedDay > 30) {
                 var refund = remaining * post.payPerSoldier;
                 k.gold = (k.gold || 0) + refund;
-                logHiddenEvent('📜 Recruitment posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                EventTypes.emit('RECRUITMENT_EXPIRED', { kingdomId: k.id, filled: post.slotsFilled, total: post.slotsTotal, refund: refund });
                 k._recruitmentPostings.splice(pi, 1);
                 continue;
             }
@@ -349,7 +349,7 @@
             // Notify periodically when recruits join
             if (filledThisTick > 0 && (post.slotsFilled % 5 === 0 || post.slotsFilled >= post.slotsTotal)) {
                 var pctFilled = Math.round(post.slotsFilled / post.slotsTotal * 100);
-                logHiddenEvent('🎖️ ' + (post.isConscription ? 'Conscription' : 'Recruitment') + ': ' + post.slotsFilled + '/' + post.slotsTotal + ' (' + pctFilled + '% filled)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                EventTypes.emit('RECRUITMENT_PROGRESS', { kingdomId: k.id, isConscription: post.isConscription, filled: post.slotsFilled, total: post.slotsTotal, pct: pctFilled });
             }
 
             // Complete posting
@@ -375,7 +375,7 @@
                 var refundPerSlot = post.weeklyPay * 2;
                 var refund = remaining * refundPerSlot;
                 k.gold = (k.gold || 0) + refund;
-                logHiddenEvent('📋 Employee posting expired (' + post.slotsFilled + '/' + post.slotsTotal + ' ' + post.type + 's filled). ' + refund + 'g refunded.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                EventTypes.emit('EMPLOYEE_POSTING_EXPIRED', { kingdomId: k.id, filled: post.slotsFilled, total: post.slotsTotal, type: post.type, refund: refund });
                 k._employeePostings.splice(pi, 1);
                 continue;
             }
@@ -450,7 +450,7 @@
 
             if (filledThisTick > 0) {
                 var tLabel = post.type === 'procurer' ? 'Procurer' : post.type === 'guard' ? 'Guard' : 'Royal Guard';
-                Engine.logHiddenEvent('👤 ' + tLabel + ' hiring: ' + post.slotsFilled + '/' + post.slotsTotal + ' filled', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                EventTypes.emit('EMPLOYEE_HIRING_PROGRESS', { kingdomId: k.id, label: tLabel, filled: post.slotsFilled, total: post.slotsTotal });
             }
             if (post.slotsFilled >= post.slotsTotal) k._employeePostings.splice(pi, 1);
         }
@@ -518,7 +518,7 @@
         // Clean up completed orders
         for (var oi = k._procurementOrders.length - 1; oi >= 0; oi--) {
             if (k._procurementOrders[oi].remaining <= 0) {
-                Engine.logHiddenEvent('✅ Procurement order fulfilled: ' + k._procurementOrders[oi].goodId + ' (' + k._procurementOrders[oi].filled + ' total)', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                EventTypes.emit('PROCUREMENT_FULFILLED', { kingdomId: k.id, goodId: k._procurementOrders[oi].goodId, totalFilled: k._procurementOrders[oi].filled });
                 k._procurementOrders.splice(oi, 1);
             }
         }
@@ -551,7 +551,7 @@
                         if (person2) { person2.occupation = 'unemployed'; person2.employerId = null; }
                     } catch(e) {}
                     lists[li].splice(ei, 1);
-                    logHiddenEvent('💸 Kingdom employee quit (unpaid): ' + (emp.name || 'unknown'), { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                    EventTypes.emit('KINGDOM_EMPLOYEE_QUIT', { kingdomId: k.id, name: emp.name || 'unknown' });
                 }
             }
         }
@@ -703,10 +703,10 @@
                 var toTown = findTown(tr.toTownId);
                 if (toTown && toTown.kingdomId === k.id) {
                     toTown.garrison = (toTown.garrison || 0) + tr.count;
-                    Engine.logHiddenEvent('🏰 ' + tr.count + ' soldiers arrived at ' + toTown.name + '.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                    EventTypes.emit('SOLDIER_TRANSFER_ARRIVED', { kingdomId: k.id, count: tr.count, townName: toTown.name });
                 } else {
                     // Town changed hands during transfer — soldiers lost
-                    Engine.logHiddenEvent('⚠️ ' + tr.count + ' soldiers arrived at a town no longer controlled. They dispersed.', { kingdomId: k.id }, _eventKingdomCategory(k.id));
+                    EventTypes.emit('SOLDIER_TRANSFER_DISPERSED', { kingdomId: k.id, count: tr.count });
                 }
                 k._soldierTransfers.splice(si, 1);
             }
@@ -1101,7 +1101,7 @@
                 }
             }
             // Insults between kings (personality-driven)
-            if (rng.chance(0.005) && (k.kingPersonality || {}).temperament === 'aggressive') {
+            if (rng.chance(0.005) && ((k.kingPersonality || {}).militarism === 'aggressive' || (k.kingPersonality || {}).militarism === 'warlike')) {
                 var _insTargets = world.kingdoms.filter(function(o) { return o.id !== k.id && !_kWarMap[o.id]; });
                 if (_insTargets.length > 0) {
                     var _insTarget = rng.pick(_insTargets);
@@ -1124,7 +1124,7 @@
             }
 
             // ---- C2: Periodic war evaluation (every 30-90 days based on personality) ----
-            var _warEvalInterval = (k.kingPersonality || {}).temperament === 'aggressive'
+            var _warEvalInterval = (k.kingPersonality || {}).militarism === 'aggressive' || (k.kingPersonality || {}).militarism === 'warlike'
                 ? (CONFIG.WAR_EVAL_MIN_INTERVAL || 30)
                 : ((k.kingPersonality || {}).ambition === 'ambitious'
                     ? rng.randInt(CONFIG.WAR_EVAL_MIN_INTERVAL || 30, 60)
@@ -1160,7 +1160,7 @@
                 // C3: Opportunity war — attack neighbors who are already at war with someone else
                 if (other.atWar && other.atWar.size > 0 && rel < 0) {
                     var _kp2 = k.kingPersonality || {};
-                    if (_kp2.ambition === 'ambitious' || _kp2.temperament === 'aggressive' || _kp2.militarism === 'warlike') {
+                    if (_kp2.ambition === 'ambitious' || _kp2.militarism === 'aggressive' || _kp2.militarism === 'warlike') {
                         var _oppStr = computeMilitaryStrength(k);
                         var _oppTheirStr = computeMilitaryStrength(other);
                         // C3: Lower military advantage threshold to 1.2x (was 2x for aggressive targeting)
@@ -1183,7 +1183,7 @@
                 // C2: Periodic war evaluation — aggressive kings evaluate weak neighbors
                 if ((world.day - (k._lastWarEvalDay || 0)) >= _warEvalInterval) {
                     var _kp = k.kingPersonality || {};
-                    if (_kp.temperament === 'aggressive' || _kp.ambition === 'ambitious') {
+                    if (_kp.militarism === 'aggressive' || _kp.militarism === 'warlike' || _kp.ambition === 'ambitious') {
                         var _evalOurStr = computeMilitaryStrength(k);
                         var _evalTheirStr = computeMilitaryStrength(other);
                         // Aggressive kings target kingdoms at < 50% their strength
@@ -1248,7 +1248,7 @@
                                 type: 'declare_war',
                                 description: 'Declare war on ' + other.name,
                                 details: 'Our military strength: ' + Math.floor(ourStrength) + '. Enemy estimate: ' + Math.floor(scoutedEnemy) + '. Relations: ' + Math.floor(k.relations[other.id] || 0) + '.' + _cbJustification,
-                                conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).temperament === 'aggressive' ? 0.15 : 0) + (_wMood.warMod > 1.5 ? 0.10 : _wMood.warMod < 0.5 ? -0.15 : 0)),
+                                conviction: Math.min(0.9, 0.5 + ((k.kingPersonality || {}).ambition === 'ambitious' ? 0.15 : 0) + ((k.kingPersonality || {}).militarism === 'aggressive' || (k.kingPersonality || {}).militarism === 'warlike' ? 0.15 : 0) + (_wMood.warMod > 1.5 ? 0.10 : _wMood.warMod < 0.5 ? -0.15 : 0)),
                                 execute: (function(kRef, otherRef) { return function() { declareWar(kRef, otherRef); }; })(k, other)
                             });
                         } else if (hasSpecialLaw(k, 'noble_council')) {
@@ -1361,7 +1361,7 @@
                 // v9p33river305: no kingPersonality.diplomatic field. Map to
                 // non-warlike militarism + fair/kind temperament.
                 var _kDip = k.kingPersonality || {};
-                if (_kDip.militarism === 'passive' || _kDip.temperament === 'kind' || _kDip.temperament === 'fair') {
+                if (_kDip.militarism === 'peaceful' || _kDip.temperament === 'kind' || _kDip.temperament === 'fair') {
                     allianceRelThresh -= 5;
                 }
                 if (rel >= allianceRelThresh && !k.alliances.has(other.id) && !_kWarMap[other.id]) { // v9p33river334: tolerate malformed atWar.
@@ -5901,10 +5901,19 @@
                     if (kingdom.militaryStockpile && kingdom.militaryStockpile[strat.good] !== undefined) {
                         kingdom.militaryStockpile[strat.good] += toBuy;
                     }
-                    Engine.logHiddenEvent(`📦 ${kingdom.name} stockpiles ${toBuy} ${strat.good} from ${strat.townName} at low prices.`, {
-                        type: 'economic_strategy', kingdomId: kingdom.id, cause: `${strat.good} priced below market value`,
-                        effects: [`${toBuy} units purchased for ${cost}g`, 'Strategic reserves increased']
-                    }, _eventKingdomCategory(kingdom.id));
+                    EventTypes.emit('KINGDOM_STOCKPILE', {
+                        kingdomId: kingdom.id,
+                        kingdomName: kingdom.name,
+                        qty: toBuy,
+                        good: strat.good,
+                        townName: strat.townName
+                    }, {
+                        details: {
+                            type: 'economic_strategy',
+                            cause: `${strat.good} priced below market value`,
+                            effects: [`${toBuy} units purchased for ${cost}g`, 'Strategic reserves increased']
+                        }
+                    });
                     actionsThisCycle++;
                     break;
                 }
@@ -6793,7 +6802,7 @@
         // militarism/temperament instead (passive militarism + kind/fair
         // temperament = diplomatic king).
         if (atWar && daysSinceRevolt > 10) {
-            var _isDiplomatic = p.militarism === 'passive' || p.temperament === 'kind' || p.temperament === 'fair';
+            var _isDiplomatic = p.militarism === 'peaceful' || p.temperament === 'kind' || p.temperament === 'fair';
             var courage = p.courage || 'cautious';
             k.atWar.forEach(function(enemyId) {
                 var enemy = findKingdom(enemyId);
@@ -6817,7 +6826,7 @@
                     if (theirStr < ourStr * 1.5) acceptChance += 0.2; // they're not much stronger, willing to stop
                     var ep = enemy.kingPersonality || {};
                     if (ep.temperament === 'fair' || ep.justice === 'just') acceptChance += 0.15;
-                    if (ep.temperament === 'aggressive' || ep.ambition === 'ambitious') acceptChance -= 0.1;
+                    if (ep.militarism === 'aggressive' || ep.militarism === 'warlike' || ep.ambition === 'ambitious') acceptChance -= 0.1;
                     // Enemy exhaustion makes peace more likely
                     if ((enemy.warExhaustion || 0) > 30) acceptChance += 0.2;
 
@@ -7059,10 +7068,20 @@
                     migrant.needs.happiness = Math.min(100, (migrant.needs.happiness || 30) + 20);
                     targetTown.population++;
                     if (oldTown && oldTown.population > 0) oldTown.population--;
-                    Engine.logHiddenEvent(`🚶 ${migrant.firstName} ${migrant.lastName} migrates to ${targetTown.name} in ${k.name}, drawn by the ${inc.bonus}g immigration bonus.`,  {
-                        type: 'immigration', cause: 'Kingdom immigration incentive',
-                        effects: [`${targetTown.name} gains a citizen`, `Treasury pays ${inc.bonus}g`]
-                    }, _eventKingdomCategory(k.id));
+                    EventTypes.emit('IMMIGRATION_BONUS_MIGRATION', {
+                        kingdomId: k.id,
+                        firstName: migrant.firstName,
+                        lastName: migrant.lastName,
+                        townName: targetTown.name,
+                        kingdomName: k.name,
+                        bonus: inc.bonus
+                    }, {
+                        details: {
+                            type: 'immigration',
+                            cause: 'Kingdom immigration incentive',
+                            effects: [`${targetTown.name} gains a citizen`, `Treasury pays ${inc.bonus}g`]
+                        }
+                    });
                     inc.fulfilled = true; // Mark incentive as fulfilled
                 }
             }
@@ -7568,7 +7587,7 @@
                 var _nobleLeader = _pickNobleArmyLeader(kingdom, armyObj, world);
                 if (_nobleLeader) {
                     armyObj.leaderId = _nobleLeader.id;
-                    logEvent('🏰 ' + (_nobleLeader.firstName || 'A noble') + ' ' + (_nobleLeader.lastName || '') + ' leads the army to ' + tgtT.name + '.', null, 'military');
+                    logEvent('🏰 ' + (_nobleLeader.firstName || 'A noble') + ' ' + (_nobleLeader.lastName || '') + ' leads the army to ' + tgtT.name + '.', { _noToast: true }, 'military');
                 }
 
                 // Track in kingdom._armies for King UI

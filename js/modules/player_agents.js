@@ -105,7 +105,7 @@
             reports: [] // messages from agent
         };
         player.agents.push(agent);
-        Engine.logEvent(player.fullName + ' hired agent ' + agent.name + ' in ' + (Engine.findTown(townId) || {}).name + '.', null, 'my_actions');
+        EventTypes.emit('AGENT_HIRED', { playerName: player.fullName, agentNum: agent.name, townName: (Engine.findTown(townId) || {}).name });
         // Notify story mode
         if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('hire_agent', { agentId: agent.id });
@@ -462,7 +462,7 @@
                 if (agentExecuted) {
                     // Agent permanently lost
                     agent.reports.push({ day: day, msg: '☠️ ' + agent.name + ' was executed as a spy by the enemy kingdom!' });
-                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed as a spy in a hostile kingdom!', null, 'my_actions');
+                    EventTypes.emit('AGENT_EXECUTED_SPY', { agentNum: agent.name });
                     agent.status = 'dead';
                     agent.task = null;
                     agent.travelingTo = null;
@@ -518,10 +518,10 @@
 
             if (punishResult && punishResult.punished) {
                 agent.reports.push({ day: day, msg: '⚠️ The nobles traced ' + agent.name + '\'s actions back to you! ' + punishResult.message });
-                Engine.logEvent('🔍 ' + player.fullName + '\'s scheming was discovered by the nobility! ' + punishResult.message, null, 'my_actions');
+                EventTypes.emit('AGENT_SCHEMING_DISCOVERED', { playerName: player.fullName, detail: punishResult.message });
             } else if (!agent._dead) {
                 var _disableLabel = agent.status === 'jailed' ? ('jailed for ' + (agent._jailUntil - day) + ' days') : ('laying low for ' + ((agent._cooldownUntil || day) - day) + ' days');
-                Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during ' + def.label + ' and is ' + _disableLabel + '.', null, 'my_actions');
+                EventTypes.emit('AGENT_CAUGHT', { playerName: player.fullName, agentNum: agent.name, mission: def.label, penalty: _disableLabel });
             }
             return;
         }
@@ -598,7 +598,7 @@
         town.buildings.splice(idx, 1);
         if (town.prosperity) town.prosperity = Math.max(0, town.prosperity - 3);
         agent.reports.push({ day: day, msg: '🔥 Burned down ' + (bt ? bt.name : bld.type) + ' owned by ' + (target.firstName || 'target') + ' in ' + town.name + '!' });
-        Engine.logEvent('A building in ' + town.name + ' was destroyed by fire!', null, 'my_actions');
+        EventTypes.emit('AGENT_ARSON_SUCCESS', { townName: town.name });
         if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
             StoryMode.onPlayerAction('agent_sabotage', { agentId: agent.id, townId: agent.townId, targetId: agent.task.targetId });
         }
@@ -1081,7 +1081,7 @@
                 var agentExecuted = rng ? rng.chance(0.30) : Math.random() < 0.30;
                 if (agentExecuted) {
                     agent.reports.push({ day: day, msg: '☠️ ' + agent.name + ' was executed as a spy!' });
-                    Engine.logEvent('☠️ Agent ' + agent.name + ' was executed in a hostile kingdom!', null, 'my_actions');
+                    EventTypes.emit('AGENT_EXECUTED_HOSTILE', { agentNum: agent.name });
                     agent.status = 'dead';
                     agent.task = null;
                     agent._dead = true;
@@ -1113,7 +1113,7 @@
             if (player.reputation && agentKingdomId) {
                 player.reputation[agentKingdomId] = Math.max(0, (player.reputation[agentKingdomId] || 50) - 2);
             }
-            Engine.logEvent(player.fullName + '\'s agent ' + agent.name + ' was caught during diplomatic intrigue.', null, 'my_actions');
+            EventTypes.emit('AGENT_CAUGHT_DIPLOMACY', { playerName: player.fullName, agentNum: agent.name });
             return;
         }
 

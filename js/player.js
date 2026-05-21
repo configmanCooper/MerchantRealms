@@ -3504,7 +3504,7 @@
         if (_fromKId && (player.socialRank[_fromKId] || 0) >= 5) {
             caravan.guards = (caravan.guards || 0) + 2;
             caravan._kingdomGuards = 2;
-            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your caravan.', null, 'my_business');
+            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your caravan.', { _noToast: true }, 'my_business');
         }
 
         var crewMsg = ' (' + carriers + ' carriers, ' + caravan.guards + ' guards';
@@ -3513,7 +3513,7 @@
         if (wagons > 0) crewMsg += ', ' + wagons + ' 🚛';
         crewMsg += ')';
         const tripType = recurring ? ' [Recurring Route]' : (roundTrip ? ' [Round Trip]' : '');
-        Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType, null, 'my_business');
+        Engine.logEvent('Caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + '.' + crewMsg + tripType, { _noToast: true }, 'my_business');
 
         // v9p33river110: execute any source-location orders at dispatch time so
         // the caravan loads/sells goods at its starting town BEFORE departing.
@@ -4484,11 +4484,11 @@
         if (_seaFromKId && (player.socialRank[_seaFromKId] || 0) >= 5) {
             caravan.guards = (caravan.guards || 0) + 2;
             caravan._kingdomGuards = 2;
-            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your sea caravan.', null, 'my_business');
+            Engine.logEvent('🛡️ As a Lord, 2 kingdom-paid guards join your sea caravan.', { _noToast: true }, 'my_business');
         }
 
         var shipLabel = ownedShip ? ownedShip.name : (shipTypeDef ? shipTypeDef.name + ' (rented)' : 'rented ship');
-        Engine.logEvent('Sea caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + ' on ' + shipLabel + '.', null, 'my_business');
+        Engine.logEvent('Sea caravan dispatched from ' + fromTown.name + ' to ' + toTown.name + ' on ' + shipLabel + '.', { _noToast: true }, 'my_business');
         return { success: true, message: 'Sea caravan sent to ' + toTown.name + ' on ' + shipLabel + '.', caravan: caravan };
     }
 
@@ -16908,7 +16908,7 @@
         if (result.accepted) {
             player.spouseAI.activity = 'guarding_caravan';
             player.spouseAI.activityDetail = 'Guarding caravan #' + (caravanIdx + 1);
-            Engine.logEvent(spouse.firstName + ' is guarding your caravan.', null, 'my_business');
+            Engine.logEvent(spouse.firstName + ' is guarding your caravan.', { _noToast: true }, 'my_business');
         }
         return result;
     }
@@ -28370,10 +28370,13 @@
             else if (ml.indexOf('agent') !== -1 || ml.indexOf('spy') !== -1 || ml.indexOf('intel') !== -1 || ml.indexOf('intelligence') !== -1 || ml.indexOf('smuggl') !== -1 || ml.indexOf('forged') !== -1 || ml.indexOf('notoriety') !== -1 || ml.indexOf('identity') !== -1 || ml.indexOf('laying low') !== -1 || ml.indexOf('rumor') !== -1 || ml.indexOf('frame') !== -1 || ml.indexOf('audit') !== -1 || ml.indexOf('warehouse') !== -1 || ml.indexOf('thief') !== -1 || ml.indexOf('stole') !== -1 || ml.indexOf('criminal') !== -1 || ml.indexOf('manipulated') !== -1) return 'my_business.agents';
             else if (ml.indexOf('license') !== -1 || ml.indexOf('loan') !== -1 || ml.indexOf('payment') !== -1 || ml.indexOf('permit') !== -1 || ml.indexOf('order') !== -1 || ml.indexOf('supply deal') !== -1) return 'my_business.license';
         } else if (category === 'my_kingdom') {
-            if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1 || ml.indexOf('enacted') !== -1 || ml.indexOf('repealed') !== -1) return 'my_kingdom.laws';
-            else if (ml.indexOf('tax') !== -1 || ml.indexOf('levy') !== -1 || ml.indexOf('tariff') !== -1) return 'my_kingdom.taxes';
+            if (ml.indexOf('feast') !== -1 && (ml.indexOf('praised') !== -1 || ml.indexOf('charmed') !== -1 || ml.indexOf('challenged') !== -1 || ml.indexOf('bonded') !== -1 || ml.indexOf('whispering') !== -1 || ml.indexOf('nervously') !== -1 || ml.indexOf('criticisms') !== -1 || ml.indexOf('contest') !== -1 || ml.indexOf('argument') !== -1 || ml.indexOf('toast') !== -1 || ml.indexOf('🎪') !== -1)) return 'my_kingdom.feast_actions';
             else if (ml.indexOf('feast') !== -1 || ml.indexOf('rsvp') !== -1) return 'my_kingdom.feasts';
+            else if (ml.indexOf('court') !== -1 && (ml.indexOf('address') !== -1 || ml.indexOf('spoke') !== -1 || ml.indexOf('observed') !== -1 || ml.indexOf('connections') !== -1 || ml.indexOf('petition') !== -1 || ml.indexOf('network') !== -1)) return 'my_kingdom.court_actions';
             else if (ml.indexOf('court') !== -1 && (ml.indexOf('session') !== -1 || ml.indexOf('holding court') !== -1 || ml.indexOf('in session') !== -1 || ml.indexOf('concluded') !== -1)) return 'my_kingdom.court';
+            else if (ml.indexOf('purchases') !== -1 || ml.indexOf('trade deal') !== -1 || ml.indexOf('trade agreement') !== -1 || ml.indexOf('treaty') !== -1 || ml.indexOf('alliance') !== -1 || ml.indexOf('peace') !== -1 || ml.indexOf('surrender') !== -1 || ml.indexOf('insult') !== -1) return 'my_kingdom.diplomacy';
+            else if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1 || ml.indexOf('enacted') !== -1 || ml.indexOf('repealed') !== -1) return 'my_kingdom.laws';
+            else if (ml.indexOf('tax') !== -1 || ml.indexOf('levy') !== -1 || ml.indexOf('tariff') !== -1) return 'my_kingdom.taxes';
             else if (ml.indexOf('tournament') !== -1) return 'my_kingdom.tournaments';
             else if (ml.indexOf('festival') !== -1 || ml.indexOf('celebration') !== -1) return 'my_kingdom.festivals';
             else if ((ml.indexOf(' king') !== -1 || ml.indexOf('king ') !== -1 || ml.indexOf('king\'') !== -1) || ml.indexOf('regent') !== -1 || ml.indexOf('succession') !== -1 || ml.indexOf('counsel') !== -1 || ml.indexOf('coronation') !== -1) return 'my_kingdom.king';
@@ -28385,11 +28388,14 @@
             else if (ml.indexOf('well') !== -1 || ml.indexOf('vein') !== -1 || ml.indexOf('deposit') !== -1 || ml.indexOf('ore') !== -1 || ml.indexOf('resource') !== -1) return 'local_town.resources';
             else if (ml.indexOf('population') !== -1 || ml.indexOf('refugee') !== -1 || ml.indexOf('migrat') !== -1) return 'local_town.population';
         } else if (category === 'foreign_kingdoms') {
-            if (ml.indexOf('war') !== -1 || ml.indexOf('invasion') !== -1 || ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1) return 'foreign_kingdoms.wars';
-            else if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1) return 'foreign_kingdoms.laws';
-            else if (ml.indexOf('treaty') !== -1 || ml.indexOf('alliance') !== -1 || ml.indexOf('peace') !== -1 || ml.indexOf('surrender') !== -1) return 'foreign_kingdoms.diplomacy';
+            if (ml.indexOf('feast') !== -1 && (ml.indexOf('praised') !== -1 || ml.indexOf('charmed') !== -1 || ml.indexOf('challenged') !== -1 || ml.indexOf('bonded') !== -1 || ml.indexOf('whispering') !== -1 || ml.indexOf('nervously') !== -1 || ml.indexOf('criticisms') !== -1 || ml.indexOf('contest') !== -1 || ml.indexOf('argument') !== -1 || ml.indexOf('toast') !== -1 || ml.indexOf('🎪') !== -1)) return 'foreign_kingdoms.feast_actions';
             else if (ml.indexOf('feast') !== -1) return 'foreign_kingdoms.feasts';
+            else if (ml.indexOf('court') !== -1 && (ml.indexOf('address') !== -1 || ml.indexOf('spoke') !== -1 || ml.indexOf('observed') !== -1 || ml.indexOf('connections') !== -1 || ml.indexOf('petition') !== -1 || ml.indexOf('network') !== -1)) return 'foreign_kingdoms.court_actions';
             else if (ml.indexOf('court') !== -1 && (ml.indexOf('session') !== -1 || ml.indexOf('holding court') !== -1 || ml.indexOf('in session') !== -1)) return 'foreign_kingdoms.court';
+            else if (ml.indexOf('purchases') !== -1 || ml.indexOf('trade deal') !== -1 || ml.indexOf('trade agreement') !== -1) return 'foreign_kingdoms.diplomacy';
+            else if (ml.indexOf('war') !== -1 || ml.indexOf('invasion') !== -1 || ml.indexOf('battle') !== -1 || ml.indexOf('siege') !== -1) return 'foreign_kingdoms.wars';
+            else if (ml.indexOf('law') !== -1 || ml.indexOf('decree') !== -1) return 'foreign_kingdoms.laws';
+            else if (ml.indexOf('treaty') !== -1 || ml.indexOf('alliance') !== -1 || ml.indexOf('peace') !== -1 || ml.indexOf('surrender') !== -1 || ml.indexOf('insult') !== -1) return 'foreign_kingdoms.diplomacy';
             else if (ml.indexOf('tournament') !== -1) return 'foreign_kingdoms.tournaments';
             else if (ml.indexOf('festival') !== -1 || ml.indexOf('celebration') !== -1) return 'foreign_kingdoms.festivals';
             else return 'foreign_kingdoms.political';

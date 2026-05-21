@@ -487,7 +487,7 @@
         player.townQuests[foundTownId].available = player.townQuests[foundTownId].available.filter(function(q) { return q.id !== questId; });
         player.activeQuests.push(found);
 
-        Engine.logEvent('📋 Accepted town quest: ' + found.title + ' in ' + (Engine.findTown(foundTownId) || {}).name, null, 'my_actions');
+        EventTypes.emit('QUEST_TOWN_ACCEPTED', { title: found.title, townName: (Engine.findTown(foundTownId) || {}).name });
         // Story mode: track quest accept
         if (player.storyMode) {
             player.storyMode._acceptedTownQuest = true;
@@ -663,7 +663,7 @@
             resultMsg = '💰 You sold ' + quest.quantity + ' ' + quest.resource + ' to ' + (town ? town.name : 'the town') + ' for ' + goldReward + 'g. Town reputation +' + repBoost + '. ' + boosted + ' residents noticed your help.';
         }
 
-        Engine.logEvent('✅ Completed quest: ' + quest.title + (donate ? ' (donated)' : ' (sold)'), null, 'my_actions');
+        EventTypes.emit('QUEST_TOWN_COMPLETED', { title: quest.title, donated: donate });
         if (typeof UI !== 'undefined' && UI.toast) UI.toast(resultMsg, 'success', 'critical');
         // Story mode: track quest completion
         if (player.storyMode) {
@@ -722,7 +722,7 @@
 
         _applyQuestFailurePenalty(quest, 'abandoned');
 
-        Engine.logEvent('❌ Abandoned quest: ' + quest.title, null, 'my_actions');
+        EventTypes.emit('QUEST_TOWN_ABANDONED', { title: quest.title });
         var repLoss = Math.ceil((quest.bigRepBoost || 2) / 2);
         return { success: true, message: 'Quest abandoned. (-' + repLoss + ' town rep, -' + Math.ceil(repLoss / 4) + ' kingdom rep)' };
     }
@@ -750,7 +750,7 @@
             var _expBase = _eq.donateOnly ? (_eq.bigRepBoost || _eq.smallRepBoost || 2) : (_eq.smallRepBoost || _eq.bigRepBoost || 2);
             var _expRepLoss = Math.ceil((Number(_expBase) || 2) / 2);
             if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Quest expired: ' + _eq.title + ' in ' + townName + ' (-' + _expRepLoss + ' rep)', 'warning');
-            Engine.logEvent('⏰ Quest expired: ' + _eq.title + ' in ' + townName, null, 'my_actions');
+            EventTypes.emit('QUEST_TOWN_EXPIRED', { title: _eq.title, townName: townName });
         }
 
         // Generate quests for current town
@@ -1361,7 +1361,7 @@
             }
         }
 
-        Engine.logEvent('📜 Accepted kingdom quest: ' + quest.title, null, 'my_actions');
+        EventTypes.emit('QUEST_KINGDOM_ACCEPTED', { title: quest.title });
         return { success: true, message: 'Quest accepted: ' + quest.title };
     }
 
@@ -1426,7 +1426,7 @@
         if (fromPersonal) kqData.personalAssignment = null;
 
         var _cooldownWarn = _rejectCount >= 1 ? ' ⚠️ Frequent rejections increase penalties!' : '';
-        Engine.logEvent('❌ Rejected kingdom quest: ' + quest.title + ' (-' + repLoss + ' rep, -' + relLoss + ' king rel)', null, 'my_actions');
+        EventTypes.emit('QUEST_KINGDOM_REJECTED', { title: quest.title, repLoss: repLoss, relLoss: relLoss });
         return { success: true, message: 'Quest rejected. (-' + repLoss + ' kingdom rep, -' + relLoss + ' king relationship)' + _cooldownWarn };
     }
 
@@ -1463,7 +1463,7 @@
         if (player._kqStepProgress) delete player._kqStepProgress[questId];
         if (player._kqActionAttempts) delete player._kqActionAttempts[questId]; // v9p33river333: tracking containers may be absent on old saves.
 
-        Engine.logEvent('❌ Abandoned kingdom quest: ' + quest.title, null, 'my_actions');
+        EventTypes.emit('QUEST_KINGDOM_ABANDONED', { title: quest.title });
         return { success: true, message: 'Quest abandoned. (-' + repLoss + ' rep, -' + relLoss + ' king rel)' };
     }
 
@@ -1584,7 +1584,7 @@
         // L6: Quest chains — completing certain quests unlocks follow-up directives
         var _chainFollowUp = _checkQuestChain(quest, kingdomId);
 
-        Engine.logEvent('✅ Completed kingdom quest: ' + quest.title + ' (+' + (quest.rewards.gold + _bonusGold) + 'g, +' + (_nerfedRep + _bonusRep) + ' rep)', null, 'my_actions');
+        EventTypes.emit('QUEST_KINGDOM_COMPLETED', { title: quest.title, gold: (quest.rewards.gold + _bonusGold), rep: (_nerfedRep + _bonusRep) });
         var _bonusMsg = _bonusReasons.length > 0 ? ' ' + _bonusReasons.join(' ') : '';
         return {
             success: true,
@@ -1666,7 +1666,7 @@
             rejectionPenalty: { rep: 1, kingRel: 1 }
         };
         kqData.available.push(followUp);
-        Engine.logEvent('🔗 A follow-up directive is now available: ' + followUp.title, null, 'my_actions');
+        EventTypes.emit('QUEST_FOLLOWUP_AVAILABLE', { title: followUp.title });
         if (typeof UI !== 'undefined' && UI.toast) {
             UI.toast('🔗 Follow-up directive available: ' + followUp.title, 'info', 'my_actions');
         }
@@ -2101,12 +2101,12 @@
                 var isFinalStep = (currentStepIdx + 1) >= multiStep.totalSteps;
                 if (isFinalStep) {
                     trackKQActionDone(questId);
-                    Engine.logEvent('✅ ' + (mech.label || 'Action') + ' — all steps completed! (Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label + ')', null, 'my_actions');
+                    EventTypes.emit('QUEST_ACTION_ALL_STEPS_DONE', { mechLabel: (mech.label || 'Action'), stepNum: (currentStepIdx + 1), totalSteps: multiStep.totalSteps, stepLabel: currentStep.label });
                 } else {
                     var nextStep = multiStep.steps[currentStepIdx + 1] || null;
                     var nextStepLabel = nextStep && nextStep.label ? nextStep.label : 'Continue';
                     // v9p33river333: corrupt multistep configs may omit the next step payload.
-                    Engine.logEvent('✅ Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ' complete: ' + currentStep.label + '. Next: ' + nextStepLabel, null, 'my_actions');
+                    EventTypes.emit('QUEST_ACTION_STEP_COMPLETE', { stepNum: (currentStepIdx + 1), totalSteps: multiStep.totalSteps, stepLabel: currentStep.label, nextStepLabel: nextStepLabel });
                     // Generate interactive data for next step if applicable
                     if (nextStep && nextStep.interactive) {
                         _generateInteractiveData(quest, currentStepIdx + 1);
@@ -2114,7 +2114,7 @@
                 }
             } else {
                 trackKQActionDone(questId);
-                Engine.logEvent('✅ ' + (mech.label || 'Action') + ' succeeded! (attempt #' + attemptNum + ')', null, 'my_actions');
+                EventTypes.emit('QUEST_ACTION_SUCCEEDED', { mechLabel: (mech.label || 'Action'), attemptNum: attemptNum });
             }
 
             // M2: Corrupt quest success — gain corruption trait over time
@@ -2124,7 +2124,7 @@
                 if (player._corruptionPoints >= 5 && !player._corruptionTrait) {
                     player._corruptionTrait = true;
                     successConsequences.push('🏴 Your reputation for corruption grows... (Corruption trait gained)');
-                    Engine.logEvent('🏴 ' + player.fullName + ' has gained a reputation for corruption.', null, 'my_actions');
+                    EventTypes.emit('QUEST_CORRUPTION_GAINED', { playerName: player.fullName });
                 }
             }
 
@@ -2134,7 +2134,7 @@
                 var bonusGold = rngGold ? rngGold.randInt(50, 200) : 100;
                 player.gold += bonusGold;
                 successConsequences.push('💰 Extracted ' + bonusGold + 'g from the merchant!');
-                Engine.logEvent('💰 ' + player.fullName + ' extracted ' + bonusGold + 'g from a merchant.', null, 'my_actions');
+                EventTypes.emit('QUEST_EXTORTION_GOLD', { playerName: player.fullName, gold: bonusGold });
             }
 
             // Create caravan: spawn a trade route that boosts kingdom prosperity
@@ -2161,7 +2161,7 @@
                             _ccTowns[_cti].prosperity = Math.min(100, (_ccTowns[_cti].prosperity || 50) + 3);
                         }
                         successConsequences.push('🛤️ New trade route established! Kingdom gains +' + _routeIncome + 'g/month income.');
-                        Engine.logEvent('🛤️ ' + player.fullName + ' established a new trade route for the kingdom (+' + _routeIncome + 'g/month).', null, 'my_actions');
+                        EventTypes.emit('QUEST_TRADE_ROUTE', { playerName: player.fullName, income: _routeIncome });
                     }
                 }
             }
@@ -2196,7 +2196,7 @@
                         });
                         _bbTown.prosperity = Math.min(100, (_bbTown.prosperity || 50) + 5);
                         successConsequences.push('🏗️ Built a new ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '!');
-                        Engine.logEvent('🏗️ ' + player.fullName + ' oversaw construction of a ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '.', null, 'my_actions');
+                        EventTypes.emit('QUEST_BUILDING_BUILT', { playerName: player.fullName, buildingType: _bbType.replace(/_/g, ' '), townName: _bbTown.name });
                     }
                 }
             }
@@ -2208,7 +2208,7 @@
                 player.gold += _sfGold;
                 player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _sfGold;
                 successConsequences.push('💰 Earned ' + _sfGold + 'g from foreign market sales!');
-                Engine.logEvent('💰 ' + player.fullName + ' earned ' + _sfGold + 'g selling goods in foreign markets.', null, 'my_actions');
+                EventTypes.emit('QUEST_FOREIGN_SALES', { playerName: player.fullName, gold: _sfGold });
             }
 
             // Escort NPC: relationship bonus with a random noble
@@ -2224,7 +2224,7 @@
                         if (!_enNoble._playerRelationship) _enNoble._playerRelationship = 0;
                         _enNoble._playerRelationship = Math.min(100, _enNoble._playerRelationship + 15);
                         successConsequences.push('🤝 ' + _enNoble.firstName + ' ' + (_enNoble.lastName || '') + ' is grateful for the safe escort (+15 relationship).');
-                        Engine.logEvent('🤝 ' + _enNoble.firstName + ' thanks ' + player.fullName + ' for the safe escort.', null, 'my_actions');
+                        EventTypes.emit('QUEST_ESCORT_THANKED', { nobleFirstName: _enNoble.firstName, playerName: player.fullName });
                     }
                 }
             }
@@ -2261,7 +2261,7 @@
         } else {
             // Failure — gold and time are lost, but can retry
             var failLabel = isMultiStep ? ('Step ' + (currentStepIdx + 1) + '/' + multiStep.totalSteps + ': ' + currentStep.label) : (mech.label || 'Action');
-            Engine.logEvent('❌ ' + failLabel + ' failed (attempt #' + attemptNum + ', ' + Math.round(finalChance * 100) + '% chance)', null, 'my_actions');
+            EventTypes.emit('QUEST_ACTION_FAILED', { failLabel: failLabel, attemptNum: attemptNum, chancePct: Math.round(finalChance * 100) });
 
             var failConsequences = [];
 
@@ -2276,12 +2276,12 @@
                         player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - repLoss);
                     }
                     failConsequences.push('🔍 Your involvement was discovered! (-' + repLoss + ' rep)');
-                    Engine.logEvent('🔍 ' + player.fullName + '\'s espionage activities were discovered! Reputation damaged.', null, 'my_actions');
+                    EventTypes.emit('QUEST_ESPIONAGE_DISCOVERED', { playerName: player.fullName });
                 }
                 // 10% chance of diplomatic incident
                 if (rng2 && rng2.chance(0.10)) {
                     failConsequences.push('⚠️ A diplomatic incident has occurred! Both kingdoms are aware of the operation.');
-                    Engine.logEvent('⚠️ Diplomatic incident: espionage operation exposed, straining relations.', null, 'my_actions');
+                    EventTypes.emit('QUEST_DIPLOMATIC_INCIDENT');
                 }
             }
 
@@ -2295,7 +2295,7 @@
                         player.reputation[kingdomId] = Math.max(0, (player.reputation[kingdomId] || 50) - repLoss2);
                     }
                     failConsequences.push('🚔 You were nearly caught! (-' + repLoss2 + ' rep)');
-                    Engine.logEvent('🚔 ' + player.fullName + '\'s corrupt activities were nearly exposed!', null, 'my_actions');
+                    EventTypes.emit('QUEST_CORRUPT_NEARLY_CAUGHT', { playerName: player.fullName });
                 }
                 // Track corruption — accumulates over corrupt quest attempts
                 if (!player._corruptionPoints) player._corruptionPoints = 0;
@@ -2303,7 +2303,7 @@
                 if (player._corruptionPoints >= 5 && !player._corruptionTrait) {
                     player._corruptionTrait = true;
                     failConsequences.push('🏴 Your reputation for corruption grows... (Corruption trait gained)');
-                    Engine.logEvent('🏴 ' + player.fullName + ' has gained a reputation for corruption.', null, 'my_actions');
+                    EventTypes.emit('QUEST_CORRUPTION_GAINED', { playerName: player.fullName });
                 }
             }
 
@@ -2378,7 +2378,7 @@
                 if (kingdom && kingdom.king) Player.modifyRelationship(kingdom.king, -relLoss);
 
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏰ Kingdom quest expired: ' + q.title + ' (-' + repLoss + ' rep)', 'warning');
-                Engine.logEvent('⏰ Kingdom quest expired: ' + q.title, null, 'my_actions');
+                EventTypes.emit('QUEST_KINGDOM_EXPIRED', { title: q.title });
 
                 // Clean up tracking
                 if (player._kqVisitedTowns) delete player._kqVisitedTowns[q.id];
@@ -3823,7 +3823,7 @@
             lastPaidPrice: price
         };
 
-        try { Engine.logEvent(guild.icon + ' Joined ' + guild.name + ' (' + type + ', ' + price + 'g)', null, 'my_actions'); } catch(e) {}
+        try { EventTypes.emit('GUILD_JOINED', { icon: guild.icon, guildName: guild.name, memberType: type, price: price }); } catch(e) {}
 
         // Journal — guild membership
         Player.recordJournalEntry('guild', 'Joined the ' + guild.name + ' as a ' + type + ' member for ' + price + 'g. New opportunities and connections await.', { mood: 'hopeful' });
@@ -3907,7 +3907,7 @@
                     _generateInteractiveData(quest, stepIndex + 1);
                 }
             }
-            Engine.logEvent('📋 ' + step.label + ' — auto-completed.', null, 'my_actions');
+            EventTypes.emit('QUEST_STEP_AUTO_COMPLETED', { stepLabel: step.label });
             return;
         }
 
@@ -4124,7 +4124,7 @@
         if (found) {
             target.foundEvidence = true;
             iData.evidenceFound = (iData.evidenceFound || 0) + 1;
-            Engine.logEvent('🔍 Found evidence at ' + target.buildingType + ' in ' + target.townName + '!', null, 'my_actions');
+            EventTypes.emit('QUEST_EVIDENCE_FOUND', { buildingType: target.buildingType, townName: target.townName });
 
             // Check if we have enough evidence to complete the step
             if (iData.evidenceFound >= iData.evidenceNeeded) {
@@ -4133,7 +4133,7 @@
             }
             return { success: true, message: '🔍 You found useful evidence! (' + iData.evidenceFound + '/' + iData.evidenceNeeded + ')' };
         } else {
-            Engine.logEvent('🔍 Searched ' + target.buildingType + ' in ' + target.townName + ' but found nothing useful.', null, 'my_actions');
+            EventTypes.emit('QUEST_EVIDENCE_NOT_FOUND', { buildingType: target.buildingType, townName: target.townName });
             // Check if all searched but not enough evidence
             var allSearched = iData.targets.every(function(t) { return t.searched; });
             if (allSearched && iData.evidenceFound < iData.evidenceNeeded) {
@@ -4165,7 +4165,7 @@
         if (hadInfo) {
             target.hadInfo = true;
             iData.infoGathered = (iData.infoGathered || 0) + 1;
-            Engine.logEvent('🗣️ ' + target.npcName + ' provided useful information!', null, 'my_actions');
+            EventTypes.emit('QUEST_NPC_INTERVIEW_INFO', { npcName: target.npcName });
 
             if (iData.infoGathered >= iData.infoNeeded) {
                 _advanceInteractiveStep(questId);
@@ -4173,7 +4173,7 @@
             }
             return { success: true, message: '🗣️ ' + target.npcName + ' had useful information! (' + iData.infoGathered + '/' + iData.infoNeeded + ')' };
         } else {
-            Engine.logEvent('🗣️ ' + target.npcName + ' had nothing useful to share.', null, 'my_actions');
+            EventTypes.emit('QUEST_NPC_INTERVIEW_EMPTY', { npcName: target.npcName });
             var allAsked = iData.targets.every(function(t) { return t.interviewed; });
             if (allAsked && iData.infoGathered < iData.infoNeeded) {
                 return { success: true, message: '🗣️ ' + target.npcName + ' couldn\'t help. All contacts interviewed but not enough info — try the regular action button to proceed.' };
@@ -4201,7 +4201,7 @@
 
         if (target.knowsLocation) {
             iData.criminalFound = true;
-            Engine.logEvent('🔎 ' + target.npcName + ' revealed that ' + iData.criminalName + ' is hiding in ' + iData.criminalTownName + '!', null, 'my_actions');
+            EventTypes.emit('QUEST_CRIMINAL_LOCATION_FOUND', { npcName: target.npcName, criminalName: iData.criminalName, criminalTownName: iData.criminalTownName });
             _advanceInteractiveStep(questId);
             return {
                 success: true,
@@ -4209,7 +4209,7 @@
                 revealedLocation: iData.criminalTownName
             };
         } else {
-            Engine.logEvent('🔎 ' + target.npcName + ' doesn\'t know where ' + iData.criminalName + ' is.', null, 'my_actions');
+            EventTypes.emit('QUEST_CRIMINAL_LOCATION_UNKNOWN', { npcName: target.npcName, criminalName: iData.criminalName });
             var allAsked2 = iData.npcClues.every(function(n) { return n.asked; });
             if (allAsked2 && !iData.criminalFound) {
                 return { success: true, message: '🔎 ' + target.npcName + ' doesn\'t know. All leads exhausted — try the regular action button to proceed.' };
@@ -4240,11 +4240,11 @@
         var success = rng ? rng.chance(captureChance) : (Math.random() < captureChance);
 
         if (success) {
-            Engine.logEvent('🎯 You captured ' + iData.targetName + '!', null, 'my_actions');
+            EventTypes.emit('QUEST_CRIMINAL_CAPTURED', { targetName: iData.targetName });
             _advanceInteractiveStep(questId);
             return { success: true, message: '🎯 You successfully captured ' + iData.targetName + '! Step complete!' };
         } else {
-            Engine.logEvent('🎯 ' + iData.targetName + ' escaped your grasp!', null, 'my_actions');
+            EventTypes.emit('QUEST_CRIMINAL_ESCAPED', { targetName: iData.targetName });
             // Criminal escapes — for capture_criminal quests, reset the ask_npcs data
             var actionType = '';
             try {
@@ -4309,14 +4309,14 @@
         if (currentStep + 1 >= msConfig.totalSteps) {
             // All steps done
             trackKQActionDone(questId);
-            Engine.logEvent('✅ All steps completed for quest: ' + quest.title, null, 'my_actions');
+            EventTypes.emit('QUEST_ALL_STEPS_DONE', { title: quest.title });
         } else {
             // Generate interactive data for next step if needed
             var nextStep = msConfig.steps[currentStep + 1] || null;
             if (nextStep && nextStep.interactive) {
                 _generateInteractiveData(quest, currentStep + 1);
             }
-            Engine.logEvent('✅ Step ' + (currentStep + 1) + '/' + msConfig.totalSteps + ' complete. Next: ' + (nextStep && nextStep.label ? nextStep.label : 'Continue'), null, 'my_actions');
+            EventTypes.emit('QUEST_INTERACTIVE_STEP_DONE', { stepNum: (currentStep + 1), totalSteps: msConfig.totalSteps, nextStepLabel: (nextStep && nextStep.label ? nextStep.label : 'Continue') });
         }
     }
 

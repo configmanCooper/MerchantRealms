@@ -327,11 +327,9 @@
                 if (stolenItems.length > 0) {
                     // v9p33river381: only show to player if it's their outpost
                     if (outpost.founderType === 'player') {
-                        logEvent('🦹 Thieves raided outpost "' + outpost.name + '" and stole ' + stolenItems.join(', ') +
-                            ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'my_business');
+                        EventTypes.emit('OUTPOST_THEFT_PLAYER', { outpostName: outpost.name, stolenItems: stolenItems.join(', '), value: Math.floor(stolenValue) });
                     } else {
-                        logHiddenEvent('🦹 Thieves raided outpost "' + outpost.name + '" and stole ' + stolenItems.join(', ') +
-                            ' (worth ~' + Math.floor(stolenValue) + 'g)!', null, 'military');
+                        EventTypes.emit('OUTPOST_THEFT_NPC', { outpostName: outpost.name, stolenItems: stolenItems.join(', '), value: Math.floor(stolenValue) });
                     }
                 }
             }
@@ -623,9 +621,15 @@
 
             // Guards can repel raiders
             if (numGuards >= raiderCount) {
-                logEvent('⚔️🛡️ Bandits attacked outpost "' + outpost.name + '" but were repelled by the guards!',  {
-                    type: 'outpost_defense', townId: outpost.id, icon: '⚔️'
-                }, 'military');
+                if (outpost.founderType === 'player') {
+                    logEvent('⚔️🛡️ Bandits attacked outpost "' + outpost.name + '" but were repelled by the guards!', {
+                        type: 'outpost_defense', townId: outpost.id, icon: '⚔️'
+                    }, 'my_business');
+                } else {
+                    logHiddenEvent('⚔️🛡️ Bandits attacked outpost "' + outpost.name + '" but were repelled by the guards!', {
+                        type: 'outpost_defense', townId: outpost.id, icon: '⚔️'
+                    }, 'military');
+                }
                 continue;
             }
 
@@ -701,7 +705,11 @@
             if (stolenItems.length > 0) msg += ' Stolen: ' + stolenItems.slice(0, 5).join(', ') + ' (~' + Math.floor(totalStolenValue) + 'g).';
             if (injuredNames.length > 0) msg += ' Injured: ' + injuredNames.join(', ') + '.';
             if (stolenItems.length === 0 && injuredNames.length === 0) msg += ' They found little of value.';
-            logEvent(msg,  { type: 'outpost_raid', townId: outpost.id, icon: '🦹' }, 'military');
+            if (outpost.founderType === 'player') {
+                logEvent(msg, { type: 'outpost_raid', townId: outpost.id, icon: '🦹' }, 'my_business');
+            } else {
+                logHiddenEvent(msg, { type: 'outpost_raid', townId: outpost.id, icon: '🦹' }, 'military');
+            }
         }
     }
 
@@ -789,7 +797,11 @@
                 var msg = '🔥 Fire at outpost "' + outpost.name + '"! ' + bName + ' is damaged (now ' + bld.condition + ').';
                 if (lostItems.length > 0) msg += ' Lost: ' + lostItems.slice(0, 4).join(', ') + '.';
                 msg += ' Repairs will take ' + pauseDays + ' days.';
-                logEvent(msg,  { type: 'outpost_fire', townId: outpost.id, icon: '🔥' }, 'military');
+                if (outpost.founderType === 'player') {
+                    logEvent(msg, { type: 'outpost_fire', townId: outpost.id, icon: '🔥' }, 'my_business');
+                } else {
+                    logHiddenEvent(msg, { type: 'outpost_fire', townId: outpost.id, icon: '🔥' }, 'military');
+                }
                 break; // Only one fire per outpost per day
             }
         }

@@ -17,6 +17,7 @@
 
     // ── Already-exported Engine utilities ──
     var logEvent = function(msg, details, category) { Engine.logEvent(msg, details, category); };
+    var logHiddenEvent = function(msg, details, category) { Engine.logHiddenEvent(msg, details, category); };
     var findTown = function(id) { return Engine.findTown(id); };
     var findKingdom = function(id) { return Engine.findKingdom(id); };
     var findPerson = function(id) { return Engine.findPerson(id); };
@@ -24,6 +25,17 @@
     var getPeopleInTown = function(id) { return Engine.getPeopleInTown(id); };
     var hasEmbargo = function(k1, k2) { return Engine.hasEmbargo(k1, k2); };
     var hasSpecialLaw = function(k, law) { return Engine.hasSpecialLaw(k, law); };
+
+    function _isPlayerRelevantTown(townId) {
+        if (typeof Player === 'undefined') return false;
+        if ((Player.townId || (Player.state && Player.state.townId)) === townId) return true;
+        if (Array.isArray(Player.buildings)) {
+            for (var i = 0; i < Player.buildings.length; i++) {
+                if (Player.buildings[i].townId === townId) return true;
+            }
+        }
+        return false;
+    }
     var convertBuilding = Engine.convertBuilding;
     var convertFarmBuilding = Engine.convertFarmBuilding;
     var getFarmConversionCost = Engine.getFarmConversionCost;
@@ -2902,7 +2914,8 @@
         em.buildings.push({ type: bType, townId: buildTown.id, level: 1 });
         var subsidyNote = subsidyDiscount > 0 ? ' (with ' + Math.round(subsidyDiscount * 100) + '% land subsidy)' : '';
         var holidayNote = hasTaxHoliday ? ' Tax holiday active.' : '';
-        logEvent(em.firstName + ' ' + (em.lastName || '') + ' built a ' + bt.name + ' in ' + buildTown.name + '. (materials: ' + (+materialCost).toFixed(2) + 'g, labor: ' + (+laborCost).toFixed(2) + 'g)' + subsidyNote,  {
+        var _emBuildMsg = em.firstName + ' ' + (em.lastName || '') + ' built a ' + bt.name + ' in ' + buildTown.name + '. (materials: ' + (+materialCost).toFixed(2) + 'g, labor: ' + (+laborCost).toFixed(2) + 'g)' + subsidyNote;
+        var _emBuildDetails = {
             type: 'elite_construction',
             townId: buildTown.id,
             cause: em.firstName + ' ' + (em.lastName || '') + ' invested in ' + buildTown.name + '\'s economy.' + holidayNote,
@@ -2912,7 +2925,12 @@
                 'Town economy should improve over time'
             ]
         ,
-        _noToast: true}, 'npc_activity');
+        _noToast: true};
+        if (_isPlayerRelevantTown(buildTown.id)) {
+            logEvent(_emBuildMsg, _emBuildDetails, 'npc_activity');
+        } else {
+            logHiddenEvent(_emBuildMsg, _emBuildDetails, 'npc_activity');
+        }
         grantEmXp(em, 10, 'build');
     }
 
@@ -3087,12 +3105,18 @@
                 ugBld.level = ugLevel + 1;
                 ugRef.level = ugLevel + 1;
                 ugBld.maxWorkers = (ugBt.maxWorkers || 2) + ugLevel;
-                logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades ' + ugBt.name + ' to level ' + (ugLevel + 1) + ' in ' + (ugTown.name || 'town') + '.',  {
+                var _ugMsg = em.firstName + ' ' + (em.lastName || '') + ' upgrades ' + ugBt.name + ' to level ' + (ugLevel + 1) + ' in ' + (ugTown.name || 'town') + '.';
+                var _ugDet = {
                     type: 'elite_building_upgrade',
                     cause: em.firstName + ' invests in expanding profitable operations.',
                     effects: [ugBt.name + ' upgraded to level ' + (ugLevel + 1), 'Invested ' + upgradeCost + 'g in the upgrade', 'Increased production capacity and worker slots']
                 ,
-                _noToast: true}, 'npc_activity');
+                _noToast: true};
+                if (_isPlayerRelevantTown(ugTown.id)) {
+                    logEvent(_ugMsg, _ugDet, 'npc_activity');
+                } else {
+                    logHiddenEvent(_ugMsg, _ugDet, 'npc_activity');
+                }
                 break;
             }
         }
@@ -3127,12 +3151,18 @@
                         _apBld.level = _apLvl + 1;
                         _apRef.level = _apLvl + 1;
                         var _unlockMsg = (_apLvl + 1 >= 3) ? ' 🔓 Can now produce Healing Tonics!' : '';
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' upgrades Apothecary to level ' + (_apLvl + 1) + ' in ' + (_apTown.name || 'town') + '.' + _unlockMsg,  {
+                        var _apUgMsg = em.firstName + ' ' + (em.lastName || '') + ' upgrades Apothecary to level ' + (_apLvl + 1) + ' in ' + (_apTown.name || 'town') + '.' + _unlockMsg;
+                        var _apUgDet = {
                             type: 'elite_building_upgrade',
                             cause: 'High demand for Healing Tonics motivates investment.',
                             effects: ['Apothecary upgraded to level ' + (_apLvl + 1), _unlockMsg || 'Closer to unlocking Healing Tonic production']
                         ,
-                        _noToast: true}, 'npc_activity');
+                        _noToast: true};
+                        if (_isPlayerRelevantTown(_apTown.id)) {
+                            logEvent(_apUgMsg, _apUgDet, 'npc_activity');
+                        } else {
+                            logHiddenEvent(_apUgMsg, _apUgDet, 'npc_activity');
+                        }
                         break;
                     }
                 }
@@ -4787,7 +4817,8 @@
                             var prevPerson = findPerson(prevOwner);
                             if (prevPerson) prevPerson.gold = (prevPerson.gold || 0) + discountedPrice;
                         }
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' buys a distressed ' + bType.name + ' in ' + cheapTown.name + ' for ' + discountedPrice + 'g (50% off).',  {
+                        var _distMsg = em.firstName + ' ' + (em.lastName || '') + ' buys a distressed ' + bType.name + ' in ' + cheapTown.name + ' for ' + discountedPrice + 'g (50% off).';
+                        var _distDet = {
                             type: 'elite_distressed_purchase',
                             cause: 'Economic collapse creates buying opportunities.',
                             effects: [
@@ -4796,7 +4827,12 @@
                                 'Opportunistic investment during economic downturn'
                             ]
                         ,
-                        _noToast: true}, 'npc_activity');
+                        _noToast: true};
+                        if (_isPlayerRelevantTown(cheapTown.id)) {
+                            logEvent(_distMsg, _distDet, 'npc_activity');
+                        } else {
+                            logHiddenEvent(_distMsg, _distDet, 'npc_activity');
+                        }
                         break; // One purchase per cycle
                     }
                 }
@@ -4868,12 +4904,18 @@
                             if (cvResult.success) {
                                 if (!em.buildings) em.buildings = [];
                                 em.buildings.push({ type: cvTarget, townId: cvTown.id, level: 1 });
-                                logEvent(em.firstName + ' ' + (em.lastName || '') + ' converted a ' + (cvBt.name || cvBld.type) + ' to a ' + cvTargetBt.name + ' in ' + cvTown.name + '.',  {
+                                var _cvMsg = em.firstName + ' ' + (em.lastName || '') + ' converted a ' + (cvBt.name || cvBld.type) + ' to a ' + cvTargetBt.name + ' in ' + cvTown.name + '.';
+                                var _cvDet = {
                                     type: 'elite_conversion',
                                     cause: em.firstName + ' saw better opportunity in ' + cvTargetBt.name + ' production.',
                                     effects: ['Old building demolished with blasting powder', 'New ' + cvTargetBt.name + ' built', 'Investment: ' + cvConversionCost + 'g']
                                 ,
-                                _noToast: true}, 'npc_activity');
+                                _noToast: true};
+                                if (_isPlayerRelevantTown(cvTown.id)) {
+                                    logEvent(_cvMsg, _cvDet, 'npc_activity');
+                                } else {
+                                    logHiddenEvent(_cvMsg, _cvDet, 'npc_activity');
+                                }
                             }
                             return; // One conversion per cycle
                         }
@@ -4918,7 +4960,8 @@
                         bld2.forSale = false;
                         if (!em.buildings) em.buildings = [];
                         em.buildings.push({ type: bld2.type, townId: checkTown.id, level: bld2.level || 1 });
-                        logEvent(em.firstName + ' ' + (em.lastName || '') + ' snaps up a ' + bType2.name + ' in booming ' + checkTown.name + '.',  {
+                        var _snapMsg = em.firstName + ' ' + (em.lastName || '') + ' snaps up a ' + bType2.name + ' in booming ' + checkTown.name + '.';
+                        var _snapDet = {
                             type: 'elite_growth_investment',
                             cause: 'Population influx makes ' + checkTown.name + ' a growth market.',
                             effects: [
@@ -4927,7 +4970,12 @@
                                 'Smart investment in growing town'
                             ]
                         ,
-                        _noToast: true}, 'npc_activity');
+                        _noToast: true};
+                        if (_isPlayerRelevantTown(checkTown.id)) {
+                            logEvent(_snapMsg, _snapDet, 'npc_activity');
+                        } else {
+                            logHiddenEvent(_snapMsg, _snapDet, 'npc_activity');
+                        }
                         break;
                     }
                 }
@@ -4942,7 +4990,8 @@
                         for (var tbIdx = 0; tbIdx < checkTown.buildings.length; tbIdx++) {
                             if (checkTown.buildings[tbIdx].ownerId === em.id && !checkTown.buildings[tbIdx].forSale) {
                                 checkTown.buildings[tbIdx].forSale = true;
-                                logEvent(em.firstName + ' ' + (em.lastName || '') + ' puts their ' + checkTown.buildings[tbIdx].type + ' up for sale in declining ' + checkTown.name + '.',  {
+                                var _decMsg = em.firstName + ' ' + (em.lastName || '') + ' puts their ' + checkTown.buildings[tbIdx].type + ' up for sale in declining ' + checkTown.name + '.';
+                                var _decDet = {
                                     type: 'elite_decline_sale',
                                     cause: 'Population exodus from ' + checkTown.name + ' signals declining property values.',
                                     effects: [
@@ -4950,7 +4999,12 @@
                                         'Building listed for sale in ' + checkTown.name
                                     ]
                                 ,
-                                _noToast: true}, 'npc_activity');
+                                _noToast: true};
+                                if (_isPlayerRelevantTown(checkTown.id)) {
+                                    logEvent(_decMsg, _decDet, 'npc_activity');
+                                } else {
+                                    logHiddenEvent(_decMsg, _decDet, 'npc_activity');
+                                }
                                 break;
                             }
                         }

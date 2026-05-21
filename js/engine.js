@@ -7529,7 +7529,12 @@
                         emSpouse.spouseId = p.id;
                         initFamilyRelationship(p, emSpouse, 'spouse');
                         var emTown = findTown(p.townId);
-                        logHiddenEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + (emTown ? emTown.name : 'town') + '.', { _noToast: true }, 'npc_activity');
+                        var emTownName = emTown ? emTown.name : 'town';
+                        if (_isNpcRelevantToPlayer(p) || _isNpcRelevantToPlayer(emSpouse)) {
+                            logEvent(p.firstName + ' ' + (p.lastName || '') + ' married ' + emSpouse.firstName + ' in ' + emTownName + '.', { _noToast: true }, 'npc_activity');
+                        } else {
+                            EventTypes.emit('NPC_MARRIAGE', { firstName: p.firstName, lastName: p.lastName || '', spouseFirstName: emSpouse.firstName, townName: emTownName }, { _noToast: true });
+                        }
                     }
                 }
             }
@@ -8111,15 +8116,32 @@
                         _inheritEffects.push('🤐 ' + _benGot + 'g went to ' + (_beneficiary.firstName || 'unknown') + ' ' + (_beneficiary.lastName || '') + ' (secret beneficiary)');
                     }
                     _inheritEffects.push('Merchant inventory transferred to your stock');
-                    var _inheritMsg = _hasBeneficiary && _beneficiary ?
-                        '💰 Your spouse left most of the ' + (p.lastName || p.firstName) + ' empire to ' + _beneficiary.firstName + '! You received only ' + _playerInheritGold + 'g.' :
-                        '💰 You inherit the ' + (p.lastName || p.firstName) + ' merchant empire! ' + _playerInheritGold + 'g received (after 15% death tax).';
-                    logEvent(_inheritMsg, {
-                        type: 'player_inheritance',
-                        cause: 'Your spouse ' + p.firstName + ' ' + (p.lastName || '') + ' has died.',
-                        secretBeneficiary: _hasBeneficiary && _beneficiary ? (_beneficiary.firstName + ' ' + (_beneficiary.lastName || '')) : null,
-                        effects: _inheritEffects
-                    }, 'my_actions');
+                    if (_hasBeneficiary && _beneficiary) {
+                        EventTypes.emit('INHERIT_EMPIRE_PARTIAL', {
+                            spouseName: p.lastName || p.firstName,
+                            beneficiary: _beneficiary.firstName,
+                            amount: _playerInheritGold
+                        }, {
+                            details: {
+                                type: 'player_inheritance',
+                                cause: 'Your spouse ' + p.firstName + ' ' + (p.lastName || '') + ' has died.',
+                                secretBeneficiary: _beneficiary.firstName + ' ' + (_beneficiary.lastName || ''),
+                                effects: _inheritEffects
+                            }
+                        });
+                    } else {
+                        EventTypes.emit('INHERIT_EMPIRE_FULL', {
+                            spouseName: p.lastName || p.firstName,
+                            amount: _playerInheritGold
+                        }, {
+                            details: {
+                                type: 'player_inheritance',
+                                cause: 'Your spouse ' + p.firstName + ' ' + (p.lastName || '') + ' has died.',
+                                secretBeneficiary: null,
+                                effects: _inheritEffects
+                            }
+                        });
+                    }
                     // Skip the normal heir logic below
                     heir = { _playerHandled: true };
                 } else {
@@ -8225,16 +8247,22 @@
                     world.eliteMerchants[eliteIdx] = heir;
                 }
 
-                logEvent('The merchant dynasty of ' + (p.lastName || p.firstName) + ' passes to ' + heir.firstName + ' ' + (heir.lastName || '') + '.', {
-                    type: 'elite_succession',
-                    cause: p.firstName + ' ' + (p.lastName || '') + ' has died at age ' + p.age + '.',
-                    effects: [
-                        heir.firstName + ' inherits ' + Math.floor(inheritedGold) + 'g (after 15% death tax)',
-                        'Buildings and inventory transferred to heir',
-                        'The merchant dynasty continues under new leadership'
-                    ],
-                    _noToast: true
-                }, 'npc_activity');
+                if (_isNpcRelevantToPlayer(p) || _isNpcRelevantToPlayer(heir)) {
+                    logEvent('The merchant dynasty of ' + (p.lastName || p.firstName) + ' passes to ' + heir.firstName + ' ' + (heir.lastName || '') + '.', {
+                        type: 'elite_succession',
+                        cause: p.firstName + ' ' + (p.lastName || '') + ' has died at age ' + p.age + '.',
+                        effects: [
+                            heir.firstName + ' inherits ' + Math.floor(inheritedGold) + 'g (after 15% death tax)',
+                            'Buildings and inventory transferred to heir',
+                            'The merchant dynasty continues under new leadership'
+                        ],
+                        _noToast: true
+                    }, 'npc_activity');
+                } else {
+                    logHiddenEvent('The merchant dynasty of ' + (p.lastName || p.firstName) + ' passes to ' + heir.firstName + ' ' + (heir.lastName || '') + '.', {
+                        type: 'elite_succession'
+                    }, 'npc_activity');
+                }
             } else {
                 // No heir — estate liquidated
                 if (p.buildings && p.buildings.length > 0 && town) {
@@ -8319,18 +8347,29 @@
             }
             Player.state.gold = (Player.state.gold || 0) + _npcInheritGold;
             if (_npcHasBen && _npcBen) {
-                logEvent('💰 You inherit only ' + _npcInheritGold + 'g from your late spouse ' + p.firstName + ' ' + (p.lastName || '') + '. Most of the estate went to ' + _npcBen.firstName + ' ' + (_npcBen.lastName || '') + ' (a secret beneficiary).', {
-                    type: 'player_inheritance',
-                    cause: 'Your spouse had a secret beneficiary.',
-                    secretBeneficiary: _npcBen.firstName + ' ' + (_npcBen.lastName || ''),
-                    effects: ['You inherit ' + _npcInheritGold + 'g', '🤐 ' + Math.floor(_npcTotalGold * 0.90) + 'g went to ' + _npcBen.firstName]
-                }, 'my_actions');
+                EventTypes.emit('INHERIT_SECRET_BENEFICIARY', {
+                    amount: _npcInheritGold,
+                    spouseName: p.firstName + ' ' + (p.lastName || ''),
+                    beneficiary: _npcBen.firstName + ' ' + (_npcBen.lastName || '')
+                }, {
+                    details: {
+                        type: 'player_inheritance',
+                        cause: 'Your spouse had a secret beneficiary.',
+                        secretBeneficiary: _npcBen.firstName + ' ' + (_npcBen.lastName || ''),
+                        effects: ['You inherit ' + _npcInheritGold + 'g', '🤐 ' + Math.floor(_npcTotalGold * 0.90) + 'g went to ' + _npcBen.firstName]
+                    }
+                });
             } else {
-                logEvent('💰 You inherit ' + _npcInheritGold + 'g from your late spouse ' + p.firstName + ' ' + (p.lastName || '') + ' (after 15% death tax).', {
-                    type: 'player_inheritance',
-                    cause: 'Your spouse has died.',
-                    effects: ['You inherit ' + _npcInheritGold + 'g']
-                }, 'my_actions');
+                EventTypes.emit('INHERIT_NORMAL', {
+                    amount: _npcInheritGold,
+                    spouseName: p.firstName + ' ' + (p.lastName || '')
+                }, {
+                    details: {
+                        type: 'player_inheritance',
+                        cause: 'Your spouse has died.',
+                        effects: ['You inherit ' + _npcInheritGold + 'g']
+                    }
+                });
             }
         }
         if (!p.isEliteMerchant && town) {
@@ -8816,9 +8855,9 @@
                 kingdom._playerInfluencedKingDay = world.day;
                 var playerName = (typeof Player !== 'undefined' && Player.fullName) ? Player.fullName : 'you';
                 if (playerVoteId === elected.id) {
-                    logEvent('🤝 Your candidate won the election! As Royal Advisor, ' + playerName + ' wields great influence over the new ruler.', null, 'my_actions');
+                    EventTypes.emit('ELECTION_CANDIDATE_WON', { playerName: playerName });
                 } else {
-                    logEvent('🤝 As Royal Advisor, ' + playerName + ' participated in the election of the new ruler.', null, 'my_actions');
+                    EventTypes.emit('ELECTION_PARTICIPATED', { playerName: playerName });
                 }
             }
         } else {
@@ -9541,7 +9580,8 @@
                     type: 'treaty_expired',
                     treatyType: treaty.type,
                     effects: ['Diplomatic obligations lifted', 'Kingdoms are free to act independently'],
-                    kingdoms: treaty.signatories
+                    kingdoms: treaty.signatories,
+                    _noToast: true
                 }, 'military');
                 // Clean up peaceTreaties on kingdoms
                 for (var si = 0; si < treaty.signatories.length; si++) {
@@ -9574,7 +9614,8 @@
                             logEvent('💰 ' + payer.name + ' pays ' + payment + 'g in war reparations to ' + receiver.name + '. (' + rep.paid + '/' + rep.totalAmount + 'g total)', {
                                 type: 'reparation_payment',
                                 effects: [payer.name + ' treasury: ' + Math.floor(payer.gold) + 'g', 'Remaining: ' + (rep.totalAmount - rep.paid) + 'g'],
-                                kingdoms: [rep.payer, rep.receiver]
+                                kingdoms: [rep.payer, rep.receiver],
+                                _noToast: true
                             }, 'military');
                         } else {
                             // Failed to pay — treaty violation
@@ -11075,7 +11116,7 @@
                     }
                 } else {
                     // Player backed a loser
-                    logEvent('😞 Your claimant lost. You lose reputation and some of your investment.', null, 'my_actions');
+                    EventTypes.emit('CLAIMANT_LOST');
                     if (Player.state) {
                         Player.state.reputation[k.id] = Math.max(0, (Player.state.reputation[k.id] || 50) - cfg.loserRepPenalty);
                         Player.state.gold -= Math.floor(crisis.playerInvested * cfg.loserGoldLoss);
@@ -11472,7 +11513,7 @@
         }
 
         logKingAction(k, '✅ Commission completed: ' + comm.description + ' (+' + comm.reward + 'g, +' + comm.repReward + ' rep)');
-        logEvent('✅ Commission fulfilled for ' + k.name + '! Reward: ' + comm.reward + 'g + ' + comm.repReward + ' reputation!', null, 'my_actions');
+        EventTypes.emit('COMMISSION_FULFILLED', { goodName: k.name, gold: comm.reward, rep: comm.repReward });
 
         return { success: true, reward: comm.reward, repReward: comm.repReward, resourceId: comm.resourceId, qty: comm.quantity };
     }
@@ -11484,7 +11525,7 @@
         if (comm.status === 'pending' && world.day > comm.issuedDay + 3) {
             comm.status = 'expired';
             logKingAction(k, '⏳ Commission ignored by player: ' + comm.description);
-            logEvent('⏳ You ignored the king\'s commission. The king is displeased. (-3 reputation)', null, 'my_actions');
+            EventTypes.emit('COMMISSION_IGNORED');
             return { expired: true, repLoss: 3 };
         }
         // Check deadline for accepted commissions
@@ -11492,12 +11533,12 @@
             comm.status = 'failed';
             if (comm.lordMandatory) {
                 logKingAction(k, '❌ Lord failed to complete mandatory commission: ' + comm.description + '. Demotion!');
-                logEvent('❌ You failed to fulfill the king\'s commission on time! As a Lord, this means immediate demotion!', null, 'my_actions');
+                EventTypes.emit('COMMISSION_FAILED_LORD');
                 return { failed: true, demotionTriggered: true, repLoss: 20 };
             } else {
                 var repLoss = comm.urgency === 'desperate' ? 10 : (comm.urgency === 'urgent' ? 7 : 5);
                 logKingAction(k, '❌ Commission deadline passed: ' + comm.description + ' (rep -' + repLoss + ')');
-                logEvent('❌ The king\'s commission has expired unfulfilled. (-' + repLoss + ' reputation)', null, 'my_actions');
+                EventTypes.emit('COMMISSION_EXPIRED', { repLoss: repLoss });
                 return { failed: true, demotionTriggered: false, repLoss: repLoss };
             }
         }
@@ -11529,14 +11570,14 @@
             id: 'lower_tariff', category: 'trade', name: 'Lower Foreign Tariffs',
             description: 'Reduce tariffs on foreign goods, boosting trade',
             icon: '🌍', effect: function(k) { if (k.laws) k.laws.tradeTariff = Math.max(0, (k.laws.tradeTariff || 0.10) - 0.05); },
-            kingFavor: function(k, p) { return p.tradePolicy === 'free_market' ? 0.3 : (p.tradePolicy === 'protectionist' ? -0.3 : 0); },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditional' ? -0.3 : 0); },
             requiresGold: 0
         },
         {
             id: 'raise_tariff', category: 'trade', name: 'Raise Foreign Tariffs',
             description: 'Increase tariffs on foreign goods, protecting local producers',
             icon: '🛡️', effect: function(k) { if (k.laws) k.laws.tradeTariff = Math.min(0.40, (k.laws.tradeTariff || 0.10) + 0.05); },
-            kingFavor: function(k, p) { return p.tradePolicy === 'protectionist' ? 0.3 : (p.tradePolicy === 'free_market' ? -0.2 : 0.1); },
+            kingFavor: function(k, p) { return p.tradition === 'traditional' ? 0.3 : (p.tradition === 'progressive' ? -0.2 : 0.1); },
             requiresGold: 0
         },
         {
@@ -11586,7 +11627,7 @@
                     }
                 }
             },
-            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? 0.3 : (p.militarism === 'militarist' ? 0.1 : -0.1); },
+            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? 0.3 : (p.militarism === 'warlike' ? 0.1 : -0.1); },
             requiresGold: 0
         },
         {
@@ -11606,8 +11647,10 @@
             description: 'Cap prices on essential goods (bread, wheat, medicine)',
             icon: '⚖️', effect: function(k) {
                 if (!k.laws) k.laws = {};
-                if (!k.laws.specialLaws) k.laws.specialLaws = {};
-                k.laws.specialLaws.price_controls = true;
+                if (!k.laws.specialLaws) k.laws.specialLaws = [];
+                if (!hasSpecialLaw(k, 'price_controls')) {
+                    k.laws.specialLaws.push({ id: 'price_controls', name: 'Price Controls', desc: 'Maximum prices on essential goods.', icon: '⚖️' });
+                }
             },
             kingFavor: function(k, p) { return p.generosity === 'generous' ? 0.2 : (p.greed === 'greedy' ? -0.3 : 0); },
             requiresGold: 0
@@ -11616,9 +11659,9 @@
             id: 'remove_price_controls', category: 'economy', name: 'Remove Price Controls',
             description: 'Let the free market determine prices',
             icon: '📊', effect: function(k) {
-                if (k.laws && k.laws.specialLaws) k.laws.specialLaws.price_controls = false;
+                if (k.laws && k.laws.specialLaws) k.laws.specialLaws = k.laws.specialLaws.filter(function(l) { return l.id !== 'price_controls'; });
             },
-            kingFavor: function(k, p) { return p.tradePolicy === 'free_market' ? 0.3 : -0.1; },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : -0.1; },
             requiresGold: 0
         },
         {
@@ -11655,21 +11698,21 @@
             id: 'lift_export_restriction', category: 'trade', name: 'Lift Export Restrictions',
             description: 'Remove food export restrictions to boost trade',
             icon: '📦', effect: function(k) { k.exportRestrictions = []; },
-            kingFavor: function(k, p) { return p.tradePolicy === 'free_market' ? 0.3 : 0; },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : 0; },
             requiresGold: 0
         },
         {
             id: 'open_immigration', category: 'social', name: 'Open Immigration Policy',
             description: 'Welcome immigrants to boost population and workforce',
             icon: '🏠', effect: function(k) { k.immigrationPolicy = 'open'; },
-            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditionalist' ? -0.3 : 0); },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditional' ? -0.3 : 0); },
             requiresGold: 0
         },
         {
             id: 'restrict_immigration', category: 'social', name: 'Restrict Immigration',
             description: 'Limit immigration to protect local jobs and culture',
-            icon: '🚧', effect: function(k) { k.immigrationPolicy = 'restricted'; },
-            kingFavor: function(k, p) { return p.tradition === 'traditionalist' ? 0.3 : (p.tradition === 'progressive' ? -0.2 : 0.1); },
+            icon: '🚧', effect: function(k) { k.immigrationPolicy = 'closed'; },
+            kingFavor: function(k, p) { return p.tradition === 'traditional' ? 0.3 : (p.tradition === 'progressive' ? -0.2 : 0.1); },
             requiresGold: 0
         },
         {
@@ -11677,10 +11720,12 @@
             description: 'Permit women to inherit the throne',
             icon: '👑', effect: function(k) {
                 if (!k.laws) k.laws = {};
-                if (!k.laws.specialLaws) k.laws.specialLaws = {};
-                k.laws.specialLaws.female_heir_law = true;
+                if (!k.laws.specialLaws) k.laws.specialLaws = [];
+                if (!hasSpecialLaw(k, 'female_heir_law')) {
+                    k.laws.specialLaws.push({ id: 'female_heir_law', name: 'Female Succession', desc: 'Women may inherit the throne.', icon: '👑' });
+                }
             },
-            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditionalist' ? -0.4 : -0.1); },
+            kingFavor: function(k, p) { return p.tradition === 'progressive' ? 0.3 : (p.tradition === 'traditional' ? -0.4 : -0.1); },
             requiresGold: 0
         },
         {
@@ -11689,7 +11734,7 @@
             icon: '⚔️', effect: function(k) {
                 if (k.laws) k.laws.conscription = 'mandatory';
             },
-            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? 0.4 : (p.militarism === 'pacifist' ? -0.4 : -0.1); },
+            kingFavor: function(k, p) { return (k.atWar && k.atWar.size > 0) ? 0.4 : (p.militarism === 'peaceful' ? -0.4 : -0.1); },
             requiresGold: 0
         },
         {
@@ -11698,7 +11743,7 @@
             icon: '🕊️', effect: function(k) {
                 if (k.laws) k.laws.conscription = 'voluntary';
             },
-            kingFavor: function(k, p) { return p.militarism === 'pacifist' ? 0.3 : ((k.atWar && k.atWar.size > 0) ? -0.4 : 0.1); },
+            kingFavor: function(k, p) { return p.militarism === 'peaceful' ? 0.3 : ((k.atWar && k.atWar.size > 0) ? -0.4 : 0.1); },
             requiresGold: 0
         },
     ];
@@ -11746,14 +11791,9 @@
 
         // Relationship with king bonus
         var kingRel = 0;
-        if (k.kingNpcId) {
-            var npcs = world.npcs || [];
-            for (var ni = 0; ni < npcs.length; ni++) {
-                if (npcs[ni].id === k.kingNpcId) {
-                    kingRel = npcs[ni].relationship || 0;
-                    break;
-                }
-            }
+        if (k.king && typeof Player !== 'undefined' && Player.getRelationship) {
+            var _kingRelObj = Player.getRelationship(k.king);
+            if (_kingRelObj && _kingRelObj.level) kingRel = _kingRelObj.level;
         }
         baseChance += kingRel * 0.002; // 100 rel = +0.2
 
@@ -11778,11 +11818,11 @@
             if (law.requiresGold > 0) k.gold -= law.requiresGold;
 
             logKingAction(k, '📜 Law enacted on RA counsel: ' + law.name + ' — ' + law.description);
-            logEvent('📜 The King of ' + k.name + ' accepts your proposal: ' + law.name + '!', null, 'my_actions');
+            EventTypes.emit('PROPOSAL_ACCEPTED', { kingdomName: k.name, law: law.name });
             return { success: true, accepted: true, chance: Math.round(baseChance * 100), law: law.name };
         } else {
             logKingAction(k, '📜 Law proposal rejected: ' + law.name);
-            logEvent('📜 The King of ' + k.name + ' rejects your proposal for ' + law.name + '.', null, 'my_actions');
+            EventTypes.emit('PROPOSAL_REJECTED', { kingdomName: k.name, law: law.name });
             return { success: true, accepted: false, chance: Math.round(baseChance * 100), law: law.name };
         }
     }
@@ -11802,11 +11842,9 @@
             baseChance += favor;
             // Relationship
             var kingRel = 0;
-            if (k.kingNpcId) {
-                var npcs = world.npcs || [];
-                for (var ni = 0; ni < npcs.length; ni++) {
-                    if (npcs[ni].id === k.kingNpcId) { kingRel = npcs[ni].relationship || 0; break; }
-                }
+            if (k.king && typeof Player !== 'undefined' && Player.getRelationship) {
+                var _kingRelObj2 = Player.getRelationship(k.king);
+                if (_kingRelObj2 && _kingRelObj2.level) kingRel = _kingRelObj2.level;
             }
             baseChance += kingRel * 0.002;
             if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) baseChance += 0.20;
@@ -11944,7 +11982,7 @@
         if (response === 'agree') {
             // Player agrees — execute decision (no rep/relationship reward for supporting)
             if (typeof pd._executeFn === 'function') pd._executeFn();
-            logEvent('✅ You agreed with the king\'s decision: ' + pd.description, null, 'my_actions');
+            EventTypes.emit('COUNSEL_AGREED', { description: pd.description });
             // Remove from queue
             for (var ri = k.pendingKingDecisions.length - 1; ri >= 0; ri--) {
                 if (k.pendingKingDecisions[ri].id === decisionId) { k.pendingKingDecisions.splice(ri, 1); break; }
@@ -11971,10 +12009,9 @@
         // Diplomacy skill bonus
         if (typeof Player !== 'undefined' && Player.skills) {
             var skills = Player.skills;
-            if (skills.diplomacy) playerInfluence += 0.05;
-            if (skills.master_diplomat) playerInfluence += 0.08;
-            if (skills.persuasion) playerInfluence += 0.05;
-            if (skills.court_etiquette) playerInfluence += 0.03;
+            if (skills.court_etiquette) playerInfluence += 0.05;
+            if (skills.economic_advisor) playerInfluence += 0.05;
+            if (skills.court_informant) playerInfluence += 0.08;
         }
         // If player-influenced king is within first year of reign, big bonus
         if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < 360) {
@@ -11990,7 +12027,7 @@
 
         if (swayed) {
             // King is swayed — decision NOT executed
-            logEvent('🛡️ ' + kingTitle + ' heeded your counsel and reconsidered: ' + pd.description, null, 'my_actions');
+            EventTypes.emit('COUNSEL_HEEDED', { actor: kingTitle, description: pd.description });
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('🛡️ The king accepted your counsel!', 'success', 'my_kingdom');
             }
@@ -12012,7 +12049,7 @@
         } else {
             // King was not swayed — execute decision anyway
             if (typeof pd._executeFn === 'function') pd._executeFn();
-            logEvent('❌ ' + kingTitle + ' considered your objection but proceeded: ' + pd.description, null, 'my_actions');
+            EventTypes.emit('COUNSEL_OVERRULED', { actor: kingTitle, description: pd.description });
             if (typeof UI !== 'undefined' && UI.toast) {
                 UI.toast('❌ The king was not swayed.', 'warning', 'my_kingdom');
             }
@@ -13384,7 +13421,7 @@
                 if (deserters >= 3) {
                     logEvent('🏃‍♂️ ' + deserters + ' soldiers desert from ' + k.name + '\'s army due to low morale.', {
                         type: 'desertion', cause: 'Kingdom discontent (happiness ' + Math.round(h) + '%)',
-                        effects: [deserters + ' soldiers lost', 'Military strength reduced'], kingdomId: k.id}, 'military');
+                        effects: [deserters + ' soldiers lost', 'Military strength reduced'], kingdomId: k.id, _noToast: true}, 'military');
                 }
             }
 
@@ -18562,14 +18599,24 @@
 
                 // Log notable migrations
                 if (person.isEliteMerchant || (person.gold || 0) > 500 || person.occupation === 'merchant') {
-                    logHiddenEvent(`${person.firstName} ${person.lastName} has migrated from ${town.name} to ${destTown.name}.`, {
-                        type: 'migration',
-                        cause: 'Poor conditions in ' + town.name + ' drove ' + person.firstName + ' to seek a better life.',
-                        effects: [
-                            person.firstName + ' relocated to ' + destTown.name,
-                            familyMembers.length > 0 ? (familyMembers.length + ' family member(s) followed') : 'Traveled alone',
-                        ],
-                        townId: town.id, destinationTownId: destTown.id, _noToast: true}, 'npc_activity');
+                    EventTypes.emit('NPC_MIGRATION', {
+                        firstName: person.firstName,
+                        lastName: person.lastName,
+                        fromTown: town.name,
+                        toTown: destTown.name
+                    }, {
+                        _noToast: true,
+                        details: {
+                            type: 'migration',
+                            cause: 'Poor conditions in ' + town.name + ' drove ' + person.firstName + ' to seek a better life.',
+                            effects: [
+                                person.firstName + ' relocated to ' + destTown.name,
+                                familyMembers.length > 0 ? (familyMembers.length + ' family member(s) followed') : 'Traveled alone',
+                            ],
+                            townId: town.id,
+                            destinationTownId: destTown.id
+                        }
+                    });
                 }
             }
 
@@ -19579,7 +19626,7 @@
         }
         if (bestTown) {
             bestTown.garrison = (bestTown.garrison || 0) + survivorCount;
-            logEvent(survivorCount + ' soldiers retreated to ' + bestTown.name + '.', null, 'military');
+            logEvent(survivorCount + ' soldiers retreated to ' + bestTown.name + '.', { _noToast: true }, 'military');
         }
     }
 
@@ -19631,10 +19678,10 @@
             ps.injuryDay = world.day;
             ps.injuryType = rng.pick(['wound', 'broken_bone', 'concussion', 'arrow_wound']);
             ps.injuryDuration = rng.randInt(14, 90);
-            logEvent('🩹 ' + (ps.fullName || 'You') + ' was injured in battle at ' + (town.name || 'unknown') + ' (' + ps.injuryType.replace('_', ' ') + ').', null, 'military');
+            logEvent('🩹 ' + (ps.fullName || 'You') + ' was injured in battle at ' + (town.name || 'unknown') + ' (' + ps.injuryType.replace('_', ' ') + ').', { _noToast: true }, 'military');
         } else {
             var wonSide = (outcome === 'attacker_win' || outcome === 'defender_win');
-            logEvent('⚔️ ' + (ps.fullName || 'You') + ' fought in the battle of ' + (town.name || 'unknown') + (wonSide ? ' — Victory!' : ' — Defeat.') + ' (Combat +' + (ps.skills ? (CONFIG.SOLDIER_BATTLE_XP_GAIN || 5) + (wonSide ? 3 : 0) : 0) + ')', null, 'military');
+            logEvent('⚔️ ' + (ps.fullName || 'You') + ' fought in the battle of ' + (town.name || 'unknown') + (wonSide ? ' — Victory!' : ' — Defeat.') + ' (Combat +' + (ps.skills ? (CONFIG.SOLDIER_BATTLE_XP_GAIN || 5) + (wonSide ? 3 : 0) : 0) + ')', { _noToast: true }, 'military');
         }
     }
 
@@ -20777,7 +20824,7 @@
             attackerKingdom: attackerK.id,
             defenderKingdom: defenderK.id,
             cause: 'Fleets clashed at sea.',
-            effects: battleLog.slice(0, 5), kingdomId: attackerK.id, kingdoms: [attackerK.id, defenderK.id]}, 'military');
+            effects: battleLog.slice(0, 5), kingdomId: attackerK.id, kingdoms: [attackerK.id, defenderK.id], _noToast: true}, 'military');
 
         return result;
     }
@@ -20824,7 +20871,7 @@
         army.transportShips = assignedShips;
 
         logEvent(kingdom.name + ' embarked ' + soldiersNeeded + ' soldiers on ' + assignedShips.length + ' ships at ' + town.name, {
-            type: 'army_embark', townId: town.id, kingdomId: kingdom.id}, 'military');
+            type: 'army_embark', townId: town.id, kingdomId: kingdom.id, _noToast: true}, 'military');
 
         return true;
     }
@@ -22269,6 +22316,39 @@
         if (!world._hiddenEvents) world._hiddenEvents = [];
         world._hiddenEvents.push({ day: world.day, message: msg, details: details || null, category: category || 'npc_activity' });
         while (world._hiddenEvents.length > 500) world._hiddenEvents.shift();
+    }
+
+    function _isPlayerRelevantTown(townId) {
+        if (typeof Player === 'undefined') return false;
+        if ((Player.townId || (Player.state && Player.state.townId)) === townId) return true;
+        if (Array.isArray(Player.buildings)) {
+            for (var i = 0; i < Player.buildings.length; i++) {
+                if (Player.buildings[i].townId === townId) return true;
+            }
+        }
+        return false;
+    }
+
+    function _isNpcRelevantToPlayer(personOrId) {
+        if (typeof Player === 'undefined') return false;
+        var p = typeof personOrId === 'string' ? findPerson(personOrId) : personOrId;
+        if (!p) return false;
+        if (p.isNoble || p.isEliteMerchant) return true;
+        var ps = Player.state || Player;
+        if (ps.spouseId === p.id) return true;
+        if (ps.childrenIds && ps.childrenIds.indexOf(p.id) >= 0) return true;
+        if (ps.familyMembers) {
+            for (var i = 0; i < ps.familyMembers.length; i++) {
+                var fm = ps.familyMembers[i];
+                if ((typeof fm === 'string' ? fm : fm.id) === p.id) return true;
+            }
+        }
+        if (ps.relationships && ps.relationships[p.id]) {
+            var rel = ps.relationships[p.id];
+            var level = typeof rel === 'number' ? rel : (rel.level || 0);
+            if (level >= 20) return true;
+        }
+        return false;
     }
 
     // ── World Chronicle: Yearly Kingdom Status Summary ──
@@ -24101,7 +24181,11 @@
                 lastRentDay: null
             };
             em.rentalProperties.push(rentalProp);
-            logEvent('🏠 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.', { type: 'infrastructure', townId: emTown.id, kingdomId: emTown.kingdomId, _noToast: true }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === emTown.id) ? 'local_town' : 'npc_activity');
+            if (_isPlayerRelevantTown(emTown.id)) {
+                logEvent('🏠 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.', { type: 'infrastructure', townId: emTown.id, kingdomId: emTown.kingdomId, _noToast: true }, typeof Player !== 'undefined' && ((Player.townId || (Player.state && Player.state.townId)) === emTown.id) ? 'local_town' : 'npc_activity');
+            } else {
+                logHiddenEvent('🏠 ' + (em.firstName || '') + ' ' + (em.lastName || '') + ' built a ' + (ht ? ht.name : selectedType) + ' as a rental investment in ' + emTown.name + '.', { type: 'infrastructure', townId: emTown.id, kingdomId: emTown.kingdomId }, 'npc_activity');
+            }
         }
     }
 
@@ -24888,7 +24972,11 @@
                         townBld.ownerId = null;
                         townBld.forSale = true;
                         townBld.salePrice = Math.floor((bt ? bt.cost : 200) * CONFIG.NPC_BUSINESS_CLOSE_SALE_FACTOR);
-                        logEvent(`${p.firstName} ${p.lastName}'s ${bt ? bt.name : bld.type} in ${town ? town.name : 'a town'} has closed down.`, { townId: town.id, _noToast: true }, 'npc_activity');
+                        if (_isPlayerRelevantTown(town.id)) {
+                            logEvent(`${p.firstName} ${p.lastName}'s ${bt ? bt.name : bld.type} in ${town ? town.name : 'a town'} has closed down.`, { townId: town.id, _noToast: true }, 'npc_activity');
+                        } else {
+                            logHiddenEvent(`${p.firstName} ${p.lastName}'s ${bt ? bt.name : bld.type} in ${town ? town.name : 'a town'} has closed down.`, { townId: town.id }, 'npc_activity');
+                        }
                     }
                     // Remove from merchant's buildings
                     const idx = p.buildings.indexOf(bld);
@@ -24917,7 +25005,11 @@
                                         town.buildings.push(newBld);
                                         if (!p.buildings) p.buildings = [];
                                         p.buildings.push({ type: bt.id, townId: town.id, level: 1 });
-                                        logEvent(`${p.firstName} ${p.lastName} opened a new ${bt.name} in ${town.name}.`, { townId: town.id, _noToast: true }, 'npc_activity');
+                                        if (_isPlayerRelevantTown(town.id)) {
+                                            logEvent(`${p.firstName} ${p.lastName} opened a new ${bt.name} in ${town.name}.`, { townId: town.id, _noToast: true }, 'npc_activity');
+                                        } else {
+                                            logHiddenEvent(`${p.firstName} ${p.lastName} opened a new ${bt.name} in ${town.name}.`, { townId: town.id }, 'npc_activity');
+                                        }
                                         break;
                                     }
                                 }
@@ -24971,7 +25063,11 @@
                                 var npcCvResult = convertBuilding(npcTown, npcBIdx, npcTargetType, p.id, 'npc');
                                 if (npcCvResult.success) {
                                     p.buildings.push({ type: npcTargetType, townId: npcTown.id, level: 1 });
-                                    logEvent(p.firstName + ' ' + p.lastName + ' converted a building to a ' + (findBuildingType(npcTargetType) || {}).name + ' in ' + npcTown.name + '.', { townId: npcTown.id, _noToast: true }, 'npc_activity');
+                                    if (_isPlayerRelevantTown(npcTown.id)) {
+                                        logEvent(p.firstName + ' ' + p.lastName + ' converted a building to a ' + (findBuildingType(npcTargetType) || {}).name + ' in ' + npcTown.name + '.', { townId: npcTown.id, _noToast: true }, 'npc_activity');
+                                    } else {
+                                        logHiddenEvent(p.firstName + ' ' + p.lastName + ' converted a building to a ' + (findBuildingType(npcTargetType) || {}).name + ' in ' + npcTown.name + '.', { townId: npcTown.id }, 'npc_activity');
+                                    }
                                 }
                             }
                         }
@@ -27057,7 +27153,7 @@
                 pPerson.perceivedKingLoyalty = Math.min(98, pPerson.perceivedKingLoyalty + boost);
                 pPerson.kingLoyalty = Math.min(100, (pPerson.kingLoyalty || 50) + 2);
                 result = { success: true, message: 'You formally addressed the king and made a favorable impression. (+' + boost + ' perceived loyalty)' };
-                logEvent('🎙️ You spoke before the court and addressed the king directly.', null, 'my_actions');
+                EventTypes.emit('COURT_SPEECH');
                 break;
             }
             case 'petition_king': {
@@ -27211,7 +27307,7 @@
                 if ((_obP.ambition || 50) > 70) msg += ' They seem quite ambitious.';
                 if ((_obP.honesty || 50) < 30) msg += ' You sense dishonesty in their words.';
                 result = { success: true, message: msg };
-                logEvent('👁️ You carefully observed ' + obName + ' during court proceedings.', null, 'my_actions');
+                EventTypes.emit('COURT_OBSERVE', { npcName: obName });
                 break;
             }
             case 'network_nobles': {
@@ -27232,7 +27328,7 @@
                 if (!pPerson._nobleRelationships) pPerson._nobleRelationships = {};
                 pPerson._nobleRelationships[target.id] = Math.min(100, (pPerson._nobleRelationships[target.id] || 0) + rng.randInt(2, 6));
                 result = { success: true, message: 'You networked with ' + tName + ' and improved your relationship.' };
-                logEvent('🤝 You made connections with ' + tName + ' at court.', null, 'my_actions');
+                EventTypes.emit('COURT_NETWORK', { npcName: tName });
                 break;
             }
             default:
@@ -28945,7 +29041,7 @@
 
             if (action) {
                 feast.events.push(action);
-                if (isPlayerK) {
+                if (isPlayerK && typeof Player !== 'undefined' && Player.skills && Player.skills.court_informant) {
                     logEvent('🎪 ' + action, { type: 'feast_noble_action', kingdomId: k.id, _noToast: true }, category);
                 }
             }
@@ -32455,9 +32551,12 @@
             if (k._conspiracy.plotters.indexOf('player') >= 0) return { success: false, message: 'You are already part of this conspiracy.' };
             k._conspiracy.plotters.push('player');
             k._conspiracy.strength += 15; // player brings significant strength
-            logEvent('🤫 You have secretly joined the ' + k._conspiracy.type + ' conspiracy in ' + k.name + '.', {
-                type: 'conspiracy_joined', kingdomId: k.id
-            }, 'my_actions');
+            EventTypes.emit('JOINED_CONSPIRACY', {
+                leaderName: k._conspiracy.type,
+                kingdomName: k.name
+            }, {
+                details: { type: 'conspiracy_joined', kingdomId: k.id }
+            });
             return { success: true, message: 'You have joined the ' + k._conspiracy.type + ' plot against the king of ' + k.name + '.' };
         },
 
@@ -32495,9 +32594,13 @@
                 strength: 20,
                 detected: false
             };
-            logEvent('🤫 You have formed a secret ' + type + ' conspiracy with ' + noble.firstName + ' in ' + k.name + '.', {
-                type: 'conspiracy_formed', kingdomId: k.id
-            }, 'my_actions');
+            EventTypes.emit('FORMED_CONSPIRACY', {
+                type: type,
+                partnerName: noble.firstName,
+                kingdomName: k.name
+            }, {
+                details: { type: 'conspiracy_formed', kingdomId: k.id }
+            });
             return { success: true, message: 'You and ' + noble.firstName + ' have begun plotting a ' + type + ' against the king of ' + k.name + '.' };
         },
 
@@ -32540,9 +32643,12 @@
                 Player.state._revoltSupportRequests = Player.state._revoltSupportRequests.filter(function(r) { return r.townId !== townId; });
             }
 
-            logEvent('🔥 You secretly pledge ' + goldAmount + 'g to support dissidents in ' + town.name + '.', {
-                type: 'player_revolt_support', townId: townId, kingdomId: k.id, kingdom: k.name, gold: goldAmount
-            }, 'my_actions');
+            EventTypes.emit('FUNDED_DISSIDENTS', {
+                gold: goldAmount,
+                townName: town.name
+            }, {
+                details: { type: 'player_revolt_support', townId: townId, kingdomId: k.id, kingdom: k.name }
+            });
 
             return { success: true, message: 'You pledge ' + goldAmount + 'g to the rebels in ' + town.name + '. If they revolt, your support will strengthen them.' };
         },
@@ -32789,6 +32895,7 @@
         // computeMilitaryStrength — wrapper version at line ~22112 handles both id and object
         logEvent: logEvent,
         logHiddenEvent: logHiddenEvent,
+        isNpcRelevantToPlayer: _isNpcRelevantToPlayer,
         storeBackgroundGossip: _storeBackgroundGossip,
         getBackgroundGossip: getBackgroundGossip,
         demolishBuilding: demolishBuilding,
@@ -33142,7 +33249,7 @@
             pretender.support += Math.floor(goldAmount / 100);
             k.successionCrisis.playerBacking = pretenderId;
             k.successionCrisis.playerInvested = (k.successionCrisis.playerInvested || 0) + goldAmount;
-            logEvent('💰 You back ' + pretender.name + ' with ' + goldAmount + 'g for the throne of ' + k.name + '.', null, 'my_actions');
+            EventTypes.emit('BACKED_CLAIMANT', { claimantName: pretender.name, gold: goldAmount, kingdomName: k.name });
             return { success: true, newSupport: pretender.support };
         },
         applyPriceControls: applyPriceControls,

@@ -376,13 +376,13 @@
                 if (punishment.fine > 0) {
                     Player.deductGoldOrDebt(punishment.fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Fine for violating ' + qLabel);
                 }
-                Engine.logEvent('🚔 ' + player.fullName + ' was caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ' and fined ' + punishment.fine + 'g' : '') + '.', null, 'my_actions');
+                EventTypes.emit('QUARANTINE_VIOLATION_JAILED', { playerName: player.fullName, quarantineType: qLabel, townName: t.name, days: jailDays, extra: punishment.fine > 0 ? ' and fined ' + punishment.fine + 'g' : '' });
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught! Jailed ' + jailDays + ' days for violating ' + qLabel + '.', 'error', 'critical');
                 return { allowed: false, message: '🚧 Caught violating ' + qLabel + ' at ' + t.name + '! Jailed for ' + jailDays + ' days' + (punishment.fine > 0 ? ', fined ' + punishment.fine + 'g' : '') + '.' };
             } else {
                 // Fine only — remainder becomes debt
                 Player.deductGoldOrDebt(punishment.fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Fine for violating ' + qLabel);
-                Engine.logEvent('🚧 ' + player.fullName + ' was caught at ' + t.name + ' ' + qLabel + ' and fined ' + punishment.fine + 'g.', null, 'my_actions');
+                EventTypes.emit('QUARANTINE_VIOLATION_FINED', { playerName: player.fullName, townName: t.name, quarantineType: qLabel, gold: punishment.fine });
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught! Fined ' + punishment.fine + 'g for violating ' + qLabel + '.', 'warning', 'critical');
                 return { allowed: false, message: '🚧 Caught at ' + t.name + ' ' + qLabel + '! Fined ' + punishment.fine + 'g and turned away.' };
             }
@@ -777,7 +777,7 @@
             if (rng.chance(_bSuccessChance)) {
                 // Bribe succeeded — deduct gold, log event
                 player.gold -= bribeCost;
-                Engine.logEvent('💰 ' + player.fullName + ' bribed a guard ' + bribeCost + 'g to pass through ' + _bqLabel + ' at ' + _bt.name + '.', null, 'my_actions');
+                EventTypes.emit('QUARANTINE_BRIBE_SUCCESS', { playerName: player.fullName, gold: bribeCost, quarantineType: _bqLabel, townName: _bt.name });
                 return { allowed: true, message: '💰 You slipped the guard ' + bribeCost + 'g and were waved through the ' + _bqLabel + ' at ' + _bt.name + '.' };
             }
 
@@ -797,12 +797,12 @@
                 if (_bPunishment.fine > 0) {
                     Player.deductGoldOrDebt(_bPunishment.fine, 'kingdom', _bKingdom ? _bKingdom.id : 'unknown', _bKingdom ? _bKingdom.name : 'Kingdom', 'Fine for bribery and violating ' + _bqLabel);
                 }
-                Engine.logEvent('🚔 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ' and fined ' + _bPunishment.fine + 'g' : '') + '.', null, 'my_actions');
+                EventTypes.emit('QUARANTINE_BRIBE_JAILED', { playerName: player.fullName, townName: _bt.name, quarantineType: _bqLabel, days: _bJailDays, extra: _bPunishment.fine > 0 ? ' and fined ' + _bPunishment.fine + 'g' : '' });
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚔 Caught bribing! Jailed ' + _bJailDays + ' days for bribery and violating ' + _bqLabel + '.', 'error', 'critical');
                 return { allowed: false, message: '🚧 Caught bribing a guard at ' + _bt.name + '! Jailed for ' + _bJailDays + ' days' + (_bPunishment.fine > 0 ? ', fined ' + _bPunishment.fine + 'g' : '') + '.' };
             } else {
                 Player.deductGoldOrDebt(_bPunishment.fine, 'kingdom', _bKingdom ? _bKingdom.id : 'unknown', _bKingdom ? _bKingdom.name : 'Kingdom', 'Fine for bribery at ' + _bt.name);
-                Engine.logEvent('🚧 ' + player.fullName + ' was caught bribing a guard at ' + _bt.name + ' ' + _bqLabel + ' and fined ' + _bPunishment.fine + 'g.', null, 'my_actions');
+                EventTypes.emit('QUARANTINE_BRIBE_FINED', { playerName: player.fullName, townName: _bt.name, quarantineType: _bqLabel, gold: _bPunishment.fine });
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🚧 Caught bribing! Fined ' + _bPunishment.fine + 'g for bribery and violating ' + _bqLabel + '.', 'warning', 'critical');
                 return { allowed: false, message: '🚧 Caught bribing at ' + _bt.name + ' ' + _bqLabel + '! Fined ' + _bPunishment.fine + 'g and turned away.' };
             }
@@ -851,13 +851,13 @@
         chance = Math.min(0.95, chance);
 
         if (rng.chance(chance)) {
-            Engine.logEvent('⚕️ ' + player.fullName + ' persuaded the quarantine guard to allow passage as a medical professional.', null, 'my_actions');
+            EventTypes.emit('QUARANTINE_MEDICAL_PASS', { playerName: player.fullName });
             return { allowed: true, message: '⚕️ The guard recognizes your medical expertise and waves you through.' };
         }
 
         // Failed — set 7-day cooldown, no other penalty
         player._doctorPersuasionCooldown = currentDay + 7;
-        Engine.logEvent('⚕️ ' + player.fullName + ' failed to convince the quarantine guard of medical necessity. Must wait 7 days.', null, 'my_actions');
+        EventTypes.emit('QUARANTINE_MEDICAL_FAIL', { playerName: player.fullName });
         if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚕️ The guard isn\'t convinced. Try again in 7 days.', 'warning');
         return { allowed: false, message: '⚕️ The guard isn\'t convinced of your medical necessity. You can try again in 7 days.' };
     }
@@ -2227,7 +2227,7 @@
                             caravan.active = false;
                             caravan.recurring = false;
                             logCaravan(caravan, '🏳️ Caravan disbanded after final run.');
-                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.', null, 'my_business');
+                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.', { _noToast: true }, 'my_business');
                             return;
                         } else {
                             caravan.returnTrip = true;
@@ -2279,7 +2279,7 @@
                                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, -revenue);
                                 if (Engine.collectTradeTax) Engine.collectTradeTax(destTown.kingdomId, revenue, resId, false, destTown.id);
                                 var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
-                                Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, null, 'my_business');
+                                Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, { _noToast: true }, 'my_business');
                                 // Track cross-kingdom caravan trade for story mode
                                 if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
                                     // v9p33river320: caravan.route entries are
@@ -2321,7 +2321,7 @@
                                 buySpent += cost;
                                 destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
                                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, cost);
-                                Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`, null, 'my_business');
+                                Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`, { _noToast: true }, 'my_business');
                             }
                             if (buySpent > 0) {
                                 player.gold -= buySpent;
@@ -2355,7 +2355,7 @@
                 _processCaravanPassengers(caravan, destTownId);
 
                 const routeLabel = caravan.routeType === 'sea' ? 'Sea caravan' : 'Caravan';
-                Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`, null, 'my_business');
+                Engine.logEvent(`${routeLabel} arrived at ${destTown ? destTown.name : 'destination'}.`, { _noToast: true }, 'my_business');
 
                 // XP for caravan/voyage completion
                 if (caravan.routeType === 'sea') {
@@ -2524,7 +2524,7 @@
                                         caravan.totalProfit = (caravan.totalProfit || 0) + rev;
                                         originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
                                         if (Engine.collectTradeTax) Engine.collectTradeTax(originTownObj.kingdomId, rev, resId, false, originTownObj.id);
-                                        Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`, null, 'my_business');
+                                        Engine.logEvent(`Recurring caravan sold return goods: ${qty} ${resId} for ${rev}g.`, { _noToast: true }, 'my_business');
                                     }
                                 }
                             }
@@ -2533,7 +2533,7 @@
                                 caravan.status = 'arrived';
                                 caravan.active = false;
                                 caravan.recurring = false;
-                                Engine.logEvent(`Recurring route stopped — no goods available to reload at ${originTown ? originTown.name : 'origin'}.`, null, 'my_business');
+                                Engine.logEvent(`Recurring route stopped — no goods available to reload at ${originTown ? originTown.name : 'origin'}.`, { _noToast: true }, 'my_business');
                             } else {
                                 caravan.goods = reloadedGoods;
                                 caravan.returnTrip = false;
@@ -2552,7 +2552,7 @@
                                     legacyWeight += (res ? res.weight : 1) * qty;
                                 }
                                 caravan.totalWeight = legacyWeight;
-                                Engine.logEvent(`Recurring caravan reloaded and departing again (maintenance: ${totalMaint}g). Trip #${caravan.tripCount + 1}`, null, 'my_business');
+                                Engine.logEvent(`Recurring caravan reloaded and departing again (maintenance: ${totalMaint}g). Trip #${caravan.tripCount + 1}`, { _noToast: true }, 'my_business');
                             }
                         }
                     }
@@ -2577,7 +2577,7 @@
                                     caravan.totalProfit = (caravan.totalProfit || 0) + rev;
                                     originTownObj.market.supply[resId] = (originTownObj.market.supply[resId] || 0) + qty;
                                     if (Engine.collectTradeTax) Engine.collectTradeTax(originTownObj.kingdomId, rev, resId, false, originTownObj.id);
-                                    Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`, null, 'my_business');
+                                    Engine.logEvent(`Return caravan sold goods at ${originTownObj.name}: ${qty} ${resId} for ${rev}g.`, { _noToast: true }, 'my_business');
                                 }
                             }
                         }
@@ -3037,7 +3037,7 @@
         player.stats.totalGoldSpent += rescueCost;
         caravan.status = 'traveling';
         caravan.progress = Math.max(0, caravan.progress - 0.1);
-        Engine.logEvent(`Caravan rescued for ${rescueCost}g. It continues its journey.`, null, 'my_business');
+        Engine.logEvent(`Caravan rescued for ${rescueCost}g. It continues its journey.`, { _noToast: true }, 'my_business');
         return { success: true, message: `Caravan rescued for ${rescueCost}g.` };
     }
 
@@ -3047,7 +3047,7 @@
         if (!caravan) return { success: false, message: 'No active recurring route with that ID.' };
         caravan.recurring = false;
         caravan.active = caravan.status === 'traveling';
-        Engine.logEvent(`Recurring caravan route cancelled. Current trip will complete.`, null, 'my_business');
+        Engine.logEvent(`Recurring caravan route cancelled. Current trip will complete.`, { _noToast: true }, 'my_business');
         return { success: true, message: 'Recurring route cancelled. Current trip will finish.' };
     }
 
@@ -3070,12 +3070,12 @@
 
         logCaravan(caravan, '🏳️ Caravan set to disband. Will finish last run and drop off all goods.');
         if (isReturn) {
-            Engine.logEvent('Caravan disbanding — finishing return to ' + originName + ', then will disband.', null, 'my_business');
+            Engine.logEvent('Caravan disbanding — finishing return to ' + originName + ', then will disband.', { _noToast: true }, 'my_business');
             return { success: true, message: 'Caravan disbanding. Finishing return to ' + originName + ' and will drop off all goods.' };
         } else {
             // Outbound: will go to destination, drop goods, return, disband
             caravan.roundTrip = true; // ensure it does a return leg
-            Engine.logEvent('Caravan disbanding — finishing trip to ' + destName + ', returning goods to ' + originName + ', then will disband.', null, 'my_business');
+            Engine.logEvent('Caravan disbanding — finishing trip to ' + destName + ', returning goods to ' + originName + ', then will disband.', { _noToast: true }, 'my_business');
             return { success: true, message: 'Caravan disbanding. Will deliver to ' + destName + ', return to ' + originName + ', and drop off remaining goods.' };
         }
     }
@@ -3134,7 +3134,7 @@
 
         var originName = Engine.findTown(dropTownId) ? Engine.findTown(dropTownId).name : 'origin';
         logCaravan(caravan, '❌ Caravan force-disbanded. ' + (totalDropped > 0 ? totalDropped + ' goods dropped at ' + originName + '.' : 'No goods to drop.'));
-        Engine.logEvent('Caravan force-disbanded. Equipment returned to ' + originName + '.', null, 'my_business');
+        Engine.logEvent('Caravan force-disbanded. Equipment returned to ' + originName + '.', { _noToast: true }, 'my_business');
         return { success: true, message: 'Caravan disbanded immediately. Goods & equipment returned to ' + originName + '.' };
     }
 
