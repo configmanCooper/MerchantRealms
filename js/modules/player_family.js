@@ -1233,7 +1233,7 @@
         var dp = player.dateProgress[personId];
         // v9p33river392: update courtshipBonding — this was missing from player_family.js
         if (dp.courtshipBonding === undefined) dp.courtshipBonding = 0;
-        dp.courtshipBonding = Math.min(100, dp.courtshipBonding + (activity.dateProgress || 0) * 0.5);
+        dp.courtshipBonding = Math.min(100, dp.courtshipBonding + (activity.dateProgress || 0) * 0.15);
         var progress = activity.dateProgress || 0;
 
         if (person.quirks && person.quirks.indexOf('secretive') >= 0) {
