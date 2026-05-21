@@ -15525,7 +15525,7 @@
         var depositHunger = 0;
         if (p.greed === 'greedy') depositHunger += 0.15;
         if (p.ambition === 'ambitious') depositHunger += 0.10;
-        if (p.temperament === 'cautious') depositHunger -= 0.05;
+        if (p.courage === 'cautious') depositHunger -= 0.05;
         // At war? More desperate for weapon materials
         var kingdomAtWar = k.atWar && k.atWar.size > 0;
         if (kingdomAtWar) depositHunger += 0.15;

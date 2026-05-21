@@ -12974,7 +12974,7 @@
 
         // King personality
         if (kp.generosity === 'generous') approval += 0.10;
-        else if (kp.generosity === 'greedy') approval -= 0.15;
+        else if (kp.greed === 'greedy') approval -= 0.15;
         if (kp.tradition === 'progressive') approval += 0.05;
 
         // Military buildings during wartime
@@ -18404,8 +18404,8 @@
         // King personality affects likelihood
         var personality = k.kingPersonality || {};
         var assignChance = 0.10; // 10% base every 15 days
-        if (personality.military === 'warlike') assignChance = 0.20;
-        if (personality.military === 'aggressive') assignChance = 0.15;
+        if (personality.militarism === 'warlike') assignChance = 0.20;
+        if (personality.militarism === 'aggressive') assignChance = 0.15;
 
         // Check if there are armies without leaders
         var armies = Engine.getArmies ? Engine.getArmies() : [];
@@ -24333,7 +24333,8 @@
 
         // Generous/diplomatic kings more likely to deal
         if (kp.generosity === 'generous') dealChance += 0.25;
-        if (kp.diplomacy === 'diplomatic' || kp.diplomacy === 'peaceful') dealChance += 0.15;
+        // v9p33river387: diplomacy field doesn't exist; use temperament/justice
+        if (kp.temperament === 'kind' || kp.justice === 'just') dealChance += 0.15;
         // Greedy/warlike kings more likely to seize
         if (kp.greed === 'greedy') dealChance -= 0.15;
         if (kp.greed === 'corrupt') dealChance -= 0.25;

@@ -4502,9 +4502,9 @@
         if (!k.laws.specialLaws) k.laws.specialLaws = [];
         var moodCurrent = k.kingMood ? k.kingMood.current : 'content';
 
-        // Noble Council — just/diplomatic kings may adopt when happiness is low
+        // Noble Council — just/tradition-progressive kings may adopt when happiness is low
         if (!hasSpecialLaw(k, 'noble_council') &&
-            (p.justice === 'just' || p.diplomacy === 'diplomatic') &&
+            (p.justice === 'just' || p.tradition === 'progressive') &&
             happiness < 40 && rng.chance(0.30)) {
             k.laws.specialLaws.push({ id: 'noble_council', name: 'Noble Council', desc: 'Major decisions require a vote of the nobility.', icon: '🗳️', effect: 'noble_council' });
             if (!k._activeVotes) k._activeVotes = [];
