@@ -1188,12 +1188,21 @@ var StoryMode = (function () {
         // Track agent sabotage/arson for military path
         if (actionType === 'agent_sabotage' || actionType === 'player_sabotage') {
             if (_storyState.path === 'military') {
-                _storyState.flags._sabotageCount = (_storyState.flags._sabotageCount || 0) + 1;
-                var sc = _storyState.flags._sabotageCount;
-                for (var si = 0; si < ch.objectives.length; si++) {
-                    if (ch.objectives[si].id === 'ch17b_sabotage') {
-                        ch.objectives[si].desc = 'Sabotage or burn ' + 3 + ' buildings in enemy territory (' + Math.min(sc, 3) + '/3)';
-                        break;
+                // v9p33river410: only count sabotage in enemy territory
+                var _sabTargetKId = data && data.kingdomId;
+                if (!_sabTargetKId && data && data.townId && typeof Engine !== 'undefined' && Engine.findTown) {
+                    var _sabTown = Engine.findTown(data.townId);
+                    _sabTargetKId = _sabTown && _sabTown.kingdomId;
+                }
+                var _sabEnemyKId = _storyState.flags._enemyKingdomId || _storyState.flags.enemyKingdomId;
+                if (_sabTargetKId && _sabEnemyKId && _sabTargetKId === _sabEnemyKId) {
+                    _storyState.flags._sabotageCount = (_storyState.flags._sabotageCount || 0) + 1;
+                    var sc = _storyState.flags._sabotageCount;
+                    for (var si = 0; si < ch.objectives.length; si++) {
+                        if (ch.objectives[si].id === 'ch17b_sabotage') {
+                            ch.objectives[si].desc = 'Sabotage or burn ' + 3 + ' buildings in enemy territory (' + Math.min(sc, 3) + '/3)';
+                            break;
+                        }
                     }
                 }
             }
@@ -2485,22 +2494,22 @@ var StoryMode = (function () {
 
     // Military outpost checks
     _hooks._checkMilitaryOutpost = function () {
-        if (typeof Player !== 'undefined' && Player.state) {
+        if (typeof Player !== 'undefined' && Player.state && typeof Engine !== 'undefined') {
             var outposts = Player.state.outposts || [];
             for (var i = 0; i < outposts.length; i++) {
-                var op = outposts[i];
-                // Check for security upgrades (wall level >= 1)
-                if ((op.wallLevel || 0) >= 1) return true;
+                var town = Engine.findTown(outposts[i].townId); // v9p33river410: slim record has no wallLevel; check town.walls
+                if (town && (town.walls || 0) >= 1) return true;
             }
         }
         return false;
     };
 
     _hooks._checkMilitaryOutpostPop = function () {
-        if (typeof Player !== 'undefined' && Player.state) {
+        if (typeof Player !== 'undefined' && Player.state && typeof Engine !== 'undefined') {
             var outposts = Player.state.outposts || [];
             for (var i = 0; i < outposts.length; i++) {
-                if ((outposts[i].population || 0) >= 10) return true;
+                var town = Engine.findTown(outposts[i].townId); // v9p33river410: slim record has no population; check town
+                if (town && (town.outpostResidents || []).length >= 10) return true;
             }
         }
         return false;
@@ -2531,14 +2540,29 @@ var StoryMode = (function () {
         }
         if (!targetTownId) return false;
 
-        // Check if any outpost has a road connecting to the target town
+        // v9p33river410: BFS through road graph (handles junctions from connectOutpostToRoad)
+        // Also fix: road fields are fromTownId/toTownId, not from/to
         for (var oi = 0; oi < outposts.length; oi++) {
             var opId = outposts[oi].id || outposts[oi].townId;
-            for (var ri = 0; ri < world.roads.length; ri++) {
-                var road = world.roads[ri];
-                if ((road.from === opId && road.to === targetTownId) ||
-                    (road.to === opId && road.from === targetTownId)) {
-                    return true;
+            var visited = {};
+            var queue = [opId];
+            visited[opId] = true;
+            while (queue.length > 0) {
+                var cur = queue.shift();
+                if (cur === targetTownId) return true;
+                for (var ri = 0; ri < world.roads.length; ri++) {
+                    var road = world.roads[ri];
+                    var neighbor = null;
+                    if (road.fromTownId === cur) neighbor = road.toTownId;
+                    else if (road.toTownId === cur) neighbor = road.fromTownId;
+                    if (!neighbor || visited[neighbor]) continue;
+                    if (neighbor === targetTownId) return true;
+                    // Only traverse through junctions (don't BFS the entire map)
+                    var nTown = Engine.findTown(neighbor);
+                    if (nTown && (nTown.isJunction || nTown.category === 'junction')) {
+                        visited[neighbor] = true;
+                        queue.push(neighbor);
+                    }
                 }
             }
         }
@@ -2555,20 +2579,22 @@ var StoryMode = (function () {
     };
 
     _hooks._checkDiploOutpostPop = function () {
-        if (typeof Player !== 'undefined' && Player.state) {
+        if (typeof Player !== 'undefined' && Player.state && typeof Engine !== 'undefined') {
             var outposts = Player.state.outposts || [];
             for (var i = 0; i < outposts.length; i++) {
-                if ((outposts[i].population || 0) >= 10) return true;
+                var town = Engine.findTown(outposts[i].townId); // v9p33river410: slim record has no population
+                if (town && (town.outpostResidents || []).length >= 10) return true;
             }
         }
         return false;
     };
 
     _hooks._checkDiploOutpostHappy = function () {
-        if (typeof Player !== 'undefined' && Player.state) {
+        if (typeof Player !== 'undefined' && Player.state && typeof Engine !== 'undefined') {
             var outposts = Player.state.outposts || [];
             for (var i = 0; i < outposts.length; i++) {
-                if ((outposts[i].happiness || 0) >= 60) return true;
+                var town = Engine.findTown(outposts[i].townId); // v9p33river410: slim record has no happiness
+                if (town && (town.outpostHappiness || 0) >= 60) return true;
             }
         }
         return false;
