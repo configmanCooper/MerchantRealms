@@ -4005,6 +4005,8 @@
             // orderTarget: townId (where the prisoner is). Free a random jailed NPC there.
             var releaseTown = orderTarget ? Engine.findTown(orderTarget) : null;
             if (!releaseTown) return { success: false, message: 'No town selected for the release.' };
+            // v9p33river415: validate town belongs to the forging kingdom
+            if (releaseTown.kingdomId !== kingdom.id) return { success: false, message: releaseTown.name + ' is not in ' + kingdom.name + '.' };
             var w = Engine.getWorld();
             if (!w || !w.people) return { success: false, message: 'No prisoners found.' };
             var jailed = w.people.filter(function(p) {
@@ -4029,7 +4031,13 @@
             if (!kingdom.laws.bannedGoods) kingdom.laws.bannedGoods = [];
             var idx = kingdom.laws.bannedGoods.indexOf(orderTarget.good);
             if (orderTarget.mode === 'ban') {
-                if (idx < 0) kingdom.laws.bannedGoods.push(orderTarget.good);
+                if (idx < 0) {
+                    kingdom.laws.bannedGoods.push(orderTarget.good);
+                    // v9p33river415: track for double noble agent ban_key_goods task
+                    if (player.doubleNobleAgent && player.doubleNobleAgent.targetKingdomId === kingdom.id) {
+                        _trackDnaTask('ban_key_goods');
+                    }
+                }
                 EventTypes.emit('DD_FORGED_ORDER_BAN', { kingdomName: kingdom.name, good: orderTarget.good });
                 return { success: true, message: orderTarget.good + ' is now banned in ' + kingdom.name + '.' };
             } else {
@@ -5296,9 +5304,9 @@
         if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
         // Noble's personality affects susceptibility
         if (noble.personality) {
-            if (noble.personality.ambition > 0.6) baseSuccess += 0.10;
-            if (noble.personality.loyalty !== undefined && noble.personality.loyalty < 0.4) baseSuccess += 0.10;
-            if (noble.personality.greed > 0.6) baseSuccess += 0.05;
+            if (noble.personality.ambition > 60) baseSuccess += 0.10;  // v9p33river415: was > 0.6 (wrong scale for 0-100 fields)
+            if (noble.personality.loyalty !== undefined && noble.personality.loyalty < 40) baseSuccess += 0.10; // v9p33river415: was < 0.4
+            if (noble.personality.frugality !== undefined && noble.personality.frugality < 40) baseSuccess += 0.05; // v9p33river415: was .greed (doesn't exist on NPCs); low frugality = greedy = easier to turn
         }
         var successChance = Math.min(0.85, baseSuccess + influenceBonus);
 
@@ -5651,7 +5659,9 @@
                 player.blackmailTargets[nobleId] = {
                     type: secretType,
                     day: Engine.getDay(),
-                    leverage: 'exposed_secrets'
+                    leverage: 'exposed_secrets',
+                    paymentPerSeason: rng ? rng.randInt(50, 200) : 100, // v9p33river415: was missing — blackmail tick needs this
+                    nextPayDay: Engine.getDay() + 90                    // v9p33river415: was missing — blackmail tick needs this
                 };
             }
 
@@ -5798,6 +5808,17 @@
         _sync();
         if (!player.doubleNobleAgent) return null;
         var dna = player.doubleNobleAgent;
+
+        // v9p33river415: track prosperity drain BEFORE task completion check
+        // so drain_economy threshold is evaluated with current data
+        if (player._dnaTaskProgress) {
+            var kingdom = Engine.findKingdom(dna.targetKingdomId);
+            if (kingdom) {
+                var prosLoss = (dna._initialProsperity || 50) - (kingdom.prosperity || 50);
+                if (prosLoss > 0) player._dnaTaskProgress.drain_economy = Math.max(player._dnaTaskProgress.drain_economy || 0, prosLoss);
+            }
+        }
+
         var anyCompleted = false;
         for (var ti = 0; ti < dna.tasks.length; ti++) {
             if (dna.tasks[ti].completed) continue;
@@ -5811,15 +5832,6 @@
                 anyCompleted = true;
                 EventTypes.emit('DD_NOBLE_AGENT_TASK', { taskName: dna.tasks[ti].name, completed: dna.completed });
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🕵️ Task complete: ' + dna.tasks[ti].name + ' (' + dna.completed + '/5)', 'success', 'schemes');
-            }
-        }
-
-        // Track prosperity drain
-        if (player._dnaTaskProgress) {
-            var kingdom = Engine.findKingdom(dna.targetKingdomId);
-            if (kingdom) {
-                var prosLoss = (dna._initialProsperity || 50) - (kingdom.prosperity || 50);
-                if (prosLoss > 0) player._dnaTaskProgress.drain_economy = Math.max(player._dnaTaskProgress.drain_economy || 0, prosLoss);
             }
         }
 
@@ -5846,8 +5858,10 @@
 
         // Calculate reward based on difficulty and sponsor's resources
         var baseGold = 5000 + (dna.difficulty || 10) * 1000;
-        var maxGold = Math.min(20000, Math.floor((sponsor.gold || 10000) * 0.15));
-        var reward = Math.max(5000, Math.min(maxGold, baseGold));
+        var maxGold = Math.min(20000, Math.floor((sponsor.gold || 0) * 0.15)); // v9p33river415: was sponsor.gold || 10000
+        var reward = Math.min(maxGold, baseGold);
+        reward = Math.max(500, reward);                        // v9p33river415: floor reduced from 5000 to 500
+        reward = Math.min(reward, sponsor.gold || 0);          // v9p33river415: cap at actual treasury
         // King personality affects payment
         var sponsorKing = null;
         var sTowns = Engine.getWorld ? Engine.getWorld().towns.filter(function(t) { return t.kingdomId === sponsor.id; }) : [];
@@ -5856,8 +5870,13 @@
             if (sp) for (var spi = 0; spi < sp.length; spi++) { if (sp[spi].isKing) { sponsorKing = sp[spi]; break; } }
         }
         if (sponsorKing && sponsorKing.personality) {
-            if (sponsorKing.personality.generosity > 0.6) reward = Math.floor(reward * 1.25);
-            if (sponsorKing.personality.greed > 0.6) reward = Math.floor(reward * 0.80);
+            // v9p33river415: was generosity/greed (don't exist on NPC personality; use frugality 0-100)
+            var _skFrug = sponsorKing.personality.frugality;
+            if (typeof _skFrug === 'number') {
+                if (_skFrug > 70) reward = Math.floor(reward * 1.25);      // generous (high frugality = careful = gives fair pay)
+                else if (_skFrug < 30) reward = Math.floor(reward * 0.80); // greedy (low frugality = stingy)
+            }
+            reward = Math.min(reward, sponsor.gold || 0); // v9p33river415: re-cap after personality modifier
         }
 
         // Demote in target kingdom to citizen

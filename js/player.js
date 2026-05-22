@@ -27329,6 +27329,12 @@
     // §12G LICENSE SYSTEM
     // ========================================================
     function hasLicense(kingdomId, resourceId) {
+        // v9p33river415: check forged kingdom license (grants all restricted goods)
+        if (player.forgedKingdomDocs && player.forgedKingdomDocs[kingdomId]) {
+            var _fkd = player.forgedKingdomDocs[kingdomId];
+            var _fDay = typeof Engine !== 'undefined' ? Engine.getDay() : 0;
+            if (_fkd.license && _fkd.license > _fDay) return true;
+        }
         if (!player.licenses[kingdomId]) return false;
         var list = player.licenses[kingdomId];
         var day = typeof Engine !== 'undefined' ? Engine.getDay() : 0;

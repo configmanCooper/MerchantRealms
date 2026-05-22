@@ -7581,11 +7581,12 @@ window.UI = (function () {
         var result = null;
         switch (runId) {
             case 'steal': result = Player.stealFromNpc && Player.stealFromNpc(personId); break;
-            case 'rumors': result = Player.spreadRumors && Player.spreadRumors(personId); break;
-            case 'blackmail': result = Player.blackmailNPC && Player.blackmailNPC(personId); break;
-            case 'frame': result = Player.frameCompetitor && Player.frameCompetitor(personId); break;
-            case 'poison': result = Player.poisonTarget && Player.poisonTarget(personId); break;
-            case 'assassin_hire': result = Player.hireAssassin && Player.hireAssassin(personId, 'competitor'); break;
+            // v9p33river415: route through central dispatcher for global cooldown
+            case 'rumors': result = Player.executeCorruptAction && Player.executeCorruptAction('spread_rumors', [personId]); break;
+            case 'blackmail': result = Player.executeCorruptAction && Player.executeCorruptAction('blackmail', [personId]); break;
+            case 'frame': result = Player.executeCorruptAction && Player.executeCorruptAction('frame_competitor', [personId, 'smuggling']); break;
+            case 'poison': result = Player.executeCorruptAction && Player.executeCorruptAction('poison', [personId]); break;
+            case 'assassin_hire': result = Player.executeCorruptAction && Player.executeCorruptAction('assassinate_competitor', [personId, 'competitor']); break;
             case 'assassin_direct': result = Player.directKillNpc && Player.directKillNpc(personId); break;
             case 'jailbreak': {
                 var _jbPerson = Engine.findPerson ? Engine.findPerson(personId) : null;
@@ -18533,7 +18534,8 @@ window.UI = (function () {
         const resEl = document.getElementById('stealRes_' + idx);
         const qtyEl = document.getElementById('stealQty_' + idx);
         if (!resEl || !qtyEl) return;
-        const result = Player.stealGoods(resEl.value, parseInt(qtyEl.value) || 1, Player.townId);
+        // v9p33river415: route through central dispatcher for global cooldown
+        const result = Player.executeCorruptAction('steal_goods', [resEl.value, parseInt(qtyEl.value) || 1, Player.townId]);
         if (result.success) {
             toast(result.message, 'success');
         } else if (result.caught) {
@@ -18585,7 +18587,8 @@ window.UI = (function () {
         const resEl = document.getElementById('counterfeitRes_' + idx);
         const qtyEl = document.getElementById('counterfeitQty_' + idx);
         if (!resEl || !qtyEl) return;
-        const result = Player.sellCounterfeit(resEl.value, parseInt(qtyEl.value) || 1, Player.townId);
+        // v9p33river415: route through central dispatcher for global cooldown
+        const result = Player.executeCorruptAction('counterfeit', [resEl.value, parseInt(qtyEl.value) || 1, Player.townId]);
         if (result.success) {
             toast(result.message, 'success');
         } else if (result.caught) {
@@ -18600,18 +18603,11 @@ window.UI = (function () {
         const targetEl = document.getElementById('targetSelect_' + idx);
         if (!targetEl) return;
         const targetId = targetEl.value;
-        let result;
-        if (actionId === 'spread_rumors') {
-            result = Player.spreadRumors(targetId);
-        } else if (actionId === 'frame_competitor') {
-            result = Player.frameCompetitor(targetId, 'smuggling');
-        } else if (actionId === 'assassinate_competitor') {
-            result = Player.hireAssassin(targetId, 'competitor');
-        } else if (actionId === 'poison') {
-            result = Player.poisonTarget(targetId);
-        } else {
-            result = Player.executeCorruptAction(actionId, [targetId]);
-        }
+        // v9p33river415: route all through central dispatcher for global cooldown
+        var params = [targetId];
+        if (actionId === 'frame_competitor') params.push('smuggling');
+        if (actionId === 'assassinate_competitor') params.push('competitor');
+        let result = Player.executeCorruptAction(actionId, params);
         if (result.success) {
             toast(result.message, 'success');
         } else if (result.caught) {
@@ -18625,7 +18621,8 @@ window.UI = (function () {
     function executeBribeGuards(idx) {
         const amountEl = document.getElementById('bribeAmount_' + idx);
         if (!amountEl) return;
-        const result = Player.bribeGuards(Player.townId, parseInt(amountEl.value) || 50);
+        // v9p33river415: route through central dispatcher for global cooldown
+        const result = Player.executeCorruptAction('bribe_guards', [Player.townId, parseInt(amountEl.value) || 50]);
         if (result.success) {
             toast(result.message, 'success');
         } else if (result.caught) {
@@ -18639,7 +18636,8 @@ window.UI = (function () {
     function executeBribeAdvisor(kingdomId, idx) {
         const voteDirEl = document.getElementById('voteDir_' + idx);
         if (!voteDirEl) return;
-        const result = Player.bribeAdvisor(kingdomId, voteDirEl.value);
+        // v9p33river415: route through central dispatcher for global cooldown
+        const result = Player.executeCorruptAction('bribe_advisor', [kingdomId, voteDirEl.value]);
         if (result.success) {
             toast(result.message, 'success');
         } else if (result.caught) {
