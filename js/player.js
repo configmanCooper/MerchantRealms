@@ -238,6 +238,7 @@
         cookingBooks: false,            // currently cooking books this season
         insiderInfo: [],                // upcoming changes learned via insider trading
         poisonTargets: [],              // [{ targetId, startDay, duration }]
+        _captainKillRestores: [],       // [{ townId, amount, restoreDay }] — v9p33river412
         arsonCount: 0,                  // for pyromaniac achievement
         poisonKills: 0,                 // for poisoner achievement
         sabotagedRoads: [],             // [{ roadIdx, expiresDay, origQuality }]
@@ -1528,6 +1529,8 @@
         // Tax Attorney skill: reduce tax burden by 10%
         if (hasSkill('tax_attorney')) totalTaxRate *= 0.90;
         totalTaxRate = Math.min(totalTaxRate, 0.35);
+        // v9p33river412: cookTheBooks reduces effective tax rate by 30%
+        if (player.cookingBooks) totalTaxRate *= 0.70;
 
         // Special law: market_day — every 7th day, citizens trade tax-free
         let marketDayTaxFree = false;
@@ -1980,6 +1983,8 @@
         // Tax Attorney skill: reduce tax burden by 10%
         if (hasSkill('tax_attorney')) totalTaxRate *= 0.90;
         totalTaxRate = Math.min(totalTaxRate, 0.35);
+        // v9p33river412: cookTheBooks reduces effective tax rate by 30%
+        if (player.cookingBooks) totalTaxRate *= 0.70;
 
         // Special law: market_day — every 7th day, citizens trade tax-free
         let marketDayTaxFree = false;
@@ -19301,6 +19306,7 @@
             cookingBooks: player.cookingBooks || false,
             insiderInfo: structuredClone(player.insiderInfo || []),
             poisonTargets: structuredClone(player.poisonTargets || []),
+            _captainKillRestores: structuredClone(player._captainKillRestores || []),
             arsonCount: player.arsonCount || 0,
             poisonKills: player.poisonKills || 0,
             sabotagedRoads: structuredClone(player.sabotagedRoads || []),
@@ -19952,6 +19958,7 @@
         player.cookingBooks = data.cookingBooks || false;
         player.insiderInfo = data.insiderInfo || [];
         player.poisonTargets = data.poisonTargets || [];
+        player._captainKillRestores = data._captainKillRestores || [];
         player.arsonCount = data.arsonCount || 0;
         player.poisonKills = data.poisonKills || 0;
         player.sabotagedRoads = data.sabotagedRoads || [];
@@ -21085,6 +21092,12 @@
         }
 
         if (!bordersClosed) return { allowed: true };
+
+        // v9p33river412: forged travel papers bypass closed borders
+        if (player.forgedDocuments && player.forgedDocuments.travel_papers && player.forgedDocuments.travel_papers > Engine.getDay()) {
+            Engine.logEvent('📜 Your forged travel papers got you through the border checkpoint.', null, 'travel_events');
+            return { allowed: true, forgedPapers: true };
+        }
 
         // Borders are closed — can we bypass?
         if (hasSkill('smugglers_run')) {

@@ -1631,6 +1631,16 @@
         const res = findResource(resourceId);
         if (!res) return { success: false, message: 'Resource not found.' };
 
+        // v9p33river412: require material cost (10g per unit) — was minting gold from nothing
+        var materialCost = qty * 10;
+        if (player.gold < materialCost) {
+            var affordQty = Math.floor(player.gold / 10);
+            if (affordQty <= 0) return { success: false, message: 'Need at least 10g for materials.' };
+            qty = affordQty;
+            materialCost = qty * 10;
+        }
+        player.gold -= materialCost;
+
         const rng = Engine.getRng();
         const detection = calculateCorruptDetection(0.30, town);
         var _o = _rollSchemeOutcome(detection, rng);
@@ -1898,6 +1908,22 @@
 
         if (successful) {
             player.rumorTargets[targetMerchantId] = { expiresDay: Engine.getDay() + 60 };
+            // v9p33river412: actually damage target NPC reputation
+            var _rumorTarget = Engine.findPerson ? Engine.findPerson(targetMerchantId) : null;
+            if (_rumorTarget) {
+                if (_rumorTarget.gold != null) _rumorTarget.gold = Math.max(0, _rumorTarget.gold - 50);
+                if (_rumorTarget.socialRank && typeof _rumorTarget.socialRank === 'object') {
+                    for (var _srk in _rumorTarget.socialRank) {
+                        if ((_rumorTarget.socialRank[_srk] || 0) > 1) {
+                            _rumorTarget.socialRank[_srk] = Math.max(0, _rumorTarget.socialRank[_srk] - 1);
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!player.relationships) player.relationships = {};
+            if (!player.relationships[targetMerchantId]) player.relationships[targetMerchantId] = { level: 50, type: 'stranger' };
+            player.relationships[targetMerchantId].level = Math.max(0, (player.relationships[targetMerchantId].level || 50) - 15);
             grantXP(8, 'Spread rumors');
             if (player.doubleNobleAgent && targetMerchantId) {
                 var _rumTarget = Engine.findPerson ? Engine.findPerson(targetMerchantId) : null;
@@ -1958,6 +1984,16 @@
         var successful = _o2.successful;
 
         if (successful) {
+            // v9p33river412: actually apply framing effects to the target NPC
+            var _frameTarget = Engine.findPerson ? Engine.findPerson(targetMerchantId) : null;
+            if (_frameTarget) {
+                if (_frameTarget.gold != null) _frameTarget.gold = Math.max(0, _frameTarget.gold - 200);
+                _frameTarget._jailedUntilDay = Engine.getDay() + 15;
+                // Damage player's relationship with target
+                if (!player.relationships) player.relationships = {};
+                if (!player.relationships[targetMerchantId]) player.relationships[targetMerchantId] = { level: 50, type: 'stranger' };
+                player.relationships[targetMerchantId].level = Math.max(0, (player.relationships[targetMerchantId].level || 50) - 30);
+            }
             grantXP(20, 'Framed competitor');
             EventTypes.emit('DD_FRAME_SUCCESS', {}, { _noToast: true });
         }
@@ -2000,6 +2036,9 @@
             }
             const kingdom = Engine.findKingdom ? Engine.findKingdom(targetId) : null;
             if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+            // v9p33river412: verify king NPC exists and is alive before accepting the contract
+            var kingNpc = kingdom.king && Engine.findPerson ? Engine.findPerson(kingdom.king) : null;
+            if (!kingNpc || !kingNpc.alive) return { success: false, message: 'The kingdom has no living king to target.' };
             const cost = rng ? rng.randInt(10000, 25000) : 15000;
             if (player.gold < cost) return { success: false, message: `Need ${cost}g to hire assassin for a king.` };
 
@@ -2011,6 +2050,8 @@
             var successful = _ko.successful;
 
             if (successful) {
+                // v9p33river412: actually kill the king — triggers handleKingDeath + succession
+                if (Engine.killPerson) Engine.killPerson(kingNpc, 'assassination');
                 grantXP(100, 'Assassinated king');
                 unlockAchievement('kingslayer_ach');
                 EventTypes.emit('DD_KING_ASSASSINATED', { kingdomName: kingdom.name });
@@ -2053,7 +2094,13 @@
             var successful = _gco.successful;
 
             if (successful) {
-                if (town) town.security = Math.max(0, (town.security || 50) - 30);
+                if (town) {
+                    var _secCur = typeof town.security === 'number' ? town.security : 50;
+                    town.security = Math.max(0, _secCur - 30);
+                    // v9p33river412: store restoration record so the penalty expires after 90 days
+                    player._captainKillRestores = player._captainKillRestores || [];
+                    player._captainKillRestores.push({ townId: town.id, amount: 30, restoreDay: Engine.getDay() + 90 });
+                }
                 grantXP(40, 'Assassinated guard captain');
                 if (player.doubleNobleAgent && town && town.kingdomId === player.doubleNobleAgent.targetKingdomId) _trackDnaTask('weaken_army');
                 EventTypes.emit('DD_GUARD_CAPTAIN_ASSASSINATED', { townName: town ? town.name : 'a town' });
@@ -2465,6 +2512,21 @@
         for (const mid in player.rumorTargets) {
             if (player.rumorTargets[mid].expiresDay <= day) {
                 delete player.rumorTargets[mid];
+            }
+        }
+
+        // v9p33river412: restore guard-captain security penalties after 90 days
+        if (player._captainKillRestores && player._captainKillRestores.length > 0) {
+            for (var _cri = player._captainKillRestores.length - 1; _cri >= 0; _cri--) {
+                var _cr = player._captainKillRestores[_cri];
+                if (day >= _cr.restoreDay) {
+                    var _crTown = Engine.findTown(_cr.townId);
+                    if (_crTown) {
+                        var _crCur = typeof _crTown.security === 'number' ? _crTown.security : 50;
+                        _crTown.security = Math.min(100, _crCur + _cr.amount);
+                    }
+                    player._captainKillRestores.splice(_cri, 1);
+                }
             }
         }
 
@@ -4578,10 +4640,26 @@
         var rng = Engine.getRng();
         var people = Engine.getPeople ? Engine.getPeople(player.townId) : [];
         var targets = [];
+        var _scSeenIds = {};
         for (var i = 0; i < people.length; i++) {
             var p = people[i];
             if (p && p.alive && (p.isEliteMerchant || p.occupation === 'noble') && p.caravans && p.caravans.length > 0) {
                 targets.push(p);
+                _scSeenIds[p.id] = true;
+            }
+        }
+        // v9p33river412: also check world.npcCaravans (EM caravans live there, not on person.caravans)
+        var _scWorld = Engine.getWorld ? Engine.getWorld() : null;
+        if (_scWorld && Array.isArray(_scWorld.npcCaravans)) {
+            for (var _sci = 0; _sci < _scWorld.npcCaravans.length; _sci++) {
+                var _scWc = _scWorld.npcCaravans[_sci];
+                if (_scWc && _scWc.ownerId && !_scSeenIds[_scWc.ownerId]) {
+                    var _scOwner = Engine.findPerson ? Engine.findPerson(_scWc.ownerId) : null;
+                    if (_scOwner && _scOwner.alive && _scOwner.townId === player.townId) {
+                        targets.push(_scOwner);
+                        _scSeenIds[_scOwner.id] = true;
+                    }
+                }
             }
         }
         if (targets.length === 0) return { success: false, message: 'No elite merchant or noble caravans found near this town.' };
