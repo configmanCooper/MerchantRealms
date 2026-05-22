@@ -632,7 +632,7 @@ if (def.template === 'skill_chain') {
     if (step === 0) {
         return { title: def.title, icon: def.icon, text: lead + ' Notices have been nailed to every post in {townName}: the guild is holding a formal contest in {waitDays} days, with judges coming from outside the walls and pride worth almost as much as the purse. Bakers boast, fencers preen, and scribes rehearse speeches in the street. If you enter now, you bind your name to the performance before the crowd ever sees it. You can commit, study from the edge, or spare yourself the spectacle.', choices: [
             { id: 'accept', label: 'Enter your name and stand before the judges when the day comes (+future contest in {waitDays} days)', effectKey: 'accept', nextStepIndex: 1 },
-            { id: 'bet_safe', label: 'Watch the field and learn what the winners know (+energy, +reputation)', effectKey: 'bet_safe' },
+            { id: 'bet_safe', label: 'Watch the field and learn what the winners know (+2 skill points, +energy, +reputation)', effectKey: 'bet_safe' },
             { id: 'decline', label: 'Keep your craft private and your pride untested (+gold)', effectKey: 'decline' }
         ] };
     }
@@ -1214,7 +1214,7 @@ return { title: def.title, icon: def.icon, text: lead, choices: [{ id: 'leave', 
             case 'follow': _gold(Math.max(5, Math.floor(params.goldAmount / 2))); _rep(kid, params.repAmount); _hazard(def, ctx); break;
             case 'ward': _gold(-params.costGold); _energy(params.energyAmount); break;
             case 'attempt': _energy(-params.energyAmount); _gold(Math.max(4, Math.floor(params.goldAmount / 2))); _hazard(def, ctx); break;
-            case 'bet_safe': _energy(Math.max(1, Math.floor(params.energyAmount / 2))); _rep(kid, 1); break;
+            case 'bet_safe': _energy(Math.max(1, Math.floor(params.energyAmount / 2))); _rep(kid, 1); player.skillPoints = (player.skillPoints || 0) + 2; if (_outcome) _outcome.push({ type: 'skillPoints', delta: 2 }); break;
             case 'collect_prize': _gold(params.rewardGold); _rep(kid, params.repAmount); break;
             case 'share_credit': _rep(kid, params.repAmount + 1); _rel(pid, params.relAmount); break;
             case 'walk': _energy(params.energyAmount); break;

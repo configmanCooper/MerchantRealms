@@ -2024,6 +2024,7 @@ window.UI = (function () {
                 else if (eff.type === 'energy') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' energy'; badgeColor = eff.delta > 0 ? '#e6c86e' : '#c85050'; }
                 else if (eff.type === 'item') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' ' + (eff.name || eff.id); badgeColor = eff.delta > 0 ? '#bb86fc' : '#c85050'; }
                 else if (eff.type === 'injury') { badge = '⚠ Injury!'; badgeColor = '#c85050'; }
+                else if (eff.type === 'skillPoints') { badge = '+' + eff.delta + ' skill points'; badgeColor = '#bb86fc'; }
                 if (badge) html += '<span style="display:inline-block;padding:3px 8px;border-radius:4px;font-size:0.85em;font-weight:bold;color:' + badgeColor + ';background:rgba(0,0,0,0.3);border:1px solid ' + badgeColor + ';">' + escapeHtml(badge) + '</span>';
             }
             html += '</div>';
