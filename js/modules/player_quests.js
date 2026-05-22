@@ -1941,7 +1941,7 @@
                 var aq = kqData.active[qi];
                 if (!aq || aq.status !== 'active') continue;
                 var reqs = aq.requirements || {};
-                var goldTarget = reqs.gold || reqs.goldTarget || 0;
+                var goldTarget = (reqs.action && reqs.action.goldTarget) || 0; // v9p33river411: was reqs.gold/reqs.goldTarget (wrong level)
                 if (goldTarget > 0) {
                     trackKQGoldSpent(aq.id, amount);
                 }
@@ -1983,7 +1983,7 @@
         if (mech.locationReq === 'capital') {
             var playerTown = null;
             try { playerTown = Engine.findTown(player.townId); } catch(e) {}
-            if (!playerTown || !playerTown.isCapital) {
+            if (!playerTown || !playerTown.isCapital || playerTown.kingdomId !== kingdomId) { // v9p33river411: must be THIS kingdom's capital
                 return { success: false, message: '📍 You must be in the kingdom capital to attempt this action. Travel to the capital first.' };
             }
         }
@@ -2133,6 +2133,7 @@
                 var rngGold = Engine.getRng();
                 var bonusGold = rngGold ? rngGold.randInt(50, 200) : 100;
                 player.gold += bonusGold;
+                trackKQGoldSpent(questId, bonusGold); // v9p33river411: credit gold toward "raise X gold" objective
                 successConsequences.push('💰 Extracted ' + bonusGold + 'g from the merchant!');
                 EventTypes.emit('QUEST_EXTORTION_GOLD', { playerName: player.fullName, gold: bonusGold });
             }
@@ -2207,6 +2208,7 @@
                 var _sfGold = _sfRng ? _sfRng.randInt(100, 400) : 200;
                 player.gold += _sfGold;
                 player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _sfGold;
+                trackKQGoldSpent(questId, _sfGold); // v9p33river411: credit gold toward "raise X gold" objective
                 successConsequences.push('💰 Earned ' + _sfGold + 'g from foreign market sales!');
                 EventTypes.emit('QUEST_FOREIGN_SALES', { playerName: player.fullName, gold: _sfGold });
             }

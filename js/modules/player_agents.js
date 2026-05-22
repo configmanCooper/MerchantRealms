@@ -384,25 +384,35 @@
         var def = AGENT_TASK_DEFS[task.type];
         if (!def) return;
 
-        // Finite-duration tasks: check completion
-        if (def.duration > 0 && day - task.startDay >= def.duration) {
-            _completeAgentTask(agent, day, rng);
-            return;
-        }
+        // Finite-duration tasks: check if task should complete
+        // v9p33river411: compute up front but execute action first so short-duration
+        // hostile tasks (sabotage=3, steal=3, intimidate=2) fire at least once
+        var shouldComplete = def.duration > 0 && day - task.startDay >= def.duration;
 
         // Ongoing tasks execute periodically
         var actionInterval = def.category === 'hostile' ? 3 : 5; // hostile every 3 days, business every 5
-        if (day - task.lastActionDay < actionInterval) return;
-        task.lastActionDay = day;
+        var actionDue = day - task.lastActionDay >= actionInterval;
+        // v9p33river411: force one action for finite tasks that would complete without ever executing
+        var needsFinalAction = shouldComplete && task.lastActionDay === task.startDay;
 
-        if (def.category === 'hostile') {
-            _executeHostileAction(agent, day, rng);
-        } else if (def.category === 'business') {
-            _executeBusinessAction(agent, day, rng);
-        } else if (def.category === 'intel') {
-            _executeIntelAction(agent, day, rng);
-        } else if (def.category === 'diplomatic') {
-            _executeDiplomaticAction(agent, day, rng);
+        if (actionDue || needsFinalAction) {
+            task.lastActionDay = day;
+
+            if (def.category === 'hostile') {
+                _executeHostileAction(agent, day, rng);
+            } else if (def.category === 'business') {
+                _executeBusinessAction(agent, day, rng);
+            } else if (def.category === 'intel') {
+                _executeIntelAction(agent, day, rng);
+            } else if (def.category === 'diplomatic') {
+                _executeDiplomaticAction(agent, day, rng);
+            }
+        }
+
+        // Complete after action (guard: action may have cleared task)
+        if (shouldComplete && agent.task === task) {
+            _completeAgentTask(agent, day, rng);
+            return;
         }
     }
 
@@ -419,8 +429,10 @@
             return;
         }
 
-        // Detection chance reduced by stealth skill
-        var detection = def.baseDetection * (1 - agent.skills.stealth * 0.06);
+        // v9p33river411: use task-configured skill for detection, not always stealth
+        var _detSkillKey = def.skillKey || 'stealth';
+        var _detSkill = agent.skills && agent.skills[_detSkillKey] !== undefined ? agent.skills[_detSkillKey] : 0;
+        var detection = def.baseDetection * (1 - _detSkill * 0.06);
         detection = Math.max(0.03, Math.min(0.90, detection));
         var caught = rng ? rng.chance(detection) : Math.random() < detection;
 
@@ -607,8 +619,14 @@
     function _agentRaidCaravan(agent, target, day, rng) {
         _sync();
         // Find target's caravans (EM caravans or NPC caravans)
-        var caravans = target.emCaravans || target.caravans || [];
-        var activeCaravans = caravans.filter(function(c) { return c.active && c.status === 'traveling'; });
+        // v9p33river411: also check world.npcCaravans where EM caravans actually live
+        var _rcWorld = Engine.getWorld ? Engine.getWorld() : null;
+        var _rcWorldCaravans = [];
+        if (_rcWorld && Array.isArray(_rcWorld.npcCaravans)) {
+            _rcWorldCaravans = _rcWorld.npcCaravans.filter(function(c) { return c.ownerId === target.id; });
+        }
+        var caravans = (target.emCaravans || target.caravans || []).concat(_rcWorldCaravans);
+        var activeCaravans = caravans.filter(function(c) { return c && c.active !== false && c.status === 'traveling'; });
         if (activeCaravans.length === 0) {
             agent.reports.push({ day: day, msg: '⚔️ No active caravans found for target. Waiting...' });
             return;
@@ -1000,8 +1018,14 @@
         }
         info.push('🏛️ Buildings owned: ' + bldCount);
         // Caravans
-        var caravans = target.emCaravans || target.caravans || [];
-        var activeC = caravans.filter(function(c) { return c.active; }).length;
+        // v9p33river411: also check world.npcCaravans where EM caravans live
+        var _spyWorld = Engine.getWorld ? Engine.getWorld() : null;
+        var _spyWorldCaravans = [];
+        if (_spyWorld && Array.isArray(_spyWorld.npcCaravans)) {
+            _spyWorldCaravans = _spyWorld.npcCaravans.filter(function(c) { return c.ownerId === target.id; });
+        }
+        var caravans = (target.emCaravans || target.caravans || []).concat(_spyWorldCaravans);
+        var activeC = caravans.filter(function(c) { return c && c.active !== false; }).length;
         info.push('🐴 Active caravans: ' + activeC);
         // Relationships
         if (target._playerRelationship !== undefined) info.push('❤️ Attitude toward you: ' + Math.floor(target._playerRelationship));
@@ -1085,6 +1109,9 @@
                     agent.status = 'dead';
                     agent.task = null;
                     agent._dead = true;
+                    // v9p33river411: clear stale selection/task references (matches hostile path)
+                    if (player.selectedAgentId === agent.id) player.selectedAgentId = null;
+                    if (player.activeAgentId === agent.id) player.activeAgentId = null;
                     if (player.agents) {
                         for (var _ari = player.agents.length - 1; _ari >= 0; _ari--) {
                             if (player.agents[_ari].id === agent.id) {
