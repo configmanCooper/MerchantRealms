@@ -401,6 +401,10 @@
     }
     function _rawStep(def, instance, ctx) {
         instance.choiceHistory = instance.choiceHistory || [];
+        var history = instance.choiceHistory;
+        var lastChoiceId = history.length ? history[history.length - 1].choiceId : null;
+        var firstChoice = history[0] ? history[0].choiceId : null;
+        var secondChoice = history[1] ? history[1].choiceId : null;
 
         var step = instance.stepIndex || 0;
 var lead = _sceneLead(def);
