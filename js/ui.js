@@ -17701,7 +17701,8 @@ window.UI = (function () {
                     } else if (a.id === 'counterfeit') {
                         html += buildCounterfeitUI(a, ai);
                     } else if (a.id === 'spread_rumors' || a.id === 'frame_competitor' ||
-                               a.id === 'assassinate_competitor' || a.id === 'poison') {
+                               a.id === 'assassinate_competitor' || a.id === 'poison' ||
+                               a.id === 'plant_evidence') {
                         html += buildTargetSelectUI(a, ai);
                     } else if (a.id === 'bribe_guards') {
                         html += buildBribeGuardsUI(a, ai);
@@ -17901,7 +17902,9 @@ window.UI = (function () {
         html += '<select id="targetSelect_' + idx + '" style="font-size:0.7rem;padding:2px;flex:1;">';
         // Populate with elite merchants in the area
         try {
-            var elitesForTarget = (typeof Engine !== 'undefined' && Engine.getWorld) ? (Engine.getWorld().people || []).filter(function(p) { return p.alive && p.isEliteMerchant; }) : [];
+            // v9p33river416: filter to EMs in the player's current town (not all EMs globally)
+            var _playerTownId = (typeof Player !== 'undefined' && Player.townId) || '';
+            var elitesForTarget = (typeof Engine !== 'undefined' && Engine.getWorld) ? (Engine.getWorld().people || []).filter(function(p) { return p.alive && p.isEliteMerchant && p.townId === _playerTownId; }) : [];
             for (const m of elitesForTarget) {
                 html += `<option value="${m.id}">${(m.firstName || '') + ' ' + (m.lastName || '')}</option>`;
             }
@@ -18489,6 +18492,16 @@ window.UI = (function () {
         html += '<button class="btn-trade sell" style="font-size:0.7rem;" '
             + 'data-action="executeNobleIntrigue" data-id="' + action.id.replace(/'/g, '') + '" data-idx="' + idx + '" data-need-two="' + (needTwo ? 'true' : 'false') + '">⚡ Execute</button>';
         html += '</div>';
+        // v9p33river416: direction dropdown for manipulate_vote (support vs oppose)
+        if (action.id === 'manipulate_vote') {
+            html += '<div style="display:flex;gap:4px;align-items:center;margin-top:3px;">';
+            html += '<label style="font-size:0.65rem;color:var(--text-muted);">Direction:</label>';
+            html += '<select id="voteDir_' + idx + '" style="font-size:0.7rem;padding:2px;">';
+            html += '<option value="yes">✅ Support (vote yes)</option>';
+            html += '<option value="no">❌ Oppose (vote no)</option>';
+            html += '</select>';
+            html += '</div>';
+        }
         // Legend
         html += '<div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;">🔗=blackmailed 💰=indebted ❤️=ally (60+rel) — leverage boosts success</div>';
         html += '</div>';
@@ -18506,6 +18519,12 @@ window.UI = (function () {
             var nobleBId = selB.value;
             if (nobleAId === nobleBId) { toast('Select two different nobles!', 'warning'); return; }
             params = [nobleAId, nobleBId];
+        }
+        // v9p33river416: pass vote direction for manipulate_vote
+        if (actionId === 'manipulate_vote') {
+            var dirSel = document.getElementById('voteDir_' + idx);
+            var direction = dirSel ? dirSel.value : 'yes';
+            params = [nobleAId, 'general', direction];
         }
         var result = Player.executeCorruptAction(actionId, params);
         if (result.success) {

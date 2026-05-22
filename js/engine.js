@@ -12238,11 +12238,19 @@
             var day = world.day;
             var manipGeneral = noble._manipulatedVotes['general'];
             var manipSpecific = noble._manipulatedVotes[vote.type];
-            if ((manipSpecific && manipSpecific > day) || (manipGeneral && manipGeneral > day)) {
-                // Manipulated nobles vote YES (supporting player's agenda)
+            // v9p33river416: support both old format (expiresDay number) and new format ({ expiresDay, direction })
+            var _mvEntry = manipSpecific || manipGeneral;
+            var _mvExpires = 0;
+            var _mvDir = 'yes';
+            if (_mvEntry) {
+                if (typeof _mvEntry === 'number') { _mvExpires = _mvEntry; _mvDir = 'yes'; }
+                else if (_mvEntry && _mvEntry.expiresDay) { _mvExpires = _mvEntry.expiresDay; _mvDir = _mvEntry.direction || 'yes'; }
+            }
+            if (_mvExpires > day) {
+                // Manipulated nobles vote in the stored direction
                 // 85% reliable — 15% chance they vote their conscience anyway
                 if (!rng.chance(0.15)) {
-                    return 'yes';
+                    return _mvDir;
                 }
             }
         }

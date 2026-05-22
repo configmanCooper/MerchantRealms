@@ -363,6 +363,13 @@
         for (var vi = 0; vi < parked.length; vi++) {
             total += vehicleCaps[parked[vi].type] || 0;
         }
+        // v9p33river416: hidden warehouses (from dark deeds buildHiddenWarehouse)
+        if (player.hiddenWarehouses) {
+            for (var hwi = 0; hwi < player.hiddenWarehouses.length; hwi++) {
+                var hw = player.hiddenWarehouses[hwi];
+                if (hw && hw.townId === tid) total += hw.capacity || 50;
+            }
+        }
         return total;
     }
 
