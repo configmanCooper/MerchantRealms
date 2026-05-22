@@ -234,6 +234,7 @@
         heirFavor: {},                  // { kingdomId: favorLevel 0-100 }
         hiddenWarehouses: [],           // [{ townId, inventory: {}, capacity: 50 }]
         bribedGuards: {},               // { townId: { expiresDay, reductionPct: 40 } }
+        bribedAdvisors: {},             // { kingdomId: { expiresDay } } — v9p33river413
         taxesEvaded: 0,                 // total gold in taxes evaded
         cookingBooks: false,            // currently cooking books this season
         insiderInfo: [],                // upcoming changes learned via insider trading
@@ -19302,6 +19303,7 @@
             heirFavor: structuredClone(player.heirFavor || {}),
             hiddenWarehouses: structuredClone(player.hiddenWarehouses || []),
             bribedGuards: structuredClone(player.bribedGuards || {}),
+            bribedAdvisors: structuredClone(player.bribedAdvisors || {}),
             taxesEvaded: player.taxesEvaded || 0,
             cookingBooks: player.cookingBooks || false,
             insiderInfo: structuredClone(player.insiderInfo || []),
@@ -19954,6 +19956,7 @@
         player.heirFavor = data.heirFavor || {};
         player.hiddenWarehouses = data.hiddenWarehouses || [];
         player.bribedGuards = data.bribedGuards || {};
+        player.bribedAdvisors = data.bribedAdvisors || {};
         player.taxesEvaded = data.taxesEvaded || 0;
         player.cookingBooks = data.cookingBooks || false;
         player.insiderInfo = data.insiderInfo || [];
@@ -22601,7 +22604,13 @@
 
     function getPlayerRankIndex(kingdomId) {
         const kId = kingdomId || player.citizenshipKingdomId;
-        return (kId && player.socialRank[kId] != null) ? player.socialRank[kId] : 0;
+        var rank = (kId && player.socialRank[kId] != null) ? player.socialRank[kId] : 0;
+        // v9p33river413: forged noble title boosts effective rank to minor noble (4)
+        if (rank < 4 && player.forgedDocuments && player.forgedDocuments.noble_title &&
+            player.forgedDocuments.noble_title > Engine.getDay()) {
+            rank = 4;
+        }
+        return rank;
     }
 
     // ========================================================
@@ -32152,6 +32161,12 @@
         if (d > 2000) chance -= 0.10;
         if (d < 500) chance += 0.05;
 
+        // v9p33river413: bribed advisor gives +15% influence chance
+        if (player.bribedAdvisors && player.bribedAdvisors[kingdom.id] &&
+            player.bribedAdvisors[kingdom.id].expiresDay > Engine.getDay()) {
+            chance += 0.15;
+        }
+
         chance = Math.max(0.05, Math.min(0.85, chance));
 
         player.gold -= playerCost;
@@ -32670,6 +32685,12 @@
 
         // Court Etiquette skill: +10% petition success
         if (hasSkill('court_etiquette')) chance += 0.10;
+
+        // v9p33river413: bribed advisor gives +15% petition success
+        if (player.bribedAdvisors && player.bribedAdvisors[petition.kingdomId] &&
+            player.bribedAdvisors[petition.kingdomId].expiresDay > Engine.getDay()) {
+            chance += 0.15;
+        }
 
         // King mood affects petition receptiveness
         if (kingdom && kingdom.kingMood && CONFIG.KING_MOOD && CONFIG.KING_MOOD.moods) {

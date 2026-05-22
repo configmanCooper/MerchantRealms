@@ -1770,6 +1770,9 @@
         var successful = _o.successful;
 
         if (successful) {
+            // v9p33river413: store bribed advisor state for petition/influence bonuses
+            player.bribedAdvisors = player.bribedAdvisors || {};
+            player.bribedAdvisors[kingdomId] = { expiresDay: Engine.getDay() + 60 };
             grantXP(25, 'Bribed royal advisor');
             const kBribes = (player.crimesCommitted['bribe_advisor_' + kingdomId] || 0) + 1;
             player.crimesCommitted['bribe_advisor_' + kingdomId] = kBribes;
@@ -2505,6 +2508,15 @@
         for (const townId in player.bribedGuards) {
             if (player.bribedGuards[townId].expiresDay <= day) {
                 delete player.bribedGuards[townId];
+            }
+        }
+
+        // v9p33river413: expire bribed advisors
+        if (player.bribedAdvisors) {
+            for (var _baKid in player.bribedAdvisors) {
+                if (player.bribedAdvisors[_baKid].expiresDay <= day) {
+                    delete player.bribedAdvisors[_baKid];
+                }
             }
         }
 
