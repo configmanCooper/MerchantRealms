@@ -2179,9 +2179,9 @@
                 if (_spHasMed) {
                     var _spSev = ai.condition === 'gravely_ill' ? 'severe' : 'moderate';
                     var _spCost = getHospitalCost({ productCost: 10 }, _spSev);
-                    var _spGold = ai.savings || 0;
+                    var _spGold = ai.gold || 0; // v9p33river409: was ai.savings (never initialized)
                     if (_spGold >= _spCost) {
-                        ai.savings -= _spCost;
+                        ai.gold -= _spCost; // v9p33river409: was ai.savings
                         ai.condition = 'healthy';
                         ai.daysSick = 0;
                         ai.daysInjured = 0;
@@ -2226,6 +2226,12 @@
                 executeSpouseGatherIntel(spouse);
                 actionTaken = 'gatherIntel';
                 actionDetail = ai.activityDetail;
+            } else if (task.type === 'hire') {
+                // v9p33river409: hiring workers — spouse spends time recruiting, earns modest gold
+                goldEarned = Math.max(1, Math.floor(executeSpouseWork(spouse) * 0.5));
+                actionTaken = 'hiring';
+                actionDetail = 'Recruiting workers for your buildings';
+                ai.assignedTask = null; // one-off task
             } else {
                 // Unknown task, clear it
                 ai.assignedTask = null;
@@ -2546,6 +2552,7 @@
         if (result.accepted) {
             player.spouseAI.activity = 'hiring';
             player.spouseAI.activityDetail = 'Recruiting workers for your buildings';
+            player.spouseAI.assignedTask = { type: 'hire' }; // v9p33river409: was missing — tick only processes assignedTask
             EventTypes.emit('SPOUSE_RECRUITING_WORKERS', { spouseFirstName: spouse.firstName }, { _noToast: true });
         }
         return result;

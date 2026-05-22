@@ -1105,7 +1105,7 @@
                 result = { success: false, message: 'Unknown action.' };
         }
         if (result) {
-            toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+            toast(result.message, result.accepted === false ? 'warning' : (result.success ? 'success' : 'error')); // v9p33river409: check accepted before success
             openSpousePanel();
         }
     }
@@ -1157,7 +1157,7 @@
         } else {
             result = Player.askSpouseForMoney ? Player.askSpouseForMoney(amount) : { success: false, message: 'Not available.' };
         }
-        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        toast(result.message, result.accepted === false ? 'warning' : (result.success ? 'success' : 'error'));
         openSpousePanel();
     }
 
@@ -1213,7 +1213,7 @@
         } else {
             result = Player.askSpouseToTravel ? Player.askSpouseToTravel(townId) : { success: false, message: 'Not available.' };
         }
-        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        toast(result.message, result.accepted === false ? 'warning' : (result.success ? 'success' : 'error'));
         openSpousePanel();
     }
 
@@ -1246,7 +1246,7 @@
 
     function _spouseBuildingConfirm(idx) {
         var result = Player.askSpouseToManage ? Player.askSpouseToManage(idx) : { success: false, message: 'Not available.' };
-        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        toast(result.message, result.accepted === false ? 'warning' : (result.success ? 'success' : 'error'));
         openSpousePanel();
     }
 
@@ -1275,7 +1275,7 @@
 
     function _spouseNegotiateConfirm(npcId) {
         var result = Player.askSpouseToNegotiate ? Player.askSpouseToNegotiate(npcId) : { success: false, message: 'Not available.' };
-        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        toast(result.message, result.accepted === false ? 'warning' : (result.success ? 'success' : 'error'));
         openSpousePanel();
     }
 
@@ -1301,7 +1301,7 @@
 
     function _spouseCaravanConfirm(idx) {
         var result = Player.askSpouseToGuardCaravan ? Player.askSpouseToGuardCaravan(idx) : { success: false, message: 'Not available.' };
-        toast(result.message, result.success ? 'success' : (result.accepted === false ? 'warning' : 'error'));
+        toast(result.message, result.accepted === false ? 'warning' : (result.success ? 'success' : 'error'));
         openSpousePanel();
     }
 
