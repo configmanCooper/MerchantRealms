@@ -4576,9 +4576,9 @@
             reward = 'Bypass trade restrictions and tariffs for 90 days';
         } else if (docType === 'noble_title') {
             cost = 800;
-            duration = 60;
+            duration = 10;
             detection = 0.35;
-            reward = 'Treated as minor nobility for 60 days — access to noble-only areas and audiences';
+            reward = 'Treated as minor nobility for 10 days — access to noble-only areas and audiences';
         } else if (docType === 'travel_papers') {
             cost = 150;
             duration = 120;
