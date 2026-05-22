@@ -1983,12 +1983,16 @@ window.UI = (function () {
             html += ' <span style="font-size:0.85em;color:#cfc7b0;">' + (rankDef.icon || '') + ' ' + escapeHtml(rankDef.name || '') + '</span>';
             if (relText) html += '<div style="font-size:0.8em;color:#999;margin-top:2px;">Relationship: ' + escapeHtml(relText) + '</div>';
             html += '</div>';
+        } else if (evt.npcName) {
+            html += '<div style="text-align:center;margin-bottom:8px;"><span style="font-weight:bold;color:#d4af37;">' + escapeHtml(evt.npcName) + '</span></div>';
         }
         html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(100,149,237,0.10);border-left:3px solid #6495ed;border-radius:0 6px 6px 0;color:#ddd;">' + escapeHtml(evt.text || '') + '</div>';
-        if (evt.choices && evt.choices.length) {
+        var choices = Array.isArray(evt.choices) ? evt.choices : [];
+        if (choices.length) {
             html += '<div style="display:flex;flex-direction:column;gap:6px;">';
-            for (var ci = 0; ci < evt.choices.length; ci++) {
-                var ch = evt.choices[ci];
+            for (var ci = 0; ci < choices.length; ci++) {
+                var ch = choices[ci];
+                if (!ch) continue;
                 var btnStyle = ch.disabled ? 'opacity:0.45;cursor:not-allowed;' : '';
                 html += '<button class="btn-medieval" data-action="unsolicitedEventChoice" data-choice-index="' + ci + '" data-instance-id="' + escapeHtml(String(evt.instanceId || '')) + '" style="background:rgba(100,149,237,0.15);text-align:left;padding:8px 12px;' + btnStyle + '"' + (ch.disabled ? ' disabled' : '') + '>' + escapeHtml(ch.label || 'Choose');
                 if (ch.disabled && ch.disabledReason) html += ' <span style="font-size:0.8em;color:#c85050;">(' + escapeHtml(ch.disabledReason) + ')</span>';
@@ -2007,10 +2011,12 @@ window.UI = (function () {
         var html = '<div style="max-width:480px;padding:6px;">';
         html += '<div style="text-align:center;font-size:2.4em;margin-bottom:6px;">' + (res.icon || '🎲') + '</div>';
         html += '<div style="padding:10px 12px;margin-bottom:10px;background:rgba(85,168,104,0.12);border-left:3px solid #55a868;border-radius:0 6px 6px 0;color:#ddd;font-style:italic;">' + escapeHtml(res.narrative || 'The matter is settled.') + '</div>';
-        if (res.effects && res.effects.length) {
+        var effects = Array.isArray(res.effects) ? res.effects : [];
+        if (effects.length) {
             html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
-            for (var ei = 0; ei < res.effects.length; ei++) {
-                var eff = res.effects[ei];
+            for (var ei = 0; ei < effects.length; ei++) {
+                var eff = effects[ei];
+                if (!eff) continue;
                 var badge = '', badgeColor = '#aaa';
                 if (eff.type === 'gold') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + 'g'; badgeColor = eff.delta > 0 ? '#d4af37' : '#c85050'; }
                 else if (eff.type === 'rep') { badge = (eff.delta > 0 ? '+' : '') + eff.delta + ' reputation'; badgeColor = eff.delta > 0 ? '#55a868' : '#c85050'; }
@@ -2032,9 +2038,14 @@ window.UI = (function () {
 
     // v9p33river401: Check for pending unsolicited events in update loop
     var _lastShownUnsolicitedEventId = null;
+    var _ueResultModalOpen = false;
     function _checkPendingUnsolicitedEvent() {
         try {
+            if (_ueResultModalOpen) return;
             if (typeof Player === 'undefined' || !Player.getPendingUnsolicitedEvent) return;
+            // Don't hijack other open modals
+            var overlay = document.getElementById('modal-overlay');
+            if (overlay && overlay.style.display !== 'none') return;
             var evt = Player.getPendingUnsolicitedEvent();
             if (!evt) { _lastShownUnsolicitedEventId = null; return; }
             var evtKey = evt.instanceId + '_' + (evt.stepIndex || 0);
@@ -2318,6 +2329,7 @@ window.UI = (function () {
         if (_encounterLocked) return;
         if (_conquestLocked) return;
         if (UI._funeralLocked) return;
+        _ueResultModalOpen = false;
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
         if (mo) mo.classList.add('hidden');
         // Clear modal history state
@@ -7751,6 +7763,9 @@ window.UI = (function () {
                 html += '<div style="font-size:0.72rem;color:#999;">Step ' + ((revt.stepIndex || 0) + 1) + ' • ' + escapeHtml(evtCatLabel);
                 if (evtTown && evtTown.name) html += ' • 📍 ' + escapeHtml(evtTown.name);
                 html += '</div>';
+                if (revt.status === 'ready') {
+                    html += '<div style="margin-top:6px;"><button class="btn-medieval" data-action="resumeUnsolicitedEvent" style="background:rgba(85,168,104,0.2);font-size:0.8rem;padding:4px 12px;">📬 Open Event</button></div>';
+                }
                 html += '</div>';
             }
         }

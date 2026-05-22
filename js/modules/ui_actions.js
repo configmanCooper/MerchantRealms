@@ -4921,10 +4921,13 @@ function clickTown(townId) {
         var res = Player.handleUnsolicitedEventChoice ? Player.handleUnsolicitedEventChoice(instanceId, choiceIndex) : { success: false, message: 'Unavailable.' };
         if (res.success && res.narrative) {
             UI.closeModal();
+            _ueResultModalOpen = true;
             setTimeout(function() { if (UI.openUnsolicitedEventResult) UI.openUnsolicitedEventResult(res); }, 80);
-        } else {
-            UI.toast(res.message || (res.success ? 'Done.' : 'Cannot choose.'), res.success ? 'success' : 'warning');
+        } else if (res.success) {
+            UI.toast(res.message || 'Done.', 'success');
             UI.closeModal();
+        } else {
+            UI.toast(res.message || 'Cannot choose.', 'warning');
         }
         try { if (UI._renderTownQuestsTab) UI._renderTownQuestsTab(); } catch(e) {}
     });
@@ -4932,6 +4935,17 @@ function clickTown(townId) {
         if (Player.dismissPendingUnsolicitedEvent) Player.dismissPendingUnsolicitedEvent();
         UI.toast('Event dismissed.', 'info');
         UI.closeModal();
+    });
+    UI.registerAction('resumeUnsolicitedEvent', function() {
+        try {
+            var evt = Player.getPendingUnsolicitedEvent ? Player.getPendingUnsolicitedEvent() : null;
+            if (evt) {
+                UI.closeModal();
+                setTimeout(function() { if (UI.openUnsolicitedEventPopup) UI.openUnsolicitedEventPopup(evt); }, 80);
+            } else {
+                UI.toast('No event ready.', 'warning');
+            }
+        } catch(e) { UI.toast('Could not open event.', 'warning'); }
     });
     UI.registerAction('requestAnnulment', function() {
         if (!confirm('Annul your marriage? This costs gold and is permanent.')) return;
