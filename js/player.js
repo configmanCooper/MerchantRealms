@@ -38984,11 +38984,12 @@
         });
 
         // 4. Land grant — free building
+        // v9p33river434: land-grant copy should match the actual warehouse + land + stipend reward.
         choices.push({
             id: 'land_grant',
             label: '🏗️ Land & Building Grant',
-            description: 'The king grants you a prime building of your choice, fully constructed, in the capital.',
-            detail: 'Free building (any type) + 3 free workers'
+            description: 'The king grants you a fully built warehouse in the capital, plus the land rights to hold it.',
+            detail: 'Warehouse + land deed + 300g hiring stipend'
         });
 
         // 5. Military commission — instant high rank
@@ -39002,11 +39003,12 @@
         }
 
         // 6. Treasury reward — large gold payment
+        // v9p33river434: treasury-reward copy must not promise a 500g minimum when funds can be lower.
         choices.push({
             id: 'treasury_reward',
             label: '🪙 Treasury Reward',
             description: 'A generous payment from the royal treasury for your extraordinary service.',
-            detail: 'Receive 500-1500g depending on kingdom wealth'
+            detail: 'Receive up to 1500g depending on royal treasury funds'
         });
 
         // 7. Guaranteed petition — any petition auto-approved
@@ -39066,6 +39068,10 @@
                 return { success: true, message: 'Promoted by royal decree!' };
             }
             case 'royal_marriage': {
+                // v9p33river434: royal marriage should not overwrite an existing spouse bond.
+                if (player.spouseId) {
+                    return { success: false, message: 'You are already married.' };
+                }
                 var w = Engine.getWorld();
                 var kingPerson = kingdom.king ? Engine.findPerson(kingdom.king) : null;
                 if (!w || !kingPerson) {
@@ -39180,7 +39186,9 @@
                         foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
                         recentFoods: [],
                     };
-                    w.people.push(cousin);
+                    // v9p33river434: register generated royals through Engine.addPerson so person indices stay in sync.
+                    if (Engine.addPerson) Engine.addPerson(cousin);
+                    else w.people.push(cousin);
                     player.spouseId = cousin.id;
                     if (kingdom.king) modifyRelationship(kingdom.king, 25, 'royal_favor');
                     var cr3 = player.socialRank[kingdomId] || 0;
@@ -39202,29 +39210,64 @@
                 return { success: true, message: 'Tax exemption for 1 year!' };
             }
             case 'land_grant': {
-                // Give a warehouse building + 3 workers
                 var capitalTown = null;
                 for (var tid of (kingdom.territories || [])) {
                     var t = Engine.findTown(tid);
                     if (t && t.isCapital) { capitalTown = t; break; }
                 }
                 if (!capitalTown) capitalTown = town;
-                // Add a warehouse building
+                if (!capitalTown) return { success: false, message: 'No capital town found for this grant.' };
+
+                var grantedBuildingId = buildingUid();
+                var warehouseType = Engine.findBuildingType ? Engine.findBuildingType('warehouse') : null;
+                var grantSlots = (!warehouseType || warehouseType.noLandRequired) ? 0 : (warehouseType.landSlots || 1);
+                // v9p33river434: land grants must reserve land and mirror the building into the town registry.
+                if (grantSlots > 0) {
+                    player.landOwned = player.landOwned || {};
+                    player.landOwned[capitalTown.id] = (player.landOwned[capitalTown.id] || 0) + grantSlots;
+                }
                 player.buildings.push({
-                    id: buildingUid(), type: 'warehouse', townId: capitalTown.id,
-                    level: 1, condition: 'new', workers: [], ownerId: 'player',
-                    storage: 100, autoBuy: {}, autoSell: {},
-                    buildDay: Engine.getDay()
+                    id: grantedBuildingId,
+                    type: 'warehouse',
+                    townId: capitalTown.id,
+                    workers: [],
+                    active: true,
+                    level: 1,
+                    builtDay: Engine.getDay(),
+                    condition: 'new',
+                    lastRepairDay: 0,
+                    transferTarget: null,
+                    transferEnabled: false,
+                    ownerId: 'player',
+                    storage: 100,
+                    autoBuy: false,
+                    autoSell: false
                 });
-                // Grant gold for hiring workers
-                player.gold += 300;
-                player.stats.totalGoldEarned += 300;
-                Engine.logEvent('🏗️ The King grants ' + player.fullName + ' a warehouse in ' + capitalTown.name + ' and 300g to hire workers!', null, "my_actions");
-                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏗️ Granted a warehouse + 300g!', 'success');
-                return { success: true, message: 'Received warehouse in ' + capitalTown.name + ' + 300g!' };
+                if (!capitalTown.buildings) capitalTown.buildings = [];
+                capitalTown.buildings.push({
+                    id: grantedBuildingId,
+                    type: 'warehouse',
+                    level: 1,
+                    ownerId: 'player',
+                    builtDay: Engine.getDay(),
+                    condition: 'new',
+                    lastRepairDay: 0
+                });
+                Player.modifyGold(300, 'royal', 'Royal land grant hiring stipend');
+                Engine.logEvent('🏗️ The King grants ' + player.fullName + ' a warehouse in ' + capitalTown.name + ', a land deed, and 300g to hire workers!', null, "my_actions");
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('🏗️ Granted a warehouse + land deed + 300g!', 'success');
+                return { success: true, message: 'Received warehouse in ' + capitalTown.name + ' + land deed + 300g hiring stipend!' };
             }
             case 'military_commission': {
+                var commissionRng = Engine.getRng();
+                // v9p33river434: a royal commission should also enlist the player into that kingdom's army state.
                 player.militaryRank = 'sergeant';
+                player.militaryActive = true;
+                player.militaryKingdomId = kingdomId;
+                player.militaryDayEnlisted = Engine.getDay();
+                player.militaryRole = 'soldier';
+                player.militaryRankProgress = 0;
+                player.militaryNextBattleDay = Engine.getDay() + (commissionRng ? commissionRng.randInt(3, 5) : 4);
                 if (!hasSkill('combat_trained')) player.skills.combat_trained = true;
                 player.reputation[kingdomId] = Math.min(100, (player.reputation[kingdomId] || 50) + 5);
                 Engine.logEvent('⚔️ The King of ' + kingdom.name + ' commissions ' + player.fullName + ' as a Sergeant!', null, "military");
@@ -39232,10 +39275,18 @@
                 return { success: true, message: 'Commissioned as Sergeant + combat_trained skill!' };
             }
             case 'treasury_reward': {
-                var goldReward = Math.min(1500, Math.max(500, Math.round(kingdom.gold * 0.05)));
-                player.gold += goldReward;
-                player.stats.totalGoldEarned += goldReward;
-                kingdom.gold -= goldReward;
+                var availableTreasury = Math.max(0, Math.floor(kingdom.gold || 0));
+                if (availableTreasury <= 0) {
+                    return { success: false, message: 'The royal treasury is empty. Choose another favor.' };
+                }
+                var desiredReward = Math.min(1500, Math.max(500, Math.round(availableTreasury * 0.05)));
+                var goldReward = Math.min(availableTreasury, desiredReward);
+                // v9p33river434: treasury favors must clamp to available gold and hit the player finance ledger.
+                Player.modifyGold(goldReward, 'royal', 'Royal treasury reward');
+                kingdom.gold = Math.max(0, availableTreasury - goldReward);
+                if (Engine.recordKingdomTransaction) {
+                    Engine.recordKingdomTransaction(kingdom, 'expense', goldReward, 'Royal treasury reward for ' + (player.fullName || 'the player'), 'royal_favor');
+                }
                 Engine.logEvent('🪙 The King rewards ' + player.fullName + ' with ' + goldReward + 'g from the royal treasury!', null, "my_actions");
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('🪙 Treasury reward: ' + goldReward + 'g!', 'success');
                 return { success: true, message: 'Received ' + goldReward + 'g from the treasury!' };
@@ -39258,9 +39309,24 @@
                 return { success: true, message: 'Criminal record in ' + kingdom.name + ' cleared! Rep +10.' };
             }
             case 'trade_monopoly': {
-                // Grant monopoly on a valuable trade good
                 var monopolyGoods = ['silk', 'jewelry', 'wine', 'perfume', 'fine_clothes', 'tools'];
-                var monopolyGood = monopolyGoods[rng.randInt(0, monopolyGoods.length - 1)];
+                var kingdomTowns = Engine.getTowns().filter(function(t) {
+                    return t.kingdomId === kingdomId && t.market && t.market.supply;
+                });
+                var bannedGoods = (kingdom.laws && kingdom.laws.bannedGoods) || [];
+                // v9p33river434: monopoly picks should exclude banned goods and goods absent from the kingdom's markets.
+                var monopolyOptions = monopolyGoods.filter(function(goodId) {
+                    if (kingdom.exportRestrictions && kingdom.exportRestrictions.indexOf(goodId) !== -1) return false;
+                    if (bannedGoods.indexOf(goodId) !== -1) return false;
+                    for (var mt = 0; mt < kingdomTowns.length; mt++) {
+                        if ((kingdomTowns[mt].market.supply[goodId] || 0) > 0) return true;
+                    }
+                    return false;
+                });
+                if (monopolyOptions.length === 0) {
+                    return { success: false, message: 'No eligible trade goods are available for a monopoly right now.' };
+                }
+                var monopolyGood = monopolyOptions[rng.randInt(0, monopolyOptions.length - 1)];
                 var res = findResource(monopolyGood);
                 player.tradeMonopoly = player.tradeMonopoly || {};
                 player.tradeMonopoly[kingdomId] = {
@@ -39290,16 +39356,29 @@
     function enterTournament(job) {
         var rng = Engine.getRng();
         if (!rng) return { success: false, message: 'RNG not available.' };
+        var actBlock = _checkCanAct();
+        if (actBlock) return { success: false, message: actBlock.message };
+        if ((player.injuries && player.injuries.length > 0) || (player.illnesses && player.illnesses.length > 0) || player.injured || player.sick) {
+            return { success: false, message: 'Cannot enter the tournament while injured or sick.' };
+        }
 
         var entryFee = job.entryFee;
         if (player.gold < entryFee) return { success: false, message: 'Cannot afford the ' + entryFee + 'g entry fee.' };
 
-        // v9p33river434: route tournament entry through tracked gold flow and refund it if round setup throws.
+        var town = Engine.findTown(player.townId);
+        var sponsorKingdom = town ? Engine.findKingdom(town.kingdomId) : null;
+
+        // v9p33river434: tournament entry should validate combat readiness and credit the sponsoring kingdom with the fee.
         _modifyGold(-entryFee, 'jobs', 'Tournament entry fee');
         if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + entryFee;
+        if (sponsorKingdom) {
+            sponsorKingdom.gold = (sponsorKingdom.gold || 0) + entryFee;
+            if (Engine.recordKingdomTransaction) {
+                Engine.recordKingdomTransaction(sponsorKingdom, 'income', entryFee, 'Tournament entry fee from ' + (player.fullName || 'the player'), 'tournaments');
+            }
+        }
 
         // Set up tournament state
-        var town = Engine.findTown(player.townId);
         player.tournamentState = {
             round: 1,
             entryFee: entryFee,
@@ -39318,6 +39397,12 @@
             player.tournamentState = null;
             _modifyGold(entryFee, 'jobs', 'Tournament entry fee refund');
             if (player.stats) player.stats.totalGoldSpent = Math.max(0, (player.stats.totalGoldSpent || 0) - entryFee);
+            if (sponsorKingdom) {
+                sponsorKingdom.gold = Math.max(0, (sponsorKingdom.gold || 0) - entryFee);
+                if (Engine.recordKingdomTransaction) {
+                    Engine.recordKingdomTransaction(sponsorKingdom, 'expense', entryFee, 'Tournament entry fee refund to ' + (player.fullName || 'the player'), 'tournaments');
+                }
+            }
             throw e;
         }
 
@@ -39468,12 +39553,24 @@
         var kId = kingdom ? kingdom.id : (town ? town.kingdomId : null);
         if (!kId) return;
 
+        // v9p33river434: tournament feast attendee names flow into HTML text and attributes.
+        var escapeHtml = (typeof UI !== 'undefined' && UI.escapeHtml) ? UI.escapeHtml : function(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
+
         var html = '<div style="max-width:550px;padding:8px">';
         html += '<div style="text-align:center;margin-bottom:12px">';
         html += '<div style="font-size:2em">🏆🎉🍷</div>';
         html += '<div style="font-size:1.2em;color:#ffd700;font-weight:bold;margin:6px 0">Champion\'s Feast</div>';
         html += '<div style="color:#ccc;font-size:0.9em">The kingdom celebrates your victory! You have been honored with a feast among the nobility.</div>';
-        html += '<div style="color:#88ff88;font-size:0.95em;margin-top:6px">🏆 Prize: <strong>' + prize + 'g</strong> · Kingdom Rep +8 · King Relationship +15</div>';
+        // v9p33river434: feast copy should match the actual +4 kingdom reputation reward.
+        html += '<div style="color:#88ff88;font-size:0.95em;margin-top:6px">🏆 Prize: <strong>' + prize + 'g</strong> · Kingdom Rep +4 · King Relationship +15</div>';
         html += '</div>';
 
         html += '<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);border-radius:8px;padding:10px;margin:10px 0">';
@@ -39510,14 +39607,15 @@
 
         for (var fi = 0; fi < Math.min(nobles.length, 15); fi++) {
             var fn = nobles[fi];
-            var fnName = (fn.person.firstName || '') + ' ' + (fn.person.lastName || '');
+            var fnName = escapeHtml(((fn.person.firstName || '') + ' ' + (fn.person.lastName || '')).trim() || 'Unnamed noble');
+            var fnIdAttr = escapeHtml(String(fn.person.id || ''));
             var fnIcon = rankIcons[fn.rank] || '👤';
-            var fnLabel = rankLabels[fn.rank] || 'Noble';
-            html += '<div data-action="closeModalAndTalkToPerson" data-id="' + fn.person.id + '" ';
+            var fnLabel = escapeHtml(rankLabels[fn.rank] || 'Noble');
+            html += '<div data-action="closeModalAndTalkToPerson" data-id="' + fnIdAttr + '" ';
             html += 'style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin:3px 0;border:1px solid #555;border-radius:6px;background:rgba(40,40,40,0.8);cursor:pointer;transition:background 0.15s" ';
             html += 'onmouseover="this.style.background=\'rgba(255,215,0,0.12)\'" onmouseout="this.style.background=\'rgba(40,40,40,0.8)\'">';
             html += '<span style="font-size:1.2em">' + fnIcon + '</span>';
-            html += '<div style="flex:1"><span style="color:#eee;font-weight:bold">' + fnName.trim() + '</span>';
+            html += '<div style="flex:1"><span style="color:#eee;font-weight:bold">' + fnName + '</span>';
             html += ' <span style="color:#888;font-size:0.8em">(' + fnLabel + ')</span></div>';
             html += '</div>';
         }
@@ -40090,17 +40188,44 @@
             try { route = Engine.findPath(player.townId, l.townId); } catch(e) {}
             return route && route.some(function(s) { return s.type === 'sea'; });
         });
+        var transportRng = Engine.getRng();
+        var transportDay = Engine.getDay ? Engine.getDay() : 0;
         mission._tempHorse = false;
         mission._tempShip = false;
         if (!hasHorseAlready) {
-            // v9p33river423: initialize the horse list before adding temporary job transport.
+            // v9p33river434: mission transport should remove only its own horse later.
             if (!player.horses) player.horses = [];
-            player.horses.push({ id: '_job_horse', name: 'Job Horse', speed: 1.0, stamina: 80, maxStamina: 80, health: 100, _temporary: true });
+            mission._tempHorseId = '_job_horse_' + transportDay + '_' + (transportRng ? transportRng.randInt(0, 999999) : 0);
+            player.horses.push({ id: mission._tempHorseId, name: 'Job Horse', speed: 1.0, stamina: 80, maxStamina: 80, health: 100, _temporary: true });
             mission._tempHorse = true;
         }
         if (hasSea && !hasShipAlready) {
             if (!player.ships) player.ships = [];
-            player.ships.push({ id: '_job_ship', name: 'Job Vessel', hull: 100, maxHull: 100, speed: 1.0, cargo: 50, _temporary: true });
+            // v9p33river434: temporary mission ships should use the same ship schema as normal vessels.
+            mission._tempShipId = '_job_ship_' + transportDay + '_' + (transportRng ? transportRng.randInt(0, 999999) : 0);
+            player.ships.push({
+                id: mission._tempShipId,
+                name: 'Job Vessel',
+                type: 'cog',
+                townId: player.townId,
+                assignedCaravanId: null,
+                capacity: 50,
+                speed: 1.0,
+                passengers: 0,
+                cannons: 0,
+                defense: 0,
+                restBonus: 0,
+                maxAddons: 0,
+                addons: [],
+                hullHealth: 100,
+                condition: 100,
+                builtDay: transportDay,
+                degradeCondition: 'new',
+                lastRepairDay: transportDay,
+                lastDockFeeDay: transportDay,
+                unpaidDocking: false,
+                _temporary: true
+            });
             mission._tempShip = true;
         }
         var firstLeg = mission.legs[0];
@@ -40409,11 +40534,14 @@
 
     // Remove temporary horse/ship provided for auto-travel jobs
     function _removeJobTransport(mission) {
-        if (mission._tempHorse) {
-            player.horses = player.horses.filter(function(h) { return !h._temporary; });
+        if (mission._tempHorse && player.horses) {
+            var tempHorseId = mission._tempHorseId || '_job_horse';
+            // v9p33river434: only remove the transport loaned to this mission, not every temporary horse.
+            player.horses = player.horses.filter(function(h) { return h.id !== tempHorseId; });
         }
         if (mission._tempShip && player.ships) {
-            player.ships = player.ships.filter(function(s) { return !s._temporary; });
+            var tempShipId = mission._tempShipId || '_job_ship';
+            player.ships = player.ships.filter(function(s) { return s.id !== tempShipId; });
         }
     }
 

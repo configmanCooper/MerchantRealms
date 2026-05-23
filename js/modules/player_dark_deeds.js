@@ -1474,6 +1474,8 @@
         if (!town) return { success: false, message: 'Town not found.' };
 
         const rng = Engine.getRng();
+        // v9p33river434: robTraveler now depends on engine RNG for combat rolls and loot.
+        if (!rng) return { success: false, message: 'RNG not available.' };
         const detection = calculateCorruptDetection(0.20, town);
         var _o = _rollSchemeOutcome(detection, rng);
         var caught = _o.caught;
@@ -1500,20 +1502,21 @@
             }
         }
         const combatPower = weaponPower + (hasArmor ? 20 : 0) + (player.militaryRank ? 15 : 0);
-        const travelerFight = 10 + Math.floor(Math.random() * 40); // 10-50
+        // v9p33river434: robTraveler should use the engine RNG and pass the actual robbery outcome into crime tracking.
+        const travelerFight = rng.randInt(10, 49);
         const playerWins = combatPower > travelerFight;
 
         // Apply success effect if combat won (independent of caught)
         var goldStolen = 0;
         var goodsMsg = '';
         if (playerWins) {
-            goldStolen = 20 + Math.floor(Math.random() * 81);
+            goldStolen = rng.randInt(20, 100);
             player.gold += goldStolen;
             player.stats.totalGoldEarned += goldStolen;
-            if (Math.random() < 0.5) {
+            if (rng.chance(0.5)) {
                 const possibleGoods = ['bread', 'cloth', 'wine', 'jewelry', 'herbs', 'salt'];
-                const resId = possibleGoods[Math.floor(Math.random() * possibleGoods.length)];
-                const qty = 1 + Math.floor(Math.random() * 5);
+                const resId = rng.pick(possibleGoods);
+                const qty = rng.randInt(1, 5);
                 player.inventory[resId] = (player.inventory[resId] || 0) + qty;
                 const res = findResource(resId);
                 goodsMsg = ` + ${qty} ${res ? res.name : resId}`;
@@ -1531,7 +1534,7 @@
             EventTypes.emit('HIGHWAY_ROBBERY_CAUGHT', { playerName: player.fullName, townName: town.name });
             caughtMsg = `🚨 CAUGHT! Fined ${actualFine}g, jailed 7d.`;
         } else {
-            recordCorruptAction('rob_traveler', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft', successful);
+            recordCorruptAction('rob_traveler', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'theft', playerWins);
             player.notoriety = (player.notoriety || 0) + _trackedNotoriety(playerWins ? 6 : 5);
         }
 
