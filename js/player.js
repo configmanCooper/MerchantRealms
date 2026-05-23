@@ -8871,6 +8871,10 @@
         if (kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(targetKingdomId)) {
             return { success: false, message: 'Already at war with ' + target.name + '.' };
         }
+        // v9p33river421: check peace treaties / non-aggression pacts
+        if (kingdom.peaceTreaties && kingdom.peaceTreaties[targetKingdomId] && Engine.getDay() < kingdom.peaceTreaties[targetKingdomId]) {
+            return { success: false, message: 'Cannot declare war — active peace treaty with ' + target.name + ' (expires day ' + kingdom.peaceTreaties[targetKingdomId] + ').' };
+        }
         var warCost = CONFIG.WAR_DECLARATION_COST || 300;
         if (kingdom.gold < warCost) return { success: false, message: 'Insufficient treasury (' + warCost + 'g required).' };
         kingdom.gold -= warCost;
@@ -8898,9 +8902,13 @@
         if (target) target.gold = (target.gold || 0) + tribute;
         kingdom.atWar.delete(targetKingdomId);
         if (target && target.atWar && target.atWar.delete) target.atWar.delete(kingdom.id);
-        // Set peace treaty
+        // Set peace treaty on both kingdoms — v9p33river421
         if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
         kingdom.peaceTreaties[targetKingdomId] = Engine.getDay() + 180;
+        if (target) {
+            if (!target.peaceTreaties) target.peaceTreaties = {};
+            target.peaceTreaties[kingdom.id] = Engine.getDay() + 180;
+        }
         Engine.logEvent('🕊️ ' + kingdom.name + ' sues for peace with ' + (target ? target.name : 'the enemy') + '. Tribute: ' + tribute + 'g.', null, "military");
         player.kingState.peacesMade = (player.kingState.peacesMade || 0) + 1;
         autoJournalCapture('king', 'I sued for peace with ' + (target ? target.name : 'the enemy') + ', paying ' + tribute + 'g in tribute. War takes its toll on all.', { mood: 'reflective' });
@@ -9517,6 +9525,13 @@
         var kingdom = Engine.findKingdom(ks.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
 
+        // v9p33river421: validate target before spending resources
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or deceased.' };
+        if (!noble.socialRank || (noble.socialRank[kingdom.id] || 0) < 4) {
+            return { success: false, message: 'Target must be a noble of your kingdom.' };
+        }
+
         var giftType = null;
         for (var gi = 0; gi < _ROYAL_GIFT_TYPES.length; gi++) {
             if (_ROYAL_GIFT_TYPES[gi].id === giftTypeId) { giftType = _ROYAL_GIFT_TYPES[gi]; break; }
@@ -9541,11 +9556,8 @@
         if (giftType.cost > 0) kingdom.gold -= giftType.cost;
         ks._royalGiftCooldowns[cdKey] = Engine.getDay();
 
-        var noble = Engine.findPerson(nobleId);
-        if (noble) {
-            noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + giftType.loyaltyGain);
-            noble.fearOfKing = Math.max(0, (noble.fearOfKing || 15) - 2); // Gifts reduce fear
-        }
+        noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + giftType.loyaltyGain);
+        noble.fearOfKing = Math.max(0, (noble.fearOfKing || 15) - 2); // Gifts reduce fear
         modifyRelationship(nobleId, giftType.relGain);
 
         // Wave effect: other nobles slightly jealous of gifts (mild)
@@ -9566,9 +9578,41 @@
             }
         }
 
+        // v9p33river421: real gameplay effects for gift types
+        var _giftEffectMsg = '';
+        if (giftTypeId === 'land_grant') {
+            // Grant a building in the noble's town
+            var _nobleTown = null;
+            try { _nobleTown = Engine.findTown(noble.townId); } catch(e) {}
+            if (_nobleTown && _nobleTown.buildings) {
+                var _landBld = { id: 'land_' + nobleId + '_' + Engine.getDay(), typeId: 'estate', name: 'Royal Land Grant', ownerId: nobleId, condition: 'new', constructedDay: Engine.getDay(), _royalGrant: true };
+                _nobleTown.buildings.push(_landBld);
+                _giftEffectMsg = ' Estate granted in ' + _nobleTown.name + '.';
+            }
+        } else if (giftTypeId === 'tax_exemption') {
+            // Create actual tax exemption state
+            noble._taxExemptUntilDay = Engine.getDay() + 60;
+            noble._taxExemptKingdomId = kingdom.id;
+            _giftEffectMsg = ' Tax exempt for 60 days.';
+        } else if (giftTypeId === 'military_command') {
+            // Assign military role
+            noble._militaryCommand = { role: 'commander', assignedDay: Engine.getDay(), kingdomId: kingdom.id };
+            noble.occupation = 'military_commander';
+            _giftEffectMsg = ' Appointed military commander.';
+        } else if (giftTypeId === 'trade_monopoly') {
+            // Create trade monopoly for this noble's town
+            if (!kingdom._tradeMonopolies) kingdom._tradeMonopolies = {};
+            kingdom._tradeMonopolies[nobleId] = { grantedDay: Engine.getDay(), expiresDay: Engine.getDay() + 90, townId: noble.townId };
+            _giftEffectMsg = ' Exclusive trade rights granted for 90 days.';
+        } else if (giftTypeId === 'gold_gift') {
+            // Transfer gold to noble
+            noble.gold = (noble.gold || 0) + 200;
+            _giftEffectMsg = ' 200g transferred to noble.';
+        }
+
         var nobleName = noble ? ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim() : 'Noble';
         Engine.logEvent('👑 ' + player.fullName + ' bestows ' + giftType.label + ' upon ' + nobleName + '! (+' + giftType.loyaltyGain + ' loyalty)', null, "my_kingdom");
-        return { success: true, message: giftType.label + ' bestowed upon ' + nobleName + '! Loyalty +' + giftType.loyaltyGain + ', Relationship +' + giftType.relGain + (giftType.cost > 0 ? ' (Cost: ' + giftType.cost + 'g)' : '') };
+        return { success: true, message: giftType.label + ' bestowed upon ' + nobleName + '! Loyalty +' + giftType.loyaltyGain + ', Relationship +' + giftType.relGain + (giftType.cost > 0 ? ' (Cost: ' + giftType.cost + 'g)' : '') + _giftEffectMsg };
     }
 
     function kingGetRoyalGiftTypes() { return _ROYAL_GIFT_TYPES; }
@@ -9577,15 +9621,22 @@
     function kingPrivateAudience(nobleId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var noble = Engine.findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or deceased.' };
+        // v9p33river421: validate kingdom membership and noble rank
+        if (!noble.socialRank || (noble.socialRank[kingdom.id] || 0) < 4) {
+            return { success: false, message: 'Target must be a noble of your kingdom.' };
+        }
+
         if (!ks._privatAudienceCooldowns) ks._privatAudienceCooldowns = {};
         var lastDay = ks._privatAudienceCooldowns[nobleId] || 0;
         var daysSince = Engine.getDay() - lastDay;
         if (daysSince < 7) {
             return { success: false, message: 'Must wait ' + (7 - daysSince) + ' more days for another private audience with this noble.' };
         }
-
-        var noble = Engine.findPerson(nobleId);
-        if (!noble) return { success: false, message: 'Noble not found.' };
 
         ks._privatAudienceCooldowns[nobleId] = Engine.getDay();
 
@@ -9614,8 +9665,14 @@
     // ── Military Honors ──
     function kingGrantMilitaryHonor(nobleId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var kingdom = Engine.findKingdom(player.kingState.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         var noble = Engine.findPerson(nobleId);
-        if (!noble) return { success: false, message: 'Noble not found.' };
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or deceased.' };
+        // v9p33river421: validate kingdom membership and noble rank
+        if (!noble.socialRank || (noble.socialRank[kingdom.id] || 0) < 4) {
+            return { success: false, message: 'Target must be a noble of your kingdom.' };
+        }
 
         noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + 10);
         modifyRelationship(nobleId, 5);
@@ -9632,6 +9689,10 @@
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         var noble = Engine.findPerson(nobleId);
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+        // v9p33river421: validate kingdom membership and noble rank
+        if (!noble.socialRank || (noble.socialRank[kingdom.id] || 0) < 3) {
+            return { success: false, message: 'Target must be a noble or burgher of your kingdom.' };
+        }
         var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
         var nP = noble.personality || {};
 
@@ -9712,7 +9773,8 @@
                 break;
 
             case 'strip_title':
-                var curRank = (noble.socialRank && noble.socialRank[kingdom.id]) || 4;
+                if (!noble.socialRank) noble.socialRank = {}; // v9p33river421: prevent crash
+                var curRank = noble.socialRank[kingdom.id] || 4;
                 if (curRank <= 3) return { success: false, message: nobleName + ' has no title to strip.' };
                 noble.socialRank[kingdom.id] = curRank - 1;
                 if (curRank - 1 < 5) noble.isNoble = false;
@@ -9804,6 +9866,10 @@
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         var noble = Engine.findPerson(nobleId);
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+        // v9p33river421: validate kingdom membership and noble rank
+        if (!noble.socialRank || (noble.socialRank[kingdom.id] || 0) < 4) {
+            return { success: false, message: 'Target must be a noble of your kingdom.' };
+        }
         var nobleName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
 
         // If no method specified, return available methods (for UI to show panel)
@@ -9818,6 +9884,13 @@
 
         var results = [];
         var cost = 0;
+
+        // v9p33river421: enforce investigation cooldowns
+        var _invCooldown = method === 'spy' ? 7 : method === 'bribe_servants' ? 14 : method === 'intercept_messages' ? 10 : 5;
+        var _invCdKey = '_lastInvest_' + method;
+        if (dossier[_invCdKey] && (Engine.getDay() - dossier[_invCdKey]) < _invCooldown) {
+            return { success: false, message: 'Must wait ' + (_invCooldown - (Engine.getDay() - dossier[_invCdKey])) + ' more days before using this method again on ' + nobleName + '.' };
+        }
 
         if (method === 'spy') {
             // Hire Spies — reveals loyalty, personality, alliances over time
@@ -9845,6 +9918,7 @@
             }
             noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 3);
             dossier._lastSpyDay = Engine.getDay();
+            dossier._lastInvest_spy = Engine.getDay();
 
         } else if (method === 'bribe_servants') {
             // Bribe Servants — instant detailed info but expensive
@@ -9949,6 +10023,7 @@
         }
 
         dossier._investigatedDay = Engine.getDay();
+        dossier['_lastInvest_' + method] = Engine.getDay(); // v9p33river421: cooldown tracking
         Engine.logEvent('🔍 Investigation into ' + nobleName + ' (' + method + '): ' + results[0], null, "political_intrigue");
 
         return {
@@ -10141,9 +10216,15 @@
     function kingSendNobleOnMission(nobleId, missionTypeId, targetKingdomId) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var ks = player.kingState;
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
 
         var noble = Engine.findPerson(nobleId);
-        if (!noble) return { success: false, message: 'Noble not found.' };
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found or deceased.' };
+        // v9p33river421: validate noble rank and kingdom membership
+        if (!noble.socialRank || (noble.socialRank[kingdom.id] || 0) < 4) {
+            return { success: false, message: 'Target must be a noble of your kingdom.' };
+        }
         if ((noble.kingLoyalty || 0) < 40) return { success: false, message: 'Noble must have at least 40 loyalty to accept a mission.' };
 
         // Check not already on mission
@@ -10169,6 +10250,11 @@
 
         if (mType.needsTarget && !targetKingdomId) {
             return { success: false, message: 'This mission requires a target kingdom.' };
+        }
+        // v9p33river421: validate target kingdom actually exists
+        if (mType.needsTarget && targetKingdomId) {
+            var _tKCheck = Engine.findKingdom(targetKingdomId);
+            if (!_tKCheck) return { success: false, message: 'Target kingdom not found.' };
         }
 
         var rng = Engine.getRng();
@@ -10248,6 +10334,12 @@
                     if (kingdom && kingdom.relations) {
                         kingdom.relations[cm.targetKingdomId] = Math.min(100, (kingdom.relations[cm.targetKingdomId] || 50) + 10);
                     }
+                    // v9p33river421: reciprocal relation improvement
+                    var _dipTarget = Engine.findKingdom(cm.targetKingdomId);
+                    if (_dipTarget) {
+                        if (!_dipTarget.relations) _dipTarget.relations = {};
+                        _dipTarget.relations[ks.kingdomId] = Math.min(100, (_dipTarget.relations[ks.kingdomId] || 50) + 7);
+                    }
                 }
                 if (cm.missionType === 'trade_expedition' && cm.targetKingdomId) {
                     var kingdom2 = Engine.findKingdom(ks.kingdomId);
@@ -10258,7 +10350,17 @@
                     if (kingdom3 && kingdom3.happiness != null) kingdom3.happiness = Math.min(100, kingdom3.happiness + 3);
                 }
                 if (cm.missionType === 'intelligence_spy' && cm.targetKingdomId) {
-                    // Reveal info about target kingdom
+                    // v9p33river421: create actual intel state
+                    var _spyTarget = Engine.findKingdom(cm.targetKingdomId);
+                    if (!ks._enemyIntel) ks._enemyIntel = {};
+                    ks._enemyIntel[cm.targetKingdomId] = {
+                        gatheredDay: day,
+                        militaryStrength: _spyTarget ? (_spyTarget.soldiers || 0) : 0,
+                        treasury: _spyTarget ? Math.round((_spyTarget.gold || 0) / 100) * 100 : 0,
+                        atWar: _spyTarget && _spyTarget.atWar ? (_spyTarget.atWar.size || 0) : 0,
+                        happiness: _spyTarget ? (_spyTarget.happiness || 50) : 50,
+                        reporterName: cm.nobleName
+                    };
                     if (!ks._intrigueWarnings) ks._intrigueWarnings = [];
                     ks._intrigueWarnings.push({
                         day: day,
@@ -10266,7 +10368,7 @@
                         suspectName: cm.targetKingdomName,
                         suspectId: null,
                         plotType: 'foreign_intel',
-                        message: cm.nobleName + ' returns with intelligence about ' + cm.targetKingdomName + '\'s military strength and political climate.'
+                        message: cm.nobleName + ' returns with intelligence about ' + cm.targetKingdomName + ': ~' + (ks._enemyIntel[cm.targetKingdomId].militaryStrength) + ' soldiers, treasury ~' + (ks._enemyIntel[cm.targetKingdomId].treasury) + 'g.'
                     });
                 }
 
@@ -10407,7 +10509,22 @@
             benefit: 'trade_bonus'
         });
 
+        // v9p33river421: also store on kingdom._activeTreaties for engine diplomacy
+        if (!kingdom._activeTreaties) kingdom._activeTreaties = [];
+        kingdom._activeTreaties.push({
+            type: 'trade_agreement', partnerKingdomId: targetKingdomId,
+            startDay: Engine.getDay(), endDay: Engine.getDay() + 90
+        });
+        if (!target._activeTreaties) target._activeTreaties = [];
+        target._activeTreaties.push({
+            type: 'trade_agreement', partnerKingdomId: kingdom.id,
+            startDay: Engine.getDay(), endDay: Engine.getDay() + 90
+        });
+
+        // v9p33river421: reciprocal relations improvement
         if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 10);
+        if (!target.relations) target.relations = {};
+        target.relations[kingdom.id] = Math.min(100, (target.relations[kingdom.id] || 50) + 7);
         Engine.logEvent('👑 ' + kingdom.name + ' and ' + target.name + ' establish a trade agreement! (+10 relations)', null, "my_kingdom");
         autoJournalCapture('king', 'I established a trade agreement with ' + target.name + '. Commerce will flow between our kingdoms for 90 days.', { mood: 'content' });
         return { success: true, message: 'Trade agreement established with ' + target.name + ' for 90 days! Relations +10.' };
@@ -10538,10 +10655,15 @@
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
         var nName = ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim();
 
-        // Release from prison if jailed
+        // Release from prison if jailed — v9p33river421: clear ALL jail fields
         if (noble._imprisoned) {
             delete noble._imprisoned;
             delete noble._imprisonedUntil;
+        }
+        if (noble._jailedUntilDay) {
+            delete noble._jailedUntilDay;
+            delete noble._jailedBy;
+            delete noble._jailedCrimeId;
         }
 
         // Restore some loyalty
