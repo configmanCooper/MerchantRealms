@@ -1502,6 +1502,7 @@
                 html += '</div></div>';
                 html += '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px;">';
                 html += '<button class="btn-medieval" data-action="kingGrantAudience" data-idx="' + ai + '" style="font-size:0.62rem;padding:3px 6px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;" title="Grant">✅ Grant</button>';
+                html += '<button class="btn-medieval" data-action="kingAudienceConvince" data-idx="' + ai + '" style="font-size:0.62rem;padding:3px 6px;background:rgba(100,140,200,0.3) !important;border-color:rgba(100,140,200,0.5) !important;" title="Hear their case and let them try to convince you">🗣️ Hear Case</button>';
                 html += '<button class="btn-medieval" data-action="kingDenyAudience" data-idx="' + ai + '" style="font-size:0.62rem;padding:3px 6px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;" title="Deny">❌ Deny</button>';
                 html += '</div></div></div>';
             }
@@ -3487,6 +3488,48 @@
         UI.openKingPanel('court');
     });
     UI.registerAction('kingDenyAudience', function(_t, d) {
+        var idx = parseInt(d.idx);
+        var r = Player.kingDenyAudience(idx);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('court');
+    });
+    // v9p33river423: Audience convince — hear noble's case
+    UI.registerAction('kingAudienceConvince', function(_t, d) {
+        var idx = parseInt(d.idx);
+        var caseResult = Player.kingHearAudienceCase ? Player.kingHearAudienceCase(idx) : null;
+        if (!caseResult || !caseResult.success) {
+            UI.toast((caseResult && caseResult.message) || 'Cannot hear this case.', 'warning');
+            return;
+        }
+        // Show the noble's argument in a modal with Accept/Reject options
+        var html = '<div style="max-width:480px;padding:8px;">';
+        html += '<div style="padding:10px;background:rgba(70,90,140,0.15);border:1px solid rgba(100,140,200,0.3);border-radius:6px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:#8fb8e0;margin-bottom:6px;">🗣️ ' + escapeHtml(caseResult.nobleName) + ' presents their case:</div>';
+        html += '<div style="font-style:italic;color:#ddd;line-height:1.45;padding:4px 0;">"' + escapeHtml(caseResult.argument) + '"</div>';
+        html += '</div>';
+        // Show persuasion factors
+        html += '<div style="padding:8px;background:rgba(0,0,0,0.2);border-radius:4px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.75rem;color:#b8a060;margin-bottom:4px;">Persuasion Factors:</div>';
+        for (var fi = 0; fi < caseResult.factors.length; fi++) {
+            var f = caseResult.factors[fi];
+            var fColor = f.positive ? '#55a868' : '#c44e52';
+            html += '<div style="font-size:0.7rem;color:' + fColor + ';padding:1px 0;">' + (f.positive ? '✅' : '⚠️') + ' ' + escapeHtml(f.text) + '</div>';
+        }
+        html += '<div style="font-size:0.72rem;color:#e0c58a;margin-top:6px;font-weight:bold;">Conviction: ' + caseResult.conviction + '%</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:8px;">';
+        html += '<button class="btn-medieval" data-action="kingAudienceConvinceAccept" data-idx="' + idx + '" style="flex:1;font-size:0.75rem;padding:6px;background:rgba(85,168,104,0.3) !important;border-color:rgba(85,168,104,0.5) !important;">✅ They\'ve convinced me — Grant</button>';
+        html += '<button class="btn-medieval" data-action="kingAudienceConvinceDeny" data-idx="' + idx + '" style="flex:1;font-size:0.75rem;padding:6px;background:rgba(196,78,82,0.3) !important;border-color:rgba(196,78,82,0.5) !important;">❌ Unconvincing — Deny</button>';
+        html += '</div></div>';
+        UI.openModal('🗣️ Hearing: ' + escapeHtml(caseResult.requestLabel), html, '');
+    });
+    UI.registerAction('kingAudienceConvinceAccept', function(_t, d) {
+        var idx = parseInt(d.idx);
+        var r = Player.kingGrantAudience(idx);
+        UI.toast(r.message, r.success ? 'success' : 'warning');
+        UI.openKingPanel('court');
+    });
+    UI.registerAction('kingAudienceConvinceDeny', function(_t, d) {
         var idx = parseInt(d.idx);
         var r = Player.kingDenyAudience(idx);
         UI.toast(r.message, r.success ? 'success' : 'warning');

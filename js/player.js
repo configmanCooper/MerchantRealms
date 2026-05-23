@@ -8944,8 +8944,10 @@
 
         // Apply gold transfer: enemy pays US
         if (goldReceived > 0) {
-            enemy.gold = Math.max(0, (enemy.gold || 0) - goldReceived);
-            kingdom.gold = (kingdom.gold || 0) + goldReceived;
+            // v9p33river423: cap peace payments to the enemy's actual treasury.
+            var actualPay = Math.min(goldReceived, Math.max(0, enemy.gold || 0));
+            enemy.gold = Math.max(0, (enemy.gold || 0) - actualPay);
+            kingdom.gold = (kingdom.gold || 0) + actualPay;
         }
 
         // Transfer ceded towns
@@ -8953,6 +8955,9 @@
         var townsList = offerData.towns || [];
         for (var _cti = 0; _cti < townsList.length; _cti++) {
             var cededTownId = townsList[_cti];
+            // v9p33river423: only transfer towns that still belong to the enemy kingdom.
+            var cededTownInfo = Engine.findTown(cededTownId);
+            if (!cededTownInfo || cededTownInfo.kingdomId !== enemyKingdomId) continue;
             try {
                 var cededTown = Engine.transferTown(cededTownId, enemyKingdomId, kingdom.id, 'peace_deal');
                 if (cededTown) {
@@ -8973,13 +8978,21 @@
                         Engine.grantCitizenship(cededTown, kingdom);
                     }
                 }
-            } catch(e) { /* transfer failed silently */ }
+            } catch(e) {
+                // v9p33river423: warn when a peace-deal town transfer fails but keep the peace.
+                Engine.logEvent('⚠️ Failed to transfer town ' + cededTownId + ' during peace deal.', null, 'my_kingdom');
+            }
         }
 
         // Apply trade concessions
         var concessions = offerData.concessions || [];
         if (concessions.indexOf('lower_tariffs') >= 0 && enemy.laws) {
-            enemy.laws.tradeTariff = Math.round(Math.max(0, (enemy.laws.tradeTariff || 0.05) * 0.5) * 10000) / 10000;
+            // v9p33river423: record peace tariff concessions with an expiry window.
+            var originalTariff = enemy.laws.tradeTariff != null ? enemy.laws.tradeTariff : 0.05;
+            var reducedTariff = Math.round(Math.max(0, originalTariff * 0.5) * 10000) / 10000;
+            enemy.laws.tradeTariff = reducedTariff;
+            if (!enemy._tariffConcessions) enemy._tariffConcessions = [];
+            enemy._tariffConcessions.push({ toKingdomId: kingdom.id, originalTariff: originalTariff, reducedTariff: reducedTariff, expiresDay: Engine.getDay() + 180 });
         }
 
         // Make peace using engine function
@@ -9224,15 +9237,15 @@
         var ks = player.kingState;
         var daysSince = Engine.getDay() - (ks._audienceLastGenDay || 0);
         if (daysSince < 15) return;
-        ks._audienceLastGenDay = Engine.getDay();
-
-        var nobles = _getKingdomNoblesForCourt(ks.kingdomId);
-        if (nobles.length === 0) return;
 
         // Remove old expired audiences (older than 30 days)
         ks._nobleAudiences = (ks._nobleAudiences || []).filter(function(a) {
             return Engine.getDay() - a.generatedDay < 30;
         });
+
+        var nobles = _getKingdomNoblesForCourt(ks.kingdomId);
+        if (nobles.length === 0) return; // v9p33river423: check nobles BEFORE setting cooldown
+        ks._audienceLastGenDay = Engine.getDay();
 
         // Generate 1-3 new audiences
         var rng = Engine.getRng();
@@ -9344,42 +9357,100 @@
     function kingGrantAudience(audienceIdx) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var ks = player.kingState;
+        // v9p33river423: purge expired audiences before processing
+        ks._nobleAudiences = (ks._nobleAudiences || []).filter(function(a) {
+            return Engine.getDay() - a.generatedDay < 30;
+        });
         if (!ks._nobleAudiences || audienceIdx < 0 || audienceIdx >= ks._nobleAudiences.length) {
             return { success: false, message: 'Invalid audience request.' };
         }
         var aud = ks._nobleAudiences[audienceIdx];
         var kingdom = Engine.findKingdom(ks.kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        // v9p33river423: revalidate noble before spending treasury
+        var noble = Engine.findPerson(aud.nobleId);
+        if (!noble || !noble.alive) {
+            ks._nobleAudiences.splice(audienceIdx, 1);
+            return { success: false, message: 'This noble is no longer available.' };
+        }
+        var nobleRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 0;
+        if (nobleRank < 4) {
+            ks._nobleAudiences.splice(audienceIdx, 1);
+            return { success: false, message: noble.firstName + ' is no longer a noble in your kingdom.' };
+        }
+
         if (aud.cost > 0 && kingdom.gold < aud.cost) {
             return { success: false, message: 'Treasury needs ' + aud.cost + 'g to grant this request.' };
         }
 
-        // Pay cost
+        // Pay cost (after all validation passes)
         if (aud.cost > 0) kingdom.gold -= aud.cost;
 
         // Apply loyalty and relationship boosts
-        var noble = Engine.findPerson(aud.nobleId);
-        if (noble) {
-            noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + aud.loyaltyGain);
-            // Granting favors reduces fear
-            noble.fearOfKing = Math.max(0, (noble.fearOfKing || 15) - 3);
-        }
+        noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + aud.loyaltyGain);
+        noble.fearOfKing = Math.max(0, (noble.fearOfKing || 15) - 3);
         modifyRelationship(aud.nobleId, aud.relGain);
 
-        // Special effects by request type
-        if (aud.requestType === 'title_elevation' && noble) {
+        // v9p33river423: real gameplay effects by request type
+        if (aud.requestType === 'title_elevation') {
             var curRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 4;
             if (curRank < 6) {
                 if (!noble.socialRank) noble.socialRank = {};
                 noble.socialRank[ks.kingdomId] = curRank + 1;
             }
         }
-        // Debt forgiveness: actually clear the noble's loans
-        if (aud.requestType === 'debt_forgiveness' && player._nobleLoans) {
-            for (var _dli = 0; _dli < player._nobleLoans.length; _dli++) {
-                if (player._nobleLoans[_dli].nobleId === aud.nobleId && player._nobleLoans[_dli].status === 'active') {
-                    player._nobleLoans[_dli].status = 'forgiven';
-                    player._nobleLoans[_dli].remainingAmount = 0;
+        if (aud.requestType === 'land_grant') {
+            // v9p33river423: create estate building in noble's town
+            var _lgTown = Engine.findTown(noble.townId);
+            if (_lgTown) {
+                if (!_lgTown.buildings) _lgTown.buildings = [];
+                _lgTown.buildings.push({ type: 'estate', level: 1, ownerId: noble.id, builtDay: Engine.getDay(), condition: 'new', workers: [] });
+                if (!noble.buildings) noble.buildings = [];
+                noble.buildings.push({ townId: noble.townId, type: 'estate' });
+            }
+        }
+        if (aud.requestType === 'trade_privilege') {
+            // v9p33river423: grant trade monopoly (90-day)
+            if (!kingdom._tradeMonopolies) kingdom._tradeMonopolies = {};
+            kingdom._tradeMonopolies[noble.id] = { grantedDay: Engine.getDay(), expiresDay: Engine.getDay() + 90, grantType: 'audience' };
+        }
+        if (aud.requestType === 'military_appointment') {
+            // v9p33river423: assign military command role
+            noble._militaryCommand = { role: 'commander', assignedDay: Engine.getDay(), kingdomId: ks.kingdomId };
+            noble.occupation = 'military_commander';
+        }
+        if (aud.requestType === 'tax_exemption') {
+            // v9p33river423: set tax exemption (60 days)
+            noble._taxExemptUntilDay = Engine.getDay() + 60;
+        }
+        if (aud.requestType === 'building_rights') {
+            // v9p33river423: grant building rights permission (180 days)
+            noble._buildingRightsUntilDay = Engine.getDay() + 180;
+            noble._buildingRightsKingdom = ks.kingdomId;
+        }
+        if (aud.requestType === 'marriage_blessing') {
+            // v9p33river423: grant royal blessing state
+            noble._royalMarriageBlessing = { day: Engine.getDay(), kingdomId: ks.kingdomId };
+            // Boost noble-to-noble relations for the couple
+            if (noble.spouseId) {
+                var spouse = Engine.findPerson(noble.spouseId);
+                if (spouse) {
+                    spouse.kingLoyalty = Math.min(100, (spouse.kingLoyalty || 50) + 5);
+                }
+            }
+        }
+        if (aud.requestType === 'debt_forgiveness') {
+            // v9p33river423: clear crown debts (taxes owed), not player private loans
+            if (noble._taxDebt) noble._taxDebt = 0;
+            if (noble._crownDebt) noble._crownDebt = 0;
+            // Also clear player loans to this noble if they exist
+            if (player._nobleLoans) {
+                for (var _dli = 0; _dli < player._nobleLoans.length; _dli++) {
+                    if (player._nobleLoans[_dli].nobleId === aud.nobleId && player._nobleLoans[_dli].status === 'active') {
+                        player._nobleLoans[_dli].status = 'forgiven';
+                        player._nobleLoans[_dli].remainingAmount = 0;
+                    }
                 }
             }
         }
@@ -9464,18 +9535,30 @@
     function kingDenyAudience(audienceIdx) {
         if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
         var ks = player.kingState;
+        // v9p33river423: purge expired audiences before processing
+        ks._nobleAudiences = (ks._nobleAudiences || []).filter(function(a) {
+            return Engine.getDay() - a.generatedDay < 30;
+        });
         if (!ks._nobleAudiences || audienceIdx < 0 || audienceIdx >= ks._nobleAudiences.length) {
             return { success: false, message: 'Invalid audience request.' };
         }
         var aud = ks._nobleAudiences[audienceIdx];
 
-        // Apply loyalty and relationship penalties
+        // v9p33river423: validate noble still exists and is in kingdom
         var noble = Engine.findPerson(aud.nobleId);
-        if (noble) {
-            noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + aud.loyaltyLoss);
-            // Denial slightly increases fear
-            noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 2);
+        if (!noble || !noble.alive) {
+            ks._nobleAudiences.splice(audienceIdx, 1);
+            return { success: false, message: 'This noble is no longer available.' };
         }
+        var _denyRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 0;
+        if (_denyRank < 4) {
+            ks._nobleAudiences.splice(audienceIdx, 1);
+            return { success: false, message: noble.firstName + ' is no longer a noble in your kingdom.' };
+        }
+        // Apply loyalty and relationship penalties
+        noble.kingLoyalty = Math.max(0, (noble.kingLoyalty || 50) + aud.loyaltyLoss);
+        // Denial slightly increases fear
+        noble.fearOfKing = Math.min(100, (noble.fearOfKing || 15) + 2);
         modifyRelationship(aud.nobleId, aud.relLoss);
 
         // ── Wave effects for denial ──
@@ -9507,6 +9590,191 @@
 
         Engine.logEvent('👑 ' + player.fullName + ' denies ' + aud.nobleName + '\'s request: ' + aud.requestLabel + ' (' + aud.loyaltyLoss + ' loyalty, ' + aud.relLoss + ' rel)', null, "my_kingdom");
         return { success: true, message: 'Denied ' + aud.nobleName + '\'s ' + aud.requestLabel + '. Loyalty ' + aud.loyaltyLoss + ', Relationship ' + aud.relLoss };
+    }
+
+    // v9p33river423: Audience convincing — noble presents their case to the king
+    function kingHearAudienceCase(audienceIdx) {
+        if (!player.isKing || !player.kingState) return { success: false, message: 'Not king.' };
+        var ks = player.kingState;
+        ks._nobleAudiences = (ks._nobleAudiences || []).filter(function(a) {
+            return Engine.getDay() - a.generatedDay < 30;
+        });
+        if (!ks._nobleAudiences || audienceIdx < 0 || audienceIdx >= ks._nobleAudiences.length) {
+            return { success: false, message: 'Invalid audience request.' };
+        }
+        var aud = ks._nobleAudiences[audienceIdx];
+        var noble = Engine.findPerson(aud.nobleId);
+        if (!noble || !noble.alive) {
+            ks._nobleAudiences.splice(audienceIdx, 1);
+            return { success: false, message: 'This noble is no longer available.' };
+        }
+        var kingdom = Engine.findKingdom(ks.kingdomId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var nP = noble.personality || {};
+        var nRank = (noble.socialRank && noble.socialRank[ks.kingdomId]) || 4;
+        var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+        var perceivedLoyalty = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty;
+        var intelligence = nP.intelligence || 50;
+        var warmth = nP.warmth || 50;
+        var ambition = nP.ambition || 50;
+        var honesty = nP.honesty || 50;
+
+        // Build persuasion factors
+        var factors = [];
+        var conviction = 30; // base conviction
+
+        // 1. Rank — higher rank nobles carry more weight
+        if (nRank >= 6) {
+            factors.push({ text: 'Royal Advisor — their counsel carries great weight', positive: true });
+            conviction += 15;
+        } else if (nRank >= 5) {
+            factors.push({ text: 'Lord — speaks with the authority of their holdings', positive: true });
+            conviction += 8;
+        } else {
+            factors.push({ text: 'Minor Noble — limited political standing', positive: false });
+            conviction -= 5;
+        }
+
+        // 2. Perceived loyalty — king trusts loyal nobles more
+        if (perceivedLoyalty >= 70) {
+            factors.push({ text: 'Trusted servant — you know their loyalty runs deep', positive: true });
+            conviction += 12;
+        } else if (perceivedLoyalty >= 45) {
+            factors.push({ text: 'Reliable enough — no reason to doubt their intent', positive: true });
+            conviction += 4;
+        } else {
+            factors.push({ text: 'Questionable loyalty — their motives feel self-serving', positive: false });
+            conviction -= 10;
+        }
+
+        // 3. Relationship with the king (player)
+        var rel = player.relationships && player.relationships[noble.id] ? (player.relationships[noble.id].level || 0) : 0;
+        if (rel >= 60) {
+            factors.push({ text: 'Close personal bond — you value their judgment', positive: true });
+            conviction += 10;
+        } else if (rel >= 30) {
+            factors.push({ text: 'Amicable relationship — you hear them out fairly', positive: true });
+            conviction += 3;
+        } else if (rel < 15) {
+            factors.push({ text: 'Barely know them — hard to take their word', positive: false });
+            conviction -= 8;
+        }
+
+        // 4. Intelligence — smarter nobles make better arguments
+        if (intelligence >= 70) {
+            factors.push({ text: 'Brilliant reasoning — their logic is hard to dismiss', positive: true });
+            conviction += 10;
+        } else if (intelligence < 40) {
+            factors.push({ text: 'Weak argument — stumbles over their own reasoning', positive: false });
+            conviction -= 6;
+        }
+
+        // 5. Warmth/charisma — persuasive personality
+        if (warmth >= 65) {
+            factors.push({ text: 'Charismatic delivery — speaks with genuine feeling', positive: true });
+            conviction += 6;
+        }
+
+        // 6. Honesty — dishonest nobles less convincing (if king is smart enough to notice)
+        var kingP = kingdom.kingPersonality || player.personality || {};
+        var kingIntel = kingP.intelligence || 50;
+        if (honesty < 35 && kingIntel > 55) {
+            factors.push({ text: 'Something about their manner feels rehearsed', positive: false });
+            conviction -= 7;
+        }
+
+        // 7. Request-specific factors
+        if (aud.requestType === 'title_elevation' && ambition > 75) {
+            factors.push({ text: 'Naked ambition — promotion clearly self-interested', positive: false });
+            conviction -= 5;
+        }
+        if (aud.requestType === 'debt_forgiveness' && loyalty >= 60) {
+            factors.push({ text: 'A loyal noble in genuine need deserves mercy', positive: true });
+            conviction += 8;
+        }
+        if (aud.requestType === 'military_appointment' && loyalty >= 55) {
+            factors.push({ text: 'Proven loyalty makes them a safe military choice', positive: true });
+            conviction += 5;
+        }
+        if (aud.requestType === 'marriage_blessing' && warmth >= 55) {
+            factors.push({ text: 'Speaks warmly of the match — seems genuine', positive: true });
+            conviction += 4;
+        }
+        if (aud.requestType === 'tax_exemption' && (nP.frugality || 50) > 60) {
+            factors.push({ text: 'Known to be fiscally responsible', positive: true });
+            conviction += 4;
+        }
+
+        // 8. Kingdom context
+        if (kingdom.gold < 2000 && aud.cost > 100) {
+            factors.push({ text: 'Treasury is strained — costly favors feel reckless', positive: false });
+            conviction -= 8;
+        }
+        var atWar = kingdom.atWar && ((kingdom.atWar instanceof Set ? kingdom.atWar.size : kingdom.atWar.length) > 0);
+        if (atWar && aud.requestType === 'military_appointment') {
+            factors.push({ text: 'Wartime — military appointments carry extra weight', positive: true });
+            conviction += 6;
+        }
+
+        // Clamp conviction
+        conviction = Math.max(5, Math.min(95, conviction));
+
+        // Generate argument text based on request type and personality
+        var argument = _generateAudienceArgument(aud, noble, nP, kingdom);
+
+        return {
+            success: true,
+            nobleId: noble.id,
+            nobleName: ((noble.firstName || '') + ' ' + (noble.lastName || '')).trim(),
+            requestType: aud.requestType,
+            requestLabel: aud.requestLabel,
+            argument: argument,
+            factors: factors,
+            conviction: Math.round(conviction),
+            audienceIdx: audienceIdx
+        };
+    }
+
+    function _generateAudienceArgument(aud, noble, nP, kingdom) {
+        var firstName = noble.firstName || 'My liege';
+        var intelligence = nP.intelligence || 50;
+        var warmth = nP.warmth || 50;
+        var honesty = nP.honesty || 50;
+        var ambition = nP.ambition || 50;
+        var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+
+        // Style: intelligent nobles make logical arguments, warm ones make emotional appeals
+        var style = intelligence > warmth ? 'logical' : 'emotional';
+
+        switch (aud.requestType) {
+            case 'title_elevation':
+                if (style === 'logical') return 'Your Majesty, I have served this kingdom faithfully through ' + (loyalty > 60 ? 'peace and war alike' : 'difficult times') + '. A higher title would not merely honor me — it would signal to the court that loyalty and competence are rewarded under your rule.';
+                return 'I have poured my heart into this realm, my liege. Every day I work to strengthen what you have built. I ask only that my station reflect the devotion I have shown — not for pride, but so that I may serve you with greater authority.';
+            case 'land_grant':
+                if (style === 'logical') return 'A grant of land would let me develop resources this kingdom needs. I have studied the territory and believe I can increase its yield significantly — benefiting the treasury as much as my house.';
+                return 'My family has served faithfully for years, and a grant of land would give us roots worthy of that service. I would steward it well, my liege — the people there would prosper under my care.';
+            case 'trade_privilege':
+                if (style === 'logical') return 'Exclusive trading rights would let me stabilize supply chains that others have neglected. The market needs a firm hand, and I have the connections and capital to make this profitable for the crown.';
+                return 'Trade is the lifeblood of our kingdom, Your Majesty. Grant me this privilege and I will ensure the merchants of this land thrive — and the crown\'s coffers with them.';
+            case 'military_appointment':
+                if (style === 'logical') return 'Our defenses require experienced leadership. I have studied the threats we face and I have a plan to strengthen our position. A formal command would give me the authority to act decisively.';
+                return 'I am ready to defend this realm with my life, my liege. Give me a command, and I will prove that your trust is not misplaced. Our soldiers need a leader who understands both duty and sacrifice.';
+            case 'tax_exemption':
+                if (style === 'logical') return 'A temporary tax exemption would let me reinvest in my holdings — rebuilding infrastructure and increasing production. The long-term revenue increase would more than offset the short-term loss.';
+                return 'Times have been difficult for my household, Your Majesty. A brief reprieve from taxation would let me stabilize my affairs and return to full service stronger than before.';
+            case 'building_rights':
+                if (style === 'logical') return 'I have plans for construction that would improve the town and create work for its people. Building rights would let me proceed without the delays of petition after petition.';
+                return 'I see potential in this land that others overlook, my liege. Grant me the right to build, and I will transform neglected ground into something this kingdom can be proud of.';
+            case 'marriage_blessing':
+                if (style === 'logical') return 'This marriage alliance would strengthen ties between our houses and bring political stability. Your blessing would signal to all nobles that unity is valued under your reign.';
+                return 'We love each other truly, Your Majesty, and your blessing would mean the world to us both. A royal endorsement would also quiet those at court who whisper about the match.';
+            case 'debt_forgiveness':
+                if (honesty > 55) return 'I will speak plainly, my liege — the debt weighs heavily on my house. I cannot serve this kingdom as I should while creditors circle. Forgiveness would free me to be the noble you need me to be.';
+                return 'Circumstances beyond my control have brought me low, Your Majesty. I ask for mercy, not charity. Free me from this burden and I will repay your generosity with unwavering loyalty.';
+            default:
+                return 'Your Majesty, I bring this petition before you humbly. I believe it serves both my house and this kingdom well.';
+        }
     }
 
     // ── Royal Gifts & Bestowments ──
@@ -11094,6 +11362,13 @@
         var petition = kingdom._pendingPetitions[idx];
         var cost = kingGetOrderCost(petition.typeId, petition);
         if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
+        // v9p33river423: validate town-targeted petitions before spending treasury gold.
+        if (petition.targetData && petition.targetData.townId) {
+            var _petTown = Engine.findTown(petition.targetData.townId);
+            if (!_petTown || _petTown.kingdomId !== kingdom.id) {
+                return { success: false, message: 'Target town does not belong to your kingdom.' };
+            }
+        }
 
         kingdom.gold -= cost;
 
@@ -11149,6 +11424,13 @@
         };
         var cost = kingGetOrderCost(orderId, fakePetition);
         if (kingdom.gold < cost) return { success: false, message: 'Insufficient treasury. Need ' + cost + 'g.' };
+        // v9p33river423: validate town-targeted royal orders before spending treasury gold.
+        if (targetData && targetData.townId) {
+            var _ordTown = Engine.findTown(targetData.townId);
+            if (!_ordTown || _ordTown.kingdomId !== kingdom.id) {
+                return { success: false, message: 'Target town does not belong to your kingdom.' };
+            }
+        }
 
         kingdom.gold -= cost;
         executePetitionAction(fakePetition);
@@ -11205,6 +11487,19 @@
             // skips bounties whose findTown fails — null townId broke
             // every player-issued bounty). Use the kingdom's capital as
             // the bounty town since the king UI doesn't expose a town picker.
+            // v9p33river423: reject unknown goods instead of creating dead bounties.
+            var _hasBountyGood = false;
+            if (typeof RESOURCE_TYPES !== 'undefined') {
+                for (var _bResKey in RESOURCE_TYPES) {
+                    if (RESOURCE_TYPES[_bResKey] && RESOURCE_TYPES[_bResKey].id === data.good) {
+                        _hasBountyGood = true;
+                        break;
+                    }
+                }
+                if (!_hasBountyGood) {
+                    return { success: false, message: 'Unknown resource: ' + data.good };
+                }
+            }
             if (!kingdom.productionBounties) kingdom.productionBounties = [];
             if (kingdom.productionBounties.some(function(b) { return b.good === data.good; })) {
                 return { success: false, message: 'Bounty already active for ' + data.good + '.' };
@@ -11282,9 +11577,14 @@
             // Check for existing subsidy on same town
             for (var _lsci = 0; _lsci < kingdom.landSubsidies.length; _lsci++) {
                 var _lsEntry = kingdom.landSubsidies[_lsci];
-                if (_lsEntry && _lsEntry.townId === data.townId) {
+                if (_lsEntry && _lsEntry.townId === data.townId && _lsEntry.buildingType === _lsBldg) {
                     return { success: false, message: 'Land subsidy already active for this town.' };
                 }
+            }
+            // v9p33river423: validate land subsidies against towns in the king's own kingdom.
+            var _lsTown = Engine.findTown(data.townId);
+            if (!_lsTown || _lsTown.kingdomId !== kingdom.id) {
+                return { success: false, message: 'Town not found or not in your kingdom.' };
             }
             if (kingdom.gold < 200) return { success: false, message: 'Need 200g in treasury for land subsidy.' };
             kingdom.gold -= 200;
@@ -33260,6 +33560,7 @@
             case 'increase_security': {
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town) {
                         var addGuards = 3 + Math.floor(Math.random() * 3);
                         town.garrison = (town.garrison || 0) + addGuards;
@@ -33273,6 +33574,10 @@
                     var roads = Engine.getRoads();
                     if (roads && roads[td.roadIndex]) {
                         var road = roads[td.roadIndex];
+                        // v9p33river423: validate road belongs to kingdom
+                        var _cbFromT = Engine.findTown(road.fromTownId);
+                        var _cbToT = Engine.findTown(road.toTownId);
+                        if ((!_cbFromT || _cbFromT.kingdomId !== petition.kingdomId) && (!_cbToT || _cbToT.kingdomId !== petition.kingdomId)) break;
                         road.banditThreat = Math.max(0, (road.banditThreat || 0) - 50);
                         road.safe = true;
                         var fromT = Engine.findTown(road.fromTownId);
@@ -33299,8 +33604,15 @@
             case 'build_market': {
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town) {
                         if (!town.buildings) town.buildings = [];
+                        // v9p33river423: prevent duplicate markets
+                        var _hasMarket = (town.buildings || []).some(function(b) { return b.type === 'marketplace_royal' || b.type === 'marketplace'; });
+                        if (_hasMarket) {
+                            Engine.logEvent('📜 ' + town.name + ' already has a market.', null, "my_kingdom");
+                            break;
+                        }
                         // v9p33river290: the defined building id is
                         // 'marketplace_royal' (config.js:1992). The old type
                         // 'marketplace' wasn't a valid BUILDING_TYPES entry,
@@ -33315,9 +33627,10 @@
             case 'build_well': {
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town) {
                         if (!town.buildings) town.buildings = [];
-                        town.buildings.push({ type: 'well', level: 1, ownerId: petition.kingdomId, active: true, workers: [] });
+                        town.buildings.push({ type: 'well', level: 1, ownerId: petition.kingdomId, active: true, workers: [], builtDay: Engine.getDay(), condition: 'new' }); // v9p33river423: include canonical build metadata
                         town.prosperity = Math.min(100, (town.prosperity || 50) + 2);
                         Engine.logEvent('🪣 A public well was dug in ' + town.name + '!', null, "my_kingdom");
                     }
@@ -33327,6 +33640,7 @@
             case 'repair_infrastructure': {
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town) {
                         var roads = Engine.getRoads();
                         for (var ri = 0; ri < roads.length; ri++) {
@@ -33349,6 +33663,14 @@
                         if (!targetK.relations) targetK.relations = {};
                         kingdom.relations[td.targetKingdomId] = Math.min(100, (kingdom.relations[td.targetKingdomId] || 0) + 30);
                         targetK.relations[petition.kingdomId] = Math.min(100, (targetK.relations[petition.kingdomId] || 0) + 30);
+                        // v9p33river423: create actual trade agreement treaty
+                        var _tradeDay = Engine.getDay ? Engine.getDay() : 0;
+                        var _treatyObj = { type: 'trade_agreement', partnerKingdomId: td.targetKingdomId, startDay: _tradeDay, expiresDay: _tradeDay + 360 };
+                        if (!kingdom._activeTreaties) kingdom._activeTreaties = [];
+                        kingdom._activeTreaties.push(_treatyObj);
+                        var _treatyObj2 = { type: 'trade_agreement', partnerKingdomId: petition.kingdomId, startDay: _tradeDay, expiresDay: _tradeDay + 360 };
+                        if (!targetK._activeTreaties) targetK._activeTreaties = [];
+                        targetK._activeTreaties.push(_treatyObj2);
                         Engine.logEvent('🤝 Trade agreement established between ' + kingdom.name + ' and ' + targetK.name + '!', null, "my_kingdom");
                     }
                 }
@@ -33356,6 +33678,11 @@
             }
             case 'ban_goods': {
                 if (td.resourceId && kingdom) {
+                    // v9p33river423: validate resource exists
+                    if (typeof RESOURCE_TYPES !== 'undefined' && !RESOURCE_TYPES[td.resourceId]) {
+                        Engine.logEvent('📜 Unknown good: ' + td.resourceId, null, "my_kingdom");
+                        break;
+                    }
                     if (!kingdom.laws) kingdom.laws = {};
                     if (!kingdom.laws.bannedGoods) kingdom.laws.bannedGoods = [];
                     if (!kingdom.laws.bannedGoods.includes(td.resourceId)) {
@@ -33367,10 +33694,14 @@
             }
             case 'unban_goods': {
                 if (td.resourceId && kingdom) {
+                    // v9p33river423: only log success if good was actually banned
+                    var _wasBanned = kingdom.laws && kingdom.laws.bannedGoods && kingdom.laws.bannedGoods.includes(td.resourceId);
                     if (kingdom.laws && kingdom.laws.bannedGoods) {
                         kingdom.laws.bannedGoods = kingdom.laws.bannedGoods.filter(function(g) { return g !== td.resourceId; });
                     }
-                    Engine.logEvent('✅ ' + kingdom.name + ' unbanned the trade of ' + (td.resourceName || td.resourceId) + '!', null, "my_kingdom");
+                    if (_wasBanned) {
+                        Engine.logEvent('✅ ' + kingdom.name + ' unbanned the trade of ' + (td.resourceName || td.resourceId) + '!', null, "my_kingdom");
+                    }
                 }
                 break;
             }
@@ -33378,6 +33709,10 @@
                 if (td.roadIndex != null) {
                     var roads = Engine.getRoads();
                     if (roads && roads[td.roadIndex]) {
+                        // v9p33river423: validate road belongs to kingdom
+                        var _rbFromT = Engine.findTown(roads[td.roadIndex].fromTownId);
+                        var _rbToT = Engine.findTown(roads[td.roadIndex].toTownId);
+                        if ((!_rbFromT || _rbFromT.kingdomId !== petition.kingdomId) && (!_rbToT || _rbToT.kingdomId !== petition.kingdomId)) break;
                         Engine.rebuildBridge(td.roadIndex);
                         var fromT = Engine.findTown(roads[td.roadIndex].fromTownId);
                         var toT = Engine.findTown(roads[td.roadIndex].toTownId);
@@ -33414,6 +33749,7 @@
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
                     if (town) {
+                        // v9p33river423: petition festivals intentionally use simplified bonuses by design
                         town.happiness = Math.min(100, (town.happiness || 50) + 15);
                         town.prosperity = Math.min(100, (town.prosperity || 50) + 5);
                         Engine.logEvent('🎉 A grand festival was held in ' + town.name + '! Happiness soars!', null, "my_kingdom");
@@ -33424,6 +33760,7 @@
             case 'demolish_tent_camps': {
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town) {
                         var tcamps = (town.buildings || []).filter(function(b) { return b.type === 'tent_camp'; });
                         var demolished = 0;
@@ -33469,6 +33806,13 @@
             }
             case 'build_sea_route': {
                 if (td.fromTownId && td.toTownId) {
+                    // v9p33river423: validate both ports belong to kingdom
+                    var _seaFrom = Engine.findTown(td.fromTownId);
+                    var _seaTo = Engine.findTown(td.toTownId);
+                    if (!_seaFrom || !_seaTo || _seaFrom.kingdomId !== petition.kingdomId || _seaTo.kingdomId !== petition.kingdomId) {
+                        Engine.logEvent('⚓ Cannot build sea route — both ports must be in your kingdom.', null, "my_kingdom");
+                        break;
+                    }
                     var result = Engine.buildNewSeaRoute(td.fromTownId, td.toTownId, petition.kingdomId, {});
                     if (result && result.success) {
                         Engine.logEvent('⚓ The kingdom established a sea route between ' + (td.fromName || td.fromTownId) + ' and ' + (td.toName || td.toTownId) + '!', null, "my_kingdom");
@@ -33481,6 +33825,7 @@
             case 'promote_outpost': {
                 if (td.townId) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town && town.category === 'outpost' && (town.population || 0) >= 20) {
                         town.category = 'village';
                         town.prosperity = Math.min(100, (town.prosperity || 30) + 10);
@@ -33495,6 +33840,7 @@
             case 'build_defense': {
                 if (td.townId && kingdom) {
                     var town = Engine.findTown(td.townId);
+                    if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town) {
                         // Build a defensive structure based on what the town needs
                         if ((town.walls || 0) < 3) {
@@ -33503,9 +33849,16 @@
                         } else {
                             // Already max walls — build watchtower instead
                             if (!town.buildings) town.buildings = [];
-                            town.buildings.push({ type: 'watchtower', level: 1, ownerId: petition.kingdomId, active: true, workers: [] });
-                            town.garrison = (town.garrison || 0) + 2;
-                            Engine.logEvent('🏰 A watchtower was built in ' + town.name + ' with 2 additional guards!', null, "my_kingdom");
+                            // v9p33river423: add builtDay/condition and prevent duplicates
+                            var _hasWatchtower = (town.buildings || []).some(function(b) { return b.type === 'watchtower'; });
+                            if (_hasWatchtower) {
+                                town.garrison = (town.garrison || 0) + 1;
+                                Engine.logEvent('🏰 Additional guards posted to existing watchtower in ' + town.name + '.', null, "my_kingdom");
+                            } else {
+                                town.buildings.push({ type: 'watchtower', level: 1, ownerId: petition.kingdomId, active: true, workers: [], builtDay: Engine.getDay(), condition: 'new' });
+                                town.garrison = (town.garrison || 0) + 2;
+                                Engine.logEvent('🏰 A watchtower was built in ' + town.name + ' with 2 additional guards!', null, "my_kingdom");
+                            }
                         }
                     }
                 }
@@ -39343,6 +39696,10 @@
         // Support prebuilt missions (from kingdom auto-work)
         var mission = job._prebuiltMission || generateAutoTravelMission(job);
         if (!mission) return { success: false, message: 'Could not generate mission — no valid destinations.' };
+        // v9p33river423: reject empty travel missions before assigning temporary transport.
+        if (!mission.legs || mission.legs.length === 0) {
+            return { success: false, message: 'Mission has no destinations.' };
+        }
 
         player.autoTravelJob = mission;
 
@@ -39357,6 +39714,8 @@
         mission._tempHorse = false;
         mission._tempShip = false;
         if (!hasHorseAlready) {
+            // v9p33river423: initialize the horse list before adding temporary job transport.
+            if (!player.horses) player.horses = [];
             player.horses.push({ id: '_job_horse', name: 'Job Horse', speed: 1.0, stamina: 80, maxStamina: 80, health: 100, _temporary: true });
             mission._tempHorse = true;
         }
@@ -39365,14 +39724,12 @@
             player.ships.push({ id: '_job_ship', name: 'Job Vessel', hull: 100, maxHull: 100, speed: 1.0, cargo: 50, _temporary: true });
             mission._tempShip = true;
         }
-        if (!mission.legs || mission.legs.length === 0) {
-            player.autoTravelJob = null;
-            return { success: false, message: 'Mission has no destinations.' };
-        }
         var firstLeg = mission.legs[0];
         var travelResult = Player.travelTo(firstLeg.townId);
         if (!travelResult.success) {
             // Can't reach destination — abort
+            // v9p33river423: clean up temporary transport when the first leg cannot start.
+            _removeJobTransport(mission);
             player.autoTravelJob = null;
             return { success: false, message: 'Cannot reach ' + (Engine.findTown(firstLeg.townId) || { name: 'unknown' }).name + ': ' + travelResult.message };
         }
@@ -39881,7 +40238,7 @@
                 if (!mission) { _autoWorkStopUnavailable(aw, 'No routes available.'); return; }
                 var res = startAutoTravelJob({ autoTravel: true, _prebuiltMission: mission });
                 if (!res || !res.success) { _autoWorkStopUnavailable(aw, 'Cannot start next route.'); return; }
-                aw.daysWorked++;
+                // v9p33river423: travel missions already update daysWorked; do not double-count on restart.
                 aw.currentAction = 'Starting next route...';
             }
             return;
@@ -40014,6 +40371,10 @@
         if (kTowns.length < 2) return null;
         var homeTown = Engine.findTown(player.townId);
         if (!homeTown) return null;
+        // v9p33river423: compute per-leg pay once so each kingdom travel leg can pay explicitly.
+        var payPerLeg = Math.round((kingdom._employeePostings || []).reduce(function(best, p) {
+            return p.type === jobType ? Math.max(best, p.weeklyPay || 14) : best;
+        }, 14) / 7);
 
         var legs = [];
         if (jobType === 'procurer') {
@@ -40024,10 +40385,13 @@
             var numStops = Math.min(rng.randInt(2, 4), targetTowns.length);
             for (var i = 0; i < numStops; i++) {
                 var t = targetTowns[i];
-                var orderDesc = orders.length > 0 ? 'Buy ' + orders[i % orders.length].resourceId + ' for the stockpile' : 'Survey market prices';
+                // v9p33river423: procurement orders may identify goods by goodId/resourceId/good.
+                var _orderGood = orders.length > 0 ? (orders[i % orders.length].resourceId || orders[i % orders.length].goodId || orders[i % orders.length].good || 'goods') : null;
+                var orderDesc = _orderGood ? 'Buy ' + _orderGood + ' for the stockpile' : 'Survey market prices';
                 legs.push({
                     townId: t.id, description: orderDesc + ' in ' + t.name,
-                    stayDays: 1, stayTicks: 20, arrived: false, workDone: false
+                    stayDays: 1, stayTicks: 20, arrived: false, workDone: false,
+                    payAmount: payPerLeg
                 });
             }
         } else if (jobType === 'guard') {
@@ -40038,16 +40402,14 @@
             for (var pi = 0; pi < numPatrol; pi++) {
                 legs.push({
                     townId: patrolTowns[pi].id, description: 'Patrol duty in ' + patrolTowns[pi].name,
-                    stayDays: 2, stayTicks: 30, arrived: false, workDone: false
+                    stayDays: 2, stayTicks: 30, arrived: false, workDone: false,
+                    // v9p33river423: kingdom patrol legs need explicit pay amounts.
+                    payAmount: payPerLeg
                 });
             }
         }
         // Return home
-        legs.push({ townId: homeTown.id, description: 'Return home to ' + homeTown.name, stayDays: 0, stayTicks: 0, arrived: false, workDone: false, isReturn: true });
-
-        var payPerLeg = Math.round((kingdom._employeePostings || []).reduce(function(best, p) {
-            return p.type === jobType ? Math.max(best, p.weeklyPay || 14) : best;
-        }, 14) / 7);
+        legs.push({ townId: homeTown.id, description: 'Return home to ' + homeTown.name, stayDays: 0, stayTicks: 0, arrived: false, workDone: false, isReturn: true, payAmount: 0 });
 
         return {
             name: jobType === 'procurer' ? 'Kingdom Procurement Run' : 'Kingdom Guard Patrol',
@@ -42468,6 +42830,7 @@
         kingHoldCourt,
         kingGrantAudience,
         kingDenyAudience,
+        kingHearAudienceCase,
         kingGenerateAudiences,
         kingBestowGift,
         kingGetRoyalGiftTypes,

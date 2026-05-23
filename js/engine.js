@@ -9783,6 +9783,38 @@
             }
         }
 
+        // v9p33river423: expire temporary peace tariff concessions when their timer runs out.
+        for (var tci = 0; tci < world.kingdoms.length; tci++) {
+            var tariffKingdom = world.kingdoms[tci];
+            if (!tariffKingdom || !tariffKingdom._tariffConcessions || !tariffKingdom._tariffConcessions.length || !tariffKingdom.laws) continue;
+            var activeConcessions = [];
+            var expiredConcessions = [];
+            for (var tcj = 0; tcj < tariffKingdom._tariffConcessions.length; tcj++) {
+                var concession = tariffKingdom._tariffConcessions[tcj];
+                if (!concession) continue;
+                if ((concession.expiresDay || 0) > world.day) activeConcessions.push(concession);
+                else expiredConcessions.push(concession);
+            }
+            if (expiredConcessions.length > 0 && activeConcessions.length === 0) {
+                var currentTariff = tariffKingdom.laws.tradeTariff != null ? tariffKingdom.laws.tradeTariff : 0.05;
+                var matchesExpiredReduction = false;
+                var restoredTariff = currentTariff;
+                for (var tck = 0; tck < expiredConcessions.length; tck++) {
+                    var expiredConcession = expiredConcessions[tck];
+                    if (expiredConcession.reducedTariff != null && Math.abs(currentTariff - expiredConcession.reducedTariff) < 0.0001) {
+                        matchesExpiredReduction = true;
+                    }
+                    if (expiredConcession.originalTariff != null) {
+                        restoredTariff = Math.max(restoredTariff, expiredConcession.originalTariff);
+                    }
+                }
+                if (matchesExpiredReduction) {
+                    tariffKingdom.laws.tradeTariff = Math.round(Math.max(0, restoredTariff) * 10000) / 10000;
+                }
+            }
+            tariffKingdom._tariffConcessions = activeConcessions;
+        }
+
         // Clean up expired/inactive treaties (iterate in reverse)
         for (var r = toRemove.length - 1; r >= 0; r--) {
             world.treaties.splice(toRemove[r], 1);
@@ -15440,6 +15472,11 @@
                 if ((noble.socialRank[sk] || 0) >= 4) { kId = sk; break; }
             }
         }
+        // v9p33river423: fallback — derive kingdom from noble's town on old saves
+        if (!kId && noble.townId) {
+            var _agTown = findTown(noble.townId);
+            if (_agTown && _agTown.kingdomId) kId = _agTown.kingdomId;
+        }
         if (!kId) return null;
         var k = findKingdom(kId);
         if (!k) return null;
@@ -17470,7 +17507,10 @@
         const town = findTown(townId);
         const fromK = findKingdom(fromKingdomId);
         const toK = findKingdom(toKingdomId);
-        if (!town || !toK) return null;
+        // v9p33river423: require both source and destination kingdoms for transfers.
+        if (!town || !toK || !fromK) return null;
+        // v9p33river423: refuse transfers when the town is not actually owned by the source kingdom.
+        if (fromK && town.kingdomId !== fromKingdomId) return null;
 
         // Story mode: block Ashford transfer while story says it's under Korvath
         if (town.name === 'Ashford' && typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
@@ -34275,6 +34315,8 @@
                 // orders, and kingdom army supplies all reset on every
                 // save/load cycle.
                 peaceTreaties: k.peaceTreaties ? JSON.parse(JSON.stringify(k.peaceTreaties)) : {},
+                // v9p33river423: persist timed peace tariff concessions across save/load.
+                _tariffConcessions: k._tariffConcessions ? JSON.parse(JSON.stringify(k._tariffConcessions)) : [],
                 procurement: k.procurement ? JSON.parse(JSON.stringify(k.procurement)) : { orders: [], deals: [], needs: {}, preferredMerchants: {}, lastAssessmentDay: 0 },
                 militaryStockpile: k.militaryStockpile ? JSON.parse(JSON.stringify(k.militaryStockpile)) : { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
                 // v9p33river323: goodsStockpile and crimePunishments were
@@ -34499,6 +34541,8 @@
                 guardBudget: k.guardBudget || 0.15,
                 happiness: k.happiness != null ? k.happiness : 50,
                 peaceTreaties: k.peaceTreaties || {},
+                // v9p33river423: restore timed peace tariff concessions on load.
+                _tariffConcessions: k._tariffConcessions || [],
                 kingPersonality: k.kingPersonality ? {
                     ...k.kingPersonality,
                     intelligence: k.kingPersonality.intelligence || 'average',
