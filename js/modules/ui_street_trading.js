@@ -1430,9 +1430,80 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         }
         html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">Plotters: ' + escapeHtml(_conspiracy.plotterNames.join(', ')) + ' (' + _conspiracy.plotterCount + ' total)</div>';
         html += '<div style="font-size:0.78rem;color:' + _cStrColor + ';margin-top:2px;">Strength: ' + Math.floor(_conspiracy.strength) + '/80 — ' + _cStrLabel + '</div>';
+        // v9p33river435: enhanced conspiracy — show detailed info
+        var _detailHtml = '';
+        var _conspDetails = null;
+        try { _conspDetails = Engine.getConspiracyDetails(citizenKingdomId); } catch(e) {}
+        if (_conspDetails) {
+            var _typeExplain = {
+                assassination: '🗡️ <b>Assassination:</b> Eliminate the king. Success depends on plotter count vs royal guards. High risk, high reward.',
+                coup: '⚔️ <b>Coup:</b> Overthrow the king militarily. Success depends on plotter military support vs garrison. The most ambitious plotter becomes king.',
+                revolt_support: '🔥 <b>Revolt Support:</b> Fund a popular uprising. Supplies resources to dissatisfied towns to trigger a revolt.'
+            };
+            _detailHtml += '<div style="font-size:0.75rem;color:#d4a76a;margin-top:6px;padding:6px;background:rgba(0,0,0,0.3);border-radius:4px;">';
+            _detailHtml += (_typeExplain[_conspiracy.type] || '') + '<br>';
+            var _conspChanceLabel = _conspDetails.successChance >= 70 ? 'Very likely' : _conspDetails.successChance >= 50 ? 'Likely' : _conspDetails.successChance >= 30 ? 'Uncertain' : 'Unlikely';
+            _detailHtml += '<span style="color:' + (_conspDetails.successChance >= 50 ? '#2ecc71' : _conspDetails.successChance >= 30 ? '#e67e22' : '#c44e52') + ';">Success: ' + _conspChanceLabel + '</span>';
+            _detailHtml += ' · <span style="color:' + (_conspDetails.detectionRisk <= 10 ? '#2ecc71' : _conspDetails.detectionRisk <= 20 ? '#e67e22' : '#c44e52') + ';">Detection risk: ~' + _conspDetails.detectionRisk + '%/month</span>';
+            if (_conspDetails.caughtConsequence) {
+                _detailHtml += '<br><span style="color:#c44e52;font-size:0.72rem;">⚠️ If caught: ' + escapeHtml(_conspDetails.caughtConsequence) + '</span>';
+            }
+            _detailHtml += '</div>';
+        }
+        html += _detailHtml;
         if (_conspiracy.strength >= 80) {
             var _readyMsg = _conspiracy.type === 'revolt_support' ? '⚡ Resources are ready to deliver to the rebels!' : '⚡ The conspirators are ready to act! The plot will unfold soon.';
             html += '<div style="font-size:0.78rem;color:#2ecc71;margin-top:4px;font-weight:bold;">' + _readyMsg + '</div>';
+        }
+        // v9p33river435: enhanced conspiracy — recruit nobles to conspiracy
+        var _availableNobles = [];
+        try {
+            var _recKNobles = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(citizenKingdomId) : [];
+            if (!_recKNobles.length && Engine.getWorld) {
+                var _recWorld = Engine.getWorld();
+                var _recPeople = _recWorld ? _recWorld.people : [];
+                _recKNobles = _recPeople.filter(function(p) {
+                    return p && p.alive && p.socialRank && (p.socialRank[citizenKingdomId] || 0) >= 4 && p.id !== 'player';
+                });
+            }
+            var _recPlotters = Array.isArray(_conspiracy.plotters) ? _conspiracy.plotters : [];
+            var _recKingdom = Engine.findKingdom ? Engine.findKingdom(citizenKingdomId) : null;
+            for (var _rni = 0; _rni < _recKNobles.length; _rni++) {
+                var _rn = _recKNobles[_rni];
+                if (!_rn || !_rn.alive) continue;
+                if (_recKingdom && _rn.id === _recKingdom.king) continue;
+                if (_recPlotters.indexOf(_rn.id) >= 0) continue;
+                _availableNobles.push(_rn);
+            }
+        } catch(e) {}
+        if (_availableNobles.length > 0) {
+            html += '<div style="margin-top:8px;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">';
+            html += '<div style="font-size:0.82rem;color:#d4a76a;margin-bottom:4px;">🤝 Recruit Noble to Conspiracy</div>';
+            html += '<div style="font-size:0.72rem;color:#c44e52;margin-bottom:4px;">⚠️ Risk: The noble may report you to the king based on their loyalty!</div>';
+            html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+            html += '<select id="recruit_conspirator_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
+            for (var _rsi = 0; _rsi < _availableNobles.length; _rsi++) {
+                var _rsn = _availableNobles[_rsi];
+                var _rsnRel = 50;
+                try {
+                    if (typeof Player !== 'undefined' && Player.getRelationship) {
+                        var _rr = Player.getRelationship(_rsn.id);
+                        _rsnRel = (_rr && _rr.level) || 50;
+                    }
+                } catch(e) {}
+                var _rsnLoyHint = '';
+                if (_rsnRel >= 60) {
+                    var _rsnLoy = _rsn.kingLoyalty != null ? _rsn.kingLoyalty : 50;
+                    if (_rsnLoy <= 30) _rsnLoyHint = ' — very disloyal (safe)';
+                    else if (_rsnLoy <= 50) _rsnLoyHint = ' — wavering';
+                    else if (_rsnLoy <= 70) _rsnLoyHint = ' — loyal (risky)';
+                    else _rsnLoyHint = ' — very loyal (DANGEROUS)';
+                }
+                html += '<option value="' + _rsn.id + '">' + escapeHtml((_rsn.firstName || '?') + ' ' + (_rsn.lastName || '')) + _rsnLoyHint + '</option>';
+            }
+            html += '</select>';
+            html += '<button class="btn-medieval" data-action="recruitConspirator" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Recruit</button>';
+            html += '</div></div>';
         }
         html += '<div style="margin-top:6px;">';
         html += '<button class="btn-medieval" data-action="playerLeaveConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚪 Withdraw from Conspiracy</button>';
@@ -1504,6 +1575,104 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         } else {
             html += '<div style="font-size:0.8rem;color:#888;font-style:italic;">No discontented nobles available to conspire with. Nobles must have low loyalty to the king.</div>';
         }
+    }
+    html += '</div>';
+
+    // v9p33river435: noble coalition — legitimate noble lobbying section
+    html += '<div style="background:rgba(60,100,180,0.12);border:1px solid rgba(60,100,180,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.95rem;font-weight:bold;color:#5dade2;margin-bottom:6px;">📜 Noble Coalitions</div>';
+    html += '<div style="font-size:0.72rem;color:#8aa;margin-bottom:6px;">Organize nobles around a common cause to petition the king. Legitimate political action — no risk of arrest.</div>';
+    var _coalitions = [];
+    try { _coalitions = Engine.getKingdomCoalitions(citizenKingdomId) || []; } catch(e) {}
+    var _activeCoalitions = _coalitions.filter(function(c) { return c.status === 'forming'; });
+    var _resolvedCoalitions = _coalitions.filter(function(c) { return c.status === 'resolved' || c.status === 'dissolved'; });
+    var _coalKingdom = null;
+    try { _coalKingdom = Engine.findKingdom ? Engine.findKingdom(citizenKingdomId) : null; } catch(e) {}
+    for (var _ci = 0; _ci < _activeCoalitions.length; _ci++) {
+        var _coal = _activeCoalitions[_ci];
+        var _cStrength = _coal.strength || 0;
+        var _cThreshold = _coal.threshold || 3;
+        var _cSuccessChance = _coal.successChance || 0;
+        var _cStrColor2 = _cSuccessChance >= 0.60 ? '#2ecc71' : _cSuccessChance >= 0.35 ? '#e67e22' : '#c44e52';
+        html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="font-size:0.85rem;color:#5dade2;font-weight:bold;">📜 ' + escapeHtml(_coal.causeLabel) + '</div>';
+        html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">Members: ' + _coal.memberCount + '</div>';
+        html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">';
+        for (var _cmi = 0; _cmi < _coal.members.length; _cmi++) {
+            if (_cmi > 0) html += ', ';
+            html += escapeHtml(_coal.members[_cmi].name || '?');
+        }
+        html += '</div>';
+        html += '<div style="font-size:0.78rem;margin-top:4px;">';
+        html += '<span style="color:' + _cStrColor2 + ';">Influence: ' + _cStrength.toFixed(1) + '/' + _cThreshold.toFixed(1) + '</span>';
+        // v9p33river435: show qualitative label instead of raw percent
+        var _cChanceLabel = _cSuccessChance >= 0.80 ? 'Very likely' : _cSuccessChance >= 0.60 ? 'Likely' : _cSuccessChance >= 0.35 ? 'Uncertain' : _cSuccessChance >= 0.15 ? 'Unlikely' : 'Very unlikely';
+        html += ' · <span style="color:' + _cStrColor2 + ';">' + _cChanceLabel + '</span>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:6px;">';
+        var _coalNobles = [];
+        try {
+            var _coalCandidates = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(citizenKingdomId) : [];
+            if (!_coalCandidates.length && Engine.getWorld) {
+                var _cnWorld = Engine.getWorld();
+                var _cnPeople = _cnWorld ? _cnWorld.people : [];
+                for (var _cni = 0; _cni < _cnPeople.length; _cni++) {
+                    var _cnP = _cnPeople[_cni];
+                    if (!_cnP || !_cnP.alive) continue;
+                    if (!_cnP.socialRank || (_cnP.socialRank[citizenKingdomId] || 0) < 4) continue;
+                    _coalCandidates.push(_cnP);
+                }
+            }
+            for (var _cnj = 0; _cnj < _coalCandidates.length; _cnj++) {
+                var _cnNoble = _coalCandidates[_cnj];
+                if (!_cnNoble || !_cnNoble.alive || _cnNoble.id === 'player') continue;
+                if (_coalKingdom && _cnNoble.id === _coalKingdom.king) continue;
+                var _alreadyMember = false;
+                for (var _cmj = 0; _cmj < _coal.members.length; _cmj++) {
+                    if (_coal.members[_cmj].id === _cnNoble.id) { _alreadyMember = true; break; }
+                }
+                if (_alreadyMember) continue;
+                _coalNobles.push(_cnNoble);
+            }
+        } catch(e) {}
+        if (_coalNobles.length > 0) {
+            html += '<select id="coalition_recruit_' + _ci + '" style="font-size:0.72rem;padding:2px;flex:1;min-width:100px;">';
+            for (var _cri = 0; _cri < _coalNobles.length; _cri++) {
+                html += '<option value="' + _coalNobles[_cri].id + '">' + escapeHtml((_coalNobles[_cri].firstName || '?') + ' ' + (_coalNobles[_cri].lastName || '')) + '</option>';
+            }
+            html += '</select>';
+            html += '<button class="btn-medieval" data-action="recruitToCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" data-idx="' + _ci + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">🤝 Recruit</button>';
+        }
+        if (_coal.memberCount >= 2) {
+            html += '<button class="btn-medieval" data-action="presentCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">👑 Present to King</button>';
+        }
+        html += '</div></div>';
+    }
+    for (var _ri = 0; _ri < _resolvedCoalitions.length; _ri++) {
+        var _rCoal = _resolvedCoalitions[_ri];
+        var _rColor = (_rCoal.resolutionMessage && _rCoal.resolutionMessage.indexOf('persuaded') >= 0) ? '#2ecc71' : '#c44e52';
+        html += '<div style="font-size:0.75rem;color:' + _rColor + ';padding:4px;opacity:0.7;">';
+        html += '📜 ' + escapeHtml(_rCoal.causeLabel) + ': ' + escapeHtml(_rCoal.resolutionMessage || 'Resolved');
+        html += '</div>';
+    }
+    if (_activeCoalitions.length < 3) {
+        html += '<div style="margin-top:6px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+        html += '<select id="coalition_cause" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
+        html += '<option value="lower_taxes">Lower Taxes</option>';
+        html += '<option value="raise_taxes">Raise Taxes</option>';
+        html += '<option value="make_peace">Seek Peace</option>';
+        html += '<option value="declare_war">Declare War</option>';
+        html += '<option value="war_offensive">Military Offensive</option>';
+        html += '<option value="form_alliance">Form Alliance</option>';
+        html += '<option value="build_infrastructure">Build Infrastructure</option>';
+        html += '<option value="build_walls">Fortify Towns</option>';
+        html += '<option value="improve_happiness">Improve Public Welfare</option>';
+        html += '<option value="medical_funding">Fund Plague Relief</option>';
+        html += '</select>';
+        html += '<button class="btn-medieval" data-action="formCoalition" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">📜 Start Coalition</button>';
+        html += '</div>';
+    } else {
+        html += '<div style="font-size:0.75rem;color:#888;font-style:italic;">Maximum active coalitions reached (3).</div>';
     }
     html += '</div>';
 
@@ -2821,7 +2990,9 @@ function _executeKQAction(questId, kingdomId) {
     html += '<div style="color:#aaa;margin-bottom:4px;">📊 Action Summary:</div>';
     if (result.goldSpent > 0) html += '<div style="color:#e67e22;">💰 Gold spent: ' + result.goldSpent + 'g</div>';
     if (result.ticksSpent > 0) html += '<div style="color:#5dade2;">⏳ Time spent: ~' + result.ticksSpent + ' days</div>';
-    html += '<div style="color:#aaa;">🎲 Success chance was: ' + (result.chance || '?') + '%</div>';
+    var _actChance = result.chance || 0;
+    var _actChanceLabel = _actChance >= 80 ? 'Very likely' : _actChance >= 60 ? 'Likely' : _actChance >= 35 ? 'Uncertain' : _actChance >= 15 ? 'Unlikely' : 'Very unlikely';
+    html += '<div style="color:#aaa;">🎲 Odds were: ' + _actChanceLabel + '</div>';
     if (result.attempt > 1) html += '<div style="color:#ccb974;">📝 Attempt #' + result.attempt + '</div>';
     html += '</div>';
 
@@ -3194,6 +3365,48 @@ function _switchProposeActionTab(tabId, kingdomId) {
             toast(result.message, 'warning');
         }
         openNobilityDialog(); // refresh
+    });
+
+    // v9p33river435: noble coalition actions
+    UI.registerAction('formCoalition', function(el) {
+        var kId = el.getAttribute('data-id');
+        var causeSelect = document.getElementById('coalition_cause');
+        if (!kId || !causeSelect || typeof Engine === 'undefined') return;
+        var result = Engine.playerFormCoalition(kId, causeSelect.value);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    });
+
+    // v9p33river435: noble coalition actions
+    UI.registerAction('recruitToCoalition', function(el) {
+        var kId = el.getAttribute('data-id');
+        var coalId = el.getAttribute('data-val');
+        var idx = el.getAttribute('data-idx') || '0';
+        var select = document.getElementById('coalition_recruit_' + idx);
+        if (!kId || !coalId || !select || typeof Engine === 'undefined') return;
+        var result = Engine.playerRecruitToCoalition(kId, coalId, select.value);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    });
+
+    // v9p33river435: noble coalition actions
+    UI.registerAction('presentCoalition', function(el) {
+        var kId = el.getAttribute('data-id');
+        var coalId = el.getAttribute('data-val');
+        if (!kId || !coalId || typeof Engine === 'undefined') return;
+        var result = Engine.playerPresentCoalition(kId, coalId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    });
+
+    // v9p33river435: enhanced conspiracy — recruit nobles into an existing plot
+    UI.registerAction('recruitConspirator', function(el) {
+        var kId = el.getAttribute('data-id');
+        var select = document.getElementById('recruit_conspirator_target');
+        if (!kId || !select || typeof Engine === 'undefined') return;
+        var result = Engine.playerRecruitConspirator(kId, select.value);
+        toast(result.message, result.reported ? 'error' : (result.success ? 'success' : 'warning'));
+        openNobilityDialog();
     });
 
     // Revolt support actions
