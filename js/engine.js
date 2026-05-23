@@ -32367,11 +32367,8 @@
         }
         // Imprisonment: 30-90 days
         var jailDays = 30 + Math.floor(Math.random() * 61);
-        if (Player.state) {
-            Player.state._jailed = true;
-            Player.state._jailDays = jailDays;
-            Player.state._jailKingdom = kId;
-        }
+        // v9p33river446: use canonical Player.jailedUntilDay field (was setting wrong Player.state._jailed)
+        Player.jailedUntilDay = world.day + jailDays;
         logEvent('🔒 You have been imprisoned for ' + jailDays + ' days for your role in the ' + plotType + ' conspiracy in ' + k.name + '!', {
             type: 'player_jailed', kingdomId: kId
         }, 'my_kingdom');
