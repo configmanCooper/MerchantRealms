@@ -1212,9 +1212,17 @@ function openNobilityDialog() {
     html += _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, _selectedForeignKingdom || null);
     html += '</div>';
 
-    // Open modal
+    // Open modal — preserve scroll position on refresh
     var footerHtml = '<button class="btn-medieval" data-action="closeModal">Close</button>';
+    var _prevScroll = 0;
+    var _mb = document.getElementById('modalBody');
+    if (_mb && !document.getElementById('modalOverlay').classList.contains('hidden')) {
+        _prevScroll = _mb.scrollTop;
+    }
     openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+    if (_prevScroll > 0 && _mb) {
+        _mb.scrollTop = _prevScroll;
+    }
 }
 
 // ── Noble Influence Tab Builder ──

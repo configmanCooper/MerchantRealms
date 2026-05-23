@@ -2562,7 +2562,7 @@ window.UI = (function () {
             if (ftl.indexOf('funeral') === -1 && ftl.indexOf('plan funeral') === -1
                 && ftl.indexOf('save') === -1 && ftl.indexOf('load') === -1
                 && ftl.indexOf('settings') === -1 && ftl.indexOf('main menu') === -1
-                && ftl.indexOf('passing') === -1) {
+                && ftl.indexOf('passing') === -1 && ftl.indexOf('nobility') === -1) {
                 toast('⚰️ You must plan the funeral first!', 'warning');
                 // v9p33river216: re-open the funeral planning dialog if it isn't
                 // already up so the player has a clear path forward.
@@ -2572,7 +2572,7 @@ window.UI = (function () {
         }
         if (_encounterLocked) {
             var etl = (title || '').toLowerCase();
-            if (etl.indexOf('encounter') === -1) {
+            if (etl.indexOf('encounter') === -1 && etl.indexOf('nobility') === -1) {
                 toast('⚠️ You must resolve the encounter first!', 'warning');
                 return;
             }
@@ -2580,7 +2580,7 @@ window.UI = (function () {
         // Block opening non-bankruptcy modals while bankruptcy decision pending
         if (_isBankruptcyBlocked()) {
             var tl = (title || '').toLowerCase();
-            if (tl.indexOf('bankrupt') === -1 && tl.indexOf('guild loan') === -1) {
+            if (tl.indexOf('bankrupt') === -1 && tl.indexOf('guild loan') === -1 && tl.indexOf('nobility') === -1) {
                 toast('💸 You must resolve your bankruptcy first!', 'danger', 'critical');
                 return;
             }
@@ -2588,7 +2588,7 @@ window.UI = (function () {
         // Block opening non-conquest modals while conquest decision pending
         if (_conquestLocked) {
             var ctl = (title || '').toLowerCase();
-            if (ctl.indexOf('conquest') === -1) {
+            if (ctl.indexOf('conquest') === -1 && ctl.indexOf('nobility') === -1) {
                 toast('⚔️ You must decide the fate of the conquered town first!', 'warning');
                 return;
             }
