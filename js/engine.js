@@ -11882,6 +11882,32 @@
         for (var i = 0; i < PROPOSABLE_LAWS.length; i++) {
             if (PROPOSABLE_LAWS[i].id === lawId) { law = PROPOSABLE_LAWS[i]; break; }
         }
+
+        // v9p33river428: handle _enact_special_ prefix for CONFIG.SPECIAL_LAWS proposals
+        var isSpecialEnact = false;
+        var specialLawId = null;
+        if (!law && lawId.indexOf('_enact_special_') === 0) {
+            specialLawId = lawId.substring('_enact_special_'.length);
+            var slDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === specialLawId; });
+            if (slDef) {
+                isSpecialEnact = true;
+                law = {
+                    id: lawId, name: slDef.name, description: slDef.desc, icon: slDef.icon || '📜',
+                    requiresGold: 0,
+                    kingFavor: function() { return 0; },
+                    effect: function(kingdom) {
+                        if (!kingdom.laws) kingdom.laws = {};
+                        if (!kingdom.laws.specialLaws) kingdom.laws.specialLaws = [];
+                        if (!kingdom.laws.specialLaws.some(function(l) { return l.id === specialLawId; })) {
+                            kingdom.laws.specialLaws.push({ id: specialLawId, name: slDef.name, desc: slDef.desc, icon: slDef.icon, enactedDay: world.day });
+                        }
+                        if (specialLawId === 'immigration_policy') kingdom.immigrationPolicy = 'closed';
+                        if (specialLawId === 'conscription_law') kingdom.laws.conscription = true;
+                    }
+                };
+            }
+        }
+
         if (!law) return { success: false, reason: 'Unknown law proposal.' };
 
         // Check treasury requirement
@@ -11946,20 +11972,36 @@
         if (!k) return [];
         var pers = k.kingPersonality || {};
         var result = [];
+        // v9p33river428: gather already-active special law IDs to filter out
+        var activeLawIds = {};
+        if (k.laws && k.laws.specialLaws) {
+            for (var _ali = 0; _ali < k.laws.specialLaws.length; _ali++) {
+                activeLawIds[k.laws.specialLaws[_ali].id] = true;
+            }
+        }
+        // Map of PROPOSABLE_LAWS IDs that enact a specific specialLaw
+        var _proposableEnacts = {
+            'price_controls': 'price_controls',
+            'female_heir': 'female_heir_law'
+        };
+
+        // Relationship with king
+        var kingRel = 0;
+        if (k.king && typeof Player !== 'undefined' && Player.getRelationship) {
+            var _kingRelObj2 = Player.getRelationship(k.king);
+            if (_kingRelObj2 && _kingRelObj2.level) kingRel = _kingRelObj2.level;
+        }
+
         for (var i = 0; i < PROPOSABLE_LAWS.length; i++) {
             var law = PROPOSABLE_LAWS[i];
+            // Skip if this proposal enacts a specialLaw that's already active
+            if (_proposableEnacts[law.id] && activeLawIds[_proposableEnacts[law.id]]) continue;
             var favor = typeof law.kingFavor === 'function' ? law.kingFavor(k, pers) : 0;
             var baseChance = pers.intelligence === 'brilliant' ? 0.35 :
                              pers.intelligence === 'clever' ? 0.45 :
                              pers.intelligence === 'dim' ? 0.70 :
                              pers.intelligence === 'foolish' ? 0.80 : 0.55;
             baseChance += favor;
-            // Relationship
-            var kingRel = 0;
-            if (k.king && typeof Player !== 'undefined' && Player.getRelationship) {
-                var _kingRelObj2 = Player.getRelationship(k.king);
-                if (_kingRelObj2 && _kingRelObj2.level) kingRel = _kingRelObj2.level;
-            }
             baseChance += kingRel * 0.002;
             if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) baseChance += 0.20;
             baseChance = Math.max(0.10, Math.min(0.95, baseChance));
@@ -11974,12 +12016,149 @@
                 canAfford: (law.requiresGold || 0) <= (k.gold || 0),
             });
         }
+
+        // v9p33river428: auto-generate entries from CONFIG.SPECIAL_LAWS not already covered
+        var _coveredSpecialLawIds = {};
+        // Mark specialLaw IDs that PROPOSABLE_LAWS already handle
+        _coveredSpecialLawIds['price_controls'] = true;
+        _coveredSpecialLawIds['female_heir_law'] = true;
+        _coveredSpecialLawIds['conscription_law'] = true; // covered by military_draft
+        _coveredSpecialLawIds['immigration_policy'] = true; // covered by restrict_immigration
+        var specialLaws = CONFIG.SPECIAL_LAWS || [];
+        for (var si = 0; si < specialLaws.length; si++) {
+            var sl = specialLaws[si];
+            if (_coveredSpecialLawIds[sl.id]) continue;
+            if (activeLawIds[sl.id]) continue; // already enacted
+            var slBaseChance = pers.intelligence === 'brilliant' ? 0.35 :
+                               pers.intelligence === 'clever' ? 0.45 :
+                               pers.intelligence === 'dim' ? 0.70 :
+                               pers.intelligence === 'foolish' ? 0.80 : 0.55;
+            slBaseChance += kingRel * 0.002;
+            if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) slBaseChance += 0.20;
+            // Apply personality-based favor for known law themes
+            if (sl.id === 'noble_council') slBaseChance += pers.justice === 'just' ? 0.2 : (pers.ambition === 'ambitious' ? -0.3 : 0);
+            else if (sl.id === 'open_market' || sl.id === 'free_trade') slBaseChance += pers.tradition === 'progressive' ? 0.2 : (pers.tradition === 'traditional' ? -0.2 : 0);
+            else if (sl.id === 'guild_monopoly' || sl.id === 'sumptuary_laws') slBaseChance += pers.tradition === 'traditional' ? 0.2 : -0.1;
+            else if (sl.id === 'blood_price') slBaseChance += pers.greed === 'greedy' ? 0.2 : (pers.justice === 'just' ? -0.2 : 0);
+            else if (sl.id === 'night_market') slBaseChance += pers.greed === 'corrupt' ? 0.3 : -0.15;
+            else if (sl.id === 'market_day') slBaseChance += pers.generosity === 'generous' ? 0.2 : 0;
+            else if (sl.id === 'harvest_tithe') slBaseChance += pers.greed === 'greedy' ? 0.2 : (pers.generosity === 'generous' ? -0.2 : 0.1);
+            else if (sl.id === 'sanctuary_law') slBaseChance += pers.justice === 'just' ? 0.15 : -0.1;
+            else if (sl.id === 'foreign_ban') slBaseChance += pers.tradition === 'traditional' ? 0.3 : -0.2;
+            else if (sl.id === 'trial_combat') slBaseChance += pers.militarism === 'warlike' ? 0.2 : (pers.justice === 'just' ? -0.2 : 0);
+            else if (sl.id === 'maritime_privilege') slBaseChance += pers.tradition === 'progressive' ? 0.15 : 0;
+            else if (sl.id === 'random_inspections') slBaseChance += pers.justice === 'just' ? 0.2 : (pers.temperament === 'cruel' ? 0.15 : -0.1);
+            else if (sl.id === 'no_tent_camps') slBaseChance += pers.temperament === 'cruel' ? 0.2 : (pers.temperament === 'kind' ? -0.3 : 0);
+            else if (sl.id === 'right_to_camps') slBaseChance += pers.temperament === 'kind' ? 0.3 : (pers.temperament === 'cruel' ? -0.3 : 0);
+            else if (sl.id === 'no_dual_citizenship') slBaseChance += pers.tradition === 'traditional' ? 0.2 : -0.1;
+            else if (sl.id === 'inheritance_tax') slBaseChance += pers.greed === 'greedy' ? 0.3 : (pers.generosity === 'generous' ? -0.2 : 0.1);
+            else if (sl.id === 'draft_animal_law') slBaseChance += pers.tradition === 'traditional' ? 0.15 : -0.1;
+            else if (sl.id === 'apprentice_law') slBaseChance += pers.tradition === 'traditional' ? 0.15 : 0;
+            slBaseChance = Math.max(0.10, Math.min(0.95, slBaseChance));
+            result.push({
+                id: '_enact_special_' + sl.id,
+                category: 'special',
+                name: 'Enact ' + sl.name,
+                description: sl.desc,
+                icon: sl.icon || '📜',
+                chance: Math.round(slBaseChance * 100),
+                requiresGold: 0,
+                canAfford: true,
+                _specialLawId: sl.id
+            });
+        }
+
         return result;
     }
 
-    // ========================================================
-    // §14A-2 ROYAL ADVISOR CONSULTATION SYSTEM
-    // ========================================================
+    // v9p33river428: Repeal active special laws
+    function getRepealableLaws(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k || !k.laws || !k.laws.specialLaws || !k.laws.specialLaws.length) return [];
+        var pers = k.kingPersonality || {};
+        var result = [];
+        var kingRel = 0;
+        if (k.king && typeof Player !== 'undefined' && Player.getRelationship) {
+            var _kRelObj = Player.getRelationship(k.king);
+            if (_kRelObj && _kRelObj.level) kingRel = _kRelObj.level;
+        }
+        for (var i = 0; i < k.laws.specialLaws.length; i++) {
+            var sl = k.laws.specialLaws[i];
+            var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === sl.id; });
+            // Base chance — kings are slightly reluctant to repeal their own laws
+            var baseChance = pers.intelligence === 'brilliant' ? 0.30 :
+                             pers.intelligence === 'clever' ? 0.40 :
+                             pers.intelligence === 'dim' ? 0.60 :
+                             pers.intelligence === 'foolish' ? 0.70 : 0.45;
+            // Traditional kings resist change
+            if (pers.tradition === 'traditional') baseChance -= 0.15;
+            if (pers.tradition === 'progressive') baseChance += 0.10;
+            baseChance += kingRel * 0.002;
+            if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) baseChance += 0.20;
+            baseChance = Math.max(0.05, Math.min(0.90, baseChance));
+            result.push({
+                id: sl.id,
+                name: lawDef ? lawDef.name : sl.name || sl.id,
+                description: lawDef ? lawDef.desc : sl.desc || 'Active law',
+                icon: lawDef ? lawDef.icon : sl.icon || '📜',
+                chance: Math.round(baseChance * 100),
+                enactedDay: sl.enactedDay || 0
+            });
+        }
+        return result;
+    }
+
+    function proposeRepealLaw(kingdomId, lawId) {
+        var k = findKingdom(kingdomId);
+        if (!k) return { success: false, reason: 'Kingdom not found.' };
+        if (typeof Player === 'undefined') return { success: false, reason: 'Player not available.' };
+        var pState = Player.state;
+        if (!pState || !pState.socialRank || (pState.socialRank[k.id] || 0) < 6) {
+            return { success: false, reason: 'Only Royal Advisors can propose repeals.' };
+        }
+        if (typeof pState.politicalCapital !== 'undefined' && pState.politicalCapital <= 0) {
+            return { success: false, reason: 'No political capital remaining this season.' };
+        }
+        if (!k.laws || !k.laws.specialLaws) return { success: false, reason: 'No active laws.' };
+        var idx = -1;
+        for (var i = 0; i < k.laws.specialLaws.length; i++) {
+            if (k.laws.specialLaws[i].id === lawId) { idx = i; break; }
+        }
+        if (idx < 0) return { success: false, reason: 'Law not currently active.' };
+        var lawDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === lawId; });
+        var lawName = lawDef ? lawDef.name : lawId;
+
+        var pers = k.kingPersonality || {};
+        var rng = world.rng;
+        var baseChance = pers.intelligence === 'brilliant' ? 0.30 :
+                         pers.intelligence === 'clever' ? 0.40 :
+                         pers.intelligence === 'dim' ? 0.60 :
+                         pers.intelligence === 'foolish' ? 0.70 : 0.45;
+        if (pers.tradition === 'traditional') baseChance -= 0.15;
+        if (pers.tradition === 'progressive') baseChance += 0.10;
+        var kingRel = 0;
+        if (k.king && Player.getRelationship) {
+            var _kRelObj2 = Player.getRelationship(k.king);
+            if (_kRelObj2 && _kRelObj2.level) kingRel = _kRelObj2.level;
+        }
+        baseChance += kingRel * 0.002;
+        if (k._playerInfluencedKingDay && (world.day - k._playerInfluencedKingDay) < CONFIG.DAYS_PER_SEASON) baseChance += 0.20;
+        baseChance = Math.max(0.05, Math.min(0.90, baseChance));
+
+        if (typeof pState.politicalCapital !== 'undefined') pState.politicalCapital--;
+
+        var accepted = rng ? rng.chance(baseChance) : Math.random() < baseChance;
+        if (accepted) {
+            k.laws.specialLaws.splice(idx, 1);
+            if (lawId === 'immigration_policy') k.immigrationPolicy = 'open';
+            if (lawId === 'conscription_law') k.laws.conscription = false;
+            logKingAction(k, '📜 Law repealed on RA counsel: ' + lawName);
+            return { success: true, accepted: true, chance: Math.round(baseChance * 100), law: lawName };
+        } else {
+            logKingAction(k, '📜 Law repeal rejected: ' + lawName);
+            return { success: true, accepted: false, chance: Math.round(baseChance * 100), law: lawName };
+        }
+    }
     // When the player is a Royal Advisor, king decisions are queued for
     // consultation instead of executing immediately. The player has 1 day
     // to agree or oppose before the king proceeds.
@@ -34103,6 +34282,8 @@
         // Royal Advisor — Propose Laws API
         proposeLaw: proposeLaw,
         getProposableLaws: getProposableLaws,
+        getRepealableLaws: getRepealableLaws,
+        proposeRepealLaw: proposeRepealLaw,
 
         // Bridge & Road management
         destroyBridge(idx, bridgeId) { return destroyBridge(idx, bridgeId); },

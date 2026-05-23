@@ -846,32 +846,18 @@ function openNobilityDialog() {
             html += '<div style="font-size:0.78rem;color:#888;font-style:italic;margin-bottom:8px;">No pending king decisions. The king will consult you on major policy changes.</div>';
         }
 
-        // Direct advice
+        // v9p33river428: removed individual advice buttons (lower_taxes, raise_taxes, etc.)
+        // — Propose Law and Propose Action cover all these with proper target selection and chance display
         html += '<div style="margin-top:8px;border-top:1px solid rgba(201,168,76,0.15);padding-top:8px;">';
         html += '<div style="font-size:0.78rem;font-weight:bold;color:#ddd;margin-bottom:6px;">🗣️ Advise the King</div>';
-        var _adviceTypes = [
-            { id: 'lower_taxes', icon: '📉', label: 'Lower Taxes', tip: 'Suggest the king lower taxes to boost trade' },
-            { id: 'raise_taxes', icon: '📈', label: 'Raise Taxes', tip: 'Suggest the king raise taxes for more revenue' },
-            { id: 'build_walls', icon: '🏰', label: 'Build Walls', tip: 'Suggest fortifying towns' },
-            { id: 'make_peace', icon: '🕊️', label: 'Make Peace', tip: 'Urge the king to seek peace' },
-            { id: 'declare_war', icon: '⚔️', label: 'Declare War', tip: 'Urge military action' }
-        ];
-        html += '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
-        for (var _adi = 0; _adi < _adviceTypes.length; _adi++) {
-            var _adv = _adviceTypes[_adi];
-            var _advDisabled = polCap <= 0;
-            html += '<button class="btn-medieval" data-action="adviseKingAction" data-id="' + citizenKingdomId + '" data-val="' + _adv.id + '" title="' + _adv.tip + '" style="font-size:0.7rem;padding:4px 8px;' + (_advDisabled ? 'opacity:0.4;cursor:not-allowed;' : '') + '"' + (_advDisabled ? ' disabled' : '') + '>' + _adv.icon + ' ' + _adv.label + '</button>';
-        }
+        html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+        html += '<button class="btn-medieval" data-action="_nobilityProposeLaw" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
+        html += '<button class="btn-medieval" data-action="_nobilityRepealLaw" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(120,40,40,0.4) !important;border:1px solid rgba(200,80,80,0.4) !important;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;background:rgba(120,40,40,0.4) !important;border:1px solid rgba(200,80,80,0.4) !important;"' : '') + '>🗑️ Repeal Law</button>';
+        html += '<button class="btn-medieval" data-action="_nobilityProposeAction" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;" ' + (polCap <= 0 ? 'disabled' : '') + '>👑 Propose Action</button>';
         html += '</div>';
         if (polCap <= 0) {
             html += '<div style="font-size:0.68rem;color:#c44e52;margin-top:4px;">No political capital remaining. Capital regenerates over time.</div>';
         }
-        html += '</div>';
-
-        // Propose law & Propose action
-        html += '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">';
-        html += '<button class="btn-medieval" data-action="_nobilityProposeLaw" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;" ' + (polCap <= 0 ? 'disabled style="font-size:0.75rem;padding:5px 12px;opacity:0.4;cursor:not-allowed;"' : '') + '>📜 Propose New Law</button>';
-        html += '<button class="btn-medieval" data-action="_nobilityProposeAction" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:5px 12px;background:rgba(44,100,60,0.5) !important;border:2px solid rgba(80,180,100,0.5) !important;color:#f0e0c0 !important;" ' + (polCap <= 0 ? 'disabled' : '') + '>👑 Propose Action</button>';
         html += '</div>';
 
         // Crime immunity note
@@ -2912,6 +2898,24 @@ function _nobilityProposeLaw(kingdomId) {
     openModal('📜 Propose Law', html, '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>');
 }
 
+// v9p33river428: Repeal an active law
+function _nobilityRepealLaw(kingdomId) {
+    var repealable = Engine.getRepealableLaws ? Engine.getRepealableLaws(kingdomId) : [];
+    if (!repealable.length) { toast('No active laws to repeal.', 'warning'); return; }
+    var html = '<div style="font-size:0.8rem;color:#ccc;margin-bottom:8px;">Propose repealing an active law (costs 1 political capital). Kings are reluctant to undo their own decrees.</div>';
+    html += '<div style="max-height:350px;overflow-y:auto;">';
+    for (var i = 0; i < repealable.length; i++) {
+        var law = repealable[i];
+        var chanceColor = law.chance >= 50 ? '#8f8' : law.chance >= 25 ? '#ff8' : '#f88';
+        html += '<button class="btn-medieval" data-action="proposeRepealLawAction" data-id="' + kingdomId + '" data-val="' + law.id + '" style="display:block;width:100%;text-align:left;font-size:0.75rem;padding:6px 10px;margin-bottom:3px;">';
+        html += '<span>' + (law.icon || '📜') + ' <strong>Repeal ' + law.name + '</strong> <span style="color:' + chanceColor + ';font-size:0.65rem;">(' + law.chance + '% chance)</span></span><br>';
+        html += '<span style="font-size:0.7rem;color:#d4c9a0;">' + (law.description || '') + '</span>';
+        html += '</button>';
+    }
+    html += '</div>';
+    openModal('🗑️ Repeal Law', html, '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>');
+}
+
 // Helper: Propose action from nobility panel (Royal Advisor)
 var _proposeActionTab = 'economic';
 function _nobilityProposeAction(kingdomId) {
@@ -3246,6 +3250,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI._nobilityRequestBuilding = _nobilityRequestBuilding;
     UI._nobilityProposeLaw = _nobilityProposeLaw;
     UI._nobilityProposeAction = _nobilityProposeAction;
+    UI._nobilityRepealLaw = _nobilityRepealLaw;
     UI._switchProposeActionTab = _switchProposeActionTab;
     // -- Noble Agents --
     UI.toggleAgentExpand = toggleAgentExpand;
@@ -3292,6 +3297,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('_switchProposeActionTab', function(_t, d) { if (d.id && d.val) UI._switchProposeActionTab(d.id, d.val); });
     UI.registerAction('_nobilityRequestBuilding', function(_t, d) { if (d.id) UI._nobilityRequestBuilding(d.id); });
     UI.registerAction('_nobilityProposeLaw', function(_t, d) { if (d.id) UI._nobilityProposeLaw(d.id); });
+    UI.registerAction('_nobilityRepealLaw', function(_t, d) { if (d.id) UI._nobilityRepealLaw(d.id); });
     UI.registerAction('_nobilityProposeAction', function(_t, d) { if (d.id) UI._nobilityProposeAction(d.id); });
     UI.registerAction('switchNobilityTab', function(_t, d) {
         _nobilityTab = d.id || 'status';
@@ -3518,8 +3524,58 @@ function _switchProposeActionTab(tabId, kingdomId) {
         UI.openNobilityDialog();
     });
     UI.registerAction('adviseKingAction', function(_t, d) {
+        // v9p33river428: declare_war / make_peace need a target kingdom picker
+        var adviceType = d.val;
+        var kingdomId = d.id;
+        if (adviceType === 'declare_war' || adviceType === 'make_peace') {
+            var kingdom = null;
+            try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+            if (!kingdom) { UI.toast('Kingdom not found.', 'warning'); return; }
+            var allKingdoms = [];
+            try { allKingdoms = Engine.getKingdoms(); } catch(e) {}
+            var targets = [];
+            if (adviceType === 'declare_war') {
+                for (var _ki = 0; _ki < allKingdoms.length; _ki++) {
+                    var _kk = allKingdoms[_ki];
+                    if (_kk.id === kingdomId) continue;
+                    var isAtWar = kingdom.atWar && (kingdom.atWar.has ? kingdom.atWar.has(_kk.id) : (kingdom.atWar.indexOf ? kingdom.atWar.indexOf(_kk.id) >= 0 : false));
+                    if (!isAtWar) targets.push(_kk);
+                }
+            } else {
+                for (var _ki2 = 0; _ki2 < allKingdoms.length; _ki2++) {
+                    var _kk2 = allKingdoms[_ki2];
+                    if (_kk2.id === kingdomId) continue;
+                    var atWar = kingdom.atWar && (kingdom.atWar.has ? kingdom.atWar.has(_kk2.id) : (kingdom.atWar.indexOf ? kingdom.atWar.indexOf(_kk2.id) >= 0 : false));
+                    if (atWar) targets.push(_kk2);
+                }
+            }
+            if (targets.length === 0) {
+                UI.toast(adviceType === 'declare_war' ? 'No kingdoms to declare war on.' : 'Not at war with anyone.', 'warning');
+                return;
+            }
+            var pickHtml = '<div style="padding:8px;max-width:360px;">';
+            pickHtml += '<div style="font-size:0.85rem;color:#ccc;margin-bottom:10px;">' + (adviceType === 'declare_war' ? '⚔️ Which kingdom should we declare war on?' : '🕊️ Which kingdom should we make peace with?') + '</div>';
+            for (var _ti = 0; _ti < targets.length; _ti++) {
+                var _tgt = targets[_ti];
+                var rel = (kingdom.relations && kingdom.relations[_tgt.id]) || 0;
+                var relColor = rel > 20 ? '#55a868' : rel < -20 ? '#c44e52' : '#ccb974';
+                pickHtml += '<button class="btn-medieval" data-action="adviseKingWithTarget" data-id="' + kingdomId + '" data-val="' + adviceType + '" data-target="' + _tgt.id + '" style="display:block;width:100%;text-align:left;font-size:0.78rem;padding:6px 10px;margin-bottom:4px;">';
+                pickHtml += (adviceType === 'declare_war' ? '⚔️' : '🕊️') + ' ' + _tgt.name + ' <span style="color:' + relColor + ';font-size:0.68rem;">(relations: ' + Math.round(rel) + ')</span>';
+                pickHtml += '</button>';
+            }
+            pickHtml += '</div>';
+            openModal(adviceType === 'declare_war' ? '⚔️ Declare War' : '🕊️ Make Peace', pickHtml, '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Back</button>');
+            return;
+        }
         var r = Player.adviseKing(d.id, d.val);
         UI.toast(r && (r.message || r.reason) ? r.message || r.reason : 'Advice given.', r && r.success ? 'success' : 'warning');
+        UI.openNobilityDialog();
+    });
+    UI.registerAction('adviseKingWithTarget', function(_t, d) {
+        // v9p33river428: execute advise with target kingdom
+        var r = Player.adviseKing(d.id, d.val, d.target);
+        UI.toast(r && (r.message || r.reason) ? r.message || r.reason : 'Advice given.', r && r.success ? 'success' : 'warning');
+        UI.closeModal();
         UI.openNobilityDialog();
     });
     UI.registerAction('closeAndShowPerson', function(_t, d) {
@@ -3566,7 +3622,22 @@ function _switchProposeActionTab(tabId, kingdomId) {
     });
     UI.registerAction('proposeLawAction', function(_t, d) {
         var r = Player.proposeLaw(d.id, d.val);
-        UI.toast(r && (r.reason || r.message) ? (r.reason || r.message) : 'Law proposed.', r && r.success ? 'success' : 'warning');
+        // v9p33river428: show accepted/rejected result
+        if (r && r.success && typeof r.accepted !== 'undefined') {
+            UI.toast(r.accepted ? '✅ ' + r.law + ' enacted! (' + r.chance + '% chance)' : '❌ The king rejected ' + r.law + '. (' + r.chance + '% chance)', r.accepted ? 'success' : 'warning');
+        } else {
+            UI.toast(r && (r.reason || r.message) ? (r.reason || r.message) : 'Law proposed.', r && r.success ? 'success' : 'warning');
+        }
+        UI.openNobilityDialog();
+    });
+    // v9p33river428: repeal law action
+    UI.registerAction('proposeRepealLawAction', function(_t, d) {
+        var r = Player.proposeRepealLaw(d.id, d.val);
+        if (r && r.success && typeof r.accepted !== 'undefined') {
+            UI.toast(r.accepted ? '✅ ' + r.law + ' repealed! (' + r.chance + '% chance)' : '❌ The king refused to repeal ' + r.law + '. (' + r.chance + '% chance)', r.accepted ? 'success' : 'warning');
+        } else {
+            UI.toast(r && (r.reason || r.message) ? (r.reason || r.message) : 'Repeal proposed.', r && r.success ? 'success' : 'warning');
+        }
         UI.openNobilityDialog();
     });
     UI.registerAction('proposeKingActionSelect', function(_t, d) {

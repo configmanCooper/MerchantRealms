@@ -12629,40 +12629,26 @@
                 Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} raises taxes!`, null, "my_kingdom");
                 break;
             case 'declare_war':
-                // v9p33river419: advisor counsel now actually declares war
+                // v9p33river428: use Engine.declareWar for proper war registration
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
                     if (target && (!kingdom.atWar || !kingdom.atWar.has(target.id))) {
-                        var _warCost = CONFIG.WAR_DECLARATION_COST || 300;
-                        if (kingdom.gold >= _warCost) {
-                            kingdom.gold -= _warCost;
-                            if (!kingdom.atWar) kingdom.atWar = new Set();
-                            kingdom.atWar.add(target.id);
-                            if (!target.atWar) target.atWar = new Set();
-                            target.atWar.add(kingdom.id);
-                            kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 40);
-                            kingdom._lastWarStartDay = Engine.getDay();
-                            target._lastWarStartDay = Engine.getDay();
+                        if (Engine.declareWar) {
+                            Engine.declareWar(kingdom, target);
                             Engine.logEvent(`⚔️ On the Royal Advisor's counsel, ${kingdom.name} declares war on ${target.name}!`, { type: 'war_declaration', kingdomId: kingdom.id }, "military");
-                        } else {
-                            Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers war with ${target.name}, but the treasury is too low.`, null, "military");
-                            kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 20);
                         }
                     }
                 }
                 break;
             case 'make_peace':
-                // v9p33river419: advisor counsel now actually makes peace
+                // v9p33river428: use Engine.makePeace for proper peace handling
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
                     if (target && kingdom.atWar && kingdom.atWar.has(target.id)) {
-                        kingdom.atWar.delete(target.id);
-                        if (target.atWar && target.atWar.delete) target.atWar.delete(kingdom.id);
-                        kingdom.relations[target.id] = 0;
-                        if (target.relations) target.relations[kingdom.id] = 0;
-                        if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
-                        kingdom.peaceTreaties[target.id] = Engine.getDay() + 180;
-                        Engine.logEvent(`🕊️ On the Royal Advisor's counsel, ${kingdom.name} makes peace with ${target.name}.`, null, "military");
+                        if (Engine.makePeace) {
+                            Engine.makePeace(kingdom, target, false, null);
+                            Engine.logEvent(`🕊️ On the Royal Advisor's counsel, ${kingdom.name} makes peace with ${target.name}.`, null, "military");
+                        }
                     }
                 }
                 break;
@@ -13836,6 +13822,31 @@
         if (!kingdomId) kingdomId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
         if (!kingdomId) return [];
         try { return Engine.getProposableLaws(kingdomId); } catch(e) { return []; }
+    }
+
+    // v9p33river428: repeal law wrappers
+    function getRepealableLaws(kingdomId) {
+        if (!kingdomId) kingdomId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kingdomId) return [];
+        try { return Engine.getRepealableLaws(kingdomId); } catch(e) { return []; }
+    }
+
+    function proposeRepealLaw(kingdomId, lawId) {
+        if (!kingdomId) kingdomId = player.royalAdvisorKingdomId || player.citizenshipKingdomId;
+        if (!kingdomId) return { success: false, message: 'No kingdom specified.' };
+        var rank = player.socialRank[kingdomId] || 0;
+        if (rank < 6) return { success: false, message: 'Only Royal Advisors can propose repeals.' };
+        if (player.politicalCapital <= 0) return { success: false, message: 'No political capital remaining this season.' };
+        var result = Engine.proposeRepealLaw(kingdomId, lawId);
+        if (result && result.success) {
+            if (result.accepted) {
+                grantXP(75, 'repeal_law');
+                autoJournalCapture('politics', 'I convinced the king to repeal ' + result.law + '!', { mood: 'triumphant' });
+            } else {
+                autoJournalCapture('politics', 'I proposed repealing ' + result.law + ' but the king refused.', { mood: 'disappointed' });
+            }
+        }
+        return result;
     }
 
     // ========================================================
@@ -42898,6 +42909,8 @@
         // Royal Advisor — Propose Laws
         proposeLaw,
         getProposableLaws,
+        getRepealableLaws,
+        proposeRepealLaw,
 
         // Lord/RA — Kingdom Building Construction
         requestKingdomBuilding,
