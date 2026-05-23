@@ -1486,9 +1486,17 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             html += '<div style="font-size:0.82rem;color:#d4a76a;margin-bottom:4px;">🤝 Recruit Noble to Conspiracy</div>';
             html += '<div style="font-size:0.72rem;color:#c44e52;margin-bottom:4px;">⚠️ Risk: The noble may report you to the king based on their loyalty!</div>';
             html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
+            // v9p33river453: sort by player location — local first, remote grayed with town name
+            var _pTownId = (typeof Player !== 'undefined') ? Player.townId : null;
+            _availableNobles.sort(function(a, b) {
+                var aLocal = a.townId === _pTownId ? 0 : 1;
+                var bLocal = b.townId === _pTownId ? 0 : 1;
+                return aLocal - bLocal;
+            });
             html += '<select id="recruit_conspirator_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
             for (var _rsi = 0; _rsi < _availableNobles.length; _rsi++) {
                 var _rsn = _availableNobles[_rsi];
+                var _rsnLocal = _rsn.townId === _pTownId;
                 var _rsnRel = 50;
                 try {
                     if (typeof Player !== 'undefined' && Player.getRelationship) {
@@ -1504,7 +1512,12 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                     else if (_rsnLoy <= 70) _rsnLoyHint = ' — loyal (risky)';
                     else _rsnLoyHint = ' — very loyal (DANGEROUS)';
                 }
-                html += '<option value="' + _rsn.id + '">' + escapeHtml((_rsn.firstName || '?') + ' ' + (_rsn.lastName || '')) + _rsnLoyHint + '</option>';
+                var _rsnLocTag = '';
+                if (!_rsnLocal) {
+                    var _rsnTown = _rsn.townId ? Engine.findTown(_rsn.townId) : null;
+                    _rsnLocTag = ' (' + ((_rsnTown && _rsnTown.name) || 'away') + ')';
+                }
+                html += '<option value="' + _rsn.id + '"' + (!_rsnLocal ? ' style="color:#888;"' : '') + '>' + escapeHtml((_rsn.firstName || '?') + ' ' + (_rsn.lastName || '')) + _rsnLoyHint + _rsnLocTag + '</option>';
             }
             html += '</select>';
             html += '<button class="btn-medieval" data-action="recruitConspirator" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Recruit</button>';
@@ -1555,13 +1568,20 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                 }
             }
         } catch(e) {}
-        var _discontented = _citizenNobles.filter(function(n) { return (n.kingLoyalty != null ? n.kingLoyalty : 50) <= 55; });
+        // v9p33river453: sort discontented by player location — local first
+        var _pTownId2 = (typeof Player !== 'undefined') ? Player.townId : null;
+        _discontented.sort(function(a, b) {
+            var aLocal = a.townId === _pTownId2 ? 0 : 1;
+            var bLocal = b.townId === _pTownId2 ? 0 : 1;
+            return aLocal - bLocal;
+        });
         if (_discontented.length > 0) {
             html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:6px;">No active conspiracy. You could form one with a discontented noble.</div>';
             html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
             html += '<select id="conspiracy_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
             for (var _di = 0; _di < _discontented.length; _di++) {
                 var _dn = _discontented[_di];
+                var _dnLocal = _dn.townId === _pTownId2;
                 // v9p33river425: show loyalty descriptor only at 60+ relationship, never exact number
                 var _dnRel = (typeof Player !== 'undefined' && Player.getRelationship) ? Player.getRelationship(_dn.id) : null;
                 var _dnRelLevel = (_dnRel && _dnRel.level) || 0;
@@ -1572,7 +1592,12 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                     else if (_dnLoy <= 69) _dnLoyDesc = ' — wavering';
                     else _dnLoyDesc = ' — loyal';
                 }
-                html += '<option value="' + _dn.id + '">' + escapeHtml((_dn.firstName || '?') + ' ' + (_dn.lastName || '')) + _dnLoyDesc + '</option>';
+                var _dnLocTag = '';
+                if (!_dnLocal) {
+                    var _dnTown = _dn.townId ? Engine.findTown(_dn.townId) : null;
+                    _dnLocTag = ' (' + ((_dnTown && _dnTown.name) || 'away') + ')';
+                }
+                html += '<option value="' + _dn.id + '"' + (!_dnLocal ? ' style="color:#888;"' : '') + '>' + escapeHtml((_dn.firstName || '?') + ' ' + (_dn.lastName || '')) + _dnLoyDesc + _dnLocTag + '</option>';
             }
             html += '</select>';
             html += '<select id="conspiracy_type" style="font-size:0.72rem;padding:2px;">';
@@ -1653,9 +1678,23 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             }
         } catch(e) {}
         if (_coalNobles.length > 0) {
+            // v9p33river453: sort by player location — local first, remote grayed with town name
+            var _coalPTownId = (typeof Player !== 'undefined') ? Player.townId : null;
+            _coalNobles.sort(function(a, b) {
+                var aLocal = a.townId === _coalPTownId ? 0 : 1;
+                var bLocal = b.townId === _coalPTownId ? 0 : 1;
+                return aLocal - bLocal;
+            });
             html += '<select id="coalition_recruit_' + _ci + '" style="font-size:0.72rem;padding:2px;flex:1;min-width:100px;">';
             for (var _cri = 0; _cri < _coalNobles.length; _cri++) {
-                html += '<option value="' + _coalNobles[_cri].id + '">' + escapeHtml((_coalNobles[_cri].firstName || '?') + ' ' + (_coalNobles[_cri].lastName || '')) + '</option>';
+                var _crNoble = _coalNobles[_cri];
+                var _crLocal = _crNoble.townId === _coalPTownId;
+                var _crLocTag = '';
+                if (!_crLocal) {
+                    var _crTown = _crNoble.townId ? Engine.findTown(_crNoble.townId) : null;
+                    _crLocTag = ' (' + ((_crTown && _crTown.name) || 'away') + ')';
+                }
+                html += '<option value="' + _crNoble.id + '"' + (!_crLocal ? ' style="color:#888;"' : '') + '>' + escapeHtml((_crNoble.firstName || '?') + ' ' + (_crNoble.lastName || '')) + _crLocTag + '</option>';
             }
             html += '</select>';
             html += '<button class="btn-medieval" data-action="recruitToCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" data-idx="' + _ci + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">🤝 Recruit</button>';
