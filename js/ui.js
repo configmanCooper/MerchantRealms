@@ -6894,7 +6894,24 @@ window.UI = (function () {
         try { if (person.townId && Engine.findTown) town = Engine.findTown(person.townId); } catch(e) {}
         try { if (meta.isNoble && Engine.getNobleAgenda) agenda = Engine.getNobleAgenda(person.id); } catch(e) {}
 
-        if (meta.isNoble) {
+        // v9p33river424: detect if this noble IS the king
+        var isKing = meta.npcRank >= 7 || (kingdom && kingdom.king === person.id);
+
+        if (meta.isNoble && isKing) {
+            // King-specific questions — not "what do you think of our king"
+            defs.push({ id: 'king_burden', text: 'What is the hardest part of ruling?', roleLabel: 'Royal question', requiredRel: 20, answer: function() { return _answerKingBurden(person, kingdom); } });
+            defs.push({ id: 'king_court_state', text: 'How do you see your court right now?', roleLabel: 'Royal question', requiredRel: 20, answer: function() { return _answerKingCourtView(person, kingdom); } });
+            defs.push({ id: 'king_matters', text: 'What matters most to you as ruler?', roleLabel: 'Personal question', requiredRel: 20, answer: function() { return _answerKingPriority(person); } });
+            defs.push({ id: 'king_trusted_noble', text: 'Which noble do you trust most?', roleLabel: 'Royal question', requiredRel: 20, answer: function() { return _answerKingTrustedNoble(person, kingdom); } });
+            defs.push({ id: 'king_troublesome', text: 'Is any noble giving you trouble?', roleLabel: 'Royal question', requiredRel: 60, answer: function() { return _answerKingTroublesomeNoble(person, kingdom); } });
+            defs.push({ id: 'king_plans', text: 'What are your plans for the kingdom?', roleLabel: 'Political question', requiredRel: 60, answer: function() { return _answerKingPlans(person, kingdom); } });
+            defs.push({ id: 'king_enemies', text: 'Which kingdom worries you most?', roleLabel: 'Political question', requiredRel: 60, answer: function() { return _answerKingForeignThreat(person, kingdom); } });
+            defs.push({ id: 'king_legacy', text: 'How do you want to be remembered?', roleLabel: 'Personal question', requiredRel: 60, answer: function() { return _answerKingLegacy(person); } });
+            defs.push({ id: 'king_regret', text: 'Do you have any regrets as king?', roleLabel: 'Personal question', requiredRel: 80, answer: function() { return _answerKingRegret(person, kingdom); } });
+            defs.push({ id: 'king_succession', text: 'Have you thought about succession?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerKingSuccession(person, kingdom); } });
+            defs.push({ id: 'king_secret_fear', text: 'What keeps you up at night?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerKingSecretFear(person, kingdom); } });
+            defs.push({ id: 'king_betrayal', text: 'Do you suspect anyone of disloyalty?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerKingBetrayalFear(person, kingdom); } });
+        } else if (meta.isNoble) {
             defs.push({ id: 'noble_king_opinion', text: 'What do you think of our king?', roleLabel: 'Court question', requiredRel: 20, answer: function() { return _answerNobleKingOpinion(person, kingdom); } });
             defs.push({ id: 'noble_court_state', text: 'How are things in court lately?', roleLabel: 'Court question', requiredRel: 20, answer: function() { return _answerNobleCourtState(person, kingdom); } });
             defs.push({ id: 'noble_matters', text: 'What matters most to you?', roleLabel: 'Personal question', requiredRel: 20, answer: function() { return _answerNoblePriority(person); } });
@@ -7007,13 +7024,24 @@ window.UI = (function () {
         return { key: bestKey, label: labels[bestKey], value: bestValue };
     }
 
-    function _findNobleRelationshipTarget(person, wantLowest) {
+    function _findNobleRelationshipTarget(person, wantLowest, excludeKing) {
         var rels = (person && person._nobleRelationships) || null;
         if (!rels) return null;
+        // v9p33river424: find king ID to exclude from non-king questions
+        var kingId = null;
+        if (excludeKing) {
+            var _kId = _getNpcQuestionsKingdomId(person);
+            if (_kId) {
+                var _k = null;
+                try { _k = Engine.findKingdom(_kId); } catch(e) {}
+                if (_k && _k.king) kingId = _k.king;
+            }
+        }
         var best = null;
         var bestScore = wantLowest ? 101 : -101;
         for (var otherId in rels) {
             if (otherId === person.id) continue;
+            if (kingId && otherId === kingId) continue;
             var score = rels[otherId];
             var other = null;
             try { other = Engine.getPerson(otherId); } catch(e) {}
@@ -7247,14 +7275,14 @@ window.UI = (function () {
     }
 
     function _answerNobleCourtFriend(person) {
-        var best = _findNobleRelationshipTarget(person, false);
+        var best = _findNobleRelationshipTarget(person, false, true);
         if (!best || !best.person) return 'A few are pleasant enough, but court friendships are rarely as simple as they look from the gallery.';
         if (best.score >= 50) return 'I deal best with ' + _getQuestionPersonName(best.person) + '. We understand one another without needing every sentence dressed as a trap.';
         return _getQuestionPersonName(best.person) + ' is probably the easiest company at court. That is not quite the same thing as trust, but it is close enough for nobles.';
     }
 
     function _answerNobleCourtEnemy(person) {
-        var worst = _findNobleRelationshipTarget(person, true);
+        var worst = _findNobleRelationshipTarget(person, true, true);
         if (!worst || !worst.person) return 'There are tiresome people, certainly, but I have learned not to waste all my energy on one rival.';
         if (worst.score <= -50) return _getQuestionPersonName(worst.person) + '. Every conversation with them feels like being measured for a coffin.';
         return 'I have little patience for ' + _getQuestionPersonName(worst.person) + '. Too much pride, not enough sense.';
@@ -7329,6 +7357,124 @@ window.UI = (function () {
 
     function _answerNobleAsKing(agenda) {
         return 'First, I would ' + _agendaActionToFirstPerson(agenda) + '. A king sets the tone for everything that follows.';
+    }
+
+    // v9p33river424: King-specific question answers
+    function _answerKingBurden(person, kingdom) {
+        var personality = person.personality || {};
+        var warmth = personality.warmth || 50;
+        var intelligence = personality.intelligence || 50;
+        var war = _isKingdomAtWarForQuestions(kingdom);
+        if (war) return 'War. Every decision costs lives, and the weight of that never becomes lighter no matter how many campaigns you endure.';
+        if (warmth > 65) return 'The loneliness. You can surround yourself with advisors and courtiers, but the final choice is always yours alone — and no one truly shares the blame when it goes wrong.';
+        if (intelligence > 65) return 'Knowing that every good decision also makes enemies. The realm demands competence, but competence unsettles those who prefer the crown to be predictable.';
+        if ((kingdom && (kingdom.gold || 0) < 2000)) return 'Money. Ambition outpaces the treasury every day, and a king who cannot fund his promises quickly becomes one who breaks them.';
+        return 'Balancing what the realm needs against what the court will tolerate. Good policy and popular policy are rarely the same thing.';
+    }
+
+    function _answerKingCourtView(person, kingdom) {
+        if (!kingdom) return 'Court is as it always is — a careful game played by ambitious people under a thin veil of manners.';
+        var happiness = kingdom.happiness != null ? kingdom.happiness : 50;
+        var treasury = kingdom.gold || 0;
+        var war = _isKingdomAtWarForQuestions(kingdom);
+        if (war && happiness < 40) return 'Nervous. The war strains everyone, and I can see which nobles are calculating whether to stand firm or look for safer ground.';
+        if (war) return 'Focused, thankfully. War has a way of clarifying loyalties — though some clarity I could do without.';
+        if (happiness >= 65 && treasury > 5000) return 'Stable and even content, which makes me suspicious. Courts are most dangerous when everyone seems satisfied.';
+        if (treasury < 2000) return 'Restless. When gold runs thin, every noble suddenly remembers slights they were happy to forget during prosperous times.';
+        return 'Watchful. My nobles are loyal enough when watched, and I make sure they know they are watched.';
+    }
+
+    function _answerKingPriority(person) {
+        var personality = person.personality || {};
+        var ambition = personality.ambition || 50;
+        var warmth = personality.warmth || 50;
+        var loyalty = personality.loyalty || 50;
+        if (ambition > 70) return 'Expansion and strength. A kingdom that does not grow eventually becomes a target for those that do.';
+        if (warmth > 65) return 'The wellbeing of my people. Prosperous subjects are loyal subjects, and loyalty built on genuine welfare lasts longer than loyalty built on fear.';
+        if (loyalty > 65) return 'Stability and order. The realm must endure beyond any single reign, and that requires systems stronger than personalities.';
+        return 'Keeping the balance. Between ambitious nobles, foreign threats, and the needs of the common folk — a king who favors one too much loses the rest.';
+    }
+
+    function _answerKingTrustedNoble(person, kingdom) {
+        if (!kingdom) return 'Trust is a careful investment, and I spread it thinly.';
+        var best = _findNobleRelationshipTarget(person, false, false);
+        if (best && best.person && best.score >= 30) return _getQuestionPersonName(best.person) + '. They have earned my trust through deeds, not words — which is rarer than you might think at court.';
+        if (best && best.person) return _getQuestionPersonName(best.person) + ' is perhaps the most reliable, though a king learns quickly not to trust without reservation.';
+        return 'Trust is not something I hand out freely. I rely on several nobles for different things, and that is deliberate — no single advisor should feel irreplaceable.';
+    }
+
+    function _answerKingTroublesomeNoble(person, kingdom) {
+        if (!kingdom) return 'Every court has its difficult personalities. I manage them.';
+        var worst = _findNobleRelationshipTarget(person, true, false);
+        if (worst && worst.person && worst.score <= -30) return _getQuestionPersonName(worst.person) + ' tests my patience more than most. Their ambitions outpace their loyalty, and that combination concerns me.';
+        if (worst && worst.person && worst.score < 0) return _getQuestionPersonName(worst.person) + ' can be difficult, though I would not say they are disloyal — merely disagreeable. There is a difference.';
+        return 'No more than the usual friction. Nobles are ambitious by nature, and managing that ambition is part of the crown\'s duty.';
+    }
+
+    function _answerKingPlans(person, kingdom) {
+        var personality = person.personality || {};
+        var war = _isKingdomAtWarForQuestions(kingdom);
+        if (war) return 'End this war on favorable terms, rebuild what it has cost us, and ensure that the next generation inherits strength rather than debt.';
+        if ((kingdom && (kingdom.gold || 0) > 8000)) return 'The treasury is healthy, so now is the time to invest — infrastructure, defenses, and the kind of projects that make a kingdom matter for generations.';
+        if ((kingdom && (kingdom.happiness || 50) < 40)) return 'Restore confidence. The people are uneasy, and a king who ignores that is building on cracked foundations.';
+        if ((personality.ambition || 50) > 65) return 'Growth. Stronger borders, richer towns, and alliances that make our neighbors think twice before testing us.';
+        return 'Steady improvement. Strengthen trade, keep the peace where possible, and make sure the kingdom is better positioned next year than it is today.';
+    }
+
+    function _answerKingForeignThreat(person, kingdom) {
+        var worst = _findWorstKingdomRelation(kingdom);
+        var war = _isKingdomAtWarForQuestions(kingdom);
+        if (war && kingdom && kingdom.atWar) {
+            var enemyIds = Array.isArray(kingdom.atWar) ? kingdom.atWar : (kingdom.atWar instanceof Set ? Array.from(kingdom.atWar) : []);
+            if (enemyIds.length > 0) {
+                var enemy = null;
+                try { enemy = Engine.findKingdom(enemyIds[0]); } catch(e) {}
+                if (enemy) return enemy.name + ', obviously. We are at war, and until that is resolved, everything else is secondary.';
+            }
+        }
+        if (worst && worst.kingdom && worst.score < -20) return worst.kingdom.name + '. Their ambitions and ours are fundamentally incompatible, and pretending otherwise only delays the reckoning.';
+        return 'No single kingdom keeps me awake, but complacency is the real enemy. The moment a king stops watching the horizon is the moment trouble arrives.';
+    }
+
+    function _answerKingLegacy(person) {
+        var personality = person.personality || {};
+        if ((personality.ambition || 50) > 70) return 'As the king who made this realm impossible to ignore. Not merely stable — powerful.';
+        if ((personality.warmth || 50) > 65) return 'As a ruler who cared about the people, not just the crown. Statues crumble, but a kingdom that remembers prosperity remembers the one who built it.';
+        if ((personality.intelligence || 50) > 65) return 'As someone who governed wisely. History forgets the flashy rulers and remembers the ones who built systems that outlasted them.';
+        return 'As a king who kept the realm together through difficult times. It is a quieter legacy than conquest, but a harder one to earn.';
+    }
+
+    function _answerKingRegret(person, kingdom) {
+        var personality = person.personality || {};
+        var warmth = personality.warmth || 50;
+        if (warmth > 65) return 'The people I could not protect. Policy decisions are abstract until you see what they cost someone who has no power to argue back.';
+        if ((personality.honesty || 50) > 60) return 'Compromises I made too quickly. A king who moves fast sometimes trades away things he should have fought harder to keep.';
+        if ((personality.ambition || 50) > 65) return 'Moving too slowly at times. Opportunities I let pass because caution seemed wiser — some of them did not come back.';
+        return 'Every king has regrets they keep behind their teeth. Mine are the usual kind — things done too late, things said too harshly, trust given too freely.';
+    }
+
+    function _answerKingSuccession(person, kingdom) {
+        var personality = person.personality || {};
+        if ((personality.ambition || 50) > 70) return 'I intend to rule for a long time yet. Succession is a problem for the distant future, and I would rather spend my energy on the present.';
+        if ((personality.intelligence || 50) > 65) return 'Any king who does not think about succession is a fool. I have considered it, and I have plans — but naming them publicly would invite exactly the scheming I wish to prevent.';
+        return 'It crosses my mind. The realm must endure beyond any one ruler, and pretending otherwise is vanity. But I am not ready to discuss specifics.';
+    }
+
+    function _answerKingSecretFear(person, kingdom) {
+        var personality = person.personality || {};
+        var war = _isKingdomAtWarForQuestions(kingdom);
+        if (war) return 'That the war will cost more than the kingdom can bear, and that by the time I see the breaking point, it will already be behind us.';
+        if ((personality.warmth || 50) > 65) return 'That the people suffer in ways I cannot see from the throne. Courts insulate you from the truth, and that insulation can become blindness.';
+        if ((personality.ambition || 50) > 65) return 'Stagnation. A kingdom that stops striving becomes a target, and I refuse to let this realm become someone else\'s easy conquest.';
+        return 'Betrayal from someone I trust. A king can guard against enemies, but treachery from within the court — that is the wound that bleeds the most.';
+    }
+
+    function _answerKingBetrayalFear(person, kingdom) {
+        if (!kingdom) return 'Suspicion is a king\'s constant companion. I keep my own counsel on that matter.';
+        var worst = _findNobleRelationshipTarget(person, true, false);
+        if (worst && worst.person && worst.score <= -40) return 'I have my eye on ' + _getQuestionPersonName(worst.person) + '. Their behavior has not gone unnoticed, and I am prepared for whatever they might attempt.';
+        if (worst && worst.person && worst.score <= -10) return 'There are nobles whose loyalty I question quietly. ' + _getQuestionPersonName(worst.person) + ' bears watching, but suspicion is not proof — and a king who punishes suspicion alone becomes a tyrant.';
+        return 'Not specifically, no. But a wise king watches everyone and trusts no one completely. The crown that rests easy is the crown most easily taken.';
     }
 
     function _answerMerchantBestGoods(person, town) {
