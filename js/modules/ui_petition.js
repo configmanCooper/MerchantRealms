@@ -1942,7 +1942,14 @@
                 var comm = openComms[ci];
                 var daysLeft = comm.expiresDay - (typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0);
                 var playerHas = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
-                var canFulfill = comm.type !== 'building_request' && comm.resourceId && playerHas >= (comm.quantity || 1);
+                // v9p33river418: also count town storage
+                var _rcStoredUI = 0;
+                var _rcTidUI = (typeof Player !== 'undefined') ? (Player.townId || (Player.state && Player.state.townId) || '') : '';
+                if (_rcTidUI && typeof Player !== 'undefined' && Player.state && Player.state.townStorage && Player.state.townStorage[_rcTidUI]) {
+                    _rcStoredUI = Player.state.townStorage[_rcTidUI][comm.resourceId] || 0;
+                }
+                var _rcTotalUI = playerHas + _rcStoredUI;
+                var canFulfill = comm.type !== 'building_request' && comm.resourceId && _rcTotalUI >= (comm.quantity || 1);
 
                 html += '<div style="background:rgba(255,215,0,0.08);padding:10px;border-radius:6px;margin-bottom:8px;border:1px solid rgba(255,215,0,0.2);">';
                 html += '<div><b>📜 ' + comm.description + '</b></div>';
@@ -1952,7 +1959,7 @@
                 html += '<span class="text-dim">⏳ ' + daysLeft + ' days left</span>';
                 html += '</div>';
                 if (comm.resourceId) {
-                    html += '<div style="margin-top:4px;font-size:0.8rem;">You have: <b>' + playerHas + '</b> / ' + (comm.quantity || 1) + ' ' + comm.resourceId + '</div>';
+                    html += '<div style="margin-top:4px;font-size:0.8rem;">You have: <b>' + _rcTotalUI + '</b> / ' + (comm.quantity || 1) + ' ' + comm.resourceId + (_rcStoredUI > 0 ? ' (' + playerHas + ' carried + ' + _rcStoredUI + ' stored)' : '') + '</div>';
                 }
                 if (canFulfill) {
                     html += '<button class="btn-medieval" data-action="fulfillCommissionUI" data-id="' + kingdomId + '" data-val="' + comm.id + '" style="font-size:0.8rem;padding:4px 10px;margin-top:4px;">✅ Fulfill Commission</button>';
@@ -1981,20 +1988,9 @@
         }
         if (!comm) { toast('Commission no longer available.', 'warning'); closeModal(); return; }
 
-        // Check player has inventory
-        var inv = (typeof Player !== 'undefined' && Player.state) ? (Player.state.inventory || {}) : {};
-        var has = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
-        if (has < (comm.quantity || 1)) {
-            toast('Not enough ' + comm.resourceId + '. Need ' + (comm.quantity || 1) + ', have ' + has + '.', 'danger');
-            return;
-        }
-
-        // Deduct goods from player
-        Player.state.inventory[comm.resourceId] -= (comm.quantity || 1);
-        if (Player.state.inventory[comm.resourceId] <= 0) delete Player.state.inventory[comm.resourceId];
-
-        // Fulfill via engine
-        var result = Engine.fulfillRoyalCommission(kingdomId, commissionId, 'player');
+        // v9p33river418: engine handles goods validation/deduction — just pass townId
+        var _fTownId = (typeof Player !== 'undefined') ? (Player.townId || (Player.state && Player.state.townId) || '') : '';
+        var result = Engine.fulfillRoyalCommission(kingdomId, commissionId, 'player', _fTownId);
         if (result && result.success) {
             // Grant reward and rep
             Player.state.gold += result.reward;

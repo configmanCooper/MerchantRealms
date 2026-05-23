@@ -12780,23 +12780,11 @@
             if (rank < 4) continue;
 
             // Check for deadline failures
+            // v9p33river418: penalties now applied directly in engine function
             if (typeof Engine.checkDirectedCommissionDeadline === 'function') {
                 var deadlineResult = Engine.checkDirectedCommissionDeadline(k.id);
-                if (deadlineResult && deadlineResult.expired) {
-                    player.reputation[k.id] = Math.max(0, (player.reputation[k.id] || 50) - deadlineResult.repLoss);
-                    if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏳ You ignored the king\'s commission! (-' + deadlineResult.repLoss + ' reputation)', 'danger');
-                }
-                if (deadlineResult && deadlineResult.failed) {
-                    player.reputation[k.id] = Math.max(0, (player.reputation[k.id] || 50) - deadlineResult.repLoss);
-                    if (deadlineResult.demotionTriggered) {
-                        // Lord demotion for failing mandatory commission
-                        player.socialRank[k.id] = 4; // demote to Minor Noble
-                        player.reputation[k.id] = Math.min(player.reputation[k.id] || 50, 60);
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ You failed the king\'s commission! Demoted to Minor Noble!', 'danger');
-                        autoJournalCapture('politics', 'I failed the king\'s commission. My lordship has been revoked.', { mood: 'devastated' });
-                    } else {
-                        if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Commission deadline passed! (-' + deadlineResult.repLoss + ' reputation)', 'warning');
-                    }
+                if (deadlineResult && deadlineResult.failed && deadlineResult.demotionTriggered) {
+                    autoJournalCapture('politics', 'I failed the king\'s commission. My lordship has been revoked.', { mood: 'devastated' });
                 }
             }
 

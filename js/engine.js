@@ -8652,6 +8652,7 @@
                         intelligence: _ec.personality ? (_ec.personality.intelligence || 50) : 50,
                         ambition: _ec.personality ? (_ec.personality.ambition || 50) : 50,
                         loyalty: _ec.personality ? (_ec.personality.loyalty || 50) : 50,
+                        charisma: _ec.personality ? (_ec.personality.warmth != null ? _ec.personality.warmth : 50) : 50, // v9p33river418: UI expects charisma
                         score: Math.round(_ecScore),
                         isPlayer: _ec.id === _playerNobleId,
                         isAdvisor: (kingdom.royalAdvisors || []).indexOf(_ec.id) >= 0
@@ -8681,6 +8682,10 @@
                 }
 
                 var _elVoterPool = _electionCandidates.slice();
+                // v9p33river418: single candidate wins by default
+                if (_elVoterPool.length === 1) {
+                    newKing = _elVoterPool[0];
+                } else {
                 var _elElected = null;
                 for (var _elRound = 0; _elRound < (CONFIG.SUCCESSION_ELECTION_ROUNDS_MAX || 5); _elRound++) {
                     var _elVotes = {};
@@ -8725,6 +8730,7 @@
                     newKing = _elElected;
                     logEvent(_elElected.firstName + ' ' + _elElected.lastName + ' has been elected ruler of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id, }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
                 }
+                } // end else (multi-candidate NPC election)
             }
         }
 
@@ -8788,6 +8794,19 @@
         // Rebuild live candidate list
         var voterPool = candidates.map(function(c) { return findPerson(c.id); }).filter(function(a) { return a && a.alive; });
         if (voterPool.length === 0) { kingdom._pendingElection = null; return; }
+        // v9p33river418: single candidate wins by default (no self-vote possible)
+        if (voterPool.length === 1) {
+            kingdom._pendingElection = null;
+            var sole = voterPool[0];
+            if (playerAdvisorId && sole.id === playerAdvisorId) {
+                logEvent(sole.firstName + ' ' + sole.lastName + ' (YOU) is the sole candidate and becomes King/Queen of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id }, 'my_kingdom');
+                if (typeof Player !== 'undefined' && Player.becomeKing) Player.becomeKing(kingdom.id);
+            } else {
+                installNewKing(kingdom, sole, election.cause);
+                logEvent(sole.firstName + ' ' + sole.lastName + ' is the sole candidate and becomes King/Queen of ' + kingdom.name + '!', { type: 'succession', kingdomId: kingdom.id }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
+            }
+            return;
+        }
 
         // Build candidate scores with influence factors
         var scores = {};
@@ -11546,9 +11565,12 @@
 
         // Grant rewards
         comm.status = 'completed';
-        Player.state.gold = (Player.state.gold || 0) + comm.reward;
+        // v9p33river418: removed gold payment here — player.js:deliverKingCommission handles it
 
-        // Add to military stockpile if military supply
+        // v9p33river418: add to kingdom goods stockpile for all commission types
+        if (!k.goodsStockpile) k.goodsStockpile = {};
+        k.goodsStockpile[comm.resourceId] = (k.goodsStockpile[comm.resourceId] || 0) + comm.quantity;
+        // Also add to military stockpile if military supply
         if (comm.type === 'military_supply' && k.militaryStockpile) {
             k.militaryStockpile[comm.resourceId] = (k.militaryStockpile[comm.resourceId] || 0) + comm.quantity;
         }
@@ -11559,15 +11581,23 @@
         return { success: true, reward: comm.reward, repReward: comm.repReward, resourceId: comm.resourceId, qty: comm.quantity };
     }
 
-    function checkDirectedCommissionDeadline(k) {
-        if (!k.directedPlayerCommission) return;
+    // v9p33river418: accept ID or object, apply penalties directly
+    function checkDirectedCommissionDeadline(kOrId) {
+        var k = (typeof kOrId === 'string') ? findKingdom(kOrId) : kOrId;
+        if (!k || !k.directedPlayerCommission) return null;
         var comm = k.directedPlayerCommission;
         // Auto-expire pending commissions after 3 days (if not accepted/refused)
         if (comm.status === 'pending' && world.day > comm.issuedDay + 3) {
             comm.status = 'expired';
             logKingAction(k, '⏳ Commission ignored by player: ' + comm.description);
             EventTypes.emit('COMMISSION_IGNORED');
-            return { expired: true, repLoss: 3 };
+            var _expRepLoss = 3;
+            // Apply penalty directly
+            if (typeof Player !== 'undefined' && Player.state && Player.state.reputation) {
+                Player.state.reputation[k.id] = Math.max(0, (Player.state.reputation[k.id] || 50) - _expRepLoss);
+            }
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast('⏳ You ignored the king\'s commission! (-' + _expRepLoss + ' reputation)', 'danger');
+            return { expired: true, repLoss: _expRepLoss };
         }
         // Check deadline for accepted commissions
         if (comm.status === 'accepted' && world.day > comm.deadlineDay) {
@@ -11575,11 +11605,22 @@
             if (comm.lordMandatory) {
                 logKingAction(k, '❌ Lord failed to complete mandatory commission: ' + comm.description + '. Demotion!');
                 EventTypes.emit('COMMISSION_FAILED_LORD');
-                return { failed: true, demotionTriggered: true, repLoss: 20 };
+                var _lordRepLoss = 20;
+                if (typeof Player !== 'undefined' && Player.state) {
+                    Player.state.reputation[k.id] = Math.max(0, (Player.state.reputation[k.id] || 50) - _lordRepLoss);
+                    Player.state.socialRank[k.id] = 4; // demote to Minor Noble
+                    Player.state.reputation[k.id] = Math.min(Player.state.reputation[k.id] || 50, 60);
+                }
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ You failed the king\'s commission! Demoted to Minor Noble!', 'danger');
+                return { failed: true, demotionTriggered: true, repLoss: _lordRepLoss };
             } else {
                 var repLoss = comm.urgency === 'desperate' ? 10 : (comm.urgency === 'urgent' ? 7 : 5);
                 logKingAction(k, '❌ Commission deadline passed: ' + comm.description + ' (rep -' + repLoss + ')');
                 EventTypes.emit('COMMISSION_EXPIRED', { repLoss: repLoss });
+                if (typeof Player !== 'undefined' && Player.state && Player.state.reputation) {
+                    Player.state.reputation[k.id] = Math.max(0, (Player.state.reputation[k.id] || 50) - repLoss);
+                }
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('❌ Commission deadline passed! (-' + repLoss + ' reputation)', 'warning');
                 return { failed: true, demotionTriggered: false, repLoss: repLoss };
             }
         }
@@ -33325,15 +33366,48 @@
             return { success: true };
         },
         getRoyalCommissions: function(kingdomId) { var k = findKingdom(kingdomId); return k ? (k.royalCommissions || []) : []; },
-        fulfillRoyalCommission: function(kingdomId, commissionId, playerId) {
+        fulfillRoyalCommission: function(kingdomId, commissionId, playerId, townId) {
             var k = findKingdom(kingdomId);
             if (!k || !k.royalCommissions) return { success: false, reason: 'Kingdom not found' };
             var comm = k.royalCommissions.find(function(c) { return c.id === commissionId && c.status === 'open'; });
             if (!comm) return { success: false, reason: 'Commission not found or already fulfilled' };
+            // v9p33river418: reject building_request (no goods fulfillment path)
+            if (comm.type === 'building_request' || !comm.resourceId || (comm.quantity || 0) <= 0) {
+                return { success: false, reason: 'This commission cannot be fulfilled with goods.' };
+            }
+            // v9p33river418: validate and deduct goods from player
+            if (typeof Player === 'undefined' || !Player.state) return { success: false, reason: 'No player state' };
+            var _rcInv = Player.state.inventory || {};
+            var _rcHeld = _rcInv[comm.resourceId] || 0;
+            var _rcTid = townId || Player.state.townId || (typeof Player !== 'undefined' ? Player.townId : '');
+            var _rcStored = 0;
+            if (_rcTid && Player.state.townStorage && Player.state.townStorage[_rcTid]) {
+                _rcStored = Player.state.townStorage[_rcTid][comm.resourceId] || 0;
+            }
+            var _rcTotal = _rcHeld + _rcStored;
+            if (_rcTotal < comm.quantity) return { success: false, reason: 'Not enough ' + comm.resourceId + ' (have ' + _rcTotal + ', need ' + comm.quantity + ')' };
+            // Deduct from carried first, then town storage
+            var _rcRemain = comm.quantity;
+            var _rcFromCarried = Math.min(_rcRemain, _rcHeld);
+            if (_rcFromCarried > 0) {
+                Player.state.inventory[comm.resourceId] = (_rcInv[comm.resourceId] || 0) - _rcFromCarried;
+                if (Player.state.inventory[comm.resourceId] <= 0) delete Player.state.inventory[comm.resourceId];
+                _rcRemain -= _rcFromCarried;
+            }
+            if (_rcRemain > 0 && _rcTid && Player.state.townStorage && Player.state.townStorage[_rcTid]) {
+                Player.state.townStorage[_rcTid][comm.resourceId] = (Player.state.townStorage[_rcTid][comm.resourceId] || 0) - _rcRemain;
+                if (Player.state.townStorage[_rcTid][comm.resourceId] <= 0) delete Player.state.townStorage[_rcTid][comm.resourceId];
+            }
             comm.status = 'fulfilled';
             comm.fulfilledBy = playerId || 'player';
+            // v9p33river418: add goods to kingdom stockpile
+            if (!k.goodsStockpile) k.goodsStockpile = {};
+            k.goodsStockpile[comm.resourceId] = (k.goodsStockpile[comm.resourceId] || 0) + comm.quantity;
+            // v9p33river418: deduct reward from kingdom treasury (cap at available)
+            var _rcReward = Math.min(comm.reward || 0, Math.max(0, k.gold || 0));
+            k.gold = Math.max(0, (k.gold || 0) - _rcReward);
             logKingAction(k, '✅ Commission fulfilled: ' + comm.description);
-            return { success: true, reward: comm.reward, repReward: comm.repReward };
+            return { success: true, reward: _rcReward, repReward: comm.repReward };
         },
         backPretender: function(kingdomId, pretenderId, goldAmount) {
             var k = findKingdom(kingdomId);
