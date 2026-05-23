@@ -2349,6 +2349,7 @@ function showPersonDetail(person) {
                 html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">`;
                 html += `<button class="btn-medieval" data-action="godRelPlus" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;background:rgba(50,200,50,0.2);border-color:rgba(50,200,50,0.4);color:#a5d6a7;">⬆️ +10 Relationship</button>`;
                 html += `<button class="btn-medieval" data-action="godRelMinus" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;background:rgba(200,50,50,0.2);border-color:rgba(200,50,50,0.4);color:#ef9a9a;">⬇️ -10 Relationship</button>`;
+                html += `<button class="btn-medieval" data-action="godViewMemories" data-id="${person.id}" style="font-size:0.75rem;padding:5px 10px;background:rgba(160,120,200,0.2);border-color:rgba(160,120,200,0.4);color:#ce93d8;">🧠 View Memories</button>`;
                 html += `</div>`;
             }
             html += `</div>`;
@@ -5151,6 +5152,9 @@ function clickTown(townId) {
             strengthen_military: { label: 'Strengthen Military', icon: '🛡️' },
             improve_happiness: { label: 'Improve Public Welfare', icon: '😊' },
             enforce_law: { label: 'Enforce Law & Order', icon: '⚖️' },
+            lower_tariffs: { label: 'Lower Tariffs', icon: '📉' },
+            raise_tariffs: { label: 'Raise Tariffs', icon: '📈' },
+            lift_all_quarantines: { label: 'Lift All Quarantines', icon: '🔓' },
             promote_noble: { label: 'Promote a Noble', icon: '👑' }
         };
 
@@ -5199,13 +5203,68 @@ function clickTown(townId) {
         }
         html += '</div>';
 
+        // Pass/Repeal Law sections with law dropdowns
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        var kingdom = null;
+        try { if (nobleKingdomId) kingdom = Engine.findKingdom ? Engine.findKingdom(nobleKingdomId) : null; } catch(e) {}
+        if (kingdom) {
+            var currentLaws = (kingdom.laws && kingdom.laws.specialLaws) ? kingdom.laws.specialLaws : [];
+            var currentLawIds = currentLaws.map(function(l) { return l.id; });
+            var allLaws = (typeof CONFIG !== 'undefined' && CONFIG.SPECIAL_LAWS) ? CONFIG.SPECIAL_LAWS : [];
+            var passableLaws = allLaws.filter(function(l) { return currentLawIds.indexOf(l.id) < 0; });
+
+            html += '<div style="margin-top:10px;border-top:1px solid #445;padding-top:8px;">';
+            if (passableLaws.length > 0) {
+                html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<span style="font-size:0.82em;color:#cc9;">📜 Pass a Law:</span>';
+                html += '<select id="sv_pass_law" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+                for (var pli = 0; pli < passableLaws.length; pli++) {
+                    html += '<option value="' + passableLaws[pli].id + '">' + passableLaws[pli].icon + ' ' + escapeHtml(passableLaws[pli].name) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="pass_law" data-sel="sv_pass_law" style="font-size:0.75rem;padding:4px 10px;background:rgba(60,100,80,0.3);border-color:rgba(80,140,100,0.3);">Share</button>';
+                html += '</div>';
+            }
+
+            if (currentLaws.length > 0) {
+                html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<span style="font-size:0.82em;color:#cc9;">🚫 Repeal a Law:</span>';
+                html += '<select id="sv_repeal_law" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+                for (var rli = 0; rli < currentLaws.length; rli++) {
+                    html += '<option value="' + currentLaws[rli].id + '">' + (currentLaws[rli].icon || '📜') + ' ' + escapeHtml(currentLaws[rli].name) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="repeal_law" data-sel="sv_repeal_law" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,60,60,0.3);border-color:rgba(140,80,80,0.3);">Share</button>';
+                html += '</div>';
+            }
+
+            // Quarantine a town
+            var kTowns = [];
+            if (world && world.towns) {
+                kTowns = world.towns.filter(function(t) { return t.kingdomId === nobleKingdomId; });
+            }
+            var nonQuarantined = kTowns.filter(function(t) {
+                if (!kingdom.healthPolicies) return true;
+                return !kingdom.healthPolicies.some(function(hp) { return hp.type === 'quarantine' && hp.townId === t.id; });
+            });
+            if (nonQuarantined.length > 0) {
+                html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<span style="font-size:0.82em;color:#cc9;">🔒 Quarantine Town:</span>';
+                html += '<select id="sv_quarantine_town" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+                for (var qti = 0; qti < nonQuarantined.length; qti++) {
+                    html += '<option value="' + nonQuarantined[qti].id + '">' + escapeHtml(nonQuarantined[qti].name) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="quarantine_town" data-sel="sv_quarantine_town" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,80,50,0.3);border-color:rgba(140,100,60,0.3);">Share</button>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
         html += '<div style="margin-top:10px;border-top:1px solid #445;padding-top:8px;">';
         html += '<strong style="color:#cc9;font-size:0.85em;">👑 Recommend a Noble for Promotion:</strong>';
 
-        var world = Engine.getWorld ? Engine.getWorld() : null;
         if (world && world.people && nobleKingdomId) {
-            var kingdom = null;
-            try { kingdom = Engine.findKingdom ? Engine.findKingdom(nobleKingdomId) : null; } catch(e) {}
             var promotable = world.people.filter(function(p) {
                 var _rank = (p && p.socialRank && p.socialRank[nobleKingdomId]) || 0;
                 return p && p.alive && p.id !== nobleId &&
@@ -5255,6 +5314,27 @@ function clickTown(townId) {
         else if (result.reaction === 'hostile') toastType = 'danger';
         toast(result.message, toastType);
 
+        var _shareHandler = UI._actionHandlers && UI._actionHandlers.shareViewsWithNoble;
+        if (_shareHandler) _shareHandler(null, { id: nobleId });
+    });
+    // v9p33river462: Handle parameterized declaration (pass_law, repeal_law, quarantine_town)
+    UI.registerAction('declareWithParam', function(_t, d) {
+        var nobleId = d.id;
+        var category = d.val;
+        var selId = d.sel;
+        if (!Engine.playerDeclareToNoble) { toast('System not available.', 'warning'); return; }
+        var sel = document.getElementById(selId);
+        if (!sel) { toast('No selection made.', 'warning'); return; }
+        var paramVal = sel.value;
+        if (!paramVal) { toast('Please select an option.', 'warning'); return; }
+        var paramLabel = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : paramVal;
+        var result = Engine.playerDeclareToNoble(nobleId, category, { param: paramVal, paramLabel: paramLabel });
+        if (!result || !result.success) { toast((result && result.message) || 'Could not share your views.', 'warning'); return; }
+        var toastType = 'info';
+        if (result.reaction === 'supportive') toastType = 'success';
+        else if (result.reaction === 'opposed') toastType = 'warning';
+        else if (result.reaction === 'hostile') toastType = 'danger';
+        toast(result.message, toastType);
         var _shareHandler = UI._actionHandlers && UI._actionHandlers.shareViewsWithNoble;
         if (_shareHandler) _shareHandler(null, { id: nobleId });
     });
@@ -5666,6 +5746,98 @@ function clickTown(townId) {
         var lvl = Math.floor(Player.state.relationships[d.id].level);
         UI.toast('⬇️ -10 relationship with ' + (p.firstName || 'NPC') + ' (now ' + lvl + ')', 'info');
         UI.showPersonDetail(d.id);
+    });
+    // v9p33river462: god mode — view NPC memories of the player
+    UI.registerAction('godViewMemories', function(_t, d) {
+        var person = Engine.findPerson(d.id);
+        if (!person) { UI.toast('Person not found.', 'warning'); return; }
+        var npcName = ((person.firstName || '') + ' ' + (person.lastName || '')).trim() || 'NPC';
+        var isNoble = person.occupation === 'noble' || (person.socialRank && Object.values(person.socialRank).some(function(r) { return r >= 4; }));
+        var isEM = !!person.isEliteMerchant;
+
+        var memories = [];
+        // Noble memories
+        if (person.nobleMemory && person.nobleMemory.playerActions) {
+            for (var i = 0; i < person.nobleMemory.playerActions.length; i++) {
+                var m = person.nobleMemory.playerActions[i];
+                memories.push({ source: 'Noble Memory', type: m.type || '?', category: m.category || '?', detail: m.detail || '', sentiment: m.sentiment || 0, day: m.day || 0, label: m.label || '' });
+            }
+        }
+        // EM memories
+        if (person._emMemory && person._emMemory.playerActions) {
+            for (var j = 0; j < person._emMemory.playerActions.length; j++) {
+                var em = person._emMemory.playerActions[j];
+                memories.push({ source: 'Elite Merchant Memory', type: em.type || '?', category: em.category || '?', detail: em.detail || '', sentiment: em.sentiment || 0, day: em.day || 0, label: em.label || '' });
+            }
+        }
+
+        // Compute relationship cap
+        var cap = 100;
+        try { if (Engine.getMemoryRelationshipCap) cap = Engine.getMemoryRelationshipCap(d.id); } catch(e) {}
+        var totalNeg = 0, totalPos = 0;
+        for (var k = 0; k < memories.length; k++) {
+            var s = memories[k].sentiment;
+            if (s < 0) {
+                if (s === -1) totalNeg -= 5;
+                else if (s === -2) totalNeg -= 12;
+                else if (s <= -3) totalNeg -= 25;
+            } else if (s > 0) {
+                if (s === 1) totalPos += 3;
+                else if (s === 2) totalPos += 6;
+                else if (s >= 3) totalPos += 10;
+            }
+        }
+
+        // Sort: most recent first
+        memories.sort(function(a, b) { return (b.day || 0) - (a.day || 0); });
+
+        var day = 0; try { day = Engine.getDay(); } catch(e) {}
+        var html = '<div style="padding:14px;max-width:640px;color:#e0d6b8;">';
+        html += '<h2 style="margin:0 0 8px;color:#ce93d8;">🧠 ' + escapeHtml(npcName) + '\'s Memories of You</h2>';
+
+        // Summary
+        html += '<div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap;">';
+        html += '<div style="background:rgba(80,50,120,0.2);border:1px solid rgba(160,120,200,0.3);border-radius:6px;padding:6px 10px;font-size:0.82em;">';
+        html += '<span style="color:#aaa;">Memories:</span> <strong style="color:#ce93d8;">' + memories.length + '</strong></div>';
+        html += '<div style="background:rgba(200,50,50,0.1);border:1px solid rgba(200,80,80,0.3);border-radius:6px;padding:6px 10px;font-size:0.82em;">';
+        html += '<span style="color:#aaa;">Negative cap penalty:</span> <strong style="color:#ef9a9a;">' + totalNeg + '</strong></div>';
+        html += '<div style="background:rgba(50,200,50,0.1);border:1px solid rgba(80,200,80,0.3);border-radius:6px;padding:6px 10px;font-size:0.82em;">';
+        html += '<span style="color:#aaa;">Positive restore:</span> <strong style="color:#a5d6a7;">+' + totalPos + '</strong></div>';
+        html += '<div style="background:rgba(218,165,32,0.1);border:1px solid rgba(218,165,32,0.3);border-radius:6px;padding:6px 10px;font-size:0.82em;">';
+        html += '<span style="color:#aaa;">Effective rel cap:</span> <strong style="color:#daa520;">' + cap + '</strong></div>';
+        html += '</div>';
+
+        if (memories.length === 0) {
+            html += '<div style="color:#888;font-size:0.85em;padding:10px;">This NPC has no memories of you.</div>';
+        } else {
+            html += '<div style="max-height:350px;overflow-y:auto;border:1px solid #444;border-radius:6px;">';
+            for (var mi = 0; mi < memories.length; mi++) {
+                var mem = memories[mi];
+                var sentColor = mem.sentiment > 0 ? '#a5d6a7' : (mem.sentiment < 0 ? '#ef9a9a' : '#aaa');
+                var sentIcon = mem.sentiment > 0 ? '👍' : (mem.sentiment < 0 ? '👎' : '➖');
+                var sentLabel = mem.sentiment > 0 ? '+' + mem.sentiment : String(mem.sentiment);
+                var daysAgo = Math.max(0, day - mem.day);
+                var bg = mi % 2 === 0 ? 'rgba(40,40,55,0.5)' : 'rgba(50,50,65,0.5)';
+                html += '<div style="padding:6px 10px;background:' + bg + ';border-bottom:1px solid #333;font-size:0.8em;">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+                html += '<div>';
+                html += '<span style="color:' + sentColor + ';font-weight:bold;">' + sentIcon + ' ' + sentLabel + '</span> ';
+                html += '<span style="color:#cc9;">' + escapeHtml(mem.category.replace(/_/g, ' ')) + '</span>';
+                if (mem.label) html += ' <span style="color:#88a;">(' + escapeHtml(mem.label) + ')</span>';
+                html += '</div>';
+                html += '<span style="color:#666;font-size:0.85em;">' + daysAgo + 'd ago</span>';
+                html += '</div>';
+                if (mem.detail) {
+                    html += '<div style="color:#999;font-size:0.9em;margin-top:2px;">' + escapeHtml(mem.detail) + '</div>';
+                }
+                html += '<div style="color:#555;font-size:0.8em;">' + escapeHtml(mem.source) + ' | ' + escapeHtml(mem.type) + '</div>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        UI.openModal('🧠 Memories — ' + escapeHtml(npcName), html);
     });
     UI.registerAction('_smuggleBorder', function(_t, d) { UI._smuggleBorder(d.id); });
     UI.registerAction('showRouteDangerDetail', function(_t, d) { UI.showRouteDangerDetail(d.id); });

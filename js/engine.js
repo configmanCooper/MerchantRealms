@@ -17020,6 +17020,40 @@
                 logEvent('🌾 Noble advisors convinced ' + k.name + ' to invest in public welfare.', null, category);
                 break;
             }
+            case 'lower_tariffs': {
+                if (!k.laws) k.laws = {};
+                var curTariff = k.laws.tradeTariff || 0.05;
+                if (curTariff > 0.01) {
+                    k.laws.tradeTariff = Math.max(0.005, curTariff - 0.02);
+                    logEvent('📉 Under noble pressure, ' + k.name + ' lowered trade tariffs to ' + Math.round(k.laws.tradeTariff * 100) + '%.', null, category);
+                }
+                break;
+            }
+            case 'raise_tariffs': {
+                if (!k.laws) k.laws = {};
+                var curTariff2 = k.laws.tradeTariff || 0.05;
+                if (curTariff2 < 0.25) {
+                    k.laws.tradeTariff = Math.min(0.25, curTariff2 + 0.02);
+                    logEvent('📈 Protectionist nobles convinced ' + k.name + ' to raise trade tariffs to ' + Math.round(k.laws.tradeTariff * 100) + '%.', null, category);
+                }
+                break;
+            }
+            case 'lift_all_quarantines': {
+                if (k.healthPolicies) {
+                    var liftedTowns = [];
+                    for (var lqi = k.healthPolicies.length - 1; lqi >= 0; lqi--) {
+                        if (k.healthPolicies[lqi].type === 'quarantine') {
+                            var lqTown = findTown(k.healthPolicies[lqi].townId);
+                            if (lqTown) liftedTowns.push(lqTown.name);
+                            k.healthPolicies.splice(lqi, 1);
+                        }
+                    }
+                    if (liftedTowns.length > 0) {
+                        logEvent('🔓 Under noble pressure, ' + k.name + ' lifted quarantines in ' + liftedTowns.join(', ') + '.', null, category);
+                    }
+                }
+                break;
+            }
         }
     }
 
@@ -17124,14 +17158,16 @@
             if (deficit <= 2) continue;
             var eres = findResourceById(eg);
             var eName = eres ? eres.name : eg;
+            var _scaledNeed = Math.ceil(deficit * 0.25);
+            if (_scaledNeed < 1) _scaledNeed = 1;
             enticements.push({
                 goodId: eg,
                 goodName: eName,
-                amountNeeded: Math.ceil(deficit),
+                amountNeeded: _scaledNeed,
                 locationId: kingdomId,
                 locationName: kingdom.name,
                 score: deficit,
-                desc: kingdom.name + ' needs ' + Math.ceil(deficit) + ' more ' + eName
+                desc: kingdom.name + ' needs ' + _scaledNeed + ' more ' + eName
             });
         }
         enticements.sort(function(a, b) { return b.score - a.score; });
@@ -17183,6 +17219,99 @@
         demands.push({ id: 'build_walls', label: '🏰 Build Walls' });
         demands.push({ id: 'improve_happiness', label: '🌾 Improve Happiness' });
         demands.push({ id: 'medical_funding', label: '🏥 Medical Funding' });
+
+        // Tariffs
+        if ((kingdom.laws && kingdom.laws.tradeTariff || 0.05) > 0.01) {
+            demands.push({ id: 'lower_tariffs', label: '📉 Lower Tariffs' });
+        }
+        if ((kingdom.laws && kingdom.laws.tradeTariff || 0.05) < 0.25) {
+            demands.push({ id: 'raise_tariffs', label: '📈 Raise Tariffs' });
+        }
+
+        // Pass a law (laws not already enacted)
+        var currentLaws = (kingdom.laws && kingdom.laws.specialLaws) ? kingdom.laws.specialLaws.map(function(l) { return l.id; }) : [];
+        var allLaws = CONFIG.SPECIAL_LAWS || [];
+        for (var sli = 0; sli < allLaws.length; sli++) {
+            if (currentLaws.indexOf(allLaws[sli].id) < 0) {
+                demands.push({ id: 'pass_law', label: '📜 Pass Law: ' + allLaws[sli].name, param: allLaws[sli].id, needsParam: 'law' });
+            }
+        }
+
+        // Repeal a law (laws currently enacted)
+        if (kingdom.laws && kingdom.laws.specialLaws) {
+            for (var rli = 0; rli < kingdom.laws.specialLaws.length; rli++) {
+                var rl = kingdom.laws.specialLaws[rli];
+                demands.push({ id: 'repeal_law', label: '🚫 Repeal Law: ' + rl.name, param: rl.id, needsParam: 'law' });
+            }
+        }
+
+        // Quarantine / lift quarantines
+        var kTowns = getTownsForKingdom(kingdomId);
+        var hasQuarantine = false;
+        for (var qti = 0; qti < kTowns.length; qti++) {
+            var qTown = kTowns[qti];
+            // Check if town has active quarantine health policy
+            var isQuarantined = false;
+            if (kingdom.healthPolicies) {
+                for (var hpi = 0; hpi < kingdom.healthPolicies.length; hpi++) {
+                    if (kingdom.healthPolicies[hpi].type === 'quarantine' && kingdom.healthPolicies[hpi].townId === qTown.id) {
+                        isQuarantined = true; break;
+                    }
+                }
+            }
+            if (isQuarantined) hasQuarantine = true;
+            // Quarantine a non-quarantined town
+            if (!isQuarantined) {
+                demands.push({ id: 'quarantine_town', label: '🔒 Quarantine ' + qTown.name, param: qTown.id, needsParam: 'town' });
+            }
+        }
+        if (hasQuarantine) {
+            demands.push({ id: 'lift_all_quarantines', label: '🔓 Lift All Quarantines' });
+        }
+
+        // Build route / sea route between kingdom towns and other locations
+        var worldObj = world;
+        if (worldObj && worldObj.roads) {
+            // Find towns in this kingdom that could have new routes
+            for (var rti = 0; rti < kTowns.length; rti++) {
+                var fromTown = kTowns[rti];
+                // Land routes: find towns reachable but not already connected
+                var existingRoadDests = {};
+                for (var eri = 0; eri < worldObj.roads.length; eri++) {
+                    var rd = worldObj.roads[eri];
+                    if (rd.from === fromTown.id) existingRoadDests[rd.to] = true;
+                    if (rd.to === fromTown.id) existingRoadDests[rd.from] = true;
+                }
+                // Consider all towns as potential destinations
+                for (var dti = 0; dti < worldObj.towns.length; dti++) {
+                    var destTown = worldObj.towns[dti];
+                    if (destTown.id === fromTown.id) continue;
+                    if (existingRoadDests[destTown.id]) continue;
+                    if (destTown.isIsland || fromTown.isIsland) continue;
+                    demands.push({ id: 'build_route', label: '🛤️ Build Route: ' + fromTown.name + ' → ' + destTown.name, param: fromTown.id + '|' + destTown.id, needsParam: 'route' });
+                }
+            }
+            // Sea routes: find port towns that could have new sea routes
+            var seaRoutes = worldObj.seaRoutes || [];
+            for (var sri = 0; sri < kTowns.length; sri++) {
+                var fromPort = kTowns[sri];
+                if (!fromPort.isPort) continue;
+                var existingSeaDests = {};
+                for (var esi = 0; esi < seaRoutes.length; esi++) {
+                    var sr = seaRoutes[esi];
+                    if (sr.from === fromPort.id) existingSeaDests[sr.to] = true;
+                    if (sr.to === fromPort.id) existingSeaDests[sr.from] = true;
+                }
+                // Consider other port towns as destinations
+                for (var sdi = 0; sdi < worldObj.towns.length; sdi++) {
+                    var destPort = worldObj.towns[sdi];
+                    if (destPort.id === fromPort.id) continue;
+                    if (!destPort.isPort) continue;
+                    if (existingSeaDests[destPort.id]) continue;
+                    demands.push({ id: 'build_sea_route', label: '⚓ Build Sea Route: ' + fromPort.name + ' → ' + destPort.name, param: fromPort.id + '|' + destPort.id, needsParam: 'route' });
+                }
+            }
+        }
 
         return demands;
     }
@@ -17545,10 +17674,12 @@
                         var rng = world.rng;
                         if (rng.chance(0.35)) {
                             // Execute the advised action with param support
-                            if (nd.param && (nd.actionId === 'make_peace' || nd.actionId === 'declare_war' || nd.actionId === 'form_alliance')) {
-                                _executeNobleAdvisedActionWithParam(k, nd.actionId, rng, nd.param);
-                            } else if (nd.actionId === 'lift_ban') {
-                                _executeLiftBan(k, nd.param);
+                            if (nd.param) {
+                                if (nd.actionId === 'lift_ban') {
+                                    _executeLiftBan(k, nd.param);
+                                } else {
+                                    _executeNobleAdvisedActionWithParam(k, nd.actionId, rng, nd.param);
+                                }
                             } else {
                                 _executeNobleAdvisedAction(k, nd.actionId, rng);
                             }
@@ -17562,16 +17693,16 @@
     }
 
     /** Execute a parameterized noble-advised action (for targeted war/peace/alliance). */
-    function _executeNobleAdvisedActionWithParam(k, actionId, rng, targetKingdomId) {
+    function _executeNobleAdvisedActionWithParam(k, actionId, rng, param) {
         var kId = k.id;
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
         var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
-        var targetK = findKingdom(targetKingdomId);
-        if (!targetK) return;
 
         switch (actionId) {
             case 'make_peace': {
-                var atWar = k.atWar && (k.atWar instanceof Set ? k.atWar.has(targetKingdomId) : (Array.isArray(k.atWar) && k.atWar.indexOf(targetKingdomId) >= 0));
+                var targetK = findKingdom(param);
+                if (!targetK) break;
+                var atWar = k.atWar && (k.atWar instanceof Set ? k.atWar.has(param) : (Array.isArray(k.atWar) && k.atWar.indexOf(param) >= 0));
                 if (!atWar) break;
                 if (Engine.makePeace) {
                     Engine.makePeace(k, targetK, false, null, true);
@@ -17580,22 +17711,121 @@
                 break;
             }
             case 'declare_war': {
+                var targetK2 = findKingdom(param);
+                if (!targetK2) break;
                 if (Engine.declareWar) {
-                    Engine.declareWar(k, targetK);
-                    logEvent('⚔️ Under merchant pressure, ' + k.name + ' declared war on ' + targetK.name + '!', null, category);
+                    Engine.declareWar(k, targetK2);
+                    logEvent('⚔️ Under merchant pressure, ' + k.name + ' declared war on ' + targetK2.name + '!', null, category);
                 }
                 break;
             }
             case 'form_alliance': {
+                var targetK3 = findKingdom(param);
+                if (!targetK3) break;
                 if (!k.alliances) k.alliances = new Set();
-                if (!targetK.alliances) targetK.alliances = new Set();
-                k.alliances.add(targetKingdomId);
-                targetK.alliances.add(kId);
+                if (!targetK3.alliances) targetK3.alliances = new Set();
+                k.alliances.add(param);
+                targetK3.alliances.add(kId);
                 if (!k.allianceMeta) k.allianceMeta = {};
-                if (!targetK.allianceMeta) targetK.allianceMeta = {};
-                k.allianceMeta[targetKingdomId] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                targetK.allianceMeta[kId] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
-                logEvent('🤝 Under merchant pressure, ' + k.name + ' allied with ' + targetK.name + '.', null, category);
+                if (!targetK3.allianceMeta) targetK3.allianceMeta = {};
+                k.allianceMeta[param] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                targetK3.allianceMeta[kId] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                logEvent('🤝 Under merchant pressure, ' + k.name + ' allied with ' + targetK3.name + '.', null, category);
+                break;
+            }
+            case 'pass_law': {
+                if (!k.laws) k.laws = {};
+                if (!k.laws.specialLaws) k.laws.specialLaws = [];
+                if (k.laws.specialLaws.some(function(l) { return l.id === param; })) break;
+                var slDef = (CONFIG.SPECIAL_LAWS || []).find(function(l) { return l.id === param; });
+                if (!slDef) break;
+                k.laws.specialLaws.push({ id: slDef.id, name: slDef.name, desc: slDef.desc, icon: slDef.icon, enactedDay: world.day });
+                if (param === 'conscription_law') k.laws.conscription = true;
+                logEvent('📜 Under noble pressure, ' + k.name + ' enacted ' + slDef.name + '.', null, category);
+                break;
+            }
+            case 'repeal_law': {
+                if (!k.laws || !k.laws.specialLaws) break;
+                var repIdx = -1;
+                for (var rpi = 0; rpi < k.laws.specialLaws.length; rpi++) {
+                    if (k.laws.specialLaws[rpi].id === param) { repIdx = rpi; break; }
+                }
+                if (repIdx < 0) break;
+                var repName = k.laws.specialLaws[repIdx].name;
+                k.laws.specialLaws.splice(repIdx, 1);
+                if (param === 'conscription_law') k.laws.conscription = false;
+                logEvent('🚫 Under noble pressure, ' + k.name + ' repealed ' + repName + '.', null, category);
+                break;
+            }
+            case 'quarantine_town': {
+                var qTown = findTown(param);
+                if (!qTown) break;
+                if (!k.healthPolicies) k.healthPolicies = [];
+                var alreadyQ = k.healthPolicies.some(function(hp) { return hp.type === 'quarantine' && hp.townId === param; });
+                if (alreadyQ) break;
+                k.healthPolicies.push({ type: 'quarantine', townId: param, enactedDay: world.day });
+                logEvent('🔒 Under noble pressure, ' + k.name + ' quarantined ' + qTown.name + '.', null, category);
+                break;
+            }
+            case 'build_route': {
+                var routeParts = param.split('|');
+                if (routeParts.length < 2) break;
+                var fromTown = findTown(routeParts[0]);
+                var toTown = findTown(routeParts[1]);
+                if (!fromTown || !toTown) break;
+                // Check not already connected
+                var alreadyConnected = world.roads.some(function(rd) {
+                    return (rd.from === routeParts[0] && rd.to === routeParts[1]) ||
+                           (rd.from === routeParts[1] && rd.to === routeParts[0]);
+                });
+                if (alreadyConnected) break;
+                // Build the road using pathfinding
+                var roadCost = 500;
+                if ((k.gold || 0) < roadCost) {
+                    logEvent('🛤️ ' + k.name + ' wanted to build a road from ' + fromTown.name + ' to ' + toTown.name + ' but lacks funds.', null, category);
+                    break;
+                }
+                k.gold -= roadCost;
+                // Use the terrain pathfinder
+                var path = null;
+                try { path = Engine.findTerrainPath(fromTown.x, fromTown.y, toTown.x, toTown.y, 'land'); } catch(e) {}
+                if (!path || path.length < 2) {
+                    logEvent('🛤️ No viable land path from ' + fromTown.name + ' to ' + toTown.name + '.', null, category);
+                    k.gold += roadCost;
+                    break;
+                }
+                world.roads.push({ from: routeParts[0], to: routeParts[1], path: path, type: 'road' });
+                logEvent('🛤️ Under noble pressure, ' + k.name + ' built a road from ' + fromTown.name + ' to ' + toTown.name + '.', null, category);
+                break;
+            }
+            case 'build_sea_route': {
+                var seaParts = param.split('|');
+                if (seaParts.length < 2) break;
+                var fromPort = findTown(seaParts[0]);
+                var toPort = findTown(seaParts[1]);
+                if (!fromPort || !toPort) break;
+                if (!fromPort.isPort || !toPort.isPort) break;
+                if (!world.seaRoutes) world.seaRoutes = [];
+                var alreadySea = world.seaRoutes.some(function(sr) {
+                    return (sr.from === seaParts[0] && sr.to === seaParts[1]) ||
+                           (sr.from === seaParts[1] && sr.to === seaParts[0]);
+                });
+                if (alreadySea) break;
+                var seaCost = 400;
+                if ((k.gold || 0) < seaCost) {
+                    logEvent('⚓ ' + k.name + ' wanted to establish a sea route from ' + fromPort.name + ' to ' + toPort.name + ' but lacks funds.', null, category);
+                    break;
+                }
+                k.gold -= seaCost;
+                var seaPath = null;
+                try { seaPath = Engine.findTerrainPath(fromPort.x, fromPort.y, toPort.x, toPort.y, 'sea'); } catch(e) {}
+                if (!seaPath || seaPath.length < 2) {
+                    logEvent('⚓ No viable sea path from ' + fromPort.name + ' to ' + toPort.name + '.', null, category);
+                    k.gold += seaCost;
+                    break;
+                }
+                world.seaRoutes.push({ from: seaParts[0], to: seaParts[1], path: seaPath, type: 'sea' });
+                logEvent('⚓ Under noble pressure, ' + k.name + ' established a sea route from ' + fromPort.name + ' to ' + toPort.name + '.', null, category);
                 break;
             }
         }

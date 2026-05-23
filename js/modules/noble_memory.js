@@ -13,7 +13,13 @@
         strengthen_military: { label: 'Strengthen Military', icon: '🛡️', opposite: 'seek_peace' },
         improve_happiness: { label: 'Improve Public Welfare', icon: '😊', opposite: null },
         enforce_law: { label: 'Enforce Law & Order', icon: '⚖️', opposite: null },
-        promote_noble: { label: 'Promote a Noble', icon: '👑', opposite: null }
+        promote_noble: { label: 'Promote a Noble', icon: '👑', opposite: null },
+        lower_tariffs: { label: 'Lower Tariffs', icon: '📉', opposite: 'raise_tariffs' },
+        raise_tariffs: { label: 'Raise Tariffs', icon: '📈', opposite: 'lower_tariffs' },
+        pass_law: { label: 'Pass a Law', icon: '📜', opposite: 'repeal_law' },
+        repeal_law: { label: 'Repeal a Law', icon: '🚫', opposite: 'pass_law' },
+        quarantine_town: { label: 'Quarantine a Town', icon: '🔒', opposite: 'lift_all_quarantines' },
+        lift_all_quarantines: { label: 'Lift All Quarantines', icon: '🔓', opposite: 'quarantine_town' }
     };
     var DECLARATION_TO_CAUSE = {
         lower_taxes: 'lower_taxes',
@@ -25,7 +31,13 @@
         strengthen_military: 'war_offensive',
         improve_happiness: 'improve_happiness',
         enforce_law: null,
-        promote_noble: 'promote_noble'
+        promote_noble: 'promote_noble',
+        lower_tariffs: 'lower_tariffs',
+        raise_tariffs: 'raise_tariffs',
+        pass_law: 'pass_law',
+        repeal_law: 'repeal_law',
+        quarantine_town: 'quarantine_town',
+        lift_all_quarantines: 'lift_all_quarantines'
     };
     var CAUSE_LABELS = {
         lower_taxes: 'Lower Taxes',
@@ -38,7 +50,13 @@
         build_walls: 'Fortify Towns',
         improve_happiness: 'Improve Public Welfare',
         medical_funding: 'Fund Plague Relief',
-        promote_noble: 'Promote a Noble'
+        promote_noble: 'Promote a Noble',
+        lower_tariffs: 'Lower Tariffs',
+        raise_tariffs: 'Raise Tariffs',
+        pass_law: 'Pass a Law',
+        repeal_law: 'Repeal a Law',
+        quarantine_town: 'Quarantine a Town',
+        lift_all_quarantines: 'Lift All Quarantines'
     };
     var NOBLE_QUESTION_DEFS = [
         { id: 'king_opinion', text: 'What do you think of our king?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleKingOpinionFact(target, kingdom, asker); } },
@@ -252,12 +270,16 @@
     function _getTargetInfo(category, targetData, kingdomId) {
         var targetId = null;
         var targetName = '';
+        var param = null;
+        var paramLabel = '';
         if (typeof targetData === 'string') targetId = targetData;
         if (targetData && typeof targetData === 'object') {
             if (targetData.targetId) targetId = targetData.targetId;
             if (targetData.targetNobleId) targetId = targetData.targetNobleId;
             if (targetData.targetKingdomId) targetId = targetData.targetKingdomId;
             if (targetData.targetName) targetName = targetData.targetName;
+            if (targetData.param) param = targetData.param;
+            if (targetData.paramLabel) paramLabel = targetData.paramLabel;
         }
         if (category === 'promote_noble' && !targetId) targetId = 'player';
         if (!targetName && targetId) targetName = _getTargetName(targetId);
@@ -265,7 +287,7 @@
             var k = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
             if (k) targetName = k.name || '';
         }
-        return { targetId: targetId, targetName: targetName };
+        return { targetId: targetId, targetName: targetName, param: param, paramLabel: paramLabel };
     }
     function _getPromotionTargetInfo(kingdomId, targetId) {
         var target;
@@ -297,6 +319,9 @@
         }
         if ((category === 'declare_war' || category === 'seek_peace') && targetInfo && targetInfo.targetName) {
             return 'The player declared support for ' + label + ' with ' + targetInfo.targetName + '.';
+        }
+        if ((category === 'pass_law' || category === 'repeal_law' || category === 'quarantine_town') && targetInfo && targetInfo.paramLabel) {
+            return 'The player declared support for ' + label + ': ' + targetInfo.paramLabel + '.';
         }
         return 'The player declared support for: ' + label + '.';
     }
@@ -465,6 +490,27 @@
                     }
                 }
                 if ((np.ambition || 50) > 70 && (!targetInfo || targetInfo.targetId !== noble.id)) score -= 1;
+                break;
+            case 'lower_tariffs':
+                if ((np.warmth || 50) > 60) score += 1;
+                if ((np.intelligence || 50) > 60) score += 1;
+                break;
+            case 'raise_tariffs':
+                if ((np.frugality || 50) > 70) score += 1;
+                if ((np.intelligence || 50) > 60 && (np.warmth || 50) < 40) score += 1;
+                break;
+            case 'pass_law':
+            case 'repeal_law':
+                if ((np.intelligence || 50) > 60) score += 1;
+                if (loyalty > 70) score += 1;
+                break;
+            case 'quarantine_town':
+                if ((np.warmth || 50) > 60) score += 1;
+                if ((np.intelligence || 50) > 60) score += 1;
+                break;
+            case 'lift_all_quarantines':
+                if ((np.ambition || 50) > 60) score += 1;
+                if ((np.frugality || 50) > 60) score += 1;
                 break;
         }
 
@@ -769,11 +815,14 @@
             reaction = sentiment > 0 ? 'supportive' : (sentiment < 0 ? 'opposed' : 'neutral');
         }
 
+        var _memLabel = _getCategoryLabel(category);
+        if (targetInfo.paramLabel) _memLabel += ': ' + targetInfo.paramLabel;
         _addPlayerMemory(noble, {
             type: 'declaration',
             source: 'direct',
             category: category,
             detail: _buildDeclarationDetail(category, targetInfo),
+            label: _memLabel,
             actorId: 'player',
             targetId: targetInfo.targetId || null,
             day: _getDay(),
