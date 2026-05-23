@@ -2114,6 +2114,13 @@ function showPersonDetail(person) {
     if (isPlayer && isAlive && Player.getRelationship) {
         const rel = Player.getRelationship(person.id);
         const relLabel = Player.getRelationshipLabel ? Player.getRelationshipLabel(rel.level) : { icon: '🤝', name: 'Acquaintance' };
+        // v9p33river464: compute memory-based relationship cap
+        var _relCap = 100;
+        try { if (Engine.getMemoryRelationshipCap) _relCap = Engine.getMemoryRelationshipCap(person.id); } catch(e) {}
+        var _capHtml = '';
+        if (_relCap < 100) {
+            _capHtml = '<div style="font-size:0.78em;color:#e57373;margin-top:3px;">⚠️ Max relationship: ' + _relCap + '/100 (memories effect)</div>';
+        }
         html += `<div class="detail-section"><h3>Relationship</h3>
             <div class="detail-row"><span class="label">${relLabel.icon} ${relLabel.name}</span>
                 <span class="value">${Math.floor(rel.level)}/100</span></div>
@@ -2122,6 +2129,7 @@ function showPersonDetail(person) {
                     <div class="needs-bar-fill" style="width:${Math.floor(rel.level)}%;background:var(--gold)"></div>
                 </div>
             </div>
+            ${_capHtml}
         </div>`;
 
         // ── v9p33river357: Unsolicited Quest section ──
@@ -5244,8 +5252,12 @@ function clickTown(townId) {
                 kTowns = world.towns.filter(function(t) { return t.kingdomId === nobleKingdomId; });
             }
             var nonQuarantined = kTowns.filter(function(t) {
+                if (t.quarantined) return false;
                 if (!kingdom.healthPolicies) return true;
-                return !kingdom.healthPolicies.some(function(hp) { return hp.type === 'quarantine' && hp.townId === t.id; });
+                // v9p33river464: share-views quarantine picker must honor canonical health policy types.
+                return !kingdom.healthPolicies.some(function(hp) {
+                    return hp && hp.active !== false && (hp.type === 'quarantine_town' || hp.type === 'martial_quarantine') && hp.townId === t.id;
+                });
             });
             if (nonQuarantined.length > 0) {
                 html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
@@ -5256,6 +5268,26 @@ function clickTown(townId) {
                 }
                 html += '</select>';
                 html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="quarantine_town" data-sel="sv_quarantine_town" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,80,50,0.3);border-color:rgba(140,100,60,0.3);">Share</button>';
+                html += '</div>';
+            }
+            // v9p33river464: Lift quarantine on a specific quarantined town
+            var quarantinedTowns = kTowns.filter(function(t) {
+                if (t.quarantined) return true;
+                if (!kingdom.healthPolicies) return false;
+                // v9p33river464: lift-quarantine picker must honor canonical health policy types.
+                return kingdom.healthPolicies.some(function(hp) {
+                    return hp && hp.active !== false && (hp.type === 'quarantine_town' || hp.type === 'martial_quarantine') && hp.townId === t.id;
+                });
+            });
+            if (quarantinedTowns.length > 0) {
+                html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<span style="font-size:0.82em;color:#cc9;">🔓 Lift Quarantine:</span>';
+                html += '<select id="sv_lift_quarantine" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+                for (var lqti = 0; lqti < quarantinedTowns.length; lqti++) {
+                    html += '<option value="' + quarantinedTowns[lqti].id + '">' + escapeHtml(quarantinedTowns[lqti].name) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="lift_quarantine" data-sel="sv_lift_quarantine" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,80,50,0.3);border-color:rgba(140,100,60,0.3);">Share</button>';
                 html += '</div>';
             }
             html += '</div>';

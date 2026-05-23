@@ -12002,6 +12002,47 @@ window.UI = (function () {
         return lookup;
     }
 
+    // v9p33river464: scan event message text for known NPC names and wrap in clickable spans
+    function _linkifyPersonNames(msgHtml) {
+        try {
+            if (!Engine || !Engine.getPeople) return msgHtml;
+            var people = Engine.getPeople();
+            if (!people || people.length === 0) return msgHtml;
+            // Build list of {fullName, firstName, id} sorted longest-name-first to avoid partial matches
+            var nameEntries = [];
+            for (var i = 0; i < people.length; i++) {
+                var p = people[i];
+                if (!p || !p.id) continue;
+                var fn = (p.firstName || '').trim();
+                var ln = (p.lastName || '').trim();
+                var full = (fn + ' ' + ln).trim();
+                if (full.length > 1 && msgHtml.indexOf(full) !== -1) {
+                    nameEntries.push({ name: full, id: p.id });
+                } else if (fn.length > 2 && msgHtml.indexOf(fn) !== -1) {
+                    nameEntries.push({ name: fn, id: p.id });
+                }
+            }
+            if (nameEntries.length === 0) return msgHtml;
+            // Sort longest first so "Everett Longmire" matches before "Everett"
+            nameEntries.sort(function(a, b) { return b.name.length - a.name.length; });
+            // Replace each name (only first occurrence to avoid mangling)
+            var used = {};
+            for (var ni = 0; ni < nameEntries.length; ni++) {
+                var ne = nameEntries[ni];
+                if (used[ne.id]) continue;
+                var idx = msgHtml.indexOf(ne.name);
+                if (idx === -1) continue;
+                // Don't replace inside an HTML tag or already-linked span
+                var before = msgHtml.substring(0, idx);
+                if (before.lastIndexOf('<') > before.lastIndexOf('>')) continue;
+                var link = '<span data-action="showPersonLink" data-id="' + ne.id + '" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:#e0c080;">' + ne.name + '</span>';
+                msgHtml = msgHtml.substring(0, idx) + link + msgHtml.substring(idx + ne.name.length);
+                used[ne.id] = true;
+            }
+        } catch(e) {}
+        return msgHtml;
+    }
+
     function showEventDetail(eventIndex) {
         var events = openEventLog._cachedEvents;
         if (!events || eventIndex == null || eventIndex >= events.length) return;
@@ -12010,8 +12051,10 @@ window.UI = (function () {
 
         var html = '<div class="event-detail-panel">';
 
-        // Main message
-        html += '<div class="event-detail-message" style="font-size:1.1rem;margin-bottom:12px;color:var(--gold-bright);">' + (event.message || event.description || 'Event') + '</div>';
+        // Main message — v9p33river464: linkify person names so player can click to open NPC detail
+        var _evtMsgRaw = event.message || event.description || 'Event';
+        var _evtMsgLinked = _linkifyPersonNames(_evtMsgRaw);
+        html += '<div class="event-detail-message" style="font-size:1.1rem;margin-bottom:12px;color:var(--gold-bright);">' + _evtMsgLinked + '</div>';
         html += '<div class="event-detail-day" style="color:var(--text-dim);margin-bottom:12px;">Day ' + (event.day || '?') + '</div>';
 
         if (event.details) {
@@ -12164,6 +12207,15 @@ window.UI = (function () {
             } else if (action === 'toggleNotifFilter') {
                 var key = btn.getAttribute('data-id');
                 if (key && typeof Player !== 'undefined' && Player.toggleNotifFilter) Player.toggleNotifFilter(key);
+            } else if (action === 'showPersonLink') {
+                // v9p33river464: click person name to open NPC detail panel
+                closeOverlay();
+                closeModal();
+                var _plId = btn.getAttribute('data-id');
+                if (_plId && Engine.getPerson) {
+                    var _plPerson = Engine.getPerson(_plId);
+                    if (_plPerson && UI.showPersonDetail) UI.showPersonDetail(_plPerson);
+                }
             } else if (action === 'setNotifFilterAndShowEventDetail') {
                 var fKey = btn.getAttribute('data-key');
                 var fVal = btn.getAttribute('data-val');

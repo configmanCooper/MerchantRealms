@@ -17041,10 +17041,14 @@
             case 'lift_all_quarantines': {
                 if (k.healthPolicies) {
                     var liftedTowns = [];
+                    // v9p33river464: lifting quarantines must clear canonical quarantine policies and town flags.
                     for (var lqi = k.healthPolicies.length - 1; lqi >= 0; lqi--) {
-                        if (k.healthPolicies[lqi].type === 'quarantine') {
+                        if (k.healthPolicies[lqi].type === 'quarantine_town' || k.healthPolicies[lqi].type === 'martial_quarantine') {
                             var lqTown = findTown(k.healthPolicies[lqi].townId);
-                            if (lqTown) liftedTowns.push(lqTown.name);
+                            if (lqTown) {
+                                liftedTowns.push(lqTown.name);
+                                lqTown.quarantined = false;
+                            }
                             k.healthPolicies.splice(lqi, 1);
                         }
                     }
@@ -17176,6 +17180,12 @@
         return { threats: threats, enticements: enticements };
     }
 
+    // v9p33river464: negotiation route logic must read canonical route endpoints.
+    function _getRoadEndpoint(edge, which) {
+        if (!edge) return null;
+        return which === 'from' ? (edge.fromTownId || edge.from || null) : (edge.toTownId || edge.to || null);
+    }
+
     /**
      * Build list of demands the player can ask a noble to push the king on.
      */
@@ -17254,7 +17264,9 @@
             var isQuarantined = false;
             if (kingdom.healthPolicies) {
                 for (var hpi = 0; hpi < kingdom.healthPolicies.length; hpi++) {
-                    if (kingdom.healthPolicies[hpi].type === 'quarantine' && kingdom.healthPolicies[hpi].townId === qTown.id) {
+                    var _qPol = kingdom.healthPolicies[hpi];
+                    // v9p33river464: negotiation quarantine checks must match canonical health policy types.
+                    if (_qPol && _qPol.active !== false && (_qPol.type === 'quarantine_town' || _qPol.type === 'martial_quarantine') && _qPol.townId === qTown.id) {
                         isQuarantined = true; break;
                     }
                 }
@@ -17263,6 +17275,10 @@
             // Quarantine a non-quarantined town
             if (!isQuarantined) {
                 demands.push({ id: 'quarantine_town', label: '🔒 Quarantine ' + qTown.name, param: qTown.id, needsParam: 'town' });
+            }
+            // v9p33river464: lift quarantine on a specific quarantined town
+            if (isQuarantined) {
+                demands.push({ id: 'lift_quarantine', label: '🔓 Lift Quarantine on ' + qTown.name, param: qTown.id, needsParam: 'town' });
             }
         }
         if (hasQuarantine) {
@@ -17279,8 +17295,10 @@
                 var existingRoadDests = {};
                 for (var eri = 0; eri < worldObj.roads.length; eri++) {
                     var rd = worldObj.roads[eri];
-                    if (rd.from === fromTown.id) existingRoadDests[rd.to] = true;
-                    if (rd.to === fromTown.id) existingRoadDests[rd.from] = true;
+                    var _rdFrom = _getRoadEndpoint(rd, 'from');
+                    var _rdTo = _getRoadEndpoint(rd, 'to');
+                    if (_rdFrom === fromTown.id) existingRoadDests[_rdTo] = true;
+                    if (_rdTo === fromTown.id) existingRoadDests[_rdFrom] = true;
                 }
                 // Consider all towns as potential destinations
                 for (var dti = 0; dti < worldObj.towns.length; dti++) {
@@ -17299,8 +17317,10 @@
                 var existingSeaDests = {};
                 for (var esi = 0; esi < seaRoutes.length; esi++) {
                     var sr = seaRoutes[esi];
-                    if (sr.from === fromPort.id) existingSeaDests[sr.to] = true;
-                    if (sr.to === fromPort.id) existingSeaDests[sr.from] = true;
+                    var _srFrom = _getRoadEndpoint(sr, 'from');
+                    var _srTo = _getRoadEndpoint(sr, 'to');
+                    if (_srFrom === fromPort.id) existingSeaDests[_srTo] = true;
+                    if (_srTo === fromPort.id) existingSeaDests[_srFrom] = true;
                 }
                 // Consider other port towns as destinations
                 for (var sdi = 0; sdi < worldObj.towns.length; sdi++) {
@@ -17351,12 +17371,13 @@
             }
         } catch(e) {}
 
-        // Personality modifiers
-        var ambition = noble.ambition || 50;
-        var loyalty = noble.loyalty || 50;
-        var selfishness = noble.selfishness || 50;
-        var honesty = noble.honesty || 50;
-        var frugality = noble.frugality || 50;
+        // v9p33river464: noble negotiation chance must read canonical personality fields.
+        var negPersonality = noble.personality || {};
+        var ambition = negPersonality.ambition != null ? negPersonality.ambition : 50;
+        var loyalty = negPersonality.loyalty != null ? negPersonality.loyalty : (noble.kingLoyalty != null ? noble.kingLoyalty : 50);
+        var selfishness = negPersonality.selfishness != null ? negPersonality.selfishness : 50;
+        var honesty = negPersonality.honesty != null ? negPersonality.honesty : 50;
+        var frugality = negPersonality.frugality != null ? negPersonality.frugality : 50;
 
         if (negType === 'threaten') {
             // Brave/loyal nobles resist threats
@@ -17761,10 +17782,34 @@
                 var qTown = findTown(param);
                 if (!qTown) break;
                 if (!k.healthPolicies) k.healthPolicies = [];
-                var alreadyQ = k.healthPolicies.some(function(hp) { return hp.type === 'quarantine' && hp.townId === param; });
+                // v9p33river464: noble-advised quarantine must use canonical health policy shape.
+                var alreadyQ = k.healthPolicies.some(function(hp) {
+                    return hp && hp.active !== false && (hp.type === 'quarantine_town' || hp.type === 'martial_quarantine') && hp.townId === param;
+                });
                 if (alreadyQ) break;
-                k.healthPolicies.push({ type: 'quarantine', townId: param, enactedDay: world.day });
+                qTown.quarantined = true;
+                qTown.quarantineDay = world.day;
+                k.healthPolicies.push({
+                    type: 'quarantine_town', townId: param, active: true,
+                    startDay: world.day, expiresDay: world.day + 45, costPerDay: 8
+                });
                 logEvent('🔒 Under noble pressure, ' + k.name + ' quarantined ' + qTown.name + '.', null, category);
+                break;
+            }
+            // v9p33river464: lift quarantine on a specific town
+            case 'lift_quarantine': {
+                var lqTown = findTown(param);
+                if (!lqTown) break;
+                if (k.healthPolicies) {
+                    for (var lqi2 = k.healthPolicies.length - 1; lqi2 >= 0; lqi2--) {
+                        if ((k.healthPolicies[lqi2].type === 'quarantine_town' || k.healthPolicies[lqi2].type === 'martial_quarantine') && k.healthPolicies[lqi2].townId === param) {
+                            k.healthPolicies.splice(lqi2, 1);
+                            lqTown.quarantined = false;
+                            logEvent('🔓 Under noble pressure, ' + k.name + ' lifted the quarantine on ' + lqTown.name + '.', null, category);
+                            break;
+                        }
+                    }
+                }
                 break;
             }
             case 'build_route': {
@@ -17775,8 +17820,10 @@
                 if (!fromTown || !toTown) break;
                 // Check not already connected
                 var alreadyConnected = world.roads.some(function(rd) {
-                    return (rd.from === routeParts[0] && rd.to === routeParts[1]) ||
-                           (rd.from === routeParts[1] && rd.to === routeParts[0]);
+                    var _rdFrom2 = _getRoadEndpoint(rd, 'from');
+                    var _rdTo2 = _getRoadEndpoint(rd, 'to');
+                    return (_rdFrom2 === routeParts[0] && _rdTo2 === routeParts[1]) ||
+                           (_rdFrom2 === routeParts[1] && _rdTo2 === routeParts[0]);
                 });
                 if (alreadyConnected) break;
                 // Build the road using pathfinding
@@ -17794,7 +17841,8 @@
                     k.gold += roadCost;
                     break;
                 }
-                world.roads.push({ from: routeParts[0], to: routeParts[1], path: path, type: 'road' });
+                // v9p33river464: new negotiation-built roads must use canonical route fields.
+                world.roads.push({ fromTownId: routeParts[0], toTownId: routeParts[1], path: path, type: 'road' });
                 logEvent('🛤️ Under noble pressure, ' + k.name + ' built a road from ' + fromTown.name + ' to ' + toTown.name + '.', null, category);
                 break;
             }
@@ -17807,8 +17855,10 @@
                 if (!fromPort.isPort || !toPort.isPort) break;
                 if (!world.seaRoutes) world.seaRoutes = [];
                 var alreadySea = world.seaRoutes.some(function(sr) {
-                    return (sr.from === seaParts[0] && sr.to === seaParts[1]) ||
-                           (sr.from === seaParts[1] && sr.to === seaParts[0]);
+                    var _srFrom2 = _getRoadEndpoint(sr, 'from');
+                    var _srTo2 = _getRoadEndpoint(sr, 'to');
+                    return (_srFrom2 === seaParts[0] && _srTo2 === seaParts[1]) ||
+                           (_srFrom2 === seaParts[1] && _srTo2 === seaParts[0]);
                 });
                 if (alreadySea) break;
                 var seaCost = 400;
@@ -17824,7 +17874,8 @@
                     k.gold += seaCost;
                     break;
                 }
-                world.seaRoutes.push({ from: seaParts[0], to: seaParts[1], path: seaPath, type: 'sea' });
+                // v9p33river464: new negotiation-built sea routes must use canonical route fields.
+                world.seaRoutes.push({ fromTownId: seaParts[0], toTownId: seaParts[1], path: seaPath, type: 'sea' });
                 logEvent('⚓ Under noble pressure, ' + k.name + ' established a sea route from ' + fromPort.name + ' to ' + toPort.name + '.', null, category);
                 break;
             }
@@ -24218,10 +24269,20 @@
                 var sickPct = totalHere > 0 ? sickCount / totalHere : 0;
                 var spreadChance = spreadBase + sickPct * NPC_HEALTH_CONFIG.TOWN_SPREAD_SICK_RATIO_MULT * spreadBase;
                 // Check if quarantine policy is active for this town
-                var quarantined = false;
-                if (town.activePolicies) {
-                    for (var qp = 0; qp < town.activePolicies.length; qp++) {
-                        if (town.activePolicies[qp].id === 'quarantine_town') { quarantined = true; break; }
+                var quarantined = !!town.quarantined;
+                // v9p33river464: plague spread must honor canonical kingdom quarantine policies.
+                if (!quarantined && town.kingdomId) {
+                    var _qKingdom = findKingdom(town.kingdomId);
+                    if (_qKingdom && _qKingdom.healthPolicies) {
+                        for (var qp = 0; qp < _qKingdom.healthPolicies.length; qp++) {
+                            var _spreadPol = _qKingdom.healthPolicies[qp];
+                            if (_spreadPol && _spreadPol.active !== false && (_spreadPol.type === 'quarantine_town' || _spreadPol.type === 'martial_quarantine') && (!_spreadPol.townId || _spreadPol.townId === town.id)) { quarantined = true; break; }
+                        }
+                    }
+                }
+                if (!quarantined && town.activePolicies) {
+                    for (var qp2 = 0; qp2 < town.activePolicies.length; qp2++) {
+                        if (town.activePolicies[qp2].id === 'quarantine_town') { quarantined = true; break; }
                     }
                 }
                 // Quarantine is 95% effective — nobles, EMs, and officials slip through
@@ -33074,7 +33135,8 @@
                         k.taxRate = Math.max(0.02, (k.taxRate || 0.10) - 0.01);
                         logEvent('📜 The king of ' + k.name + ' lowered taxes after counsel from the nobility.', { type: 'policy_change', kingdomId: kId }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms');
                     } else if (opKey === 'lower_tariffs' || opKey === 'merchant_lower_tariffs') {
-                        if (k.laws) k.laws.tariffRate = Math.max(0, ((k.laws.tariffRate != null ? k.laws.tariffRate : 0.10) - 0.02));
+                        // v9p33river464: tariff advocacy must update canonical tradeTariff field.
+                        if (k.laws) k.laws.tradeTariff = Math.max(0, ((k.laws.tradeTariff != null ? k.laws.tradeTariff : 0.10) - 0.02));
                         logEvent('📜 The king of ' + k.name + ' reduced tariffs after noble advocacy.', { type: 'policy_change', kingdomId: kId }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId ? 'my_kingdom' : 'foreign_kingdoms');
                     } else if (opKey.indexOf('unban_') === 0) {
                         var goodToUnban = opKey.replace('unban_', '');

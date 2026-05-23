@@ -19,7 +19,8 @@
         pass_law: { label: 'Pass a Law', icon: '📜', opposite: 'repeal_law' },
         repeal_law: { label: 'Repeal a Law', icon: '🚫', opposite: 'pass_law' },
         quarantine_town: { label: 'Quarantine a Town', icon: '🔒', opposite: 'lift_all_quarantines' },
-        lift_all_quarantines: { label: 'Lift All Quarantines', icon: '🔓', opposite: 'quarantine_town' }
+        lift_all_quarantines: { label: 'Lift All Quarantines', icon: '🔓', opposite: 'quarantine_town' },
+        lift_quarantine: { label: 'Lift Quarantine', icon: '🔓', opposite: 'quarantine_town' }
     };
     var DECLARATION_TO_CAUSE = {
         lower_taxes: 'lower_taxes',
@@ -37,7 +38,8 @@
         pass_law: 'pass_law',
         repeal_law: 'repeal_law',
         quarantine_town: 'quarantine_town',
-        lift_all_quarantines: 'lift_all_quarantines'
+        lift_all_quarantines: 'lift_all_quarantines',
+        lift_quarantine: 'lift_quarantine'
     };
     var CAUSE_LABELS = {
         lower_taxes: 'Lower Taxes',
@@ -56,7 +58,8 @@
         pass_law: 'Pass a Law',
         repeal_law: 'Repeal a Law',
         quarantine_town: 'Quarantine a Town',
-        lift_all_quarantines: 'Lift All Quarantines'
+        lift_all_quarantines: 'Lift All Quarantines',
+        lift_quarantine: 'Lift Quarantine'
     };
     var NOBLE_QUESTION_DEFS = [
         { id: 'king_opinion', text: 'What do you think of our king?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleKingOpinionFact(target, kingdom, asker); } },
@@ -320,7 +323,7 @@
         if ((category === 'declare_war' || category === 'seek_peace') && targetInfo && targetInfo.targetName) {
             return 'The player declared support for ' + label + ' with ' + targetInfo.targetName + '.';
         }
-        if ((category === 'pass_law' || category === 'repeal_law' || category === 'quarantine_town') && targetInfo && targetInfo.paramLabel) {
+        if ((category === 'pass_law' || category === 'repeal_law' || category === 'quarantine_town' || category === 'lift_quarantine') && targetInfo && targetInfo.paramLabel) {
             return 'The player declared support for ' + label + ': ' + targetInfo.paramLabel + '.';
         }
         return 'The player declared support for: ' + label + '.';
@@ -509,6 +512,7 @@
                 if ((np.intelligence || 50) > 60) score += 1;
                 break;
             case 'lift_all_quarantines':
+            case 'lift_quarantine':
                 if ((np.ambition || 50) > 60) score += 1;
                 if ((np.frugality || 50) > 60) score += 1;
                 break;
