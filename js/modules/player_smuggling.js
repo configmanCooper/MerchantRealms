@@ -29,6 +29,13 @@
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
         qty = Math.floor(qty);
 
+        // v9p33river430: verify player actually has the goods before attempting smuggle
+        var _smugAvail = (player.inventory[resourceId] || 0);
+        if (player.townId && player.townStorage[player.townId] && player.townStorage[player.townId][resourceId]) {
+            _smugAvail += player.townStorage[player.townId][resourceId];
+        }
+        if (_smugAvail < qty) return { success: false, message: 'You only have ' + _smugAvail + ' ' + ((findResource(resourceId) || {}).name || resourceId) + '.' };
+
         // Nobles cannot smuggle against their own kingdom — it's beneath their station and treasonous
         var _smNobleRank = player.socialRank[kingdom.id] || 0;
         if (_smNobleRank >= 4) {
@@ -214,6 +221,7 @@
     // ── Exports ──
     Player.attemptSmuggle = attemptSmuggle;
     Player.getSmuggleChance = function(kingdomId) {
+        _sync(); // v9p33river430: sync player state to avoid reading stale/undefined data
         var rankIdx = player.socialRank[kingdomId] || 0;
         var detection = CONFIG.SMUGGLING_BASE_DETECTION
             - (rankIdx * CONFIG.SMUGGLING_RANK_REDUCTION)

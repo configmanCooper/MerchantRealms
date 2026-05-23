@@ -1330,16 +1330,24 @@
         }
     }
 
-    /** Deduct qty of resourceId from carried inventory first, then town storage. */
+    /** Deduct qty of resourceId from carried inventory first, then town storage.
+     *  v9p33river430: returns { success, deducted, shortfall } and clamps to available stock. */
     function deductGoodsFromPools(resourceId, qty) {
         _sync();
-        var fromCarried = Math.min(qty, player.inventory[resourceId] || 0);
-        var fromStorage = qty - fromCarried;
-        player.inventory[resourceId] = (player.inventory[resourceId] || 0) - fromCarried;
-        if (fromStorage > 0 && player.townId && player.townStorage[player.townId]) {
-            player.townStorage[player.townId][resourceId] = (player.townStorage[player.townId][resourceId] || 0) - fromStorage;
+        var carried = player.inventory[resourceId] || 0;
+        var fromCarried = Math.min(qty, carried);
+        player.inventory[resourceId] = carried - fromCarried;
+        if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId]; // v9p33river430: clean up zero keys
+        var remaining = qty - fromCarried;
+        var fromStorage = 0;
+        if (remaining > 0 && player.townId && player.townStorage[player.townId]) {
+            var stored = player.townStorage[player.townId][resourceId] || 0;
+            fromStorage = Math.min(remaining, stored); // v9p33river430: clamp to available stock
+            player.townStorage[player.townId][resourceId] = stored - fromStorage;
             if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
         }
+        var totalDeducted = fromCarried + fromStorage;
+        return { success: totalDeducted >= qty, deducted: totalDeducted, shortfall: qty - totalDeducted };
     }
 
     /**

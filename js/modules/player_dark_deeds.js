@@ -4051,6 +4051,12 @@
             // orderTarget: noble personId
             var noble = orderTarget ? Engine.findPerson(orderTarget) : null;
             if (!noble || !noble.alive) return { success: false, message: 'Selected noble not found.' };
+            // v9p33river430: validate target is actually a noble and belongs to the forged kingdom
+            var _isJailNoble = noble.isNoble || noble.occupation === 'noble' ||
+                (noble.socialRank && typeof noble.socialRank === 'object' &&
+                 Object.keys(noble.socialRank).some(function(k){ return (noble.socialRank[k] || 0) >= 4; }));
+            if (!_isJailNoble) return { success: false, message: (noble.firstName || 'Target') + ' is not a noble.' };
+            if (noble.kingdomId !== kingdom.id) return { success: false, message: (noble.firstName || 'Target') + ' does not belong to ' + (kingdom.name || 'this kingdom') + '.' };
             noble._jailedUntilDay = day + 30;
             noble._jailedCrimeId = 'forged_treason_warrant';
             // Other nobles in the same kingdom lose loyalty toward the king
@@ -5519,6 +5525,12 @@
         if (player.gold < 200) return { success: false, message: 'Need 200g for bribes and favors.' };
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+        // v9p33river430: validate target is actually a noble and in the local kingdom
+        var _isManipNoble = noble.isNoble || noble.occupation === 'noble' ||
+            (noble.socialRank && typeof noble.socialRank === 'object' &&
+             Object.keys(noble.socialRank).some(function(k){ return (noble.socialRank[k] || 0) >= 4; }));
+        if (!_isManipNoble) return { success: false, message: (noble.firstName || 'Target') + ' is not a noble.' };
+        if (noble.kingdomId !== kingdom.id) return { success: false, message: (noble.firstName || 'Target') + ' is not a noble of ' + (kingdom.name || 'this kingdom') + '.' };
 
         var _cd = _checkSchemeCooldown('manipulate_vote', nobleId);
         if (_cd.blocked) return { success: false, message: 'You must wait ' + _cd.daysLeft + ' more days before targeting ' + noble.firstName + ' again.' };

@@ -811,6 +811,7 @@
 
                 if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
                 player.inventory[usedSupply]--;
+                if (player.inventory[usedSupply] <= 0) delete player.inventory[usedSupply]; // v9p33river430: clean up zero-qty keys
 
                 // Success chance: doctor 90%, field_medic 70%, +5% per intelligence point of player
                 var baseChance = hasSkill('doctor') ? 0.90 : 0.70;
@@ -826,11 +827,15 @@
                     } else if (ai.condition === 'sick') {
                         ai.condition = 'healthy';
                         ai.daysSick = 0;
+                        // v9p33river430: clear underlying NPC illness fields so other systems see recovery
+                        spouse.illnesses = []; spouse.sick = false; spouse.illness = null;
                         ai.health = Math.min(ai.health + 30, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
                         Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '. Fully recovered!', null, 'illness');
                     } else if (ai.condition === 'injured') {
                         ai.condition = 'healthy';
                         ai.daysInjured = 0;
+                        // v9p33river430: clear underlying NPC injury fields so other systems see recovery
+                        spouse.injuries = []; spouse.injured = false; spouse.injurySeverity = null; spouse.injuryType = null;
                         ai.health = Math.min(ai.health + 25, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
                         Engine.logEvent('⚕️ ' + player.fullName + ' treated ' + spouse.firstName + '\'s injuries. Fully recovered!', null, 'illness');
                     }
@@ -871,6 +876,9 @@
                 ai.condition = 'healthy';
                 ai.daysSick = 0;
                 ai.daysInjured = 0;
+                // v9p33river430: clear underlying NPC illness/injury fields so other systems see recovery
+                spouse.illnesses = []; spouse.injuries = []; spouse.sick = false; spouse.injured = false;
+                spouse.injurySeverity = null; spouse.injuryType = null; spouse.illness = null;
                 ai.health = Math.min(ai.health + 40, CONFIG.SPOUSE_AI ? CONFIG.SPOUSE_AI.HEALTH_MAX : 100);
                 modifyRelationship(player.spouseId, 3);
                 Engine.logEvent('🏥 ' + spouse.firstName + ' was sent to the hospital for treatment. Cost: ' + cost + 'g. They must stay ' + spouseTreatDays + ' day(s).', null, 'illness');
@@ -975,6 +983,7 @@
 
                 if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.treat_other || 5);
                 player.inventory[usedSup]--;
+                if (player.inventory[usedSup] <= 0) delete player.inventory[usedSup]; // v9p33river430: clean up zero-qty keys
 
                 // Heal the NPC
                 if (npc.injuries && npc.injuries.length > 0) {

@@ -230,6 +230,11 @@
             player.weddingPlan = null;
             return { success: false, message: 'Your fiance is no longer available.' };
         }
+        // v9p33river430: prevent wedding if fiance married someone else during engagement
+        if (person.spouseId && person.spouseId !== 'player') {
+            player.weddingPlan = null;
+            return { success: false, message: person.firstName + ' has married someone else. The wedding is cancelled.' };
+        }
 
         // Set defaults for any unchosen options
         if (!plan.venue) plan.venue = 'town_square';
@@ -679,6 +684,8 @@
         if (child.spouseId) return { success: false, message: 'Your child is already married.' };
         if (target.spouseId) return { success: false, message: 'Target is already married.' };
         if (child.sex === target.sex) return { success: false, message: 'Medieval tradition requires a man and a woman.' };
+        // v9p33river430: require child and target to be in the same town
+        if (child.townId !== target.townId) return { success: false, message: target.firstName + ' is not in the same town as ' + child.firstName + '.' };
 
         if (player.childrenIds.indexOf(childId) < 0) return { success: false, message: 'Not your child.' };
 
@@ -954,7 +961,7 @@
                     skills: { farming: 0, mining: 0, crafting: 0, trading: 0, combat: 0 },
                     spouseId: null,
                     childrenIds: [],
-                    parentIds: ['player', player.spouseId],
+                    parentIds: player.spouseId ? ['player', player.spouseId] : ['player'], // v9p33river430: guard null spouseId
                     personality: {
                         loyalty:      Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
                         ambition:     Math.floor((rng.random() + rng.random() + rng.random()) / 3 * 100),
@@ -999,7 +1006,8 @@
                 }
 
                 player.childrenIds.push(newChild.id);
-                if (spouse && spouse.childrenIds) {
+                if (spouse) {
+                    if (!spouse.childrenIds) spouse.childrenIds = []; // v9p33river430: init if missing
                     spouse.childrenIds.push(newChild.id);
                 }
                 if (!player.familyMembers) player.familyMembers = [];
