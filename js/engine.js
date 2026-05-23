@@ -34564,6 +34564,12 @@
         playerRecruitConspirator(kingdomId, nobleId) {
             var k = findKingdom(kingdomId);
             if (!k || !k._conspiracy) return { success: false, message: 'No active conspiracy.' };
+            // v9p33river447: 7-day cooldown between recruitment attempts
+            var lastAttempt = k._conspiracy._lastPlayerRecruitDay || 0;
+            if (world.day - lastAttempt < 7) {
+                var daysLeft = 7 - (world.day - lastAttempt);
+                return { success: false, message: 'You must wait ' + daysLeft + ' more day' + (daysLeft !== 1 ? 's' : '') + ' before approaching another noble.' };
+            }
             // v9p33river439: bugfix — tolerate malformed conspiracy saves missing a plotters array.
             var plotters = Array.isArray(k._conspiracy.plotters) ? k._conspiracy.plotters : [];
             if (!Array.isArray(k._conspiracy.plotters)) k._conspiracy.plotters = plotters;
@@ -34575,6 +34581,9 @@
             var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
             if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
             if (nobleId === k.king) return { success: false, message: 'You cannot recruit the king into a conspiracy against themselves!' };
+
+            // v9p33river447: stamp cooldown on attempt
+            k._conspiracy._lastPlayerRecruitDay = world.day;
 
             var rng = world.rng;
             var kingLoy = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
