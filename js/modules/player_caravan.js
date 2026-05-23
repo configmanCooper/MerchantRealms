@@ -62,6 +62,31 @@
         }
         return best;
     }
+    function _findSeaRouteBetweenTowns(fromTownId, toTownId) {
+        // v9p33river431: both NPC passage and player-run sea transport must
+        // verify that a real sea route exists between the two ports.
+        var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
+        for (var i = 0; i < seaRoutes.length; i++) {
+            if ((seaRoutes[i].fromTownId === fromTownId && seaRoutes[i].toTownId === toTownId) ||
+                (seaRoutes[i].toTownId === fromTownId && seaRoutes[i].fromTownId === toTownId)) {
+                return seaRoutes[i];
+            }
+        }
+        return null;
+    }
+    function _checkTravelClearance(originTownId, destTownId, route) {
+        // v9p33river431: paid transport must obey the same border and
+        // quarantine rules as normal travel.
+        var borderResult = attemptBorderCrossing(destTownId);
+        if (!borderResult.allowed) {
+            return { success: false, message: borderResult.message };
+        }
+        var quarantineCheck = _checkRouteQuarantine(route, originTownId, destTownId);
+        if (quarantineCheck && !quarantineCheck.allowed) {
+            return { success: false, message: quarantineCheck.message };
+        }
+        return { success: true };
+    }
 
     function useNPCTransport(townId, serviceIndex) {
         _sync();
@@ -79,88 +104,62 @@
         var destTown = Engine.findTown(service.destinationTownId);
         if (!destTown) return { success: false, message: 'Destination not found.' };
 
-        player.gold -= service.price;
-        if (player.stats && typeof player.stats.totalGoldSpent === 'number') {
-            player.stats.totalGoldSpent += service.price;
+        var route = null;
+        var totalDist = 0;
+        if (service.isSea) {
+            var seaRoute = _findSeaRouteBetweenTowns(townId, service.destinationTownId);
+            if (!seaRoute) return { success: false, message: 'No sea route found.' };
+            route = [seaRoute];
+            totalDist = (seaRoute.distance || 500) * 0.7;
+        } else {
+            route = Engine.findPath(townId, service.destinationTownId);
+            if (!route || route.length === 0) return { success: false, message: 'No route found.' };
+            for (var s = 0; s < route.length; s++) {
+                var a = Engine.findTown(route[s].fromTownId);
+                var b = Engine.findTown(route[s].toTownId);
+                if (a && b) totalDist += Math.hypot(a.x - b.x, a.y - b.y) / (CONFIG.CARAVAN_ROAD_MULTIPLIER[route[s].quality] || 1);
+            }
+            totalDist *= 0.6;
         }
+
+        var accessCheck = _checkTravelClearance(townId, service.destinationTownId, route);
+        if (!accessCheck.success) return accessCheck;
+
+        // v9p33river431: only charge paid transport after the route clears the
+        // same border and quarantine checks as regular travel.
+        player.gold -= service.price;
+        player.stats = player.stats || {};
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + service.price;
         service.capacity -= 1;
 
         // Pay the NPC operator
         var operator = Engine.findPerson ? Engine.findPerson(service.operatorId) : null;
         if (operator) operator.gold = (operator.gold || 0) + service.price;
 
-        // v9p33river308: shared refund helper — both route-lookup failures
-        // below previously refunded the player but left the operator paid
-        // (minting gold). Now clawing back from the operator too.
-        var _refundTransport = function() {
-            player.gold += service.price;
-            if (player.stats && typeof player.stats.totalGoldSpent === 'number') {
-                player.stats.totalGoldSpent -= service.price;
-            }
-            if (operator) operator.gold = Math.max(0, (operator.gold || 0) - service.price);
-            service.capacity += 1;
-        };
+        player.traveling = true;
+        player.travelProgress = 0;
+        player.travelDestination = service.destinationTownId;
+        player.travelRoute = route;
+        player.travelOrigin = townId;
+        player.travelPaid = true;
 
         if (service.isSea) {
-            // Sea travel via NPC ship
-            var seaRoutes = Engine.getSeaRoutes ? Engine.getSeaRoutes() : [];
-            var seaRoute = null;
-            for (var i = 0; i < seaRoutes.length; i++) {
-                if ((seaRoutes[i].fromTownId === townId && seaRoutes[i].toTownId === service.destinationTownId) ||
-                    (seaRoutes[i].toTownId === townId && seaRoutes[i].fromTownId === service.destinationTownId)) {
-                    seaRoute = seaRoutes[i];
-                    break;
-                }
-            }
-            if (!seaRoute) {
-                _refundTransport();
-                return { success: false, message: 'No sea route found.' };
-            }
-            player.traveling = true;
-            player.travelProgress = 0;
-            player.travelDestination = service.destinationTownId;
-            player.travelRoute = [seaRoute];
             player.travelBySea = true;
-            player.travelPaid = true;
-            player.travelOrigin = townId;
             // v9p33river285: use 'npc_vessel' (the canonical paid-sea mode) so
             // the energy drain code in player.js recognises it as paid transport
             // (was 'npc_sea', which fell through to the walking-drain branch).
             player.travelMode = 'npc_vessel';
-            player.travelTotalDist = (seaRoute.distance || 500);
-            // NPC ships are reasonably fast
-            player.travelTotalDist *= 0.7;
         } else {
-            // Land travel via NPC wagon — use normal pathfinding with speed bonus
-            var route = Engine.findPath(townId, service.destinationTownId);
-            if (!route || route.length === 0) {
-                _refundTransport();
-                return { success: false, message: 'No route found.' };
-            }
-            var totalDist = 0;
-            for (var s = 0; s < route.length; s++) {
-                var a = Engine.findTown(route[s].fromTownId);
-                var b = Engine.findTown(route[s].toTownId);
-                if (a && b) totalDist += Math.hypot(a.x - b.x, a.y - b.y) / (CONFIG.CARAVAN_ROAD_MULTIPLIER[route[s].quality] || 1);
-            }
-            // NPC wagons have horses, so apply speed bonus (40% faster than walking)
-            totalDist *= 0.6;
-            player.traveling = true;
-            player.travelProgress = 0;
-            player.travelDestination = service.destinationTownId;
-            player.travelRoute = route;
             // v9p33river285: mark paid land transport so energy drain treats it
             // as 'npc_carriage' (passive drain only) instead of walking, and so
             // the player cannot turn back mid-route.
-            player.travelOrigin = townId;
-            player.travelPaid = true;
             player.travelMode = 'npc_carriage';
             player.travelBySea = false;
-            player.travelTotalDist = totalDist;
         }
+        player.travelTotalDist = totalDist;
 
-        Engine.logEvent('\uD83D\uDE90 You boarded ' + service.operatorName + "'s transport to " + destTown.name + ' for ' + service.price + 'g.', null, 'travel_events');
-        return { success: true, message: '\uD83D\uDE90 Boarding transport to ' + destTown.name + '! Paid ' + service.price + 'g.' };
+        Engine.logEvent('🚐 You boarded ' + service.operatorName + "'s transport to " + destTown.name + ' for ' + service.price + 'g.', null, 'travel_events');
+        return { success: true, message: '🚐 Boarding transport to ' + destTown.name + '! Paid ' + service.price + 'g.' };
     }
 
     function setupTransport(townId, destTownId, pricePerPassenger, isSea) {
@@ -179,6 +178,9 @@
             maxCap = getSeaTransportCapacity();
             if (maxCap === 0) return { success: false, message: 'You need a ship for sea transport.' };
             if (!town.isPort || !destTown.isPort) return { success: false, message: 'Both towns must be ports for sea transport.' };
+            // v9p33river431: ship capacity + port checks are not enough; only
+            // offer sea passenger transport when a real sea lane exists.
+            if (!_findSeaRouteBetweenTowns(townId, destTownId)) return { success: false, message: 'No sea route to that destination.' };
         } else {
             maxCap = getTransportCapacity();
             if (maxCap === 0) return { success: false, message: 'You need a wagon and horses for land transport.' };
@@ -225,32 +227,48 @@
 
     function completeTransport() {
         _sync();
-        if (!player.activeTransport) return;
+        if (!player.activeTransport) return { success: false, message: 'No active transport.' };
         var transport = player.activeTransport;
-        if (player.townId !== transport.toTownId) return;
+        if (player.townId !== transport.toTownId) return { success: false, message: 'You have not reached the destination yet.' };
 
-        player.gold += transport.totalRevenue;
-        player.stats.totalGoldEarned += transport.totalRevenue;
-        var passengerCount = transport.passengers.length;
-
-        // Move passengers to destination town
+        // v9p33river431: only pay for passengers who still exist and are alive
+        // when the transport actually arrives.
+        var passengerCount = 0;
+        var deliveredRevenue = 0;
         for (var i = 0; i < transport.passengers.length; i++) {
-            var person = Engine.findPerson ? Engine.findPerson(transport.passengers[i].personId) : null;
-            if (person) {
-                person.townId = transport.toTownId;
-            }
+            var passenger = transport.passengers[i];
+            var person = Engine.findPerson ? Engine.findPerson(passenger.personId) : null;
+            if (!person || !person.alive) continue;
+            person.townId = transport.toTownId;
+            passengerCount += 1;
+            deliveredRevenue += passenger.fare || 0;
         }
 
+        player.stats = player.stats || {};
+        player.gold += deliveredRevenue;
+        player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + deliveredRevenue;
+
         var destTown = Engine.findTown(transport.toTownId);
-        Engine.logEvent('\uD83D\uDE8C Delivered ' + passengerCount + ' passengers to ' + (destTown ? destTown.name : 'destination') + '. Earned ' + transport.totalRevenue + 'g!', null, 'my_business');
-        grantXP(5 + passengerCount * 2, 'Passenger transport');
+        Engine.logEvent('🚌 Delivered ' + passengerCount + ' passengers to ' + (destTown ? destTown.name : 'destination') + '. Earned ' + deliveredRevenue + 'g!', null, 'my_business');
+        if (passengerCount > 0) grantXP(5 + passengerCount * 2, 'Passenger transport');
         player.activeTransport = null;
+        return {
+            success: true,
+            message: 'Delivered ' + passengerCount + ' passengers to ' + (destTown ? destTown.name : 'destination') + '. Earned ' + deliveredRevenue + 'g.',
+            passengers: passengerCount,
+            revenue: deliveredRevenue
+        };
     }
 
     function cancelTransport() {
         _sync();
         if (!player.activeTransport) return { success: false, message: 'No active transport.' };
         var transport = player.activeTransport;
+        // v9p33river431: once you are already at the destination, finishing the
+        // transport must not bounce passengers back to the origin queue.
+        if (player.townId === transport.toTownId) {
+            return completeTransport();
+        }
         // Return passengers to origin town's travel demand
         var originTown = Engine.findTown(transport.fromTownId);
         if (originTown) {
@@ -274,6 +292,20 @@
         player.activeTransport = null;
         Engine.logEvent('🚌 Transport cancelled. ' + count + ' passengers returned to ' + (originTown ? originTown.name : 'origin') + '.', null, 'my_business');
         return { success: true, message: 'Transport cancelled. ' + count + ' passengers returned to waiting.' };
+    }
+
+    function _hasLocalQuarantinePrivilege(kingdomId) {
+        // v9p33river431: the global isNoble flag is cross-kingdom, so only the
+        // player's rank in the current kingdom should grant quarantine passage.
+        var localRank = (player.socialRank && player.socialRank[kingdomId]) || 0;
+        return localRank >= 4 || !!(player.isKing && player.kingState && player.kingState.kingdomId === kingdomId);
+    }
+    function _hasOfficialQuarantineOrders(kingdomId) {
+        // v9p33river431: quarantine clearance from auto-travel only applies to
+        // recognized crown missions issued by the kingdom running the checkpoint.
+        var mission = player.autoTravelJob;
+        var officialTypes = ['royal_messenger', 'spy', 'weapons_courier', 'privateer'];
+        return !!(mission && officialTypes.indexOf(mission.type) >= 0 && mission.kingdomId === kingdomId);
     }
 
     // Quarantine travel check — nobles pass freely, others can try to sneak through
@@ -315,14 +347,10 @@
             var isMartial = qType === 'martial';
             var qLabel = isMartial ? 'martial quarantine' : 'quarantine';
 
-            // Nobles (minor noble+, rank >= 4) pass freely
-            if (player.isNoble) {
-                return { allowed: true, message: 'Your noble status grants passage through the ' + qLabel + ' at ' + t.name + '.' };
+            if (_hasLocalQuarantinePrivilege(t.kingdomId)) {
+                return { allowed: true, message: 'Your standing in this kingdom grants passage through the ' + qLabel + ' at ' + t.name + '.' };
             }
-            // v9p33river134: official auto-travel kingdom missions (royal
-            // messenger, weapons courier, spy, etc.) carry sealed orders that
-            // grant passage through quarantines along the route.
-            if (player.autoTravelJob) {
+            if (_hasOfficialQuarantineOrders(t.kingdomId)) {
                 return { allowed: true, message: '📜 Your official kingdom orders grant passage through the ' + qLabel + ' at ' + t.name + '.' };
             }
             // Guildmasters (rank 3) can pass standard quarantine on trade business, but NOT martial
@@ -495,10 +523,15 @@
             var isMartial = qType === 'martial';
             var qLabel = isMartial ? 'Martial Quarantine' : 'Quarantine';
 
-            // Check if player passes freely
-            if (player.isNoble) {
+            // v9p33river431: preview uses the same kingdom-specific privilege
+            // checks as the live quarantine gate.
+            if (_hasLocalQuarantinePrivilege(t.kingdomId)) {
                 return { blocked: false, townName: t.name, townId: tid, qType: qType, qLabel: qLabel,
-                    reason: 'Your noble status grants free passage.' };
+                    reason: 'Your standing in this kingdom grants free passage.' };
+            }
+            if (_hasOfficialQuarantineOrders(t.kingdomId)) {
+                return { blocked: false, townName: t.name, townId: tid, qType: qType, qLabel: qLabel,
+                    reason: 'Your official kingdom orders grant passage.' };
             }
             var playerRankInKingdom = 0;
             if (t.kingdomId && player.socialRank) {
@@ -721,13 +754,10 @@
             var _bisMartial = _bqType === 'martial';
             var _bqLabel = _bisMartial ? 'martial quarantine' : 'quarantine';
 
-            // Nobles pass freely
-            if (player.isNoble) {
-                return { allowed: true, message: 'Your noble status grants passage through the ' + _bqLabel + ' at ' + _bt.name + '.' };
+            if (_hasLocalQuarantinePrivilege(_bt.kingdomId)) {
+                return { allowed: true, message: 'Your standing in this kingdom grants passage through the ' + _bqLabel + ' at ' + _bt.name + '.' };
             }
-            // v9p33river134: official auto-travel kingdom missions grant
-            // passage (mirrors _checkRouteQuarantine logic).
-            if (player.autoTravelJob) {
+            if (_hasOfficialQuarantineOrders(_bt.kingdomId)) {
                 return { allowed: true, message: '📜 Your official kingdom orders grant passage through the ' + _bqLabel + ' at ' + _bt.name + '.' };
             }
             var _bpRank = 0;

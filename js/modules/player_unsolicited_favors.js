@@ -25,6 +25,8 @@
     function _findKingdom(id) { try { return Engine.getKingdom(id); } catch(e) { return null; } }
     function _logEvent(msg, d, c) { try { Engine.logEvent(msg, d, c); } catch(e) {} }
     function _toast(msg, type) { if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, type); }
+    function _rng() { try { return Engine.getRng ? Engine.getRng() : null; } catch(e) { return null; } } // v9p33river431: deterministic RNG helper
+    function _canTalkTo(personId) { try { var r = Player.canTalkTo ? Player.canTalkTo(personId) : { canTalk: true }; return !!(r && r.canTalk); } catch(e) { return false; } } // v9p33river431: Bug 59 — respect talkability gates
 
     // ── Constants ──────────────────────────────────────────
     var FAVOR_CHANCE = 0.02;
@@ -80,7 +82,7 @@
 
     // ── State init ─────────────────────────────────────────
     function _initState() {
-        if (player._lastUnsolicitedFavorDay === undefined) player._lastUnsolicitedFavorDay = 0;
+        if (player._lastUnsolicitedFavorDay === undefined) player._lastUnsolicitedFavorDay = null; // v9p33river431: Bug 49 — undefined means no prior favor yet
         if (player._favorHistory === undefined) player._favorHistory = [];
         if (player._lastFavorInfo === undefined) player._lastFavorInfo = null;
     }
@@ -134,7 +136,8 @@
             if (typeof RESOURCE_TYPES !== 'undefined') {
                 var rtArr = Object.values(RESOURCE_TYPES);
                 if (rtArr.length > 0) {
-                    var ri = Math.floor(Math.random() * rtArr.length);
+                    var _fftRng = _rng(); // v9p33river431: Bug 50 — use deterministic RNG for favor text placeholders
+                    var ri = _fftRng ? _fftRng.randInt(0, rtArr.length - 1) : 0;
                     goodName = rtArr[ri].name || 'goods';
                 }
             }
@@ -145,13 +148,31 @@
                    .replace(/\{good\}/g, goodName);
     }
 
+    function _clearPlayerJailState() {
+        player.jailedUntilDay = 0;
+        if (player.jailFastForwardAvailable !== undefined) player.jailFastForwardAvailable = false;
+        if (player.jailReason !== undefined) player.jailReason = null;
+        if (player.jailKingdomId !== undefined) player.jailKingdomId = null;
+        if (player.jailed !== undefined) player.jailed = false;
+        if (player.jailDaysRemaining !== undefined) player.jailDaysRemaining = 0;
+    } // v9p33river431: Bug 56 — clear known jail metadata, not just the timer
+
+    function _clearPlayerCriminalState() {
+        player.criminalRecord = {};
+        if (player.activeManhunts) player.activeManhunts = {};
+        if (player.notoriety !== undefined) player.notoriety = 0;
+        if (player.nobleNotoriety !== undefined) player.nobleNotoriety = 0;
+        _clearPlayerJailState();
+    } // v9p33river431: Bug 57 — pardon should clear related criminal/jail state too
+
     function _applyFavorEffects(favor, person) {
         var day = _getDay();
         var effects = [];
+        var rng = _rng(); // v9p33river431: Bugs 51-53 — single deterministic RNG for favor rewards
 
         // Gold gift
         if (favor.goldMin != null) {
-            var gold = favor.goldMin + Math.floor(Math.random() * ((favor.goldMax || favor.goldMin) - favor.goldMin + 1));
+            var gold = favor.goldMin + (rng ? rng.randInt(0, (favor.goldMax || favor.goldMin) - favor.goldMin) : 0);
             try { Player.modifyGold(gold); } catch(e) { player.gold = (player.gold || 0) + gold; }
             effects.push('+' + gold + 'g');
         }
@@ -165,15 +186,15 @@
                         var rtArr2 = Object.values(RESOURCE_TYPES);
                         if (rtArr2.length > 0) {
                             var tradeGoods = rtArr2.filter(function(r) { return r.category === 'luxury'; });
-                            if (tradeGoods.length > 0) goodId = tradeGoods[Math.floor(Math.random() * tradeGoods.length)].id;
-                            else goodId = rtArr2[Math.floor(Math.random() * rtArr2.length)].id;
+                            if (tradeGoods.length > 0) goodId = tradeGoods[rng ? rng.randInt(0, tradeGoods.length - 1) : 0].id; // v9p33river431: Bug 52 — deterministic trade-good pick
+                            else goodId = rtArr2[rng ? rng.randInt(0, rtArr2.length - 1) : 0].id; // v9p33river431: Bug 52 — deterministic fallback good pick
                         }
                     }
                 } catch(e) {}
             }
             if (goodId && goodId !== 'random_trade') {
                 var qty = 5;
-                if (favor.goodQty) qty = favor.goodQty[0] + Math.floor(Math.random() * (favor.goodQty[1] - favor.goodQty[0] + 1));
+                if (favor.goodQty) qty = favor.goodQty[0] + (rng ? rng.randInt(0, favor.goodQty[1] - favor.goodQty[0]) : 0); // v9p33river431: Bug 53
                 if (!player.inventory) player.inventory = {};
                 player.inventory[goodId] = (player.inventory[goodId] || 0) + qty;
                 var gName = goodId;
@@ -207,13 +228,13 @@
 
         // Jail release
         if (favor.jailRelease && player.jailedUntilDay) {
-            player.jailedUntilDay = 0;
+            _clearPlayerJailState(); // v9p33river431: Bug 56 — release should clear related jail metadata too
             effects.push('Released from jail!');
         }
 
         // Clear criminal record
         if (favor.clearCriminal && player.criminalRecord) {
-            player.criminalRecord = {};
+            _clearPlayerCriminalState(); // v9p33river431: Bug 57 — pardon should clear jail/notoriety follow-on state too
             effects.push('Criminal record cleared!');
         }
 
@@ -246,6 +267,10 @@
         _ensureState();
         _initState();
 
+        var _isTutorial = typeof Tutorial !== 'undefined' && Tutorial.isActive && Tutorial.isActive();
+        var _isStory = player && player.storyMode && player.storyMode.active && !player.storyMode.complete;
+        if (_isTutorial || _isStory) return; // v9p33river431: Bug 58 — disable favors during tutorial/story mode
+
         var day = _getDay();
         // Global cooldown
         // v9p33river366: favor cooldowns set on day 0 must still block immediate repeats.
@@ -262,6 +287,7 @@
             var p = w.people[i];
             if (!p || !p.alive || p.id === 'player') continue;
             if (p.townId !== player.townId) continue;
+            if (!_canTalkTo(p.id)) continue; // v9p33river431: Bug 59 — do not trigger favors from untalkable NPCs
             var relLvl = _getRelLevel(p.id);
             var isLov = _isLover(p.id);
             if (relLvl >= REL_THRESHOLD || isLov) {
@@ -271,15 +297,17 @@
         if (!candidates.length) return;
 
         // Each eligible NPC has a 2% chance
+        var rng = _rng();
+        if (!rng) return; // v9p33river431: Bugs 60-61 — require deterministic RNG for trigger chance and favor selection
         for (var ci = 0; ci < candidates.length; ci++) {
-            if (Math.random() >= FAVOR_CHANCE) continue;
+            if (rng.random() >= FAVOR_CHANCE) continue;
 
             var npc = candidates[ci];
             var role = _getNPCRole(npc);
             var eligible = _getEligibleFavors(npc, role);
             if (!eligible.length) continue;
 
-            var favor = eligible[Math.floor(Math.random() * eligible.length)];
+            var favor = eligible[rng.randInt(0, eligible.length - 1)];
             var text = _fillFavorText(favor.text, npc);
             var effects = _applyFavorEffects(favor, npc);
 

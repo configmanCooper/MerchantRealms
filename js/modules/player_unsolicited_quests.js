@@ -357,12 +357,17 @@
         },
         check: function(q) {
             if (player.townId !== q.params.targetTownId) return { ok: false, reason: 'Travel to ' + q.params.targetTownName + ' to deliver the letter.' };
+            var target = _findPerson(q.params.targetNobleId);
+            if (!target || target.alive === false || target.townId !== q.params.targetTownId) return { ok: false, reason: q.params.targetNobleName + ' is no longer in ' + q.params.targetTownName + '.' }; // v9p33river431: Bug 73 — require the actual recipient to be present
             return { ok: true };
         },
         consume: function(q) {
             var purpose = q.params.purpose || 'alliance';
             var sender = _findPerson(q.params.senderId);
             var target = _findPerson(q.params.targetNobleId);
+            if (!sender || sender.alive === false || !target || target.alive === false || target.townId !== q.params.targetTownId) {
+                throw new Error('Courier participants unavailable'); // v9p33river431: Bug 74 — missing nobles must abort turn-in before rewards
+            }
             if (sender && target) {
                 if (!target._npcRelationships) target._npcRelationships = {};
                 if (!sender._npcRelationships) sender._npcRelationships = {};
@@ -845,13 +850,22 @@
         _ensureState();
         var offer = player._pendingUnsolicitedOffer;
         if (!offer) return { success: false, message: 'No pending offer.' };
+        var day = _getDay();
+        if (offer.expiresDay && day > offer.expiresDay) {
+            player._pendingUnsolicitedOffer = null;
+            return { success: false, message: 'That offer has expired.' }; // v9p33river431: Bug 75 — re-check expiry on accept
+        }
+        if ((player._activeUnsolicitedQuests || []).length >= MAX_ACTIVE) {
+            return { success: false, message: 'You already have the maximum number of active unsolicited quests.' }; // v9p33river431: Bug 76 — enforce active quest cap on accept too
+        }
         var offerNpc = _findPerson(offer.npcId);
         if (!offerNpc || offerNpc.alive === false) {
             // v9p33river366: don't let dead/missing NPCs hand out ghost quests.
             player._pendingUnsolicitedOffer = null;
             return { success: false, message: 'That offer is no longer available.' };
         }
-        var day = _getDay();
+        if (offerNpc.townId !== player.townId) return { success: false, message: 'You must be in the same town as ' + offer.npcName + ' to accept this offer.' }; // v9p33river431: Bug 77 — same-town requirement must still hold on accept
+        if (!_canTalkTo(offer.npcId)) return { success: false, message: 'You cannot speak to ' + offer.npcName + ' right now.' }; // v9p33river431: Bug 77 — honor talkability gates on accept
         var quest = {
             id: 'uq_' + (player._nextUnsolicitedQuestId++),
             npcId: offer.npcId,
@@ -937,6 +951,16 @@
             player._activeUnsolicitedQuests.splice(idx, 1);
             return { success: false, message: 'Quest definition missing.' };
         }
+        var day = _getDay();
+        if (q.deadlineDay && day > q.deadlineDay) {
+            _failUnsolicitedQuest(idx, 'expired');
+            return { success: false, message: 'This quest has expired.' }; // v9p33river431: Bug 78 — re-check deadline at turn-in time
+        }
+        var questNpc = q.npcId ? _findPerson(q.npcId) : null;
+        if (!questNpc || questNpc.alive === false) {
+            _failUnsolicitedQuest(idx, 'giver_dead');
+            return { success: false, message: 'That quest giver is no longer available.' }; // v9p33river431: Bug 81 — abort completion if giver lookup fails
+        }
         var check;
         try {
             // v9p33river367: stale/corrupted quest params should fail cleanly instead of crashing turn-in.
@@ -945,12 +969,16 @@
             return { success: false, message: 'This quest cannot be completed right now.' };
         }
         if (!check.ok) return { success: false, message: check.reason };
-        // Consume + award
-        try { def.consume(q); } catch (e) {}
+        // Consume + award — if consume throws, abort without paying rewards (Bug 73)
+        // v9p33river431: silent consume failure previously let player keep goods AND receive rewards
+        var consumeOk = true;
+        try { def.consume(q); } catch (e) { consumeOk = false; }
+        if (!consumeOk) return { success: false, message: 'Quest completion failed unexpectedly. Please try again.' };
         var rewards = q.rewards || {};
         var msg = '✅ Quest complete!';
         if (rewards.gold) {
-            player.gold = (player.gold || 0) + rewards.gold;
+            if (Player.modifyGold) Player.modifyGold(rewards.gold, 'quest_reward', 'Completed unsolicited quest for ' + q.npcName); // v9p33river431: Bug 80 — route reward gold through finance/stats logging
+            else player.gold = (player.gold || 0) + rewards.gold;
             msg += ' +' + rewards.gold + 'g.';
         }
         if (rewards.rel) {
@@ -960,8 +988,7 @@
         if (rewards.unique) _applyUniqueReward(rewards.unique, q);
         // Record completion on NPC for disposition
         try {
-            var npc = _findPerson(q.npcId);
-            if (npc && Engine.recordPlayerQuestCompleted) Engine.recordPlayerQuestCompleted(npc);
+            if (Engine.recordPlayerQuestCompleted) Engine.recordPlayerQuestCompleted(questNpc);
         } catch (e) {}
         if (player.completedQuestCount != null) player.completedQuestCount = (player.completedQuestCount || 0) + 1;
         player._activeUnsolicitedQuests.splice(idx, 1);
@@ -991,8 +1018,10 @@
             } else if (unique.type === 'citizenship') {
                 if (unique.kingdomId) {
                     if (!player.socialRank) player.socialRank = {};
+                    if (!player.rankSince) player.rankSince = {};
                     if ((player.socialRank[unique.kingdomId] || 0) < 1) player.socialRank[unique.kingdomId] = 1;
-                    if (!player.citizenshipKingdomId) player.citizenshipKingdomId = unique.kingdomId;
+                    if (player.rankSince[unique.kingdomId] == null) player.rankSince[unique.kingdomId] = _getDay(); // v9p33river431: Bug 82 — grant citizenship with rank metadata too
+                    player.citizenshipKingdomId = unique.kingdomId; // v9p33river431: Bug 83 — citizenship rewards should switch the canonical citizenship kingdom
                     _logEvent('🏛️ You have been granted citizenship.', null, 'my_actions');
                 }
             }
@@ -1050,10 +1079,12 @@
             var q = active[i];
             if (!q) continue;
             var def = QUEST_DEFS[q.defId]; if (!def || !def.onArrival) continue;
-            var res = def.onArrival(q, townId);
-            if (res && res.advance) {
-                _toast(res.msg || 'Quest progress.', 'success');
-            }
+            try {
+                var res = def.onArrival(q, townId);
+                if (res && res.advance) {
+                    _toast(res.msg || 'Quest progress.', 'success');
+                }
+            } catch (e) {} // v9p33river431: Bug 84 — isolate arrival-hook failures so one quest cannot break arrival processing
         }
         return fired;
     }

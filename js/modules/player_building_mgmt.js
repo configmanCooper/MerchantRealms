@@ -20,6 +20,60 @@
         if (typeof CONFIG !== 'undefined' && CONFIG.ITEMS) return CONFIG.ITEMS[id] || null;
         return null;
     }
+    function _consumeBuildingWorkCost(bt) {
+        // v9p33river431: only charge the shift after all validation passes so
+        // missing-input failures do not burn ticks or energy.
+        if ((player.ticksRemaining || 0) >= 15) {
+            player.ticksRemaining -= 15;
+        } else {
+            player.ticksRemaining = 0;
+        }
+        if (Player.consumeEnergy) {
+            var _ePerTick = 2.0;
+            if (bt) {
+                if (bt.category === 'farm') _ePerTick = 2.0;
+                else if (bt.category === 'mining' || bt.category === 'mine') _ePerTick = 3.0;
+                else if (bt.category === 'processing') _ePerTick = 2.5;
+                else if (bt.category === 'finished') _ePerTick = 2.0;
+                else if (bt.category === 'retail' || bt.category === 'trade') _ePerTick = 1.5;
+                else if (bt.category === 'storage') _ePerTick = 0.5;
+            }
+            Player.consumeEnergy(15 * _ePerTick);
+        }
+    }
+    function _getManualOutputStorageState(bt, bld, outputId) {
+        // v9p33river431: manual shifts now honor the same output storage cap
+        // used by daily production and manager auto-handling.
+        var cap = Player._bldStorageCap ? Player._bldStorageCap(bt.storage || 50, bld.level) : Math.floor((bt.storage || 50) * (1 + (((bld.level || 1) - 1) * 0.50)));
+        if (cap <= 0) return { cap: 0, space: Infinity };
+        var outputSet = {};
+        outputSet[outputId] = true;
+        if (bt.canProduce) {
+            for (var _moi = 0; _moi < bt.canProduce.length; _moi++) outputSet[bt.canProduce[_moi]] = true;
+        }
+        if (bt.availableProducts) {
+            for (var _mok in bt.availableProducts) {
+                var _mor = bt.availableProducts[_mok];
+                if (_mor && _mor.produces) outputSet[_mor.produces] = true;
+            }
+        }
+        var consumed = Player.getBuildingConsumedGoods ? Player.getBuildingConsumedGoods(bt) : (bt.consumes || {});
+        for (var consumedId in consumed) delete outputSet[consumedId];
+        var used = 0;
+        if (bld.inventory) {
+            for (var invId in bld.inventory) {
+                if (!outputSet[invId]) continue;
+                var invRes = findResource(invId);
+                used += (bld.inventory[invId] || 0) * (invRes ? (invRes.weight || 1) : 1);
+            }
+        }
+        var outRes = findResource(outputId);
+        var outWeight = outRes ? (outRes.weight || 1) : 1;
+        return {
+            cap: cap,
+            space: Math.max(0, Math.floor((cap - used) / outWeight))
+        };
+    }
 
     // ========================================================
     // §1 WORK AT OWN BUILDING (C1)
@@ -60,35 +114,11 @@
         var _isWorkable = !!(bt.retailConfig || bt.produces);
         if (!_isWorkable) return { success: false, message: 'This building does not produce goods or support a retail shift.' };
 
-        // Deduct ticks if available (but don't block — owner can always work their building)
-        if ((player.ticksRemaining || 0) >= 15) {
-            player.ticksRemaining -= 15;
-        } else {
-            player.ticksRemaining = 0;
-        }
-
-        // v9p33river98: working at your own building now costs energy too,
-        // matching the regular work-job flow. Cost scales with building category.
-        if (Player.consumeEnergy) {
-            var _bt = bt;
-            var _ePerTick = 2.0; // default = medium
-            if (_bt) {
-                if (_bt.category === 'farm') _ePerTick = 2.0;
-                // v9p33river308: config uses 'mine' (singular) for mine
-                // buildings (iron_mine/gold_mine/quarry/coal_mine etc).
-                // Was matching only 'mining', so mines fell back to the
-                // default 2.0 instead of the intended 3.0.
-                else if (_bt.category === 'mining' || _bt.category === 'mine') _ePerTick = 3.0;
-                else if (_bt.category === 'processing') _ePerTick = 2.5;
-                else if (_bt.category === 'finished') _ePerTick = 2.0;
-                else if (_bt.category === 'retail' || _bt.category === 'trade') _ePerTick = 1.5;
-                else if (_bt.category === 'storage') _ePerTick = 0.5;
-            }
-            Player.consumeEnergy(15 * _ePerTick);
-        }
-
         // Retail buildings — player works the counter
         if (bt.retailConfig) {
+            // v9p33river431: retail shifts still pay the normal work cost, but
+            // only after the building passed all early validation.
+            _consumeBuildingWorkCost(bt);
             return _workRetailShift(bld, bt, day);
         }
 
@@ -142,6 +172,13 @@
 
         var rawOutput = activeRate * playerWorkerFraction * seasonMod * levelBonus * playerSkillMult * condPenalty;
         var output = Math.max(1, Math.round(rawOutput));
+        var outputState = _getManualOutputStorageState(bt, bld, activeProduces);
+        var storedOutput = Math.min(output, outputState.space);
+        var overflowOutput = Math.max(0, output - storedOutput);
+
+        // v9p33river431: production shifts only spend the action after both the
+        // recipe inputs and output storage rules have been validated.
+        _consumeBuildingWorkCost(bt);
 
         // Consume inputs
         if (activeConsumes) {
@@ -156,7 +193,26 @@
 
         // Store output in building's own inventory (output storage), matching daily production
         if (!bld.inventory) bld.inventory = {};
-        bld.inventory[activeProduces] = (bld.inventory[activeProduces] || 0) + output;
+        if (storedOutput > 0) {
+            bld.inventory[activeProduces] = (bld.inventory[activeProduces] || 0) + storedOutput;
+        }
+
+        var overflowRevenue = 0;
+        if (overflowOutput > 0) {
+            var sellTown = ENGINE_REF ? ENGINE_REF.findTown(bld.townId) : null;
+            if (sellTown && !sellTown.isOutpost && sellTown.market) {
+                if (!sellTown.market.supply) sellTown.market.supply = {};
+                var overflowRes = findResource(activeProduces);
+                var overflowPrice = (sellTown.market.prices && sellTown.market.prices[activeProduces]) || ((overflowRes && overflowRes.basePrice) || 1);
+                overflowRevenue = Math.floor(overflowOutput * overflowPrice);
+                player.stats = player.stats || {};
+                player.gold += overflowRevenue;
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + overflowRevenue;
+                sellTown.market.supply[activeProduces] = (sellTown.market.supply[activeProduces] || 0) + overflowOutput;
+                if (ENGINE_REF && ENGINE_REF.transferFoodCohorts) ENGINE_REF.transferFoodCohorts(bld, sellTown.market, activeProduces, overflowOutput);
+                if (Player.logFinance) Player.logFinance(overflowRevenue, 'building_sales', 'Sold ' + overflowOutput + ' ' + activeProduces + ' (manual overflow)');
+            }
+        }
 
         // Mark as worked today
         bld._playerWorkedDay = day;
@@ -171,6 +227,9 @@
 
         var prodRes = findResource(activeProduces);
         var prodName = prodRes ? prodRes.name : activeProduces;
+        var overflowMsg = '';
+        if (overflowOutput > 0 && overflowRevenue > 0) overflowMsg = ' Storage was full, so ' + overflowOutput + ' auto-sold for ' + overflowRevenue + 'g.';
+        else if (overflowOutput > 0) overflowMsg = ' Storage was full, so ' + overflowOutput + ' could not be stored.';
 
         // Story Mode: notify of work shift
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
@@ -179,7 +238,7 @@
 
         return {
             success: true,
-            message: '🔨 Worked a shift at ' + bt.name + '! Produced ' + output + ' ' + prodName + '. (+3 XP)',
+            message: '🔨 Worked a shift at ' + bt.name + '! Produced ' + output + ' ' + prodName + '.' + overflowMsg + ' (+3 XP)',
             produced: output,
             resource: activeProduces
         };
@@ -201,6 +260,9 @@
 
         // Player gains XP
         player.xp = (player.xp || 0) + 2;
+        player.stats = player.stats || {};
+        // v9p33river431: retail shifts award XP too, so keep total XP stats in sync.
+        player.stats.totalXpEarned = (player.stats.totalXpEarned || 0) + 2;
 
         return {
             success: true,

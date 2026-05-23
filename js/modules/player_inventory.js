@@ -7,7 +7,12 @@
     if (!Player) throw new Error("Player must be loaded before player_inventory.js");
 
     var player;
-    function _sync() { player = Player.state; }
+    function _sync() {
+        player = Player.state;
+        // v9p33river431: legacy saves can lack the horses array, but the horse
+        // buy/sell/mount flows all rely on array methods.
+        if (player && !Array.isArray(player.horses)) player.horses = [];
+    }
     function _findOwnedTownBuildingIndex(town, bld) {
         if (!town || !town.buildings || !bld) return -1;
         if (bld.id) {
@@ -121,6 +126,8 @@
         var price = 0;
         if (town && town.market) {
             price = Math.floor(((town.market.prices && town.market.prices.horses) || 60) * 0.7);
+            // v9p33river431: some markets exist without an initialized supply map.
+            if (!town.market.supply) town.market.supply = {};
             town.market.supply.horses = (town.market.supply.horses || 0) + 1;
         } else {
             price = 40; // Fallback

@@ -2121,7 +2121,7 @@ function assignBusinessTask(agentId) {
 
     var result = Player.assignAgentTask(agentId, taskSel.value, {
         targetTownId: townSel ? townSel.value : null,
-        monthlyBudget: budgetEl ? parseInt(budgetEl.value) || 500 : 500
+        monthlyBudget: budgetEl ? (parseInt(budgetEl.value, 10) || 0) : 0 // v9p33river431: blank/invalid → 0 (unlimited), not 500 (bug 47)
     });
     toast(result.message, result.success ? 'success' : 'warning');
     if (result.success) openNobilityDialog();
@@ -2133,7 +2133,9 @@ function assignIntelTask(agentId) {
     if (!taskSel) return;
 
     var params = {};
-    if (taskSel.value === 'spy_on_target' && targetSel) {
+    if (taskSel.value === 'spy_on_target') {
+        // v9p33river431: validate spy target is selected before assigning (bug 48)
+        if (!targetSel || !targetSel.value) { toast('Select a target to spy on.', 'warning'); return; }
         params.targetId = targetSel.value;
     }
     var result = Player.assignAgentTask(agentId, taskSel.value, params);

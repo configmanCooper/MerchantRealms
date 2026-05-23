@@ -65,6 +65,7 @@
         var maxA = getMaxAgents();
         if ((player.agents || []).length >= maxA) return { success: false, message: 'You can only have ' + maxA + ' agents at your current rank.' };
         if (!townId) townId = player.townId;
+        if (!Engine.findTown(townId)) return { success: false, message: 'Town not found.' }; // v9p33river431: validate town exists before hiring
         if (player.townId !== townId) return { success: false, message: 'You must be in the town to hire.' };
         var cost = getAgentDailyCost(townId);
         var hireFee = cost * 10; // 10 days upfront
@@ -122,6 +123,10 @@
         if (idx === -1) return { success: false, message: 'Agent not found.' };
         var agent = player.agents[idx];
         if (agent.status === 'jailed') return { success: false, message: agent.name + ' is in jail and cannot be dismissed yet.' };
+        // v9p33river431: return agent-held purchase cost to prevent orphaned spend (bugs 2+3)
+        if (agent.task && agent.task.heldQty > 0 && agent.task.heldCost > 0) {
+            player.gold += agent.task.heldCost;
+        }
         player.agents.splice(idx, 1);
         return { success: true, message: '✅ Dismissed ' + agent.name + '.' };
     }
@@ -161,6 +166,30 @@
         noble_intrigue_expose: { category: 'diplomatic', label: 'Expose Noble Secrets', icon: '💥', duration: 0, skillKey: 'stealth', baseDetection: 0.20, desc: 'Investigate and expose damaging information about a noble' }
     };
 
+    // v9p33river431: rank-based helper keeps diplomatic target checks aligned with court-role schemas
+    function _getAgentPersonMaxRank(person) {
+        var maxRank = 0;
+        if (!person || !person.socialRank) return 0;
+        for (var kingdomId in person.socialRank) {
+            maxRank = Math.max(maxRank, person.socialRank[kingdomId] || 0);
+        }
+        return maxRank;
+    }
+
+    function _isAgentNobleTarget(person, kingdomId) {
+        if (!person || !person.alive) return false;
+        if (person.isKing || person.occupation === 'king' || person.occupation === 'queen' || person.occupation === 'reigning_queen') return false; // v9p33river431: exclude monarchs from noble-only diplomatic targets
+        if (person.isNoble || person.occupation === 'noble') return true;
+        if (kingdomId && person.socialRank && person.socialRank[kingdomId] >= 4) return true; // v9p33river431: allow other noble court roles by rank
+        return _getAgentPersonMaxRank(person) >= 4;
+    }
+
+    function _recordAgentIncome(amount, description) {
+        if (!(amount > 0)) return;
+        if (Player.logFinance) Player.logFinance(amount, 'agents', description);
+        if (player.stats) player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + amount; // v9p33river431: keep agent income in lifetime stats as well as finance ledger (bugs 30/31/34/35)
+    }
+
     function assignAgentTask(agentId, taskType, params) {
         _sync();
         var agent = findAgent(agentId);
@@ -184,15 +213,41 @@
         }
 
         // For business tasks with budget, validate
-        if (params.monthlyBudget !== undefined && params.monthlyBudget < 0) {
-            return { success: false, message: 'Budget cannot be negative.' };
+        if (params.monthlyBudget !== undefined) {
+            if (typeof params.monthlyBudget !== 'number' || isNaN(params.monthlyBudget) || params.monthlyBudget < 0) {
+                return { success: false, message: 'Budget must be a non-negative number.' }; // v9p33river431: bug 6
+            }
         }
 
         // If agent needs to travel to a different town
         var targetTown = params.targetTownId || null;
         if (def.category === 'hostile' && params.targetId) {
             var targetPerson = Engine.findPerson(params.targetId);
-            if (targetPerson) targetTown = targetPerson.townId;
+            // v9p33river431: validate target exists and is alive before assignment (bug 8)
+            if (!targetPerson || !targetPerson.alive) return { success: false, message: 'Target is no longer available.' };
+            targetTown = targetPerson.townId;
+        }
+        if (def.category === 'diplomatic' && params.targetId) {
+            var diplomaticTarget = Engine.findPerson(params.targetId);
+            var diplomaticTown = diplomaticTarget && diplomaticTarget.townId ? Engine.findTown(diplomaticTarget.townId) : null;
+            var diplomaticKingdomId = diplomaticTown ? diplomaticTown.kingdomId : '';
+            if (!_isAgentNobleTarget(diplomaticTarget, diplomaticKingdomId)) {
+                return { success: false, message: 'Target must be a living noble.' }; // v9p33river431: enforce noble-only diplomatic targets (bugs 9+41)
+            }
+        }
+        if (targetTown && targetTown !== agent.townId && !Engine.findTown(targetTown)) {
+            return { success: false, message: 'Target town not found.' }; // v9p33river431: surface invalid travel destination before task overwrite (bugs 10+11)
+        }
+
+        // v9p33river431: refund held goods and clear stale travel state before overwriting (bugs 4+5)
+        if (agent.task && agent.task.heldQty > 0 && agent.task.heldCost > 0) {
+            player.gold += agent.task.heldCost;
+        }
+        if (agent.status === 'traveling') {
+            agent.travelingTo = null;
+            agent.travelProgress = 0;
+            agent.travelRoute = null;
+            agent.travelTotalDist = 0;
         }
 
         agent.task = {
@@ -216,8 +271,18 @@
         agent.status = 'working';
 
         // If agent is not in the target town, they need to travel first
+        var _travelStarted = false;
         if (targetTown && targetTown !== agent.townId) {
-            _startAgentTravel(agent, targetTown);
+            _travelStarted = _startAgentTravel(agent, targetTown); // v9p33river431: check travel success (bug 11)
+            if (!_travelStarted) {
+                agent.task = null;
+                agent.status = 'idle';
+                agent.travelingTo = null;
+                agent.travelProgress = 0;
+                agent.travelRoute = null;
+                agent.travelTotalDist = 0;
+                return { success: false, message: 'Unable to start travel to target town.' }; // v9p33river431: do not report success when travel cannot start (bug 11)
+            }
         }
 
         // Notify story mode of agent task assignment
@@ -225,7 +290,7 @@
             StoryMode.onPlayerAction('assign_agent_task', { agentId: agent.id, taskType: taskType, category: def.category, targetId: params.targetId || null });
         }
 
-        return { success: true, message: '✅ ' + agent.name + ' assigned: ' + def.icon + ' ' + def.label + (targetTown && targetTown !== agent.townId ? ' (traveling to target)' : '') };
+        return { success: true, message: '✅ ' + agent.name + ' assigned: ' + def.icon + ' ' + def.label + (_travelStarted ? ' (traveling to target)' : '') };
     }
 
     function cancelAgentTask(agentId) {
@@ -233,6 +298,10 @@
         var agent = findAgent(agentId);
         if (!agent) return { success: false, message: 'Agent not found.' };
         if (!agent.task && agent.status === 'idle') return { success: false, message: agent.name + ' has no active task.' };
+        // v9p33river431: return held purchase cost before clearing task to prevent orphaned spend (bug 33)
+        if (agent.task && agent.task.heldQty > 0 && agent.task.heldCost > 0) {
+            player.gold += agent.task.heldCost;
+        }
         agent.task = null;
         agent.status = 'idle';
         agent.travelingTo = null;
@@ -267,7 +336,7 @@
         _sync();
         var fromTown = Engine.findTown(agent.townId);
         var toTown = Engine.findTown(destTownId);
-        if (!fromTown || !toTown) return;
+        if (!fromTown || !toTown) return false; // v9p33river431: return false on invalid towns (bug 10/11)
         agent.travelingTo = destTownId;
         agent.travelProgress = 0;
         // Estimate distance
@@ -275,6 +344,7 @@
         var dy = (fromTown.y || 0) - (toTown.y || 0);
         agent.travelTotalDist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
         agent.status = 'traveling';
+        return true; // v9p33river431
     }
 
     // ── Agent Daily Tick ──
@@ -306,11 +376,15 @@
                     player.gold -= _partialCost;
                     if (Player.logFinance && _partialCost > 0) Player.logFinance(-_partialCost, 'agents', 'Agent wages partial (' + agent.name + ')');
                     else if (player.stats && _partialCost > 0) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + _partialCost;
-                    // v9p33river333: partial wages pay the oldest days but unpaid skipped days remain owed.
-                    if (daysPaid > 0) agent.lastPaidDay = Math.min(day, agent.lastPaidDay + daysPaid);
+                    // v9p33river431: always advance lastPaidDay to day to prevent re-counting the same
+                    // unpaid period on the next tick (bugs 14+15); _unpaidWageDays tracks what wasn't paid
+                    agent.lastPaidDay = day;
                     if (daysPaid < daysMissed) agent._unpaidWageDays = (agent._unpaidWageDays || 0) + (daysMissed - daysPaid);
                     agent.loyalty = Math.max(0, agent.loyalty - (daysMissed - daysPaid) * 3);
                 } else {
+                    // v9p33river431: advance lastPaidDay to prevent compounding loyalty loss over same period (bug 16)
+                    agent.lastPaidDay = day;
+                    agent._unpaidWageDays = (agent._unpaidWageDays || 0) + daysMissed;
                     agent.loyalty = Math.max(0, agent.loyalty - daysMissed * 5);
                 }
                 // Loyalty too low — agent quits
@@ -539,7 +613,8 @@
         }
 
         // Success! Execute the specific action
-        var targetTown = Engine.findTown(target.townId || agent.townId);
+        // v9p33river431: use agent's actual town, not target's current (possibly moved) town (bug 17)
+        var targetTown = Engine.findTown(agent.townId);
         // v9p33river302: previously dispatched only on task.type (the first
         // checked action at assignment time), so picking multiple actions in
         // the hostile UI had no effect — the remainder of allowedActions
@@ -580,7 +655,7 @@
     function _agentSabotageBuilding(agent, target, town, day, rng) {
         _sync();
         if (!town) return;
-        var targetBuildings = town.buildings.filter(function(b) { return b.ownerId === target.id; });
+        var targetBuildings = (town.buildings || []).filter(function(b) { return b.ownerId === target.id; }); // v9p33river431: null guard (bug 18)
         if (targetBuildings.length === 0) {
             agent.reports.push({ day: day, msg: '🔨 No buildings belonging to target found in ' + town.name + '.' });
             return;
@@ -597,9 +672,10 @@
     function _agentArsonBuilding(agent, target, town, day, rng) {
         _sync();
         if (!town) return;
+        var _townBuildings = town.buildings || []; // v9p33river431: null guard (bug 19)
         var idx = -1;
-        for (var i = 0; i < town.buildings.length; i++) {
-            if (town.buildings[i].ownerId === target.id) { idx = i; break; }
+        for (var i = 0; i < _townBuildings.length; i++) {
+            if (_townBuildings[i].ownerId === target.id) { idx = i; break; }
         }
         if (idx === -1) {
             agent.reports.push({ day: day, msg: '🔥 No buildings belonging to target found in ' + town.name + '.' });
@@ -677,7 +753,7 @@
         _sync();
         if (!town) return;
         // Steal from target's buildings
-        var targetBuildings = town.buildings.filter(function(b) { return b.ownerId === target.id; });
+        var targetBuildings = (town.buildings || []).filter(function(b) { return b.ownerId === target.id; }); // v9p33river431: null guard
         if (targetBuildings.length === 0) {
             agent.reports.push({ day: day, msg: '🥷 No warehouses/buildings found for target.' });
             return;
@@ -693,27 +769,7 @@
             return;
         }
         target.gold = (target.gold || 0) - actuallyStolen;
-        // v9p33river333: remove linked warehouse/retail stock so victim wealth doesn't desync.
-        var _stockValueLeft = actuallyStolen;
-        for (var _tbi = 0; _tbi < targetBuildings.length && _stockValueLeft > 0; _tbi++) {
-            var _tb = targetBuildings[_tbi];
-            var _stocks = [_tb.storage, _tb.retailStock, _tb.inventory];
-            for (var _si = 0; _si < _stocks.length && _stockValueLeft > 0; _si++) {
-                var _stock = _stocks[_si];
-                if (!_stock) continue;
-                for (var _gid in _stock) {
-                    if (_stockValueLeft <= 0) break;
-                    var _qty = Math.max(0, Math.floor(_stock[_gid] || 0));
-                    if (_qty <= 0) continue;
-                    var _res = findResource(_gid);
-                    var _unitValue = Math.max(1, (_res && _res.basePrice) || 5);
-                    var _takeQty = Math.min(_qty, Math.ceil(_stockValueLeft / _unitValue));
-                    _stock[_gid] -= _takeQty;
-                    if (_stock[_gid] <= 0) delete _stock[_gid];
-                    _stockValueLeft -= _takeQty * _unitValue;
-                }
-            }
-        }
+        // v9p33river431: removed stock loop that double-penalized victim (bug 25) — gold deduction above is sufficient
         player.gold += actuallyStolen;
         agent.earnings += actuallyStolen;
         agent.reports.push({ day: day, msg: '🥷 Stole ' + actuallyStolen + 'g worth of goods from ' + (target.firstName || 'target') + '\'s warehouse.' });
@@ -723,9 +779,8 @@
         _sync();
         var success = agent.skills.combat >= 4 || (rng ? rng.chance(0.6 + agent.skills.combat * 0.05) : Math.random() < 0.7);
         if (success) {
-            if (target._playerRelationship !== undefined) {
-                target._playerRelationship = (target._playerRelationship || 0) - 10;
-            }
+            // v9p33river431: always apply relationship effect, creating field if absent (bug 27)
+            target._playerRelationship = (target._playerRelationship || 0) - 10;
             // v9p33river292: NPC reputation lives in target.reputation[kingdomId]
             // (per-kingdom map). target._reputation was a dead write — only
             // buildings use the underscore-prefixed field.
@@ -750,7 +805,7 @@
         var task = agent.task;
 
         // Monthly budget check (30-day cycle)
-        if (task.monthlyBudget > 0) {
+        if (typeof task.monthlyBudget === 'number' && task.monthlyBudget > 0) { // v9p33river431: typeof guard prevents malformed values bypassing limit (bug 28)
             var dayInCycle = (day - task.startDay) % 30;
             if (dayInCycle === 0 && day !== task.startDay) task.monthlySpent = 0; // reset monthly
             if (task.monthlySpent >= task.monthlyBudget) return; // budget exhausted
@@ -812,8 +867,9 @@
         // Execute trade (simplified: instant with travel time factored into interval)
         var qty = Math.min(20, Math.floor(town.market.supply[bestRes] || 0));
         var buyCost = qty * (town.market.prices[bestRes] || 10);
-        var budget = agent.task.monthlyBudget || 500;
-        if (buyCost > budget - (agent.task.monthlySpent || 0)) {
+        // v9p33river431: 0 budget means no per-trade cap; don't fall back to 500 (bug 29)
+        var budget = agent.task.monthlyBudget;
+        if (budget > 0 && buyCost > budget - (agent.task.monthlySpent || 0)) {
             qty = Math.floor((budget - (agent.task.monthlySpent || 0)) / (town.market.prices[bestRes] || 10));
         }
         if (qty <= 0) return;
@@ -825,6 +881,7 @@
         var sellPrice = qty * (bestDest.market ? (bestDest.market.prices[bestRes] || 10) : 10);
         var netProfit = sellPrice - buyCost;
         player.gold += sellPrice;
+        _recordAgentIncome(netProfit, 'Agent caravan profit (' + agent.name + ')');
         agent.earnings += netProfit;
         // Affect markets
         if (town.market.supply[bestRes]) town.market.supply[bestRes] = Math.max(0, town.market.supply[bestRes] - qty);
@@ -884,6 +941,7 @@
                 var sellQty = agent.task.heldQty;
                 var revenue = Math.floor(sellPrice * sellQty);
                 player.gold += revenue;
+                _recordAgentIncome(revenue - agent.task.heldCost, 'Agent trade profit (' + agent.name + ')');
                 agent.earnings = (agent.earnings || 0) + (revenue - agent.task.heldCost);
                 if (town.market.supply) {
                     town.market.supply[agent.task.heldGood] = (town.market.supply[agent.task.heldGood] || 0) + sellQty;
@@ -912,8 +970,9 @@
         if (!bestBuy) return;
         var qty = Math.min(10, Math.floor(town.market.supply[bestBuy] || 0));
         var cost = qty * bestBuyPrice;
-        var budget = agent.task.monthlyBudget || 200;
-        if (cost > budget - (agent.task.monthlySpent || 0)) return;
+        // v9p33river431: 0 budget means no per-trade cap; don't fall back to 200 (bug 32)
+        var budget = agent.task.monthlyBudget;
+        if (budget > 0 && cost > budget - (agent.task.monthlySpent || 0)) return;
         if (player.gold < cost) return;
 
         player.gold -= cost;
@@ -948,6 +1007,7 @@
             return;
         }
         player.gold += bonus;
+        _recordAgentIncome(bonus, 'Property management revenue (' + agent.name + ')');
         agent.earnings += bonus;
         agent.reports.push({ day: day, msg: '🏠 Managed ' + playerBuildings.length + ' building(s) in ' + town.name + '. Earned ' + bonus + 'g in optimized revenue.' });
     }
@@ -967,6 +1027,7 @@
         // Earn some gold from brokered connections
         var goldEarned = 5 + agent.skills.persuasion * 3 + (rng ? rng.randInt(0, 15) : 8);
         player.gold += goldEarned;
+        _recordAgentIncome(goldEarned, 'Trade contacts revenue (' + agent.name + ')');
         agent.earnings += goldEarned;
         agent.reports.push({ day: day, msg: '🤝 Establishing contacts in ' + town.name + '. Prosperity +' + prosperityGain + ', rep +' + repGain + ', earned ' + goldEarned + 'g in referral fees.' });
     }
@@ -1123,12 +1184,14 @@
                 } else {
                     agent.status = 'jailed';
                     agent._jailUntil = day + 10;
+                    agent._jailedUntilDay = day + 10; // v9p33river431: normalize canonical jail field (bug 39)
                     agent.task = null;
                 }
             } else if (isForeignKingdom) {
                 player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + 12);
                 agent.status = 'jailed';
                 agent._jailUntil = day + 5;
+                agent._jailedUntilDay = day + 5; // v9p33river431: normalize canonical jail field (bug 40)
                 agent.task = null;
             } else {
                 player.nobleNotoriety = Math.min(100, (player.nobleNotoriety || 0) + 15);
@@ -1247,8 +1310,9 @@
             var allNobles = [];
             var people = Engine.getPeople ? Engine.getPeople() : [];
             for (var ni = 0; ni < people.length; ni++) {
-                if (people[ni].alive && people[ni].occupation === 'noble' && people[ni].socialRank && people[ni].socialRank[kId]) {
-                    allNobles.push(people[ni]);
+                if ((people[ni].isKing || people[ni].occupation === 'king' || people[ni].occupation === 'queen' || people[ni].occupation === 'reigning_queen')) continue; // v9p33river431: exclude monarchs from court-noble splash effects
+                if (people[ni].alive && people[ni].socialRank && people[ni].socialRank[kId] >= 4) {
+                    allNobles.push(people[ni]); // v9p33river431: include non-occupation-'noble' court roles (bug 46)
                 }
             }
             for (var ai = 0; ai < allNobles.length; ai++) {

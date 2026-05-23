@@ -252,6 +252,35 @@
         }
         return outposts;
     }
+    function _releaseOutpostStaff(town) {
+        // v9p33river431: abandoned outposts must release hired staff so NPCs do
+        // not stay stuck as player-employed outpost workers/guards forever.
+        var seen = {};
+        var workerIds = town.outpostWorkers || [];
+        for (var wi = 0; wi < workerIds.length; wi++) {
+            _unassignOutpostWorker(town, workerIds[wi]);
+            seen[workerIds[wi]] = true;
+            var workerNpc = Engine.findPerson(workerIds[wi]);
+            if (workerNpc) {
+                workerNpc.employerId = null;
+                if (workerNpc.occupation === 'outpost_worker') workerNpc.occupation = 'unemployed';
+            }
+        }
+        var guardIds = town.outpostGuards || [];
+        for (var gi = 0; gi < guardIds.length; gi++) {
+            if (seen[guardIds[gi]]) continue;
+            var guardNpc = Engine.findPerson(guardIds[gi]);
+            if (guardNpc) {
+                guardNpc.employerId = null;
+                if (guardNpc.occupation === 'outpost_guard') guardNpc.occupation = 'unemployed';
+            }
+        }
+        town.outpostWorkers = [];
+        town.outpostGuards = [];
+        town.hiredWorkers = 0;
+        town.hiredGuards = 0;
+        town.workerAssignments = {};
+    }
 
     /**
      * Pay daily maintenance for player outposts. Called from player tick.
@@ -296,6 +325,9 @@
                 if (daysSince >= cfg.abandonDaysNoMaintenance) {
                     town.abandoned = true;
                     town.abandonedDay = Engine.getDay();
+                    // v9p33river431: release hired outpost staff before removing
+                    // the outpost from the player's roster.
+                    _releaseOutpostStaff(town);
                     EventTypes.emit('OUTPOST_ABANDONED_MAINTENANCE', {
                         townName: town.name,
                         daysSince: daysSince,
