@@ -9414,7 +9414,12 @@
                     var hp = kingdom.healthPolicies[hi];
                     if (!hp.active) continue;
                     if ((hp.costPerDay || 0) > 5) {
-                        cancelledPolicies.push(hp.type.replace(/_/g, ' '));
+                        var hpLabel = hp.type.replace(/_/g, ' ');
+                        if (hp.townId) {
+                            var hpTown = findTown(hp.townId);
+                            if (hpTown) hpLabel += ' in ' + hpTown.name;
+                        }
+                        cancelledPolicies.push(hpLabel);
                         kingdom.healthPolicies.splice(hi, 1);
                     }
                 }
