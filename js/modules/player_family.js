@@ -1184,7 +1184,12 @@
         if (!player.alive) return { success: false, message: 'You are not alive.' };
         var person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
+        // v9p33river432: dating must reject dead, underage, or untalkable NPCs.
+        if (!person.alive) return { success: false, message: 'Person is not alive.' };
+        if ((person.age || 0) < 18) return { success: false, message: 'Person is too young to date.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
+        var talkCheck = Player.canTalkTo ? Player.canTalkTo(personId) : { canTalk: true };
+        if (!talkCheck.canTalk) return { success: false, message: talkCheck.reason || 'You cannot speak to this person right now.' };
 
         if ((player.investigatorCaught[personId] || 0) >= 2) {
             return { success: false, message: 'This person will never speak to you again.' };
@@ -1330,17 +1335,17 @@
         }
         var cost = 200 * Math.pow(2, Math.min(rankIndex, 3));
 
+        if (!player.investigatorCaught) player.investigatorCaught = {};
+        var caught = player.investigatorCaught[personId] || 0;
+        if (caught >= 2) return { success: false, message: 'She will never trust you again. Investigation impossible.' };
+
         if (player.gold < cost) return { success: false, message: 'Cannot afford investigator (' + cost + 'g needed, have ' + player.gold + 'g).' };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.hire_investigator || 2);
         player.gold -= cost;
         player.stats.totalGoldSpent += cost;
 
-        if (!player.investigatorCaught) player.investigatorCaught = {};
-        var caught = player.investigatorCaught[personId] || 0;
-
-        if (caught >= 2) return { success: false, message: 'She will never trust you again. Investigation impossible.' };
-
-        if (Math.random() < 0.5) {
+        var rng = Engine.getRng();
+        if (rng ? rng.chance(0.5) : false) {
             player.investigatorCaught[personId] = caught + 1;
             modifyRelationship(personId, -20);
             if (caught + 1 >= 2) {
@@ -1364,6 +1369,13 @@
         if (player.gold < 5) return { success: false, message: 'Need 5g for tavern gossip.' };
         var person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
+        if (!person.alive) return { success: false, message: 'Person is not alive.' };
+        if (person.townId !== player.townId) return { success: false, message: 'You must be in the same town to ask about them.' };
+        var gossipTown = Engine.findTown(player.townId);
+        var hasTavern = !!(gossipTown && Array.isArray(gossipTown.buildings) && gossipTown.buildings.some(function(b) {
+            return b && b.type === 'tavern' && b.condition !== 'destroyed';
+        }));
+        if (!hasTavern) return { success: false, message: 'There is no functioning tavern here to gather gossip from.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.ask_tavern || 3);
 
@@ -1393,6 +1405,7 @@
         if (!player.alive) return { success: false, message: 'You are not alive.' };
         var person = Engine.findPerson(personId);
         if (!person) return { success: false, message: 'Person not found.' };
+        if (!person.alive) return { success: false, message: 'Person is not alive.' };
         if (person.townId !== player.townId) return { success: false, message: 'Not in same town.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.observe_person || 30);
@@ -1473,6 +1486,7 @@
 
     function tickSpouseEffects() {
         var player = ps();
+        var rng = Engine.getRng();
         // Reset modifiers each day
         player.spouseProdMod = 1.0;
         player.spouseCostMod = 1.0;
@@ -1497,9 +1511,12 @@
         if (pers.warmth >= 70) player.spouseRepMod = 1.10;
         else if (pers.warmth < 30) player.spouseRepMod = 0.90;
 
-        if (pers.honesty < 30 && Math.random() < 0.02) {
-            var skimmed = Math.floor(5 + Math.random() * 20);
+        if (pers.honesty < 30 && rng && rng.chance(0.02)) {
+            // v9p33river432: spouse skim events must use engine RNG and hit finance/stats when gold disappears.
+            var skimmed = rng.randInt(5, 24);
             player.gold = Math.max(0, player.gold - skimmed);
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + skimmed;
+            if (Player.logFinance) Player.logFinance(-skimmed, 'spouse', 'Spouse skimmed gold');
             if (player.revealedTraits[player.spouseId] && player.revealedTraits[player.spouseId].traits && player.revealedTraits[player.spouseId].traits.honesty) {
                 if (typeof UI !== 'undefined' && UI.toast) {
                     UI.toast('You notice some gold missing... your spouse may be skimming.', 'warning', 'my_actions');
@@ -1511,9 +1528,11 @@
             var q = quirks[_qi];
             switch(q) {
                 case 'secret_gambler':
-                    if (Math.random() < 0.025) {
-                        var loss = 10 + Math.floor(Math.random() * 90);
+                    if (rng && rng.chance(0.025)) {
+                        var loss = rng.randInt(10, 99);
                         player.gold = Math.max(0, player.gold - loss);
+                        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + loss;
+                        if (Player.logFinance) Player.logFinance(-loss, 'spouse', 'Spouse gambling loss');
                         if (typeof UI !== 'undefined' && UI.toast) {
                             UI.toast('Your spouse lost ' + loss + 'g gambling...', 'warning', 'my_actions');
                         }
@@ -1576,6 +1595,7 @@
                             var ik = invKeys[Math.floor(Math.random() * invKeys.length)];
                             var dmg = Math.min(player.inventory[ik], 1 + Math.floor(Math.random() * 3));
                             player.inventory[ik] -= dmg;
+                            if (player.inventory[ik] <= 0) delete player.inventory[ik]; // v9p33river432: damaged stacks should not leave zero-qty inventory keys behind.
                             if (typeof UI !== 'undefined' && UI.toast) {
                                 UI.toast('Your clumsy spouse damaged ' + dmg + ' ' + ik + '!', 'warning', 'my_actions');
                             }
@@ -1628,28 +1648,7 @@
         var spouse = Engine.findPerson(player.spouseId);
         if (!spouse || !spouse.alive) return;
 
-        // Spouse stays at primary home
-        var _bestHomeTownForSpouse = null;
-        var _bestHC = -1;
-        for (var _shi = 0; _shi < (player.houses || []).length; _shi++) {
-            var _sh = player.houses[_shi];
-            var _sht = CONFIG.HOUSING_TYPES ? CONFIG.HOUSING_TYPES.find(function(t) { return t.id === _sh.type; }) : null;
-            if (_sht && _sht.comfort > _bestHC) { _bestHC = _sht.comfort; _bestHomeTownForSpouse = _sh.townId; }
-        }
-        if (_bestHomeTownForSpouse) {
-            if (spouse.townId !== _bestHomeTownForSpouse && !player.traveling) {
-                if (player.pregnantDay > 0) {
-                    spouse.townId = _bestHomeTownForSpouse;
-                } else if (spouse.townId !== player.townId) {
-                    spouse.townId = _bestHomeTownForSpouse;
-                }
-            }
-        } else {
-            if (spouse.townId !== player.townId && !player.traveling) {
-                spouse.townId = player.townId;
-            }
-        }
-
+        // v9p33river432: spouse travel is handled by spouseAI; relationship upkeep must not teleport them home.
         var rel = getRelationship(player.spouseId);
         var sameCity = spouse.townId === player.townId;
 
@@ -1658,14 +1657,8 @@
         } else {
             var decayRate = 0.3;
             if (spouse.quirks && spouse.quirks.indexOf('jealous') >= 0) decayRate *= 2;
+            if (spouse.quirks && spouse.quirks.indexOf('clingy') >= 0) decayRate += 0.5;
             modifyRelationship(player.spouseId, -decayRate, 'spouse');
-        }
-
-        if (!sameCity) {
-            modifyRelationship(player.spouseId, -0.1, 'spouse');
-            if (spouse.quirks && spouse.quirks.indexOf('clingy') >= 0) {
-                modifyRelationship(player.spouseId, -0.5, 'spouse');
-            }
         }
 
         if (spouse.quirks && spouse.quirks.indexOf('violent_temper') >= 0) {
@@ -1698,6 +1691,8 @@
                 var gloss = rng2.randInt(5, 50);
                 if (player.gold >= gloss) {
                     player.gold -= gloss;
+                    player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + gloss;
+                    if (Player.logFinance) Player.logFinance(-gloss, 'spouse', 'Spouse relationship tick gambling loss');
                     if (typeof UI !== 'undefined' && UI.toast) {
                         UI.toast('\u{1F3B2} Your spouse gambled away ' + gloss + 'g!', 'warning', 'my_actions');
                     }
@@ -1709,7 +1704,16 @@
             var donation = Math.floor(player.gold * 0.0017);
             if (donation > 0 && player.gold >= donation) {
                 player.gold -= donation;
+                player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + donation;
+                if (Player.logFinance) Player.logFinance(-donation, 'spouse', 'Spouse temple donation');
                 if (player.citizenshipKingdomId) {
+                    var donationKingdom = Engine.findKingdom ? Engine.findKingdom(player.citizenshipKingdomId) : null;
+                    if (donationKingdom) {
+                        donationKingdom.gold = (donationKingdom.gold || 0) + donation;
+                        if (Engine.recordKingdomTransaction) {
+                            Engine.recordKingdomTransaction(donationKingdom, 'income', donation, 'Temple donation from ' + (player.fullName || 'the player'), 'religion');
+                        }
+                    }
                     player.reputation[player.citizenshipKingdomId] = Math.min(100,
                         (player.reputation[player.citizenshipKingdomId] || 50) + 0.01);
                 }

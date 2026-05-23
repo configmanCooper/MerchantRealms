@@ -1968,6 +1968,11 @@
             if (kqData.active[qi].id === questId) { quest = kqData.active[qi]; break; }
         }
         if (!quest) return { success: false, message: 'Quest not found in active quests.' };
+        // v9p33river432: action attempts must fail immediately once the kingdom quest has expired.
+        var _kqToday = Engine.getDay ? Engine.getDay() : 0;
+        if (quest.expiresDay && _kqToday >= quest.expiresDay) {
+            return { success: false, message: 'This quest has expired.' };
+        }
 
         // Get action type from quest requirements
         var actionType = quest.requirements.action ? quest.requirements.action.type : null;
@@ -2133,6 +2138,9 @@
                 var rngGold = Engine.getRng();
                 var bonusGold = rngGold ? rngGold.randInt(50, 200) : 100;
                 player.gold += bonusGold;
+                // v9p33river432: extortion bonus gold is real income and must hit finance + stats.
+                player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + bonusGold;
+                if (Player.logFinance) Player.logFinance(bonusGold, 'quests', 'Kingdom quest extortion payout');
                 trackKQGoldSpent(questId, bonusGold); // v9p33river411: credit gold toward "raise X gold" objective
                 successConsequences.push('💰 Extracted ' + bonusGold + 'g from the merchant!');
                 EventTypes.emit('QUEST_EXTORTION_GOLD', { playerName: player.fullName, gold: bonusGold });
@@ -2151,7 +2159,7 @@
                         if (!_ccKingdom.tradeRoutes) _ccKingdom.tradeRoutes = [];
                         var _routeIncome = _ccRng ? _ccRng.randInt(5, 15) : 10;
                         _ccKingdom.tradeRoutes.push({
-                            id: 'route_' + _ccWorld.day + '_' + Math.floor(Math.random() * 1000),
+                            id: 'route_' + _ccWorld.day + '_' + (_ccRng ? _ccRng.randInt(0, 999) : 0), // v9p33river432: kingdom trade-route ids must use engine RNG.
                             createdDay: _ccWorld.day,
                             income: _routeIncome,
                             createdBy: 'player'
@@ -2173,18 +2181,52 @@
                 var _bbWorld = Engine.getWorld ? Engine.getWorld() : null;
                 if (_bbWorld && kingdomId) {
                     var _bbTowns = (_bbWorld.towns || []).filter(function(t) { return t.kingdomId === kingdomId; });
-                    var _bbTown = null;
-                    // Prefer player's current town, then pick a random kingdom town
+                    var _bbTypes = ['workshop', 'warehouse', 'market_stall', 'tavern', 'smithy', 'mill'];
+                    var _bbChoices = [];
+                    var _bbCatOrder = ['village', 'town', 'city', 'capital_city'];
                     for (var _bti = 0; _bti < _bbTowns.length; _bti++) {
-                        if (_bbTowns[_bti].id === player.townId) { _bbTown = _bbTowns[_bti]; break; }
+                        var _candidateTown = _bbTowns[_bti];
+                        if (!_candidateTown) continue;
+                        if (!_candidateTown.buildings) _candidateTown.buildings = [];
+                        var _bbMaxSlots = ((CONFIG.TOWN_CATEGORIES || {})[_candidateTown.category] || {}).maxBuildingSlots || 10;
+                        if (_candidateTown.buildings.length >= _bbMaxSlots) continue;
+                        var _bbUsedLand = 0;
+                        for (var _bbi = 0; _bbi < _candidateTown.buildings.length; _bbi++) {
+                            var _existingBt = Engine.findBuildingType ? Engine.findBuildingType(_candidateTown.buildings[_bbi].type) : null;
+                            _bbUsedLand += (_existingBt && _existingBt.landSlots) || 1;
+                        }
+                        var _bbTotalLand = _candidateTown.totalLand || (_candidateTown.category === 'capital_city' ? 50 : _candidateTown.category === 'city' ? 35 : _candidateTown.category === 'town' ? 20 : 10);
+                        var _bbAllowedTypes = [];
+                        for (var _bbti = 0; _bbti < _bbTypes.length; _bbti++) {
+                            var _candidateType = _bbTypes[_bbti];
+                            var _candidateBt = Engine.findBuildingType ? Engine.findBuildingType(_candidateType) : null;
+                            if (!_candidateBt) continue;
+                            if (_candidateBt.minTownCategory) {
+                                var _townCatIdx = _bbCatOrder.indexOf(_candidateTown.category || 'village');
+                                var _needCatIdx = _bbCatOrder.indexOf(_candidateBt.minTownCategory);
+                                if (_needCatIdx >= 0 && _townCatIdx >= 0 && _townCatIdx < _needCatIdx) continue;
+                            }
+                            if (_candidateBt.requiresPort && !_candidateTown.isPort) continue;
+                            var _bbDepReq = CONFIG.DEPOSIT_REQUIREMENTS ? CONFIG.DEPOSIT_REQUIREMENTS[_candidateBt.id] : null;
+                            if (_bbDepReq) {
+                                var _bbDeps = _candidateTown.naturalDeposits || {};
+                                if (!_bbDeps[_bbDepReq.deposit] || _bbDeps[_bbDepReq.deposit] <= 0) continue;
+                            }
+                            if (_bbUsedLand + (_candidateBt.landSlots || 1) > _bbTotalLand) continue;
+                            _bbAllowedTypes.push(_candidateType);
+                        }
+                        if (_bbAllowedTypes.length > 0) {
+                            _bbChoices.push({ town: _candidateTown, types: _bbAllowedTypes, preferred: _candidateTown.id === player.townId ? 1 : 0 });
+                        }
                     }
-                    if (!_bbTown && _bbTowns.length > 0) _bbTown = _bbRng ? _bbRng.pick(_bbTowns) : _bbTowns[0];
-                    if (_bbTown) {
-                        if (!_bbTown.buildings) _bbTown.buildings = [];
-                        var _bbTypes = ['workshop', 'warehouse', 'market_stall', 'tavern', 'smithy', 'mill'];
-                        var _bbType = _bbRng ? _bbRng.pick(_bbTypes) : 'workshop';
+                    if (_bbChoices.length > 0) {
+                        _bbChoices.sort(function(a, b) { return (b.preferred || 0) - (a.preferred || 0); });
+                        var _bbChoicePool = _bbChoices.filter(function(c) { return c.preferred === _bbChoices[0].preferred; });
+                        var _bbChoice = _bbRng ? _bbRng.pick(_bbChoicePool) : _bbChoicePool[0];
+                        var _bbTown = _bbChoice.town;
+                        var _bbType = _bbRng ? _bbRng.pick(_bbChoice.types) : _bbChoice.types[0];
                         _bbTown.buildings.push({
-                            id: 'bld_' + _bbWorld.day + '_' + Math.floor(Math.random() * 1000),
+                            id: 'bld_' + _bbWorld.day + '_' + (_bbRng ? _bbRng.randInt(0, 999) : 0), // v9p33river432: quest-built ids must use engine RNG.
                             type: _bbType,
                             ownerId: kingdomId,
                             // v9p33river290: condition is a state string per
@@ -2198,6 +2240,8 @@
                         _bbTown.prosperity = Math.min(100, (_bbTown.prosperity || 50) + 5);
                         successConsequences.push('🏗️ Built a new ' + _bbType.replace(/_/g, ' ') + ' in ' + _bbTown.name + '!');
                         EventTypes.emit('QUEST_BUILDING_BUILT', { playerName: player.fullName, buildingType: _bbType.replace(/_/g, ' '), townName: _bbTown.name });
+                    } else {
+                        successConsequences.push('🏗️ No kingdom town had free space or valid land for new construction.');
                     }
                 }
             }
@@ -2223,8 +2267,8 @@
                     if (_enNobles.length > 0) {
                         var _enRng = Engine.getRng();
                         var _enNoble = _enRng ? _enRng.pick(_enNobles) : _enNobles[0];
-                        if (!_enNoble._playerRelationship) _enNoble._playerRelationship = 0;
-                        _enNoble._playerRelationship = Math.min(100, _enNoble._playerRelationship + 15);
+                        // v9p33river432: escort rewards must use the canonical player relationship system.
+                        if (Player.modifyRelationship) Player.modifyRelationship(_enNoble.id, 15);
                         successConsequences.push('🤝 ' + _enNoble.firstName + ' ' + (_enNoble.lastName || '') + ' is grateful for the safe escort (+15 relationship).');
                         EventTypes.emit('QUEST_ESCORT_THANKED', { nobleFirstName: _enNoble.firstName, playerName: player.fullName });
                     }
@@ -4250,16 +4294,9 @@
             // Criminal escapes — for capture_criminal quests, reset the ask_npcs data
             var actionType = '';
             try {
-                var kingdomId = quest ? quest.kingdomId : _getPlayerKingdomId();
-                var kqData = player.kingdomQuests[kingdomId];
-                if (kqData) {
-                    for (var qi = 0; qi < kqData.active.length; qi++) {
-                        if (kqData.active[qi].id === questId) {
-                            actionType = kqData.active[qi].requirements.action ? kqData.active[qi].requirements.action.type : '';
-                            break;
-                        }
-                    }
-                }
+                // v9p33river432: use the real active quest lookup; the old `quest` reference was undefined here.
+                var _captureQuest = _findActiveQuest(questId);
+                actionType = (_captureQuest && _captureQuest.requirements && _captureQuest.requirements.action) ? _captureQuest.requirements.action.type : '';
             } catch(e) {}
 
             if (actionType === 'capture_criminal') {

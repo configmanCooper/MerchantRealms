@@ -1018,6 +1018,18 @@
                 return { success: false, message: npc.firstName + ' holds the rank of ' + (_nrkDef.name || 'Noble') + ' and will not move to an outpost.' };
             }
         }
+        // v9p33river432: recruiting should not split a spouse/parent away from the household they currently live with.
+        var _recruitSpouse = npc.spouseId ? Engine.findPerson(npc.spouseId) : null;
+        if (_recruitSpouse && _recruitSpouse.alive && _recruitSpouse.townId === npc.townId && _recruitSpouse.townId !== town.id) {
+            return { success: false, message: npc.firstName + ' will not leave ' + _recruitSpouse.firstName + ' behind.' };
+        }
+        var _minorChildAtHome = npc.childrenIds ? npc.childrenIds.some(function(cid) {
+            var _child = Engine.findPerson(cid);
+            return _child && _child.alive && _child.age < 18 && _child.townId === npc.townId;
+        }) : false;
+        if (_minorChildAtHome) {
+            return { success: false, message: npc.firstName + ' will not leave their minor child behind.' };
+        }
 
         // Check cooldown
         if (!player._outpostRecruitCooldowns) player._outpostRecruitCooldowns = {};
@@ -1087,6 +1099,8 @@
         if (goldIncentive > 0) {
             player.gold -= goldIncentive;
             player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldIncentive;
+            // v9p33river432: recruitment incentives should reach the NPC instead of disappearing on failed rolls.
+            npc.gold = (npc.gold || 0) + goldIncentive;
         }
 
         // Roll
@@ -1094,8 +1108,35 @@
         var roll = rng.random();
         if (roll < chance) {
             // Success — NPC agrees to move
+            var oldTown = Engine.findTown(npc.townId);
+            if (oldTown && oldTown.id !== town.id) {
+                // v9p33river432: moving a recruit must also remove them from the old town's population/outpost state.
+                if (oldTown.isOutpost) {
+                    var _oldResidentIdx = (oldTown.outpostResidents || []).indexOf(npc.id);
+                    if (_oldResidentIdx >= 0) oldTown.outpostResidents.splice(_oldResidentIdx, 1);
+                    var _oldWorkerIdx = (oldTown.outpostWorkers || []).indexOf(npc.id);
+                    if (_oldWorkerIdx >= 0) {
+                        _unassignOutpostWorker(oldTown, npc.id);
+                        oldTown.outpostWorkers.splice(_oldWorkerIdx, 1);
+                    }
+                    var _oldGuardIdx = (oldTown.outpostGuards || []).indexOf(npc.id);
+                    if (_oldGuardIdx >= 0) {
+                        _unassignOutpostWorker(oldTown, npc.id);
+                        oldTown.outpostGuards.splice(_oldGuardIdx, 1);
+                    }
+                    if (_oldWorkerIdx >= 0 || _oldGuardIdx >= 0) {
+                        npc.employerId = null;
+                        if (npc.occupation === 'outpost_worker' || npc.occupation === 'outpost_guard') npc.occupation = 'unemployed';
+                    }
+                    oldTown.hiredWorkers = (oldTown.outpostWorkers || []).length;
+                    oldTown.hiredGuards = (oldTown.outpostGuards || []).length;
+                    oldTown.population = (oldTown.outpostResidents || []).length;
+                } else if (oldTown.population > 0) {
+                    oldTown.population--;
+                }
+            }
             npc.townId = town.id;
-            town.outpostResidents.push(npc.id);
+            if (town.outpostResidents.indexOf(npc.id) < 0) town.outpostResidents.push(npc.id);
             town.population = town.outpostResidents.length;
             // Consume shelter item given to the recruit
             if (shelterUsed) {
@@ -1267,6 +1308,14 @@
             kingdom.gold -= payment;
         }
         player.gold += payment;
+        // v9p33river432: village-conversion payouts should update finance/stats and clear outpost-only resident/staff state.
+        if (Player.logFinance) Player.logFinance(payment, 'settlements', 'Village conversion payment: ' + town.name);
+        player.stats = player.stats || {};
+        player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + payment;
+        if (Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(kingdom, 'expense', payment, 'Recognized ' + town.name + ' as a village', 'settlements');
+        _releaseOutpostStaff(town);
+        town.outpostResidents = [];
+        town.population = Engine.getPeopleInTown ? (Engine.getPeopleInTown(town.id) || []).length : (town.population || 0);
 
         // Remove from player outposts tracking (it's now a regular village)
         if (player.outposts) {
@@ -1323,6 +1372,11 @@
      */
     function depositToOutpostStorage(townId, resId, qty) {
         _sync();
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        // v9p33river432: outpost storage actions must honor the townId parameter, not whichever town the player happens to be in.
+        if (player.townId !== townId) return { success: false, message: 'You must be in the same town as this outpost.' };
         // Unified: outpost storage IS town storage
         return Player.depositToStorage(resId, qty);
     }
@@ -1332,6 +1386,11 @@
      */
     function withdrawFromOutpostStorage(townId, resId, qty) {
         _sync();
+        var town = Engine.findTown(townId);
+        if (!town || !town.isOutpost) return { success: false, message: 'Not an outpost.' };
+        if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
+        // v9p33river432: outpost storage actions must honor the townId parameter, not whichever town the player happens to be in.
+        if (player.townId !== townId) return { success: false, message: 'You must be in the same town as this outpost.' };
         // Unified: outpost storage IS town storage
         return Player.withdrawFromStorage(resId, qty);
     }
@@ -1358,6 +1417,8 @@
         if (quantity != null) { quantity = Number(quantity); if (!isFinite(quantity) || quantity <= 0) return { success: false, message: 'Invalid quantity.' }; }
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
+        // v9p33river432: stocking retail inventory is an in-person action for the building's town.
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this shop.' };
         var bt = findBuildingType(bld.type);
         if (!bt || !bt.retailConfig) return { success: false, message: 'This building is not a retail building.' };
 
@@ -1393,16 +1454,23 @@
         if (quantity != null) { quantity = Number(quantity); if (!isFinite(quantity) || quantity <= 0) return { success: false, message: 'Invalid quantity.' }; }
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
+        // v9p33river432: unstocking retail inventory is an in-person action for the building's town.
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this shop.' };
         bld.retailStock = bld.retailStock || {};
         var available = bld.retailStock[resourceId] || 0;
         if (available <= 0) return { success: false, message: 'No ' + resourceId + ' in this shop.' };
         var qty = Math.min(quantity || available, available);
 
+        var res = findResource(resourceId);
+        var weight = res ? (res.weight || 1) : 1;
+        // v9p33river432: pulling goods out of shop stock must still respect player carry capacity.
+        if (Player.getCarriedWeight && Player.getCarryCapacity && Player.getCarriedWeight() + qty * weight > Player.getCarryCapacity()) {
+            return { success: false, message: 'Too heavy to carry. Upgrade your storage container.' };
+        }
         bld.retailStock[resourceId] -= qty;
         if (bld.retailStock[resourceId] <= 0) delete bld.retailStock[resourceId];
         player.inventory[resourceId] = (player.inventory[resourceId] || 0) + qty;
 
-        var res = findResource(resourceId);
         return { success: true, message: '📤 Withdrew ' + qty + ' ' + (res ? res.name : resourceId) + ' from shop.' };
     }
 
@@ -1410,6 +1478,8 @@
         _sync();
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
+        // v9p33river432: retail revenue collection is local to the building's town.
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this shop.' };
         var revenue = bld.retailRevenue || 0;
         if (revenue <= 0) return { success: false, message: 'No revenue to collect.' };
         player.gold += revenue;
@@ -1421,7 +1491,8 @@
     function collectAllRetailRevenue() {
         _sync();
         var total = 0;
-        var buildings = getRetailBuildings();
+        // v9p33river432: collect-all revenue should only sweep shops in the player's current town.
+        var buildings = getRetailBuildings().filter(function(b) { return b.townId === player.townId; });
         for (var i = 0; i < buildings.length; i++) {
             var rev = buildings[i].retailRevenue || 0;
             if (rev > 0) {
@@ -1478,6 +1549,8 @@
         var base = bt.retailConfig.baseMarkup || 1.2;
         var upgradeBonus = (bt.retailConfig.upgradeMarkupBonus || 0.1) * ((bld.level || 1) - 1);
         var max = bt.retailConfig.maxMarkup || 2.0;
+        // v9p33river432: custom retail markups stored on the building must override the default formula.
+        if (bld._retailMarkup != null) return Math.min(max, bld._retailMarkup);
         return Math.min(max, base + upgradeBonus);
     }
 
@@ -1491,6 +1564,8 @@
             var bld = player.buildings[bi];
             var bt = findBuildingType(bld.type);
             if (!bt || !bt.retailConfig) continue;
+            // v9p33river432: destroyed/inactive retail buildings should not process daily customers.
+            if (bld.active === false || bld.condition === 'destroyed') continue;
 
             // Reset daily customer count
             bld.retailCustomersToday = 0;
@@ -1500,7 +1575,11 @@
             bld.retailTotalSold = bld.retailTotalSold || 0;
 
             // Need workers to operate
-            var workerCount = Array.isArray(bld.workers) ? bld.workers.length : (bld.workers || 0);
+            var workerCount = Array.isArray(bld.workers) ? bld.workers.filter(function(workerId) {
+                var worker = Engine.findPerson(workerId);
+                return worker && worker.alive && worker.townId === bld.townId;
+            }).length : (bld.workers || 0);
+            // v9p33river432: retail staffing must ignore dead or moved-away workers.
             if (workerCount < (bt.workers || 1)) continue;
 
             var town = Engine.findTown(bld.townId);
@@ -1553,6 +1632,10 @@
                     }
 
                     var fee = bt.retailConfig.serviceFee * (bld.level || 1);
+                    // v9p33river432: service fees must come from the town market gold pool instead of materializing from nothing.
+                    var _serviceAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(town.id) : Infinity;
+                    if (_serviceAvail < fee) continue;
+                    if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -fee);
                     // Tax the service fee
                     var serviceTax = Math.floor(fee * tariffRate);
                     if (kingdom) kingdom.gold = (kingdom.gold || 0) + serviceTax;
@@ -1572,9 +1655,9 @@
                 // Pick a random stocked item the NPC might want
                 var itemId = stockKeys[Math.floor(rng.random() * stockKeys.length)];
                 var res = findResource(itemId);
-                var marketPrice = town.market.prices[itemId] || (res ? res.basePrice : 5);
+                var marketPrice = (town.market && town.market.prices && town.market.prices[itemId]) || (res ? res.basePrice : 5);
                 var shopPrice = Math.round(marketPrice * markup);
-                var marketSupply = town.market.supply[itemId] || 0;
+                var marketSupply = (town.market && town.market.supply && town.market.supply[itemId]) || 0;
 
                 // NPC decision: buy from market or shop?
                 var buyFromShop = false;

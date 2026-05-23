@@ -432,7 +432,7 @@
         if (used + qty * weight > cap) return { success: false, message: 'Not enough warehouse space. Build or upgrade warehouses.' };
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.deposit || 2);
         player.inventory[resId] -= qty;
-        if (player.inventory[resId] <= 0) player.inventory[resId] = 0;
+        if (player.inventory[resId] <= 0) delete player.inventory[resId]; // v9p33river432: remove zero-count keys
         if (!player.townStorage) player.townStorage = {}; // v9p33river334: initialize missing town storage map before writing.
         if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
         player.townStorage[player.townId][resId] = (player.townStorage[player.townId][resId] || 0) + qty;
@@ -481,7 +481,7 @@
             return { success: false, message: 'You are currently using this as your storage container. Unmount it first.' };
         }
         player.inventory[vehicleType] = invQty - 1;
-        if (player.inventory[vehicleType] <= 0) player.inventory[vehicleType] = 0;
+        if (player.inventory[vehicleType] <= 0) delete player.inventory[vehicleType]; // v9p33river432: remove zero-count keys
         if (!player.parkedVehicles) player.parkedVehicles = {};
         if (!player.parkedVehicles[player.townId]) player.parkedVehicles[player.townId] = [];
         player.parkedVehicles[player.townId].push({ type: vehicleType, parkedDay: Engine.getDay ? Engine.getDay() : 0 });
@@ -506,6 +506,11 @@
         var currentUsed = getTownStorageUsed(player.townId);
         if (currentUsed > currentCap - removingCap) {
             return { success: false, message: 'Town storage would overflow. Withdraw goods first.' };
+        }
+        var _uvRes = findResource(vehicleType);
+        var _uvWeight = _uvRes ? (_uvRes.weight || 1) : 1;
+        if (getCarriedWeight() + _uvWeight > getCarryCapacity()) { // v9p33river432: overburden check when retrieving parked vehicle
+            return { success: false, message: 'Too heavy to carry. Lighten your load before retrieving this vehicle.' };
         }
         parked.splice(idx, 1);
         if (parked.length <= 0) delete player.parkedVehicles[player.townId];
@@ -542,12 +547,12 @@
                     parked.splice(vi, 1);
                     // Also steal some goods from town storage
                     var stolenGoods = [];
-                    var ts = player.townStorage[tid];
+                    var ts = player.townStorage && player.townStorage[tid]; // v9p33river432: guard missing townStorage
                     if (ts) {
                         var stolenWeight = 0;
                         var maxSteal = 30 + Math.floor(rng.random() * 50);
                         for (var rk in ts) {
-                            if (ts[rk] <= 0 || stolenWeight >= maxSteal) continue;
+                            if (rk.charAt(0) === '_' || ts[rk] <= 0 || stolenWeight >= maxSteal) continue; // v9p33river432: skip underscore metadata
                             var sr = findResource(rk);
                             var sw = sr ? (sr.weight || 1) : 1;
                             var stealQty = Math.min(ts[rk], Math.floor((maxSteal - stolenWeight) / sw));
@@ -647,9 +652,17 @@
         if (!house) return { success: false, message: 'House not found.' };
         if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
         if (!player.horses || player.horses.length === 0) return { success: false, message: 'You have no mounted horses.' };
-        var maxHorses = hasSkill('horse_mastery') ? 4 : 2;
+        var _sHType = CONFIG.HOUSING_TYPES.find(function(ht) { return ht.id === house.type; });
+        var _sHasStables = !!(_sHType && _sHType.hasStables) || (house.addons || []).indexOf('stables') >= 0; // v9p33river432: require stables addon or built-in
+        if (!_sHasStables) return { success: false, message: 'This home has no stables. Install the Stables addon first.' };
+        var maxHorses = hasSkill('horse_mastery') ? 8 : 4; // v9p33river432: match stables addon description (was 4/2)
         if (!house.horses) house.horses = [];
         if (house.horses.length >= maxHorses) return { success: false, message: 'Home can hold ' + maxHorses + ' horses (has ' + house.horses.length + ').' };
+        var _horsesRequired = player.storageContainer ? ((CONFIG.STORAGE_CONTAINERS[player.storageContainer] || {}).horsesRequired || 0) : 0; // v9p33river432: vehicle horse requirement check
+        if (player.horses.length - 1 < _horsesRequired) {
+            var _vcNm = (CONFIG.STORAGE_CONTAINERS[player.storageContainer] || {}).name || 'vehicle';
+            return { success: false, message: 'Your ' + _vcNm + ' needs ' + _horsesRequired + ' horse(s). Dismount it first.' };
+        }
         // v9p33river315: was always pop()ing the last horse, ignoring
         // any horseId passed by the UI. Now selects the requested horse
         // when given (by id or name), falling back to pop().
@@ -675,6 +688,10 @@
         if (!house.horses || house.horses.length === 0) return { success: false, message: 'No horses stabled here.' };
         var idx = Number(horseIdx) || 0;
         if (idx < 0 || idx >= house.horses.length) return { success: false, message: 'Invalid horse.' };
+        var _unstMaxMounted = (CONFIG.MAX_HORSES || 2) + (hasSkill('horse_mastery') ? 2 : 0); // v9p33river432: enforce mounted horse cap on unstable
+        if ((player.horses ? player.horses.length : 0) >= _unstMaxMounted) {
+            return { success: false, message: 'You can only have ' + _unstMaxMounted + ' mounted horses. Sell or store one first.' };
+        }
         var horse = house.horses.splice(idx, 1)[0];
         if (!player.horses) player.horses = [];
         player.horses.push(horse);
@@ -714,6 +731,7 @@
         if (house.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
         var addon = CONFIG.HOUSE_ADDONS ? CONFIG.HOUSE_ADDONS[addonId] : null;
         if (!addon) return { success: false, message: 'Unknown addon.' };
+        player.inventory = player.inventory || {}; // v9p33river432: guard legacy saves missing inventory during addon install
         if (!house.addons) house.addons = [];
         if (house.addons.indexOf(addonId) >= 0) return { success: false, message: 'Already installed.' };
         if (player.gold < addon.goldCost) return { success: false, message: 'Need ' + addon.goldCost + ' gold (have ' + Math.floor(player.gold) + ').' };
@@ -722,7 +740,7 @@
         if (addon.materials) {
             for (var matId in addon.materials) {
                 var need = addon.materials[matId];
-                var have = player.inventory[matId] || 0;
+                var have = (player.inventory && player.inventory[matId]) || 0; // v9p33river432: guard null inventory
                 // Also check home storage and market
                 var houseHas = (house.homeStorage && house.homeStorage[matId]) ? house.homeStorage[matId] : 0;
                 var town = Engine.findTown(player.townId);
@@ -822,6 +840,7 @@
         _sync();
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this building.' }; // v9p33river432: prevent remote toggle
         bld.inputOnly = !bld.inputOnly;
         return { success: true, message: bld.inputOnly ? 'Storage restricted to consumed goods only.' : 'Storage now accepts any goods.' };
     }
@@ -834,6 +853,7 @@
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
         if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this building.' };
+        if (!bld.active || bld.condition === 'destroyed') return { success: false, message: 'This building is not operational.' }; // v9p33river432: block deposit to inactive/destroyed buildings
         var res = findResource(resId);
         // Block livestock except to livestock buildings, horses except to cavalry/stable buildings
         var bt = null;
@@ -910,6 +930,7 @@
         var bld = (player.buildings || []).find(function(b) { return b.id === buildingId; });
         if (!bld) return { success: false, message: 'Building not found.' };
         if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town.' };
+        if (!bld.active || bld.condition === 'destroyed') return { success: false, message: 'This building is not operational.' }; // v9p33river432: block withdraw from inactive/destroyed buildings
         var stored = (bld.inventory && bld.inventory[resId]) || 0;
         if (stored < qty) return { success: false, message: 'Not enough stored.' };
         var res = findResource(resId);
@@ -988,7 +1009,7 @@
                 if (!container.materials.hasOwnProperty(matId)) continue;
                 var qty = container.materials[matId];
                 var playerHas = player.inventory[matId] || 0;
-                var townHas = (town.market && town.market.supply[matId]) || 0;
+                var townHas = (town.market && town.market.supply && town.market.supply[matId]) || 0; // v9p33river432: guard missing market supply map
                 if (playerHas + townHas < qty) {
                     var res = findResource(matId);
                     var resName = res ? res.name : matId;
@@ -1022,6 +1043,18 @@
             var _oldId = player.storageContainer;
             var _oldNm = (_oldId && _oldId !== 'backpack') ? CONFIG.STORAGE_CONTAINERS[_oldId].name : null;
             if (player.storageContainer === 'backpack') player._backpack = true;
+            var _bcCapBase = CONFIG.PLAYER_BASE_CARRY || 20; // v9p33river432: capacity check for new vehicle
+            if (hasSkill('pack_mule')) _bcCapBase += 20;
+            if (hasSkill('beast_of_burden')) _bcCapBase += 20;
+            if (hasSkill('iron_back')) _bcCapBase += 30;
+            var _bcHorseCarry = CONFIG.HORSE_CARRY_BONUS || 40;
+            if (hasSkill('horse_mastery')) _bcHorseCarry = Math.floor(_bcHorseCarry * 1.25);
+            var _bcNewCap = _bcCapBase * (container.capacityMult || 1) + player.horses.length * _bcHorseCarry;
+            if (player._backpack) _bcNewCap += _bcCapBase;
+            if (getCarriedWeight() > _bcNewCap) {
+                player.inventory[containerId] = (player.inventory[containerId] || 0) + 1; // v9p33river432: return inventory vehicle on failed equip
+                return { success: false, message: 'Current cargo (' + Math.round(getCarriedWeight()) + ') exceeds new container capacity (' + _bcNewCap + '). Lighten your load first.' };
+            }
             player.storageContainer = containerId;
             var _msg = 'Equipped ' + container.icon + ' ' + container.name + ' (from inventory)!';
             if (_oldNm && _oldId !== containerId) {
@@ -1050,6 +1083,20 @@
 
         if (player.gold < totalGoldCost) return { success: false, message: 'Not enough gold. Need ' + totalGoldCost + 'g (' + laborCost + 'g labor + ' + materialMarketCost + 'g materials).' };
 
+        if (containerId !== 'backpack') {
+            var _bcCraftCapBase = CONFIG.PLAYER_BASE_CARRY || 20; // v9p33river432: capacity check before auto-equipping crafted vehicle
+            if (hasSkill('pack_mule')) _bcCraftCapBase += 20;
+            if (hasSkill('beast_of_burden')) _bcCraftCapBase += 20;
+            if (hasSkill('iron_back')) _bcCraftCapBase += 30;
+            var _bcCraftHorseCarry = CONFIG.HORSE_CARRY_BONUS || 40;
+            if (hasSkill('horse_mastery')) _bcCraftHorseCarry = Math.floor(_bcCraftHorseCarry * 1.25);
+            var _bcCraftNewCap = _bcCraftCapBase * (container.capacityMult || 1) + player.horses.length * _bcCraftHorseCarry;
+            if (player._backpack || player.storageContainer === 'backpack') _bcCraftNewCap += _bcCraftCapBase;
+            if (getCarriedWeight() > _bcCraftNewCap) {
+                return { success: false, message: 'Current cargo (' + Math.round(getCarriedWeight()) + ') exceeds new container capacity (' + _bcCraftNewCap + '). Lighten your load first.' };
+            }
+        }
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
 
         // Consume materials from inventory first, then market
@@ -1064,13 +1111,14 @@
                     if (player.inventory[matId] <= 0) delete player.inventory[matId];
                     remaining -= fromInv;
                 }
-                if (remaining > 0) {
+                if (remaining > 0 && town.market && town.market.supply) { // v9p33river432: guard null market
                     town.market.supply[matId] = (town.market.supply[matId] || 0) - remaining;
                 }
             }
         }
 
         player.gold -= totalGoldCost;
+        player.stats = player.stats || {}; // v9p33river432: guard legacy saves missing stats on craft
         player.stats.totalGoldSpent += totalGoldCost;
         // v9p33river310: same return-to-inventory fix as the inventory-good
         // path above — preserve the player's previous vehicle instead of
@@ -1135,20 +1183,33 @@
         }
 
         // If current container is backpack-only, preserve it as the second slot.
+        var _prevVehicleId = null;
+        var _prevVehicle = null;
         if (player.storageContainer === 'backpack') {
             player._backpack = true;
         } else if (player.storageContainer && player.storageContainer !== 'backpack') {
-            // Switching vehicles — put old vehicle in inventory.
-            var oldC = CONFIG.STORAGE_CONTAINERS[player.storageContainer];
-            // v9p33river339: removed the "already have a better/equal" gate —
-            // players are free to swap vehicles (e.g. downgrade to a cart
-            // for less theft risk). Old vehicle is returned to inventory.
-            player.inventory[player.storageContainer] = (player.inventory[player.storageContainer] || 0) + 1;
-            Engine.logEvent('Stored your ' + (oldC ? oldC.name : 'vehicle') + ' in inventory.', null, 'my_business');
+            _prevVehicleId = player.storageContainer; // v9p33river432: defer vehicle swap until capacity check succeeds
+            _prevVehicle = CONFIG.STORAGE_CONTAINERS[_prevVehicleId];
         }
 
         player.inventory[containerId] -= 1;
         if (player.inventory[containerId] <= 0) delete player.inventory[containerId];
+        var _mcCapBase = CONFIG.PLAYER_BASE_CARRY || 20; // v9p33river432: capacity check for new vehicle
+        if (hasSkill('pack_mule')) _mcCapBase += 20;
+        if (hasSkill('beast_of_burden')) _mcCapBase += 20;
+        if (hasSkill('iron_back')) _mcCapBase += 30;
+        var _mcHorseCarry = CONFIG.HORSE_CARRY_BONUS || 40;
+        if (hasSkill('horse_mastery')) _mcHorseCarry = Math.floor(_mcHorseCarry * 1.25);
+        var _mcNewCap = _mcCapBase * (container.capacityMult || 1) + player.horses.length * _mcHorseCarry;
+        if (player._backpack) _mcNewCap += _mcCapBase;
+        if (getCarriedWeight() > _mcNewCap) {
+            player.inventory[containerId] = (player.inventory[containerId] || 0) + 1; // v9p33river432: return to inventory on failed mount
+            return { success: false, message: 'Current cargo (' + Math.round(getCarriedWeight()) + ') exceeds new container capacity (' + _mcNewCap + '). Lighten your load first.' };
+        }
+        if (_prevVehicleId) {
+            player.inventory[_prevVehicleId] = (player.inventory[_prevVehicleId] || 0) + 1; // v9p33river432: only swap out old vehicle on successful mount
+            Engine.logEvent('Stored your ' + (_prevVehicle ? _prevVehicle.name : 'vehicle') + ' in inventory.', null, 'my_business');
+        }
         player.storageContainer = containerId;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_container || 2);
@@ -1250,13 +1311,15 @@
         // Notoriety actually helps here — feared merchants get robbed less
         if (player.notoriety > 30) risk *= 0.7;
         if (player.notoriety > 60) risk *= 0.5;
-        if (Math.random() < risk) {
-            var keys = Object.keys(player.inventory).filter(function(k) { return (player.inventory[k] || 0) > 0; });
+        var _stRng = Engine.getRng ? Engine.getRng() : null; // v9p33river432: use seeded RNG for theft
+        var _stRand = function() { return _stRng && _stRng.random ? _stRng.random() : Math.random(); };
+        if (_stRand() < risk) {
+            var keys = Object.keys(player.inventory).filter(function(k) { return k.charAt(0) !== '_' && (player.inventory[k] || 0) > 0; }); // v9p33river432: skip underscore metadata keys
             if (keys.length === 0) return;
-            var targetRes = keys[Math.floor(Math.random() * keys.length)];
+            var targetRes = keys[Math.floor(_stRand() * keys.length)];
             var qty = player.inventory[targetRes] || 0;
             // Only lose 3-8% — forgiving
-            var stolen = Math.max(1, Math.floor(qty * (0.03 + Math.random() * 0.05)));
+            var stolen = Math.max(1, Math.floor(qty * (0.03 + _stRand() * 0.05)));
             stolen = Math.min(stolen, qty);
             player.inventory[targetRes] -= stolen;
             var res = findResource(targetRes);
@@ -1296,11 +1359,14 @@
         _sync();
         // 0.05% daily chance per worker — extremely rare
         // Reduced by: player being in town, worker skill level, security upgrades
+        if (!player.buildings) return; // v9p33river432: guard missing buildings
+        var _wRng = Engine.getRng ? Engine.getRng() : null; // v9p33river432: seeded RNG for worker theft
+        var _wrand = function() { return _wRng && _wRng.random ? _wRng.random() : Math.random(); };
         var playerTownId = player.townId;
         for (var i = 0; i < player.buildings.length; i++) {
             var bld = player.buildings[i];
             if (!bld.active || !bld.workers || bld.workers.length === 0) continue;
-            var stored = player.townStorage[bld.townId];
+            var stored = player.townStorage && player.townStorage[bld.townId]; // v9p33river432: guard missing townStorage
             if (!stored) continue;
             var storageKeys = Object.keys(stored).filter(function(k) { return (stored[k] || 0) > 0; });
             if (storageKeys.length === 0) continue;
@@ -1322,9 +1388,9 @@
                     else if (bld.security === 'vault_room') theftChance *= 0.15;
                     else if (bld.security === 'trapped_locks') theftChance *= 0.05;
                 }
-                if (Math.random() < theftChance) {
-                    var targetRes = storageKeys[Math.floor(Math.random() * storageKeys.length)];
-                    var maxSteal = Math.min(stored[targetRes], 1 + Math.floor(Math.random() * 1));
+                if (_wrand() < theftChance) { // v9p33river432: use seeded RNG
+                    var targetRes = storageKeys[Math.floor(_wrand() * storageKeys.length)];
+                    var maxSteal = Math.min(stored[targetRes], 1 + Math.floor(_wrand() * 3)); // v9p33river432: was always 1 (Math.floor(random*1)=0)
                     if (maxSteal > 0) {
                         stored[targetRes] -= maxSteal;
                         if (stored[targetRes] <= 0) delete stored[targetRes];
@@ -1486,6 +1552,9 @@
         var kingdom = Engine.getKingdom(kingdomId);
         if (!kingdom) return { success: false, message: 'Kingdom not found.' };
         player.gold -= cost;
+        player.stats = player.stats || {}; // v9p33river432: guard legacy saves missing stats on donation
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost; // v9p33river432: track donation in stats
+        logFinance(-cost, 'donation', 'Donated ' + cost + 'g to ' + kingdom.name); // v9p33river432: log in finance ledger
         kingdom.gold = (kingdom.gold || 0) + cost;
         // Diminishing returns: each donation in 30 days gives 25% less
         if (!player._donationTracker) player._donationTracker = {};
@@ -1514,7 +1583,7 @@
         if (!player.warAllegiances) player.warAllegiances = {};
         const activeWars = Engine.getActiveWars ? Engine.getActiveWars() : {};
         const war = activeWars[warId];
-        if (!war) return;
+        if (!war) return { success: false, message: 'War not found.' }; // v9p33river432: return error object instead of undefined
 
         // Handle changing allegiance — allowed for non-nobles, with penalties
         if (player.warAllegiances[warId] && player.warAllegiances[warId].side !== 'neutral' && player.warAllegiances[warId].side) {
@@ -1552,7 +1621,7 @@
             // Restore saved rank from Enemy status before re-applying
             if (player._warSavedRanks) {
                 var _oldEnemy = _oldSide === war.kingdomA ? war.kingdomB : war.kingdomA;
-                if (player._warSavedRanks[_oldEnemy] != null && player.socialRank[_oldEnemy] === -1) {
+                if (player._warSavedRanks[_oldEnemy] != null && player.socialRank && player.socialRank[_oldEnemy] === -1) { // v9p33river432: guard missing socialRank during allegiance reset
                     player.socialRank[_oldEnemy] = player._warSavedRanks[_oldEnemy];
                     delete player._warSavedRanks[_oldEnemy];
                 }
@@ -1572,10 +1641,10 @@
 
         // Nobility check: must side with own kingdom or be downgraded
         if (side !== 'neutral' && enemySide) {
-            var playerRankInEnemy = player.socialRank[enemySide] || 0;
+            var playerRankInEnemy = (player.socialRank && player.socialRank[enemySide]) || 0; // v9p33river432: guard missing socialRank
             if (playerRankInEnemy >= 4) {
                 // Player is noble in the enemy kingdom — they must side with that kingdom, or be downgraded
-                var playerRankInChosen = player.socialRank[side] || 0;
+                var playerRankInChosen = (player.socialRank && player.socialRank[side]) || 0; // v9p33river432: guard missing socialRank
                 if (playerRankInChosen < 4) {
                     // They're choosing against the kingdom they're noble in — downgrade to guildmaster
                     var oldRank = CONFIG.SOCIAL_RANKS[playerRankInEnemy] ? CONFIG.SOCIAL_RANKS[playerRankInEnemy].name : 'Noble';
@@ -1628,7 +1697,7 @@
             }
 
             // If player has social status with enemy kingdom, temporarily set to "Enemy" (rank -1)
-            if (enemySide && (player.socialRank[enemySide] || 0) >= 1) {
+            if (enemySide && player.socialRank && (player.socialRank[enemySide] || 0) >= 1) { // v9p33river432: guard missing socialRank
                 if (!player._warSavedRanks) player._warSavedRanks = {};
                 player._warSavedRanks[enemySide] = player.socialRank[enemySide];
                 player.socialRank[enemySide] = -1; // Special "Enemy" rank
@@ -1918,7 +1987,7 @@
     function getShipCargo(shipId) {
         _sync();
         var ship = (player.ships || []).find(function(s) { return s.id === shipId; });
-        return ship ? (ship.cargo || {}) : {};
+        return ship ? Object.assign({}, ship.cargo || {}) : {}; // v9p33river432: return copy to prevent accidental mutation
     }
     function getShipCargoWeight(shipId) {
         _sync();
@@ -1929,10 +1998,12 @@
     // direction: 'load' (player → ship) or 'unload' (ship → player).
     function transferShipCargo(shipId, resId, qty, direction) {
         _sync();
+        qty = Number(qty);
+        if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' }; // v9p33river432: reject NaN/non-finite
         qty = Math.floor(qty);
-        if (qty <= 0) return { success: false, message: 'Invalid quantity.' };
         var ship = (player.ships || []).find(function(s) { return s.id === shipId; });
         if (!ship) return { success: false, message: 'Ship not found.' };
+        if (!player.townId || ship.townId !== player.townId) return { success: false, message: 'Ship must be docked in your current town.' }; // v9p33river432: require ship in player's town
         ship.cargo = ship.cargo || {};
         var res = findResource(resId);
         var w = res ? (res.weight || 1) : 1;
@@ -1951,17 +2022,30 @@
         } else if (direction === 'unload') {
             var aboard = ship.cargo[resId] || 0;
             if (aboard < qty) return { success: false, message: 'Ship only has ' + aboard + '.' };
-            // Player capacity check (allow overflow if at port — town storage handles it)
             var maxCarry = Player.getCarryCapacity ? Player.getCarryCapacity() : Infinity;
             var carried = Player.getCarriedWeight ? Player.getCarriedWeight() : 0;
             var roomP = maxCarry - carried;
+            var toInv = qty;
+            var toStore = 0;
             if (roomP < qty * w) {
-                // Overflow handled silently if at a town with storage; otherwise reject.
-                if (!player.townId) return { success: false, message: 'You can carry only ' + Math.floor(roomP / w) + ' ' + resId + ' more.' };
+                toInv = Math.max(0, Math.floor(roomP / w));
+                toStore = qty - toInv;
+                var storageCap = getTownStorageCapacity(player.townId); // v9p33river432: overflow unload requires real town storage room
+                var storageUsed = getTownStorageUsed(player.townId);
+                var storageRoom = Math.max(0, storageCap - storageUsed);
+                if (toStore * w > storageRoom) {
+                    return { success: false, message: 'You can carry ' + toInv + ' now, and town storage has room for only ' + Math.floor(storageRoom / w) + ' more ' + resId + '.' };
+                }
             }
             ship.cargo[resId] = aboard - qty;
             if (ship.cargo[resId] <= 0) delete ship.cargo[resId];
-            player.inventory[resId] = (player.inventory[resId] || 0) + qty;
+            if (toInv > 0) player.inventory[resId] = (player.inventory[resId] || 0) + toInv;
+            if (toStore > 0) {
+                if (!player.townStorage) player.townStorage = {};
+                if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
+                player.townStorage[player.townId][resId] = (player.townStorage[player.townId][resId] || 0) + toStore;
+                return { success: true, message: '📦 Unloaded ' + qty + ' ' + resId + ' (' + toInv + ' to inventory, ' + toStore + ' to town storage).' };
+            }
             return { success: true, message: '📦 Unloaded ' + qty + ' ' + resId + ' from ship.' };
         }
         return { success: false, message: 'Invalid direction.' };

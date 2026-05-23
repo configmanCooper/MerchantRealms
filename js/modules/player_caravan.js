@@ -12,6 +12,9 @@
         player = Player.state;
         // v9p33river333: legacy saves may lack horses; caravan travel assumes an array.
         if (player && !player.horses) player.horses = [];
+        // v9p33river432: caravan flows read town storage + ships directly on legacy saves.
+        if (player && !player.townStorage) player.townStorage = {};
+        if (player && !Array.isArray(player.ships)) player.ships = [];
     }
 
     // ── Player helpers (defined in player.js, accessed via Player) ──
@@ -1163,6 +1166,122 @@
         return Math.floor((baseStorage || 0) * (1 + (((level || 1) - 1) * 0.50)));
     }
 
+    // v9p33river432: caravan storage drops must honor town storage capacity instead of silently overflowing.
+    function _storeInTownStorage(townId, resId, qty) {
+        _sync();
+        qty = Math.floor(Number(qty) || 0);
+        if (qty <= 0) return 0;
+        var cap = Player.getTownStorageCapacity ? Player.getTownStorageCapacity(townId) : 0;
+        var used = Player.getTownStorageUsed ? Player.getTownStorageUsed(townId) : 0;
+        var res = findResource(resId);
+        var weight = res ? Number(res.weight || 1) : 1;
+        if (!isFinite(weight) || weight <= 0) weight = 1;
+        var freeUnits = Math.max(0, Math.floor((cap - used) / weight));
+        var storeQty = Math.min(qty, freeUnits);
+        if (storeQty <= 0) return 0;
+        if (!player.townStorage[townId]) player.townStorage[townId] = {};
+        player.townStorage[townId][resId] = (player.townStorage[townId][resId] || 0) + storeQty;
+        return storeQty;
+    }
+
+    // v9p33river432: remote contraband sales must not leave staged inventory behind when the sale fails.
+    function _runStagedCaravanTrade(tradeFn, resId, qty, town, kingdom, basePrice) {
+        _sync();
+        var beforeInv = player.inventory[resId] || 0;
+        player.inventory[resId] = beforeInv + qty;
+        var result = tradeFn(resId, qty, town, kingdom, basePrice) || { success: false, message: 'Trade failed.' };
+        var afterInv = player.inventory[resId] || 0;
+        var stagedRemaining = Math.max(0, afterInv - beforeInv);
+        if (stagedRemaining > 0) {
+            player.inventory[resId] = afterInv - stagedRemaining;
+            if (player.inventory[resId] <= 0) delete player.inventory[resId];
+        }
+        return { result: result, consumed: Math.max(0, qty - stagedRemaining) };
+    }
+
+    // v9p33river432: caravan sell tax must reduce merchant payout before revenue is finalized.
+    function _collectCaravanSellTax(townId, resId, grossRevenue) {
+        _sync();
+        var town = Engine.findTown(townId);
+        if (!town || !town.kingdomId || grossRevenue <= 0) {
+            return { net: grossRevenue, tax: 0 };
+        }
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null;
+        if (!kingdom) return { net: grossRevenue, tax: 0 };
+        var taxableAmount = grossRevenue;
+        if (resId && kingdom.exportRestrictions && kingdom.exportRestrictions.indexOf(resId) >= 0) {
+            taxableAmount = Math.floor(taxableAmount * 0.5);
+        }
+        var taxCollected = Math.max(0, Math.floor(taxableAmount * (kingdom.taxRate || 0.10)));
+        if (town.buildings) {
+            var _tbBonus = 0;
+            for (var _tbi = 0; _tbi < town.buildings.length; _tbi++) {
+                var _tb = town.buildings[_tbi];
+                if (!_tb || _tb.condition === 'destroyed') continue;
+                var _tbt = Engine.findBuildingType ? Engine.findBuildingType(_tb.type) : null;
+                if (_tbt && _tbt.tradeBonus) _tbBonus += _tbt.tradeBonus;
+            }
+            if (_tbBonus > 0) taxCollected = Math.floor(taxCollected * (1 + Math.min(0.5, _tbBonus)));
+        }
+        return { net: Math.max(1, grossRevenue - taxCollected), tax: taxCollected };
+    }
+
+    function _applyCaravanSellTax(townId, resId, grossRevenue) {
+        _sync();
+        var town = Engine.findTown(townId);
+        if (!town || !town.kingdomId || !Engine.collectTradeTax || grossRevenue <= 0) return;
+        Engine.collectTradeTax(town.kingdomId, grossRevenue, resId, false, townId);
+    }
+
+    // v9p33river432: sea-caravan risk must inspect the assigned ship, not player.ships[0].
+    function _findAssignedCaravanShip(caravan) {
+        _sync();
+        if (!caravan || !caravan.shipId || !player.ships) return null;
+        for (var i = 0; i < player.ships.length; i++) {
+            if (player.ships[i] && player.ships[i].id === caravan.shipId) return player.ships[i];
+        }
+        return null;
+    }
+
+    // v9p33river432: edited caravan orders need schema validation before they are accepted.
+    function _validateCaravanOrders(newOrders) {
+        _sync();
+        if (newOrders == null) return { valid: true, orders: [] };
+        if (!Array.isArray(newOrders)) return { valid: false, message: 'Orders must be an array.' };
+        var validActions = { buy: true, sell: true, store: true, pickup: true };
+        var sanitized = [];
+        for (var i = 0; i < newOrders.length; i++) {
+            var order = newOrders[i];
+            if (!order || typeof order !== 'object') return { valid: false, message: 'Order #' + (i + 1) + ' is invalid.' };
+            var action = order.action;
+            if (!validActions[action]) return { valid: false, message: 'Order #' + (i + 1) + ' has an invalid action.' };
+            var good = order.good;
+            if (!findResource(good)) return { valid: false, message: 'Order #' + (i + 1) + ' has an invalid good.' };
+            var location = order.location || 'destination';
+            var isWaypoint = typeof location === 'string' && location.indexOf('waypoint:') === 0;
+            if (location !== 'source' && location !== 'destination' && !(isWaypoint && Engine.findTown(location.replace('waypoint:', '')))) {
+                return { valid: false, message: 'Order #' + (i + 1) + ' has an invalid location.' };
+            }
+            var qty = order.qty;
+            if (qty !== 'max') {
+                qty = Number(qty);
+                if (!isFinite(qty) || qty <= 0) return { valid: false, message: 'Order #' + (i + 1) + ' has an invalid quantity.' };
+                qty = Math.floor(qty);
+            }
+            var priceLimit = null;
+            if (order.priceLimit != null) {
+                priceLimit = Number(order.priceLimit);
+                if (!isFinite(priceLimit) || priceLimit < 0) return { valid: false, message: 'Order #' + (i + 1) + ' has an invalid price limit.' };
+                priceLimit = Math.floor(priceLimit);
+                if (priceLimit <= 0) priceLimit = null;
+            }
+            var buildingId = order.buildingId == null ? null : order.buildingId;
+            if (buildingId != null && typeof buildingId !== 'string') return { valid: false, message: 'Order #' + (i + 1) + ' has an invalid building target.' };
+            sanitized.push({ good: good, action: action, location: location, qty: qty, priceLimit: priceLimit, buildingId: buildingId });
+        }
+        return { valid: true, orders: sanitized };
+    }
+
     /**
      * Calculate the quality crafting chance for a given tier, resource, and worker skill.
      * @param {'good'|'excellent'} tier
@@ -1602,11 +1721,15 @@
                         }
                         var remainder = storeQty - stored;
                         if (remainder > 0) {
-                            // Fall back to town/outpost storage
-                            if (!player.townStorage[townId]) player.townStorage[townId] = {};
-                            player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) + remainder;
-                            stored += remainder;
-                            logCaravan(caravan, '📥 ' + remainder + ' ' + resName + ' overflow stored in town storage at ' + townName + '.');
+                            // v9p33river432: clamp overflow against remote town-storage capacity instead of blindly writing past it.
+                            var _storedOverflow = _storeInTownStorage(townId, o.good, remainder);
+                            if (_storedOverflow > 0) {
+                                stored += _storedOverflow;
+                                logCaravan(caravan, '📥 ' + _storedOverflow + ' ' + resName + ' overflow stored in town storage at ' + townName + '.');
+                            }
+                            if (_storedOverflow < remainder) {
+                                logCaravan(caravan, '⚠️ Town storage full at ' + townName + ' — keeping ' + (remainder - _storedOverflow) + ' ' + resName + ' on caravan.');
+                            }
                         }
                     } else {
                         logCaravan(caravan, '⚠️ Target building not found in ' + townName + '. Keeping goods on caravan.');
@@ -1673,14 +1796,18 @@
                             logCaravan(caravan, '📥 Stored ' + _tStoreQty + ' ' + resName + ' in ' + (_tBt.name || _tBld.type) + ' at ' + townName + '.');
                         }
                     }
-                    // Overflow: fall back to town/outpost storage, then sell to market or keep on caravan
+                    // Overflow: fall back to town/outpost storage, then keep leftovers on the caravan
                     if (_storeRemaining > 0) {
-                        // Try town/outpost storage as fallback
-                        if (!player.townStorage[townId]) player.townStorage[townId] = {};
-                        player.townStorage[townId][o.good] = (player.townStorage[townId][o.good] || 0) + _storeRemaining;
-                        stored += _storeRemaining;
-                        logCaravan(caravan, '📥 Stored ' + _storeRemaining + ' ' + resName + ' in town storage at ' + townName + '.');
-                        _storeRemaining = 0;
+                        // v9p33river432: general fallback storage also needs a real capacity check.
+                        var _storedTown = _storeInTownStorage(townId, o.good, _storeRemaining);
+                        if (_storedTown > 0) {
+                            stored += _storedTown;
+                            logCaravan(caravan, '📥 Stored ' + _storedTown + ' ' + resName + ' in town storage at ' + townName + '.');
+                            _storeRemaining -= _storedTown;
+                        }
+                        if (_storeRemaining > 0) {
+                            logCaravan(caravan, '⚠️ Town storage full at ' + townName + ' — keeping ' + _storeRemaining + ' ' + resName + ' on caravan.');
+                        }
                     }
                 }
                 if (stored > 0) {
@@ -1711,40 +1838,46 @@
                 var _sellRestricted = _sellKingdom && _sellKingdom.laws && _sellKingdom.laws.restrictedGoods && _sellKingdom.laws.restrictedGoods.indexOf(o.good) >= 0 && !hasLicense(_sellKingdom.id, o.good);
 
                 if (_sellBanned) {
-                    // Stage caravan goods into player inventory for attemptSmuggle's deductGoodsFromPools
-                    player.inventory[o.good] = (player.inventory[o.good] || 0) + sellQty;
-                    var _cSmugResult = Player.attemptSmuggle(o.good, sellQty, town, _sellKingdom, sellPrice);
+                    // v9p33river432: staged contraband must be removed again if the remote smuggle attempt fails.
+                    var _cSmugTrade = _runStagedCaravanTrade(Player.attemptSmuggle, o.good, sellQty, town, _sellKingdom, sellPrice);
+                    var _cSmugResult = _cSmugTrade.result;
                     if (_cSmugResult.success) {
                         logCaravan(caravan, '🚫💰 Caravan smuggled ' + sellQty + ' ' + resName + ' at ' + townName + '. ' + (_cSmugResult.message || ''));
                         caravan.totalProfit = (caravan.totalProfit || 0) + (_cSmugResult.totalRevenue || 0);
                     } else {
-                        logCaravan(caravan, '🚨 Caravan caught smuggling ' + resName + ' at ' + townName + '! ' + (_cSmugResult.message || ''));
+                        logCaravan(caravan, '🚨 Caravan caught smuggling ' + resName + ' at ' + townName + '! ' + (_cSmugResult.message || '') + (_cSmugTrade.consumed <= 0 ? ' Goods stayed on the caravan.' : ''));
                     }
-                    caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
-                    if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
-                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
+                    if (_cSmugTrade.consumed > 0) {
+                        caravan.goods[o.good] = (caravan.goods[o.good] || 0) - _cSmugTrade.consumed;
+                        if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                        player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _cSmugTrade.consumed;
+                    }
                     continue;
                 }
 
                 if (_sellRestricted) {
-                    // Stage caravan goods into player inventory for attemptRestrictedTrade's deductGoodsFromPools
-                    player.inventory[o.good] = (player.inventory[o.good] || 0) + sellQty;
+                    // v9p33river432: failed restricted sales must not teleport staged cargo into player inventory.
                     player.restrictedTradesWithoutLicense = (player.restrictedTradesWithoutLicense || 0) + 1;
                     if (player.restrictedTradesWithoutLicense >= 10) unlockAchievement('tax_evader');
-                    var _cRestResult = attemptRestrictedTrade(o.good, sellQty, town, _sellKingdom, sellPrice);
+                    var _cRestTrade = _runStagedCaravanTrade(attemptRestrictedTrade, o.good, sellQty, town, _sellKingdom, sellPrice);
+                    var _cRestResult = _cRestTrade.result;
                     if (_cRestResult.success) {
                         logCaravan(caravan, '⚠️💰 Caravan sold restricted ' + resName + ' at ' + townName + ' (no license). ' + (_cRestResult.message || ''));
                         caravan.totalProfit = (caravan.totalProfit || 0) + (_cRestResult.totalRevenue || 0);
                     } else {
-                        logCaravan(caravan, '🚨 Caravan caught selling restricted ' + resName + ' at ' + townName + '! ' + (_cRestResult.message || ''));
+                        logCaravan(caravan, '🚨 Caravan caught selling restricted ' + resName + ' at ' + townName + '! ' + (_cRestResult.message || '') + (_cRestTrade.consumed <= 0 ? ' Goods stayed on the caravan.' : ''));
                     }
-                    caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
-                    if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
-                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
+                    if (_cRestTrade.consumed > 0) {
+                        caravan.goods[o.good] = (caravan.goods[o.good] || 0) - _cRestTrade.consumed;
+                        if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
+                        player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _cRestTrade.consumed;
+                    }
                     continue;
                 }
                 var grossRevenue = Math.floor(sellPrice * sellQty);
-                var _cTariff = _applyCaravanTariff(grossRevenue, townId);
+                // v9p33river432: collect sell tax from the gross first so caravan payouts are net, not tax-minting.
+                var _cTax = _collectCaravanSellTax(townId, o.good, grossRevenue);
+                var _cTariff = _applyCaravanTariff(_cTax.net, townId);
                 var revenue = _cTariff.net;
                 // v9p33river85: refuse caravan sale if market can't pay (silent — caravan keeps the goods).
                 var _mAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(townId) : Infinity;
@@ -1752,6 +1885,7 @@
                     logCaravan(caravan, '🪙 ' + townName + ' market lacks gold to buy ' + sellQty + ' ' + resName + ' (need ' + revenue + 'g, has ' + _mAvail + 'g). Caravan keeps the goods.');
                     continue;
                 }
+                _applyCaravanSellTax(townId, o.good, grossRevenue);
                 player.gold += revenue;
                 logFinance(revenue, 'caravan_sales', 'Caravan sold ' + sellQty + ' ' + res.name);
                 player.stats.totalGoldEarned += revenue;
@@ -1761,13 +1895,13 @@
                 town.market.supply[o.good] = (town.market.supply[o.good] || 0) + sellQty;
                 // v9p33river85: gold flows out of the town's market to the caravan
                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -revenue);
-                // v9p33river313: caravan sells now pay trade tax (export
-                // direction so subsidies don't fire).
-                if (Engine.collectTradeTax) Engine.collectTradeTax(town.kingdomId, revenue, o.good, false, town.id);
                 caravan.goods[o.good] = (caravan.goods[o.good] || 0) - sellQty;
                 if (caravan.goods[o.good] <= 0) delete caravan.goods[o.good];
                 player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + sellQty;
-                var _tariffMsg = _cTariff.tariff > 0 ? ' (tariff: ' + _cTariff.tariff + 'g)' : '';
+                var _sellCharges = [];
+                if (_cTax.tax > 0) _sellCharges.push('tax: ' + _cTax.tax + 'g');
+                if (_cTariff.tariff > 0) _sellCharges.push('tariff: ' + _cTariff.tariff + 'g');
+                var _tariffMsg = _sellCharges.length > 0 ? ' (' + _sellCharges.join(', ') + ')' : '';
                 logCaravan(caravan, '💰 Sold ' + sellQty + ' ' + resName + ' for ' + revenue + 'g at ' + townName + '.' + _tariffMsg);
                 // Track cross-kingdom caravan trade for story mode
                 if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
@@ -1804,35 +1938,39 @@
 
                 if (_asBanned) {
                     var remPrice = town.market.prices[gId] || 1;
-                    // Stage caravan goods into player inventory for attemptSmuggle
-                    player.inventory[gId] = (player.inventory[gId] || 0) + remQty;
-                    var _asSmugResult = Player.attemptSmuggle(gId, remQty, town, _asKingdom, remPrice);
+                    // v9p33river432: auto-smuggle fallbacks need the same staged-inventory cleanup as manual sell orders.
+                    var _asSmugTrade = _runStagedCaravanTrade(Player.attemptSmuggle, gId, remQty, town, _asKingdom, remPrice);
+                    var _asSmugResult = _asSmugTrade.result;
                     if (_asSmugResult.success) {
                         logCaravan(caravan, '🚫💰 Caravan auto-smuggled ' + remQty + ' ' + _asResName + ' at ' + townName + '. ' + (_asSmugResult.message || ''));
                         caravan.totalProfit = (caravan.totalProfit || 0) + (_asSmugResult.totalRevenue || 0);
                     } else {
-                        logCaravan(caravan, '🚨 Caravan caught auto-smuggling ' + _asResName + ' at ' + townName + '! ' + (_asSmugResult.message || ''));
+                        logCaravan(caravan, '🚨 Caravan caught auto-smuggling ' + _asResName + ' at ' + townName + '! ' + (_asSmugResult.message || '') + (_asSmugTrade.consumed <= 0 ? ' Goods stayed on the caravan.' : ''));
                     }
-                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
+                    if (_asSmugTrade.consumed <= 0) continue;
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _asSmugTrade.consumed;
                 } else if (_asRestricted) {
                     var remPrice2 = town.market.prices[gId] || 1;
-                    // Stage caravan goods into player inventory for attemptRestrictedTrade
-                    player.inventory[gId] = (player.inventory[gId] || 0) + remQty;
+                    // v9p33river432: failed restricted auto-sales must not teleport cargo into player inventory.
                     player.restrictedTradesWithoutLicense = (player.restrictedTradesWithoutLicense || 0) + 1;
                     if (player.restrictedTradesWithoutLicense >= 10) unlockAchievement('tax_evader');
-                    var _asRestResult = attemptRestrictedTrade(gId, remQty, town, _asKingdom, remPrice2);
+                    var _asRestTrade = _runStagedCaravanTrade(attemptRestrictedTrade, gId, remQty, town, _asKingdom, remPrice2);
+                    var _asRestResult = _asRestTrade.result;
                     if (_asRestResult.success) {
                         logCaravan(caravan, '⚠️💰 Caravan auto-sold restricted ' + _asResName + ' at ' + townName + ' (no license). ' + (_asRestResult.message || ''));
                         caravan.totalProfit = (caravan.totalProfit || 0) + (_asRestResult.totalRevenue || 0);
                     } else {
-                        logCaravan(caravan, '🚨 Caravan caught selling restricted ' + _asResName + ' at ' + townName + '! ' + (_asRestResult.message || ''));
+                        logCaravan(caravan, '🚨 Caravan caught selling restricted ' + _asResName + ' at ' + townName + '! ' + (_asRestResult.message || '') + (_asRestTrade.consumed <= 0 ? ' Goods stayed on the caravan.' : ''));
                     }
-                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
+                    if (_asRestTrade.consumed <= 0) continue;
+                    player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + _asRestTrade.consumed;
                 } else {
-                    var remPrice3 = town.market.prices[gId] || 1;
+                    var remPrice3 = Engine.getMarketPrice ? Engine.getMarketPrice(town.id, gId) : (town.market.prices[gId] || 1);
                     if (hasSkill('trade_route_mastery')) remPrice3 *= 1.10;
                     var remGross = Math.floor(remPrice3 * remQty);
-                    var remTar = _applyCaravanTariff(remGross, townId);
+                    // v9p33river432: auto-sells need the same pre-payout tax handling as explicit caravan sells.
+                    var remTax = _collectCaravanSellTax(townId, gId, remGross);
+                    var remTar = _applyCaravanTariff(remTax.net, townId);
                     var remRev = remTar.net;
                     // v9p33river85: refuse if market lacks gold
                     var _remAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(townId) : Infinity;
@@ -1840,6 +1978,7 @@
                         logCaravan(caravan, '🪙 ' + townName + ' market lacks gold to buy ' + remQty + ' ' + _asResName + ' (need ' + remRev + 'g, has ' + _remAvail + 'g).');
                         continue;
                     }
+                    _applyCaravanSellTax(townId, gId, remGross);
                     player.gold += remRev;
                     logFinance(remRev, 'caravan_sales', 'Caravan auto-sold ' + _asResName);
                     player.stats.totalGoldEarned += remRev;
@@ -1847,7 +1986,10 @@
                     town.market.supply[gId] = (town.market.supply[gId] || 0) + remQty;
                     if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -remRev);
                     player.stats.caravanGoodsMoved = (player.stats.caravanGoodsMoved || 0) + remQty;
-                    var _remTMsg = remTar.tariff > 0 ? ' (tariff: ' + remTar.tariff + 'g)' : '';
+                    var _remCharges = [];
+                    if (remTax.tax > 0) _remCharges.push('tax: ' + remTax.tax + 'g');
+                    if (remTar.tariff > 0) _remCharges.push('tariff: ' + remTar.tariff + 'g');
+                    var _remTMsg = _remCharges.length > 0 ? ' (' + _remCharges.join(', ') + ')' : '';
                     logCaravan(caravan, '💰 Auto-sold ' + remQty + ' ' + _asResName + ' for ' + remRev + 'g at ' + townName + '.' + _remTMsg);
                 }
             }
@@ -1871,7 +2013,11 @@
         _sync();
         for (var i = 0; i < player.caravans.length; i++) {
             if (player.caravans[i].id === caravanId) {
-                player.caravans[i].orders = newOrders ? structuredClone(newOrders) : null;
+                var _validatedOrders = _validateCaravanOrders(newOrders);
+                if (!_validatedOrders.valid) {
+                    return { success: false, message: _validatedOrders.message };
+                }
+                player.caravans[i].orders = _validatedOrders.orders.length > 0 ? structuredClone(_validatedOrders.orders) : null;
                 logCaravan(player.caravans[i], '📝 Orders updated.');
                 return { success: true, message: 'Caravan orders updated.' };
             }
@@ -2056,7 +2202,7 @@
     function _releaseCaravanShip(caravan) {
         _sync();
         if (caravan.shipId) {
-            var ship = player.ships.find(function(s) { return s.id === caravan.shipId; });
+            var ship = _findAssignedCaravanShip(caravan);
             if (ship) ship.assignedCaravanId = null;
             caravan.shipId = null;
         }
@@ -2154,12 +2300,12 @@
         for (var i = 0; i < caravan.passengers.length; i++) {
             var p = caravan.passengers[i];
             if (p.destinationTownId === townId) {
-                fareEarned += p.fare || 0;
-                dropped.push(p);
-                // Move the NPC to destination
-                if (Engine.findPerson) {
-                    var person = Engine.findPerson(p.personId);
-                    if (person) person.townId = townId;
+                // v9p33river432: only pay for passengers who still exist and are alive on arrival.
+                var person = Engine.findPerson ? Engine.findPerson(p.personId) : null;
+                if (person && person.alive) {
+                    fareEarned += p.fare || 0;
+                    dropped.push(p);
+                    person.townId = townId;
                 }
             } else {
                 remaining.push(p);
@@ -2177,6 +2323,14 @@
 
         // 2. Pick up travelers whose destination is on the caravan's route
         var demand = town.travelDemand || [];
+        // v9p33river432: stale travel-demand entries can point to dead or moved NPCs.
+        if (demand.length > 0 && Engine.findPerson) {
+            demand = demand.filter(function(d) {
+                var traveler = Engine.findPerson(d.personId);
+                return traveler && traveler.alive && traveler.townId === townId;
+            });
+            town.travelDemand = demand;
+        }
         if (demand.length === 0) return;
         var routeTowns = _getCaravanRouteTownIds(caravan);
         var cap = _getCaravanPassengerCap(caravan);
@@ -2220,7 +2374,7 @@
                 // Handle ship arrival: move owned ship to destination, release assignment
                 var _arrDestId = caravan.returnTrip ? caravan.fromTownId : caravan.toTownId;
                 if (caravan.routeType === 'sea' && caravan.shipId) {
-                    var _arrShip = player.ships.find(function(s) { return s.id === caravan.shipId; });
+                    var _arrShip = _findAssignedCaravanShip(caravan);
                     if (_arrShip) _arrShip.townId = _arrDestId;
                 }
 
@@ -2281,34 +2435,37 @@
                     } else {
                         // Legacy behavior: sell all goods at destination
                         let tripRevenue = 0;
+                        let remainingLegacyGoods = {};
                         for (const [resId, qty] of Object.entries(caravan.goods)) {
                             if (qty <= 0) continue;
                             if (player.townId === destTownId) {
                                 player.inventory[resId] = (player.inventory[resId] || 0) + qty;
                             } else {
-                                // v9p33river313: legacy sell path now
-                                // uses Engine.getMarketPrice (price-control
-                                // aware) and calls collectTradeTax(false,
-                                // townId) for tax/no-subsidy on export.
+                                // v9p33river432: keep unsold legacy cargo aboard, and collect sell tax before final payout.
                                 let price = Engine.getMarketPrice ? Engine.getMarketPrice(destTownId, resId) : (destTown.market.prices[resId] || 1);
                                 if (hasSkill('trade_route_mastery')) price *= 1.10;
                                 const grossRev = Math.floor(price * qty);
-                                const _legTar = _applyCaravanTariff(grossRev, destTownId);
+                                const _legTax = _collectCaravanSellTax(destTownId, resId, grossRev);
+                                const _legTar = _applyCaravanTariff(_legTax.net, destTownId);
                                 const revenue = _legTar.net;
                                 // v9p33river85: refuse if dest market can't pay
                                 const _legAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(destTownId) : Infinity;
                                 if (_legAvail < revenue) {
+                                    remainingLegacyGoods[resId] = qty;
                                     Engine.logEvent('🪙 ' + destTown.name + ' market lacks gold for caravan goods (need ' + revenue + 'g, has ' + _legAvail + 'g) — kept aboard.', null, 'my_business');
                                     continue;
                                 }
+                                _applyCaravanSellTax(destTownId, resId, grossRev);
                                 player.gold += revenue;
                                 logFinance(revenue, 'caravan_sales', 'Caravan sold goods');
                                 player.stats.totalGoldEarned += revenue;
                                 tripRevenue += revenue;
                                 destTown.market.supply[resId] = (destTown.market.supply[resId] || 0) + qty;
                                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, -revenue);
-                                if (Engine.collectTradeTax) Engine.collectTradeTax(destTown.kingdomId, revenue, resId, false, destTown.id);
-                                var _legTMsg = _legTar.tariff > 0 ? ' (tariff: ' + _legTar.tariff + 'g)' : '';
+                                var _legCharges = [];
+                                if (_legTax.tax > 0) _legCharges.push('tax: ' + _legTax.tax + 'g');
+                                if (_legTar.tariff > 0) _legCharges.push('tariff: ' + _legTar.tariff + 'g');
+                                var _legTMsg = _legCharges.length > 0 ? ' (' + _legCharges.join(', ') + ')' : '';
                                 Engine.logEvent('Caravan goods sold at ' + destTown.name + ': ' + qty + ' ' + resId + ' for ' + revenue + 'g.' + _legTMsg, { _noToast: true }, 'my_business');
                                 // Track cross-kingdom caravan trade for story mode
                                 if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction && caravan.route && caravan.route.length > 0) {
@@ -2326,18 +2483,19 @@
                             }
                         }
                         caravan.totalProfit = (caravan.totalProfit || 0) + tripRevenue;
-                        caravan.goods = {};
+                        caravan.goods = remainingLegacyGoods;
 
                         // Legacy auto-buy at destination if buyOrders configured
                         if (caravan.buyOrders && (caravan.roundTrip || caravan.recurring)) {
                             let buySpent = 0;
+                            let buySubsidy = 0;
                             const boughtGoods = {};
                             let boughtWeight = 0;
                             const legacyCap = _getCaravanCapacity(caravan);
                             for (const [resId, order] of Object.entries(caravan.buyOrders)) {
                                 const wantQty = order.qty || 0;
                                 const maxPrice = order.maxPrice || Infinity;
-                                const marketPrice = destTown.market.prices[resId] || 0;
+                                const marketPrice = Engine.getMarketPrice ? Engine.getMarketPrice(destTown.id, resId) : (destTown.market.prices[resId] || 0);
                                 const marketSupply = destTown.market.supply[resId] || 0;
                                 if (marketPrice <= 0 || marketPrice > maxPrice || marketSupply <= 0) continue;
                                 const canAfford = Math.floor((player.gold - buySpent) / marketPrice);
@@ -2351,12 +2509,21 @@
                                 buySpent += cost;
                                 destTown.market.supply[resId] = Math.max(0, marketSupply - buyQty);
                                 if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(destTown.id, cost);
+                                if (Engine.collectTradeTax) {
+                                    var _legacyTax = Engine.collectTradeTax(destTown.kingdomId, cost, resId, true, destTown.id);
+                                    if (_legacyTax && _legacyTax.subsidyAwarded > 0) {
+                                        buySubsidy += _legacyTax.subsidyAwarded;
+                                        player.gold += _legacyTax.subsidyAwarded;
+                                        player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + _legacyTax.subsidyAwarded;
+                                        if (typeof logFinance === 'function') logFinance(_legacyTax.subsidyAwarded, 'caravan', 'Trade subsidy: ' + resId);
+                                    }
+                                }
                                 Engine.logEvent(`Caravan bought ${buyQty} ${resId} at ${destTown.name} for ${cost}g.`, { _noToast: true }, 'my_business');
                             }
                             if (buySpent > 0) {
                                 player.gold -= buySpent;
                                 player.stats.totalGoldSpent += buySpent;
-                                caravan.totalProfit = (caravan.totalProfit || 0) - buySpent;
+                                caravan.totalProfit = (caravan.totalProfit || 0) - buySpent + buySubsidy;
                                 caravan.totalSpent = (caravan.totalSpent || 0) + buySpent;
                             }
                             caravan.goods = boughtGoods;
@@ -2781,8 +2948,9 @@
                 // Sea caravan — check for storms instead of bandits
                 let stormChance = CONFIG.STORM_RISK_PER_TRIP || 0.05;
                 if (hasSkill('expert_navigator')) stormChance *= 0.90;
-                // Breaking ships have 2x storm/sinking risk
-                if (player.ships.length > 0 && player.ships[0].degradeCondition === 'breaking') {
+                // v9p33river432: only the caravan's assigned ship should affect storm risk.
+                var _stormShip = _findAssignedCaravanShip(caravan);
+                if (_stormShip && _stormShip.degradeCondition === 'breaking') {
                     stormChance *= 2;
                 }
 
@@ -2799,17 +2967,11 @@
                         }
                         if (ev.type === 'naval_blockade') {
                             if (ev.townId === caravan.toTownId) {
-                                // Blockaded — caravan turns back
+                                // v9p33river432: blockade cargo stays with the blocked caravan so rescue can resume the run.
                                 caravan.status = 'blocked';
                                 caravan.active = false;
                                 Engine.logEvent('Your sea caravan was turned back by a naval blockade!', null, 'combat');
-                                // Return goods to player
-                                for (const [resId, qty] of Object.entries(caravan.goods)) {
-                                    if (qty > 0) {
-                                        player.inventory[resId] = (player.inventory[resId] || 0) + qty;
-                                    }
-                                }
-                                caravan.goods = {}; // Clear to prevent duplication
+                                logCaravan(caravan, '⛔ Naval blockade halted the voyage. Cargo remains aboard pending rescue.');
                                 break;
                             }
                         }
@@ -2827,6 +2989,7 @@
                     for (const resId in caravan.goods) {
                         const lost = Math.ceil(caravan.goods[resId] * lossRate);
                         caravan.goods[resId] = Math.max(0, caravan.goods[resId] - lost);
+                        if (caravan.goods[resId] <= 0) delete caravan.goods[resId]; // v9p33river432: storm losses should not leave zero-qty cargo keys behind.
                         totalLost += lost;
                     }
                     if (totalLost > 0) {
@@ -3016,7 +3179,11 @@
                     for (var bk in BUILDING_TYPES) { if (BUILDING_TYPES[bk].id === bld.type) { bt = BUILDING_TYPES[bk]; break; } }
                     var cap = bt ? _bldStorageCap(bt.storage, bld.level) : 0;
                     var used = 0;
-                    if (bld.inventory) { for (var ik in bld.inventory) { var rw = (findResource(ik) || {}).weight || 1; used += (bld.inventory[ik] || 0) * rw; } }
+                    // v9p33river432: auto-disband input checks must ignore output goods in mixed building inventories.
+                    var _adOutSet = {};
+                    if (bt && bt.produces) _adOutSet[bt.produces] = true;
+                    if (bt && bt.canProduce) { for (var _adi = 0; _adi < bt.canProduce.length; _adi++) _adOutSet[bt.canProduce[_adi]] = true; }
+                    if (bld.inventory) { for (var ik in bld.inventory) { if (_adOutSet[ik]) continue; var rw = (findResource(ik) || {}).weight || 1; used += (bld.inventory[ik] || 0) * rw; } }
                     if (used < cap) { allFull = false; break; }
                 }
                 if (allFull) {
@@ -3066,6 +3233,7 @@
         player.gold -= rescueCost;
         player.stats.totalGoldSpent += rescueCost;
         caravan.status = 'traveling';
+        caravan.active = true; // v9p33river432: blocked rescues must reactivate the caravan or it never moves again.
         caravan.progress = Math.max(0, caravan.progress - 0.1);
         Engine.logEvent(`Caravan rescued for ${rescueCost}g. It continues its journey.`, { _noToast: true }, 'my_business');
         return { success: true, message: `Caravan rescued for ${rescueCost}g.` };

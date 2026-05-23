@@ -379,6 +379,8 @@
 
         var town = ENGINE_REF ? ENGINE_REF.findTown(bld.townId) : null;
         if (!town) return { success: false, message: 'Town not found.' };
+        // v9p33river432: hiring a manager is an in-person building action, so require the player to be in that town.
+        if (bld.townId !== player.townId) return { success: false, message: 'You must be in the same town as this building.' };
 
         // Find a suitable NPC in the town
         var candidates = [];
@@ -426,6 +428,13 @@
         bld._managerSkill = (manager.workerSkill || 0) + ((manager.personality && manager.personality.intelligence) || 30) * 0.5;
         bld._managerHireDay = ENGINE_REF ? ENGINE_REF.getDay() : 0;
         bld._managerCaravans = false; // player must enable
+        // v9p33river432: new managers must start with clean payroll/raise state so prior hires do not poison salary retries.
+        bld._managerUnpaidDays = 0;
+        bld._managerLastPaidDay = null;
+        bld._managerLastMissedPayDay = null;
+        bld._managerProtectedUntil = 0;
+        bld._managerRaiseRequest = null;
+        bld._managerLastRaiseRequestDay = 0;
 
         // Manager counts as one worker
         if (!bld.workers) bld.workers = [];
@@ -439,6 +448,8 @@
                 Player.state.employees.push(manager.id);
             }
         }
+        // v9p33river432: hired managers need an occupation update so NPC role/state matches their new job.
+        manager.occupation = 'merchant';
         manager.employerId = 'player';
 
         // Track employee relationship
@@ -479,10 +490,17 @@
 
         bld._managerId = null;
         bld._managerName = null;
+        // v9p33river432: fully clear stale payroll/raise state when a manager leaves so the next hire starts clean.
         bld._managerSalary = 0;
         bld._managerSkill = 0;
         bld._managerHireDay = 0;
         bld._managerCaravans = false;
+        bld._managerUnpaidDays = 0;
+        bld._managerLastPaidDay = null;
+        bld._managerLastMissedPayDay = null;
+        bld._managerProtectedUntil = 0;
+        bld._managerRaiseRequest = null;
+        bld._managerLastRaiseRequestDay = 0;
 
         return { success: true, message: '🚫 Fired ' + name + ' from manager position.' };
     }
@@ -531,9 +549,17 @@
             }
             bld._managerId = null;
             bld._managerName = null;
+            // v9p33river432: clear stale payroll/raise state when a manager leaves for EM life.
             bld._managerSalary = 0;
             bld._managerSkill = 0;
+            bld._managerHireDay = 0;
+            bld._managerCaravans = false;
+            bld._managerUnpaidDays = 0;
+            bld._managerLastPaidDay = null;
+            bld._managerLastMissedPayDay = null;
+            bld._managerProtectedUntil = 0;
             bld._managerRaiseRequest = null;
+            bld._managerLastRaiseRequestDay = 0;
             return { success: true, message: name + ' left to become an elite merchant. You need a new manager.' };
         }
     }
@@ -557,25 +583,49 @@
             var manager = ENGINE_REF ? ENGINE_REF.findPerson(bld._managerId) : null;
             // Manager died or left the town
             if (!manager || !manager.alive) {
+                // v9p33river432: dead/missing managers must be removed from worker + employee tracking, not just from the manager slot.
+                if (bld.workers) {
+                    var _mgrDeadIdx = bld.workers.indexOf(bld._managerId);
+                    if (_mgrDeadIdx >= 0) bld.workers.splice(_mgrDeadIdx, 1);
+                }
+                if (manager && manager.employerId === 'player') manager.employerId = null;
+                if (Player && Player.state && Player.state.employees) {
+                    var _mgrEmpIdx = Player.state.employees.indexOf(bld._managerId);
+                    if (_mgrEmpIdx >= 0) Player.state.employees.splice(_mgrEmpIdx, 1);
+                }
                 bld._managerId = null;
                 bld._managerName = null;
+                bld._managerSalary = 0;
+                bld._managerSkill = 0;
+                bld._managerHireDay = 0;
+                bld._managerCaravans = false;
+                bld._managerUnpaidDays = 0;
+                bld._managerLastPaidDay = null;
+                bld._managerLastMissedPayDay = null;
+                bld._managerProtectedUntil = 0;
+                bld._managerRaiseRequest = null;
+                bld._managerLastRaiseRequestDay = 0;
                 if (typeof UI !== 'undefined' && UI.toast) UI.toast('⚠️ Your manager at ' + (findBuildingType(bld.type) || { name: bld.type }).name + ' is no longer available.', 'warning');
                 continue;
             }
 
             // Pay salary
             if (bld._managerLastPaidDay !== day) { // v9p33river334: tick can run more than once per day; charge salary once daily.
-                bld._managerLastPaidDay = day;
                 var salary = bld._managerSalary || 0;
                 if (player.gold >= salary) {
                     player.gold -= salary;
                     manager.gold = (manager.gold || 0) + salary;
+                    bld._managerLastPaidDay = day;
+                    // v9p33river432: successful payment resets unpaid streaks so managers can recover after a missed day.
+                    bld._managerLastMissedPayDay = null;
+                    bld._managerUnpaidDays = 0;
                     // v9p33river315: missing stats/finance update —
                     // manager salaries drained gold silently.
                     if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + salary;
                     if (Player.logFinance) Player.logFinance(-salary, 'managers', 'Manager salary (' + (manager.firstName || 'manager') + ')');
-                } else {
-                    // Can't pay — manager quits after 3 days
+                } else if (bld._managerLastMissedPayDay !== day) {
+                    // v9p33river432: do not mark the manager as paid on a failed attempt; only record one missed-pay strike per day so same-day retries still work.
+                    bld._managerLastMissedPayDay = day;
                     bld._managerUnpaidDays = (bld._managerUnpaidDays || 0) + 1;
                     if (bld._managerUnpaidDays >= 3) {
                         if (typeof UI !== 'undefined' && UI.toast) UI.toast('😤 ' + bld._managerName + ' quit due to unpaid wages!', 'danger');
@@ -641,6 +691,8 @@
                             // were invisible in the finance report.
                             if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost;
                             if (Player.logFinance) Player.logFinance(-cost, 'buildings', 'Manager auto-buy: ' + toBuy + ' ' + resId);
+                            // v9p33river432: market purchases must also credit the town market gold pool.
+                            if (ENGINE_REF.adjustTownMarketGold) ENGINE_REF.adjustTownMarketGold(town.id, cost);
                             town.market.supply[resId] -= toBuy;
                             if (!bld.inventory) bld.inventory = {};
                             bld.inventory[resId] = (bld.inventory[resId] || 0) + toBuy;
@@ -663,14 +715,19 @@
                     var toSell = Math.floor(stored * 0.5);
                     var sellPrice = (town.market.prices && town.market.prices[outputId]) || 5;
                     var totalRevenue = toSell * sellPrice;
+                    // v9p33river432: market auto-sales need solvent buyers and finance logging just like normal market sales.
+                    var _mgrSellAvail = ENGINE_REF.getTownMarketGold ? ENGINE_REF.getTownMarketGold(town.id) : Infinity;
+                    if (_mgrSellAvail < totalRevenue) continue;
                     bld.inventory[outputId] -= toSell;
                     if (bld.inventory[outputId] <= 0) delete bld.inventory[outputId];
                     // Add to market supply
                     if (!town.market.supply) town.market.supply = {};
                     town.market.supply[outputId] = (town.market.supply[outputId] || 0) + toSell;
                     player.gold += totalRevenue;
+                    if (ENGINE_REF.adjustTownMarketGold) ENGINE_REF.adjustTownMarketGold(town.id, -totalRevenue);
                     player.stats = player.stats || {};
                     player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + totalRevenue;
+                    if (Player.logFinance) Player.logFinance(totalRevenue, 'building_sales', 'Manager auto-sell: ' + toSell + ' ' + outputId);
                 }
             }
 
@@ -692,6 +749,8 @@
                                 if (Player && Player.state && Player.state.employees && Player.state.employees.indexOf(wp.id) < 0) {
                                     Player.state.employees.push(wp.id);
                                 }
+                                // v9p33river432: manager-hired workers need an occupation update so they are no longer treated as unassigned locals.
+                                wp.occupation = 'laborer';
                                 wp.employerId = 'player';
                                 break;
                             }
@@ -775,7 +834,8 @@
             if (activeRecipe && activeRecipe.consumes) activeConsumes = activeRecipe.consumes;
 
             for (var resId in activeConsumes) {
-                var localPrice = (town.market.prices && town.market.prices[resId]) || 999;
+                // v9p33river432: outposts/junctions may lack markets, so caravan price lookups must null-guard town.market.
+                var localPrice = (town.market && town.market.prices && town.market.prices[resId]) || 999;
                 for (var ci2 = 0; ci2 < connections.length; ci2++) {
                     var ct2 = connections[ci2];
                     var remotePrice = (ct2.market && ct2.market.prices && ct2.market.prices[resId]) || 999;
@@ -784,9 +844,31 @@
                     if (remotePrice < localPrice * 0.8 && remoteAvail > 5) {
                         var caravanCost = 10; // flat caravan hire cost
                         var toBuy = Math.min(10, remoteAvail);
-                        var totalCost = toBuy * remotePrice + caravanCost;
-                        if (player.gold >= totalCost) {
+                        var _mgrCavCap = Player._bldStorageCap ? Player._bldStorageCap(bt.storage || 50, bld.level) : Math.floor((bt.storage || 50) * (1 + (((bld.level || 1) - 1) * 0.50)));
+                        if (_mgrCavCap > 0) {
+                            // v9p33river432: caravan restocking must obey building input storage limits too.
+                            var _mgrOutSet = {};
+                            if (bt.produces) _mgrOutSet[bt.produces] = true;
+                            if (bt.canProduce) { for (var _mci = 0; _mci < bt.canProduce.length; _mci++) _mgrOutSet[bt.canProduce[_mci]] = true; }
+                            if (bt.availableProducts) { for (var _mck in bt.availableProducts) { var _mcr = bt.availableProducts[_mck]; if (_mcr && _mcr.produces) _mgrOutSet[_mcr.produces] = true; } }
+                            var _mgrInputWeight = 0;
+                            if (bld.inventory) {
+                                for (var _mcik in bld.inventory) {
+                                    if (_mgrOutSet[_mcik]) continue;
+                                    var _mciRes = findResource(_mcik);
+                                    _mgrInputWeight += (bld.inventory[_mcik] || 0) * (_mciRes ? (_mciRes.weight || 1) : 1);
+                                }
+                            }
+                            var _mgrBuyRes = findResource(resId);
+                            var _mgrUnitWeight = _mgrBuyRes ? (_mgrBuyRes.weight || 1) : 1;
+                            toBuy = Math.min(toBuy, Math.floor(Math.max(0, _mgrCavCap - _mgrInputWeight) / _mgrUnitWeight));
+                        }
+                        var goodsCost = toBuy * remotePrice;
+                        var totalCost = goodsCost + caravanCost;
+                        if (toBuy > 0 && player.gold >= totalCost) {
                             player.gold -= totalCost;
+                            // v9p33river432: remote caravan buys must credit the source market's gold pool for the goods actually purchased.
+                            if (ENGINE_REF.adjustTownMarketGold) ENGINE_REF.adjustTownMarketGold(ct2.id, goodsCost);
                             ct2.market.supply[resId] -= toBuy;
                             if (!bld.inventory) bld.inventory = {};
                             bld.inventory[resId] = (bld.inventory[resId] || 0) + toBuy;
@@ -803,7 +885,8 @@
             if (!bld.inventory) bld.inventory = {};
             var stored = bld.inventory[outputId] || 0; // v9p33river329: manager output is stored on the building inventory.
             if (stored > 15) {
-                var localSellPrice = (town.market.prices && town.market.prices[outputId]) || 5;
+                // v9p33river432: outposts/junctions may lack markets, so caravan sale price lookups must null-guard town.market.
+                var localSellPrice = (town.market && town.market.prices && town.market.prices[outputId]) || 5;
                 for (var ci3 = 0; ci3 < connections.length; ci3++) {
                     var ct3 = connections[ci3];
                     var remoteP = (ct3.market && ct3.market.prices && ct3.market.prices[outputId]) || 0;
@@ -812,11 +895,17 @@
                         var caravanFee = 10;
                         var revenue = toSell * remoteP - caravanFee;
                         if (revenue > 0) {
+                            // v9p33river432: remote caravan sales need solvent markets, finance logging, and trade-tax handling.
+                            var _mgrRemoteAvail = ENGINE_REF.getTownMarketGold ? ENGINE_REF.getTownMarketGold(ct3.id) : Infinity;
+                            if (_mgrRemoteAvail < revenue) continue;
                             bld.inventory[outputId] -= toSell;
                             if (bld.inventory[outputId] <= 0) delete bld.inventory[outputId];
                             if (!ct3.market.supply) ct3.market.supply = {};
                             ct3.market.supply[outputId] = (ct3.market.supply[outputId] || 0) + toSell;
                             player.gold += revenue;
+                            if (ENGINE_REF.adjustTownMarketGold) ENGINE_REF.adjustTownMarketGold(ct3.id, -revenue);
+                            if (ENGINE_REF.collectTradeTax) ENGINE_REF.collectTradeTax(ct3.kingdomId, revenue, outputId, false, ct3.id);
+                            if (Player.logFinance) Player.logFinance(revenue, 'building_sales', 'Manager caravan sale: ' + toSell + ' ' + outputId);
                         }
                         break;
                     }
@@ -843,6 +932,8 @@
             var bld = player.buildings[bi];
             var bt = findBuildingType(bld.type);
             if (!bt || !bt.retailConfig) continue;
+            // v9p33river432: inactive/destroyed retail buildings should not gain or lose live reputation ticks.
+            if (bld.active === false || bld.condition === 'destroyed') continue;
 
             if (bld._reputation == null) bld._reputation = 30; // start at 30
             if (!bld._repName) bld._repName = null; // custom name
