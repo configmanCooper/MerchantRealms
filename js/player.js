@@ -42690,6 +42690,7 @@
         get relationships() { return player.relationships; },
         get smugglingSkill() { return player.smugglingSkill; },
         get jailedUntilDay() { return player.jailedUntilDay; },
+        set jailedUntilDay(v) { player.jailedUntilDay = v; }, // v9p33river448: setter so engine can jail player
         get goldEarnedInKingdom() { return player.goldEarnedInKingdom; },
         get tradingStartDay() { return player.tradingStartDay; },
         get rankSince() { return player.rankSince; },
