@@ -1413,8 +1413,41 @@ function showPersonDetail(person) {
             <span class="value">${person.sex === 'M' ? '♂ Male' : person.sex === 'F' ? '♀ Female' : '?'}</span></div>`;
     var _npcSR = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
     var _npcSRDef = CONFIG.SOCIAL_RANKS[_npcSR] || CONFIG.SOCIAL_RANKS[0];
-    html += `<div class="detail-row"><span class="label">Social Rank</span>
-            <span class="value">${_npcSRDef.icon || ''} ${_npcSRDef.name || 'Peasant'}</span></div>`;
+    // v9p33river452: show kingdom of highest rank + rank in player's kingdom
+    var _npcHighestKingdom = '';
+    var _npcPlayerKingdomRank = '';
+    try {
+        if (person.socialRank && typeof person.socialRank === 'object') {
+            var _bestKId = null, _bestRank = 0;
+            for (var _srk in person.socialRank) {
+                if (person.socialRank[_srk] > _bestRank) { _bestRank = person.socialRank[_srk]; _bestKId = _srk; }
+            }
+            if (_bestKId && _bestRank >= 1) {
+                var _bestK = Engine.findKingdom ? Engine.findKingdom(_bestKId) : null;
+                if (_bestK) _npcHighestKingdom = _bestK.name || _bestKId;
+            }
+            // Player's active kingdom rank
+            var _playerKId = (typeof Player !== 'undefined' && Player.citizenshipKingdomId) ? Player.citizenshipKingdomId : null;
+            if (_playerKId && _playerKId !== _bestKId) {
+                var _npcRankInPlayerK = person.socialRank[_playerKId] || 0;
+                if (_npcRankInPlayerK >= 1) {
+                    var _npcPKDef = CONFIG.SOCIAL_RANKS[_npcRankInPlayerK] || CONFIG.SOCIAL_RANKS[0];
+                    var _playerK = Engine.findKingdom ? Engine.findKingdom(_playerKId) : null;
+                    var _playerKName = _playerK ? (_playerK.name || _playerKId) : _playerKId;
+                    _npcPlayerKingdomRank = '<div class="detail-row"><span class="label">Rank in ' + _playerKName + '</span><span class="value">' + (_npcPKDef.icon || '') + ' ' + (_npcPKDef.name || 'Peasant') + '</span></div>';
+                } else if (_bestRank >= 4) {
+                    // Noble in another kingdom but not in player's — show as Foreign Noble
+                    var _foreignLabel = _bestRank >= 5 ? 'Foreign Noble' : 'Minor Foreign Noble';
+                    var _playerK2 = Engine.findKingdom ? Engine.findKingdom(_playerKId) : null;
+                    var _playerKName2 = _playerK2 ? (_playerK2.name || _playerKId) : _playerKId;
+                    _npcPlayerKingdomRank = '<div class="detail-row"><span class="label">Status in ' + _playerKName2 + '</span><span class="value">🌍 ' + _foreignLabel + '</span></div>';
+                }
+            }
+        }
+    } catch(e) {}
+    var _npcKingdomLabel = _npcHighestKingdom ? ' <span style="font-size:0.8em;color:#aaa;">(' + _npcHighestKingdom + ')</span>' : '';
+    html += '<div class="detail-row"><span class="label">Social Rank</span><span class="value">' + (_npcSRDef.icon || '') + ' ' + (_npcSRDef.name || 'Peasant') + _npcKingdomLabel + '</span></div>';
+    if (_npcPlayerKingdomRank) html += _npcPlayerKingdomRank;
     html += `<div class="detail-row"><span class="label">Occupation</span>
             <span class="value">${occInfo.name || occ}</span></div>
         <div class="detail-row"><span class="label">Town</span>
