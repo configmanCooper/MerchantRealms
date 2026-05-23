@@ -2227,7 +2227,7 @@
         if (typeof Player !== 'undefined' && Player.state && Player.state.gold < cost) {
             toast('Not enough gold. Need ' + cost + 'g.', 'danger'); return;
         }
-        if (typeof Player !== 'undefined' && Player.state) Player.state.gold -= cost;
+        // v9p33river417: removed UI gold deduction — engine.backPretender handles it
         var result = null;
         try { result = Engine.backPretender(kingdomId, pretenderId, cost); } catch(e) {}
         if (result && result.success) {

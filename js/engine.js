@@ -27180,6 +27180,11 @@
         var court = k._activeCourtSession;
         if (!court || court._playerActionsLeft <= 0) return { success: false, message: 'No court actions remaining.' };
 
+        // v9p33river417: validate player belongs to this kingdom
+        if (typeof Player !== 'undefined' && Player.citizenshipKingdomId && Player.citizenshipKingdomId !== kingdomId) {
+            return { success: false, message: 'You are not a citizen of this kingdom.' };
+        }
+
         var pPerson = null;
         try {
             pPerson = findPerson(Player.personId || 'player');
@@ -27384,10 +27389,13 @@
                 result = { success: false, message: 'Unknown court action.' };
         }
 
-        court._playerActionsLeft--;
-        // Clear court session after all actions used
-        if (court._playerActionsLeft <= 0) {
-            k._activeCourtSession = null;
+        // v9p33river417: only consume action on success
+        if (result.success) {
+            court._playerActionsLeft--;
+            // Clear court session after all actions used
+            if (court._playerActionsLeft <= 0) {
+                k._activeCourtSession = null;
+            }
         }
         return result;
     }
@@ -28935,6 +28943,24 @@
         }
         if (effects.diplomacy) {
             msgs.push((effects.diplomacy > 0 ? '+' : '') + effects.diplomacy + ' diplomacy');
+        }
+        // v9p33river417: handle building_permit effect (prosperity boost)
+        if (effects.building && caseObj.townId) {
+            var _bpTown = findTown(caseObj.townId);
+            if (_bpTown) {
+                var _bpBase = _bpTown.prosperity != null ? _bpTown.prosperity : 50;
+                _bpTown.prosperity = Math.max(0, Math.min(100, _bpBase + 3));
+                msgs.push('+3 prosperity (' + _bpTown.name + ')');
+            }
+        }
+        // v9p33river417: handle security effect (bandit_threat etc.)
+        if (effects.security && caseObj.townId) {
+            var _secTown = findTown(caseObj.townId);
+            if (_secTown) {
+                var _secBase = _secTown.security != null ? _secTown.security : 50;
+                _secTown.security = Math.max(0, Math.min(100, _secBase + effects.security));
+                msgs.push((effects.security > 0 ? '+' : '') + effects.security + ' security (' + _secTown.name + ')');
+            }
         }
 
         // Noble reactions based on personality
@@ -32635,19 +32661,34 @@
             if (k.king === 'player_king') return { success: false, message: 'You cannot conspire against yourself!' };
             var noble = findPerson(targetNobleId);
             if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+            // v9p33river417: prevent king from plotting against themselves
+            if (targetNobleId === k.king) return { success: false, message: 'You cannot recruit the king into a conspiracy against themselves!' };
             var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
             if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
             // Check noble's loyalty — must be discontented
             var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
             if (loyalty > 55) return { success: false, message: noble.firstName + ' is too loyal to the king to conspire.' };
 
-            var type = plotType === 'coup' ? 'coup' : 'assassination';
+            // v9p33river417: accept revolt_support (was silently mapped to assassination)
+            var type = plotType === 'coup' ? 'coup' : (plotType === 'revolt_support' ? 'revolt_support' : 'assassination');
+            var revoltTargetTownId = null;
+            var revoltTargetTownName = null;
+            if (type === 'revolt_support') {
+                // Find a town with revolt pressure in this kingdom
+                var _kTowns = world.towns.filter(function(t) { return t.kingdomId === kingdomId && (t._revoltPressureDays || 0) >= 10; });
+                if (_kTowns.length === 0) return { success: false, message: 'No towns with brewing unrest. Revolt support requires a dissatisfied populace.' };
+                _kTowns.sort(function(a, b) { return (b._revoltPressureDays || 0) - (a._revoltPressureDays || 0); });
+                revoltTargetTownId = _kTowns[0].id;
+                revoltTargetTownName = _kTowns[0].name;
+            }
             k._conspiracy = {
                 plotters: ['player', targetNobleId],
                 type: type,
                 startDay: world.day,
                 strength: 20,
-                detected: false
+                detected: false,
+                revoltTargetTownId: revoltTargetTownId,
+                revoltTargetTownName: revoltTargetTownName
             };
             EventTypes.emit('FORMED_CONSPIRACY', {
                 type: type,
@@ -32668,6 +32709,8 @@
             if (!k) return { success: false, message: 'Kingdom not found.' };
 
             goldAmount = Math.max(0, Math.floor(goldAmount || 0));
+            // v9p33river417: reject 0g pledges (free backer + pressure exploit)
+            if (goldAmount <= 0) return { success: false, message: 'Must pledge at least 1 gold.' };
             var pGold = Player.state.gold || Player.gold || 0;
             if (goldAmount > pGold) return { success: false, message: 'Not enough gold.' };
 
@@ -33297,13 +33340,20 @@
             if (!k || !k.successionCrisis || !k.successionCrisis.active) return { success: false, reason: 'No active crisis' };
             var pretender = k.successionCrisis.pretenders.find(function(p) { return p.id === pretenderId; });
             if (!pretender) return { success: false, reason: 'Pretender not found' };
-            // v9p33river312: was crediting support + tracking playerInvested
-            // but never deducting the gold from Player.state.gold. Now
-            // requires the player can afford it and charges them.
+            // v9p33river417: validate goldAmount (reject negative, NaN, non-numeric)
+            goldAmount = Number(goldAmount);
+            if (!isFinite(goldAmount)) return { success: false, reason: 'Invalid amount' };
+            goldAmount = Math.floor(goldAmount);
+            if (goldAmount <= 0) return { success: false, reason: 'Must pledge at least 1 gold' };
             if (typeof Player === 'undefined' || (Player.state.gold || 0) < goldAmount) {
                 return { success: false, reason: 'Not enough gold' };
             }
-            Player.state.gold -= goldAmount;
+            // v9p33river417: use modifyGold if available
+            if (typeof Player.modifyGold === 'function') {
+                Player.modifyGold(-goldAmount, 'succession_backing');
+            } else {
+                Player.state.gold = Math.max(0, (Player.state.gold || 0) - goldAmount);
+            }
             if (Player.state.stats) Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + goldAmount;
             pretender.support += Math.floor(goldAmount / 100);
             k.successionCrisis.playerBacking = pretenderId;
@@ -34728,8 +34778,8 @@
         doFeastAction: function(kingdomId, actionId) {
             return doFeastAction(kingdomId, actionId);
         },
-        doCourtAction: function(kingdomId, actionId) {
-            return doCourtAction(kingdomId, actionId);
+        doCourtAction: function(kingdomId, actionId, extraData) {
+            return doCourtAction(kingdomId, actionId, extraData);
         },
         startRoyalFeast: function(kingdomId, leadDays) {
             return startRoyalFeast(kingdomId, leadDays);
