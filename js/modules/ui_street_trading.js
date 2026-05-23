@@ -1476,6 +1476,8 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                 if (!_rn || !_rn.alive) continue;
                 if (_recKingdom && _rn.id === _recKingdom.king) continue;
                 if (_recPlotters.indexOf(_rn.id) >= 0) continue;
+                // v9p33river451: age gate
+                if (_rn.age != null && _rn.age < 18) continue;
                 _availableNobles.push(_rn);
             }
         } catch(e) {}
@@ -1645,6 +1647,8 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                     if (_coal.members[_cmj].id === _cnNoble.id) { _alreadyMember = true; break; }
                 }
                 if (_alreadyMember) continue;
+                // v9p33river451: age gate
+                if (_cnNoble.age != null && _cnNoble.age < 18) continue;
                 _coalNobles.push(_cnNoble);
             }
         } catch(e) {}
@@ -1719,6 +1723,8 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                 if (!_cpTarget || !_cpTarget.alive || _cpTarget.id === 'player') continue;
                 if (_coalKingdom && _cpTarget.id === _coalKingdom.king) continue;
                 if (_cpRank < 4 || _cpRank >= 6) continue;
+                // v9p33river451: age gate
+                if (_cpTarget.age != null && _cpTarget.age < 18) continue;
                 _coalPromotionTargets.push({ id: _cpTarget.id, label: ((_cpTarget.firstName || '?') + ' ' + (_cpTarget.lastName || '')).trim() || (_cpTarget.firstName || 'Unnamed Noble') });
             }
             // Build kingdom list for war/peace/alliance targets

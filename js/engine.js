@@ -16286,6 +16286,8 @@
             for (var ni = 0; ni < nobles.length; ni++) {
                 var noble = nobles[ni];
                 if (!noble.alive) continue;
+                // v9p33river451: age gate
+                if (noble.age != null && noble.age < 18) continue;
                 var agenda = getNobleAgenda(noble.id);
                 if (!agenda || !agenda.advice || agenda.advice.length === 0) continue;
 
@@ -16328,6 +16330,8 @@
                 for (var ri = 0; ri < nobles.length; ri++) {
                     var recruit = nobles[ri];
                     if (recruit.id === noble.id || !recruit.alive) continue;
+                    // v9p33river451: age gate
+                    if (recruit.age != null && recruit.age < 18) continue;
                     var rAgenda = getNobleAgenda(recruit.id);
                     if (!rAgenda || !rAgenda.advice) continue;
 
@@ -16488,6 +16492,8 @@
                             if (coal.members[mj].id === candidate.id) { alreadyIn = true; break; }
                         }
                         if (alreadyIn) continue;
+                        // v9p33river451: age gate
+                        if (candidate.age != null && candidate.age < 18) continue;
 
                         // Score: relationship with recruiter + agenda alignment + personality
                         var score = 0;
@@ -16575,6 +16581,8 @@
                     var cNoble = nobles[cni];
                     if (!cNoble || !cNoble.alive || cNoble.id === k.king) continue;
                     if (c.plotters.indexOf(cNoble.id) >= 0) continue;
+                    // v9p33river451: age gate
+                    if (cNoble.age != null && cNoble.age < 18) continue;
                     var cScore = 0;
                     var cLoy = cNoble.kingLoyalty != null ? cNoble.kingLoyalty : 50;
                     cScore += (50 - cLoy) * 0.04; // low loyalty = better target
@@ -34583,6 +34591,8 @@
             var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
             if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
             if (nobleId === k.king) return { success: false, message: 'You cannot recruit the king into a conspiracy against themselves!' };
+            // v9p33river451: age gate
+            if (noble.age != null && noble.age < 18) return { success: false, message: noble.firstName + ' is too young to be involved in a conspiracy.' };
 
             // v9p33river447: stamp cooldown on attempt
             k._conspiracy._lastPlayerRecruitDay = world.day;
@@ -34928,6 +34938,8 @@
             if (nobleId === k.king) return { success: false, message: 'The king cannot join a coalition petitioning themselves.' };
             var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
             if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
+            // v9p33river451: age gate
+            if (noble.age != null && noble.age < 18) return { success: false, message: noble.firstName + ' is too young to participate in political coalitions.' };
             var rng = world.rng;
             var recruitChance = 0.30;
             var agenda = getNobleAgenda(nobleId);
