@@ -1578,17 +1578,17 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         } catch(e) {}
         // v9p33river453: sort discontented by player location — local first
         var _pTownId2 = (typeof Player !== 'undefined') ? Player.townId : null;
-        _discontented.sort(function(a, b) {
+        _citizenNobles.sort(function(a, b) {
             var aLocal = a.townId === _pTownId2 ? 0 : 1;
             var bLocal = b.townId === _pTownId2 ? 0 : 1;
             return aLocal - bLocal;
         });
-        if (_discontented.length > 0) {
+        if (_citizenNobles.length > 0) {
             html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:6px;">No active conspiracy. You could form one with a discontented noble.</div>';
             html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
             html += '<select id="conspiracy_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
-            for (var _di = 0; _di < _discontented.length; _di++) {
-                var _dn = _discontented[_di];
+            for (var _di = 0; _di < _citizenNobles.length; _di++) {
+                var _dn = _citizenNobles[_di];
                 var _dnLocal = _dn.townId === _pTownId2;
                 // v9p33river425: show loyalty descriptor only at 60+ relationship, never exact number
                 var _dnRel = (typeof Player !== 'undefined' && Player.getRelationship) ? Player.getRelationship(_dn.id) : null;
