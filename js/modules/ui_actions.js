@@ -1645,6 +1645,35 @@ function showPersonDetail(person) {
         html += `</div>`;
     }
 
+    // ── Noble Agenda (requires noble_agendas skill) ── v9p33river419
+    if (isPlayer && Player.hasSkill && Player.hasSkill('noble_agendas') && _npcSR >= 4 && !person.isEliteMerchant) {
+        var _agenda = null;
+        try { if (Engine.getNobleAgenda) _agenda = Engine.getNobleAgenda(person.id); } catch(e) {}
+        if (_agenda) {
+            html += `<div class="detail-section" style="border:1px solid rgba(180,130,255,0.25);background:rgba(180,130,255,0.05);">`;
+            html += `<h3 style="color:#b482ff;">🏛️ Political Agenda</h3>`;
+            html += `<div style="font-size:0.72rem;color:#ccc;margin-bottom:6px;">Influence: <span style="color:#d4af37;font-weight:bold;">${_agenda.influence.toFixed(1)}</span> | `;
+            html += `King's Trust: <span style="color:${_agenda.perceivedLoyalty > 60 ? '#55a868' : _agenda.perceivedLoyalty > 35 ? '#ccb974' : '#c44e52'}">${Math.round(_agenda.perceivedLoyalty)}/100</span></div>`;
+
+            if (_agenda.goals.length > 0) {
+                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-bottom:3px;">Personal Goals:</div>`;
+                for (var _gi = 0; _gi < _agenda.goals.length; _gi++) {
+                    html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_agenda.goals[_gi].icon} ${_agenda.goals[_gi].text}</div>`;
+                }
+            }
+            if (_agenda.advice.length > 0) {
+                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Advising the King:</div>`;
+                for (var _advi = 0; _advi < _agenda.advice.length; _advi++) {
+                    html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_agenda.advice[_advi].icon} ${_agenda.advice[_advi].text}</div>`;
+                }
+            }
+            if (!_agenda.goals.length && !_agenda.advice.length) {
+                html += `<div style="font-size:0.72rem;color:#888;">No strong political ambitions.</div>`;
+            }
+            html += `</div>`;
+        }
+    }
+
     // ── Needs Bars ──
     if (person.needs) {
         html += `<div class="detail-section"><h3>Needs</h3>`;

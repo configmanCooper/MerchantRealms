@@ -17368,7 +17368,9 @@ window.UI = (function () {
             { id: 'observe_court', icon: '👀', name: 'Observe Court Politics', desc: 'Learn about noble relationships', category: 'intel' },
             { id: 'spread_rumor', icon: '🗣️', name: 'Spread a Rumor', desc: 'Damage noble reputation', category: 'scheme' },
             { id: 'forge_alliance', icon: '🤝', name: 'Forge Alliance', desc: 'Propose pact with a noble', category: 'scheme' },
-            { id: 'pit_nobles', icon: '⚔️', name: 'Pit Nobles', desc: 'Cause friction (-10 mutual)', category: 'scheme' }
+            { id: 'pit_nobles', icon: '⚔️', name: 'Pit Nobles', desc: 'Cause friction (-10 mutual)', category: 'scheme' },
+            { id: 'champion_noble', icon: '🏅', name: 'Champion a Noble', desc: 'Publicly praise a noble to the king (+4-8 perceived loyalty)', category: 'social' },
+            { id: 'introduce_noble', icon: '🎩', name: 'Introduce Noble to King', desc: 'Bring a lesser noble to the king\'s attention (+2-5 perceived loyalty, +rank visibility)', category: 'social' }
         ];
 
         // Add non-king-specific actions

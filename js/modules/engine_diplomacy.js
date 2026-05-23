@@ -172,6 +172,7 @@
     var tickNobleIncome = function() { return Engine.tickNobleIncome(); };
     var tickNobleRelationships = function() { return Engine.tickNobleRelationships(); };
     var tickNoblePersonalityActions = function() { return Engine.tickNoblePersonalityActions(); };
+    var tickNobleAdvisoryInfluence = function() { return Engine.tickNobleAdvisoryInfluence(); };
     var tickKingdomConstruction = function() { return Engine.tickKingdomConstruction(); };
     var tickTreaties = function() { return Engine.tickTreaties(); };
     var checkWarGoals = function() { return Engine.checkWarGoals(); };
@@ -2032,6 +2033,9 @@
 
         // ---- M4: Noble personality-driven actions (every 30 days, offset) ----
         tickNoblePersonalityActions();
+
+        // ---- Noble advisory influence on king decisions (every 45 days) ----
+        tickNobleAdvisoryInfluence();
 
         // ---- Process construction & repair timers (daily) ----
         tickKingdomConstruction();

@@ -1281,7 +1281,8 @@ function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
                 { id: 'address_king', icon: '🎙️', label: 'Address the King', desc: 'Formally speak before the court (+3-7 perceived loyalty)' },
                 { id: 'petition_king', icon: '📜', label: 'Present a Petition', desc: 'Present a petition directly to the king' },
                 { id: 'observe_nobles', icon: '👁️', label: 'Observe Nobles', desc: 'Learn about a noble\'s true loyalty and personality' },
-                { id: 'network_nobles', icon: '🤝', label: 'Network with Nobles', desc: 'Improve relationship with a random noble' }
+                { id: 'network_nobles', icon: '🤝', label: 'Network with Nobles', desc: 'Improve relationship with a random noble' },
+                { id: 'praise_noble_loyalty', icon: '🏅', label: 'Praise a Noble\'s Loyalty', desc: 'Tell the king how loyal a specific noble is (+3-6 perceived loyalty)' }
             ];
             for (var _ca = 0; _ca < _courtActions.length; _ca++) {
                 var _act = _courtActions[_ca];

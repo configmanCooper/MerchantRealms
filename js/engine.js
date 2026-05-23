@@ -15424,6 +15424,333 @@
     }
 
     // ========================================================
+    // §14A3B NOBLE AGENDA SYSTEM (v9p33river419)
+    // ========================================================
+    function getTownsForKingdom(kId) {
+        return world.towns.filter(function(t) { return t.kingdomId === kId && !t.destroyed && !t.abandoned; });
+    }
+    // Returns what a noble wants and what they're advising the king to do
+    function getNobleAgenda(nobleId) {
+        var noble = findPerson(nobleId);
+        if (!noble || !noble.alive) return null;
+        // Determine which kingdom this noble belongs to
+        var kId = null;
+        if (noble.socialRank && typeof noble.socialRank === 'object') {
+            for (var sk in noble.socialRank) {
+                if ((noble.socialRank[sk] || 0) >= 4) { kId = sk; break; }
+            }
+        }
+        if (!kId) return null;
+        var k = findKingdom(kId);
+        if (!k) return null;
+        var nP = noble.personality || {};
+        var nRank = (noble.socialRank && noble.socialRank[kId]) || 4;
+        var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+        var ambition = nP.ambition || 50;
+        var warmth = nP.warmth || 50;
+        var intelligence = nP.intelligence || 50;
+        var honesty = nP.honesty || 50;
+        var selfishness = nP.selfishness || 50;
+        var frugality = nP.frugality || 50;
+        var atWar = k.atWar && k.atWar.size > 0;
+        var hasPlague = false;
+        var lowTreasury = (k.gold || 0) < 2000;
+        var highTaxes = (k.taxRate || 0.10) > 0.15;
+        var lowHappiness = (k.happiness || 50) < 35;
+        try {
+            var _aTowns = getTownsForKingdom(kId);
+            for (var _ai = 0; _ai < _aTowns.length; _ai++) { if (_aTowns[_ai].plagueActive) { hasPlague = true; break; } }
+        } catch(e) {}
+
+        var goals = [];    // personal goals
+        var advice = [];   // what they push the king to do
+        var priority = ''; // highest-priority agenda item
+
+        // --- Personal Goals (based on personality + situation) ---
+        if (ambition > 65 && nRank < 6) {
+            goals.push({ icon: '👑', text: 'Seeks promotion to ' + (CONFIG.SOCIAL_RANKS[nRank + 1] ? CONFIG.SOCIAL_RANKS[nRank + 1].name : 'higher rank'), weight: ambition });
+        }
+        if (ambition > 75 && nRank >= 5 && loyalty < 40) {
+            goals.push({ icon: '⚔️', text: 'Harbors ambitions for the throne', weight: ambition + 20 });
+        }
+        if (selfishness > 60) {
+            goals.push({ icon: '💰', text: 'Wants to increase personal wealth', weight: selfishness });
+        }
+        if (warmth > 65) {
+            goals.push({ icon: '🤝', text: 'Values peace and good relations between nobles', weight: warmth });
+        }
+        if (loyalty > 70) {
+            goals.push({ icon: '🛡️', text: 'Devoted to serving the crown faithfully', weight: loyalty });
+        }
+        if (loyalty < 30) {
+            goals.push({ icon: '🔥', text: 'Dissatisfied with the current regime', weight: 100 - loyalty });
+        }
+        if (honesty < 35 && ambition > 55) {
+            goals.push({ icon: '🎭', text: 'Undermining political rivals', weight: 80 - honesty });
+        }
+
+        // --- What they advise the king (based on personality + kingdom state) ---
+        if (atWar) {
+            if (warmth > 60 || loyalty < 40) {
+                advice.push({ icon: '🕊️', text: 'Advocates making peace', weight: warmth + (100 - loyalty) / 2, actionId: 'make_peace' });
+            } else if (ambition > 55 || intelligence < 45) {
+                advice.push({ icon: '⚔️', text: 'Pushes for aggressive military action', weight: ambition, actionId: 'war_offensive' });
+            }
+        } else {
+            if (ambition > 65 && loyalty > 50) {
+                // Find a target kingdom with poor relations
+                var _worstRel = 0, _worstK = null;
+                for (var _rk in (k.relations || {})) {
+                    if ((k.relations[_rk] || 0) < _worstRel) { _worstRel = k.relations[_rk]; _worstK = _rk; }
+                }
+                if (_worstK && _worstRel < -30) {
+                    var _targetK = findKingdom(_worstK);
+                    advice.push({ icon: '⚔️', text: 'Advocates war against ' + (_targetK ? _targetK.name : 'a rival'), weight: ambition - 10, actionId: 'declare_war' });
+                }
+            }
+            if (warmth > 55) {
+                advice.push({ icon: '🤝', text: 'Advocates forming alliances', weight: warmth - 10, actionId: 'form_alliance' });
+            }
+        }
+
+        if (highTaxes && (warmth > 55 || selfishness > 60)) {
+            advice.push({ icon: '📉', text: 'Wants taxes lowered', weight: Math.max(warmth, selfishness), actionId: 'lower_taxes' });
+        }
+        if (lowTreasury && frugality > 55) {
+            advice.push({ icon: '💰', text: 'Urges fiscal austerity', weight: frugality, actionId: 'raise_taxes' });
+        }
+        if (hasPlague && (warmth > 50 || intelligence > 55)) {
+            advice.push({ icon: '🏥', text: 'Demands action on the plague', weight: 80, actionId: 'medical_funding' });
+        }
+        if (lowHappiness && warmth > 50) {
+            advice.push({ icon: '🌾', text: 'Urges measures to improve morale', weight: warmth + 10, actionId: 'improve_happiness' });
+        }
+        if (intelligence > 65) {
+            advice.push({ icon: '🏗️', text: 'Advocates investing in infrastructure', weight: intelligence - 10, actionId: 'build_infrastructure' });
+        }
+        if (nRank >= 5 && ambition > 55 && loyalty > 50 && !atWar) {
+            advice.push({ icon: '🏰', text: 'Recommends fortifying border towns', weight: 55, actionId: 'build_walls' });
+        }
+
+        // Sort by weight and pick priority
+        advice.sort(function(a, b) { return b.weight - a.weight; });
+        goals.sort(function(a, b) { return b.weight - a.weight; });
+        priority = advice.length > 0 ? advice[0].text : (goals.length > 0 ? goals[0].text : 'No strong agenda');
+
+        return {
+            nobleId: nobleId,
+            kingdomId: kId,
+            goals: goals.slice(0, 3),
+            advice: advice.slice(0, 3),
+            priority: priority,
+            loyalty: loyalty,
+            perceivedLoyalty: noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty,
+            influence: _computeNobleInfluence(noble, k)
+        };
+    }
+
+    // Compute how much influence a noble has over the king's decisions
+    function _computeNobleInfluence(noble, kingdom) {
+        if (!noble || !kingdom) return 0;
+        var kId = kingdom.id;
+        var nRank = (noble.socialRank && noble.socialRank[kId]) || 4;
+        var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+        var perceivedLoyalty = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty;
+        var nP = noble.personality || {};
+
+        // Base influence from rank: Minor Noble 1, Lord 2, RA 4
+        var baseInfluence = nRank === 6 ? 4 : nRank === 5 ? 2 : 1;
+
+        // Perceived loyalty multiplier: king trusts loyal nobles more
+        var loyaltyMult = 0.5 + (perceivedLoyalty / 100) * 1.0; // 0.5 at 0 loyalty, 1.5 at 100
+
+        // Intelligence gives more convincing arguments
+        var intBonus = ((nP.intelligence || 50) - 50) * 0.01; // ±0.5
+
+        // Warmth/charisma makes the noble more persuasive
+        var warmthBonus = ((nP.warmth || 50) - 50) * 0.008; // ±0.4
+
+        // King personality interaction: foolish kings influenced more easily
+        var kp = kingdom.kingPersonality || {};
+        var kingMult = 1.0;
+        if (kp.intelligence === 'dim' || kp.intelligence === 'foolish') kingMult = 1.3;
+        else if (kp.intelligence === 'brilliant') kingMult = 0.7;
+
+        return Math.max(0.1, (baseInfluence * loyaltyMult + intBonus + warmthBonus) * kingMult);
+    }
+
+    // ========================================================
+    // §14A3A NOBLE ADVISORY INFLUENCE (v9p33river419)
+    // Nobles with high influence sway the king toward policy decisions
+    // ========================================================
+    function tickNobleAdvisoryInfluence() {
+        if (world.day % 45 !== 7) return; // runs every 45 days offset from personality tick
+        var rng = world.rng;
+
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (!k.king) continue;
+            var kId = k.id;
+            var nobles = getNoblesInKingdom(kId);
+            if (nobles.length === 0) continue;
+
+            // Gather all noble advisory pressure
+            var pressureMap = {}; // actionId -> total weighted pressure
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var noble = nobles[ni];
+                var influence = _computeNobleInfluence(noble, k);
+                var agenda = getNobleAgenda(noble.id);
+                if (!agenda || !agenda.advice) continue;
+                for (var ai = 0; ai < agenda.advice.length; ai++) {
+                    var adv = agenda.advice[ai];
+                    if (!adv.actionId) continue;
+                    if (!pressureMap[adv.actionId]) pressureMap[adv.actionId] = 0;
+                    // Weight by influence and how strongly they feel about it (weight normalized)
+                    pressureMap[adv.actionId] += influence * (adv.weight / 100);
+                }
+            }
+
+            // Check if any action has enough pressure to sway the king
+            var kp = k.kingPersonality || {};
+            // King stubbornness: how much pressure needed to sway
+            var stubbornness = 3.0; // base threshold
+            if (kp.intelligence === 'brilliant') stubbornness = 4.0;
+            if (kp.intelligence === 'dim') stubbornness = 2.0;
+            if (kp.temperament === 'cruel') stubbornness += 0.5;
+            if (kp.ambition === 'content') stubbornness += 1.0;
+
+            for (var actionId in pressureMap) {
+                var totalPressure = pressureMap[actionId];
+                if (totalPressure < stubbornness) continue;
+                // Probability scales with how much pressure exceeds threshold
+                var swayChance = Math.min(0.6, (totalPressure - stubbornness) * 0.15);
+                if (!rng.chance(swayChance)) continue;
+
+                // Noble pressure succeeded — king acts on this advice
+                _executeNobleAdvisedAction(k, actionId, rng);
+                break; // one action per tick maximum
+            }
+        }
+    }
+
+    function _executeNobleAdvisedAction(k, actionId, rng) {
+        var kId = k.id;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+        switch (actionId) {
+            case 'make_peace': {
+                if (!k.atWar || k.atWar.size === 0) break;
+                var enemies = [];
+                k.atWar.forEach(function(eId) { enemies.push(eId); });
+                if (enemies.length > 0) {
+                    var peaceTarget = rng.pick(enemies);
+                    var enemyK = findKingdom(peaceTarget);
+                    if (enemyK && Engine.makePeace) {
+                        Engine.makePeace(k, enemyK, false, null, true);
+                        logEvent('🕊️ The nobles of ' + k.name + ' persuaded the king to seek peace with ' + enemyK.name + '.', null, category);
+                    }
+                }
+                break;
+            }
+            case 'declare_war': {
+                var worstRel = 0, worstK = null;
+                for (var rk in (k.relations || {})) {
+                    if ((k.relations[rk] || 0) < worstRel) { worstRel = k.relations[rk]; worstK = rk; }
+                }
+                if (worstK && worstRel < -40) {
+                    var targetK = findKingdom(worstK);
+                    if (targetK && Engine.declareWar) {
+                        Engine.declareWar(k, targetK);
+                        logEvent('⚔️ Hawkish nobles convinced the king of ' + k.name + ' to declare war on ' + targetK.name + '!', null, category);
+                    }
+                }
+                break;
+            }
+            case 'form_alliance': {
+                if (k.atWar && k.atWar.size > 0) break;
+                var bestRel = 30, bestAlly = null;
+                for (var rk2 in (k.relations || {})) {
+                    if (k.alliances && k.alliances.has(rk2)) continue;
+                    if ((k.relations[rk2] || 0) > bestRel) { bestRel = k.relations[rk2]; bestAlly = rk2; }
+                }
+                if (bestAlly) {
+                    var allyK = findKingdom(bestAlly);
+                    if (allyK) {
+                        if (!k.alliances) k.alliances = new Set();
+                        if (!allyK.alliances) allyK.alliances = new Set();
+                        k.alliances.add(bestAlly);
+                        allyK.alliances.add(kId);
+                        if (!k.allianceMeta) k.allianceMeta = {};
+                        if (!allyK.allianceMeta) allyK.allianceMeta = {};
+                        k.allianceMeta[bestAlly] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                        allyK.allianceMeta[kId] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                        logEvent('🤝 Diplomatic nobles convinced ' + k.name + ' to ally with ' + allyK.name + '.', null, category);
+                    }
+                }
+                break;
+            }
+            case 'lower_taxes': {
+                if ((k.taxRate || 0.10) > 0.08) {
+                    k.taxRate = Math.max(0.05, (k.taxRate || 0.10) - 0.02);
+                    logEvent('📉 Under noble pressure, ' + k.name + ' lowered taxes.', null, category);
+                }
+                break;
+            }
+            case 'raise_taxes': {
+                if ((k.taxRate || 0.10) < 0.20) {
+                    k.taxRate = Math.min(0.25, (k.taxRate || 0.10) + 0.02);
+                    logEvent('📈 Frugal nobles convinced ' + k.name + ' to raise taxes.', null, category);
+                }
+                break;
+            }
+            case 'medical_funding': {
+                var kTowns = getTownsForKingdom(kId);
+                for (var ti = 0; ti < kTowns.length; ti++) {
+                    if (kTowns[ti].plagueActive) {
+                        kTowns[ti].plagueSeverity = Math.max(0, (kTowns[ti].plagueSeverity || 0) - 20);
+                        if (kTowns[ti].plagueSeverity <= 0) { kTowns[ti].plagueActive = false; }
+                    }
+                }
+                k.gold = Math.max(0, (k.gold || 0) - 200);
+                logEvent('🏥 Noble advisors convinced ' + k.name + ' to fund plague relief.', null, category);
+                break;
+            }
+            case 'build_walls': {
+                var kTowns2 = getTownsForKingdom(kId);
+                var unwalled = kTowns2.filter(function(t) { return (t.walls || 0) < 2 && !t._wallConstruction; });
+                if (unwalled.length > 0 && (k.gold || 0) >= 300) {
+                    var target = rng.pick(unwalled);
+                    target._wallConstruction = { targetLevel: (target.walls || 0) + 1, completeDay: world.day + 90, name: target.name };
+                    k.gold -= 300;
+                    logEvent('🏰 Noble advisors convinced ' + k.name + ' to fortify ' + target.name + '.', null, category);
+                }
+                break;
+            }
+            case 'build_infrastructure': {
+                var kTowns3 = getTownsForKingdom(kId);
+                if (kTowns3.length > 0 && (k.gold || 0) >= 200) {
+                    var t = rng.pick(kTowns3);
+                    t.prosperity = Math.min(100, (t.prosperity || 50) + 3);
+                    k._tradeSpeedBonus = Math.min(0.3, (k._tradeSpeedBonus || 0) + 0.02);
+                    k.gold -= 200;
+                    logEvent('🏗️ Noble advisors convinced ' + k.name + ' to invest in infrastructure.', null, category);
+                }
+                break;
+            }
+            case 'improve_happiness': {
+                var kTowns4 = getTownsForKingdom(kId);
+                for (var ti2 = 0; ti2 < kTowns4.length; ti2++) {
+                    kTowns4[ti2].happiness = Math.min(100, (kTowns4[ti2].happiness || 50) + 3);
+                }
+                k.gold = Math.max(0, (k.gold || 0) - 150);
+                logEvent('🌾 Noble advisors convinced ' + k.name + ' to invest in public welfare.', null, category);
+                break;
+            }
+        }
+    }
+
+    // ========================================================
     // §14A3 TAX CONSEQUENCES SYSTEM (called daily)
     // ========================================================
     function tickTaxConsequences() {
@@ -27426,6 +27753,31 @@
                 EventTypes.emit('COURT_NETWORK', { npcName: tName });
                 break;
             }
+            case 'praise_noble_loyalty': {
+                // v9p33river419: Praise a specific noble's loyalty to the king
+                var kId3 = kingdomId;
+                var nobles3 = world.people.filter(function(p) {
+                    return p.alive && p.socialRank && p.socialRank[kId3] >= 4 && p.id !== (pPerson.id || 'player');
+                });
+                if (nobles3.length === 0) {
+                    result = { success: true, message: 'No nobles to praise.' };
+                    break;
+                }
+                // Pick from extraData if provided, otherwise random
+                var praiseTarget = (extraData && extraData.targetNobleId) ? findPerson(extraData.targetNobleId) : rng.pick(nobles3);
+                if (!praiseTarget || !praiseTarget.alive) { result = { success: false, message: 'Noble not found.' }; break; }
+                var praiseName = ((praiseTarget.firstName || '') + ' ' + (praiseTarget.lastName || '')).trim();
+                if (praiseTarget.perceivedKingLoyalty == null) praiseTarget.perceivedKingLoyalty = praiseTarget.kingLoyalty || 50;
+                var praiseBoost = rng.randInt(3, 6);
+                praiseTarget.perceivedKingLoyalty = Math.min(100, praiseTarget.perceivedKingLoyalty + praiseBoost);
+                // Slight actual loyalty boost from appreciation
+                praiseTarget.kingLoyalty = Math.min(100, (praiseTarget.kingLoyalty || 50) + 1);
+                // Player relationship improves with target
+                try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(praiseTarget.id, 3); } catch(e) {}
+                result = { success: true, message: 'You praised ' + praiseName + '\'s loyalty to the king. (+' + praiseBoost + ' perceived loyalty)' };
+                logEvent('🏅 You spoke well of ' + praiseName + ' at court.', null, 'my_kingdom');
+                break;
+            }
             default:
                 result = { success: false, message: 'Unknown court action.' };
         }
@@ -28296,6 +28648,53 @@
                 feast.events.push('Your attempt to pit ' + pitNameA + ' against ' + pitNameB + ' failed.');
                 result = { success: false, message: 'Your attempt to pit ' + pitNameA + ' against ' + pitNameB + ' failed.' };
             }
+
+        // ── Noble championing feast actions ── v9p33river419
+        } else if (actionId === 'champion_noble') {
+            // Player publicly praises a noble's loyalty/service to the king
+            var _champNobles = otherAttendees.filter(function(id) {
+                var p = findPerson(id); return p && p.alive && p.socialRank && p.socialRank[kingdomId] >= 4;
+            });
+            if (_champNobles.length === 0) return { success: false, message: 'No nobles to champion at this feast.' };
+            var champTarget = feast._selectedNobleId ? feast._selectedNobleId : rng.pick(_champNobles);
+            feast._selectedNobleId = null;
+            var champPerson = findPerson(champTarget);
+            if (!champPerson) return { success: false, message: 'Noble not found.' };
+            var champName = (champPerson.firstName || 'a noble') + ' ' + (champPerson.lastName || '');
+            // Boost perceived loyalty with king
+            if (champPerson.perceivedKingLoyalty == null) champPerson.perceivedKingLoyalty = champPerson.kingLoyalty || 50;
+            var champBoost = rng.randInt(4, 8);
+            champPerson.perceivedKingLoyalty = Math.min(100, champPerson.perceivedKingLoyalty + champBoost);
+            // Also slight actual loyalty boost (they appreciate being championed)
+            champPerson.kingLoyalty = Math.min(100, (champPerson.kingLoyalty || 50) + 1);
+            // Improve player-noble relationship
+            try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(champTarget, 5); } catch(e) {}
+            feast.events.push('You publicly championed ' + champName.trim() + ' before the king.');
+            result = { success: true, message: '🏅 You championed ' + champName.trim() + '\'s service to the crown. (+' + champBoost + ' perceived loyalty, +5 relationship with you)' };
+
+        } else if (actionId === 'introduce_noble') {
+            // Bring a minor noble to the king's personal attention
+            var _introNobles = otherAttendees.filter(function(id) {
+                var p = findPerson(id);
+                return p && p.alive && p.socialRank && p.socialRank[kingdomId] === 4; // minor nobles only
+            });
+            if (_introNobles.length === 0) return { success: false, message: 'No minor nobles to introduce.' };
+            var introTarget = feast._selectedNobleId ? feast._selectedNobleId : rng.pick(_introNobles);
+            feast._selectedNobleId = null;
+            var introPerson = findPerson(introTarget);
+            if (!introPerson) return { success: false, message: 'Noble not found.' };
+            var introName = (introPerson.firstName || 'a noble') + ' ' + (introPerson.lastName || '');
+            // Boost perceived loyalty
+            if (introPerson.perceivedKingLoyalty == null) introPerson.perceivedKingLoyalty = introPerson.kingLoyalty || 50;
+            var introBoost = rng.randInt(2, 5);
+            introPerson.perceivedKingLoyalty = Math.min(100, introPerson.perceivedKingLoyalty + introBoost);
+            // Rank visibility: boost reputation slightly
+            if (!introPerson.reputation) introPerson.reputation = {};
+            introPerson.reputation[kingdomId] = Math.min(100, (introPerson.reputation[kingdomId] || 50) + rng.randInt(2, 4));
+            // Improve player-noble relationship
+            try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(introTarget, 3); } catch(e) {}
+            feast.events.push('You introduced ' + introName.trim() + ' to the king.');
+            result = { success: true, message: '🎩 You introduced ' + introName.trim() + ' to the king. (+' + introBoost + ' perceived loyalty, +reputation)' };
 
         // ── King-specific feast actions ──
         } else if (actionId === 'royal_toast') {
@@ -33174,6 +33573,7 @@
         tickNobleIncome: tickNobleIncome,
         tickNobleRelationships: tickNobleRelationships,
         tickNoblePersonalityActions: tickNoblePersonalityActions,
+        tickNobleAdvisoryInfluence: tickNobleAdvisoryInfluence,
         tickKingdomConstruction: tickKingdomConstruction,
         tickTreaties: tickTreaties,
         checkWarGoals: checkWarGoals,
@@ -34767,6 +35167,23 @@
                 isEM: !!person.isEliteMerchant,
                 incomeLog: person._incomeLog || null
             };
+        },
+        // v9p33river419: Noble Agenda API
+        getNobleAgenda: function(nobleId) {
+            return getNobleAgenda(nobleId);
+        },
+        // Boost a noble's perceived loyalty with the king (for court/feast actions)
+        boostNobleStanding: function(nobleId, loyaltyBoost, perceivedBoost) {
+            var noble = findPerson(nobleId);
+            if (!noble) return { success: false, message: 'Noble not found.' };
+            if (loyaltyBoost) {
+                noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + loyaltyBoost);
+            }
+            if (perceivedBoost) {
+                if (noble.perceivedKingLoyalty == null) noble.perceivedKingLoyalty = noble.kingLoyalty || 50;
+                noble.perceivedKingLoyalty = Math.min(100, noble.perceivedKingLoyalty + perceivedBoost);
+            }
+            return { success: true, message: noble.firstName + '\'s standing with the king improved.' };
         },
         // ---- Noble Council Voting API ----
         getActiveVote: function(voteId) {
