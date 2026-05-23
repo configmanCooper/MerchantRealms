@@ -15512,37 +15512,52 @@
         var priority = ''; // highest-priority agenda item
 
         // --- Personal Goals (based on personality + situation) ---
-        if (ambition > 65 && nRank < 6) {
+        // v9p33river427: lowered thresholds so nobles with default 50 values still show goals
+        if (ambition >= 55 && nRank < 6) {
             goals.push({ icon: '👑', text: 'Seeks promotion to ' + (CONFIG.SOCIAL_RANKS[nRank + 1] ? CONFIG.SOCIAL_RANKS[nRank + 1].name : 'higher rank'), weight: ambition });
         }
-        if (ambition > 75 && nRank >= 5 && loyalty < 40) {
+        if (ambition >= 70 && nRank >= 5 && loyalty < 40) {
             goals.push({ icon: '⚔️', text: 'Harbors ambitions for the throne', weight: ambition + 20 });
         }
-        if (selfishness > 60) {
+        if (selfishness >= 50) {
             goals.push({ icon: '💰', text: 'Wants to increase personal wealth', weight: selfishness });
         }
-        if (warmth > 65) {
+        if (warmth >= 55) {
             goals.push({ icon: '🤝', text: 'Values peace and good relations between nobles', weight: warmth });
         }
-        if (loyalty > 70) {
+        if (loyalty >= 60) {
             goals.push({ icon: '🛡️', text: 'Devoted to serving the crown faithfully', weight: loyalty });
         }
-        if (loyalty < 30) {
+        if (loyalty < 35) {
             goals.push({ icon: '🔥', text: 'Dissatisfied with the current regime', weight: 100 - loyalty });
         }
-        if (honesty < 35 && ambition > 55) {
+        if (honesty < 40 && ambition >= 50) {
             goals.push({ icon: '🎭', text: 'Undermining political rivals', weight: 80 - honesty });
+        }
+        if (frugality >= 55) {
+            goals.push({ icon: '📊', text: 'Careful stewardship of resources', weight: frugality });
+        }
+        if (intelligence >= 55) {
+            goals.push({ icon: '📚', text: 'Seeks to be a voice of reason at court', weight: intelligence });
+        }
+        // Fallback: every noble has at least one goal
+        if (goals.length === 0) {
+            if (nRank >= 5) {
+                goals.push({ icon: '🏰', text: 'Maintaining their house\'s standing', weight: 50 });
+            } else {
+                goals.push({ icon: '⬆️', text: 'Climbing the ranks of the court', weight: 50 });
+            }
         }
 
         // --- What they advise the king (based on personality + kingdom state) ---
         if (atWar) {
-            if (warmth > 60 || loyalty < 40) {
+            if (warmth >= 50 || loyalty < 40) {
                 advice.push({ icon: '🕊️', text: 'Advocates making peace', weight: warmth + (100 - loyalty) / 2, actionId: 'make_peace' });
-            } else if (ambition > 55 || intelligence < 45) {
+            } else if (ambition >= 50 || intelligence < 45) {
                 advice.push({ icon: '⚔️', text: 'Pushes for aggressive military action', weight: ambition, actionId: 'war_offensive' });
             }
         } else {
-            if (ambition > 65 && loyalty > 50) {
+            if (ambition >= 60 && loyalty >= 45) {
                 // Find a target kingdom with poor relations
                 var _worstRel = 0, _worstK = null;
                 for (var _rk in (k.relations || {})) {
@@ -15553,28 +15568,36 @@
                     advice.push({ icon: '⚔️', text: 'Advocates war against ' + (_targetK ? _targetK.name : 'a rival'), weight: ambition - 10, actionId: 'declare_war' });
                 }
             }
-            if (warmth > 55) {
+            if (warmth >= 45) {
                 advice.push({ icon: '🤝', text: 'Advocates forming alliances', weight: warmth - 10, actionId: 'form_alliance' });
             }
         }
 
-        if (highTaxes && (warmth > 55 || selfishness > 60)) {
+        if (highTaxes && (warmth >= 45 || selfishness >= 50)) {
             advice.push({ icon: '📉', text: 'Wants taxes lowered', weight: Math.max(warmth, selfishness), actionId: 'lower_taxes' });
         }
-        if (lowTreasury && frugality > 55) {
+        if (lowTreasury && frugality >= 45) {
             advice.push({ icon: '💰', text: 'Urges fiscal austerity', weight: frugality, actionId: 'raise_taxes' });
         }
-        if (hasPlague && (warmth > 50 || intelligence > 55)) {
+        if (hasPlague && (warmth >= 40 || intelligence >= 45)) {
             advice.push({ icon: '🏥', text: 'Demands action on the plague', weight: 80, actionId: 'medical_funding' });
         }
-        if (lowHappiness && warmth > 50) {
+        if (lowHappiness && warmth >= 40) {
             advice.push({ icon: '🌾', text: 'Urges measures to improve morale', weight: warmth + 10, actionId: 'improve_happiness' });
         }
-        if (intelligence > 65) {
+        if (intelligence >= 55) {
             advice.push({ icon: '🏗️', text: 'Advocates investing in infrastructure', weight: intelligence - 10, actionId: 'build_infrastructure' });
         }
-        if (nRank >= 5 && ambition > 55 && loyalty > 50 && !atWar) {
+        if (nRank >= 5 && ambition >= 50 && loyalty >= 45 && !atWar) {
             advice.push({ icon: '🏰', text: 'Recommends fortifying border towns', weight: 55, actionId: 'build_walls' });
+        }
+        // Fallback advice
+        if (advice.length === 0) {
+            if (loyalty >= 50) {
+                advice.push({ icon: '👑', text: 'Supports the king\'s current course', weight: 45, actionId: 'none' });
+            } else {
+                advice.push({ icon: '🔄', text: 'Thinks the kingdom needs change', weight: 45, actionId: 'none' });
+            }
         }
 
         // Sort by weight and pick priority
@@ -15591,6 +15614,187 @@
             loyalty: loyalty,
             perceivedLoyalty: noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty,
             influence: _computeNobleInfluence(noble, k)
+        };
+    }
+
+    // v9p33river427: King-specific agenda — shows ruling priorities, not noble-style goals
+    function getKingAgenda(kingId) {
+        var king = findPerson(kingId);
+        if (!king || !king.alive) return null;
+        var kId = null;
+        if (king.socialRank && typeof king.socialRank === 'object') {
+            for (var sk in king.socialRank) {
+                if ((king.socialRank[sk] || 0) >= 7) { kId = sk; break; }
+            }
+        }
+        if (!kId && king.townId) {
+            var _kt = findTown(king.townId);
+            if (_kt && _kt.kingdomId) kId = _kt.kingdomId;
+        }
+        if (!kId) return null;
+        var k = findKingdom(kId);
+        if (!k || k.king !== king.id) return null;
+
+        var kp = k.kingPersonality || {};
+        var nP = king.personality || {};
+        var towns = getTownsForKingdom(kId);
+        var atWar = k.atWar && (k.atWar instanceof Set ? k.atWar.size > 0 : (Array.isArray(k.atWar) ? k.atWar.length > 0 : false));
+        var treasury = k.gold || 0;
+        var happiness = k.happiness != null ? k.happiness : 50;
+        var taxRate = k.taxRate || 0.10;
+
+        var priorities = [];  // ruling priorities
+        var concerns = [];    // current kingdom concerns
+        var policies = [];    // laws/policies being considered
+
+        // ── Current Concerns (based on kingdom state) ──
+        if (atWar) {
+            concerns.push({ icon: '⚔️', text: 'Kingdom is at war', severity: 'high' });
+        }
+        if (treasury < 2000) {
+            concerns.push({ icon: '💰', text: 'Treasury is dangerously low (' + Math.floor(treasury) + 'g)', severity: 'high' });
+        } else if (treasury < 5000) {
+            concerns.push({ icon: '💰', text: 'Treasury could be healthier', severity: 'medium' });
+        }
+        if (happiness < 35) {
+            concerns.push({ icon: '😠', text: 'People are deeply unhappy', severity: 'high' });
+        } else if (happiness < 50) {
+            concerns.push({ icon: '😐', text: 'Public morale is below average', severity: 'medium' });
+        }
+        var hasPlague = false;
+        for (var ti = 0; ti < towns.length; ti++) { if (towns[ti].plagueActive) { hasPlague = true; break; } }
+        if (hasPlague) {
+            concerns.push({ icon: '🦠', text: 'Plague is spreading in the kingdom', severity: 'high' });
+        }
+        // Check for disloyal nobles
+        var nobles = getNoblesInKingdom(kId);
+        var disloyalCount = 0;
+        for (var ni = 0; ni < nobles.length; ni++) {
+            if ((nobles[ni].kingLoyalty != null ? nobles[ni].kingLoyalty : 50) < 30) disloyalCount++;
+        }
+        if (disloyalCount >= 3) {
+            concerns.push({ icon: '🗡️', text: 'Multiple nobles harbor disloyalty', severity: 'high' });
+        } else if (disloyalCount >= 1) {
+            concerns.push({ icon: '⚠️', text: 'Some nobles have questionable loyalty', severity: 'medium' });
+        }
+        if (k._conspiracy) {
+            concerns.push({ icon: '🕵️', text: 'Rumors of conspiracy in the court', severity: 'high' });
+        }
+
+        // ── Ruling Priorities (based on kingPersonality) ──
+        if (kp.militarism === 'warlike') {
+            priorities.push({ icon: '⚔️', text: 'Military expansion and dominance' });
+        } else if (kp.militarism === 'peaceful') {
+            priorities.push({ icon: '🕊️', text: 'Maintaining peace and diplomacy' });
+        }
+        if (kp.greed === 'greedy' || kp.greed === 'corrupt') {
+            priorities.push({ icon: '💰', text: 'Growing the royal treasury' });
+        } else if (kp.generosity === 'generous') {
+            priorities.push({ icon: '🤝', text: 'Investing in the people\'s welfare' });
+        }
+        if (kp.ambition === 'ambitious') {
+            priorities.push({ icon: '👑', text: 'Expanding the kingdom\'s influence' });
+        } else if (kp.ambition === 'content') {
+            priorities.push({ icon: '🏰', text: 'Preserving the realm\'s stability' });
+        }
+        if (kp.justice === 'just') {
+            priorities.push({ icon: '⚖️', text: 'Upholding law and fair governance' });
+        } else if (kp.justice === 'unjust' || kp.justice === 'harsh') {
+            priorities.push({ icon: '🔨', text: 'Ruling with a firm hand' });
+        }
+        if (kp.tradition === 'traditional') {
+            priorities.push({ icon: '📜', text: 'Preserving tradition and customs' });
+        } else if (kp.tradition === 'progressive' || kp.tradition === 'reformer') {
+            priorities.push({ icon: '🔄', text: 'Modernizing the kingdom' });
+        }
+
+        // ── Laws/Policies Being Considered ──
+        if (atWar && (kp.militarism === 'peaceful' || happiness < 40)) {
+            policies.push({ icon: '🕊️', text: 'Considering suing for peace' });
+        } else if (!atWar && kp.militarism === 'warlike') {
+            // Find weakest neighbor
+            var worstRel = null;
+            if (k.relations) {
+                for (var rk in k.relations) {
+                    if ((k.relations[rk] || 0) < (worstRel ? worstRel.score : 0)) {
+                        var _relK = findKingdom(rk);
+                        if (_relK) worstRel = { name: _relK.name, score: k.relations[rk] };
+                    }
+                }
+            }
+            if (worstRel && worstRel.score < -30) {
+                policies.push({ icon: '⚔️', text: 'Eyeing war with ' + worstRel.name });
+            }
+        }
+        if (treasury < 3000 && taxRate < 0.18) {
+            policies.push({ icon: '📈', text: 'May raise taxes to shore up the treasury' });
+        } else if (treasury > 15000 && taxRate > 0.12 && happiness < 60) {
+            policies.push({ icon: '📉', text: 'Considering lowering taxes to boost morale' });
+        }
+        if (happiness < 40 && treasury > 3000) {
+            policies.push({ icon: '🎪', text: 'Planning festivals to restore public morale' });
+        }
+        if (hasPlague && treasury > 2000) {
+            policies.push({ icon: '🏥', text: 'Considering emergency medical funding' });
+        }
+        if (disloyalCount >= 2) {
+            policies.push({ icon: '🔍', text: 'May investigate disloyal nobles' });
+        }
+        // Check banned goods
+        var bannedGoods = (k.laws && k.laws.bannedGoods) || (k.exportRestrictions || []);
+        if (bannedGoods.length > 0 && happiness < 50) {
+            policies.push({ icon: '📦', text: 'Reconsidering trade restrictions' });
+        }
+        // Fortification
+        var hasUnwalled = false;
+        for (var twi = 0; twi < towns.length; twi++) {
+            if (!towns[twi].walls && !towns[twi].isOutpost && !towns[twi].isJunction) { hasUnwalled = true; break; }
+        }
+        if (hasUnwalled && (atWar || kp.militarism === 'warlike') && treasury > 5000) {
+            policies.push({ icon: '🏰', text: 'Planning fortification of undefended towns' });
+        }
+        // Alliance seeking
+        if (!atWar && (kp.ambition === 'ambitious' || (nP.warmth || 50) > 60)) {
+            var allianceCount = k.alliances ? (k.alliances instanceof Set ? k.alliances.size : (Array.isArray(k.alliances) ? k.alliances.length : 0)) : 0;
+            if (allianceCount === 0) {
+                policies.push({ icon: '🤝', text: 'Seeking diplomatic alliances' });
+            }
+        }
+
+        // No policies? Add a default
+        if (policies.length === 0) {
+            if (happiness >= 60 && treasury > 8000 && !atWar) {
+                policies.push({ icon: '🌿', text: 'Content with the current course — no major changes planned' });
+            } else {
+                policies.push({ icon: '⏳', text: 'Weighing options carefully before acting' });
+            }
+        }
+
+        // Foreign relations summary
+        var foreignStance = [];
+        if (k.relations) {
+            for (var frk in k.relations) {
+                var frScore = k.relations[frk] || 0;
+                var frKingdom = findKingdom(frk);
+                if (!frKingdom) continue;
+                if (frScore < -40) {
+                    foreignStance.push({ icon: '👊', text: 'Hostile toward ' + frKingdom.name, score: frScore });
+                } else if (frScore > 60) {
+                    foreignStance.push({ icon: '💚', text: 'Strong ties with ' + frKingdom.name, score: frScore });
+                }
+            }
+        }
+
+        return {
+            isKing: true,
+            kingdomId: kId,
+            kingdomName: k.name,
+            priorities: priorities.slice(0, 4),
+            concerns: concerns,
+            policies: policies.slice(0, 4),
+            foreignStance: foreignStance.slice(0, 3),
+            nobleCount: nobles.length,
+            disloyalCount: disloyalCount
         };
     }
 
@@ -35225,6 +35429,10 @@
         // v9p33river419: Noble Agenda API
         getNobleAgenda: function(nobleId) {
             return getNobleAgenda(nobleId);
+        },
+        // v9p33river427: King-specific agenda
+        getKingAgenda: function(kingId) {
+            return getKingAgenda(kingId);
         },
         // Boost a noble's perceived loyalty with the king (for court/feast actions)
         boostNobleStanding: function(nobleId, loyaltyBoost, perceivedBoost) {

@@ -1653,32 +1653,90 @@ function showPersonDetail(person) {
         html += `</div>`;
     }
 
-    // ── Noble Agenda (requires noble_agendas skill) ── v9p33river419
+    // ── Noble/King Agenda (requires noble_agendas skill) ── v9p33river419 / v9p33river427
     if (isPlayer && Player.hasSkill && Player.hasSkill('noble_agendas') && _npcSR >= 4 && !person.isEliteMerchant) {
-        var _agenda = null;
-        try { if (Engine.getNobleAgenda) _agenda = Engine.getNobleAgenda(person.id); } catch(e) {}
-        if (_agenda) {
-            html += `<div class="detail-section" style="border:1px solid rgba(180,130,255,0.25);background:rgba(180,130,255,0.05);">`;
-            html += `<h3 style="color:#b482ff;">🏛️ Political Agenda</h3>`;
-            html += `<div style="font-size:0.72rem;color:#ccc;margin-bottom:6px;">Influence: <span style="color:#d4af37;font-weight:bold;">${_agenda.influence.toFixed(1)}</span> | `;
-            html += `King's Trust: <span style="color:${_agenda.perceivedLoyalty > 60 ? '#55a868' : _agenda.perceivedLoyalty > 35 ? '#ccb974' : '#c44e52'}">${Math.round(_agenda.perceivedLoyalty)}/100</span></div>`;
+        // v9p33river427: detect if this NPC is a king
+        var _isNpcKing = _npcSR >= 7;
+        if (!_isNpcKing) {
+            try {
+                var _npcKingdomId = null;
+                if (person.socialRank && typeof person.socialRank === 'object') {
+                    for (var _skk in person.socialRank) { if (person.socialRank[_skk] >= 4) { _npcKingdomId = _skk; break; } }
+                }
+                if (_npcKingdomId) {
+                    var _npcKingdom = Engine.findKingdom ? Engine.findKingdom(_npcKingdomId) : null;
+                    if (_npcKingdom && _npcKingdom.king === person.id) _isNpcKing = true;
+                }
+            } catch(e) {}
+        }
 
-            if (_agenda.goals.length > 0) {
-                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-bottom:3px;">Personal Goals:</div>`;
-                for (var _gi = 0; _gi < _agenda.goals.length; _gi++) {
-                    html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_agenda.goals[_gi].icon} ${_agenda.goals[_gi].text}</div>`;
+        if (_isNpcKing) {
+            // King agenda — show ruling priorities, concerns, and policies
+            var _kingAgenda = null;
+            try { if (Engine.getKingAgenda) _kingAgenda = Engine.getKingAgenda(person.id); } catch(e) {}
+            if (_kingAgenda) {
+                html += `<div class="detail-section" style="border:1px solid rgba(212,168,67,0.3);background:rgba(212,168,67,0.05);">`;
+                html += `<h3 style="color:#d4a843;">👑 Royal Agenda</h3>`;
+
+                if (_kingAgenda.concerns.length > 0) {
+                    html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-bottom:3px;">Current Concerns:</div>`;
+                    for (var _ci = 0; _ci < _kingAgenda.concerns.length; _ci++) {
+                        var _concern = _kingAgenda.concerns[_ci];
+                        var _sevColor = _concern.severity === 'high' ? '#c44e52' : '#e0c58a';
+                        html += `<div style="font-size:0.72rem;color:${_sevColor};padding-left:8px;margin-bottom:2px;">${_concern.icon} ${_concern.text}</div>`;
+                    }
                 }
-            }
-            if (_agenda.advice.length > 0) {
-                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Advising the King:</div>`;
-                for (var _advi = 0; _advi < _agenda.advice.length; _advi++) {
-                    html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_agenda.advice[_advi].icon} ${_agenda.advice[_advi].text}</div>`;
+
+                if (_kingAgenda.priorities.length > 0) {
+                    html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Ruling Priorities:</div>`;
+                    for (var _pi = 0; _pi < _kingAgenda.priorities.length; _pi++) {
+                        html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_kingAgenda.priorities[_pi].icon} ${_kingAgenda.priorities[_pi].text}</div>`;
+                    }
                 }
+
+                if (_kingAgenda.policies.length > 0) {
+                    html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Considering:</div>`;
+                    for (var _pli = 0; _pli < _kingAgenda.policies.length; _pli++) {
+                        html += `<div style="font-size:0.72rem;color:#8fb8e0;padding-left:8px;margin-bottom:2px;">${_kingAgenda.policies[_pli].icon} ${_kingAgenda.policies[_pli].text}</div>`;
+                    }
+                }
+
+                if (_kingAgenda.foreignStance.length > 0) {
+                    html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Foreign Relations:</div>`;
+                    for (var _fri = 0; _fri < _kingAgenda.foreignStance.length; _fri++) {
+                        var _fs = _kingAgenda.foreignStance[_fri];
+                        var _fsColor = _fs.score > 0 ? '#55a868' : '#c44e52';
+                        html += `<div style="font-size:0.72rem;color:${_fsColor};padding-left:8px;margin-bottom:2px;">${_fs.icon} ${_fs.text}</div>`;
+                    }
+                }
+
+                html += `<div style="font-size:0.68rem;color:#888;margin-top:6px;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px;">Court: ${_kingAgenda.nobleCount} nobles${_kingAgenda.disloyalCount > 0 ? ' (' + _kingAgenda.disloyalCount + ' disloyal)' : ''}</div>`;
+                html += `</div>`;
             }
-            if (!_agenda.goals.length && !_agenda.advice.length) {
-                html += `<div style="font-size:0.72rem;color:#888;">No strong political ambitions.</div>`;
+        } else {
+            // Regular noble agenda
+            var _agenda = null;
+            try { if (Engine.getNobleAgenda) _agenda = Engine.getNobleAgenda(person.id); } catch(e) {}
+            if (_agenda) {
+                html += `<div class="detail-section" style="border:1px solid rgba(180,130,255,0.25);background:rgba(180,130,255,0.05);">`;
+                html += `<h3 style="color:#b482ff;">🏛️ Political Agenda</h3>`;
+                html += `<div style="font-size:0.72rem;color:#ccc;margin-bottom:6px;">Influence: <span style="color:#d4af37;font-weight:bold;">${_agenda.influence.toFixed(1)}</span> | `;
+                html += `King's Trust: <span style="color:${_agenda.perceivedLoyalty > 60 ? '#55a868' : _agenda.perceivedLoyalty > 35 ? '#ccb974' : '#c44e52'}">${Math.round(_agenda.perceivedLoyalty)}/100</span></div>`;
+
+                if (_agenda.goals.length > 0) {
+                    html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-bottom:3px;">Personal Goals:</div>`;
+                    for (var _gi = 0; _gi < _agenda.goals.length; _gi++) {
+                        html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_agenda.goals[_gi].icon} ${_agenda.goals[_gi].text}</div>`;
+                    }
+                }
+                if (_agenda.advice.length > 0) {
+                    html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Advising the King:</div>`;
+                    for (var _advi = 0; _advi < _agenda.advice.length; _advi++) {
+                        html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_agenda.advice[_advi].icon} ${_agenda.advice[_advi].text}</div>`;
+                    }
+                }
+                html += `</div>`;
             }
-            html += `</div>`;
         }
     }
 
