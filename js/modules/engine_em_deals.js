@@ -129,6 +129,27 @@
         }
     }
 
+    // v9p33river460: add memory to elite merchant for deal outcomes
+    function _addEMMemory(emId, category, detail, sentiment) {
+        var em = findPerson(emId);
+        if (!em) return;
+        if (!em._emMemory) em._emMemory = { playerActions: [], nobleActions: [] };
+        var day = 0; try { day = Engine.getDay(); } catch(e) {}
+        em._emMemory.playerActions.push({
+            type: 'deal',
+            source: 'player',
+            category: category,
+            detail: detail || '',
+            actorId: 'player',
+            targetId: emId,
+            day: day,
+            sentiment: sentiment || 0,
+            kingdomId: em.kingdomId || ''
+        });
+        // Cap at 50 memories
+        while (em._emMemory.playerActions.length > 50) em._emMemory.playerActions.shift();
+    }
+
     function _playerInTown(townId) {
         var ps = _getPlayerState();
         if (!ps) return false;
@@ -236,6 +257,7 @@
 
                 // Penalty: relationship hit
                 _modifyRelationship(deal.emId, RELATIONSHIP_PLAYER_BROKE);
+                _addEMMemory(deal.emId, 'deal_broken', 'Player broke a trade deal', -3);
 
                 // Penalty: player pays base value of undelivered goods
                 var penalty = _getResourceBasePrice(deal.playerGives.good) * deal.playerGives.qty;
@@ -673,6 +695,7 @@
         world.emDeals.push(deal);
 
         _modifyRelationship(emId, RELATIONSHIP_DEAL_ACCEPT);
+        _addEMMemory(emId, 'deal_accepted', 'Player accepted a trade deal', 1);
 
         EventTypes.emit('EM_DEAL_ACCEPTED', {
             dealId: dealId,
@@ -709,6 +732,7 @@
         if (cancelledBy === 'player') {
             deal.status = 'broken_by_player';
             _modifyRelationship(deal.emId, RELATIONSHIP_PLAYER_CANCEL);
+            _addEMMemory(deal.emId, 'deal_cancelled', 'Player cancelled a trade deal', -2);
             EventTypes.emit('EM_DEAL_CANCELLED_BY_PLAYER', {
                 dealId: dealId,
                 emId: deal.emId,

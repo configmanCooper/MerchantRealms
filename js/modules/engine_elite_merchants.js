@@ -4028,6 +4028,14 @@
 
         if (caught) {
             var fine = _applyActorCrimePenalty(em, town, kingdom, 'sabotage', 1.0);
+            // v9p33river460: EM-to-EM sabotage caught — add memory to victim
+            if (!bestRival._emMemory) bestRival._emMemory = { playerActions: [], nobleActions: [] };
+            bestRival._emMemory.nobleActions.push({
+                type: 'sabotage', source: 'observed', category: 'em_sabotage_caught',
+                detail: em.firstName + ' caught sabotaging', actorId: em.id, targetId: bestRival.id,
+                day: world.day || 0, sentiment: -3, kingdomId: town.kingdomId || ''
+            });
+            while (bestRival._emMemory.nobleActions.length > 50) bestRival._emMemory.nobleActions.shift();
             logEvent('⚖️ ' + em.firstName + ' ' + (em.lastName || '') + ' caught sabotaging ' + bestRival.firstName + '\'s ' + (findBuildingType(realBld.type) || {name:realBld.type}).name + ' in ' + town.name + '! Fined ' + fine + 'g.',  {
                 type: 'em_crime_sabotage_caught', cause: 'EM-vs-EM sabotage attempt failed.',
                 effects: [fine + 'g fine', 'Notoriety +5', 'Reputation damaged'], townId: town.id, kingdomId: kingdom && kingdom.id

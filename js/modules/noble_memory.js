@@ -202,7 +202,12 @@
         if (!noble._nobleRelationships) noble._nobleRelationships = {};
         cur = noble._nobleRelationships[otherId];
         if (cur == null) cur = 50;
-        noble._nobleRelationships[otherId] = _clamp(cur + delta, -100, 100);
+        // v9p33river460: memory-based relationship cap
+        var cap = 100;
+        try {
+            if (Engine.getNobleMemoryRelationshipCap) cap = Engine.getNobleMemoryRelationshipCap(noble, otherId);
+        } catch(e) {}
+        noble._nobleRelationships[otherId] = _clamp(cur + delta, -100, cap);
     }
     function _modifyObservedRelationship(observer, actorId, delta) {
         if (!observer || !actorId || !delta) return;
@@ -1769,6 +1774,65 @@
     Engine._getRecentPlayerMemories = _getRecentPlayerMemories;
     Engine._getRecentNobleMemories = _getRecentNobleMemories;
     Engine._hasRecentMemory = _hasRecentMemory;
+
+    // v9p33river460: Memory-based relationship cap.
+    // Negative memories reduce the max relationship, positive ones partially undo it.
+    // Returns the effective max relationship (0..100).
+    Engine.getMemoryRelationshipCap = function(personOrId) {
+        var person = personOrId;
+        if (typeof personOrId === 'string') {
+            person = Engine.findPerson ? Engine.findPerson(personOrId) : null;
+        }
+        if (!person) return 100;
+        var memory = person.nobleMemory || person._emMemory;
+        if (!memory) return 100;
+        var actions = memory.playerActions || [];
+        var capDelta = 0;
+        for (var i = 0; i < actions.length; i++) {
+            var s = actions[i].sentiment || 0;
+            if (s < 0) {
+                // Negative memories reduce cap: sentiment -1 → -5, -2 → -12, -3 → -25
+                var penalty = s === -1 ? -5 : s === -2 ? -12 : -25;
+                capDelta += penalty;
+            } else if (s > 0) {
+                // Positive memories restore cap: sentiment +1 → +3, +2 → +6, +3 → +10
+                var restore = s === 1 ? 3 : s === 2 ? 6 : 10;
+                capDelta += restore;
+            }
+        }
+        // Cap delta can only reduce (positive memories restore toward 0 but never above)
+        if (capDelta > 0) capDelta = 0;
+        // Clamp the total penalty to -100
+        if (capDelta < -100) capDelta = -100;
+        return Math.max(0, 100 + capDelta);
+    };
+
+    // Compute NPC-to-NPC memory relationship cap (noble memories of another noble).
+    Engine.getNobleMemoryRelationshipCap = function(personOrId, otherPersonId) {
+        var person = personOrId;
+        if (typeof personOrId === 'string') {
+            person = Engine.findPerson ? Engine.findPerson(personOrId) : null;
+        }
+        if (!person) return 100;
+        var memory = person.nobleMemory || person._emMemory;
+        if (!memory) return 100;
+        var actions = memory.nobleActions || [];
+        var capDelta = 0;
+        for (var i = 0; i < actions.length; i++) {
+            if (actions[i].actorId !== otherPersonId) continue;
+            var s = actions[i].sentiment || 0;
+            if (s < 0) {
+                var penalty = s === -1 ? -5 : s === -2 ? -12 : -25;
+                capDelta += penalty;
+            } else if (s > 0) {
+                var restore = s === 1 ? 3 : s === 2 ? 6 : 10;
+                capDelta += restore;
+            }
+        }
+        if (capDelta > 0) capDelta = 0;
+        if (capDelta < -100) capDelta = -100;
+        return Math.max(0, 100 + capDelta);
+    };
     Engine.playerDeclareToNoble = playerDeclareToNoble;
     Engine.recordNobleObservation = recordNobleObservation;
     Engine.tickNobleMemoryAI = tickNobleMemoryAI;

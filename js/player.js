@@ -25575,7 +25575,53 @@
         if (amount < 0 && newLevel < 0 && !reason) {
             newLevel = 0;
         }
-        rel.level = Math.max(-50, Math.min(100, newLevel));
+        // v9p33river460: Memory-based relationship cap
+        var _relCap = 100;
+        try {
+            if (typeof Engine !== 'undefined' && Engine.getMemoryRelationshipCap) {
+                _relCap = Engine.getMemoryRelationshipCap(personId);
+            }
+        } catch(e) {}
+        rel.level = Math.max(-50, Math.min(_relCap, newLevel));
+        // v9p33river460: auto-create EM memory for negative relationship changes
+        if (amount <= -10 && reason) {
+            try {
+                var _emPerson = Engine.findPerson ? Engine.findPerson(personId) : null;
+                if (_emPerson && _emPerson.isEliteMerchant) {
+                    if (!_emPerson._emMemory) _emPerson._emMemory = { playerActions: [], nobleActions: [] };
+                    var _emSentiment = amount <= -25 ? -3 : amount <= -15 ? -2 : -1;
+                    var _emDay = 0; try { _emDay = Engine.getDay(); } catch(e2) {}
+                    _emPerson._emMemory.playerActions.push({
+                        type: 'negative_interaction', source: 'player',
+                        category: reason || 'negative_action',
+                        detail: 'Player action caused relationship damage',
+                        actorId: 'player', targetId: personId,
+                        day: _emDay, sentiment: _emSentiment,
+                        kingdomId: _emPerson.kingdomId || ''
+                    });
+                    while (_emPerson._emMemory.playerActions.length > 50) _emPerson._emMemory.playerActions.shift();
+                }
+            } catch(e3) {}
+        }
+        // v9p33river460: auto-create EM memory for significant positive relationship changes
+        if (amount >= 5 && reason) {
+            try {
+                var _emPerson2 = Engine.findPerson ? Engine.findPerson(personId) : null;
+                if (_emPerson2 && _emPerson2.isEliteMerchant) {
+                    if (!_emPerson2._emMemory) _emPerson2._emMemory = { playerActions: [], nobleActions: [] };
+                    var _emDay2 = 0; try { _emDay2 = Engine.getDay(); } catch(e4) {}
+                    _emPerson2._emMemory.playerActions.push({
+                        type: 'positive_interaction', source: 'player',
+                        category: reason || 'positive_action',
+                        detail: 'Player action improved relationship',
+                        actorId: 'player', targetId: personId,
+                        day: _emDay2, sentiment: 1,
+                        kingdomId: _emPerson2.kingdomId || ''
+                    });
+                    while (_emPerson2._emMemory.playerActions.length > 50) _emPerson2._emMemory.playerActions.shift();
+                }
+            } catch(e5) {}
+        }
         if (type) rel.type = type;
         // Update type label based on level thresholds
         if (rel.type !== 'spouse' && rel.type !== 'child' && rel.type !== 'romantic') {
@@ -25666,6 +25712,22 @@
                 if (!_crNpc || _crNpc.alive === false) continue;
                 if (!_crNpc.isEliteMerchant && getNPCSocialRank(_crNpc) < 4) continue;
                 modifyRelationship(_crNpc.id, -8, undefined, _crReason);
+                // v9p33river460: add EM memory for competition
+                if (_crNpc.isEliteMerchant) {
+                    try {
+                        if (!_crNpc._emMemory) _crNpc._emMemory = { playerActions: [], nobleActions: [] };
+                        var _compDay = 0; try { _compDay = Engine.getDay(); } catch(e2) {}
+                        _crNpc._emMemory.playerActions.push({
+                            type: 'competition', source: 'player',
+                            category: 'direct_competition',
+                            detail: 'Player built competing business in same town',
+                            actorId: 'player', targetId: _crNpc.id,
+                            day: _compDay, sentiment: -1,
+                            kingdomId: _crNpc.kingdomId || ''
+                        });
+                        while (_crNpc._emMemory.playerActions.length > 50) _crNpc._emMemory.playerActions.shift();
+                    } catch(e3) {}
+                }
             }
         }
     }
