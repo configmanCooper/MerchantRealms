@@ -33294,6 +33294,9 @@
         if (!npc || !npc.alive) return { signed: false, chance: 0, message: 'Person not found or not alive.' };
         if (npc.townId !== player.townId) return { signed: false, chance: 0, message: 'That person is not in your current town.' };
         if (npc.kingdomId !== petition.kingdomId) return { signed: false, chance: 0, message: 'That person is not a citizen of the petition\'s kingdom.' };
+        // v9p33river440: only citizens or above can sign petitions (socialRank >= 1)
+        var _npcRank = (npc.socialRank != null) ? npc.socialRank : 0;
+        if (_npcRank < 1 && !npc.isEliteMerchant) return { signed: false, chance: 0, message: npc.firstName + ' is a peasant and cannot sign petitions. Only citizens or above may sign.' };
         if (!petition.signatures) petition.signatures = [];
         if (petition.signatures.includes(npcId)) return { signed: false, chance: 0, message: npc.firstName + ' has already signed this petition.' };
 
@@ -33427,6 +33430,8 @@
                     var eligible = world.people.filter(function(p) {
                         return p.alive && p.townId === ptr.currentTownId &&
                                p.kingdomId === petition.kingdomId &&
+                               // v9p33river440: only citizens or above can sign
+                               ((p.socialRank != null ? p.socialRank : 0) >= 1 || p.isEliteMerchant) &&
                                !(petition.signatures || []).includes(p.id);
                     });
                     if (eligible.length === 0) break;
@@ -33473,7 +33478,7 @@
         var total = 0;
         for (var i = 0; i < petition.signatures.length; i++) {
             var npc = world.people.find(function(p) { return p.id === petition.signatures[i]; });
-            if (!npc) { total += 1; continue; }
+            if (!npc) { total += 0.5; continue; }
             var rankIdx = 0;
             if (npc.socialRank != null) rankIdx = npc.socialRank;
             if (rankIdx >= 5 || (npc.occupation === 'noble' || npc.wealthClass === 'upper')) {
@@ -33481,7 +33486,9 @@
             } else if (npc.isEliteMerchant) {
                 total += CONFIG.PETITION_ELITE_SIGNATURE_WEIGHT;
             } else {
-                total += 1;
+                // v9p33river440: regular citizen weight halved from 1 to 0.5
+                // to make noble signatures much more valuable
+                total += 0.5;
             }
         }
         return total;

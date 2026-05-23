@@ -404,6 +404,8 @@
                 var townNpcs = world.people.filter(function(p) {
                     return p.alive && p.townId === Player.townId &&
                            p.kingdomId === petition.kingdomId &&
+                           // v9p33river440: only citizens or above (socialRank >= 1) can sign
+                           ((p.socialRank != null ? p.socialRank : 0) >= 1 || p.isEliteMerchant) &&
                            !(petition.signatures || []).includes(p.id) &&
                            (_askCounts[p.id] || 0) < 2;
                 });

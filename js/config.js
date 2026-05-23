@@ -797,14 +797,14 @@ const CONFIG = {
 
     // ── Petition System ──
     PETITION_MIN_RANK: 0,              // Peasant can petition (citizen required though)
-    PETITION_MAX_DURATION_DAYS: 30,     // Auto-submit after 30 days
+    PETITION_MAX_DURATION_DAYS: 14,     // Auto-submit after 14 days — forces urgency in gathering signatures
     PETITION_MIN_SIGNATURES_PCT: 5,     // Need 5% of kingdom pop to even have a chance
     PETITION_GOOD_CHANCE_PCT: 15,       // 15% gives good chance
     PETITION_GREAT_CHANCE_PCT: 25,      // 25%+ gives great chance
     PETITION_BASE_CHANCE: 0.05,         // Base 5% chance — signatures are essential
     PETITION_PER_PCT_BONUS: 0.035,     // +3.5% chance per 1% of population signed
-    PETITION_ELITE_SIGNATURE_WEIGHT: 5, // Elite merchant signature = 5 normal
-    PETITION_NOBLE_SIGNATURE_WEIGHT: 10,// Noble signature = 10 normal
+    PETITION_ELITE_SIGNATURE_WEIGHT: 2.5, // Elite merchant signature = 2.5 normal (v9p33river440: halved from 5)
+    PETITION_NOBLE_SIGNATURE_WEIGHT: 10,// Noble signature = 10 normal (unchanged — nobles are the priority target)
     PETITION_MAX_ACTIVE: 3,            // Max 3 active petitions at once
     PETITION_COOLDOWN_DAYS: 30,        // 30 days between petitions of same type
     PETITIONER_BASIC_COST: 50,         // 50g/day for basic petitioner (on foot)

@@ -1737,6 +1737,37 @@ function showPersonDetail(person) {
                 }
                 html += `</div>`;
             }
+
+            // v9p33river439: noble political actions
+            if (isInSameTown && isPlayer && _agenda) {
+                var _nobleKId = _agenda.kingdomId || null;
+                if (!_nobleKId && person.socialRank) {
+                    var _nobleRankKeys = Object.keys(person.socialRank);
+                    for (var _nrki = 0; _nrki < _nobleRankKeys.length; _nrki++) {
+                        if ((person.socialRank[_nobleRankKeys[_nrki]] || 0) >= 4) {
+                            _nobleKId = _nobleRankKeys[_nrki];
+                            break;
+                        }
+                    }
+                }
+                if (_nobleKId) {
+                    var _playerNobleRank = (typeof Player !== 'undefined' && Player.socialRank) ? (Player.socialRank[_nobleKId] || 0) : 0;
+                    var _targetRank = (person.socialRank && person.socialRank[_nobleKId]) || 0;
+                    var _nobleKingdom = null;
+                    try { _nobleKingdom = Engine.findKingdom ? Engine.findKingdom(_nobleKId) : null; } catch(e) {}
+                    html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">`;
+
+                    if (_playerNobleRank >= 4 && _targetRank >= 4 && _targetRank < 6 && person.id !== (_nobleKingdom ? _nobleKingdom.king : '')) {
+                        html += `<button class="btn-medieval" data-action="recommendPromotion" data-id="${person.id}" data-val="${_nobleKId}" title="Recommend this noble for promotion to the king. Success depends on your rank and reputation." style="font-size:0.72rem;padding:4px 10px;background:rgba(85,168,104,0.25);border-color:rgba(85,168,104,0.5);color:#d4af37;">👑 Recommend Promotion</button>`;
+                    }
+
+                    if (_playerNobleRank >= 4 && Player.hasSkill && Player.hasSkill('noble_agendas') && _agenda.loyalty < 40) {
+                        html += `<button class="btn-medieval" data-action="exposeDisloyalty" data-id="${person.id}" data-val="${_nobleKId}" title="Report this noble's disloyalty to the king. You gain favor but they become your enemy." style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.25);border-color:rgba(196,78,82,0.5);color:#c44e52;">🕵️ Expose Disloyalty</button>`;
+                    }
+
+                    html += `</div>`;
+                }
+            }
         }
     }
 
@@ -5000,6 +5031,30 @@ function clickTown(townId) {
     UI.registerAction('untrackMerchantPerson', function(_t, d) { Player.untrackMerchant(d.id); UI.showPersonDetail(Engine.getPerson(d.id)); });
     UI.registerAction('trackMerchantPerson', function(_t, d) { Player.trackMerchant(d.id); UI.showPersonDetail(Engine.getPerson(d.id)); });
     UI.registerAction('showPersonLink', function(t, d) { UI.showPersonDetail(Engine.getPerson(d.id)); });
+    // v9p33river439: noble political actions
+    UI.registerAction('recommendPromotion', function(_t, d) {
+        var nobleId = d.id;
+        var kingdomId = d.val;
+        if (!Engine.playerRecommendPromotion) return;
+        var result = Engine.playerRecommendPromotion(nobleId, kingdomId);
+        if (result.message) toast(result.message, result.success ? 'success' : 'warning');
+        try {
+            var _noblePerson = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+            if (_noblePerson && typeof showPersonDetail === 'function') showPersonDetail(_noblePerson);
+        } catch(e) {}
+    });
+    // v9p33river439: noble political actions
+    UI.registerAction('exposeDisloyalty', function(_t, d) {
+        var nobleId = d.id;
+        var kingdomId = d.val;
+        if (!Engine.playerExposeDisloyalty) return;
+        var result = Engine.playerExposeDisloyalty(nobleId, kingdomId);
+        if (result.message) toast(result.message, result.success ? 'success' : 'warning');
+        try {
+            var _exposedPerson = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+            if (_exposedPerson && typeof showPersonDetail === 'function') showPersonDetail(_exposedPerson);
+        } catch(e) {}
+    });
     UI.registerAction('treatCompanionUI', function(_t, d) { UI.treatCompanionUI(d.type, d.id, d.val); });
 
     // v9p33river357: Unsolicited Quest actions

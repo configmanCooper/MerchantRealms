@@ -1655,6 +1655,18 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         html += '📜 ' + escapeHtml(_rCoal.causeLabel) + ': ' + escapeHtml(_rCoal.resolutionMessage || 'Resolved');
         html += '</div>';
     }
+    // v9p33river439: NPC coalition invitations
+    var _invitations = [];
+    try { _invitations = Engine.getCoalitionInvitations(citizenKingdomId) || []; } catch(e) {}
+    for (var _invi = 0; _invi < _invitations.length; _invi++) {
+        var _inv = _invitations[_invi];
+        html += '<div style="background:rgba(60,100,180,0.15);border:1px solid rgba(60,100,180,0.4);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="font-size:0.82rem;color:#5dade2;">📩 <b>' + escapeHtml(_inv.inviterName) + '</b> invites you to join a coalition: <b>' + escapeHtml(_inv.causeLabel) + '</b></div>';
+        html += '<div style="display:flex;gap:4px;margin-top:4px;">';
+        html += '<button class="btn-medieval" data-action="acceptCoalitionInvite" data-id="' + citizenKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">✅ Join</button>';
+        html += '<button class="btn-medieval" data-action="declineCoalitionInvite" data-id="' + citizenKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(100,100,100,0.3);border-color:rgba(100,100,100,0.5);">❌ Decline</button>';
+        html += '</div></div>';
+    }
     if (_activeCoalitions.length < 3) {
         html += '<div style="margin-top:6px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
         html += '<select id="coalition_cause" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
@@ -3374,6 +3386,19 @@ function _switchProposeActionTab(tabId, kingdomId) {
         if (!kId || !causeSelect || typeof Engine === 'undefined') return;
         var result = Engine.playerFormCoalition(kId, causeSelect.value);
         toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    });
+
+    // v9p33river439: coalition invitation actions
+    UI.registerAction('acceptCoalitionInvite', function(el) {
+        var result = Engine.playerAcceptCoalitionInvite(el.getAttribute('data-id'), el.getAttribute('data-val'));
+        if (result.message) toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    });
+    // v9p33river439: coalition invitation actions
+    UI.registerAction('declineCoalitionInvite', function(el) {
+        var result = Engine.playerDeclineCoalitionInvite(el.getAttribute('data-id'), el.getAttribute('data-val'));
+        if (result.message) toast(result.message, result.success ? 'info' : 'warning');
         openNobilityDialog();
     });
 
