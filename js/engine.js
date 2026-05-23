@@ -17024,6 +17024,604 @@
     }
 
     // ========================================================
+    // §14A4 ECONOMIC NEGOTIATION SYSTEM
+    // ========================================================
+
+    /**
+     * Compute what goods the player can threaten to withhold (must own buildings
+     * producing them) and what goods a noble/kingdom would like to gain.
+     */
+    function getPlayerEconomicLeverage(kingdomId) {
+        var kingdom = findKingdom(kingdomId);
+        if (!kingdom) return { threats: [], enticements: [] };
+        var kTowns = getTownsForKingdom(kingdomId);
+        if (!kTowns || kTowns.length === 0) return { threats: [], enticements: [] };
+
+        // Build production map: goodId → { playerCount, totalCount, townBreakdown }
+        var prodMap = {};
+        var playerBuildings = (typeof Player !== 'undefined' && Player.buildings) ? Player.buildings : [];
+        // Index player buildings by type and town
+        var playerBuildingsByTown = {};
+        for (var pbi = 0; pbi < playerBuildings.length; pbi++) {
+            var pb = playerBuildings[pbi];
+            if (!pb || pb.destroyed) continue;
+            var pbt = findBuildingType(pb.type);
+            if (!pbt || !pbt.produces) continue;
+            var pbGood = pb.currentProduct || pb.productionChoice || pbt.produces;
+            var pbTownId = pb.townId || pb.locationTownId;
+            if (!pbTownId) continue;
+            // Check this town is in our kingdom
+            var pbTown = findTown(pbTownId);
+            if (!pbTown || pbTown.kingdomId !== kingdomId) continue;
+            if (!playerBuildingsByTown[pbTownId]) playerBuildingsByTown[pbTownId] = {};
+            if (!playerBuildingsByTown[pbTownId][pbGood]) playerBuildingsByTown[pbTownId][pbGood] = 0;
+            playerBuildingsByTown[pbTownId][pbGood]++;
+            if (!prodMap[pbGood]) prodMap[pbGood] = { playerCount: 0, totalCount: 0, demand: 0 };
+            prodMap[pbGood].playerCount++;
+        }
+        // Count all buildings in kingdom towns
+        for (var ti = 0; ti < kTowns.length; ti++) {
+            var town = kTowns[ti];
+            if (!town.buildings) continue;
+            for (var bi = 0; bi < town.buildings.length; bi++) {
+                var bld = town.buildings[bi];
+                if (!bld || bld.destroyed) continue;
+                var bt = findBuildingType(bld.type);
+                if (!bt || !bt.produces) continue;
+                var bGood = bld.currentProduct || bld.productionChoice || bt.produces;
+                if (!prodMap[bGood]) prodMap[bGood] = { playerCount: 0, totalCount: 0, demand: 0 };
+                prodMap[bGood].totalCount++;
+            }
+            // Gather demand
+            if (town.market) {
+                for (var dg in town.market.demand) {
+                    if ((town.market.demand[dg] || 0) > 0) {
+                        if (!prodMap[dg]) prodMap[dg] = { playerCount: 0, totalCount: 0, demand: 0 };
+                        prodMap[dg].demand += town.market.demand[dg];
+                    }
+                }
+            }
+        }
+
+        // THREATS: goods where player owns >= 30% of production buildings
+        var threats = [];
+        for (var tg in prodMap) {
+            var pm = prodMap[tg];
+            if (pm.playerCount <= 0 || pm.totalCount <= 0) continue;
+            var share = pm.playerCount / pm.totalCount;
+            if (share < 0.30) continue;
+            var res = findResourceById(tg);
+            var gName = res ? res.name : tg;
+            var shareLabel = Math.round(share * 100) + '%';
+            threats.push({
+                goodId: tg,
+                goodName: gName,
+                playerShare: share,
+                shareLabel: shareLabel,
+                demand: pm.demand,
+                score: share * Math.max(1, pm.demand),
+                desc: 'You produce ' + shareLabel + ' of ' + kingdom.name + "'s " + gName
+            });
+        }
+        threats.sort(function(a, b) { return b.score - a.score; });
+        threats = threats.slice(0, 3);
+
+        // ENTICEMENTS: goods with highest unmet demand (from market + procurement)
+        var enticements = [];
+        var procNeeds = (kingdom.procurement && kingdom.procurement.needs) || {};
+        for (var eg in prodMap) {
+            var em = prodMap[eg];
+            var totalDemand = em.demand + (procNeeds[eg] || 0);
+            if (totalDemand <= 0) continue;
+            // Calculate total supply across kingdom
+            var totalSupply = 0;
+            for (var sti = 0; sti < kTowns.length; sti++) {
+                if (kTowns[sti].market && kTowns[sti].market.supply) {
+                    totalSupply += (kTowns[sti].market.supply[eg] || 0);
+                }
+            }
+            var deficit = totalDemand - totalSupply;
+            if (deficit <= 2) continue;
+            var eres = findResourceById(eg);
+            var eName = eres ? eres.name : eg;
+            enticements.push({
+                goodId: eg,
+                goodName: eName,
+                amountNeeded: Math.ceil(deficit),
+                locationId: kingdomId,
+                locationName: kingdom.name,
+                score: deficit,
+                desc: kingdom.name + ' needs ' + Math.ceil(deficit) + ' more ' + eName
+            });
+        }
+        enticements.sort(function(a, b) { return b.score - a.score; });
+        enticements = enticements.slice(0, 3);
+
+        return { threats: threats, enticements: enticements };
+    }
+
+    /**
+     * Build list of demands the player can ask a noble to push the king on.
+     */
+    function getAvailableNegotiationDemands(kingdomId) {
+        var kingdom = findKingdom(kingdomId);
+        if (!kingdom) return [];
+        var demands = [];
+
+        // Tax changes
+        if ((kingdom.taxRate || 0.10) > 0.05) demands.push({ id: 'lower_taxes', label: '📉 Lower Taxes' });
+        if ((kingdom.taxRate || 0.10) < 0.25) demands.push({ id: 'raise_taxes', label: '📈 Raise Taxes' });
+
+        // War/Peace/Alliance with other kingdoms
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var ok = world.kingdoms[ki];
+            if (ok.id === kingdomId || ok.destroyed) continue;
+            var atWar = kingdom.atWar && (kingdom.atWar instanceof Set ? kingdom.atWar.has(ok.id) : (Array.isArray(kingdom.atWar) && kingdom.atWar.indexOf(ok.id) >= 0));
+            var isAllied = kingdom.alliances && (kingdom.alliances instanceof Set ? kingdom.alliances.has(ok.id) : (Array.isArray(kingdom.alliances) && kingdom.alliances.indexOf(ok.id) >= 0));
+            if (atWar) {
+                demands.push({ id: 'make_peace', label: '🕊️ Make Peace with ' + ok.name, param: ok.id });
+            } else if (!isAllied) {
+                demands.push({ id: 'declare_war', label: '⚔️ Declare War on ' + ok.name, param: ok.id });
+                demands.push({ id: 'form_alliance', label: '🤝 Form Alliance with ' + ok.name, param: ok.id });
+            }
+        }
+
+        // Lift bans
+        if (kingdom.laws && kingdom.laws.bannedGoods) {
+            for (var bgi = 0; bgi < kingdom.laws.bannedGoods.length; bgi++) {
+                var bg = kingdom.laws.bannedGoods[bgi];
+                // Skip quality-tier variants, just show base
+                if (bg.indexOf('_good') >= 0 || bg.indexOf('_excellent') >= 0) continue;
+                var bgRes = findResourceById(bg);
+                var bgName = bgRes ? bgRes.name : bg;
+                demands.push({ id: 'lift_ban', label: '🔓 Lift Ban on ' + bgName, param: bg });
+            }
+        }
+
+        // Infrastructure/Happiness/Medical
+        demands.push({ id: 'build_infrastructure', label: '🏗️ Build Infrastructure' });
+        demands.push({ id: 'build_walls', label: '🏰 Build Walls' });
+        demands.push({ id: 'improve_happiness', label: '🌾 Improve Happiness' });
+        demands.push({ id: 'medical_funding', label: '🏥 Medical Funding' });
+
+        return demands;
+    }
+
+    /**
+     * Calculate chance a noble agrees to an economic negotiation.
+     */
+    function _calculateNegotiationChance(noble, negType, leverage, demandAction, kingdomId) {
+        var rng = world.rng;
+        var chance = 0.30; // base 30%
+
+        // Relationship modifier (+25% at 100 relationship)
+        var rel = 0;
+        try {
+            if (typeof Player !== 'undefined' && Player.getRelationship) {
+                rel = (Player.getRelationship(noble.id) || {}).level || 0;
+            }
+        } catch(e) {}
+        chance += (rel / 100) * 0.25;
+
+        // Memory modifiers: past player follow-through
+        try {
+            if (Engine._getRecentPlayerMemories) {
+                var mems = Engine._getRecentPlayerMemories(noble, 180);
+                for (var mi = 0; mi < mems.length; mi++) {
+                    if (mems[mi].category === 'economic_threat_fulfilled' || mems[mi].category === 'economic_entice_fulfilled') {
+                        chance += 0.20;
+                        break;
+                    }
+                }
+                for (var mi2 = 0; mi2 < mems.length; mi2++) {
+                    if (mems[mi2].category === 'economic_bluff') {
+                        chance -= 0.15;
+                        break;
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // Personality modifiers
+        var ambition = noble.ambition || 50;
+        var loyalty = noble.loyalty || 50;
+        var selfishness = noble.selfishness || 50;
+        var honesty = noble.honesty || 50;
+        var frugality = noble.frugality || 50;
+
+        if (negType === 'threaten') {
+            // Brave/loyal nobles resist threats
+            if (ambition > 70) chance -= 0.08;
+            if (loyalty > 70) chance -= 0.08;
+            // Cowardly/selfish nobles cave to threats
+            if (ambition < 30) chance += 0.05;
+            if (selfishness > 70) chance += 0.05;
+            // Stronger leverage = more persuasive
+            if (leverage && leverage.playerShare >= 0.60) chance += 0.10;
+            else if (leverage && leverage.playerShare >= 0.45) chance += 0.05;
+        } else {
+            // Entice: ambitious/selfish nobles love deals
+            if (ambition > 60) chance += 0.08;
+            if (selfishness > 60) chance += 0.05;
+            if (frugality < 40) chance += 0.05;
+        }
+
+        // Agenda alignment: if noble already wants this action
+        try {
+            var agenda = getNobleAgenda(noble.id);
+            if (agenda && agenda.advice) {
+                for (var ai = 0; ai < agenda.advice.length; ai++) {
+                    if (agenda.advice[ai].actionId === demandAction) {
+                        chance += 0.15;
+                        break;
+                    }
+                }
+            }
+        } catch(e) {}
+
+        // Clamp
+        if (chance < 0.05) chance = 0.05;
+        if (chance > 0.95) chance = 0.95;
+        return chance;
+    }
+
+    /**
+     * Execute an economic negotiation attempt.
+     */
+    function attemptEconomicNegotiation(nobleId, negType, leverageGoodId, leverageLocation, demandAction, demandParam) {
+        var noble = findPerson(nobleId);
+        if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
+
+        var kId = null;
+        if (noble.socialRank && typeof noble.socialRank === 'object') {
+            for (var sk in noble.socialRank) {
+                if ((noble.socialRank[sk] || 0) >= 4) { kId = sk; break; }
+            }
+        }
+        if (!kId) return { success: false, message: 'Not a noble.' };
+        var kingdom = findKingdom(kId);
+        if (!kingdom) return { success: false, message: 'Kingdom not found.' };
+
+        var rng = world.rng;
+        var nobleName = noble.firstName + ' ' + noble.lastName;
+
+        // Build leverage info
+        var leverage = null;
+        if (negType === 'threaten') {
+            var levData = getPlayerEconomicLeverage(kId);
+            for (var li = 0; li < levData.threats.length; li++) {
+                if (levData.threats[li].goodId === leverageGoodId) { leverage = levData.threats[li]; break; }
+            }
+            if (!leverage) return { success: false, message: 'You do not control enough production of that good to make this threat credible.' };
+        } else {
+            var levData2 = getPlayerEconomicLeverage(kId);
+            for (var li2 = 0; li2 < levData2.enticements.length; li2++) {
+                if (levData2.enticements[li2].goodId === leverageGoodId) { leverage = levData2.enticements[li2]; break; }
+            }
+            if (!leverage) return { success: false, message: 'That good is not in demand.' };
+        }
+
+        // Calculate chance
+        var chance = _calculateNegotiationChance(noble, negType, leverage, demandAction, kId);
+        var roll = rng.random();
+        var agreed = roll < chance;
+
+        // Snapshot baseline supply for tracking
+        var baselineSupply = 0;
+        var kTowns = getTownsForKingdom(kId);
+        for (var bsi = 0; bsi < kTowns.length; bsi++) {
+            if (kTowns[bsi].market && kTowns[bsi].market.supply) {
+                baselineSupply += (kTowns[bsi].market.supply[leverageGoodId] || 0);
+            }
+        }
+
+        // Store tracking on noble
+        if (!noble._economicNegotiations) noble._economicNegotiations = [];
+        noble._economicNegotiations.push({
+            type: negType,
+            leverageGood: leverageGoodId,
+            leverageLocation: leverageLocation || kId,
+            demandAction: demandAction,
+            demandParam: demandParam || null,
+            agreed: agreed,
+            startDay: world.day,
+            expiresDay: world.day + 14,
+            baselineSupply: baselineSupply,
+            amountNeeded: (leverage && leverage.amountNeeded) ? leverage.amountNeeded : 0,
+            resolved: false
+        });
+
+        // Relationship change
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        if (negType === 'threaten') {
+            try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(nobleId, -10, null, 'economic_threat'); } catch(e) {}
+        }
+
+        // If agreed on threaten: noble immediately adds to their advisory agenda
+        if (agreed && negType === 'threaten') {
+            if (!noble._negotiatedDemands) noble._negotiatedDemands = [];
+            noble._negotiatedDemands.push({
+                actionId: demandAction,
+                param: demandParam || null,
+                weight: 30,
+                source: 'economic_negotiation',
+                expiresDay: world.day + 45
+            });
+        }
+
+        // Add memory of the attempt
+        try {
+            if (Engine._addPlayerMemory) {
+                Engine._addPlayerMemory(noble, {
+                    type: 'observation',
+                    source: 'player',
+                    category: negType === 'threaten' ? 'economic_threat_attempt' : 'economic_entice_attempt',
+                    detail: negType === 'threaten'
+                        ? 'Player threatened to withhold ' + (leverage ? leverage.goodName : leverageGoodId)
+                        : 'Player offered to supply ' + (leverage ? leverage.goodName : leverageGoodId),
+                    actorId: 'player',
+                    targetId: nobleId,
+                    day: world.day,
+                    sentiment: negType === 'threaten' ? -2 : 1,
+                    kingdomId: kId
+                });
+            }
+        } catch(e) {}
+
+        // Log event
+        var demandLabel = demandAction.replace(/_/g, ' ');
+        var goodLabel = leverage ? leverage.goodName : leverageGoodId;
+        if (agreed) {
+            logEvent((negType === 'threaten' ? '⚔️' : '🎁') + ' ' + nobleName + ' agreed to your ' + negType + '. They will push the king to ' + demandLabel + '.',
+                { type: 'economic_negotiation', nobleId: nobleId, negType: negType, agreed: true }, category);
+        } else {
+            logEvent((negType === 'threaten' ? '⚔️' : '🎁') + ' ' + nobleName + ' rejected your ' + negType + '. They are unmoved by your offer regarding ' + goodLabel + '.',
+                { type: 'economic_negotiation', nobleId: nobleId, negType: negType, agreed: false }, category);
+        }
+
+        return {
+            success: true,
+            agreed: agreed,
+            chance: Math.round(chance * 100),
+            message: agreed
+                ? (negType === 'threaten'
+                    ? nobleName + ' takes your threat seriously and agrees to push the king to ' + demandLabel + '. (-10 relationship)'
+                    : nobleName + ' is interested in your offer. Deliver ' + (leverage.amountNeeded || '?') + ' ' + goodLabel + ' within 14 days to seal the deal.')
+                : (negType === 'threaten'
+                    ? nobleName + " isn't intimidated. But they'll be watching — prove you mean business. (-10 relationship)"
+                    : nobleName + " declines your offer. But they'll notice if you deliver anyway.")
+        };
+    }
+
+    /**
+     * Daily tick: check 14-day economic negotiation tracking.
+     */
+    function tickEconomicNegotiations() {
+        if (!world || !world.people) return;
+        for (var pi = 0; pi < world.people.length; pi++) {
+            var person = world.people[pi];
+            if (!person || !person.alive || !person._economicNegotiations) continue;
+            for (var ni = person._economicNegotiations.length - 1; ni >= 0; ni--) {
+                var neg = person._economicNegotiations[ni];
+                if (neg.resolved) { person._economicNegotiations.splice(ni, 1); continue; }
+                if (world.day < neg.expiresDay) continue;
+
+                // Expired — evaluate fulfillment
+                neg.resolved = true;
+                var kId = null;
+                if (person.socialRank && typeof person.socialRank === 'object') {
+                    for (var sk in person.socialRank) {
+                        if ((person.socialRank[sk] || 0) >= 4) { kId = sk; break; }
+                    }
+                }
+                if (!kId) { person._economicNegotiations.splice(ni, 1); continue; }
+
+                var kTowns = getTownsForKingdom(kId);
+                var currentSupply = 0;
+                for (var tsi = 0; tsi < kTowns.length; tsi++) {
+                    if (kTowns[tsi].market && kTowns[tsi].market.supply) {
+                        currentSupply += (kTowns[tsi].market.supply[neg.leverageGood] || 0);
+                    }
+                }
+
+                var fulfilled = false;
+                if (neg.type === 'threaten') {
+                    // Check if player actually reduced production — verify player no longer owns buildings for this good
+                    var playerStillProducing = false;
+                    var playerBuildings = (typeof Player !== 'undefined' && Player.buildings) ? Player.buildings : [];
+                    for (var pci = 0; pci < playerBuildings.length; pci++) {
+                        var pcb = playerBuildings[pci];
+                        if (!pcb || pcb.destroyed) continue;
+                        var pcbt = findBuildingType(pcb.type);
+                        if (!pcbt) continue;
+                        var pcGood = pcb.currentProduct || pcb.productionChoice || pcbt.produces;
+                        if (pcGood === neg.leverageGood) {
+                            var pcTown = findTown(pcb.townId || pcb.locationTownId);
+                            if (pcTown && pcTown.kingdomId === kId) { playerStillProducing = true; break; }
+                        }
+                    }
+                    // Fulfilled if supply dropped >= 25% OR player stopped producing
+                    fulfilled = !playerStillProducing || (neg.baselineSupply > 0 && currentSupply <= neg.baselineSupply * 0.75);
+                } else {
+                    // Entice: fulfilled if supply increased by >= 70% of amount needed
+                    var supplyGain = currentSupply - neg.baselineSupply;
+                    fulfilled = neg.amountNeeded > 0 && supplyGain >= neg.amountNeeded * 0.70;
+                }
+
+                var nobleName = person.firstName + ' ' + person.lastName;
+                var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+                var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+
+                if (fulfilled) {
+                    // Player followed through
+                    try {
+                        if (Engine._addPlayerMemory) {
+                            Engine._addPlayerMemory(person, {
+                                type: 'observation', source: 'player',
+                                category: neg.type === 'threaten' ? 'economic_threat_fulfilled' : 'economic_entice_fulfilled',
+                                detail: 'Player followed through on ' + neg.type + ' regarding ' + neg.leverageGood,
+                                actorId: 'player', targetId: person.id,
+                                day: world.day, sentiment: neg.type === 'threaten' ? -1 : 3,
+                                kingdomId: kId
+                            });
+                        }
+                    } catch(e) {}
+
+                    if (neg.type === 'entice') {
+                        // +10 relationship on successful entice delivery
+                        try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(person.id, 10, null, 'economic_entice_success'); } catch(e) {}
+
+                        // Now the noble pushes the demand (agreed or not — if they didn't agree, the memory still helps next time)
+                        if (!person._negotiatedDemands) person._negotiatedDemands = [];
+                        person._negotiatedDemands.push({
+                            actionId: neg.demandAction,
+                            param: neg.demandParam,
+                            weight: neg.agreed ? 30 : 15,
+                            source: 'economic_negotiation',
+                            expiresDay: world.day + 45
+                        });
+                        logEvent('🎁 ' + nobleName + (neg.agreed ? ' honors the deal' : ' is impressed by your delivery') + ' and will push the king regarding your request.', null, category);
+                    } else {
+                        // Threaten fulfilled — if they didn't agree, now they remember you mean business
+                        if (!neg.agreed) {
+                            logEvent('⚔️ ' + nobleName + ' notices your threat was genuine. They will remember this.', null, category);
+                        }
+                    }
+                } else {
+                    // Player did NOT follow through
+                    if (neg.agreed && neg.type === 'threaten') {
+                        // Bluff — noble remembers
+                        try {
+                            if (Engine._addPlayerMemory) {
+                                Engine._addPlayerMemory(person, {
+                                    type: 'observation', source: 'player',
+                                    category: 'economic_bluff',
+                                    detail: 'Player bluffed on economic threat regarding ' + neg.leverageGood,
+                                    actorId: 'player', targetId: person.id,
+                                    day: world.day, sentiment: -3,
+                                    kingdomId: kId
+                                });
+                            }
+                        } catch(e) {}
+                        // Remove the negotiated demand since player didn't follow through
+                        if (person._negotiatedDemands) {
+                            for (var rdi = person._negotiatedDemands.length - 1; rdi >= 0; rdi--) {
+                                if (person._negotiatedDemands[rdi].source === 'economic_negotiation' && person._negotiatedDemands[rdi].actionId === neg.demandAction) {
+                                    person._negotiatedDemands.splice(rdi, 1);
+                                    break;
+                                }
+                            }
+                        }
+                        logEvent('⚔️ ' + nobleName + ' realizes your threat was a bluff. They will not forget this.', null, category);
+                    } else if (neg.agreed && neg.type === 'entice') {
+                        logEvent('🎁 ' + nobleName + ' waited but you did not deliver. The deal is off.', null, category);
+                    }
+                }
+                person._economicNegotiations.splice(ni, 1);
+            }
+            // Clean empty arrays
+            if (person._economicNegotiations && person._economicNegotiations.length === 0) {
+                delete person._economicNegotiations;
+            }
+        }
+
+        // Process negotiated demands through advisory influence
+        // (runs here so fulfilled enticements take effect same day)
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            var kId2 = k.id;
+            var kPeople = world.people.filter(function(p) { return p.alive && p._negotiatedDemands && p._negotiatedDemands.length > 0 && p.socialRank && (p.socialRank[kId2] || 0) >= 4; });
+            for (var ndi = 0; ndi < kPeople.length; ndi++) {
+                var ndp = kPeople[ndi];
+                for (var ndj = ndp._negotiatedDemands.length - 1; ndj >= 0; ndj--) {
+                    var nd = ndp._negotiatedDemands[ndj];
+                    if (nd.expiresDay && world.day > nd.expiresDay) {
+                        ndp._negotiatedDemands.splice(ndj, 1);
+                        continue;
+                    }
+                    // Every 7 days, this noble pushes the king
+                    if (world.day % 7 === 0) {
+                        var rng = world.rng;
+                        if (rng.chance(0.35)) {
+                            // Execute the advised action with param support
+                            if (nd.param && (nd.actionId === 'make_peace' || nd.actionId === 'declare_war' || nd.actionId === 'form_alliance')) {
+                                _executeNobleAdvisedActionWithParam(k, nd.actionId, rng, nd.param);
+                            } else if (nd.actionId === 'lift_ban') {
+                                _executeLiftBan(k, nd.param);
+                            } else {
+                                _executeNobleAdvisedAction(k, nd.actionId, rng);
+                            }
+                            ndp._negotiatedDemands.splice(ndj, 1);
+                        }
+                    }
+                }
+                if (ndp._negotiatedDemands.length === 0) delete ndp._negotiatedDemands;
+            }
+        }
+    }
+
+    /** Execute a parameterized noble-advised action (for targeted war/peace/alliance). */
+    function _executeNobleAdvisedActionWithParam(k, actionId, rng, targetKingdomId) {
+        var kId = k.id;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var targetK = findKingdom(targetKingdomId);
+        if (!targetK) return;
+
+        switch (actionId) {
+            case 'make_peace': {
+                var atWar = k.atWar && (k.atWar instanceof Set ? k.atWar.has(targetKingdomId) : (Array.isArray(k.atWar) && k.atWar.indexOf(targetKingdomId) >= 0));
+                if (!atWar) break;
+                if (Engine.makePeace) {
+                    Engine.makePeace(k, targetK, false, null, true);
+                    logEvent('🕊️ Under merchant pressure, ' + k.name + ' sought peace with ' + targetK.name + '.', null, category);
+                }
+                break;
+            }
+            case 'declare_war': {
+                if (Engine.declareWar) {
+                    Engine.declareWar(k, targetK);
+                    logEvent('⚔️ Under merchant pressure, ' + k.name + ' declared war on ' + targetK.name + '!', null, category);
+                }
+                break;
+            }
+            case 'form_alliance': {
+                if (!k.alliances) k.alliances = new Set();
+                if (!targetK.alliances) targetK.alliances = new Set();
+                k.alliances.add(targetKingdomId);
+                targetK.alliances.add(kId);
+                if (!k.allianceMeta) k.allianceMeta = {};
+                if (!targetK.allianceMeta) targetK.allianceMeta = {};
+                k.allianceMeta[targetKingdomId] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                targetK.allianceMeta[kId] = { type: 'mutual_defense', formedDay: world.day, callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                logEvent('🤝 Under merchant pressure, ' + k.name + ' allied with ' + targetK.name + '.', null, category);
+                break;
+            }
+        }
+    }
+
+    /** Execute a lift-ban action. */
+    function _executeLiftBan(k, goodId) {
+        if (!k.laws || !k.laws.bannedGoods || !goodId) return;
+        var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+        var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+        var idx = k.laws.bannedGoods.indexOf(goodId);
+        if (idx >= 0) {
+            k.laws.bannedGoods.splice(idx, 1);
+            // Also remove tiered variants
+            var tiers = [goodId + '_good', goodId + '_excellent'];
+            for (var ti = 0; ti < tiers.length; ti++) {
+                var tidx = k.laws.bannedGoods.indexOf(tiers[ti]);
+                if (tidx >= 0) k.laws.bannedGoods.splice(tidx, 1);
+            }
+            var res = findResourceById(goodId);
+            var gName = res ? res.name : goodId;
+            logEvent('🔓 Under merchant pressure, ' + k.name + ' lifted the ban on ' + gName + '.', null, category);
+        }
+    }
+
+    // ========================================================
     // §14A3 TAX CONSEQUENCES SYSTEM (called daily)
     // ========================================================
     function tickTaxConsequences() {
@@ -34344,6 +34942,8 @@
             // Daily tax consequences
             // NEVER throttled — tax effects on happiness must accumulate daily
             tickTaxConsequences();
+            // Economic negotiations — 14-day tracking & resolution
+            if (!_rFF) tickEconomicNegotiations();
             // Daily mercenary expiry & war zone supply drain
             tickMercenaryExpiry();
 
@@ -37607,6 +38207,12 @@
                 noble.perceivedKingLoyalty = Math.min(100, noble.perceivedKingLoyalty + perceivedBoost);
             }
             return { success: true, message: noble.firstName + '\'s standing with the king improved.' };
+        },
+        // v9p33river459: Economic Negotiation API
+        getPlayerEconomicLeverage: function(kingdomId) { return getPlayerEconomicLeverage(kingdomId); },
+        getAvailableNegotiationDemands: function(kingdomId) { return getAvailableNegotiationDemands(kingdomId); },
+        attemptEconomicNegotiation: function(nobleId, negType, leverageGoodId, leverageLocation, demandAction, demandParam) {
+            return attemptEconomicNegotiation(nobleId, negType, leverageGoodId, leverageLocation, demandAction, demandParam);
         },
         // ---- Noble Council Voting API ----
         getActiveVote: function(voteId) {

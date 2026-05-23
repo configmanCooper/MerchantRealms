@@ -2298,6 +2298,19 @@ function showPersonDetail(person) {
                 html += `<button class="btn-medieval" data-action="observePerson" data-id="${person.id}" title="Spend 8 hours watching this person — 30% chance to discover a hidden quirk (free)" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
                 html += `<button class="btn-medieval" data-action="askTavernAbout" data-id="${person.id}" title="Ask around at the tavern for gossip about this person (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
                 html += `<button class="btn-medieval" data-action="hireInvestigator" data-id="${person.id}" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
+                // v9p33river459: Economic Negotiation button for nobles
+                if (_socialQuestionsRank >= 4 && typeof Engine !== 'undefined' && Engine.getPlayerEconomicLeverage) {
+                    var _negKId = null;
+                    if (person.socialRank && typeof person.socialRank === 'object') {
+                        for (var _nsk in person.socialRank) { if ((person.socialRank[_nsk] || 0) >= 4) { _negKId = _nsk; break; } }
+                    }
+                    if (_negKId) {
+                        var _negLev = Engine.getPlayerEconomicLeverage(_negKId);
+                        if ((_negLev.threats && _negLev.threats.length > 0) || (_negLev.enticements && _negLev.enticements.length > 0)) {
+                            html += `<button class="btn-medieval" data-action="openNegotiateDialog" data-id="${person.id}" data-val="${_negKId}" title="Use economic leverage to pressure this noble" style="font-size:0.75rem;padding:5px 10px;background:rgba(218,165,32,0.15);border-color:rgba(218,165,32,0.4);color:#daa520;">💰 Negotiate</button>`;
+                        }
+                    }
+                }
                 // Introduction request for same-rank peers (if this is a noble you already know)
                 var _introNpcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
                 if (_introNpcRank >= 4 && _introNpcRank < 7) {
@@ -5888,5 +5901,129 @@ function clickTown(townId) {
     UI.registerAction('rebuildBridge', function(_t, d) { UI.rebuildBridge(Number(d.idx)); });
     UI.registerAction('destroyBridge', function(_t, d) { UI.destroyBridge(Number(d.idx)); });
     UI.registerAction('stopTravelUI', function() { stopTravelUI(); });
+
+    // ═══════════════════════════════════════════════════════
+    // v9p33river459: ECONOMIC NEGOTIATION DIALOG
+    // ═══════════════════════════════════════════════════════
+    UI.registerAction('openNegotiateDialog', function(_t, d) {
+        var personId = d.id;
+        var kingdomId = d.val;
+        if (!personId || !kingdomId) return;
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        if (!person) return;
+        var nobleName = (person.firstName || '') + ' ' + (person.lastName || '');
+
+        var leverage = Engine.getPlayerEconomicLeverage(kingdomId);
+        var demands = Engine.getAvailableNegotiationDemands(kingdomId);
+        if (!leverage || (!leverage.threats.length && !leverage.enticements.length)) {
+            UI.toast('No economic leverage available.', 'warning');
+            return;
+        }
+
+        var html = '<div style="padding:14px;max-width:640px;color:#e0d6b8;">';
+        html += '<h2 style="margin:0 0 8px;color:#daa520;">💰 Economic Negotiation with ' + nobleName + '</h2>';
+        html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:12px;">Use your economic power to influence this noble. They will pressure the king on your behalf.</div>';
+
+        // Demand dropdown (shared between threaten and entice)
+        var demandOpts = '';
+        for (var di = 0; di < demands.length; di++) {
+            demandOpts += '<option value="' + demands[di].id + '" data-param="' + (demands[di].param || '') + '">' + demands[di].label + '</option>';
+        }
+
+        // ── THREATEN SECTION ──
+        if (leverage.threats.length > 0) {
+            html += '<div style="background:rgba(139,0,0,0.12);border:1px solid rgba(139,0,0,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.9rem;font-weight:bold;color:#e74c3c;margin-bottom:6px;">⚔️ Threaten</div>';
+            html += '<div style="font-size:0.75rem;color:#c88;margin-bottom:8px;">Threaten to withhold goods you control. Always costs -10 relationship.</div>';
+            html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+            html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
+            html += '<span style="font-size:0.8rem;color:#ccc;white-space:nowrap;">Withhold:</span>';
+            html += '<select id="neg_threat_good" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+            for (var ti = 0; ti < leverage.threats.length; ti++) {
+                var thr = leverage.threats[ti];
+                html += '<option value="' + thr.goodId + '">' + thr.goodName + ' (' + thr.shareLabel + ' of production)</option>';
+            }
+            html += '</select></div>';
+            html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
+            html += '<span style="font-size:0.8rem;color:#ccc;white-space:nowrap;">Demand:</span>';
+            html += '<select id="neg_threat_demand" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">' + demandOpts + '</select></div>';
+            html += '<button class="btn-medieval" data-action="executeNegotiation" data-id="' + personId + '" data-val="threaten" style="font-size:0.8rem;padding:5px 12px;background:rgba(139,0,0,0.25);border-color:rgba(139,0,0,0.5);color:#e74c3c;align-self:flex-end;">⚔️ Make Threat</button>';
+            html += '</div></div>';
+        }
+
+        // ── ENTICE SECTION ──
+        if (leverage.enticements.length > 0) {
+            html += '<div style="background:rgba(39,174,96,0.10);border:1px solid rgba(39,174,96,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.9rem;font-weight:bold;color:#27ae60;margin-bottom:6px;">🎁 Entice</div>';
+            html += '<div style="font-size:0.75rem;color:#8c8;margin-bottom:8px;">Offer to supply goods the kingdom needs. +10 relationship if you deliver within 14 days.</div>';
+            html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+            html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
+            html += '<span style="font-size:0.8rem;color:#ccc;white-space:nowrap;">Supply:</span>';
+            html += '<select id="neg_entice_good" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+            for (var ei = 0; ei < leverage.enticements.length; ei++) {
+                var ent = leverage.enticements[ei];
+                html += '<option value="' + ent.goodId + '">' + ent.goodName + ' — need ' + ent.amountNeeded + ' in ' + ent.locationName + '</option>';
+            }
+            html += '</select></div>';
+            html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
+            html += '<span style="font-size:0.8rem;color:#ccc;white-space:nowrap;">In return:</span>';
+            html += '<select id="neg_entice_demand" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">' + demandOpts + '</select></div>';
+            html += '<button class="btn-medieval" data-action="executeNegotiation" data-id="' + personId + '" data-val="entice" style="font-size:0.8rem;padding:5px 12px;background:rgba(39,174,96,0.2);border-color:rgba(39,174,96,0.5);color:#27ae60;align-self:flex-end;">🎁 Propose Deal</button>';
+            html += '</div></div>';
+        }
+
+        // Active negotiations with this noble
+        if (person._economicNegotiations && person._economicNegotiations.length > 0) {
+            html += '<div style="background:rgba(100,100,100,0.12);border:1px solid rgba(100,100,100,0.3);border-radius:6px;padding:8px;margin-top:6px;">';
+            html += '<div style="font-size:0.85rem;color:#daa520;margin-bottom:4px;">📋 Active Negotiations</div>';
+            var day = 0; try { day = Engine.getDay(); } catch(e) {}
+            for (var ani = 0; ani < person._economicNegotiations.length; ani++) {
+                var an = person._economicNegotiations[ani];
+                if (an.resolved) continue;
+                var daysLeft = Math.max(0, an.expiresDay - day);
+                var statusText = an.agreed ? '✅ Agreed' : '⏳ Watching';
+                var typeIcon = an.type === 'threaten' ? '⚔️' : '🎁';
+                html += '<div style="font-size:0.78rem;color:#bbb;padding:2px 0;">' + typeIcon + ' ' + an.type + ': ' + an.leverageGood + ' → ' + an.demandAction.replace(/_/g, ' ') + ' — ' + statusText + ' (' + daysLeft + ' days left)</div>';
+            }
+            html += '</div>';
+        }
+
+        html += '</div>';
+        UI.openModal('💰 Negotiate with ' + nobleName, html);
+    });
+
+    UI.registerAction('executeNegotiation', function(_t, d) {
+        var personId = d.id;
+        var negType = d.val;
+        if (!personId || !negType) return;
+
+        var goodSel = document.getElementById(negType === 'threaten' ? 'neg_threat_good' : 'neg_entice_good');
+        var demandSel = document.getElementById(negType === 'threaten' ? 'neg_threat_demand' : 'neg_entice_demand');
+        if (!goodSel || !demandSel) return;
+
+        var leverageGoodId = goodSel.value;
+        var demandAction = demandSel.value;
+        var demandParam = demandSel.options[demandSel.selectedIndex].getAttribute('data-param') || null;
+
+        var person = null;
+        try { person = Engine.findPerson(personId); } catch(e) {}
+        if (!person) return;
+        var kId = null;
+        if (person.socialRank && typeof person.socialRank === 'object') {
+            for (var sk in person.socialRank) { if ((person.socialRank[sk] || 0) >= 4) { kId = sk; break; } }
+        }
+
+        var result = Engine.attemptEconomicNegotiation(personId, negType, leverageGoodId, kId, demandAction, demandParam);
+        if (!result || !result.success) {
+            UI.toast(result ? result.message : 'Negotiation failed.', 'error');
+            return;
+        }
+
+        UI.closeModal();
+        var toastType = result.agreed ? 'success' : 'warning';
+        UI.toast(result.message, toastType);
+        try { showPersonDetail(person); } catch(e) {}
+    });
 
 })(window.UI);
