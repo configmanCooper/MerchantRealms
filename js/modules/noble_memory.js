@@ -40,6 +40,41 @@
         medical_funding: 'Fund Plague Relief',
         promote_noble: 'Promote a Noble'
     };
+    var NOBLE_QUESTION_DEFS = [
+        { id: 'king_opinion', text: 'What do you think of our king?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleKingOpinionFact(target, kingdom, asker); } },
+        { id: 'court_state', text: 'How are things in court lately?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleCourtStateFact(target, kingdom, asker); } },
+        { id: 'noble_priority', text: 'What matters most to you?', tags: ['personal'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNoblePriorityFact(target, kingdom, asker); } },
+        { id: 'court_friend', text: 'Who do you get along with at court?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleCourtFriendFact(target, kingdom, asker); } },
+        { id: 'court_enemy', text: 'Is there a noble you can\'t stand?', tags: ['court', 'personal'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleCourtEnemyFact(target, kingdom, asker); } },
+        { id: 'noble_advice', text: 'What would you advise the king to do?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleAdviceFact(target, kingdom, asker); } },
+        { id: 'noble_direction', text: 'Do you think the kingdom is headed in the right direction?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleDirectionFact(target, kingdom, asker); } },
+        { id: 'noble_ambitions', text: 'What are your ambitions?', tags: ['personal'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleAmbitionsFact(target, kingdom, asker); } },
+        { id: 'noble_occupied', text: 'What have you been occupied with lately?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleOccupiedFact(target, kingdom, asker); } },
+        { id: 'noble_next_business', text: 'What business has your attention next?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleNextBusinessFact(target, kingdom, asker); } },
+        { id: 'court_allies', text: 'Who has your ear at court?', tags: ['court', 'political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleCourtAlliesFact(target, kingdom, asker); } },
+        { id: 'favor_hook', text: 'What matter would you like settled?', tags: ['personal'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleFavorHookFact(target, kingdom, asker); } },
+        { id: 'win_support', text: 'What would win your support?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleWinSupportFact(target, kingdom, asker); } },
+        { id: 'noble_watch', text: 'Which noble should I watch?', tags: ['dangerous'], trustRequired: 65, extract: function(target, kingdom, asker) { return _extractNobleWatchFact(target, kingdom, asker); } },
+        { id: 'court_forecast', text: 'What is the court likely to do next?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleCourtForecastFact(target, kingdom, asker); } },
+        { id: 'noble_investment', text: 'Are you looking for investment?', tags: ['personal'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleInvestmentFact(target, kingdom, asker); } },
+        { id: 'move_against_king', text: 'Would you ever move against the king?', tags: ['dangerous'], trustRequired: 65, extract: function(target, kingdom, asker) { return _extractNobleMoveAgainstKingFact(target, kingdom, asker); } },
+        { id: 'noble_secret', text: 'What\'s your biggest secret?', tags: ['dangerous'], trustRequired: 65, extract: function(target, kingdom, asker) { return _extractNobleSecretFact(target, kingdom, asker); } },
+        { id: 'noble_threat', text: 'Who do you think threatens the kingdom most?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleThreatFact(target, kingdom, asker); } },
+        { id: 'noble_as_king', text: 'If you were king, what would you change first?', tags: ['political'], trustRequired: 30, extract: function(target, kingdom, asker) { return _extractNobleAsKingFact(target, kingdom, asker); } }
+    ];
+    var NOBLE_QUESTION_ID_ALIASES = {
+        noble_king_opinion: 'king_opinion',
+        noble_court_state: 'court_state',
+        noble_matters: 'noble_priority',
+        noble_friends: 'court_friend',
+        noble_enemy: 'court_enemy',
+        noble_move_against_king: 'move_against_king',
+        noble_if_king: 'noble_as_king',
+        noble_court_allies: 'court_allies',
+        noble_favor_hook: 'favor_hook',
+        noble_win_support: 'win_support',
+        noble_court_forecast: 'court_forecast'
+    };
 
     // v9p33river442: local utility helpers with defensive guards.
     function _cfg(name, fallback) {
@@ -512,12 +547,19 @@
         if (!memory) return null;
         if (memory.category === 'coalition_formed' && memory.targetId) return memory.targetId;
         if (memory.category === 'promote_noble') return 'promote_noble';
+        if (memory.type === 'question_answer') {
+            if (memory.category === 'noble_advice' || memory.category === 'noble_next_business' || memory.category === 'win_support' || memory.category === 'court_forecast' || memory.category === 'noble_as_king') {
+                return CAUSE_LABELS[memory.detail] ? memory.detail : null;
+            }
+            if (memory.category === 'noble_investment' && memory.sentiment > 0) return 'build_infrastructure';
+        }
         return _declarationToCause(memory.category);
     }
     function _isSuspiciousMemory(memory) {
         var detail = memory && memory.detail ? String(memory.detail).toLowerCase() : '';
         if (!memory) return false;
-        if (memory.category === 'conspiracy_joined' || memory.category === 'conspiracy_formed') return true;
+        if (memory.category === 'conspiracy_joined' || memory.category === 'conspiracy_formed' || memory.category === 'move_against_king_suspicion') return true;
+        if (memory.type === 'question_answer' && memory.category === 'move_against_king' && detail === 'willing') return true;
         if (memory.category === 'feast_behavior' && (detail.indexOf('whisper') >= 0 || detail.indexOf('dark corner') >= 0 || detail.indexOf('criticisms') >= 0)) return true;
         return false;
     }
@@ -806,6 +848,646 @@
         }
     }
 
+    function _getNobleEffectiveLoyalty(noble) {
+        var personality = noble && noble.personality ? noble.personality : {};
+        if (!noble) return 50;
+        if (noble.kingLoyalty != null) return noble.kingLoyalty;
+        if (personality.loyalty != null) return personality.loyalty;
+        return 50;
+    }
+    function _normalizeNobleQuestionId(questionId) {
+        return NOBLE_QUESTION_ID_ALIASES[questionId] || questionId || '';
+    }
+    function _getNobleQuestionDef(questionId) {
+        var normalizedId = _normalizeNobleQuestionId(questionId);
+        var i;
+        for (i = 0; i < NOBLE_QUESTION_DEFS.length; i++) {
+            if (NOBLE_QUESTION_DEFS[i].id === normalizedId) return NOBLE_QUESTION_DEFS[i];
+        }
+        return null;
+    }
+    function _questionHasTag(questionDef, tag) {
+        return !!(questionDef && questionDef.tags && questionDef.tags.indexOf(tag) >= 0);
+    }
+    function _isKingdomAtWar(kingdom) {
+        if (!kingdom || !kingdom.atWar) return false;
+        if (Array.isArray(kingdom.atWar)) return kingdom.atWar.length > 0;
+        return !!kingdom.atWar.size;
+    }
+    function _getNobleQuestionTrait(noble) {
+        var personality = noble && noble.personality ? noble.personality : {};
+        var traitKeys = ['loyalty', 'ambition', 'warmth', 'intelligence', 'honesty', 'selfishness', 'frugality'];
+        var bestKey = 'loyalty';
+        var bestValue = personality.loyalty != null ? personality.loyalty : 50;
+        var i;
+        for (i = 0; i < traitKeys.length; i++) {
+            var key = traitKeys[i];
+            var value = personality[key] != null ? personality[key] : 50;
+            if (value > bestValue) {
+                bestKey = key;
+                bestValue = value;
+            }
+        }
+        return { key: bestKey, value: bestValue };
+    }
+    function _findNobleQuestionRelationshipTarget(noble, kingdomId, wantLowest, excludeKing) {
+        var rels = noble && noble._nobleRelationships ? noble._nobleRelationships : null;
+        var kingId = null;
+        var best = null;
+        var bestScore = wantLowest ? 101 : -101;
+        var otherId;
+        if (!rels) return null;
+        if (excludeKing && kingdomId && Engine.findKingdom) {
+            var kingdom = Engine.findKingdom(kingdomId);
+            if (kingdom && kingdom.king) kingId = kingdom.king;
+        }
+        for (otherId in rels) {
+            var score;
+            var other;
+            var otherKingdomId;
+            var otherRank;
+            if (otherId === noble.id) continue;
+            if (kingId && otherId === kingId) continue;
+            score = rels[otherId];
+            other = Engine.findPerson ? Engine.findPerson(otherId) : null;
+            if (!other || other.alive === false) continue;
+            otherKingdomId = _getNobleKingdomId(other);
+            if (kingdomId && otherKingdomId !== kingdomId) continue;
+            otherRank = _getNobleRank(other, otherKingdomId || kingdomId);
+            if (otherRank < 4 && other.occupation !== 'noble') continue;
+            if ((wantLowest && score < bestScore) || (!wantLowest && score > bestScore)) {
+                bestScore = score;
+                best = { person: other, score: score };
+            }
+        }
+        return best;
+    }
+    function _findWorstKingdomRelation(kingdom) {
+        var worstId = null;
+        var worstScore = 1;
+        var otherId;
+        if (!kingdom || !kingdom.relations) return null;
+        for (otherId in kingdom.relations) {
+            var score = kingdom.relations[otherId] || 0;
+            if (score < worstScore) {
+                worstScore = score;
+                worstId = otherId;
+            }
+        }
+        if (!worstId) return null;
+        return { kingdom: Engine.findKingdom ? Engine.findKingdom(worstId) : null, score: worstScore };
+    }
+    function _getNobleAgendaData(nobleId) {
+        try {
+            if (Engine.getNobleAgenda) return Engine.getNobleAgenda(nobleId) || null;
+        } catch (e) {}
+        return null;
+    }
+    function _getNobleAgendaActionId(agenda) {
+        return agenda && agenda.advice && agenda.advice[0] ? (agenda.advice[0].actionId || '') : '';
+    }
+    function _hasAnyQuestionFactAbout(noble, targetId) {
+        var memory = _initNobleMemory(noble);
+        var i;
+        if (!memory || !targetId) return false;
+        for (i = 0; i < memory.nobleActions.length; i++) {
+            if (memory.nobleActions[i].type === 'question_answer' && memory.nobleActions[i].actorId === targetId) return true;
+        }
+        return false;
+    }
+    function _hasQuestionFact(noble, questionId, targetId) {
+        var memory = _initNobleMemory(noble);
+        var normalizedId = _normalizeNobleQuestionId(questionId);
+        var i;
+        if (!memory || !targetId) return false;
+        for (i = 0; i < memory.nobleActions.length; i++) {
+            if (memory.nobleActions[i].type === 'question_answer' && memory.nobleActions[i].category === normalizedId && memory.nobleActions[i].actorId === targetId) return true;
+        }
+        return false;
+    }
+    function _pickWeightedEntry(entries, rng) {
+        var total = 0;
+        var i;
+        var roll;
+        if (!entries || !entries.length) return null;
+        for (i = 0; i < entries.length; i++) total += Math.max(0, entries[i].weight || 0);
+        if (!rng || !rng.random || total <= 0) return entries[0].value;
+        roll = rng.random() * total;
+        for (i = 0; i < entries.length; i++) {
+            roll -= Math.max(0, entries[i].weight || 0);
+            if (roll <= 0) return entries[i].value;
+        }
+        return entries[entries.length - 1].value;
+    }
+    function _getLatestRecentMemoryEntry(noble, maxAgeDays) {
+        var memory = _initNobleMemory(noble);
+        var best = null;
+        var i;
+        var age = maxAgeDays == null ? 30 : maxAgeDays;
+        if (!memory) return null;
+        for (i = 0; i < memory.playerActions.length; i++) {
+            if ((_getDay() - (memory.playerActions[i].day || 0)) > age) continue;
+            if (!best || (memory.playerActions[i].day || 0) > (best.day || 0)) best = memory.playerActions[i];
+        }
+        for (i = 0; i < memory.nobleActions.length; i++) {
+            if ((_getDay() - (memory.nobleActions[i].day || 0)) > age) continue;
+            if (!best || (memory.nobleActions[i].day || 0) > (best.day || 0)) best = memory.nobleActions[i];
+        }
+        return best;
+    }
+    function _memoryToOccupation(memory) {
+        var cause;
+        if (!memory) return null;
+        if (memory.category === 'coalition_formed') return { detail: 'court_faction_building', sentiment: 0 };
+        if (memory.category === 'conspiracy_joined' || memory.category === 'conspiracy_formed' || memory.category === 'move_against_king_suspicion') return { detail: 'plot_watching', sentiment: -1 };
+        if (memory.type === 'question_asked') return { detail: 'sounding_out_court', sentiment: 0 };
+        if (memory.category === 'feast_behavior') return { detail: 'court_maneuvering', sentiment: 0 };
+        cause = _memoryToCause(memory);
+        if (cause === 'declare_war' || cause === 'war_offensive' || cause === 'build_walls') return { detail: 'war_preparations', sentiment: 0 };
+        if (cause === 'make_peace' || cause === 'form_alliance') return { detail: 'diplomatic_work', sentiment: 0 };
+        if (cause === 'build_infrastructure' || cause === 'medical_funding') return { detail: 'public_works', sentiment: 1 };
+        if (cause === 'lower_taxes' || cause === 'raise_taxes' || cause === 'improve_happiness') return { detail: 'policy_lobbying', sentiment: 0 };
+        return null;
+    }
+    function _getNobleKingOpinionFact(noble, kingdom) {
+        var loyalty = _getNobleEffectiveLoyalty(noble);
+        if (loyalty >= 75) return { detail: 'approves', sentiment: 1, targetId: kingdom && kingdom.king ? kingdom.king : null };
+        if (loyalty >= 50) return { detail: 'cautious', sentiment: 0, targetId: kingdom && kingdom.king ? kingdom.king : null };
+        return { detail: 'disapproves', sentiment: -1, targetId: kingdom && kingdom.king ? kingdom.king : null };
+    }
+    function _extractNobleKingOpinionFact(target, kingdom) {
+        var opinion = _getNobleKingOpinionFact(target, kingdom);
+        return { category: 'king_opinion', detail: opinion.detail, sentiment: opinion.sentiment, targetId: opinion.targetId || null };
+    }
+    function _extractNobleCourtStateFact(target, kingdom) {
+        var war = _isKingdomAtWar(kingdom);
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        var treasury = kingdom && kingdom.gold ? kingdom.gold : 0;
+        if (war && happiness < 40) return { category: 'court_state', detail: 'war_strained', sentiment: -1 };
+        if (war) return { category: 'court_state', detail: 'war_focused', sentiment: 0 };
+        if (treasury < 2000) return { category: 'court_state', detail: 'treasury_anxious', sentiment: -1 };
+        if (happiness >= 65) return { category: 'court_state', detail: 'calm', sentiment: 1 };
+        return { category: 'court_state', detail: 'watchful', sentiment: 0 };
+    }
+    function _extractNoblePriorityFact(target) {
+        var trait = _getNobleQuestionTrait(target);
+        return { category: 'noble_priority', detail: trait.key, sentiment: 0 };
+    }
+    function _extractNobleCourtFriendFact(target, kingdom) {
+        var kingdomId = kingdom ? kingdom.id : _getNobleKingdomId(target);
+        var best = _findNobleQuestionRelationshipTarget(target, kingdomId, false, true);
+        if (!best || !best.person) return { category: 'court_friend', detail: 'guarded', sentiment: 0, targetId: null };
+        return { category: 'court_friend', detail: best.score >= 50 ? 'trusted_friend' : 'easy_company', sentiment: best.score >= 50 ? 1 : 0, targetId: best.person.id };
+    }
+    function _extractNobleCourtEnemyFact(target, kingdom) {
+        var kingdomId = kingdom ? kingdom.id : _getNobleKingdomId(target);
+        var worst = _findNobleQuestionRelationshipTarget(target, kingdomId, true, true);
+        if (!worst || !worst.person) return { category: 'court_enemy', detail: 'no_single_rival', sentiment: 0, targetId: null };
+        return { category: 'court_enemy', detail: worst.score <= -50 ? 'bitter_rival' : 'rival', sentiment: -1, targetId: worst.person.id };
+    }
+    function _extractNobleAdviceFact(target) {
+        var agenda = _getNobleAgendaData(target && target.id);
+        var actionId = _getNobleAgendaActionId(agenda);
+        if (actionId) return { category: 'noble_advice', detail: actionId, sentiment: 0, cause: actionId };
+        return { category: 'noble_advice', detail: 'steady_governance', sentiment: 0, cause: '' };
+    }
+    function _extractNobleDirectionFact(target, kingdom) {
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        if (loyalty >= 65 && happiness >= 55) return { category: 'noble_direction', detail: 'right_direction', sentiment: 1 };
+        if (loyalty < 35 && happiness < 45) return { category: 'noble_direction', detail: 'wrong_direction', sentiment: -1 };
+        if (happiness < 40) return { category: 'noble_direction', detail: 'people_strained', sentiment: -1 };
+        if (loyalty < 40) return { category: 'noble_direction', detail: 'needs_better_guidance', sentiment: -1 };
+        return { category: 'noble_direction', detail: 'cautious_stability', sentiment: 0 };
+    }
+    function _extractNobleAmbitionsFact(target, kingdom) {
+        var ambition = target && target.personality && target.personality.ambition != null ? target.personality.ambition : 50;
+        var rank = _getNobleRank(target, kingdom ? kingdom.id : _getNobleKingdomId(target));
+        if (ambition >= 80 && rank < 7) return { category: 'noble_ambitions', detail: 'seeking_promotion', sentiment: 1 };
+        if (ambition >= 60) return { category: 'noble_ambitions', detail: 'seeking_influence', sentiment: 1 };
+        if (rank >= 6) return { category: 'noble_ambitions', detail: 'guarding_position', sentiment: 0 };
+        return { category: 'noble_ambitions', detail: 'measured_service', sentiment: 0 };
+    }
+    function _extractNobleOccupiedFact(target, kingdom) {
+        var latest = _getLatestRecentMemoryEntry(target, 30);
+        var fromMemory = _memoryToOccupation(latest);
+        var personality = target && target.personality ? target.personality : {};
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        if (fromMemory) return { category: 'noble_occupied', detail: fromMemory.detail, sentiment: fromMemory.sentiment };
+        if (_isKingdomAtWar(kingdom)) {
+            if ((personality.ambition || 50) > 65) return { category: 'noble_occupied', detail: 'war_preparations', sentiment: 0 };
+            return { category: 'noble_occupied', detail: 'war_logistics', sentiment: 0 };
+        }
+        if (kingdom && (kingdom.happiness != null ? kingdom.happiness : 50) < 35) return { category: 'noble_occupied', detail: 'calming_unrest', sentiment: 0 };
+        if (loyalty > 70) return { category: 'noble_occupied', detail: 'supporting_crown', sentiment: 1 };
+        if ((personality.ambition || 50) > 65) return { category: 'noble_occupied', detail: 'expanding_influence', sentiment: 0 };
+        if ((personality.warmth || 50) > 60) return { category: 'noble_occupied', detail: 'settling_disputes', sentiment: 1 };
+        if ((personality.frugality || 50) > 55) return { category: 'noble_occupied', detail: 'reviewing_accounts', sentiment: 0 };
+        return { category: 'noble_occupied', detail: 'court_business', sentiment: 0 };
+    }
+    function _extractNobleNextBusinessFact(target, kingdom) {
+        var agenda = _getNobleAgendaData(target && target.id);
+        var actionId = _getNobleAgendaActionId(agenda);
+        var personality = target && target.personality ? target.personality : {};
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        if (actionId) return { category: 'noble_next_business', detail: actionId, sentiment: 0, cause: actionId };
+        if ((personality.ambition || 50) > 65) return { category: 'noble_next_business', detail: 'advancement', sentiment: 0 };
+        if (loyalty > 60) return { category: 'noble_next_business', detail: 'support_crown', sentiment: 1 };
+        if (kingdom && (kingdom.happiness || 50) < 40) return { category: 'noble_next_business', detail: 'restore_order', sentiment: 0 };
+        return { category: 'noble_next_business', detail: 'court_matters', sentiment: 0 };
+    }
+    function _extractNobleCourtAlliesFact(target, kingdom) {
+        var kingdomId = kingdom ? kingdom.id : _getNobleKingdomId(target);
+        var ally = _findNobleQuestionRelationshipTarget(target, kingdomId, false, true);
+        if (ally && ally.person) return { category: 'court_allies', detail: 'ally_network', sentiment: 1, targetId: ally.person.id };
+        return { category: 'court_allies', detail: 'independent', sentiment: 0, targetId: null };
+    }
+    function _extractNobleFavorHookFact(target, kingdom) {
+        var personality = target && target.personality ? target.personality : {};
+        if ((personality.selfishness || 50) > 55) return { category: 'favor_hook', detail: 'trade_dispute', sentiment: 0 };
+        if ((personality.ambition || 50) > 60) return { category: 'favor_hook', detail: 'court_reputation', sentiment: 0 };
+        if ((personality.warmth || 50) > 55) return { category: 'favor_hook', detail: 'tenant_relief', sentiment: 1 };
+        if (_isKingdomAtWar(kingdom)) return { category: 'favor_hook', detail: 'war_supplies', sentiment: 0 };
+        if (target && (target._financiallyStressed || (target.gold || 0) < 3000)) return { category: 'favor_hook', detail: 'needs_investor', sentiment: 1 };
+        return { category: 'favor_hook', detail: 'public_works', sentiment: 1 };
+    }
+    function _extractNobleWinSupportFact(target) {
+        var agenda = _getNobleAgendaData(target && target.id);
+        var actionId = _getNobleAgendaActionId(agenda);
+        var personality = target && target.personality ? target.personality : {};
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        if (actionId) return { category: 'win_support', detail: actionId, sentiment: 1, cause: actionId };
+        if (loyalty < 35) return { category: 'win_support', detail: 'regime_change', sentiment: -1 };
+        if ((personality.ambition || 50) > 70) return { category: 'win_support', detail: 'personal_advancement', sentiment: 0 };
+        return { category: 'win_support', detail: 'kingdom_service', sentiment: 1 };
+    }
+    function _extractNobleWatchFact(target, kingdom) {
+        var kingdomId = kingdom ? kingdom.id : _getNobleKingdomId(target);
+        var worst = _findNobleQuestionRelationshipTarget(target, kingdomId, true, true);
+        if (worst && worst.person) return { category: 'noble_watch', detail: 'watch_rival', sentiment: -1, targetId: worst.person.id };
+        return { category: 'noble_watch', detail: 'no_clear_watch', sentiment: 0, targetId: null };
+    }
+    function _extractNobleCourtForecastFact(target, kingdom) {
+        var kingPersonality = kingdom && kingdom.kingPersonality ? kingdom.kingPersonality : {};
+        var treasury = kingdom ? (kingdom.gold || 0) : 0;
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        if (_isKingdomAtWar(kingdom)) return { category: 'court_forecast', detail: 'war_offensive', sentiment: -1, cause: 'war_offensive' };
+        if (treasury < 2000) return { category: 'court_forecast', detail: 'raise_taxes', sentiment: -1, cause: 'raise_taxes' };
+        if (happiness < 35) return { category: 'court_forecast', detail: 'improve_happiness', sentiment: 1, cause: 'improve_happiness' };
+        if (kingPersonality.ambition === 'ambitious') return { category: 'court_forecast', detail: 'declare_war', sentiment: -1, cause: 'declare_war' };
+        if (kingPersonality.temperament === 'kind' || kingPersonality.generosity === 'generous') return { category: 'court_forecast', detail: 'improve_happiness', sentiment: 1, cause: 'improve_happiness' };
+        return { category: 'court_forecast', detail: 'steady_course', sentiment: 0, cause: '' };
+    }
+    function _isNobleInvestmentInterested(noble) {
+        var personality = noble && noble.personality ? noble.personality : {};
+        if (!noble) return false;
+        if (noble._financiallyStressed || (noble.gold || 0) < 3000) return true;
+        if ((personality.ambition || 50) > 60) return true;
+        if (noble.buildings && noble.buildings.length > 0) return true;
+        return false;
+    }
+    function _extractNobleInvestmentFact(target) {
+        var personality = target && target.personality ? target.personality : {};
+        if (target && (target._financiallyStressed || (target.gold || 0) < 3000)) return { category: 'noble_investment', detail: 'needs_capital', sentiment: 1 };
+        if ((personality.ambition || 50) > 60) return { category: 'noble_investment', detail: 'seeks_expansion', sentiment: 1 };
+        if (target && target.buildings && target.buildings.length > 0) return { category: 'noble_investment', detail: 'estate_improvements', sentiment: 1 };
+        return { category: 'noble_investment', detail: 'not_interested', sentiment: 0 };
+    }
+    function _extractNobleMoveAgainstKingFact(target, kingdom) {
+        var personality = target && target.personality ? target.personality : {};
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        var ambition = personality.ambition != null ? personality.ambition : 50;
+        if (loyalty < 30 && ambition > 70) return { category: 'move_against_king', detail: 'willing', sentiment: -1, targetId: kingdom && kingdom.king ? kingdom.king : null };
+        if (loyalty >= 65) return { category: 'move_against_king', detail: 'loyal', sentiment: 1, targetId: kingdom && kingdom.king ? kingdom.king : null };
+        return { category: 'move_against_king', detail: 'pressure_only', sentiment: 0, targetId: kingdom && kingdom.king ? kingdom.king : null };
+    }
+    function _extractNobleSecretFact(target) {
+        var agenda = _getNobleAgendaData(target && target.id);
+        var personality = target && target.personality ? target.personality : {};
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        if ((personality.honesty || 50) < 35 && (personality.ambition || 50) > 60) return { category: 'noble_secret', detail: 'hidden_pacts', sentiment: -1 };
+        if (loyalty < 35) return { category: 'noble_secret', detail: 'crown_doubts', sentiment: -1 };
+        if ((personality.selfishness || 50) > 65) return { category: 'noble_secret', detail: 'house_first', sentiment: -1 };
+        if (agenda && agenda.goals && agenda.goals.length > 0) return { category: 'noble_secret', detail: 'long_game', sentiment: 0 };
+        return { category: 'noble_secret', detail: 'keen_observer', sentiment: 0 };
+    }
+    function _extractNobleThreatFact(target, kingdom) {
+        var worst = _findWorstKingdomRelation(kingdom);
+        var loyalty = _getNobleEffectiveLoyalty(target);
+        if (worst && worst.kingdom && worst.score < -30) return { category: 'noble_threat', detail: 'foreign_threat', sentiment: -1, targetId: worst.kingdom.id };
+        if ((kingdom && (kingdom.happiness != null ? kingdom.happiness : 50) < 40) || loyalty < 35) return { category: 'noble_threat', detail: 'internal_division', sentiment: -1 };
+        return { category: 'noble_threat', detail: 'complacency', sentiment: 0 };
+    }
+    function _extractNobleAsKingFact(target) {
+        var agenda = _getNobleAgendaData(target && target.id);
+        var actionId = _getNobleAgendaActionId(agenda);
+        if (actionId) return { category: 'noble_as_king', detail: actionId, sentiment: 0, cause: actionId };
+        return { category: 'noble_as_king', detail: 'clearer_course', sentiment: 0, cause: '' };
+    }
+    function _getQuestionTruthfulness(asker, target, questionDef, trustScore) {
+        var personality = target && target.personality ? target.personality : {};
+        var honesty = personality.honesty != null ? personality.honesty : 50;
+        var intelligence = personality.intelligence != null ? personality.intelligence : 50;
+        var targetRel = _getNobleRelationshipScore(target, asker.id);
+        var mutualTrust = Math.min(trustScore, targetRel);
+        if (honesty > 65) return { truthfulness: 'honest', confidence: 0.8 };
+        if (intelligence > 70 && honesty >= 45) return { truthfulness: 'honest', confidence: 0.8 };
+        if (honesty < 35 && mutualTrust < 40 && intelligence <= 70) return { truthfulness: 'evasive', confidence: 0.4 };
+        if (_questionHasTag(questionDef, 'dangerous') && honesty < 50 && mutualTrust < (questionDef.trustRequired + 10) && intelligence <= 70) return { truthfulness: 'evasive', confidence: 0.4 };
+        if (intelligence > 70) return { truthfulness: 'partial', confidence: 0.7 };
+        return { truthfulness: 'partial', confidence: 0.6 };
+    }
+    function _finalizeQuestionFact(asker, target, questionDef, fact, trustScore) {
+        var truth = _getQuestionTruthfulness(asker, target, questionDef, trustScore);
+        var finalFact = {
+            category: fact && fact.category ? fact.category : questionDef.id,
+            detail: fact && fact.detail ? fact.detail : 'unknown',
+            sentiment: fact && fact.sentiment != null ? fact.sentiment : 0,
+            targetId: fact && fact.targetId != null ? fact.targetId : null,
+            kingdomId: fact && fact.kingdomId ? fact.kingdomId : (_getNobleKingdomId(target) || ''),
+            cause: fact && fact.cause ? fact.cause : '',
+            confidence: truth.confidence,
+            truthfulness: truth.truthfulness
+        };
+        if (truth.truthfulness === 'evasive') {
+            if (_questionHasTag(questionDef, 'dangerous')) {
+                finalFact.detail = 'evasive';
+                finalFact.sentiment = 0;
+                finalFact.targetId = null;
+                finalFact.cause = '';
+            } else if (finalFact.targetId && _getNobleRelationshipScore(target, asker.id) < 30) {
+                finalFact.targetId = null;
+            }
+        }
+        if (truth.truthfulness === 'partial' && _questionHasTag(questionDef, 'dangerous') && finalFact.targetId) finalFact.targetId = null;
+        return finalFact;
+    }
+    function _pickNobleQuestionTarget(asker, nobles, kingdom, rng) {
+        var entries = [];
+        var personality = asker && asker.personality ? asker.personality : {};
+        var myRank = _getNobleRank(asker, kingdom ? kingdom.id : _getNobleKingdomId(asker));
+        var myLoyalty = _getNobleEffectiveLoyalty(asker);
+        var i;
+        for (i = 0; i < nobles.length; i++) {
+            var target = nobles[i];
+            var rel;
+            var targetRank;
+            var targetLoyalty;
+            var weight = 1;
+            if (!target || !target.alive || target.id === asker.id) continue;
+            if (kingdom && kingdom.king === target.id) continue;
+            rel = _getNobleRelationshipScore(asker, target.id);
+            targetRank = _getNobleRank(target, kingdom ? kingdom.id : _getNobleKingdomId(target));
+            targetLoyalty = _getNobleEffectiveLoyalty(target);
+            if (!_hasAnyQuestionFactAbout(asker, target.id)) weight += 1.5;
+            if (rel >= 45 && rel <= 55) weight += 1.5;
+            if ((personality.warmth || 50) > 60 && rel > 55) weight += 2;
+            if ((personality.ambition || 50) > 70 && targetRank > myRank) weight += 2.5;
+            if ((personality.intelligence || 50) > 70 && rel < 45) weight += 1.5;
+            if (myLoyalty > 70 && targetLoyalty < 50) weight += 2;
+            if ((personality.ambition || 50) > 65 && rel < 35) weight += 0.75;
+            if (!target._nobleRelationships || target._nobleRelationships[asker.id] == null) weight += 0.5;
+            entries.push({ value: target, weight: weight });
+        }
+        return _pickWeightedEntry(entries, rng);
+    }
+    function _pickNobleQuestionDef(asker, target, kingdom, rng) {
+        var entries = [];
+        var personality = asker && asker.personality ? asker.personality : {};
+        var trustScore = _getNobleRelationshipScore(asker, target.id);
+        var askerLoyalty = _getNobleEffectiveLoyalty(asker);
+        var targetLoyalty = _getNobleEffectiveLoyalty(target);
+        var askerRank = _getNobleRank(asker, kingdom ? kingdom.id : _getNobleKingdomId(asker));
+        var targetRank = _getNobleRank(target, kingdom ? kingdom.id : _getNobleKingdomId(target));
+        var askerAgenda = _getNobleAgendaData(asker && asker.id);
+        var askerCause = _getNobleAgendaActionId(askerAgenda);
+        var cooldownDays = _cfg('NOBLE_MEMORY_QUESTION_COOLDOWN_DAYS', 14);
+        var i;
+        for (i = 0; i < NOBLE_QUESTION_DEFS.length; i++) {
+            var def = NOBLE_QUESTION_DEFS[i];
+            var weight = 1;
+            if (trustScore < def.trustRequired) continue;
+            if (_hasRecentMemory(asker, 'question_asked_' + def.id, target.id, cooldownDays)) continue;
+            if (!_hasQuestionFact(asker, def.id, target.id)) weight += 1.5;
+            if ((personality.ambition || 50) > 70) {
+                if (_questionHasTag(def, 'political')) weight += 2;
+                if (_questionHasTag(def, 'dangerous')) weight += 1.5;
+            }
+            if ((personality.intelligence || 50) > 70) {
+                if (_questionHasTag(def, 'dangerous')) weight += 2;
+                if (_questionHasTag(def, 'political')) weight += 1.5;
+                if (def.id === 'court_allies' || def.id === 'court_enemy' || def.id === 'noble_watch') weight += 1;
+            }
+            if (askerLoyalty > 70) {
+                if (def.id === 'king_opinion') weight += 4;
+                if (def.id === 'move_against_king') weight += 2.5;
+                if (def.id === 'noble_threat') weight += 1;
+            }
+            if ((personality.warmth || 50) > 60) {
+                if (_questionHasTag(def, 'personal')) weight += 2;
+                if (_questionHasTag(def, 'court')) weight += 1.5;
+            }
+            if (askerCause && (def.id === 'noble_advice' || def.id === 'noble_next_business' || def.id === 'win_support' || def.id === 'noble_as_king')) weight += 1;
+            if (targetRank > askerRank && ((personality.ambition || 50) > 70 || (personality.intelligence || 50) > 70) && (def.id === 'noble_ambitions' || def.id === 'noble_as_king' || def.id === 'noble_advice')) weight += 1.5;
+            if (targetLoyalty < 45 && askerLoyalty > 70 && (def.id === 'king_opinion' || def.id === 'move_against_king' || def.id === 'noble_watch')) weight += 2;
+            if (trustScore < 45 && (_questionHasTag(def, 'dangerous') || _questionHasTag(def, 'personal'))) weight -= 1;
+            if (weight > 0) entries.push({ value: def, weight: weight });
+        }
+        return _pickWeightedEntry(entries, rng);
+    }
+    function _askNobleQuestionPair(asker, target, questionId, kingdom, rng, ignoreCooldown) {
+        var def = _getNobleQuestionDef(questionId);
+        var trustScore;
+        var fact;
+        if (!asker || !target || !kingdom) return { success: false, message: 'Questioning data is incomplete.' };
+        if (target.id === asker.id) return { success: false, message: 'A noble cannot question themselves.' };
+        if (kingdom.king === target.id) return { success: false, message: 'This question set is for non-royal nobles.' };
+        if (_getNobleKingdomId(target) !== kingdom.id) return { success: false, message: 'Both nobles must belong to the same kingdom.' };
+        if (!def) return { success: false, message: 'Unknown noble question.' };
+        trustScore = _getNobleRelationshipScore(asker, target.id);
+        if (trustScore < def.trustRequired) return { success: false, message: 'Trust is too low for that question.' };
+        if (!ignoreCooldown && _hasRecentMemory(asker, 'question_asked_' + def.id, target.id, _cfg('NOBLE_MEMORY_QUESTION_COOLDOWN_DAYS', 14))) return { success: false, message: 'That question was asked too recently.' };
+        fact = def.extract(target, kingdom, asker);
+        if (!fact) return { success: false, message: 'No answer was gathered.' };
+        fact = _finalizeQuestionFact(asker, target, def, fact, trustScore);
+        _addNobleMemory(asker, {
+            type: 'question_asked',
+            source: 'direct',
+            category: 'question_asked_' + def.id,
+            detail: 'Asked ' + _getNobleName(target) + ': ' + def.text,
+            actorId: target.id,
+            targetId: null,
+            day: _getDay(),
+            sentiment: 0,
+            kingdomId: kingdom.id
+        });
+        return {
+            success: true,
+            targetId: target.id,
+            target: target,
+            questionId: def.id,
+            questionText: def.text,
+            fact: fact,
+            relationship: trustScore,
+            memory: {
+                type: 'question_answer',
+                source: 'direct',
+                category: def.id,
+                detail: fact.detail,
+                actorId: target.id,
+                targetId: fact.targetId || null,
+                day: _getDay(),
+                sentiment: fact.sentiment,
+                kingdomId: fact.kingdomId || kingdom.id || ''
+            }
+        };
+    }
+    function _nobleAskQuestion(asker, nobles, kingdom, rng) {
+        var target = _pickNobleQuestionTarget(asker, nobles, kingdom, rng);
+        var def;
+        var result;
+        if (!target) return null;
+        def = _pickNobleQuestionDef(asker, target, kingdom, rng);
+        if (!def) return null;
+        result = _askNobleQuestionPair(asker, target, def.id, kingdom, rng, false);
+        return result && result.success ? result : null;
+    }
+    function _upsertNobleQuestionFact(noble, questionId, targetId, fact, day) {
+        var memory = _initNobleMemory(noble);
+        var normalizedId = _normalizeNobleQuestionId(questionId);
+        var i;
+        if (!memory) return null;
+        for (i = 0; i < memory.nobleActions.length; i++) {
+            var m = memory.nobleActions[i];
+            if (m.type === 'question_answer' && m.category === normalizedId && m.actorId === targetId) {
+                m.day = day;
+                m.detail = fact.detail;
+                m.sentiment = fact.sentiment;
+                m.targetId = fact.targetId || null;
+                m.kingdomId = fact.kingdomId || m.kingdomId || '';
+                return m;
+            }
+        }
+        return _addNobleMemory(noble, {
+            type: 'question_answer',
+            source: 'direct',
+            category: normalizedId,
+            detail: fact.detail,
+            actorId: targetId,
+            targetId: fact.targetId || null,
+            day: day,
+            sentiment: fact.sentiment,
+            kingdomId: fact.kingdomId || ''
+        });
+    }
+    function _reactToLearnedFact(noble, questionResult, kingdom, rng) {
+        var fact = questionResult ? questionResult.fact : null;
+        var target = questionResult && questionResult.target ? questionResult.target : (questionResult && questionResult.targetId && Engine.findPerson ? Engine.findPerson(questionResult.targetId) : null);
+        var learnedCause;
+        var myOpinion;
+        var myAgenda;
+        var myCause;
+        var sharedRel;
+        var myRank;
+        var targetRank;
+        var personality = noble && noble.personality ? noble.personality : {};
+        var loyalty = _getNobleEffectiveLoyalty(noble);
+        if (!noble || !fact || !target || fact.truthfulness === 'evasive') return;
+        learnedCause = fact.cause || (CAUSE_LABELS[fact.detail] ? fact.detail : '');
+        switch (questionResult.questionId) {
+            case 'king_opinion':
+                myOpinion = _getNobleKingOpinionFact(noble, kingdom).detail;
+                if (myOpinion === 'disapproves' && fact.detail === 'disapproves') _modifyNobleRelationship(noble, target.id, 3);
+                else if ((myOpinion === 'approves' && fact.detail === 'disapproves') || (myOpinion === 'disapproves' && fact.detail === 'approves')) _modifyNobleRelationship(noble, target.id, -2);
+                break;
+            case 'noble_advice':
+            case 'noble_next_business':
+            case 'win_support':
+            case 'noble_as_king':
+                myAgenda = _getNobleAgendaData(noble.id);
+                myCause = _getNobleAgendaActionId(myAgenda);
+                if (myCause && learnedCause && myCause === learnedCause) {
+                    _modifyNobleRelationship(noble, target.id, 2);
+                    if (kingdom && !_hasActiveCoalition(kingdom, learnedCause, null) && rng && rng.chance(_chance(0.06 + ((personality.ambition || 50) > 70 ? 0.03 : 0)))) {
+                        _createMemoryCoalition(kingdom, noble, learnedCause, null, 'found common cause through quiet questioning');
+                    }
+                }
+                break;
+            case 'court_friend':
+            case 'court_allies':
+                if (fact.targetId) {
+                    sharedRel = _getNobleRelationshipScore(noble, fact.targetId);
+                    if (sharedRel > 60) _modifyNobleRelationship(noble, target.id, 1);
+                    else if (sharedRel < 30) _modifyNobleRelationship(noble, target.id, -1);
+                }
+                break;
+            case 'court_enemy':
+            case 'noble_watch':
+                if (fact.targetId) {
+                    sharedRel = _getNobleRelationshipScore(noble, fact.targetId);
+                    if (sharedRel < 35) _modifyNobleRelationship(noble, target.id, 1);
+                    else if (sharedRel > 60) _modifyNobleRelationship(noble, target.id, -1);
+                }
+                break;
+            case 'move_against_king':
+                if (fact.detail === 'willing') {
+                    if (loyalty > 70) {
+                        _modifyNobleRelationship(noble, target.id, -4);
+                        _addNobleMemory(noble, {
+                            type: 'observed',
+                            source: 'questioning',
+                            category: 'move_against_king_suspicion',
+                            detail: _getNobleName(target) + ' hinted at moving against the crown.',
+                            actorId: target.id,
+                            targetId: kingdom && kingdom.king ? kingdom.king : null,
+                            day: _getDay(),
+                            sentiment: -1,
+                            kingdomId: kingdom ? kingdom.id : ''
+                        });
+                        if (kingdom) {
+                            Engine.logEvent('🕵️ ' + _getNobleName(noble) + ' grows suspicious of ' + _getNobleName(target) + ' after a quiet political question.', {
+                                type: 'noble_question_suspicion',
+                                kingdomId: kingdom.id,
+                                actorId: noble.id,
+                                targetId: target.id,
+                                questionId: questionResult.questionId
+                            }, _getLogCategory(kingdom.id));
+                        }
+                    } else if (loyalty < 35) {
+                        _modifyNobleRelationship(noble, target.id, 5);
+                        _addNobleMemory(noble, {
+                            type: 'question_answer',
+                            source: 'direct',
+                            category: 'conspiracy_seed',
+                            detail: 'Found shared disloyalty with ' + _getNobleName(target) + '.',
+                            actorId: target.id,
+                            targetId: kingdom && kingdom.king ? kingdom.king : null,
+                            day: _getDay(),
+                            sentiment: 1,
+                            kingdomId: kingdom ? kingdom.id : ''
+                        });
+                    }
+                }
+                break;
+            case 'noble_ambitions':
+                myRank = _getNobleRank(noble, kingdom ? kingdom.id : _getNobleKingdomId(noble));
+                targetRank = _getNobleRank(target, kingdom ? kingdom.id : _getNobleKingdomId(target));
+                if (fact.detail === 'seeking_promotion' || fact.detail === 'seeking_influence') {
+                    if (targetRank >= myRank && (personality.ambition || 50) > 55) _modifyNobleRelationship(noble, target.id, -3);
+                    else if (targetRank < myRank || (personality.warmth || 50) > 60) _modifyNobleRelationship(noble, target.id, 1);
+                }
+                break;
+            case 'noble_investment':
+                if (fact.sentiment > 0 && _isNobleInvestmentInterested(noble)) {
+                    _modifyNobleRelationship(noble, target.id, 1);
+                    if (kingdom && !_hasActiveCoalition(kingdom, 'build_infrastructure', null) && rng && rng.chance(_chance(0.08 + ((personality.frugality || 50) > 60 ? 0.02 : 0)))) {
+                        _createMemoryCoalition(kingdom, noble, 'build_infrastructure', null, 'found a practical ally through investment talk');
+                    }
+                }
+                break;
+        }
+    }
+
     // v9p33river442: noble memory AI uses remembered declarations and observations.
     function tickNobleMemoryAI() {
         var rng;
@@ -839,6 +1521,7 @@
                 var sourceDecl;
                 var topCause = null;
                 var topCount = 0;
+                var questionResult;
                 var mi;
                 if (!noble || !noble.alive) continue;
                 _initNobleMemory(noble);
@@ -847,6 +1530,14 @@
                 playerMemories = _getRecentPlayerMemories(noble, actionableDays);
                 nobleMemories = _getRecentNobleMemories(noble, actionableDays);
                 latestDecl = _getLatestDeclarationMemory(noble);
+
+                if (rng.chance(_chance(_cfg('NOBLE_MEMORY_AI_QUESTION_CHANCE', 0.15)))) {
+                    questionResult = _nobleAskQuestion(noble, nobles, k, rng);
+                    if (questionResult && questionResult.fact) {
+                        questionResult.memory = _upsertNobleQuestionFact(noble, questionResult.questionId, questionResult.targetId, questionResult.fact, _getDay());
+                        _reactToLearnedFact(noble, questionResult, k, rng);
+                    }
+                }
 
                 if (latestDecl) {
                     cause = _declarationToCause(latestDecl.category);
@@ -1049,6 +1740,26 @@
             rivals: Object.keys(rivals)
         };
     }
+
+    Engine.nobleAskNobleQuestion = function(askerId, targetId, questionId) {
+        var asker = Engine.findPerson ? Engine.findPerson(askerId) : null;
+        var target = Engine.findPerson ? Engine.findPerson(targetId) : null;
+        var kingdomId;
+        var kingdom;
+        var rng = _getRng();
+        var result;
+        if (!asker || !asker.alive) return { success: false, message: 'That asking noble is unavailable.' };
+        if (!target || !target.alive) return { success: false, message: 'That target noble is unavailable.' };
+        kingdomId = _getNobleKingdomId(asker);
+        if (!kingdomId || _getNobleKingdomId(target) !== kingdomId) return { success: false, message: 'Both nobles must belong to the same kingdom.' };
+        kingdom = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
+        if (!kingdom) return { success: false, message: 'That kingdom could not be found.' };
+        result = _askNobleQuestionPair(asker, target, questionId, kingdom, rng, false);
+        if (!result || !result.success) return result || { success: false, message: 'No question was asked.' };
+        result.memory = _upsertNobleQuestionFact(asker, result.questionId, result.targetId, result.fact, _getDay());
+        _reactToLearnedFact(asker, result, kingdom, rng);
+        return result;
+    };
 
     // v9p33river442: expose noble memory API on Engine.
     Engine._initNobleMemory = _initNobleMemory;
