@@ -9089,7 +9089,8 @@
             return { success: false, message: 'Cannot host a feast while court is in session.' };
         }
         if (kingdom._pendingCourt) return { success: false, message: 'Cannot host a feast while court is being planned.' };
-        var daysSinceLast = Engine.getDay() - (player.kingState.feastHeldDay || 0);
+        // v9p33river429: feastHeldDay defaults to 0 for new kings, which should mean "never held" rather than "held on day 0".
+        var daysSinceLast = player.kingState.feastHeldDay > 0 ? (Engine.getDay() - player.kingState.feastHeldDay) : Infinity;
         if (daysSinceLast < 30) return { success: false, message: 'Must wait ' + (30 - daysSinceLast) + ' more days before hosting another feast.' };
         // If feast already active, just open it
         if (kingdom._activeFeast) {
@@ -9172,7 +9173,8 @@
             return { success: true, message: 'Court is scheduled to convene in ' + daysUntil + ' days.', pendingCourt: true, kingdomId: player.kingState.kingdomId };
         }
         // Check cooldown AFTER checking existing sessions (so reopen/pending status still works)
-        var daysSinceLast = Engine.getDay() - (player.kingState.courtHeldDay || 0);
+        // v9p33river429: courtHeldDay defaults to 0 for new kings, which should mean "never held" rather than "held on day 0".
+        var daysSinceLast = player.kingState.courtHeldDay > 0 ? (Engine.getDay() - player.kingState.courtHeldDay) : Infinity;
         if (daysSinceLast < 14) return { success: false, message: 'Must wait ' + (14 - daysSinceLast) + ' more days before holding court.' };
         // If no leadDays specified, return schedule options (don't set courtHeldDay yet!)
         if (!leadDays) {
@@ -12809,7 +12811,8 @@
                     var kTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
                     for (var _fi = 0; _fi < kTowns.length; _fi++) {
                         var _ft = kTowns[_fi];
-                        if ((Engine.getDay() - (_ft._lastFestivalDay || 0)) < 90) continue;
+                        // v9p33river429: an unset _lastFestivalDay means no prior festival, not an implicit festival on day 0.
+                        if (_ft._lastFestivalDay > 0 && (Engine.getDay() - _ft._lastFestivalDay) < 90) continue;
                         var _fh = _ft.happiness || 50;
                         if (_fh < bestHapp) { bestHapp = _fh; bestTown = _ft; }
                     }

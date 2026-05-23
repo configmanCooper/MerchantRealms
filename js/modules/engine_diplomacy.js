@@ -2956,7 +2956,8 @@
                     var _bestFestTown = null, _bestFestHapp = 999;
                     for (const tid of k.territories) {
                         const t = findTown(tid);
-                        if (!t || (world.day - (t._lastFestivalDay || 0)) < 90) continue;
+                        // v9p33river429: an unset _lastFestivalDay means no prior festival, not an implicit festival on day 0.
+                        if (!t || (t._lastFestivalDay > 0 && (world.day - t._lastFestivalDay) < 90)) continue;
                         if ((t.happiness || 50) < _bestFestHapp) { _bestFestHapp = t.happiness || 50; _bestFestTown = t; }
                     }
                     if (_bestFestTown) {
@@ -3011,7 +3012,8 @@
             var _kindFestTowns = [];
             for (const tid of k.territories) {
                 const t = findTown(tid);
-                if (t && (world.day - (t._lastFestivalDay || 0)) >= 90) _kindFestTowns.push(t);
+                // v9p33river429: an unset _lastFestivalDay means the town is eligible for its first festival.
+                if (t && (t._lastFestivalDay <= 0 || (world.day - t._lastFestivalDay) >= 90)) _kindFestTowns.push(t);
             }
             if (_kindFestTowns.length > 0) {
                 var _kindTown = rng.pick(_kindFestTowns);

@@ -533,7 +533,8 @@
         html += '<option value="">Select town...</option>';
         for (var _ron = 0; _ron < _roTowns.length; _ron++) {
             var _fTown = _roTowns[_ron];
-            var _fCd = Engine.getDay() - (_fTown._lastFestivalDay || 0);
+            // v9p33river429: an unset _lastFestivalDay means the town is still eligible for its first festival.
+            var _fCd = _fTown._lastFestivalDay > 0 ? (Engine.getDay() - _fTown._lastFestivalDay) : 9999;
             var _fReady = _fCd >= 90;
             html += '<option value="' + _fTown.id + '"' + (!_fReady ? ' disabled' : '') + '>' + escapeHtml(_fTown.name) + (_fReady ? '' : ' (CD: ' + (90 - _fCd) + 'd)') + '</option>';
         }

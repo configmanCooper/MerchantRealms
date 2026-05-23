@@ -27003,6 +27003,8 @@
         var _roadWaypoints = _pathResult.waypoints;
         var _roadBridges = createBridgeObjects(_roadWaypoints);
         options = options || {};
+        // v9p33river429: kingdom-built roads should default ownership to the building kingdom when no explicit ownerId was provided.
+        const ownerId = options.ownerId !== undefined ? options.ownerId : ((builtBy && findKingdom(builtBy)) ? builtBy : null);
         world.roads.push({
             fromTownId, toTownId,
             quality: options.quality || 2,
@@ -27015,7 +27017,7 @@
             condition: 'new',
             builtDay: world.day,
             builtBy: builtBy || null,
-            ownerId: options.ownerId || null,
+            ownerId: ownerId,
             tollRate: options.tollRate || 0,
             tollRevenue: 0,
             isTollRoad: options.isTollRoad || false,
@@ -27227,12 +27229,14 @@
 
         const dist = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
         options = options || {};
+        // v9p33river429: kingdom-built sea routes should default ownership to the building kingdom when no explicit ownerId was provided.
+        const ownerId = options.ownerId !== undefined ? options.ownerId : ((builtBy && findKingdom(builtBy)) ? builtBy : null);
         world.seaRoutes.push({
             fromTownId, toTownId,
             type: 'sea',
             distance: dist,
             safe: true,
-            ownerId: options.ownerId || null,
+            ownerId: ownerId,
             tollRate: options.tollRate || 0,
             tollRevenue: 0,
             isTollRoute: options.isTollRoute || false,
@@ -27932,7 +27936,8 @@
                 if (_pRank1 >= 4) {
                     // Noble player can attend court — store court session data for UI access
                     k._activeCourtSession = {
-                        id: 'court_' + world.day,
+                        // v9p33river429: include kingdom id so same-day courts in different kingdoms do not share an id.
+                        id: 'court_' + k.id + '_' + world.day,
                         day: world.day,
                         events: courtEvents,
                         kingName: kingName,
@@ -28467,7 +28472,8 @@
             var feastTownName = feastTown ? feastTown.name : 'the capital';
 
             k._activeFeast = {
-                id: 'feast_' + world.day,
+                // v9p33river429: include kingdom id so same-day feasts in different kingdoms do not share an id.
+                id: 'feast_' + k.id + '_' + world.day,
                 townId: feastTownId,
                 startDay: world.day,
                 endDay: world.day + 3,
@@ -29466,7 +29472,8 @@
             }
 
             k._pendingFeast = {
-                id: 'feast_' + world.day,
+                // v9p33river429: include kingdom id so same-day feasts in different kingdoms do not share an id.
+                id: 'feast_' + k.id + '_' + world.day,
                 townId: feastTownId,
                 townName: feastTownName,
                 scheduledDay: world.day,
@@ -29489,7 +29496,8 @@
 
         // Instant feast (NPC-triggered or leadDays=0)
         k._activeFeast = {
-            id: 'feast_' + world.day,
+            // v9p33river429: include kingdom id so same-day feasts in different kingdoms do not share an id.
+            id: 'feast_' + k.id + '_' + world.day,
             townId: feastTownId,
             startDay: world.day,
             endDay: world.day + 3,
@@ -29627,6 +29635,8 @@
                 nobleB: null,
                 townId: null,
                 good: null,
+                // v9p33river429: store the actual foreign kingdom id so diplomacy and marriage rulings can update live state.
+                foreignKingdomId: null,
                 foreignKingdomName: null
             };
 
@@ -29640,9 +29650,15 @@
             caseObj.desc = caseObj.desc.replace(/\{town\}/g, townName);
             caseObj.desc = caseObj.desc.replace(/\{amount\}/g, String(rng.randInt(50, 300)));
 
-            if (nobles.length >= 2 && caseObj.desc.indexOf('{noble1}') >= 0) {
-                var n1 = rng.pick(nobles);
-                var remaining = nobles.filter(function(n) { return n.id !== n1.id; });
+            var _caseNobles = nobles;
+            // v9p33river429: marriage-alliance cases need an unmarried local noble so grant can create a real spouse link.
+            if (caseObj.typeId === 'noble_marriage') {
+                var _eligibleMarriageNobles = nobles.filter(function(n) { return n && n.alive && !n.spouseId && n.age >= 18; });
+                if (_eligibleMarriageNobles.length > 0) _caseNobles = _eligibleMarriageNobles;
+            }
+            if (_caseNobles.length > 0 && caseObj.desc.indexOf('{noble1}') >= 0) {
+                var n1 = rng.pick(_caseNobles);
+                var remaining = _caseNobles.filter(function(n) { return n.id !== n1.id; });
                 var n2 = remaining.length > 0 ? rng.pick(remaining) : n1;
                 caseObj.nobleA = n1.id;
                 caseObj.nobleB = n2.id;
@@ -29655,6 +29671,8 @@
 
             if (foreignKingdoms.length > 0 && caseObj.desc.indexOf('{foreignKingdom}') >= 0) {
                 var fk = rng.pick(foreignKingdoms);
+                // v9p33river429: keep the kingdom id alongside the display name so court rulings can affect actual diplomatic state.
+                caseObj.foreignKingdomId = fk.id;
                 caseObj.foreignKingdomName = fk.name;
                 caseObj.desc = caseObj.desc.replace(/\{foreignKingdom\}/g, fk.name);
             } else {
@@ -29692,7 +29710,8 @@
             }
 
             k._pendingCourt = {
-                id: 'court_' + world.day,
+                // v9p33river429: include kingdom id so same-day courts in different kingdoms do not share an id.
+                id: 'court_' + k.id + '_' + world.day,
                 townId: courtTownId,
                 townName: courtTownName,
                 scheduledDay: world.day,
@@ -29728,7 +29747,8 @@
         }
 
         k._courtSession = {
-            id: 'court_' + world.day,
+            // v9p33river429: include kingdom id so same-day courts in different kingdoms do not share an id.
+            id: 'court_' + k.id + '_' + world.day,
             day: world.day,
             cases: cases,
             nobles: courtNobles,
@@ -29747,6 +29767,10 @@
     function resolveCourtCase(kingdomId, caseId, resolution) {
         var k = findKingdom(kingdomId);
         if (!k || !k._courtSession) return { success: false, message: 'No court session active.' };
+        // v9p33river429: only the reigning king of this kingdom may resolve its court cases.
+        if (typeof Player === 'undefined' || !Player.state || !Player.state.isKing || !Player.state.kingState || Player.state.kingState.kingdomId !== kingdomId) {
+            return { success: false, message: 'Only the reigning king of this kingdom may resolve court cases.' };
+        }
         var court = k._courtSession;
         var caseObj = null;
         for (var i = 0; i < court.cases.length; i++) {
@@ -29778,6 +29802,12 @@
             return { success: false, message: 'Invalid resolution.' };
         }
 
+        // v9p33river429: do not let court rulings spend money the treasury does not actually have.
+        var _courtTreasuryDelta = (effects && typeof effects.treasury === 'number') ? effects.treasury : 0;
+        if (_courtTreasuryDelta < 0 && ((k.gold || 0) + _courtTreasuryDelta) < 0) {
+            return { success: false, message: 'Treasury cannot afford that ruling.' };
+        }
+
         caseObj.resolved = true;
         caseObj.resolution = resolution;
         court._resolvedCount++;
@@ -29789,7 +29819,7 @@
             msgs.push((effects.happiness > 0 ? '+' : '') + effects.happiness + ' happiness');
         }
         if (effects.treasury) {
-            k.gold = Math.max(0, (k.gold || 0) + effects.treasury);
+            k.gold = (k.gold || 0) + effects.treasury;
             msgs.push((effects.treasury > 0 ? '+' : '') + effects.treasury + 'g treasury');
         }
         if (effects.loyA && caseObj.nobleA) {
@@ -29810,9 +29840,27 @@
             msgs.push('+' + effects.fearAll + ' fear (all nobles)');
         }
         if (effects.morale) {
-            msgs.push((effects.morale > 0 ? '+' : '') + effects.morale + ' military morale');
+            // v9p33river429: court morale rulings must change live military state, not only the text summary.
+            var _moraleArmiesAffected = 0;
+            for (var _mai = 0; _mai < (world.armies || []).length; _mai++) {
+                var _courtArmy = world.armies[_mai];
+                if (_courtArmy.kingdomId !== k.id) continue;
+                _courtArmy.morale = Math.max(0, Math.min(100, (_courtArmy.morale != null ? _courtArmy.morale : CONFIG.ARMY_DEFAULT_MORALE) + effects.morale));
+                _moraleArmiesAffected++;
+            }
+            if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
+            k.warExhaustion = Math.max(0, Math.min(100, k.warExhaustion - effects.morale));
+            msgs.push((effects.morale > 0 ? '+' : '') + effects.morale + ' military morale' + (_moraleArmiesAffected > 0 ? ' (' + _moraleArmiesAffected + ' armies)' : ''));
         }
         if (effects.diplomacy) {
+            // v9p33river429: court diplomacy rulings should update actual inter-kingdom relations when a foreign kingdom is involved.
+            var _dipTarget = caseObj.foreignKingdomId ? findKingdom(caseObj.foreignKingdomId) : null;
+            if (_dipTarget) {
+                if (!k.relations) k.relations = {};
+                if (!_dipTarget.relations) _dipTarget.relations = {};
+                k.relations[_dipTarget.id] = Math.max(-100, Math.min(100, (k.relations[_dipTarget.id] || 0) + effects.diplomacy));
+                _dipTarget.relations[k.id] = Math.max(-100, Math.min(100, (_dipTarget.relations[k.id] || 0) + effects.diplomacy));
+            }
             msgs.push((effects.diplomacy > 0 ? '+' : '') + effects.diplomacy + ' diplomacy');
         }
         // v9p33river417: handle building_permit effect (prosperity boost)
@@ -29831,6 +29879,88 @@
                 var _secBase = _secTown.security != null ? _secTown.security : 50;
                 _secTown.security = Math.max(0, Math.min(100, _secBase + effects.security));
                 msgs.push((effects.security > 0 ? '+' : '') + effects.security + ' security (' + _secTown.name + ')');
+            }
+        }
+        // v9p33river429: trade-rights rulings should create actual monopoly state instead of only generic loyalty text.
+        if (caseObj.typeId === 'trade_rights' && caseObj.nobleA && (resolution === 'grant' || resolution === 'compromise')) {
+            if (!k._tradeMonopolies) k._tradeMonopolies = {};
+            k._tradeMonopolies[caseObj.nobleA] = {
+                grantedDay: world.day,
+                expiresDay: world.day + (resolution === 'grant' ? 180 : 90),
+                townId: caseObj.townId,
+                good: caseObj.good,
+                grantType: 'court'
+            };
+            msgs.push('trade rights granted in ' + (caseObj.good || 'local goods'));
+        }
+        // v9p33river429: temple-funding rulings should repair or restore a real religious building in the town.
+        if (caseObj.typeId === 'temple_funding' && caseObj.townId && (resolution === 'grant' || resolution === 'compromise')) {
+            var _templeTown = findTown(caseObj.townId);
+            if (_templeTown) {
+                if (!_templeTown.buildings) _templeTown.buildings = [];
+                var _templeCondition = resolution === 'grant' ? 'new' : 'used';
+                var _templeBuilding = _templeTown.buildings.find(function(b) {
+                    return b && (b.type === 'chapel' || b.type === 'cathedral');
+                });
+                if (_templeBuilding) {
+                    _templeBuilding.condition = _templeCondition;
+                } else {
+                    _templeTown.buildings.push({ type: 'chapel', level: 1, ownerId: k.id, active: true, workers: [], builtDay: world.day, condition: _templeCondition });
+                }
+                msgs.push((_templeBuilding ? 'temple repaired' : 'chapel restored') + ' in ' + _templeTown.name);
+            }
+        }
+        // v9p33river429: noble-marriage rulings should create an actual spouse link, not only a diplomacy message.
+        if (caseObj.typeId === 'noble_marriage' && resolution === 'grant' && caseObj.nobleA && caseObj.foreignKingdomId) {
+            var _marriageNoble = findPerson(caseObj.nobleA);
+            var _marriageKingdom = findKingdom(caseObj.foreignKingdomId);
+            if (_marriageNoble && _marriageKingdom && !_marriageNoble.spouseId) {
+                var _desiredSex = _marriageNoble.sex === 'F' ? 'M' : 'F';
+                var _marriagePartner = (world.people || []).find(function(p) {
+                    return p && p.alive && p.kingdomId === _marriageKingdom.id && p.sex === _desiredSex && !p.spouseId && p.socialRank && p.socialRank[_marriageKingdom.id] >= 4;
+                });
+                if (!_marriagePartner) {
+                    var _marriageTownId = _marriageKingdom.capitalTownId || (_marriageKingdom.territories && _marriageKingdom.territories.size > 0 ? Array.from(_marriageKingdom.territories)[0] : _marriageNoble.townId);
+                    var _marriageTown = _marriageTownId ? findTown(_marriageTownId) : null;
+                    var _foreignRoyal = _marriageKingdom.king ? findPerson(_marriageKingdom.king) : null;
+                    _marriagePartner = {
+                        id: uid('p'),
+                        firstName: _desiredSex === 'M' ? rng.pick(NAMES.male) : rng.pick(NAMES.female),
+                        lastName: (_foreignRoyal && _foreignRoyal.lastName) ? _foreignRoyal.lastName : (_marriageNoble.lastName || 'of ' + _marriageKingdom.name),
+                        age: Math.max(18, (_marriageNoble.age || 24) + rng.randInt(-5, 5)),
+                        sex: _desiredSex,
+                        alive: true,
+                        townId: _marriageTown ? _marriageTown.id : _marriageNoble.townId,
+                        kingdomId: _marriageKingdom.id,
+                        occupation: 'noble',
+                        employerId: null,
+                        needs: { food: rng.randInt(50, 80), shelter: rng.randInt(55, 85), safety: rng.randInt(50, 80), wealth: rng.randInt(40, 70), happiness: rng.randInt(50, 75) },
+                        gold: rng.randInt(80, 180),
+                        skills: { farming: 5, mining: 5, crafting: 5, trading: rng.randInt(10, 30), combat: rng.randInt(10, 30) },
+                        workerSkill: 0,
+                        spouseId: null,
+                        childrenIds: [],
+                        parentIds: [],
+                        socialRank: (function() { var _sr = {}; _sr[_marriageKingdom.id] = 4; return _sr; })(),
+                        wealthClass: 'upper',
+                        houseType: rng.pick(['manor', 'townhouse']),
+                        personality: {
+                            loyalty: rng.randInt(30, 80),
+                            ambition: rng.randInt(30, 80),
+                            frugality: rng.randInt(30, 80),
+                            intelligence: rng.randInt(30, 80),
+                            warmth: rng.randInt(30, 80),
+                            honesty: rng.randInt(30, 80)
+                        },
+                        quirks: [],
+                        foodPreferences: { bread: 1, meat: 1, poultry: 1, fish: 1, eggs: 1, preserved_food: 1 },
+                        recentFoods: []
+                    };
+                    world.people.push(_marriagePartner);
+                }
+                _marriageNoble.spouseId = _marriagePartner.id;
+                _marriagePartner.spouseId = _marriageNoble.id;
+                msgs.push('marriage alliance formed with ' + _marriageKingdom.name);
             }
         }
 
@@ -30156,7 +30286,8 @@
             if (!town) return;
 
             // 90-day cooldown per town
-            if (day - (town._lastFestivalDay || 0) < 90) return;
+            // v9p33river429: an unset _lastFestivalDay means no prior festival, not an implicit festival on day 0.
+            if (town._lastFestivalDay > 0 && day - town._lastFestivalDay < 90) return;
 
             // Base chance 5%
             var chance = 0.05;
@@ -30632,8 +30763,9 @@
 
         // Check cooldown (90 days)
         var day = world.day;
-        if (day - (town._lastFestivalDay || 0) < 90) {
-            var daysLeft = 90 - (day - (town._lastFestivalDay || 0));
+        // v9p33river429: an unset _lastFestivalDay means no prior festival, not an implicit festival on day 0.
+        if (town._lastFestivalDay > 0 && day - town._lastFestivalDay < 90) {
+            var daysLeft = 90 - (day - town._lastFestivalDay);
             return { error: 'This town had a festival recently. Wait ' + daysLeft + ' more days.' };
         }
 
@@ -35668,8 +35800,13 @@
             var voter = vote.voters.find(function(v) { return v.id === nobleId; });
             if (!voter) return { success: false, message: 'Noble not found in voters.' };
             if (voter.isPlayer) return { success: false, message: 'Cannot influence your own vote.' };
+            // v9p33river429: only undecided nobles are valid targets for influence attempts.
+            if (voter.vote !== 'undecided') return { success: false, message: 'That noble has already voted.' };
 
-            // v9p33river419: require political capital and enforce per-vote cooldown
+            var noble = findPerson(nobleId);
+            if (!noble) return { success: false, message: 'Noble not found.' };
+
+            // v9p33river429: validate the target noble before spending political capital or consuming the per-vote attempt.
             if (typeof Player !== 'undefined' && Player.state) {
                 if ((Player.state.politicalCapital || 0) <= 0) return { success: false, message: 'No political capital remaining to influence votes.' };
                 // Cooldown: can only attempt to influence each noble once per vote
@@ -35678,9 +35815,6 @@
                 vote._influenceAttempts[nobleId] = true;
                 Player.state.politicalCapital = Math.max(0, (Player.state.politicalCapital || 0) - 1);
             }
-
-            var noble = findPerson(nobleId);
-            if (!noble) return { success: false, message: 'Noble not found.' };
 
             var rel = 0;
             if (typeof Player !== 'undefined' && Player.getRelationship) {
