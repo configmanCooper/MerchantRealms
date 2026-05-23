@@ -8190,7 +8190,19 @@
                 Engine.logEvent('📜 ' + nobleName + ' has delivered military supplies to the front lines. Military strength increased.', { _noToast: true }, "military");
                 break;
             case 'recruit_soldiers':
+                // v9p33river419: raise military strength + add soldiers to garrison
                 kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + rng.randInt(3, 8));
+                (function() {
+                    var _drCount = rng.randInt(3, 8);
+                    kingdom.soldiers = (kingdom.soldiers || 0) + _drCount;
+                    try {
+                        var _drTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
+                        if (_drTowns.length > 0) {
+                            var _drTarget = _drTowns[rng.randInt(0, _drTowns.length - 1)];
+                            _drTarget.garrison = (_drTarget.garrison || 0) + _drCount;
+                        }
+                    } catch(e) {}
+                })();
                 Engine.logEvent('📜 ' + nobleName + ' has recruited new soldiers for the army.', { _noToast: true }, "military");
                 break;
             case 'fortify_border':
@@ -8198,7 +8210,30 @@
                 Engine.logEvent('📜 ' + nobleName + ' has fortified border defenses.', { _noToast: true }, "military");
                 break;
             case 'scout_enemy':
-                Engine.logEvent('📜 ' + nobleName + ' has returned with intelligence on enemy movements.', { _noToast: true }, "military");
+                // v9p33river419: create intel record on enemy kingdom
+                (function() {
+                    if (!kingdom._enemyIntel) kingdom._enemyIntel = {};
+                    var _enemies = [];
+                    if (kingdom.atWar) kingdom.atWar.forEach(function(eid) { _enemies.push(eid); });
+                    if (_enemies.length > 0) {
+                        var _scoutTarget = _enemies[rng.randInt(0, _enemies.length - 1)];
+                        var _enemyK = Engine.findKingdom(_scoutTarget);
+                        if (_enemyK) {
+                            kingdom._enemyIntel[_scoutTarget] = {
+                                day: Engine.getDay(),
+                                soldiers: _enemyK.soldiers || 0,
+                                militaryStrength: _enemyK.militaryStrength || 50,
+                                gold: Math.round((_enemyK.gold || 0) / 100) * 100,
+                                morale: _enemyK.happiness || 50
+                            };
+                            Engine.logEvent('📜 ' + nobleName + ' returned with intelligence on ' + _enemyK.name + ': ~' + (kingdom._enemyIntel[_scoutTarget].soldiers) + ' soldiers, strength ' + kingdom._enemyIntel[_scoutTarget].militaryStrength + '.', { _noToast: true }, "military");
+                        } else {
+                            Engine.logEvent('📜 ' + nobleName + ' has returned with intelligence on enemy movements.', { _noToast: true }, "military");
+                        }
+                    } else {
+                        Engine.logEvent('📜 ' + nobleName + ' scouted the borders but found no active enemies.', { _noToast: true }, "military");
+                    }
+                })();
                 break;
             case 'plague_response':
                 // Reduce plague in random town
@@ -8214,11 +8249,46 @@
                 } catch (e) { Engine.logEvent('📜 ' + nobleName + ' completed medical directive.', { _noToast: true }, "illness"); }
                 break;
             case 'quarantine_towns':
-                Engine.logEvent('📜 ' + nobleName + ' has enforced quarantine measures. Plague spread slowed.', { _noToast: true }, "illness");
+                // v9p33river419: actually set quarantine on plagued towns
+                (function() {
+                    var _qTowns = [];
+                    try { _qTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && t.plagueActive && !t.quarantined; }); } catch(e) {}
+                    if (_qTowns.length > 0) {
+                        var _qTarget = _qTowns[rng.randInt(0, _qTowns.length - 1)];
+                        _qTarget.quarantined = true;
+                        _qTarget.quarantineDay = Engine.getDay();
+                        if (!kingdom.healthPolicies) kingdom.healthPolicies = [];
+                        kingdom.healthPolicies.push({
+                            type: 'quarantine_town', townId: _qTarget.id, active: true,
+                            startDay: Engine.getDay(), expiresDay: Engine.getDay() + 30, costPerDay: 8
+                        });
+                        Engine.logEvent('📜 ' + nobleName + ' has enforced quarantine in ' + _qTarget.name + '. Plague spread contained.', { _noToast: true }, "illness");
+                    } else {
+                        Engine.logEvent('📜 ' + nobleName + ' enforced quarantine measures. No new outbreaks detected.', { _noToast: true }, "illness");
+                    }
+                })();
                 break;
             case 'food_relief':
+                // v9p33river419: raise happiness + attempt to clear food shortage
                 kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.randInt(3, 8));
-                Engine.logEvent('📜 ' + nobleName + ' distributed food to starving towns. Happiness improved.', { _noToast: true }, "my_kingdom");
+                (function() {
+                    var _frCost = Math.min(300, kingdom.gold || 0);
+                    kingdom.gold = Math.max(0, (kingdom.gold || 0) - _frCost);
+                    // Clear food shortage in one town
+                    try {
+                        var _frTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && (t.foodShortage || t.famine); });
+                        if (_frTowns.length > 0) {
+                            var _frTarget = _frTowns[rng.randInt(0, _frTowns.length - 1)];
+                            _frTarget.foodShortage = false;
+                            _frTarget.famine = false;
+                            Engine.logEvent('📜 ' + nobleName + ' distributed food to ' + _frTarget.name + '. Famine ended! (Cost: ' + _frCost + 'g)', { _noToast: true }, "my_kingdom");
+                        } else {
+                            Engine.logEvent('📜 ' + nobleName + ' distributed food to starving towns. Happiness improved. (Cost: ' + _frCost + 'g)', { _noToast: true }, "my_kingdom");
+                        }
+                    } catch(e) {
+                        Engine.logEvent('📜 ' + nobleName + ' distributed food to starving towns. Happiness improved.', { _noToast: true }, "my_kingdom");
+                    }
+                })();
                 break;
             case 'quell_unrest':
                 kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + rng.randInt(5, 12));
@@ -8243,26 +8313,101 @@
                 Engine.logEvent('📜 ' + nobleName + '\'s trade expedition returned with ' + _tradeProfit + 'g profit for the crown.', { _noToast: true }, "my_kingdom");
                 break;
             case 'build_roads':
+                // v9p33river419: raise prosperity + improve trade speed
                 kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.randInt(2, 5));
+                kingdom._tradeSpeedBonus = Math.min(0.3, (kingdom._tradeSpeedBonus || 0) + 0.03);
+                kingdom._roadsRepairedDay = Engine.getDay();
                 Engine.logEvent('📜 ' + nobleName + ' has improved road infrastructure. Trade flows more freely.', { _noToast: true }, "my_kingdom");
                 break;
             case 'build_buildings':
+                // v9p33river419: raise prosperity + build actual building
                 kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.randInt(3, 7));
-                Engine.logEvent('📜 ' + nobleName + ' oversaw construction of new buildings in the kingdom.', { _noToast: true }, "my_kingdom");
+                (function() {
+                    try {
+                        var _bbTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
+                        if (_bbTowns.length > 0) {
+                            var _bbTarget = _bbTowns[rng.randInt(0, _bbTowns.length - 1)];
+                            if (!_bbTarget.buildings) _bbTarget.buildings = [];
+                            var _bbTypes = ['warehouse', 'tavern', 'smithy', 'workshop'];
+                            var _bbType = _bbTypes[rng.randInt(0, _bbTypes.length - 1)];
+                            _bbTarget.buildings.push({
+                                type: _bbType, level: 1, ownerId: kingdom.id, active: true,
+                                builtDay: Engine.getDay(), condition: 'new'
+                            });
+                            _bbTarget.prosperity = Math.min(100, (_bbTarget.prosperity || 50) + 3);
+                            Engine.logEvent('📜 ' + nobleName + ' oversaw construction of a ' + _bbType + ' in ' + _bbTarget.name + '.', { _noToast: true }, "my_kingdom");
+                        } else {
+                            Engine.logEvent('📜 ' + nobleName + ' oversaw construction of new buildings in the kingdom.', { _noToast: true }, "my_kingdom");
+                        }
+                    } catch(e) {
+                        Engine.logEvent('📜 ' + nobleName + ' oversaw construction of new buildings in the kingdom.', { _noToast: true }, "my_kingdom");
+                    }
+                })();
                 break;
             case 'diplomatic_mission':
-                Engine.logEvent('📜 ' + nobleName + ' completed a diplomatic mission to a neighboring kingdom.', { _noToast: true }, "my_kingdom");
+                // v9p33river419: actually improve relations with a neighboring kingdom
+                (function() {
+                    var _dmOthers = [];
+                    try {
+                        _dmOthers = Engine.getKingdoms().filter(function(k) { return k.id !== kingdom.id; });
+                    } catch(e) {}
+                    if (_dmOthers.length > 0) {
+                        var _dmTarget = _dmOthers[rng.randInt(0, _dmOthers.length - 1)];
+                        if (!kingdom.relations) kingdom.relations = {};
+                        kingdom.relations[_dmTarget.id] = Math.min(100, (kingdom.relations[_dmTarget.id] || 0) + rng.randInt(8, 20));
+                        Engine.logEvent('📜 ' + nobleName + ' completed a diplomatic mission to ' + _dmTarget.name + '. Relations improved by ' + Math.min(20, 15) + '.', { _noToast: true }, "my_kingdom");
+                    } else {
+                        Engine.logEvent('📜 ' + nobleName + ' completed a diplomatic mission to a neighboring kingdom.', { _noToast: true }, "my_kingdom");
+                    }
+                })();
                 break;
             case 'trade_agreement':
+                // v9p33river419: boost prosperity + improve relations with trade partner
                 kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + rng.randInt(2, 5));
-                Engine.logEvent('📜 ' + nobleName + ' negotiated favorable trade terms.', { _noToast: true }, "my_kingdom");
+                (function() {
+                    var _taOthers = [];
+                    try {
+                        _taOthers = Engine.getKingdoms().filter(function(k) {
+                            return k.id !== kingdom.id && !(kingdom.atWar && kingdom.atWar.has && kingdom.atWar.has(k.id));
+                        });
+                    } catch(e) {}
+                    if (_taOthers.length > 0) {
+                        var _taTarget = _taOthers[rng.randInt(0, _taOthers.length - 1)];
+                        if (!kingdom.relations) kingdom.relations = {};
+                        kingdom.relations[_taTarget.id] = Math.min(100, (kingdom.relations[_taTarget.id] || 0) + rng.randInt(5, 12));
+                        _taTarget.prosperity = Math.min(100, (_taTarget.prosperity || 50) + 1);
+                        Engine.logEvent('📜 ' + nobleName + ' negotiated favorable trade terms with ' + _taTarget.name + '. Prosperity up.', { _noToast: true }, "my_kingdom");
+                    } else {
+                        Engine.logEvent('📜 ' + nobleName + ' negotiated favorable trade terms.', { _noToast: true }, "my_kingdom");
+                    }
+                })();
                 break;
             case 'suppress_smuggling':
+                // v9p33river419: reduce unrest + seize contraband value as gold
                 kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.randInt(3, 8));
-                Engine.logEvent('📜 ' + nobleName + ' broke up a smuggling ring. Order restored.', { _noToast: true }, "my_kingdom");
+                (function() {
+                    var _ssGold = rng.randInt(50, 200);
+                    kingdom.gold = (kingdom.gold || 0) + _ssGold;
+                    kingdom.security = Math.min(100, (kingdom.security || 50) + 3);
+                    Engine.logEvent('📜 ' + nobleName + ' broke up a smuggling ring. Seized ' + _ssGold + 'g in contraband. Order restored.', { _noToast: true }, "my_kingdom");
+                })();
                 break;
             case 'capture_criminal':
-                Engine.logEvent('📜 ' + nobleName + ' captured a wanted criminal. Justice is served!', { _noToast: true }, "my_kingdom");
+                // v9p33river419: reduce unrest + boost security + award bounty
+                (function() {
+                    kingdom.unrest = Math.max(0, (kingdom.unrest || 0) - rng.randInt(2, 5));
+                    kingdom.security = Math.min(100, (kingdom.security || 50) + 2);
+                    // If kingdom has wanted criminals/bounties, resolve one
+                    if (kingdom._wantedCriminals && kingdom._wantedCriminals.length > 0) {
+                        var _ccIdx = rng.randInt(0, kingdom._wantedCriminals.length - 1);
+                        var _captured = kingdom._wantedCriminals.splice(_ccIdx, 1)[0];
+                        var _bounty = (_captured && _captured.bounty) || 50;
+                        kingdom.gold = Math.max(0, (kingdom.gold || 0) - _bounty); // pay bounty
+                        Engine.logEvent('📜 ' + nobleName + ' captured wanted criminal' + (_captured.name ? ' ' + _captured.name : '') + '! Bounty: ' + _bounty + 'g. Justice is served!', { _noToast: true }, "my_kingdom");
+                    } else {
+                        Engine.logEvent('📜 ' + nobleName + ' captured a wanted criminal. Justice is served! Security improved.', { _noToast: true }, "my_kingdom");
+                    }
+                })();
                 break;
             default:
                 Engine.logEvent('📜 ' + nobleName + ' completed a royal directive: ' + (directive.title || 'unknown'), { _noToast: true }, "my_kingdom");
@@ -10754,7 +10899,7 @@
                 // Market cost
                 if (fromMarket > 0) {
                     var matPrice = 0;
-                    try { matPrice = Engine.getMarketPrice(townId, matId) || 0; } catch(e) {}
+                    try { matPrice = Engine.getMarketPrice(town, matId) || 0; } catch(e) {}
                     if (matPrice <= 0) { var res2 = findResource(matId); matPrice = res2 ? (res2.basePrice || 5) : 5; }
                     materialCost += fromMarket * matPrice;
                 }
@@ -11177,10 +11322,8 @@
         // Split army composition based on mounted option
         var inf, arch, cav;
         if (sendMounted) {
-            // All cavalry — consume horses from kingdom stockpile
+            // All cavalry — horses consumed AFTER route validation (v9p33river419)
             inf = 0; arch = 0; cav = soldiers;
-            var _sp = kingdom.militaryStockpile || {};
-            _sp.horses = Math.max(0, (_sp.horses || 0) - soldiers);
         } else {
             // Standard split: 60% infantry, 25% archers, 15% cavalry
             inf = Math.floor(soldiers * 0.6);
@@ -11227,6 +11370,12 @@
                 var portName = _embarkPort ? _embarkPort.name : 'the port';
                 return { success: false, message: 'This route crosses the sea! Need ' + shipsNeeded + ' ships at ' + portName + ' but only ' + shipsAvail + ' available. Build warships at port towns first.' };
             }
+        }
+
+        // v9p33river419: consume horses AFTER route/ship validation succeeds
+        if (sendMounted) {
+            var _sp = kingdom.militaryStockpile || {};
+            _sp.horses = Math.max(0, (_sp.horses || 0) - soldiers);
         }
 
         var armyObj = {
@@ -11793,7 +11942,8 @@
         try {
             var person = Engine.findPerson(emp.npcId);
             if (person) {
-                person.occupation = 'unemployed';
+                // v9p33river419: restore previous occupation instead of forcing unemployed
+                person.occupation = person.previousOccupation || 'unemployed';
                 person.employerId = null;
             }
         } catch(e) {}
@@ -12057,30 +12207,82 @@
                 Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} raises taxes!`, null, "my_kingdom");
                 break;
             case 'declare_war':
+                // v9p33river419: advisor counsel now actually declares war
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
                     if (target && (!kingdom.atWar || !kingdom.atWar.has(target.id))) {
-                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers war with ${target.name}.`, null, "military");
-                        // Shift relations negatively
-                        kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 40);
+                        var _warCost = CONFIG.WAR_DECLARATION_COST || 300;
+                        if (kingdom.gold >= _warCost) {
+                            kingdom.gold -= _warCost;
+                            if (!kingdom.atWar) kingdom.atWar = new Set();
+                            kingdom.atWar.add(target.id);
+                            if (!target.atWar) target.atWar = new Set();
+                            target.atWar.add(kingdom.id);
+                            kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 40);
+                            kingdom._lastWarStartDay = Engine.getDay();
+                            target._lastWarStartDay = Engine.getDay();
+                            Engine.logEvent(`⚔️ On the Royal Advisor's counsel, ${kingdom.name} declares war on ${target.name}!`, { type: 'war_declaration', kingdomId: kingdom.id }, "military");
+                        } else {
+                            Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers war with ${target.name}, but the treasury is too low.`, null, "military");
+                            kingdom.relations[target.id] = Math.max(-100, (kingdom.relations[target.id] || 0) - 20);
+                        }
                     }
                 }
                 break;
             case 'make_peace':
+                // v9p33river419: advisor counsel now actually makes peace
                 if (adviceValue) {
                     const target = Engine.findKingdom(adviceValue);
                     if (target && kingdom.atWar && kingdom.atWar.has(target.id)) {
-                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} seeks peace with ${target.name}.`, null, "military");
-                        kingdom.relations[target.id] = Math.min(0, (kingdom.relations[target.id] || -50) + 30);
+                        kingdom.atWar.delete(target.id);
+                        if (target.atWar && target.atWar.delete) target.atWar.delete(kingdom.id);
+                        kingdom.relations[target.id] = 0;
+                        if (target.relations) target.relations[kingdom.id] = 0;
+                        if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
+                        kingdom.peaceTreaties[target.id] = Engine.getDay() + 180;
+                        Engine.logEvent(`🕊️ On the Royal Advisor's counsel, ${kingdom.name} makes peace with ${target.name}.`, null, "military");
                     }
                 }
                 break;
             case 'build_walls':
-                Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} fortifies its towns.`, null, "military");
-                // King prioritizes wall building next decision cycle
+                // v9p33river419: advisor counsel now starts wall construction
+                (function() {
+                    var _bwTowns = [];
+                    try { _bwTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && (t.walls || 0) < 3 && !t._wallConstruction; }); } catch(e) {}
+                    if (_bwTowns.length > 0 && kingdom.gold >= 300) {
+                        _bwTowns.sort(function(a, b) { return (a.walls || 0) - (b.walls || 0); });
+                        var _bwTarget = _bwTowns[0];
+                        var _bwLevel = (_bwTarget.walls || 0) + 1;
+                        var _bwDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade) ? CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade.build : 30;
+                        _bwTarget._wallConstruction = { targetLevel: _bwLevel, completeDay: Engine.getDay() + _bwDays, name: 'Wall Level ' + _bwLevel };
+                        kingdom.gold -= 300;
+                        Engine.logEvent(`🏰 On the Royal Advisor's counsel, ${kingdom.name} begins fortifying ${_bwTarget.name} (Wall Level ${_bwLevel}).`, null, "military");
+                    } else {
+                        Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers fortification, but ${kingdom.gold < 300 ? 'cannot afford it' : 'all towns are already fortified'}.`, null, "military");
+                    }
+                })();
                 break;
             case 'change_law':
-                Engine.logEvent(`On the Royal Advisor's counsel, ${kingdom.name} considers new legislation.`, null, "my_kingdom");
+                // v9p33river419: advisor counsel now enacts a law change
+                (function() {
+                    if (!kingdom.laws) kingdom.laws = {};
+                    var _lawChanged = false;
+                    if (kingdom.taxRate > 0.12 && !_lawChanged) {
+                        kingdom.taxRate = Math.max(0.05, kingdom.taxRate - 0.03);
+                        Engine.logEvent(`📜 On the Royal Advisor's counsel, ${kingdom.name} lowers taxes by 3%.`, null, "my_kingdom");
+                        _lawChanged = true;
+                    }
+                    if (!_lawChanged && kingdom.laws.conscription) {
+                        kingdom.laws.conscription = false;
+                        if (kingdom.laws.specialLaws) kingdom.laws.specialLaws = kingdom.laws.specialLaws.filter(function(l) { return l.id !== 'conscription_law'; });
+                        Engine.logEvent(`📜 On the Royal Advisor's counsel, ${kingdom.name} ends conscription.`, null, "my_kingdom");
+                        _lawChanged = true;
+                    }
+                    if (!_lawChanged) {
+                        kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 5);
+                        Engine.logEvent(`📜 On the Royal Advisor's counsel, ${kingdom.name} enacts benevolent legislation. People are pleased.`, null, "my_kingdom");
+                    }
+                })();
                 break;
             default:
                 break;
@@ -12258,8 +12460,22 @@
                     return m;
                 }; })(target),
                 execute: (function(t) { return function() {
-                    kingdom.relations[t.id] = Math.max(-100, (kingdom.relations[t.id] || 0) - 40);
-                    Engine.logEvent('⚔️ On the Royal Advisor\'s urging, ' + kingdom.name + ' moves toward war with ' + t.name + '.', null, "military");
+                    // v9p33river419: actually declare war
+                    var _dwCost = CONFIG.WAR_DECLARATION_COST || 300;
+                    if (kingdom.gold >= _dwCost) {
+                        kingdom.gold -= _dwCost;
+                        if (!kingdom.atWar) kingdom.atWar = new Set();
+                        kingdom.atWar.add(t.id);
+                        if (!t.atWar) t.atWar = new Set();
+                        t.atWar.add(kingdom.id);
+                        kingdom.relations[t.id] = Math.max(-100, (kingdom.relations[t.id] || 0) - 40);
+                        kingdom._lastWarStartDay = Engine.getDay();
+                        t._lastWarStartDay = Engine.getDay();
+                        Engine.logEvent('⚔️ On the Royal Advisor\'s urging, ' + kingdom.name + ' declares war on ' + t.name + '!', { type: 'war_declaration', kingdomId: kingdom.id }, "military");
+                    } else {
+                        kingdom.relations[t.id] = Math.max(-100, (kingdom.relations[t.id] || 0) - 20);
+                        Engine.logEvent('⚔️ ' + kingdom.name + ' moves toward war with ' + t.name + ', but lacks funds to mobilize.', null, "military");
+                    }
                 }; })(target)
             });
         }
@@ -12283,8 +12499,14 @@
                         return m;
                     }; })(enemy),
                     execute: (function(eId, e) { return function() {
-                        kingdom.relations[eId] = Math.min(0, (kingdom.relations[eId] || -50) + 30);
-                        Engine.logEvent('🕊️ On the Royal Advisor\'s counsel, ' + kingdom.name + ' seeks peace with ' + e.name + '.', null, "military");
+                        // v9p33river419: actually make peace
+                        kingdom.atWar.delete(eId);
+                        if (e.atWar && e.atWar.delete) e.atWar.delete(kingdom.id);
+                        kingdom.relations[eId] = 0;
+                        if (e.relations) e.relations[kingdom.id] = 0;
+                        if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
+                        kingdom.peaceTreaties[eId] = Engine.getDay() + 180;
+                        Engine.logEvent('🕊️ On the Royal Advisor\'s counsel, ' + kingdom.name + ' makes peace with ' + e.name + '.', null, "military");
                     }; })(enemyId, enemy)
                 });
             });
@@ -12310,8 +12532,18 @@
                     return m;
                 }; })(ally, allyRel),
                 execute: (function(a) { return function() {
-                    kingdom.relations[a.id] = Math.min(100, (kingdom.relations[a.id] || 0) + 15);
-                    Engine.logEvent('🤝 On the Royal Advisor\'s proposal, ' + kingdom.name + ' opens alliance talks with ' + a.name + '.', null, "my_kingdom");
+                    // v9p33river419: actually form alliance
+                    if (!kingdom.alliances) kingdom.alliances = new Set();
+                    if (!a.alliances) a.alliances = new Set();
+                    kingdom.alliances.add(a.id);
+                    a.alliances.add(kingdom.id);
+                    if (!kingdom.allianceMeta) kingdom.allianceMeta = {};
+                    if (!a.allianceMeta) a.allianceMeta = {};
+                    kingdom.allianceMeta[a.id] = { type: 'defensive', formedDay: Engine.getDay(), callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                    a.allianceMeta[kingdom.id] = { type: 'defensive', formedDay: Engine.getDay(), callsHonored: 0, callsRefused: 0, fatigue: 0 };
+                    kingdom.relations[a.id] = Math.min(100, (kingdom.relations[a.id] || 0) + 20);
+                    if (a.relations) a.relations[kingdom.id] = Math.min(100, (a.relations[kingdom.id] || 0) + 20);
+                    Engine.logEvent('🤝 ' + kingdom.name + ' and ' + a.name + ' form a defensive alliance!', { type: 'alliance_formed', kingdomId: kingdom.id }, "my_kingdom");
                 }; })(ally)
             });
         }
@@ -12335,7 +12567,16 @@
                         return m;
                     }; })(bTown),
                     execute: (function(t) { return function() {
-                        Engine.logEvent('🏰 ' + kingdom.name + ' begins building walls in ' + t.name + '.', null, "my_kingdom");
+                        // v9p33river419: actually start wall construction
+                        if (kingdom.gold >= 300) {
+                            var _wLvl = (t.walls || 0) + 1;
+                            var _wDays = (CONFIG.KINGDOM_BUILD_TIMES && CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade) ? CONFIG.KINGDOM_BUILD_TIMES.wall_upgrade.build : 30;
+                            t._wallConstruction = { targetLevel: _wLvl, completeDay: Engine.getDay() + _wDays, name: 'Wall Level ' + _wLvl };
+                            kingdom.gold -= 300;
+                            Engine.logEvent('🏰 ' + kingdom.name + ' begins building walls in ' + t.name + ' (Level ' + _wLvl + ').', null, "my_kingdom");
+                        } else {
+                            Engine.logEvent('🏰 ' + kingdom.name + ' plans to fortify ' + t.name + ' but the treasury is insufficient.', null, "my_kingdom");
+                        }
                     }; })(bTown)
                 });
             }
@@ -12354,7 +12595,22 @@
                         return m;
                     }; })(bTown),
                     execute: (function(t) { return function() {
-                        Engine.logEvent('🏪 ' + kingdom.name + ' begins building a market in ' + t.name + '.', null, "my_kingdom");
+                        // v9p33river419: actually build a market
+                        var _mCost = 400;
+                        if (kingdom.gold >= _mCost) {
+                            kingdom.gold -= _mCost;
+                            if (!t.market) t.market = { supply: {}, demand: {}, prices: {} };
+                            if (!t.buildings) t.buildings = [];
+                            t.buildings.push({
+                                type: 'market', level: 1, ownerId: kingdom.id, active: true,
+                                builtDay: Engine.getDay(), condition: 'new'
+                            });
+                            t.hasMarket = true;
+                            t.prosperity = Math.min(100, (t.prosperity || 50) + 5);
+                            Engine.logEvent('🏪 ' + kingdom.name + ' builds a public market in ' + t.name + '!', null, "my_kingdom");
+                        } else {
+                            Engine.logEvent('🏪 ' + kingdom.name + ' plans a market in ' + t.name + ' but lacks funds.', null, "my_kingdom");
+                        }
                     }; })(bTown)
                 });
             }
@@ -12373,9 +12629,14 @@
                 return m;
             },
             execute: function() {
+                // v9p33river419: spend treasury + boost prosperity + mark roads maintained
                 var cost = Math.min(500, treasury * 0.03);
                 kingdom.gold = Math.max(0, kingdom.gold - cost);
-                Engine.logEvent('🛤️ ' + kingdom.name + ' invests in road repairs across the kingdom.', null, "my_kingdom");
+                kingdom.prosperity = Math.min(100, (kingdom.prosperity || 50) + 3);
+                kingdom._roadsRepairedDay = Engine.getDay();
+                // Improve trade speed modifier for the kingdom
+                kingdom._tradeSpeedBonus = Math.min(0.3, (kingdom._tradeSpeedBonus || 0) + 0.05);
+                Engine.logEvent('🛤️ ' + kingdom.name + ' invests ' + Math.floor(cost) + 'g in road repairs. Trade flows more freely.', null, "my_kingdom");
             }
         });
 
@@ -12507,15 +12768,35 @@
                 return opts;
             })(),
             execute: function(subChoice) {
+                // v9p33river419: actually cure plague and boost health
                 var cost = Math.min(800, treasury * 0.04);
                 kingdom.gold = Math.max(0, kingdom.gold - cost);
                 if (subChoice && subChoice !== '_all') {
                     var targetTown = Engine.findTown(subChoice);
                     if (targetTown) {
-                        Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding in ' + targetTown.name + '.', null, "illness");
+                        if (targetTown.plagueActive) {
+                            targetTown.plagueActive = false;
+                            targetTown.plagueSeverity = 0;
+                            Engine.logEvent('🏥 ' + kingdom.name + ' funds healers in ' + targetTown.name + '. The plague is cured! (Cost: ' + Math.floor(cost) + 'g)', null, "illness");
+                        } else {
+                            targetTown.prosperity = Math.min(100, (targetTown.prosperity || 50) + 3);
+                            kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 3);
+                            Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding in ' + targetTown.name + '. (Cost: ' + Math.floor(cost) + 'g)', null, "illness");
+                        }
                     }
                 } else {
-                    Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.', null, "illness");
+                    // Kingdom-wide: cure plague in first plagued town, boost all health
+                    var _curedTown = null;
+                    try {
+                        var _medTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id && t.plagueActive; });
+                        if (_medTowns.length > 0) {
+                            _curedTown = _medTowns[0];
+                            _curedTown.plagueActive = false;
+                            _curedTown.plagueSeverity = 0;
+                        }
+                    } catch(e) {}
+                    kingdom.happiness = Math.min(100, (kingdom.happiness || 50) + 4);
+                    Engine.logEvent('🏥 ' + kingdom.name + ' increases medical funding across the kingdom.' + (_curedTown ? ' Plague cured in ' + _curedTown.name + '!' : '') + ' (Cost: ' + Math.floor(cost) + 'g)', null, "illness");
                 }
             }
         });
@@ -12626,7 +12907,19 @@
                 return m;
             },
             execute: function() {
-                Engine.logEvent('🗡️ ' + kingdom.name + ' begins stockpiling weapons on the Royal Advisor\'s advice.', null, "military");
+                // v9p33river419: actually purchase weapons for military stockpile
+                var _wpCost = Math.min(600, treasury * 0.04);
+                kingdom.gold = Math.max(0, kingdom.gold - _wpCost);
+                if (!kingdom.militaryStockpile) kingdom.militaryStockpile = {};
+                var _wpRng = Engine.getRng();
+                var _swordsQty = _wpRng ? _wpRng.randInt(5, 15) : 10;
+                var _bowsQty = _wpRng ? _wpRng.randInt(3, 8) : 5;
+                var _armorQty = _wpRng ? _wpRng.randInt(3, 8) : 5;
+                kingdom.militaryStockpile.swords = (kingdom.militaryStockpile.swords || 0) + _swordsQty;
+                kingdom.militaryStockpile.bows = (kingdom.militaryStockpile.bows || 0) + _bowsQty;
+                kingdom.militaryStockpile.armor = (kingdom.militaryStockpile.armor || 0) + _armorQty;
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + 3);
+                Engine.logEvent('🗡️ ' + kingdom.name + ' stockpiles weapons: ' + _swordsQty + ' swords, ' + _bowsQty + ' bows, ' + _armorQty + ' armor. (Cost: ' + Math.floor(_wpCost) + 'g)', null, "military");
             }
         });
         actions.push({
@@ -12643,7 +12936,22 @@
                 return m;
             },
             execute: function() {
-                Engine.logEvent('🪖 ' + kingdom.name + ' launches a recruitment drive on the Royal Advisor\'s advice.', null, "military");
+                // v9p33river419: actually recruit soldiers to garrisons
+                var _rcCost = Math.min(500, treasury * 0.03);
+                kingdom.gold = Math.max(0, kingdom.gold - _rcCost);
+                var _rcRng = Engine.getRng();
+                var _rcCount = _rcRng ? _rcRng.randInt(5, 15) : 10;
+                kingdom.soldiers = (kingdom.soldiers || 0) + _rcCount;
+                // Add to capital garrison or first town
+                try {
+                    var _rcTowns = Engine.getTowns().filter(function(t) { return t.kingdomId === kingdom.id; });
+                    if (_rcTowns.length > 0) {
+                        var _rcCapital = _rcTowns.find(function(t) { return t.isCapital; }) || _rcTowns[0];
+                        _rcCapital.garrison = (_rcCapital.garrison || 0) + _rcCount;
+                    }
+                } catch(e) {}
+                kingdom.militaryStrength = Math.min(100, (kingdom.militaryStrength || 50) + 2);
+                Engine.logEvent('🪖 ' + kingdom.name + ' recruits ' + _rcCount + ' new soldiers. (Cost: ' + Math.floor(_rcCost) + 'g)', null, "military");
             }
         });
         actions.push({

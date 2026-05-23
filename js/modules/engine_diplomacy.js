@@ -387,6 +387,8 @@
 
                 var eligible = getPeopleInTown(town.id).filter(function(p) {
                     if (!p.alive || p.occupation === 'soldier' || p.status === 'indentured') return false;
+                    // v9p33river419: skip already-employed NPCs
+                    if (p.employerId) return false;
                     if (post.type === 'royal_guard') {
                         // 18-35, prior guard/soldier experience, citizen rank+
                         // v9p33river305: p.socialRank is a per-kingdom object
@@ -398,10 +400,11 @@
                                 p.combatSkill >= 20 || p.militaryExperience) &&
                                (_rgRank >= 1 || (p.citizenship && p.citizenship[k.id]));
                     } else if (post.type === 'guard') {
-                        // 16-55, able-bodied
-                        return p.age >= 16 && p.age <= 55 &&
+                        // v9p33river419: exclude existing guards (prevents re-hiring)
+                        // 16-55, able-bodied, not already a guard
+                        return p.age >= 16 && p.age <= 55 && p.occupation !== 'guard' &&
                                (p.occupation === 'laborer' || p.occupation === 'none' || p.occupation === 'unemployed' ||
-                                p.occupation === 'farmer' || p.occupation === 'guard');
+                                p.occupation === 'farmer');
                     } else {
                         // Procurer: anyone 16+ with some merchant/trading ability
                         return p.age >= 16 && p.age <= 60 &&
@@ -548,7 +551,8 @@
                     // Can't pay — employee quits
                     try {
                         var person2 = findPerson(emp.npcId);
-                        if (person2) { person2.occupation = 'unemployed'; person2.employerId = null; }
+                        // v9p33river419: restore previous occupation
+                        if (person2) { person2.occupation = person2.previousOccupation || 'unemployed'; person2.employerId = null; }
                     } catch(e) {}
                     lists[li].splice(ei, 1);
                     EventTypes.emit('KINGDOM_EMPLOYEE_QUIT', { kingdomId: k.id, name: emp.name || 'unknown' });

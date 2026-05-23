@@ -3533,7 +3533,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
     });
     UI.registerAction('proposeLawAction', function(_t, d) {
         var r = Player.proposeLaw(d.id, d.val);
-        UI.toast(r && r.message ? r.message : 'Law proposed.', r && r.success ? 'success' : 'warning');
+        UI.toast(r && (r.reason || r.message) ? (r.reason || r.message) : 'Law proposed.', r && r.success ? 'success' : 'warning');
         UI.openNobilityDialog();
     });
     UI.registerAction('proposeKingActionSelect', function(_t, d) {

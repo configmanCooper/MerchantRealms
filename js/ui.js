@@ -17152,11 +17152,11 @@ window.UI = (function () {
         var kName = kingdom ? kingdom.name : 'Unknown';
         var daysLeft = Math.max(0, (vote.deadlineDay || 0) - (Engine.getDay ? Engine.getDay() : 0));
 
-        // Vote weight labels
-        var _weightLabels = { 7: '👑 King (×5)', 6: '📜 Royal Advisor (×3)', 5: '⚔️ Lord (×2)', 4: '🏛️ Minor Noble (×1)' };
-        var _weightValues = { 7: 5, 6: 3, 5: 2, 4: 1 };
+        // Vote weight labels — v9p33river419: RA weight is x5 (matches engine at 12458)
+        var _weightLabels = { 7: '👑 King (×5)', 6: '📜 Royal Advisor (×5)', 5: '⚔️ Lord (×2)', 4: '🏛️ Minor Noble (×1)' };
+        var _weightValues = { 7: 5, 6: 5, 5: 2, 4: 1 };
 
-        // Tally
+        // Tally — v9p33river419: exclude abstentions from total (matches engine resolution)
         var yesVotes = 0, noVotes = 0, abstainVotes = 0;
         var voters = vote.voters || [];
         for (var vi = 0; vi < voters.length; vi++) {
@@ -17166,7 +17166,7 @@ window.UI = (function () {
             else if (v.vote === 'no') noVotes += w;
             else abstainVotes += w;
         }
-        var totalWeight = yesVotes + noVotes + abstainVotes;
+        var totalWeight = yesVotes + noVotes; // abstentions excluded
         var yesPct = totalWeight > 0 ? Math.round(yesVotes / totalWeight * 100) : 0;
         var noPct = totalWeight > 0 ? Math.round(noVotes / totalWeight * 100) : 0;
 
@@ -17200,8 +17200,14 @@ window.UI = (function () {
         for (var vi2 = 0; vi2 < voters.length; vi2++) {
             var voter = voters[vi2];
             var person = null;
-            try { person = Engine.getPerson(voter.id); } catch (e) {}
-            var name = person ? (escapeHtml(person.firstName) + ' ' + escapeHtml(person.lastName)) : 'Unknown';
+            var name = '';
+            // v9p33river419: handle player voter (Engine.getPerson('player') returns null)
+            if (voter.isPlayer) {
+                name = (typeof Player !== 'undefined' && Player.state) ? (Player.state.fullName || Player.state.firstName || 'You') : 'You';
+            } else {
+                try { person = Engine.getPerson(voter.id); } catch (e) {}
+                name = person ? (escapeHtml(person.firstName) + ' ' + escapeHtml(person.lastName)) : 'Unknown';
+            }
             var rankLabel = _weightLabels[voter.rank] || 'Noble';
             var weight = _weightValues[voter.rank] || 1;
             var voteIcon = voter.vote === 'yes' ? '✅' : voter.vote === 'no' ? '❌' : '⏳';

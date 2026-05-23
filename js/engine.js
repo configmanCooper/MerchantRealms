@@ -34795,6 +34795,8 @@
         castVote: function(voteId, choice) {
             var vote = this.getActiveVote(voteId);
             if (!vote || vote.resolved) return { success: false, message: 'Vote not found or already resolved.' };
+            // v9p33river419: validate vote choice
+            if (choice !== 'yes' && choice !== 'no' && choice !== 'abstain') return { success: false, message: 'Invalid vote choice. Must be yes, no, or abstain.' };
             var voter = vote.voters.find(function(v) { return v.isPlayer; });
             if (!voter) return { success: false, message: 'You are not a voter in this decision.' };
             voter.vote = choice;
@@ -34806,6 +34808,16 @@
             var voter = vote.voters.find(function(v) { return v.id === nobleId; });
             if (!voter) return { success: false, message: 'Noble not found in voters.' };
             if (voter.isPlayer) return { success: false, message: 'Cannot influence your own vote.' };
+
+            // v9p33river419: require political capital and enforce per-vote cooldown
+            if (typeof Player !== 'undefined' && Player.state) {
+                if ((Player.state.politicalCapital || 0) <= 0) return { success: false, message: 'No political capital remaining to influence votes.' };
+                // Cooldown: can only attempt to influence each noble once per vote
+                if (!vote._influenceAttempts) vote._influenceAttempts = {};
+                if (vote._influenceAttempts[nobleId]) return { success: false, message: 'You have already attempted to influence this noble on this vote.' };
+                vote._influenceAttempts[nobleId] = true;
+                Player.state.politicalCapital = Math.max(0, (Player.state.politicalCapital || 0) - 1);
+            }
 
             var noble = findPerson(nobleId);
             if (!noble) return { success: false, message: 'Noble not found.' };
