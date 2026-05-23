@@ -981,6 +981,7 @@ window.UI = (function () {
                 if (bkk) {
                     /* v9p33river294: kds came from Engine.getKingdoms() which serializes copies — must mutate the RAW kingdom via findKingdom or the world still treats the old NPC as king. */
                     var rawBkk = Engine.findKingdom ? Engine.findKingdom(bkk.id) : null;
+                    // v9p33river434: player kings use the existing player_king sentinel checked throughout kingdom logic.
                     if (rawBkk) rawBkk.king = 'player_king';
                     bkk.king = 'player_king';
                     st.isKing = true;

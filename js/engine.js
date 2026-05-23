@@ -16050,6 +16050,46 @@
         return Math.max(0.1, (baseInfluence * loyaltyMult + intBonus + warmthBonus) * kingMult);
     }
 
+    // v9p33river435: noble coalition helpers
+    function _computeCoalitionStrength(coalition, kingdom) {
+        if (!coalition || !coalition.members) return 0;
+        var total = 0;
+        for (var i = 0; i < coalition.members.length; i++) {
+            var m = coalition.members[i];
+            if (m.id === 'player') {
+                var pRep = 50;
+                try {
+                    if (typeof Player !== 'undefined' && Player.getReputation) pRep = Player.getReputation(kingdom.id) || 50;
+                } catch (e) {}
+                total += Math.max(0.5, pRep / 50);
+            } else {
+                total += m.influence || 0;
+            }
+        }
+        return total;
+    }
+
+    // v9p33river435: noble coalition helpers
+    function _computeKingStubbornness(kingdom) {
+        var kp = kingdom.kingPersonality || {};
+        var stubbornness = 3.0;
+        if (kp.intelligence === 'brilliant') stubbornness = 4.0;
+        if (kp.intelligence === 'dim') stubbornness = 2.0;
+        if (kp.temperament === 'cruel') stubbornness += 0.5;
+        if (kp.ambition === 'content') stubbornness += 1.0;
+        return stubbornness;
+    }
+
+    // v9p33river435: noble coalition helpers
+    function _computeCoalitionSuccessChance(coalition, kingdom) {
+        var strength = _computeCoalitionStrength(coalition, kingdom);
+        var threshold = _computeKingStubbornness(kingdom);
+        if (strength >= threshold * 1.5) return 0.85;
+        if (strength >= threshold) return 0.60;
+        if (strength >= threshold * 0.7) return 0.35;
+        return 0.15;
+    }
+
     // ========================================================
     // §14A3A NOBLE ADVISORY INFLUENCE (v9p33river419)
     // Nobles with high influence sway the king toward policy decisions
@@ -16082,13 +16122,7 @@
             }
 
             // Check if any action has enough pressure to sway the king
-            var kp = k.kingPersonality || {};
-            // King stubbornness: how much pressure needed to sway
-            var stubbornness = 3.0; // base threshold
-            if (kp.intelligence === 'brilliant') stubbornness = 4.0;
-            if (kp.intelligence === 'dim') stubbornness = 2.0;
-            if (kp.temperament === 'cruel') stubbornness += 0.5;
-            if (kp.ambition === 'content') stubbornness += 1.0;
+            var stubbornness = _computeKingStubbornness(k);
 
             for (var actionId in pressureMap) {
                 var totalPressure = pressureMap[actionId];
@@ -16101,6 +16135,27 @@
                 _executeNobleAdvisedAction(k, actionId, rng);
                 break; // one action per tick maximum
             }
+        }
+    }
+
+    // v9p33river435: noble coalition — tick function for coalition decay and resolution
+    function tickNobleCoalitions() {
+        if (world.day % 30 !== 15) return;
+
+        for (var ki = 0; ki < world.kingdoms.length; ki++) {
+            var k = world.kingdoms[ki];
+            if (!k._nobleCoalitions) continue;
+
+            k._nobleCoalitions = k._nobleCoalitions.filter(function(c) {
+                if ((c.status === 'resolved' || c.status === 'dissolved') && c.resolvedDay != null && world.day - c.resolvedDay > 30) return false;
+                if (c.status === 'forming' && world.day - c.formedDay > 180) {
+                    c.status = 'dissolved';
+                    c.resolvedDay = world.day;
+                    c.resolutionMessage = c.resolutionMessage || 'The coalition lost momentum and dissolved.';
+                    return true;
+                }
+                return true;
+            });
         }
     }
 
@@ -32664,15 +32719,24 @@
 
             var mother = null;
             var father = null;
+            var playerParent = null;
             for (var pi = 0; pi < child.parentIds.length; pi++) {
-                var par = findPerson(child.parentIds[pi]);
+                var parentId = child.parentIds[pi];
+                var par = null;
+                // v9p33river434: custody logic must recognize the player marker in parentIds, not just NPC person records.
+                if (playerPersonId && (parentId === playerPersonId || parentId === 'player') && typeof Player !== 'undefined' && Player.state && Player.state.alive !== false) {
+                    par = Player.state;
+                    playerParent = par;
+                } else {
+                    par = findPerson(parentId);
+                }
                 if (!par || !par.alive) continue;
                 if (par.sex === 'female' || par.sex === 'F') mother = par;
                 else if (!father) father = par;
             }
 
             var custodian = mother || father;
-            if (father && (father.id === playerPersonId || (child.townId === father.townId && (!mother || mother.townId !== child.townId)))) {
+            if (father && ((playerParent && father === playerParent) || (child.townId === father.townId && (!mother || mother.townId !== child.townId)))) {
                 custodian = father;
             } else if (mother && child.townId === mother.townId) {
                 custodian = mother;
@@ -32742,6 +32806,8 @@
         var newTown = findTown(newTownId);
         if (!newTown) return;
 
+        var playerParentId = (typeof Player !== 'undefined') ? (Player.id || Player.personId || 'player') : 'player';
+        var movingParentId = parent.id || ((typeof Player !== 'undefined' && parent === Player.state) ? playerParentId : null);
         for (var ci = 0; ci < parent.childrenIds.length; ci++) {
             var child = findPerson(parent.childrenIds[ci]);
             if (!child || !child.alive) continue;
@@ -32754,8 +32820,15 @@
             var otherParentKeeping = false;
             if (child.parentIds) {
                 for (var opi = 0; opi < child.parentIds.length; opi++) {
-                    if (child.parentIds[opi] === parent.id) continue;
-                    var otherParent = findPerson(child.parentIds[opi]);
+                    var otherParentId = child.parentIds[opi];
+                    if (movingParentId && otherParentId === movingParentId) continue;
+                    var otherParent = null;
+                    // v9p33river434: movement helpers must honor the player parent marker so NPC travel doesn't steal children from the player.
+                    if (otherParentId === playerParentId && typeof Player !== 'undefined' && Player.state && Player.state.alive !== false) {
+                        otherParent = Player.state;
+                    } else {
+                        otherParent = findPerson(otherParentId);
+                    }
                     if (otherParent && otherParent.alive && otherParent.townId === child.townId) {
                         if (otherParent.sex === 'female' || otherParent.sex === 'F') otherParentKeeping = true;
                         if (parent.sex === 'female' || parent.sex === 'F') otherParentKeeping = false;
@@ -33599,6 +33672,10 @@
                 }
             }
 
+            // v9p33river435: noble coalition — keep noble political pressure systems advancing
+            tickNobleAdvisoryInfluence();
+            tickNobleCoalitions();
+
             // Inter-kingdom trade deals (per-kingdom interval)
             if (world.day % (_rFF ? 10 : 5) === 0) {
                 for (const k of world.kingdoms) {
@@ -33956,6 +34033,311 @@
                 details: { type: 'conspiracy_formed', kingdomId: k.id }
             });
             return { success: true, message: 'You and ' + noble.firstName + ' have begun plotting a ' + type + ' against the king of ' + k.name + '.' };
+        },
+
+        // v9p33river435: enhanced conspiracy — estimate current plot odds for UI
+        getConspiracyDetails(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._conspiracy) return null;
+            var c = k._conspiracy;
+            var plotterCount = (c.plotters || []).length;
+            var successChance = 0;
+            if (c.type === 'assassination') {
+                successChance = Math.min(75, 50 + Math.max(0, (plotterCount - 1) * 5));
+                var rgCount = (k._employees && k._employees.royalGuards) ? k._employees.royalGuards.length : 0;
+                successChance = Math.max(5, successChance - Math.min(20, rgCount));
+            } else if (c.type === 'coup') {
+                var plotterSupport = plotterCount * 50;
+                var garrison = k.soldiers || 0;
+                successChance = plotterSupport > garrison ? 70 : 40;
+                var rgCount2 = (k._employees && k._employees.royalGuards) ? k._employees.royalGuards.length : 0;
+                successChance = Math.max(5, successChance - Math.min(20, rgCount2));
+            } else if (c.type === 'revolt_support') {
+                successChance = 50;
+            }
+            return {
+                type: c.type,
+                successChance: Math.round(successChance),
+                detectionRisk: 8,
+                caughtConsequence: 'Arrest, imprisonment, possible execution. Your reputation will be destroyed.',
+                strength: Math.floor(c.strength || 0),
+                threshold: 80,
+                plotterCount: plotterCount,
+                daysSinceStart: world.day - c.startDay
+            };
+        },
+
+        // v9p33river435: enhanced conspiracy — risky noble recruitment for active plots
+        playerRecruitConspirator(kingdomId, nobleId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._conspiracy) return { success: false, message: 'No active conspiracy.' };
+            if (k._conspiracy.plotters.indexOf('player') < 0) return { success: false, message: 'You must be part of the conspiracy to recruit.' };
+            if (k._conspiracy.plotters.indexOf(nobleId) >= 0) return { success: false, message: 'This noble is already a conspirator.' };
+
+            var noble = findPerson(nobleId);
+            if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+            var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
+            if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
+            if (nobleId === k.king) return { success: false, message: 'You cannot recruit the king into a conspiracy against themselves!' };
+
+            var rng = world.rng;
+            var kingLoy = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+            var playerRel = 50;
+            try {
+                if (typeof Player !== 'undefined' && Player.getRelationship) {
+                    var rel = Player.getRelationship(nobleId);
+                    playerRel = (rel && rel.level) || 50;
+                }
+            } catch (e) {}
+            var perceivedLoy = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : kingLoy;
+            var reportChance = (kingLoy / 100) * 0.4 + (perceivedLoy / 100) * 0.3 - (playerRel / 100) * 0.3;
+            reportChance = Math.max(0, Math.min(0.80, reportChance));
+            if (kingLoy < 30 && playerRel > 60) reportChance = 0;
+
+            var recruitChance = 0.20;
+            if (kingLoy < 50) recruitChance += (50 - kingLoy) * 0.006;
+            if (playerRel > 50) recruitChance += (playerRel - 50) * 0.003;
+            var nP = noble.personality || {};
+            if ((nP.ambition || 50) > 60) recruitChance += 0.08;
+            var agenda = null;
+            try { agenda = getNobleAgenda(nobleId); } catch (e) {}
+            if (agenda && agenda.loyalty < 35) recruitChance += 0.10;
+            recruitChance = Math.max(0.05, Math.min(0.90, recruitChance));
+
+            if (rng.chance(reportChance)) {
+                k._conspiracy.detected = true;
+                var kingPerson = findPerson(k.king);
+                var kingName = kingPerson ? (kingPerson.firstName || 'The King') : 'The King';
+                var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId;
+                var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+                logEvent('🕵️ ' + (noble.firstName || 'A noble') + ' reported a conspiracy to ' + kingName + ' of ' + k.name + '! The plot is exposed!', {
+                    type: 'conspiracy_reported', kingdomId: k.id,
+                    cause: noble.firstName + ' was approached to join and reported the plot'
+                }, category);
+                for (var di = 0; di < k._conspiracy.plotters.length; di++) {
+                    var plotterId = k._conspiracy.plotters[di];
+                    var plotter = findPerson(plotterId);
+                    if (plotter && plotter.alive && plotterId !== 'player' && rng.chance(0.60)) {
+                        plotter._arrested = true;
+                        plotter.kingLoyalty = Math.min(100, (plotter.kingLoyalty || 0) + 20);
+                    }
+                }
+                if (typeof _playerConspiracyCaught === 'function') {
+                    _playerConspiracyCaught(k, k._conspiracy.type, false);
+                }
+                noble.kingLoyalty = Math.min(100, (noble.kingLoyalty || 50) + 15);
+                noble.perceivedKingLoyalty = Math.min(100, (noble.perceivedKingLoyalty || 50) + 20);
+                k._conspiracy = null;
+                return {
+                    success: false,
+                    reported: true,
+                    message: noble.firstName + ' was horrified by your proposal and went straight to the king! The conspiracy has been exposed!'
+                };
+            }
+
+            if (!rng.chance(recruitChance)) {
+                return {
+                    success: false,
+                    reported: false,
+                    message: noble.firstName + ' refuses to join. "I want no part of this. But... I did not hear this conversation."',
+                    recruitChance: Math.round(recruitChance * 100),
+                    reportRisk: Math.round(reportChance * 100)
+                };
+            }
+
+            k._conspiracy.plotters.push(nobleId);
+            k._conspiracy.strength += 10;
+            return {
+                success: true,
+                reported: false,
+                message: noble.firstName + ' nods grimly. "I am with you. The king must be dealt with."',
+                recruitChance: Math.round(recruitChance * 100),
+                reportRisk: Math.round(reportChance * 100)
+            };
+        },
+
+        // v9p33river435: noble coalition — list active and recently resolved coalitions
+        getKingdomCoalitions(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k) return [];
+            return (k._nobleCoalitions || []).map(function(c) {
+                return {
+                    id: c.id,
+                    cause: c.cause,
+                    causeLabel: c.causeLabel,
+                    organizer: c.organizer,
+                    members: (c.members || []).slice(),
+                    memberCount: (c.members || []).length,
+                    formedDay: c.formedDay,
+                    status: c.status,
+                    strength: _computeCoalitionStrength(c, k),
+                    threshold: _computeKingStubbornness(k),
+                    successChance: _computeCoalitionSuccessChance(c, k),
+                    resolvedDay: c.resolvedDay || null,
+                    resolutionMessage: c.resolutionMessage || null
+                };
+            });
+        },
+
+        // v9p33river435: noble coalition — form a public lobbying bloc around a policy cause
+        playerFormCoalition(kingdomId, cause) {
+            var k = findKingdom(kingdomId);
+            if (!k) return { success: false, message: 'Kingdom not found.' };
+            if (!k.king) return { success: false, message: 'This kingdom has no king to petition.' };
+            if (k.king === 'player' || k.king === 'player_king') return { success: false, message: 'You are the king — you can simply enact policy directly.' };
+            if (!k._nobleCoalitions) k._nobleCoalitions = [];
+            for (var i = 0; i < k._nobleCoalitions.length; i++) {
+                if (k._nobleCoalitions[i].cause === cause && k._nobleCoalitions[i].status === 'forming') {
+                    return { success: false, message: 'A coalition for this cause already exists. Try recruiting more members instead.' };
+                }
+            }
+            var activeCount = k._nobleCoalitions.filter(function(c) { return c.status === 'forming'; }).length;
+            if (activeCount >= 3) return { success: false, message: 'Too many active coalitions in this kingdom. Wait for one to resolve.' };
+            var causeLabels = {
+                lower_taxes: 'Lower Taxes',
+                raise_taxes: 'Raise Taxes',
+                make_peace: 'Seek Peace',
+                declare_war: 'Declare War',
+                war_offensive: 'Military Offensive',
+                form_alliance: 'Form Alliance',
+                build_infrastructure: 'Build Infrastructure',
+                build_walls: 'Fortify Towns',
+                improve_happiness: 'Improve Public Welfare',
+                medical_funding: 'Fund Plague Relief'
+            };
+            if (!causeLabels[cause]) return { success: false, message: 'Invalid cause for a coalition.' };
+            var coalition = {
+                id: 'coalition_' + world.day + '_' + cause,
+                cause: cause,
+                causeLabel: causeLabels[cause],
+                organizer: 'player',
+                members: [{ id: 'player', name: 'You', influence: 1.0 }],
+                formedDay: world.day,
+                status: 'forming'
+            };
+            k._nobleCoalitions.push(coalition);
+            logEvent('📜 You have started a political coalition in ' + k.name + ' to advocate for: ' + causeLabels[cause] + '.', {
+                type: 'coalition_formed', kingdomId: k.id, cause: cause
+            }, 'my_kingdom');
+            return { success: true, message: 'You have formed a coalition to ' + causeLabels[cause].toLowerCase() + ' in ' + k.name + '. Recruit nobles to strengthen your cause.' };
+        },
+
+        // v9p33river435: noble coalition — recruit a noble into an open political movement
+        playerRecruitToCoalition(kingdomId, coalitionId, nobleId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._nobleCoalitions) return { success: false, message: 'No coalitions found.' };
+            var coalition = null;
+            for (var i = 0; i < k._nobleCoalitions.length; i++) {
+                if (k._nobleCoalitions[i].id === coalitionId) {
+                    coalition = k._nobleCoalitions[i];
+                    break;
+                }
+            }
+            if (!coalition) return { success: false, message: 'Coalition not found.' };
+            if (coalition.status !== 'forming') return { success: false, message: 'This coalition is no longer active.' };
+            for (var j = 0; j < coalition.members.length; j++) {
+                if (coalition.members[j].id === nobleId) return { success: false, message: 'This noble is already a member.' };
+            }
+            var noble = findPerson(nobleId);
+            if (!noble || !noble.alive) return { success: false, message: 'Noble not found or dead.' };
+            if (nobleId === k.king) return { success: false, message: 'The king cannot join a coalition petitioning themselves.' };
+            var nobleRank = (noble.socialRank && noble.socialRank[kingdomId]) || 0;
+            if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
+            var rng = world.rng;
+            var recruitChance = 0.30;
+            var agenda = getNobleAgenda(nobleId);
+            if (agenda && agenda.advice) {
+                for (var ai = 0; ai < agenda.advice.length; ai++) {
+                    if (agenda.advice[ai].actionId === coalition.cause) {
+                        recruitChance += 0.30;
+                        break;
+                    }
+                }
+            }
+            var playerRel = 50;
+            try {
+                if (typeof Player !== 'undefined' && Player.getRelationship) {
+                    var rel = Player.getRelationship(nobleId);
+                    playerRel = (rel && rel.level) || 50;
+                }
+            } catch (e) {}
+            if (playerRel > 50) recruitChance += (playerRel - 50) * 0.003;
+            var kingLoy = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+            if (kingLoy > 70) recruitChance -= (kingLoy - 70) * 0.005;
+            var nP = noble.personality || {};
+            if ((nP.ambition || 50) > 60) recruitChance += 0.05;
+            if ((nP.warmth || 50) > 55) recruitChance += 0.03;
+            recruitChance = Math.max(0.05, Math.min(0.95, recruitChance));
+            if (!rng.chance(recruitChance)) {
+                var refusalReasons = [
+                    noble.firstName + ' listens politely but declines. "I appreciate your passion, but I\'m not ready to take sides."',
+                    noble.firstName + ' shakes their head. "The king knows what he\'s doing. I won\'t second-guess him."',
+                    noble.firstName + ' hesitates. "Perhaps another time. I have too much at stake right now."',
+                    noble.firstName + ' considers it. "An interesting proposition, but I must think on it further."'
+                ];
+                return { success: false, message: rng.pick(refusalReasons), chance: Math.round(recruitChance * 100) };
+            }
+            var influence = _computeNobleInfluence(noble, k);
+            coalition.members.push({
+                id: nobleId,
+                name: (noble.firstName || '?') + ' ' + (noble.lastName || ''),
+                influence: influence
+            });
+            return {
+                success: true,
+                message: noble.firstName + ' agrees to join the coalition! "I believe in this cause."',
+                influence: influence,
+                chance: Math.round(recruitChance * 100)
+            };
+        },
+
+        // v9p33river435: noble coalition — formally petition the king with the assembled bloc
+        playerPresentCoalition(kingdomId, coalitionId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._nobleCoalitions) return { success: false, message: 'No coalitions found.' };
+            var coalition = null;
+            for (var i = 0; i < k._nobleCoalitions.length; i++) {
+                if (k._nobleCoalitions[i].id === coalitionId) {
+                    coalition = k._nobleCoalitions[i];
+                    break;
+                }
+            }
+            if (!coalition) return { success: false, message: 'Coalition not found.' };
+            if (coalition.status !== 'forming') return { success: false, message: 'This coalition has already been presented.' };
+            if (coalition.members.length < 2) return { success: false, message: 'You need at least one noble ally to present your case to the king.' };
+            var rng = world.rng;
+            var successChance = _computeCoalitionSuccessChance(coalition, k);
+            coalition.status = 'resolved';
+            coalition.resolvedDay = world.day;
+            var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId;
+            var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
+            if (rng.chance(successChance)) {
+                _executeNobleAdvisedAction(k, coalition.cause, rng);
+                coalition.resolutionMessage = 'The king was persuaded! Your coalition achieved: ' + coalition.causeLabel;
+                logEvent('👑 The king of ' + k.name + ' was convinced by a coalition of ' + coalition.members.length + ' to ' + coalition.causeLabel.toLowerCase() + '!', {
+                    type: 'coalition_success', kingdomId: k.id, cause: coalition.cause
+                }, category);
+                for (var mi = 0; mi < coalition.members.length; mi++) {
+                    var member = findPerson(coalition.members[mi].id);
+                    if (member && member.alive && member.kingLoyalty != null) {
+                        member.kingLoyalty = Math.min(100, member.kingLoyalty + 5);
+                    }
+                }
+                if (typeof Player !== 'undefined' && Player.modifyReputation) {
+                    Player.modifyReputation(kingdomId, 3);
+                }
+                return { success: true, message: coalition.resolutionMessage };
+            }
+            var refusalMessages = [
+                'The king listens but is unmoved. "I appreciate your counsel, but I must follow my own judgment."',
+                'The king waves dismissively. "I have considered this matter and my decision stands."',
+                'The king seems irritated. "I did not ask for a delegation. Return to your estates."'
+            ];
+            coalition.resolutionMessage = rng.pick(refusalMessages);
+            logEvent('👑 The king of ' + k.name + ' rejected a coalition petition to ' + coalition.causeLabel.toLowerCase() + '.', {
+                type: 'coalition_rejected', kingdomId: k.id, cause: coalition.cause
+            }, category);
+            return { success: false, message: coalition.resolutionMessage };
         },
 
         // Player supports a revolt by pledging gold and support
@@ -34501,18 +34883,21 @@
             if (!bid || typeof bid !== 'object') return { success: false, reason: 'Invalid bid' };
             const merchantId = typeof bid.merchantId === 'string' ? bid.merchantId.trim() : '';
             const pricePerUnit = Number(bid.pricePerUnit);
-            if (!merchantId) return { success: false, reason: 'Invalid merchant' };
+            var playerMerchantId = (typeof Player !== 'undefined') ? (Player.id || Player.personId || 'player') : 'player';
+            // v9p33river434: procurement bids may come from the player marker or a live merchant NPC, but not arbitrary ids.
+            if (!merchantId || (merchantId !== playerMerchantId && !findPerson(merchantId))) return { success: false, reason: 'Invalid merchant' };
             if (!isFinite(pricePerUnit) || pricePerUnit <= 0) return { success: false, reason: 'Invalid price' };
+            var sanitizedQty = null;
             if (bid.qty != null) {
-                const bidQty = Number(bid.qty);
-                if (!isFinite(bidQty) || bidQty <= 0) return { success: false, reason: 'Invalid quantity' };
+                sanitizedQty = Math.floor(Number(bid.qty));
+                if (!isFinite(sanitizedQty) || sanitizedQty <= 0) return { success: false, reason: 'Invalid quantity' };
             }
             if (pricePerUnit > order.maxPricePerUnit) return { success: false, reason: 'Price exceeds maximum' };
             if (order.bids.some(function(existingBid) { return existingBid.merchantId === merchantId; })) {
                 return { success: false, reason: 'Merchant already bid on this order' };
             }
             // v9p33river434: validate merchant identity/price before storing procurement bids.
-            order.bids.push(Object.assign({}, bid, { merchantId: merchantId, pricePerUnit: pricePerUnit }));
+            order.bids.push(Object.assign({}, bid, { merchantId: merchantId, pricePerUnit: pricePerUnit, qty: sanitizedQty != null ? sanitizedQty : bid.qty }));
             return { success: true };
         },
         deliverKingdomOrder(kingdomId, orderId, merchantId, qty) {
@@ -34530,23 +34915,44 @@
             qty = Math.floor(qty);
             const remaining = Math.max(0, (order.qty || 0) - (order.qtyDelivered || 0));
             const requestedQty = Math.min(qty, remaining);
+            var playerMerchantId = (typeof Player !== 'undefined') ? (Player.id || Player.personId || 'player') : 'player';
+            function _refundPlayerOrderGoods(refundQty) {
+                refundQty = Math.floor(Number(refundQty) || 0);
+                if (refundQty <= 0 || merchantId !== playerMerchantId || typeof Player === 'undefined' || !Player.state) return;
+                if (!Player.state.inventory) Player.state.inventory = {};
+                Player.state.inventory[order.resourceId] = (Player.state.inventory[order.resourceId] || 0) + refundQty;
+            }
             if (requestedQty <= 0) return { success: false, reason: 'Nothing to deliver' };
             const unitPrice = Number(order.assignedPrice);
-            if (!isFinite(unitPrice) || unitPrice <= 0) return { success: false, reason: 'Invalid assigned price' };
+            if (!isFinite(unitPrice) || unitPrice <= 0) {
+                _refundPlayerOrderGoods(requestedQty);
+                return { success: false, reason: 'Invalid assigned price' };
+            }
             const availableGold = Math.max(0, k.gold || 0);
             let deliverQty = Math.min(requestedQty, Math.floor(availableGold / unitPrice));
-            if (deliverQty <= 0) return { success: false, reason: 'Kingdom treasury cannot afford this delivery' };
+            if (deliverQty <= 0) {
+                _refundPlayerOrderGoods(requestedQty);
+                return { success: false, reason: 'Kingdom treasury cannot afford this delivery' };
+            }
             let completed = deliverQty >= remaining;
             const completionBonus = completed ? Math.max(0, order.bonusOnCompletion || 0) : 0;
             if (completed && availableGold < (deliverQty * unitPrice + completionBonus)) {
                 const maxNonFinal = Math.min(requestedQty, Math.max(0, remaining - 1), Math.floor(availableGold / unitPrice));
-                if (maxNonFinal <= 0) return { success: false, reason: 'Kingdom treasury cannot cover the final delivery and bonus' };
+                if (maxNonFinal <= 0) {
+                    _refundPlayerOrderGoods(requestedQty);
+                    return { success: false, reason: 'Kingdom treasury cannot cover the final delivery and bonus' };
+                }
                 deliverQty = maxNonFinal;
                 completed = false;
             }
             const payment = deliverQty * unitPrice;
             const actualBonus = completed ? completionBonus : 0;
-            if ((payment + actualBonus) > availableGold) return { success: false, reason: 'Kingdom treasury cannot afford this delivery' };
+            if ((payment + actualBonus) > availableGold) {
+                _refundPlayerOrderGoods(requestedQty);
+                return { success: false, reason: 'Kingdom treasury cannot afford this delivery' };
+            }
+            // v9p33river434: player order delivery pre-deducts goods before settlement, so refund anything the treasury couldn't actually buy.
+            _refundPlayerOrderGoods(requestedQty - deliverQty);
 
             order.qtyDelivered = (order.qtyDelivered || 0) + deliverQty;
             if (k.militaryStockpile && Object.prototype.hasOwnProperty.call(k.militaryStockpile, order.resourceId)) {
@@ -36180,10 +36586,12 @@
         },
 
         // ---- Conspiracy API ----
+        // v9p33river435: enhanced conspiracy — expose rich conspiracy data to UI callers
         getKingdomConspiracy: function(kingdomId) {
             var k = findKingdom(kingdomId);
             if (!k || !k._conspiracy) return null;
-            var inConspiracy = k._conspiracy.plotters.indexOf('player') >= 0;
+            var c = k._conspiracy;
+            var inConspiracy = c.plotters.indexOf('player') >= 0;
             var hasSpy = false;
             try {
                 // v9p33river350: 'spy_network' is NOT a skill — it's a
@@ -36198,7 +36606,6 @@
                         if (!_sn) continue;
                         if (_sn.expiresDay && _sn.expiresDay <= _curDay) continue;
                         if (_sn.kingdomId === k.id) { hasSpy = true; break; }
-                        // Fallback: resolve town if kingdomId wasn't stored.
                         if (!_sn.kingdomId) {
                             var _snTown = findTown(_snTid);
                             if (_snTown && _snTown.kingdomId === k.id) { hasSpy = true; break; }
@@ -36207,13 +36614,26 @@
                 }
             } catch (e) { /* Player not loaded */ }
             if (!inConspiracy && !hasSpy) return null;
+            var plotterNames = [];
+            for (var i = 0; i < c.plotters.length; i++) {
+                if (c.plotters[i] === 'player') {
+                    plotterNames.push('You');
+                    continue;
+                }
+                var p = findPerson(c.plotters[i]);
+                if (p && p.alive) plotterNames.push((p.firstName || '?') + ' ' + (p.lastName || ''));
+            }
             return {
-                type: k._conspiracy.type,
-                plotters: k._conspiracy.plotters.length,
-                strength: k._conspiracy.strength,
-                detected: k._conspiracy.detected,
-                revoltTargetTownId: k._conspiracy.revoltTargetTownId || null,
-                revoltTargetTownName: k._conspiracy.revoltTargetTownName || null
+                type: c.type,
+                plotters: c.plotters.slice(),
+                plotterCount: c.plotters.length,
+                plotterNames: plotterNames,
+                strength: c.strength,
+                startDay: c.startDay,
+                playerInvolved: inConspiracy,
+                detected: c.detected,
+                revoltTargetTownId: c.revoltTargetTownId || null,
+                revoltTargetTownName: c.revoltTargetTownName || null
             };
         },
 
