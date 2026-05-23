@@ -1515,6 +1515,32 @@
         var elites = (_tickCache.eliteMerchants || world.people.filter(function(p) { return p.alive && p.isEliteMerchant; }));
         for (var i = 0; i < elites.length; i++) {
             var em = elites[i];
+            // v9p33river435: agenda system — elite merchant trade gossip
+            if (day % 30 === 0) {
+                try {
+                    var _emGName = (em.firstName || '') + ' ' + (em.lastName || '');
+                    var _emStrat = em.strategy || 'diversified';
+                    var _emStratLabels = {
+                        food_monopoly: 'cornering the food market',
+                        military_supplier: 'stockpiling weapons and armor',
+                        luxury_trader: 'trading in luxury goods',
+                        war_profiteer: 'profiting from the war',
+                        land_baron: 'acquiring property',
+                        trade_network: 'expanding trade routes',
+                        medical_supplier: 'dealing in medicines',
+                        culture_trader: 'investing in culture and instruments',
+                        retail_mogul: 'building a retail empire',
+                        political_climber: 'buying political influence',
+                        diversified: 'diversifying their investments'
+                    };
+                    var _emGossipText = _emGName.trim() + ' is said to be ' + (_emStratLabels[_emStrat] || 'making moves in the market');
+                    if (typeof _storeBackgroundGossip === 'function') {
+                        _storeBackgroundGossip('trade', _emGossipText, { personId: em.id, type: 'em_trade_gossip' });
+                    } else if (typeof Engine !== 'undefined' && Engine.storeBackgroundGossip) {
+                        Engine.storeBackgroundGossip('trade', _emGossipText, { personId: em.id, type: 'em_trade_gossip' });
+                    }
+                } catch(_emGErr) {}
+            }
             // Stagger: each elite ticks every 3 days on their own slot
             var hash = 0;
             for (var ci = 0; ci < em.id.length; ci++) hash = (hash * 31 + em.id.charCodeAt(ci)) | 0;
@@ -7304,5 +7330,9 @@
         };
     }
     Engine.getEliteMerchantAgenda = getEliteMerchantAgenda;
+    // v9p33river435: agenda system — expose strategy goods for trade intel
+    Engine.getEMStrategyGoods = function(strategy) {
+        return STRATEGY_GOODS[strategy] || STRATEGY_GOODS['diversified'] || [];
+    };
 
 })(window.Engine);

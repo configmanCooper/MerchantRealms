@@ -1849,9 +1849,29 @@
         const town = Engine.findTown(person.townId || player.townId);
         const rng = Engine.getRng();
         const detection = Math.min(0.95, calculateCorruptDetection(0.25, town) * _nobleTargetMult(personId) * _targetWealthDetectMult(personId));
-        var _o = _rollSchemeOutcome(detection, rng);
-        var caught = _o.caught;
-        var successful = _o.successful;
+        var successChance = Math.max(0.02, Math.min(0.98, (1 - detection)));
+        // v9p33river435: agenda system — disloyal nobles more vulnerable to blackmail
+        if (person && person.socialRank) {
+            var _bmAgenda = null;
+            try { if (Engine.getNobleAgenda) _bmAgenda = Engine.getNobleAgenda(person.id); } catch(e) {}
+            if (_bmAgenda) {
+                // Disloyal nobles (agenda shows dissatisfaction) are more vulnerable
+                if (_bmAgenda.loyalty < 35) {
+                    successChance += 0.12; // +12% for disloyal nobles — they have more to hide
+                }
+                // Nobles with throne ambitions are vulnerable to exposure
+                var _bmGoals = _bmAgenda.goals || [];
+                for (var _bmgi = 0; _bmgi < _bmGoals.length; _bmgi++) {
+                    if (_bmGoals[_bmgi].text && _bmGoals[_bmgi].text.indexOf('throne') >= 0) {
+                        successChance += 0.08;
+                        break;
+                    }
+                }
+            }
+        }
+        successChance = Math.max(0.02, Math.min(0.98, successChance));
+        var caught = rng && rng.chance ? rng.chance(detection) : false;
+        var successful = rng && rng.chance ? rng.chance(successChance) : false;
 
         var payment = 0;
         if (successful) {
@@ -5221,6 +5241,24 @@
         if (hasSkill('kingmaker_skill')) baseSuccess += 0.10;
         if (hasSkill('silver_tongue_dark')) baseSuccess += 0.10;
         var successChance = Math.min(0.90, baseSuccess + totalBonus);
+        // v9p33river435: agenda system — opposing agendas make nobles easier to pit
+        try {
+            var _pitAgA = Engine.getNobleAgenda ? Engine.getNobleAgenda(nobleAId) : null;
+            var _pitAgB = Engine.getNobleAgenda ? Engine.getNobleAgenda(nobleBId) : null;
+            if (_pitAgA && _pitAgB && _pitAgA.advice && _pitAgB.advice) {
+                // Check if their top advice items are opposing
+                var _pitAdvA = _pitAgA.advice[0] ? _pitAgA.advice[0].actionId : '';
+                var _pitAdvB = _pitAgB.advice[0] ? _pitAgB.advice[0].actionId : '';
+                var _opposing = {
+                    'war_offensive': 'make_peace', 'make_peace': 'war_offensive',
+                    'lower_taxes': 'raise_taxes', 'raise_taxes': 'lower_taxes'
+                };
+                if (_opposing[_pitAdvA] === _pitAdvB || _opposing[_pitAdvB] === _pitAdvA) {
+                    successChance += 0.10; // +10% — their agendas naturally conflict
+                }
+            }
+        } catch(_pitErr) {}
+        successChance = Math.min(0.90, successChance);
 
         player.gold -= adjustedCost;
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.scheme || 4);
@@ -5326,6 +5364,22 @@
             if (noble.personality.frugality !== undefined && noble.personality.frugality < 40) baseSuccess += 0.05; // v9p33river415: was .greed (doesn't exist on NPCs); low frugality = greedy = easier to turn
         }
         var successChance = Math.min(0.85, baseSuccess + influenceBonus);
+        // v9p33river435: agenda system — already-disloyal nobles easier to turn
+        try {
+            var _turnAg = Engine.getNobleAgenda ? Engine.getNobleAgenda(nobleId) : null;
+            if (_turnAg && _turnAg.loyalty < 40) {
+                successChance += 0.12; // +12% — they're already dissatisfied
+            }
+            if (_turnAg && _turnAg.goals) {
+                for (var _tgi = 0; _tgi < _turnAg.goals.length; _tgi++) {
+                    if (_turnAg.goals[_tgi].text && _turnAg.goals[_tgi].text.indexOf('throne') >= 0) {
+                        successChance += 0.10; // +10% — they already want the throne
+                        break;
+                    }
+                }
+            }
+        } catch(_turnErr) {}
+        successChance = Math.min(0.85, successChance);
 
         // Find the king first — refund if not found (H4 fix)
         var king = null;
@@ -5766,12 +5820,12 @@
 
         // Sponsor must be hostile or at war with target
         var isHostile = false;
-        if (sponsor.atWar && sponsor.atWar.has && sponsor.atWar.has(kingdom.id)) isHostile = true;
-        if (!isHostile && sponsor.atWar && sponsor.atWar.size > 0) {
-            // Check if they share an enemy
-            if (kingdom.atWar && kingdom.atWar.has) {
-                sponsor.atWar.forEach(function(wk) { if (kingdom.atWar.has(wk)) isHostile = true; });
-            }
+        var sponsorWars = Array.isArray(sponsor.atWar) ? sponsor.atWar.slice() : (sponsor.atWar && typeof sponsor.atWar.forEach === 'function' ? Array.from(sponsor.atWar) : []);
+        var kingdomWars = Array.isArray(kingdom.atWar) ? kingdom.atWar.slice() : (kingdom.atWar && typeof kingdom.atWar.forEach === 'function' ? Array.from(kingdom.atWar) : []);
+        if (sponsorWars.indexOf(kingdom.id) >= 0) isHostile = true;
+        // v9p33river434: atWar can be a Set on live kingdoms or an Array on copied/deserialized ones.
+        if (!isHostile && sponsorWars.length > 0 && kingdomWars.length > 0) {
+            sponsorWars.forEach(function(wk) { if (kingdomWars.indexOf(wk) >= 0) isHostile = true; });
         }
         // Also allow if kingdom relations are poor
         if (!isHostile) {

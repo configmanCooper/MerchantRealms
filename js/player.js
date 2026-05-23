@@ -16677,6 +16677,44 @@
         return { success: true, message: msg, reveal };
     }
 
+    // v9p33river435: agenda system — local player-state alias for agenda discovery helpers
+    function ps() {
+        return player;
+    }
+
+    // v9p33river435: agenda system — track discovered agendas
+    function discoverAgenda(personId, agendaData, isVolatile) {
+        var player = ps();
+        if (!player._discoveredAgendas) player._discoveredAgendas = {};
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        agendaData = agendaData || {};
+        player._discoveredAgendas[personId] = {
+            discoveredDay: day,
+            goals: agendaData.goals ? agendaData.goals.slice(0, 3) : [],
+            advice: agendaData.advice ? agendaData.advice.slice(0, 3) : [],
+            plans: agendaData.plans ? agendaData.plans.slice(0, 3) : [],
+            concerns: agendaData.concerns ? agendaData.concerns.slice(0, 3) : [],
+            strategy: agendaData.strategy || null,
+            financialHealth: agendaData.financialHealth || null,
+            isVolatile: !!isVolatile,
+            expiresDay: day + (isVolatile ? 30 : 90)
+        };
+    }
+
+    // v9p33river435: agenda system — retrieve discovered agendas with expiry
+    function getDiscoveredAgenda(personId) {
+        var player = ps();
+        if (!player._discoveredAgendas) return null;
+        var entry = player._discoveredAgendas[personId];
+        if (!entry) return null;
+        var day = Engine.getDay ? Engine.getDay() : 0;
+        if (entry.expiresDay && day > entry.expiresDay) {
+            delete player._discoveredAgendas[personId];
+            return null;
+        }
+        return entry;
+    }
+
     // ========================================================
     // §11.6B4 ONGOING SPOUSE EFFECTS
     // ========================================================
@@ -20231,6 +20269,8 @@
             _dnaTaskProgress: structuredClone(player._dnaTaskProgress || {}),
             nobleIntrigues: structuredClone(player.nobleIntrigues || {}),
             _discoveredSecrets: structuredClone(player._discoveredSecrets || []),
+            // v9p33river435: agenda system — persist discovered agendas
+            _discoveredAgendas: player._discoveredAgendas || {},
             _schemeCooldowns: structuredClone(player._schemeCooldowns || {}),
             // v9p33river346: per-town cooldown map for the Incite Strikes scheme.
             _inciteStrikesCooldowns: structuredClone(player._inciteStrikesCooldowns || {}),
@@ -20878,6 +20918,9 @@
         player._dnaTaskProgress = data._dnaTaskProgress || {};
         player.nobleIntrigues = data.nobleIntrigues || {};
         player._discoveredSecrets = data._discoveredSecrets || [];
+        // v9p33river435: agenda system — restore discovered agendas
+        if (data._discoveredAgendas) player._discoveredAgendas = data._discoveredAgendas;
+        if (!player._discoveredAgendas) player._discoveredAgendas = {};
         player._schemeCooldowns = data._schemeCooldowns || {};
         // v9p33river346: restore per-town Incite Strikes cooldown map.
         player._inciteStrikesCooldowns = data._inciteStrikesCooldowns || {};
@@ -39251,8 +39294,9 @@
         var entryFee = job.entryFee;
         if (player.gold < entryFee) return { success: false, message: 'Cannot afford the ' + entryFee + 'g entry fee.' };
 
-        // Deduct entry fee
-        player.gold -= entryFee;
+        // v9p33river434: route tournament entry through tracked gold flow and refund it if round setup throws.
+        _modifyGold(-entryFee, 'jobs', 'Tournament entry fee');
+        if (player.stats) player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + entryFee;
 
         // Set up tournament state
         var town = Engine.findTown(player.townId);
@@ -39263,15 +39307,37 @@
             townId: player.townId,
         };
 
-        // Track job experience
-        trackJobExperience('tournament', 1);
-        grantXP(5, 'Tournament Entry');
+        var roundResult = null;
+        try {
+            // Advance some time for the first round
+            if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
 
-        // Advance some time for the first round
-        if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(5);
+            // Fight round 1
+            roundResult = fightTournamentRound();
+        } catch (e) {
+            player.tournamentState = null;
+            _modifyGold(entryFee, 'jobs', 'Tournament entry fee refund');
+            if (player.stats) player.stats.totalGoldSpent = Math.max(0, (player.stats.totalGoldSpent || 0) - entryFee);
+            throw e;
+        }
 
-        // Fight round 1
-        return fightTournamentRound();
+        if (roundResult && roundResult.success) {
+            grantXP(5, 'Tournament Entry');
+        }
+        return roundResult;
+    }
+
+    function _awardTournamentPrize(prize, round, kingdomId) {
+        // v9p33river434: tournament prizes should hit player finance logs and the sponsoring kingdom treasury ledger.
+        var prizeDesc = round === 3 ? 'Tournament champion prize' : 'Tournament Round ' + round + ' prize';
+        _modifyGold(prize, 'jobs', prizeDesc);
+        var kingdom = kingdomId ? Engine.findKingdom(kingdomId) : null;
+        if (kingdom) {
+            kingdom.gold = (kingdom.gold || 0) - prize;
+            if (Engine.recordKingdomTransaction) {
+                Engine.recordKingdomTransaction(kingdom, 'expense', prize, prizeDesc + ' for ' + (player.fullName || 'the player'), 'other');
+            }
+        }
     }
 
     function fightTournamentRound() {
@@ -39327,8 +39393,7 @@
 
         if (round === 3) {
             // WON THE WHOLE TOURNAMENT!
-            player.gold += prize;
-            player.stats.totalGoldEarned += prize;
+            _awardTournamentPrize(prize, round, player.tournamentState ? player.tournamentState.kingdomId : null);
             player.tournamentsWon = (player.tournamentsWon || 0) + 1;
             player.tournamentState = null;
 
@@ -39360,8 +39425,7 @@
         }
 
         // Won round but tournament continues — player can choose to continue
-        player.gold += prize;
-        player.stats.totalGoldEarned += prize;
+        _awardTournamentPrize(prize, round, player.tournamentState ? player.tournamentState.kingdomId : null);
         player.tournamentState.round = round + 1;
 
         // Advance time between rounds
@@ -40190,6 +40254,13 @@
             }
         }
 
+        // v9p33river434: abort malformed legacy auto-travel saves before indexing into a missing route.
+        if (!Array.isArray(mission.legs) || mission.legs.length === 0) {
+            Engine.logEvent('🗺️ ' + (mission.name || 'Auto-travel') + ' mission aborted — route data missing.', null, "travel_events");
+            completeAutoTravelMission(false);
+            return;
+        }
+
         var leg = mission.legs[mission.currentLeg];
         if (!leg) { completeAutoTravelMission(true); return; }
 
@@ -40223,6 +40294,8 @@
             if (mission.risks && rng) {
                 if (mission.risks.deathRisk && rng.random() < mission.risks.deathRisk && !window._godInvincible) {
                     player.deathCause = 'Killed during ' + mission.name + ' mission';
+                    // v9p33river434: clean up temporary mission transport before death clears the active job.
+                    _removeJobTransport(mission);
                     player.autoTravelJob = null;
                     Engine.logEvent('☠️ ' + player.fullName + ' was killed during ' + mission.name + ' mission.', null, "travel_events");
                     handlePlayerDeath();
@@ -43006,6 +43079,9 @@
         askTavernAbout,
         observePerson,
         askFriendAbout,
+        // v9p33river435: agenda system — expose agenda discovery helpers
+        discoverAgenda,
+        getDiscoveredAgenda,
 
         // XP & Skills
         grantXP,

@@ -8790,6 +8790,7 @@
         var rng = world.rng;
         var candidates = election.candidates;
         var playerAdvisorId = election.playerAdvisorId;
+        var effectivePlayerVoteId = playerVoteId != null ? playerVoteId : (election.playerVoteId || null);
 
         // Rebuild live candidate list
         var voterPool = candidates.map(function(c) { return findPerson(c.id); }).filter(function(a) { return a && a.alive; });
@@ -8847,14 +8848,14 @@
         }
 
         // Player's direct vote gives a major boost (+40) to their chosen candidate
-        if (playerVoteId && scores[playerVoteId] !== undefined) {
+        if (effectivePlayerVoteId && scores[effectivePlayerVoteId] !== undefined) {
             // Player's own vote weight based on rank
             var _playerVoteWeight = 1;
             if (typeof Player !== 'undefined' && Player.state && Player.state.socialRank) {
                 var _pvRank = Player.state.socialRank[kingdom.id] || 0;
                 _playerVoteWeight = _pvRank >= 6 ? 5 : _pvRank >= 5 ? 2 : 1; // L1: RA vote weight 5
             }
-            scores[playerVoteId] += 30 * _playerVoteWeight;
+            scores[effectivePlayerVoteId] += 30 * _playerVoteWeight;
         }
 
         // Run weighted ranked elimination voting
@@ -8913,7 +8914,7 @@
             if (playerAdvisorId) {
                 kingdom._playerInfluencedKingDay = world.day;
                 var playerName = (typeof Player !== 'undefined' && Player.fullName) ? Player.fullName : 'you';
-                if (playerVoteId === elected.id) {
+                if (effectivePlayerVoteId === elected.id) {
                     EventTypes.emit('ELECTION_CANDIDATE_WON', { playerName: playerName });
                 } else {
                     EventTypes.emit('ELECTION_PARTICIPATED', { playerName: playerName });
@@ -12570,6 +12571,35 @@
             }
         }
 
+        // v9p33river435: agenda system — agenda-based voting inclination
+        try {
+            var _voteAgenda = getNobleAgenda(noble.id);
+            if (_voteAgenda && _voteAgenda.advice && _voteAgenda.advice.length > 0) {
+                var _topAdvice = _voteAgenda.advice[0].actionId;
+                // Map agenda to vote alignment
+                var _agendaVoteMap = {
+                    'lower_taxes': { yes: ['lower_taxes'], no: ['raise_taxes'] },
+                    'raise_taxes': { yes: ['raise_taxes', 'major_policy'], no: ['lower_taxes'] },
+                    'war_offensive': { yes: ['declare_war', 'annex'], no: ['make_peace'] },
+                    'declare_war': { yes: ['declare_war', 'annex'], no: ['make_peace'] },
+                    'make_peace': { yes: ['make_peace'], no: ['declare_war'] },
+                    'form_alliance': { yes: ['alliance'], no: ['declare_war'] },
+                    'build_infrastructure': { yes: ['major_policy'], no: [] },
+                    'improve_happiness': { yes: ['major_policy', 'unban_goods'], no: ['ban_goods'] },
+                    'build_walls': { yes: ['major_policy'], no: [] },
+                    'medical_funding': { yes: ['major_policy'], no: [] }
+                };
+                var _avMap = _agendaVoteMap[_topAdvice];
+                if (_avMap) {
+                    if (_avMap.yes && _avMap.yes.indexOf(vote.type) >= 0) {
+                        if (rng.chance(0.20)) lean = 'yes';
+                    } else if (_avMap.no && _avMap.no.indexOf(vote.type) >= 0) {
+                        if (rng.chance(0.20)) lean = 'no';
+                    }
+                }
+            }
+        } catch(_agVoteErr) {}
+
         // Random factor: 20% chance to flip
         if (rng.chance(0.20)) {
             lean = (lean === 'yes') ? 'no' : 'yes';
@@ -15399,6 +15429,19 @@
                         if (_rival.perceivedKingLoyalty == null) _rival.perceivedKingLoyalty = _rival.kingLoyalty || 50;
                         _rival.perceivedKingLoyalty = Math.max(5, _rival.perceivedKingLoyalty - rng.randInt(2, 6));
                     }
+                }
+                // v9p33river435: agenda system — nobles generate political gossip
+                if (world.day % 30 === 0 && noble.alive) {
+                    try {
+                        var _gAgenda = getNobleAgenda(noble.id);
+                        if (_gAgenda && _gAgenda.advice && _gAgenda.advice.length > 0) {
+                            var _gAdvice = _gAgenda.advice[0];
+                            if (_gAdvice.weight >= 60) {
+                                var _gName = (noble.firstName || '') + ' ' + (noble.lastName || '');
+                                _storeBackgroundGossip('political', _gName.trim() + ' is known to favor: "' + _gAdvice.text + '"', { personId: noble.id, type: 'noble_agenda_gossip' });
+                            }
+                        }
+                    } catch(_gossErr) {}
                 }
             }
 
@@ -27876,11 +27919,43 @@
         var numPetitions = rng.randInt(2, 5);
         var kNobles = getNoblesInKingdom(kId);
         var _courtMoodPetMod = getKingMoodModifiers(k).petitionMod || 1;
+        // v9p33river435: agenda system — map noble agendas to likely court petition themes
+        var _courtAgendaPetitionMap = {
+            'lower_taxes': ['tax_relief'],
+            'war_offensive': ['military_funding'],
+            'declare_war': ['military_funding'],
+            'make_peace': ['trade_dispute'],
+            'form_alliance': ['trade_dispute'],
+            'build_infrastructure': ['building_request'],
+            'improve_happiness': ['festival_request'],
+            'build_walls': ['military_funding'],
+            'medical_funding': ['building_request']
+        };
 
         for (var pi = 0; pi < numPetitions; pi++) {
-            var petitionTypes = ['tax_relief', 'military_funding', 'building_request', 'trade_dispute', 'noble_grievance', 'festival_request'];
-            var pType = rng.pick(petitionTypes);
             var petitioner = kNobles.length > 0 && rng.chance(0.4) ? rng.pick(kNobles) : null;
+            var petitionTypes = ['tax_relief', 'military_funding', 'building_request', 'trade_dispute', 'noble_grievance', 'festival_request'];
+            var pType = null;
+            // v9p33river435: agenda system — weight noble court petitions toward their agenda
+            if (petitioner) {
+                try {
+                    var _npcAgenda = getNobleAgenda(petitioner.id);
+                    var _weightedPetitions = petitionTypes.slice();
+                    if (_npcAgenda && _npcAgenda.advice) {
+                        for (var _apai = 0; _apai < _npcAgenda.advice.length; _apai++) {
+                            var _petitionPrefs = _courtAgendaPetitionMap[_npcAgenda.advice[_apai].actionId] || [];
+                            for (var _appi = 0; _appi < _petitionPrefs.length; _appi++) {
+                                if (petitionTypes.indexOf(_petitionPrefs[_appi]) >= 0) {
+                                    _weightedPetitions.push(_petitionPrefs[_appi]);
+                                    _weightedPetitions.push(_petitionPrefs[_appi]);
+                                }
+                            }
+                        }
+                    }
+                    pType = rng.pick(_weightedPetitions);
+                } catch(_courtAgendaErr) {}
+            }
+            if (!pType) pType = rng.pick(petitionTypes);
             var petName = petitioner ? (petitioner.firstName || 'A noble') : 'A citizen';
 
             // King AI decides based on personality (mood modifies approval chance)
@@ -28093,6 +28168,46 @@
                     if (nRel > 50) nobleRelBonus += (nRel - 50) * 0.001;
                 }
                 chance += Math.min(0.15, nobleRelBonus); // cap noble bonus at 15%
+
+                // v9p33river435: agenda system — petition-agenda alignment mapping
+                var _agendaPetMap = {
+                    'lower_taxes': ['lower_taxes'],
+                    'raise_taxes': ['raise_taxes'],
+                    'declare_war': ['war_offensive', 'declare_war'],
+                    'seek_peace': ['make_peace'],
+                    'build_road': ['build_infrastructure'],
+                    'build_market': ['build_infrastructure'],
+                    'build_well': ['build_infrastructure'],
+                    'build_sea_route': ['build_infrastructure'],
+                    'fund_festival': ['improve_happiness'],
+                    'repair_infrastructure': ['build_infrastructure'],
+                    'ban_goods': [],
+                    'unban_goods': [],
+                    'build_defense': ['build_walls']
+                };
+                // v9p33river435: agenda system — nobles whose agenda aligns with petition give stronger support
+                var _agendaAlignIds = _agendaPetMap[petTypeId] || [];
+                if (_agendaAlignIds.length > 0) {
+                    var _agendaBonus = 0;
+                    for (var _ani = 0; _ani < kNobles.length; _ani++) {
+                        var _aNoble = kNobles[_ani];
+                        var _aAgenda = null;
+                        try { _aAgenda = getNobleAgenda(_aNoble.id); } catch(e) {}
+                        if (!_aAgenda || !_aAgenda.advice) continue;
+                        var _aligned = false;
+                        for (var _aai = 0; _aai < _aAgenda.advice.length; _aai++) {
+                            if (_agendaAlignIds.indexOf(_aAgenda.advice[_aai].actionId) >= 0) {
+                                _aligned = true;
+                                break;
+                            }
+                        }
+                        if (_aligned) {
+                            // Aligned nobles contribute stronger support based on influence
+                            _agendaBonus += (_aAgenda.influence || 1) * 0.005;
+                        }
+                    }
+                    chance += Math.min(0.12, _agendaBonus); // cap agenda bonus at 12%
+                }
 
                 // Social rank bonus
                 var rankIdx = 0;
@@ -29985,6 +30100,65 @@
             } else if (resolution === 'compromise') {
                 if ((rnP.intelligence || 50) > 60) { reaction = rn.name + ' acknowledged the wisdom of compromise.'; rnPerson.kingLoyalty = Math.min(100, (rnPerson.kingLoyalty || 50) + 2); }
             }
+            // v9p33river435: agenda system — noble agendas shape court reactions
+            try {
+                var _reactionAgenda = getNobleAgenda(rn.id);
+                if (_reactionAgenda && _reactionAgenda.advice && _reactionAgenda.advice.length > 0) {
+                    var _reactionTop = _reactionAgenda.advice[0].actionId;
+                    var _agendaFavored = [];
+                    var _agendaOpposed = [];
+                    if (caseObj.typeId === 'merchant_tax' || caseObj.typeId === 'tax_reduction') {
+                        if (resolution === 'grant' || resolution === 'compromise') {
+                            _agendaFavored.push('lower_taxes');
+                            _agendaFavored.push('improve_happiness');
+                            _agendaOpposed.push('raise_taxes');
+                        } else if (resolution === 'deny') {
+                            _agendaFavored.push('raise_taxes');
+                            _agendaOpposed.push('lower_taxes');
+                            _agendaOpposed.push('improve_happiness');
+                        }
+                    } else if (caseObj.typeId === 'food_petition') {
+                        if (resolution === 'grant' || resolution === 'compromise') _agendaFavored.push('improve_happiness');
+                        else if (resolution === 'deny') _agendaOpposed.push('improve_happiness');
+                    } else if (caseObj.typeId === 'building_permit' || caseObj.typeId === 'trade_rights') {
+                        if (resolution === 'grant' || resolution === 'compromise') _agendaFavored.push('build_infrastructure');
+                        else if (resolution === 'deny') _agendaOpposed.push('build_infrastructure');
+                    } else if (caseObj.typeId === 'temple_funding') {
+                        if (resolution === 'grant' || resolution === 'compromise') {
+                            _agendaFavored.push('medical_funding');
+                            _agendaFavored.push('improve_happiness');
+                        } else if (resolution === 'deny') {
+                            _agendaOpposed.push('medical_funding');
+                            _agendaOpposed.push('improve_happiness');
+                        }
+                    } else if (caseObj.typeId === 'military_honors' || caseObj.typeId === 'bandit_threat') {
+                        if (resolution === 'grant' || resolution === 'compromise') {
+                            _agendaFavored.push('war_offensive');
+                            _agendaFavored.push('declare_war');
+                            _agendaFavored.push('build_walls');
+                        } else if (resolution === 'deny') {
+                            _agendaOpposed.push('war_offensive');
+                            _agendaOpposed.push('declare_war');
+                            _agendaOpposed.push('build_walls');
+                        }
+                    } else if (caseObj.typeId === 'foreign_envoy' || caseObj.typeId === 'noble_marriage') {
+                        if (resolution === 'grant' || resolution === 'compromise') {
+                            _agendaFavored.push('make_peace');
+                            _agendaFavored.push('form_alliance');
+                        } else if (resolution === 'deny') {
+                            _agendaOpposed.push('make_peace');
+                            _agendaOpposed.push('form_alliance');
+                        }
+                    }
+                    if (_agendaFavored.indexOf(_reactionTop) >= 0) {
+                        rnPerson.kingLoyalty = Math.min(100, (rnPerson.kingLoyalty || 50) + 3);
+                        reaction = reaction ? (reaction + ' They seemed satisfied that the ruling matched their agenda.') : (rn.name + ' seemed satisfied that the ruling matched their agenda.');
+                    } else if (_agendaOpposed.indexOf(_reactionTop) >= 0) {
+                        rnPerson.kingLoyalty = Math.max(0, (rnPerson.kingLoyalty || 50) - 3);
+                        reaction = reaction ? (reaction + ' They seemed displeased that the ruling cut against their agenda.') : (rn.name + ' seemed displeased that the ruling cut against their agenda.');
+                    }
+                }
+            } catch(_reactionAgendaErr) {}
             if (reaction) nobleReactions.push(reaction);
         }
 
@@ -30000,6 +30174,22 @@
             court.events.push('All cases have been heard. Court is adjourned.');
             logEvent('⚖️ Court session in ' + k.name + ' has concluded. ' + court._resolvedCount + ' cases resolved.', { _noToast: true },
                 typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id ? 'my_kingdom' : 'foreign_kingdoms');
+            // v9p33river435: agenda system — court gossip
+            try {
+                if (typeof _storeBackgroundGossip === 'function') {
+                    for (var _cgi = 0; _cgi < Math.min(3, court.nobles.length); _cgi++) {
+                        var _cgNobleRef = court.nobles[_cgi];
+                        var _cgNoble = _cgNobleRef ? findPerson(_cgNobleRef.id) : null;
+                        if (!_cgNoble) continue;
+                        var _cgAgenda = getNobleAgenda(_cgNoble.id);
+                        if (_cgAgenda && _cgAgenda.advice && _cgAgenda.advice.length > 0) {
+                            var _cgName = (_cgNoble.firstName || '') + ' ' + (_cgNoble.lastName || '');
+                            var _cgAdvice = _cgAgenda.advice[0].text;
+                            _storeBackgroundGossip('political', _cgName.trim() + ' has been lobbying: "' + _cgAdvice + '"', { personId: _cgNoble.id, kingdomId: k.id, type: 'noble_agenda' });
+                        }
+                    }
+                }
+            } catch(_cgErr) {}
         }
 
         return { success: true, message: resultMsg, nobleReactions: nobleReactions, allResolved: allResolved };
@@ -32115,13 +32305,17 @@
     function tickFoodDecay() {
         var currentDay = world.day;
 
+        function decayOwnedStorage(storageObj, supplyObj) {
+            if (!storageObj || !supplyObj) return;
+            _decayFoodInStorage(storageObj, supplyObj, currentDay);
+        }
+
         // 1. Town markets
         for (var ti = 0; ti < world.towns.length; ti++) {
             var town = world.towns[ti];
             if (!town.market || !town.market.supply) continue;
             var destroyed = _decayFoodInStorage(town.market, town.market.supply, currentDay);
             if (destroyed > 0 && town.market.supply) {
-                // Small happiness impact from rotting food
                 if (town.happiness != null) town.happiness = Math.max(0, town.happiness - 0.1);
             }
         }
@@ -32158,7 +32352,43 @@
             for (var bi = 0; bi < Player.state.buildings.length; bi++) {
                 var bld = Player.state.buildings[bi];
                 if (!bld.inventory) continue;
-                _decayFoodInStorage(bld, bld.inventory, currentDay);
+                decayOwnedStorage(bld, bld.inventory);
+            }
+        }
+
+        // v9p33river434: player house homeStorage can hold perishables outside town storage.
+        if (typeof Player !== 'undefined' && Player.state && Player.state.houses) {
+            for (var hi = 0; hi < Player.state.houses.length; hi++) {
+                var house = Player.state.houses[hi];
+                if (!house || !house.homeStorage) continue;
+                decayOwnedStorage(house.homeStorage, house.homeStorage);
+            }
+        }
+
+        // v9p33river434: hidden warehouse inventories are separate from townStorage and still need spoilage.
+        if (typeof Player !== 'undefined' && Player.state && Player.state.hiddenWarehouses) {
+            for (var hwi = 0; hwi < Player.state.hiddenWarehouses.length; hwi++) {
+                var hiddenWh = Player.state.hiddenWarehouses[hwi];
+                if (!hiddenWh || !hiddenWh.inventory) continue;
+                decayOwnedStorage(hiddenWh.inventory, hiddenWh.inventory);
+            }
+        }
+
+        // v9p33river434: active caravan manifests can carry perishable food over land or sea.
+        if (typeof Player !== 'undefined' && Player.state && Player.state.caravans) {
+            for (var ci2 = 0; ci2 < Player.state.caravans.length; ci2++) {
+                var caravan = Player.state.caravans[ci2];
+                if (!caravan || !caravan.goods) continue;
+                decayOwnedStorage(caravan, caravan.goods);
+            }
+        }
+
+        // v9p33river434: docked ship cargo is separate from caravans/town storage and was previously ignored.
+        if (typeof Player !== 'undefined' && Player.state && Player.state.ships) {
+            for (var si = 0; si < Player.state.ships.length; si++) {
+                var ship = Player.state.ships[si];
+                if (!ship || !ship.cargo) continue;
+                decayOwnedStorage(ship, ship.cargo);
             }
         }
 
@@ -32166,16 +32396,15 @@
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
             var k = world.kingdoms[ki];
             if (!k.goodsStockpile) continue;
-            _decayFoodInStorage(k, k.goodsStockpile, currentDay);
+            decayOwnedStorage(k, k.goodsStockpile);
         }
 
-        // 5. Player town storage
+        // 5. Player town storage (includes outpost storage migrated into townStorage)
         if (typeof Player !== 'undefined' && Player.state && Player.state.townStorage) {
             for (var townId in Player.state.townStorage) {
                 var ts = Player.state.townStorage[townId];
                 if (!ts) continue;
-                if (!ts._foodAge) ts._foodAge = {};
-                _decayFoodInStorage(ts, ts, currentDay);
+                decayOwnedStorage(ts, ts);
             }
         }
     }
@@ -32191,18 +32420,20 @@
     function tickTravelingMusicians() {
         if (!world || !world.people) return;
         if (world.day % 5 !== 0) return; // every 5 days for performance
-        var rng = world.rng;
+        var rng = world.rng || Engine.getRng();
         var YOUNG_MUSICIAN_AGE = 16;
         var INSTRUMENT_IDS_LOCAL = ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy'];
 
-        // Count existing musicians
         var musicianCount = 0;
         for (var i = 0; i < world.people.length; i++) {
             if (world.people[i].alive && world.people[i]._isMusician) musicianCount++;
         }
 
-        // Convert some low-rank NPCs with high social to musicians (target ~1% of population)
-        var targetMusicians = Math.max(5, Math.floor(_tickCache.aliveCount * 0.01));
+        // v9p33river434: music generation must survive stale/missing tick-cache population counts.
+        var aliveCount = (_tickCache && typeof _tickCache.aliveCount === 'number')
+            ? _tickCache.aliveCount
+            : world.people.filter(function(p) { return p && p.alive; }).length;
+        var targetMusicians = Math.max(5, Math.floor(aliveCount * 0.01));
         if (musicianCount < targetMusicians) {
             var candidates = world.people.filter(function(p) {
                 return p.alive && !p._isMusician && !p.isEliteMerchant && !p.isKing && !p.isNoble &&
@@ -32210,7 +32441,6 @@
                     (p.occupation === 'laborer' || p.occupation === 'none' || p.occupation === 'merchant') &&
                     (!p.socialRank || Object.values(p.socialRank).every(function(r) { return r < 4; }));
             });
-            // Pick candidates with high social personality
             for (var ci = 0; ci < candidates.length && musicianCount < targetMusicians; ci++) {
                 var cand = candidates[ci];
                 var socialScore = (cand.personality && cand.personality.social) ? cand.personality.social : 30;
@@ -32226,14 +32456,12 @@
             }
         }
 
-        // Tick each musician
         for (var mi = 0; mi < world.people.length; mi++) {
             var m = world.people[mi];
             if (!m.alive || !m._isMusician) continue;
             var town = findTown(m.townId);
             if (!town) continue;
 
-            // Buy an instrument if don't have one
             if (!m._musicianInstrument && town.market && town.market.supply) {
                 for (var ii = 0; ii < INSTRUMENT_IDS_LOCAL.length; ii++) {
                     var instId = INSTRUMENT_IDS_LOCAL[ii];
@@ -32242,6 +32470,8 @@
                         if (m.gold >= instPrice) {
                             m.gold -= instPrice;
                             town.market.supply[instId]--;
+                            // v9p33river434: instrument purchases should pay the local market, not just erase supply.
+                            town._marketGoldDelta = (town._marketGoldDelta || 0) + instPrice;
                             m._musicianInstrument = instId;
                             break;
                         }
@@ -32249,7 +32479,6 @@
                 }
             }
 
-            // Perform at tavern for tips
             if (m._musicianInstrument && town.buildings) {
                 var tavern = null;
                 for (var ti = 0; ti < town.buildings.length; ti++) {
@@ -32258,7 +32487,6 @@
                 if (tavern) {
                     var skillTier = m._musicianSkill >= 76 ? 3.0 : m._musicianSkill >= 51 ? 2.0 : m._musicianSkill >= 26 ? 1.5 : 1.0;
                     var baseTips = Math.floor(3 * skillTier);
-                    // Preferred instrument bonus
                     var kingdom = findKingdom(town.kingdomId);
                     if (kingdom && kingdom.musicalPreference === m._musicianInstrument) {
                         baseTips = Math.floor(baseTips * 1.5);
@@ -32266,30 +32494,34 @@
                     m.gold += baseTips;
                     m._musicianTips += baseTips;
                     m._lastPerformDay = world.day;
-                    // Skill gain (diminishing returns)
                     if (m._musicianSkill < 100) {
                         m._musicianSkill = Math.min(100, m._musicianSkill + Math.max(0.2, (100 - m._musicianSkill) * 0.02));
                     }
-                    // Track musician at tavern for happiness bonus
                     if (!tavern._hiredMusicians) tavern._hiredMusicians = 0;
                     tavern._hiredMusicians = Math.min(4, (tavern._hiredMusicians || 0));
-                    // Count actual performing musicians at this tavern today
                     if (!tavern._performingMusiciansToday) tavern._performingMusiciansToday = 0;
                     tavern._performingMusiciansToday++;
                     tavern._hiredMusicians = Math.min(4, tavern._performingMusiciansToday);
                 }
             }
 
-            // Travel to new town periodically (every 15-30 days)
             if (!m._nextTravelDay) m._nextTravelDay = world.day + rng.randInt(15, 30);
             if (world.day >= m._nextTravelDay) {
                 m._nextTravelDay = world.day + rng.randInt(15, 30);
-                // Pick a connected town or random town (skip outposts — no tavern/audience)
-                var destTowns = world.towns.filter(function(t) {
-                    return t.id !== m.townId && !t.isOutpost && !t.abandoned && !t.destroyed && t.population > 20;
-                });
+                var destTowns = [];
+                // v9p33river434: musician travel should respect the connected-town network the comment describes.
+                var connectedIds = Array.isArray(town.connectedTowns) ? town.connectedTowns.slice() : [];
+                for (var cti = 0; cti < connectedIds.length; cti++) {
+                    var connectedTown = findTown(connectedIds[cti]);
+                    if (!connectedTown || connectedTown.id === m.townId || connectedTown.isOutpost || connectedTown.abandoned || connectedTown.destroyed || connectedTown.population <= 20) continue;
+                    destTowns.push(connectedTown);
+                }
+                if (destTowns.length === 0) {
+                    destTowns = world.towns.filter(function(t) {
+                        return t.id !== m.townId && !t.isOutpost && !t.abandoned && !t.destroyed && t.population > 20;
+                    });
+                }
                 if (destTowns.length > 0) {
-                    // Prefer towns with taverns and feasts/festivals
                     var scoredDests = destTowns.map(function(t) {
                         var score = t.prosperity || 50;
                         if (t.buildings) {
@@ -32297,7 +32529,6 @@
                                 if (t.buildings[bi].type === 'tavern') score += 20;
                             }
                         }
-                        // Check for active feasts/festivals in this kingdom
                         var k = findKingdom(t.kingdomId);
                         if (k && k._activeFeast && k._activeFeast.townId === t.id) score += 50;
                         if (k && k._activeFestivals) {
@@ -32318,7 +32549,6 @@
             }
         }
 
-        // Reset tavern performing musician counts for next tick
         for (var twi = 0; twi < world.towns.length; twi++) {
             var tw = world.towns[twi];
             if (!tw.buildings) continue;
@@ -32394,54 +32624,75 @@
      * Runs every 3 days for performance. If a child is separated from all parents,
      * moves them to the mother's town (or father's, or nearest family member).
      */
+    // v9p33river434: when child custody moves someone, copy the guardian's household-specific fields too.
+    function _syncChildHousehold(child, custodian) {
+        if (!child || !custodian) return;
+        if (custodian.houseType !== undefined) child.houseType = custodian.houseType;
+        if (custodian.rentedHouseId) child.rentedHouseId = custodian.rentedHouseId;
+        else delete child.rentedHouseId;
+        if (custodian._apartmentBuildingId) {
+            child.houseType = 'apartment';
+            child._apartmentBuildingId = custodian._apartmentBuildingId;
+        } else {
+            delete child._apartmentBuildingId;
+        }
+        if (custodian._tentCampId) {
+            child.houseType = 'tent';
+            child._tentCampId = custodian._tentCampId;
+            if (custodian._tentIndex !== undefined) child._tentIndex = custodian._tentIndex;
+            else delete child._tentIndex;
+        } else {
+            delete child._tentCampId;
+            delete child._tentIndex;
+        }
+    }
+
     function tickChildCustody() {
         if (!world || !world.people) return;
         if (world.day % 3 !== 0) return;
 
         var YOUNG_AGE = 12;
-
-        var _alive = _tickCache.alivePeople;
+        // v9p33river434: custody checks must survive missing/stale tick cache snapshots.
+        var _alive = (_tickCache && Array.isArray(_tickCache.alivePeople))
+            ? _tickCache.alivePeople
+            : world.people.filter(function(p) { return p && p.alive; });
+        var playerPersonId = (typeof Player !== 'undefined') ? (Player.id || Player.personId || 'player') : null;
         for (var i = 0; i < _alive.length; i++) {
             var child = _alive[i];
             if (child.age == null || child.age >= YOUNG_AGE) continue;
             if (!child.parentIds || child.parentIds.length === 0) continue;
 
-            // Find living parents
             var mother = null;
             var father = null;
             for (var pi = 0; pi < child.parentIds.length; pi++) {
                 var par = findPerson(child.parentIds[pi]);
                 if (!par || !par.alive) continue;
-                if (par.sex === 'female' || par.sex === 'F') {
-                    mother = par;
-                } else if (!father) {
-                    father = par;
-                }
+                if (par.sex === 'female' || par.sex === 'F') mother = par;
+                else if (!father) father = par;
             }
 
-            // Prefer mother, then father
             var custodian = mother || father;
+            if (father && (father.id === playerPersonId || (child.townId === father.townId && (!mother || mother.townId !== child.townId)))) {
+                custodian = father;
+            } else if (mother && child.townId === mother.townId) {
+                custodian = mother;
+            }
             if (!custodian) {
-                // Both parents dead — find a family member (grandparent, sibling of parent, etc.)
-                // Check if any alive person shares parentIds with the child's parents (aunt/uncle)
-                // or is listed as a parent of the child's parents (grandparent)
                 var _familyMember = null;
                 for (var fpi = 0; fpi < child.parentIds.length && !_familyMember; fpi++) {
                     var deadParent = findPerson(child.parentIds[fpi]);
                     if (!deadParent) continue;
-                    // Check grandparents
                     if (deadParent.parentIds) {
                         for (var gpi = 0; gpi < deadParent.parentIds.length; gpi++) {
                             var gp = findPerson(deadParent.parentIds[gpi]);
                             if (gp && gp.alive) { _familyMember = gp; break; }
                         }
                     }
-                    // Check aunts/uncles (siblings of parent — share parentIds)
                     if (!_familyMember && deadParent.parentIds && deadParent.parentIds.length > 0) {
                         for (var si = 0; si < world.people.length && !_familyMember; si++) {
                             var sib = world.people[si];
                             if (!sib.alive || sib.id === deadParent.id) continue;
-                            if (sib.age != null && sib.age < 18) continue; // must be adult
+                            if (sib.age != null && sib.age < 18) continue;
                             if (sib.parentIds && sib.parentIds.length > 0) {
                                 for (var spi = 0; spi < sib.parentIds.length; spi++) {
                                     if (deadParent.parentIds.indexOf(sib.parentIds[spi]) !== -1) {
@@ -32455,21 +32706,29 @@
                 }
                 custodian = _familyMember;
             }
+            if (!custodian) continue;
 
-            if (!custodian) continue; // orphan with no traceable family
+            if (child.townId === custodian.townId) {
+                _syncChildHousehold(child, custodian);
+                continue;
+            }
 
-            // If child is already in custodian's town, nothing to do
-            if (child.townId === custodian.townId) continue;
-
-            // Move child to custodian's town
             var childTown = findTown(child.townId);
             var custTown = findTown(custodian.townId);
-            if (!custTown) continue;
+            if (!childTown || !custTown) continue;
+            // v9p33river434: don't teleport children across hostile/disconnected borders when custody updates.
+            if (childTown.kingdomId !== custTown.kingdomId) {
+                var custodyPath = findPath(childTown.id, custTown.id);
+                if (!custodyPath || custodyPath.length === 0) continue;
+                var childKingdom = findKingdom(childTown.kingdomId);
+                if (childKingdom && childKingdom.atWar && childKingdom.atWar.has(custTown.kingdomId)) continue;
+            }
 
-            if (childTown) childTown.population = Math.max(0, childTown.population - 1);
+            childTown.population = Math.max(0, (childTown.population || 0) - 1);
             child.townId = custTown.id;
             child.kingdomId = custTown.kingdomId;
-            custTown.population++;
+            custTown.population = (custTown.population || 0) + 1;
+            _syncChildHousehold(child, custodian);
         }
     }
 
@@ -32487,25 +32746,19 @@
             var child = findPerson(parent.childrenIds[ci]);
             if (!child || !child.alive) continue;
             if (child.age == null || child.age >= YOUNG_AGE) continue;
-            if (child.townId === newTownId) continue;
+            if (child.townId === newTownId) {
+                _syncChildHousehold(child, parent);
+                continue;
+            }
 
-            // Only move if this parent is the primary custodian (mother preferred)
-            // If the other parent is alive and in the child's current town, leave child there
             var otherParentKeeping = false;
             if (child.parentIds) {
                 for (var opi = 0; opi < child.parentIds.length; opi++) {
                     if (child.parentIds[opi] === parent.id) continue;
                     var otherParent = findPerson(child.parentIds[opi]);
                     if (otherParent && otherParent.alive && otherParent.townId === child.townId) {
-                        // Other parent is alive and in child's town
-                        // If other parent is mother, they keep the child
-                        if (otherParent.sex === 'female' || otherParent.sex === 'F') {
-                            otherParentKeeping = true;
-                        }
-                        // If parent moving is mother, mother takes child
-                        if (parent.sex === 'female' || parent.sex === 'F') {
-                            otherParentKeeping = false;
-                        }
+                        if (otherParent.sex === 'female' || otherParent.sex === 'F') otherParentKeeping = true;
+                        if (parent.sex === 'female' || parent.sex === 'F') otherParentKeeping = false;
                         break;
                     }
                 }
@@ -32513,15 +32766,17 @@
             if (otherParentKeeping) continue;
 
             var oldTown = findTown(child.townId);
-            if (oldTown) oldTown.population = Math.max(0, oldTown.population - 1);
+            if (oldTown) oldTown.population = Math.max(0, (oldTown.population || 0) - 1);
             child.townId = newTownId;
             child.kingdomId = newKingdomId || newTown.kingdomId;
-            newTown.population++;
+            newTown.population = (newTown.population || 0) + 1;
+            _syncChildHousehold(child, parent);
         }
     }
 
     // ========================================================
     // §20 MAIN GENERATE & TICK
+    // ========================================================
     // ========================================================
 
     window.Engine = {
@@ -34243,8 +34498,21 @@
             const order = k.procurement.orders.find(o => o.id === orderId);
             if (!order) return { success: false, reason: 'Order not found' };
             if (order.status !== 'open') return { success: false, reason: 'Order not open for bids' };
-            if (bid.pricePerUnit > order.maxPricePerUnit) return { success: false, reason: 'Price exceeds maximum' };
-            order.bids.push(bid);
+            if (!bid || typeof bid !== 'object') return { success: false, reason: 'Invalid bid' };
+            const merchantId = typeof bid.merchantId === 'string' ? bid.merchantId.trim() : '';
+            const pricePerUnit = Number(bid.pricePerUnit);
+            if (!merchantId) return { success: false, reason: 'Invalid merchant' };
+            if (!isFinite(pricePerUnit) || pricePerUnit <= 0) return { success: false, reason: 'Invalid price' };
+            if (bid.qty != null) {
+                const bidQty = Number(bid.qty);
+                if (!isFinite(bidQty) || bidQty <= 0) return { success: false, reason: 'Invalid quantity' };
+            }
+            if (pricePerUnit > order.maxPricePerUnit) return { success: false, reason: 'Price exceeds maximum' };
+            if (order.bids.some(function(existingBid) { return existingBid.merchantId === merchantId; })) {
+                return { success: false, reason: 'Merchant already bid on this order' };
+            }
+            // v9p33river434: validate merchant identity/price before storing procurement bids.
+            order.bids.push(Object.assign({}, bid, { merchantId: merchantId, pricePerUnit: pricePerUnit }));
             return { success: true };
         },
         deliverKingdomOrder(kingdomId, orderId, merchantId, qty) {
@@ -34254,36 +34522,44 @@
             const order = k.procurement.orders.find(o => o.id === orderId);
             if (!order) return { success: false, reason: 'Order not found' };
             if (order.status !== 'assigned') return { success: false, reason: 'Order not assigned' };
+            if (typeof merchantId !== 'string' || !merchantId.trim()) return { success: false, reason: 'Invalid merchant' };
+            merchantId = merchantId.trim();
             if (order.assignedTo !== merchantId) return { success: false, reason: 'Order not assigned to you' };
-            const remaining = order.qty - order.qtyDelivered;
-            const deliverQty = Math.min(qty, remaining);
-            if (deliverQty <= 0) return { success: false, reason: 'Nothing to deliver' };
-            order.qtyDelivered += deliverQty;
-            const payment = deliverQty * order.assignedPrice;
-            // v9p33river312: previously subtracted payment unconditionally,
-            // letting kingdom gold go negative when treasury was empty.
-            // Now short-pay (capped at available treasury) so the delivery
-            // resolves but doesn't mint gold.
-            const actualPayment = Math.min(payment, Math.max(0, k.gold || 0));
-            // Add to military stockpile if applicable
-            if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
+            qty = Number(qty);
+            if (!isFinite(qty) || qty <= 0) return { success: false, reason: 'Invalid quantity' };
+            qty = Math.floor(qty);
+            const remaining = Math.max(0, (order.qty || 0) - (order.qtyDelivered || 0));
+            const requestedQty = Math.min(qty, remaining);
+            if (requestedQty <= 0) return { success: false, reason: 'Nothing to deliver' };
+            const unitPrice = Number(order.assignedPrice);
+            if (!isFinite(unitPrice) || unitPrice <= 0) return { success: false, reason: 'Invalid assigned price' };
+            const availableGold = Math.max(0, k.gold || 0);
+            let deliverQty = Math.min(requestedQty, Math.floor(availableGold / unitPrice));
+            if (deliverQty <= 0) return { success: false, reason: 'Kingdom treasury cannot afford this delivery' };
+            let completed = deliverQty >= remaining;
+            const completionBonus = completed ? Math.max(0, order.bonusOnCompletion || 0) : 0;
+            if (completed && availableGold < (deliverQty * unitPrice + completionBonus)) {
+                const maxNonFinal = Math.min(requestedQty, Math.max(0, remaining - 1), Math.floor(availableGold / unitPrice));
+                if (maxNonFinal <= 0) return { success: false, reason: 'Kingdom treasury cannot cover the final delivery and bonus' };
+                deliverQty = maxNonFinal;
+                completed = false;
+            }
+            const payment = deliverQty * unitPrice;
+            const actualBonus = completed ? completionBonus : 0;
+            if ((payment + actualBonus) > availableGold) return { success: false, reason: 'Kingdom treasury cannot afford this delivery' };
+
+            order.qtyDelivered = (order.qtyDelivered || 0) + deliverQty;
+            if (k.militaryStockpile && Object.prototype.hasOwnProperty.call(k.militaryStockpile, order.resourceId)) {
                 k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + deliverQty;
             } else {
-                // v9p33river399: non-military goods go to goodsStockpile (was silently dropped)
                 if (!k.goodsStockpile) k.goodsStockpile = {};
                 k.goodsStockpile[order.resourceId] = (k.goodsStockpile[order.resourceId] || 0) + deliverQty;
             }
-            k.gold -= actualPayment;
-            const completed = order.qtyDelivered >= order.qty;
-            // v9p33river295: completion bonus was returned to the caller
-            // (player.js:26035 / engine_elite_merchants.js:2020) and added
-            // to the merchant's gold, but never deducted from kingdom
-            // treasury — it was effectively minted. Charge it here so the
-            // bonus is paid out of kingdom gold.
-            const completionBonus = completed ? (order.bonusOnCompletion || 0) : 0;
-            const actualBonus = Math.min(completionBonus, Math.max(0, k.gold || 0));
+            k.gold = Math.max(0, (k.gold || 0) - payment);
+            if (payment > 0 && Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(k, 'expense', payment, 'Procurement delivery: ' + deliverQty + 'x ' + order.resourceId, 'procurement');
             if (actualBonus > 0) {
-                k.gold -= actualBonus;
+                k.gold = Math.max(0, (k.gold || 0) - actualBonus);
+                if (Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(k, 'expense', actualBonus, 'Procurement completion bonus: ' + order.resourceId, 'procurement');
             }
             if (completed) {
                 order.status = 'completed';
@@ -34291,13 +34567,10 @@
                 pref.reliability = Math.min(100, pref.reliability + 10);
                 pref.completedOrders = (pref.completedOrders || 0) + 1;
                 k.procurement.preferredMerchants[merchantId] = pref;
-                // Track on the merchant entity
                 var merchant = findPerson(merchantId);
-                if (merchant && merchant.isEliteMerchant) {
-                    merchant.ordersCompleted = (merchant.ordersCompleted || 0) + 1;
-                }
+                if (merchant && merchant.isEliteMerchant) merchant.ordersCompleted = (merchant.ordersCompleted || 0) + 1;
             }
-            return { success: true, payment: actualPayment, completed: completed, bonus: actualBonus, qtyDelivered: deliverQty };
+            return { success: true, payment: payment, completed: completed, bonus: actualBonus, qtyDelivered: deliverQty };
         },
         addKingdomSupplyDeal(kingdomId, deal) {
             if (!world) return false;
@@ -34323,9 +34596,17 @@
         castElectionVote: function(kingdomId, candidateId) {
             var k = findKingdom(kingdomId);
             if (!k || !k._pendingElection) return { success: false, reason: 'No pending election' };
-            var validCandidate = k._pendingElection.candidates.some(function(c) { return c.id === candidateId; });
+            var election = k._pendingElection;
+            var playerRank = (typeof Player !== 'undefined' && Player.state && Player.state.socialRank) ? (Player.state.socialRank[kingdomId] || 0) : 0;
+            if (!election.playerAdvisorId || playerRank < 4) return { success: false, reason: 'You are not eligible to vote in this election' };
+            var playerCanVote = election.candidates.some(function(c) { return c.id === election.playerAdvisorId && c.isPlayer; });
+            if (!playerCanVote) return { success: false, reason: 'You are not eligible to vote in this election' };
+            if (election.playerVoteId) return { success: false, reason: 'Your vote has already been cast' };
+            var validCandidate = election.candidates.some(function(c) { return c.id === candidateId; });
             if (!validCandidate) return { success: false, reason: 'Invalid candidate' };
-            _resolvePendingElection(k, candidateId);
+            // v9p33river434: store the vote and let the election resolve on the normal deliberation timer.
+            election.playerVoteId = candidateId;
+            election.playerVoteDay = world ? world.day : 0;
             return { success: true };
         },
         getRoyalCommissions: function(kingdomId) { var k = findKingdom(kingdomId); return k ? (k.royalCommissions || []) : []; },
@@ -34334,69 +34615,84 @@
             if (!k || !k.royalCommissions) return { success: false, reason: 'Kingdom not found' };
             var comm = k.royalCommissions.find(function(c) { return c.id === commissionId && c.status === 'open'; });
             if (!comm) return { success: false, reason: 'Commission not found or already fulfilled' };
-            // v9p33river418: reject building_request (no goods fulfillment path)
             if (comm.type === 'building_request' || !comm.resourceId || (comm.quantity || 0) <= 0) {
                 return { success: false, reason: 'This commission cannot be fulfilled with goods.' };
             }
-            // v9p33river418: validate and deduct goods from player
             if (typeof Player === 'undefined' || !Player.state) return { success: false, reason: 'No player state' };
-            var _rcInv = Player.state.inventory || {};
-            var _rcHeld = _rcInv[comm.resourceId] || 0;
-            var _rcTid = townId || Player.state.townId || (typeof Player !== 'undefined' ? Player.townId : '');
-            var _rcStored = 0;
-            if (_rcTid && Player.state.townStorage && Player.state.townStorage[_rcTid]) {
-                _rcStored = Player.state.townStorage[_rcTid][comm.resourceId] || 0;
+            var currentTownId = Player.state.townId || (typeof Player !== 'undefined' ? Player.townId : '') || '';
+            if (townId && currentTownId && townId !== currentTownId) return { success: false, reason: 'You must be in that town to use its storage.' };
+            var reward = Math.max(0, comm.reward || 0);
+            if ((k.gold || 0) < reward) return { success: false, reason: 'Kingdom treasury cannot fund the full reward.' };
+            var inv = Player.state.inventory || {};
+            var held = inv[comm.resourceId] || 0;
+            var storageTownId = currentTownId || townId || '';
+            var townStorage = (storageTownId && Player.state.townStorage) ? Player.state.townStorage[storageTownId] : null;
+            var stored = townStorage ? (townStorage[comm.resourceId] || 0) : 0;
+            var totalAvailable = held + stored;
+            if (totalAvailable < comm.quantity) return { success: false, reason: 'Not enough ' + comm.resourceId + ' (have ' + totalAvailable + ', need ' + comm.quantity + ')' };
+
+            var remaining = comm.quantity;
+            var carriedUsed = Math.min(remaining, held);
+            var movedFoodQty = 0;
+            var currentDay = world ? world.day : 0;
+            function moveRemovedCohorts(removed) {
+                if (!removed || removed.length === 0) return;
+                for (var ri = 0; ri < removed.length; ri++) {
+                    _pushFoodCohort(k, comm.resourceId, removed[ri].qty, removed[ri].day);
+                    movedFoodQty += removed[ri].qty;
+                }
             }
-            var _rcTotal = _rcHeld + _rcStored;
-            if (_rcTotal < comm.quantity) return { success: false, reason: 'Not enough ' + comm.resourceId + ' (have ' + _rcTotal + ', need ' + comm.quantity + ')' };
-            // Deduct from carried first, then town storage
-            var _rcRemain = comm.quantity;
-            var _rcFromCarried = Math.min(_rcRemain, _rcHeld);
-            if (_rcFromCarried > 0) {
-                Player.state.inventory[comm.resourceId] = (_rcInv[comm.resourceId] || 0) - _rcFromCarried;
+            if (carriedUsed > 0) {
+                Player.state.inventory[comm.resourceId] = (inv[comm.resourceId] || 0) - carriedUsed;
                 if (Player.state.inventory[comm.resourceId] <= 0) delete Player.state.inventory[comm.resourceId];
-                _rcRemain -= _rcFromCarried;
+                moveRemovedCohorts(_removeFoodCohort(Player.state, comm.resourceId, carriedUsed));
+                remaining -= carriedUsed;
             }
-            if (_rcRemain > 0 && _rcTid && Player.state.townStorage && Player.state.townStorage[_rcTid]) {
-                Player.state.townStorage[_rcTid][comm.resourceId] = (Player.state.townStorage[_rcTid][comm.resourceId] || 0) - _rcRemain;
-                if (Player.state.townStorage[_rcTid][comm.resourceId] <= 0) delete Player.state.townStorage[_rcTid][comm.resourceId];
+            if (remaining > 0 && townStorage) {
+                townStorage[comm.resourceId] = (townStorage[comm.resourceId] || 0) - remaining;
+                if (townStorage[comm.resourceId] <= 0) delete townStorage[comm.resourceId];
+                moveRemovedCohorts(_removeFoodCohort(townStorage, comm.resourceId, remaining));
             }
+            if (movedFoodQty < comm.quantity && CONFIG.PERISHABLE_FOODS && CONFIG.PERISHABLE_FOODS[comm.resourceId]) {
+                // v9p33river434: legacy storages may lack cohorts; seed any missing delivered food so it still decays in the stockpile.
+                _pushFoodCohort(k, comm.resourceId, comm.quantity - movedFoodQty, currentDay);
+            }
+
             comm.status = 'fulfilled';
             comm.fulfilledBy = playerId || 'player';
-            // v9p33river418: add goods to kingdom stockpile
             if (!k.goodsStockpile) k.goodsStockpile = {};
             k.goodsStockpile[comm.resourceId] = (k.goodsStockpile[comm.resourceId] || 0) + comm.quantity;
-            // v9p33river418: deduct reward from kingdom treasury (cap at available)
-            var _rcReward = Math.min(comm.reward || 0, Math.max(0, k.gold || 0));
-            k.gold = Math.max(0, (k.gold || 0) - _rcReward);
+            k.gold = Math.max(0, (k.gold || 0) - reward);
+            if (reward > 0 && Engine.recordKingdomTransaction) Engine.recordKingdomTransaction(k, 'expense', reward, 'Royal commission reward: ' + comm.description, 'commissions');
             logKingAction(k, '✅ Commission fulfilled: ' + comm.description);
-            return { success: true, reward: _rcReward, repReward: comm.repReward };
+            return { success: true, reward: reward, repReward: comm.repReward };
         },
         backPretender: function(kingdomId, pretenderId, goldAmount) {
             var k = findKingdom(kingdomId);
             if (!k || !k.successionCrisis || !k.successionCrisis.active) return { success: false, reason: 'No active crisis' };
             var pretender = k.successionCrisis.pretenders.find(function(p) { return p.id === pretenderId; });
             if (!pretender) return { success: false, reason: 'Pretender not found' };
-            // v9p33river417: validate goldAmount (reject negative, NaN, non-numeric)
+            var cfg = (typeof CONFIG !== 'undefined' && CONFIG.SUCCESSION_CRISIS) ? CONFIG.SUCCESSION_CRISIS : {};
+            var minInfluence = cfg.minGoldToInfluence || 10000;
             goldAmount = Number(goldAmount);
             if (!isFinite(goldAmount)) return { success: false, reason: 'Invalid amount' };
             goldAmount = Math.floor(goldAmount);
-            if (goldAmount <= 0) return { success: false, reason: 'Must pledge at least 1 gold' };
+            if (goldAmount < minInfluence) return { success: false, reason: 'Must pledge at least ' + minInfluence + ' gold' };
             if (typeof Player === 'undefined' || (Player.state.gold || 0) < goldAmount) {
                 return { success: false, reason: 'Not enough gold' };
             }
-            // v9p33river417: use modifyGold if available
             if (typeof Player.modifyGold === 'function') {
                 Player.modifyGold(-goldAmount, 'succession_backing');
             } else {
                 Player.state.gold = Math.max(0, (Player.state.gold || 0) - goldAmount);
             }
             if (Player.state.stats) Player.state.stats.totalGoldSpent = (Player.state.stats.totalGoldSpent || 0) + goldAmount;
-            pretender.support += Math.floor(goldAmount / 100);
+            var supportGain = Math.floor(goldAmount / 100);
+            pretender.support += supportGain;
             k.successionCrisis.playerBacking = pretenderId;
             k.successionCrisis.playerInvested = (k.successionCrisis.playerInvested || 0) + goldAmount;
             EventTypes.emit('BACKED_CLAIMANT', { claimantName: pretender.name, gold: goldAmount, kingdomName: k.name });
-            return { success: true, newSupport: pretender.support };
+            return { success: true, newSupport: pretender.support, supportGain: supportGain };
         },
         applyPriceControls: applyPriceControls,
         setKingMood: setKingMood,

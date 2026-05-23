@@ -523,9 +523,14 @@ window.UI = (function () {
         registerAction('treatCompanionUI', function(_t, d) { if (d.type) treatCompanionUI(d.type, d.id, d.val); });
         registerAction('setNotifFilter', function(_t, d) { if (d.key && d.val != null) setNotifFilter(d.key, d.val); });
         registerAction('setTradeQty', function(_t, d) { if (d.type && d.id) setTradeQty(d.type, d.id, parseInt(d.qty)||1, parseFloat(d.price)||0); });
-        registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id, d.val, parseInt(d.qty)); });
-        registerAction('_bldDeposit', function(_t, d) { if (d.id) UI._bldDeposit(d.id, d.val, parseInt(d.qty)); });
-        registerAction('_bldWithdraw', function(_t, d) { if (d.id) UI._bldWithdraw(d.id, d.val, parseInt(d.qty)); });
+        // v9p33river434: malformed data-qty attributes were propagating NaN into building/item transfer handlers.
+        function _parsePositiveActionQty(rawQty, fallbackQty) {
+            var qty = parseInt(rawQty, 10);
+            return (!isFinite(qty) || qty <= 0) ? fallbackQty : qty;
+        }
+        registerAction('collectOutputUI', function(_t, d) { if (d.id) UI.collectOutputUI(d.id, d.val, _parsePositiveActionQty(d.qty, 1)); });
+        registerAction('_bldDeposit', function(_t, d) { if (d.id) UI._bldDeposit(d.id, d.val, _parsePositiveActionQty(d.qty, 1)); });
+        registerAction('_bldWithdraw', function(_t, d) { if (d.id) UI._bldWithdraw(d.id, d.val, _parsePositiveActionQty(d.qty, 1)); });
         registerAction('switchOrdersTab', function(_t, d) { if (d.tab) UI.switchOrdersTab(d.tab); });
         registerAction('_switchKQTab', function(_t, d) { if (d.tab && d.kingdom) UI._switchKQTab(d.tab, d.kingdom); });
         // v9p33river297: removed dead `executeAdvice` stub here that required
@@ -627,7 +632,22 @@ window.UI = (function () {
         // v9p33river209: data-params is an attribute, browser auto-decodes
         // HTML entities (&quot; → "). So the writer just needs &quot; in source
         // and the reader gets clean JSON in d.params with no decoding needed.
-        registerAction('executeScheme', function(_t, d) { if (d.id) UI.executeScheme(d.id, JSON.parse(d.params || '{}')); });
+        // v9p33river434: corrupted scheme datasets should fail closed instead of throwing from JSON.parse.
+        function _parseActionParams(rawParams) {
+            if (!rawParams) return {};
+            try {
+                return JSON.parse(rawParams);
+            } catch (e) {
+                if (typeof UI !== 'undefined' && UI.toast) UI.toast('Invalid scheme parameters.', 'warning');
+                return null;
+            }
+        }
+        registerAction('executeScheme', function(_t, d) {
+            if (!d.id) return;
+            var params = _parseActionParams(d.params);
+            if (params === null) return;
+            UI.executeScheme(d.id, params);
+        });
         // v9p33river344: Forge a Royal Order handlers — refresh sub-target
         // when kingdom/order changes, submit collects all three selects.
         registerAction('forgeRoyalOrderRefresh', function(_t, d) {
@@ -692,7 +712,14 @@ window.UI = (function () {
         registerAction('executeBuildingScheme', function(_t, d) { if (d.id) UI.executeBuildingScheme(d.id, parseInt(d.idx)||0, d.town || ''); });
         registerAction('unmountSaddle', function(_t, d) { var r=Player.unmountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');openCharacterDialog(); });
         registerAction('mountSaddle', function(_t, d) { var r=Player.mountSaddle(d.id);UI.toast(r.message,r.success?'success':'warning');openCharacterDialog(); });
-        registerAction('toggleLeaderboardTrack', function(_t, d) { var r = Player[d.method || 'trackMerchant'](d.id); if(typeof UI!=='undefined' && UI.toast) UI.toast(r.message, r.success?'success':'warning'); UI.openLeaderboard(); });
+        registerAction('toggleLeaderboardTrack', function(_t, d) {
+            // v9p33river434: leaderboard buttons should only toggle merchant tracking, not arbitrary Player methods.
+            var method = d.method === 'untrackMerchant' ? 'untrackMerchant' : 'trackMerchant';
+            if (!d.id || typeof Player[method] !== 'function') return;
+            var r = Player[method](d.id);
+            if(typeof UI!=='undefined' && UI.toast) UI.toast(r.message, r.success?'success':'warning');
+            UI.openLeaderboard();
+        });
         registerAction('setWeddingChoice', function(_t, d) { if (d.choice && d.id) UI.setWeddingChoice(d.choice, d.id); });
         registerAction('_setWaTabAndOpen', function() { window._waAutoRefresh=!window._waAutoRefresh;UI.openWorldAnalytics() });
         registerAction('openWorldAnalytics', function() { UI.openWorldAnalytics(); });
@@ -705,21 +732,131 @@ window.UI = (function () {
         registerAction('hireGuardUI', function() { UI.hireGuardUI(); });
         registerAction('dismissGuardUI', function(_t, d) { if (d.id) UI.dismissGuardUI(d.id); });
         registerAction('_handler_1', function() { if(confirm('Kill your character? This will trigger inheritance/dynasty.')){Player.handlePlayerDeath ? Player.handlePlayerDeath() : (function(){Player.state.alive=false; Player.state.health=0;})(); UI.toast('💀 You died. Checking inheritance...','warning');} });
-        registerAction('_godAgeChildren', function() { var p=Player.state; if(!p.childrenIds||p.childrenIds.length===0){UI.toast('No children','error'); return;} var aged=0; for(var i=0;i<p.childrenIds.length;i++){var kid=Engine.getPeople().find(function(pp){return pp.id===p.childrenIds[i]}); if(kid&&kid.alive&&kid.age<17){kid.age=17; kid._almostAdult=true; aged++;}} UI.toast('🎂 Aged '+aged+' children to 17','success'); });
-        registerAction('_iife_2', function() { var p=Player.state; var spouse=Engine.getPeople().find(function(pp){return pp.id===p.spouseId}); if(!spouse){UI.toast('❌ Need a spouse first!','error'); return;} var sex=Math.random()>0.5?'M':'F'; var nms=typeof NAMES!=='undefined'?NAMES:null; var nameList=nms?(sex==='M'?nms.male:nms.female):['Child']; var baby={id:'p_god_'+Date.now(), firstName:nameList[Math.floor(Math.random()*nameList.length)], lastName:p.lastName||'Unknown', age:0, sex:sex, alive:true, townId:p.townId, kingdomId:p.citizenshipKingdomId||'k1', occupation:'none', employerId:null, gold:0, spouseId:null, childrenIds:[], parentIds:[p.id||'player', spouse.id], skills:{farming:0,mining:0,crafting:0,trading:0,combat:0}, personality:{loyalty:50,ambition:50,frugality:50,intelligence:50,warmth:50,honesty:50}, needs:{food:70,shelter:70,safety:70,wealth:50,happiness:60}, quirks:[], wealthClass:'lower', houseType:null, workerSkill:10}; Engine.addPerson(baby); if(!p.childrenIds)p.childrenIds=[]; p.childrenIds.push(baby.id); if(!spouse.childrenIds)spouse.childrenIds=[]; spouse.childrenIds.push(baby.id); UI.toast('👶 Baby '+baby.firstName+' born! ('+sex+')','success'); });
+        // v9p33river434: god-mode family actions need deterministic RNG and collision-safe ids.
+        function _getGodModeRng() {
+            try { return (typeof Engine !== 'undefined' && Engine.getRng) ? Engine.getRng() : null; } catch (e) { return null; }
+        }
+        function _makeGodModePersonId(prefix) {
+            var rng = _getGodModeRng();
+            var day = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+            for (var attempt = 0; attempt < 12; attempt++) {
+                var suffix = rng && rng.randInt ? rng.randInt(0, 999999) : attempt;
+                var id = prefix + '_' + day + '_' + suffix;
+                if (!Engine.findPerson || !Engine.findPerson(id)) return id;
+            }
+            return prefix + '_' + day + '_fallback';
+        }
+        function _replaceIdInList(list, fromId, toId) {
+            if (!list || !list.length || fromId === toId) return;
+            for (var i = 0; i < list.length; i++) {
+                if (list[i] === fromId) list[i] = toId;
+            }
+        }
+        function _moveRelationKey(relMap, fromId, toId) {
+            if (!relMap || fromId === toId || !Object.prototype.hasOwnProperty.call(relMap, fromId)) return;
+            if (!Object.prototype.hasOwnProperty.call(relMap, toId)) relMap[toId] = relMap[fromId];
+            delete relMap[fromId];
+        }
+        registerAction('_godAgeChildren', function() {
+            var p = Player.state;
+            if (!p.childrenIds || p.childrenIds.length === 0) { UI.toast('No children', 'error'); return; }
+            var currentDay = Engine.getDay ? Engine.getDay() : 0;
+            var daysPerYear = ((typeof CONFIG !== 'undefined' && CONFIG.DAYS_PER_SEASON) || 90) * 4;
+            var aged = 0;
+            for (var i = 0; i < p.childrenIds.length; i++) {
+                var kid = Engine.findPerson ? Engine.findPerson(p.childrenIds[i]) : null;
+                if (kid && kid.alive && kid.age < 17) {
+                    kid.age = 17;
+                    kid.birthDay = currentDay - (17 * daysPerYear);
+                    delete kid._cameOfAge;
+                    kid._almostAdult = true;
+                    aged++;
+                }
+            }
+            UI.toast('🎂 Aged ' + aged + ' children to 17', 'success');
+        });
+        registerAction('_iife_2', function() {
+            var p = Player.state;
+            var spouse = Engine.findPerson ? Engine.findPerson(p.spouseId) : null;
+            if (!spouse) { UI.toast('❌ Need a spouse first!', 'error'); return; }
+            var rng = _getGodModeRng();
+            var sex = rng && rng.chance ? (rng.chance(0.5) ? 'M' : 'F') : 'M';
+            var nms = typeof NAMES !== 'undefined' ? NAMES : null;
+            var primaryPool = nms ? (sex === 'M' ? nms.male : nms.female) : null;
+            var fallbackPool = [];
+            if (nms && Array.isArray(nms.male)) fallbackPool = fallbackPool.concat(nms.male);
+            if (nms && Array.isArray(nms.female)) fallbackPool = fallbackPool.concat(nms.female);
+            var nameList = Array.isArray(primaryPool) && primaryPool.length ? primaryPool : (fallbackPool.length ? fallbackPool : ['Child']);
+            var firstName = rng && rng.pick ? rng.pick(nameList) : nameList[0];
+            var baby = {
+                id: _makeGodModePersonId('p_god'),
+                firstName: firstName,
+                lastName: p.lastName || 'Unknown',
+                fullName: firstName + ' ' + (p.lastName || 'Unknown'),
+                age: 0,
+                birthDay: Engine.getDay ? Engine.getDay() : 0,
+                sex: sex,
+                alive: true,
+                townId: p.townId,
+                kingdomId: p.citizenshipKingdomId || 'k1',
+                occupation: 'none',
+                employerId: null,
+                gold: 0,
+                spouseId: null,
+                childrenIds: [],
+                parentIds: [((typeof Player !== 'undefined' && Player.id) || 'player'), spouse.id].filter(Boolean),
+                skills: {farming:0,mining:0,crafting:0,trading:0,combat:0},
+                personality: {loyalty:50,ambition:50,frugality:50,intelligence:50,warmth:50,honesty:50},
+                needs: {food:70,shelter:70,safety:70,wealth:50,happiness:60},
+                quirks: [],
+                wealthClass: 'lower',
+                houseType: null,
+                workerSkill: 10
+            };
+            Engine.addPerson(baby);
+            if (!p.childrenIds) p.childrenIds = [];
+            p.childrenIds.push(baby.id);
+            if (!spouse.childrenIds) spouse.childrenIds = [];
+            spouse.childrenIds.push(baby.id);
+            UI.toast('👶 Baby ' + baby.firstName + ' born! (' + sex + ')', 'success');
+        });
         registerAction('_godAddSkillPoints', function() { var v=parseInt(document.getElementById('gm-set-sp').value)||10; Player.state.skillPoints=(Player.state.skillPoints||0)+v; UI.toast('🧠 +'+v+' Skill Points (now '+Player.state.skillPoints+')','success') });
         registerAction('_handler_3', function() { window._gmShowMilitary=!window._gmShowMilitary });
         registerAction('_handler_4', function() { window._gmShowMarket=!window._gmShowMarket });
         registerAction('_godSpreadPlague', function() { var tid=document.getElementById('gm-plague-town').value; var ill=document.getElementById('gm-plague-illness').value; var cnt=parseInt(document.getElementById('gm-plague-count').value,10)||10; var infected=Engine.godStartPlague(tid, ill, cnt); var tname=''; try{var tt=Engine.getTowns().find(function(t){return t.id===tid}); tname=tt?tt.name:tid;}catch(e){tname=tid;} UI.toast('🦠 '+infected+' infected with '+ill+' in '+tname+'!',infected>0?'warning':'info'); });
         registerAction('godMakeWorldPeaceAndToast', function(_t, d) { Engine.godMakeWorldPeace(); UI.toast(d.id, d.val); });
         registerAction('godMakeWorldWarAndToast', function(_t, d) { Engine.godMakeWorldWar(); UI.toast(d.id, d.val); });
-        registerAction('_godPlague', function() { var people=Engine.getPeople().filter(function(p){return p.alive && p.townId===Player.state.townId}); if(people.length===0){UI.toast('No people in town','info');return;} var killCount=Math.max(1,Math.floor(people.length*0.1)); for(var i=0;i<killCount;i++){var victim=people[Math.floor(Math.random()*people.length)]; if(victim && victim.alive){Engine.killPerson(victim, 'plague');}} UI.toast('☠️ Plague! '+killCount+' dead in town','warning'); });
+        registerAction('_godPlague', function() {
+            var people = Engine.getPeople().filter(function(p) { return p.alive && p.townId === Player.state.townId; });
+            if (people.length === 0) { UI.toast('No people in town', 'info'); return; }
+            var rng = _getGodModeRng();
+            var killCount = Math.max(1, Math.floor(people.length * 0.1));
+            var pool = people.slice();
+            var dead = 0;
+            for (var i = 0; i < killCount && pool.length > 0; i++) {
+                // v9p33river434: plague victims must be unique or the toast can overcount deaths.
+                var pickIndex = rng && rng.randInt ? rng.randInt(0, pool.length - 1) : 0;
+                var victim = pool.splice(pickIndex, 1)[0];
+                if (!victim || !victim.alive) continue;
+                Engine.killPerson(victim, 'plague');
+                if (!victim.alive) dead++;
+            }
+            UI.toast('☠️ Plague! ' + dead + ' dead in town', 'warning');
+        });
         registerAction('_godKillKing', function() { var ks=Engine.getKingdoms(); var pk=ks.find(function(k){var t=Engine.getTowns().find(function(tt){return tt.id===Player.state.townId}); return t && k.id===t.kingdomId;}); if(pk && pk.king){var king=Engine.getPeople().find(function(p){return p.id===pk.king;}); if(king){Engine.killPerson(king, 'god_mode'); UI.toast('💀 King '+king.firstName+' is dead! Succession triggered!','warning');}else{UI.toast('King not found','error');}}else{UI.toast('No kingdom','error');} });
         registerAction('_godBanditRaid', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t){t.gold=Math.max(0,(t.gold||0)-500); t.security=Math.max(0,(t.security||50)-30); UI.toast('🏴‍☠️ Bandit raid on '+t.name+'!','warning');}else{UI.toast('No town','error');} });
         registerAction('_godTradeBoom', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){for(var r in t.market.supply){t.market.supply[r]=Math.floor((t.market.supply[r]||0)*2);} UI.toast('📈 Trade boom in '+t.name+'!','success');}else{UI.toast('No town','error');} });
         registerAction('_godGoldRush', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){t.market.supply.gold_ore=(t.market.supply.gold_ore||0)+500; t.market.supply.jewelry=(t.market.supply.jewelry||0)+200; UI.toast('💎 Gold rush in '+t.name+'!','success');}else{UI.toast('No town','error');} });
         registerAction('_godFamine', function() { var t=Engine.getTowns().find(function(t){return t.id===Player.state.townId}); if(t&&t.market&&t.market.supply){var foods=['wheat','meat','fish','bread','eggs','poultry','flour','grapes','preserved_food']; for(var i=0;i<foods.length;i++){var r=foods[i]; if(t.market.supply[r]!==undefined){t.market.supply[r]=Math.max(1,Math.floor((t.market.supply[r]||50)*0.1));}} UI.toast('🥺 Famine! Food supplies at 10% in '+t.name,'warning');}else{UI.toast('No town found','error');} });
-        registerAction('_godMakeAllPeace', function(_t, d) { var kk=Engine.getKingdom(d.kingdom); if(kk && kk.atWar){kk.atWar.forEach(function(eid){Engine.godMakePeace(d.kingdom, eid);}); UI.toast('☮️ Peace declared!','success');} });
+        registerAction('_godMakeAllPeace', function(_t, d) {
+            var kk = Engine.getKingdom(d.kingdom);
+            if (kk && kk.atWar) {
+                // v9p33river434: clone war ids before mutating the Set so no enemies get skipped.
+                var enemyIds = Array.isArray(kk.atWar) ? kk.atWar.slice() : Array.from(kk.atWar);
+                for (var i = 0; i < enemyIds.length; i++) Engine.godMakePeace(d.kingdom, enemyIds[i]);
+                UI.toast('☮️ Peace declared!', 'success');
+            }
+        });
         registerAction('_godRandomMood', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){var moods=['jubilant','content','worried','paranoid','wrathful','ambitious']; pp.mood=moods[Math.floor(Math.random()*moods.length)]; UI.toast('😊 Mood: '+pp.mood,'info');} });
         registerAction('_godLowerTax', function(_t, d) { var kk=Engine.getKingdom(d.kingdom); if(kk){Engine.godSetKingdomTax(d.kingdom, Math.max(0.01,(kk.taxRate||0.1)-0.05)); UI.toast('📉 Tax now '+(Math.max(0.01,(kk.taxRate||0.1)-0.05)*100).toFixed(0)+'%','info');} });
         registerAction('_godRaiseTax', function(_t, d) { var kk=Engine.getKingdom(d.kingdom); if(kk){Engine.godSetKingdomTax(d.kingdom, Math.min(0.5,(kk.taxRate||0.1)+0.05)); UI.toast('📈 Tax now '+(Math.min(0.5,(kk.taxRate||0.1)+0.05)*100).toFixed(0)+'%','info');} });
@@ -728,8 +865,167 @@ window.UI = (function () {
         registerAction('_godCureNpc', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){return;} pp.sick=false; pp.illness=null; pp.injured=false; pp.injuryType=null; pp.health=100; UI.toast('💚 Cured ' + (pp ? pp.firstName : '?') + '','success'); });
         registerAction('_godInflictInjury', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){UI.toast('NPC not found','error'); return;} var types=['wound','broken_bone','concussion','arrow_wound']; var names=['Wound','Broken Bone','Concussion','Arrow Wound']; var choice=prompt('Inflict injury on ' + (pp ? pp.firstName : '?') + ':\\n'+types.map(function(id,i){return (i+1)+'. '+names[i];}).join('\\n')+'\\n\\nEnter number (1-4):'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=types.length){UI.toast('Invalid choice','error');return;} pp.injured=true; pp.injuryDay=Engine.getDay(); pp.injuryType=types[idx]; pp.health=Math.max(10,(pp.health||100)-20); UI.toast('🤕 '+names[idx]+' inflicted on ' + (pp ? pp.firstName : '?') + '','warning'); });
         registerAction('_godInflictIllness', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(!pp){UI.toast('NPC not found','error'); return;} var ills=['cold','flu','food_poisoning','fever','dysentery','pneumonia','typhus','plague']; var names=['Cold','Flu','Food Poisoning','Fever','Dysentery','Pneumonia','Typhus','Plague']; var choice=prompt('Inflict illness on ' + (pp ? pp.firstName : '?') + ':\\n'+ills.map(function(id,i){return (i+1)+'. '+names[i];}).join('\\n')+'\\n\\nEnter number (1-8):'); if(!choice)return; var idx=parseInt(choice,10)-1; if(idx<0||idx>=ills.length){UI.toast('Invalid choice','error');return;} var ok=Engine.infectNPC(pp, ills[idx], 'god_mode'); if(ok){UI.toast('🤒 '+names[idx]+' inflicted on ' + (pp ? pp.firstName : '?') + '','warning');} else {UI.toast('Failed (already sick or immune)','info');} });
-        registerAction('_godBecomeNpc', function(_t, d) { var target=Engine.getPeople().find(function(x){return x.id===d.id}); if(!target){UI.toast('NPC not found','error'); return;} var rankNames=['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor','King']; var npcRank=0; var kingIds={}; var kds=Engine.getKingdoms(); for(var kki=0;kki<kds.length;kki++){if(kds[kki].king)kingIds[kds[kki].king]=kds[kki].name;} var isKing=!!kingIds[target.id]; if(isKing){npcRank=7;}else if(target.socialRank){for(var srk in target.socialRank){if((target.socialRank[srk]||0)>npcRank)npcRank=target.socialRank[srk];}} var npcRankLabel=rankNames[npcRank]||'Peasant'; var npcFullName=target.firstName+' '+target.lastName; if(!confirm('Become '+npcFullName+'?\n\n📋 Status: '+npcRankLabel+(isKing?' of '+kingIds[target.id]:'')+'\n💰 Gold: '+Math.floor(target.gold||0)+'\n🏷️ Occupation: '+(target.occupation||'none')+'\n📍 Town: '+(Engine.findTown(target.townId)?Engine.findTown(target.townId).name:'?')+'\n🎂 Age: '+(target.age||'?')+'\n\nYour old character becomes an Elite Merchant.')){return;} var st=Player.state; var oldPlayerRank=0; if(st.socialRank){for(var _ork in st.socialRank){if((st.socialRank[_ork]||0)>oldPlayerRank)oldPlayerRank=st.socialRank[_ork];}} var oldClone={id:'p_former_'+Engine.getDay(), firstName:st.firstName, lastName:st.lastName, sex:st.sex, age:st.age, gold:st.gold, townId:st.townId, kingdomId:st.citizenshipKingdomId||null, personality:Object.assign({},st.personality||{}), skills:Object.assign({},st.skills||{}), socialRank:Object.assign({},st.socialRank||{}), needs:{food:80,shelter:80,safety:80,wealth:50}, alive:true, occupation:st.occupation||'merchant', isEliteMerchant:true, strategy:oldPlayerRank>=4?'political_climber':st.gold>5000?'trade_network':'opportunist', npcMerchantInventory:Object.assign({},st.inventory||{}), emCaravans:[], _formerPlayer:true, spouseId:st.spouseId||null, childrenIds:(st.childrenIds||[]).slice(), parentIds:(st.parentIds||[]).slice(), isNoble:st.isNoble||false, houseType:st.houseType||null, reputation:Object.assign({},st.reputation||{})}; if(oldClone.spouseId){var _osp=Engine.getPeople().find(function(x){return x.id===oldClone.spouseId;}); if(_osp)_osp.spouseId=oldClone.id;} var oldName=oldClone.firstName+' '+oldClone.lastName; var world=Engine.getWorld(); if(world.eliteMerchants){world.eliteMerchants.push(oldClone);} Engine.addPerson(oldClone); st.firstName=target.firstName; st.lastName=target.lastName; st.sex=target.sex; st.age=target.age; st.townId=target.townId; st.gold=target.gold||100; st.personality=Object.assign({},target.personality||{}); st.spouseId=target.spouseId||null; if(target.spouseId){var sp=Engine.getPeople().find(function(x){return x.id===target.spouseId}); if(sp)sp.spouseId='player';} st.childrenIds=(target.childrenIds||[]).slice(); st.parentIds=(target.parentIds||[]).slice(); st.occupation=target.occupation||'merchant'; st.socialRank=target.socialRank?Object.assign({},target.socialRank):{}; st.isNoble=npcRank>=4; st.citizenshipKingdomId=target.kingdomId||target.citizenshipKingdomId||st.citizenshipKingdomId; st.houseType=target.houseType||null; if(isKing){var bkk=kds.find(function(kk){return kk.king===target.id;}); if(bkk){/* v9p33river294: kds came from Engine.getKingdoms() which serializes copies — must mutate the RAW kingdom via findKingdom or the world still treats the old NPC as king. */ var rawBkk = Engine.findKingdom ? Engine.findKingdom(bkk.id) : null; if(rawBkk) rawBkk.king='player_king'; bkk.king='player_king'; st.isKing=true; st.kingdomId=bkk.id; st.kingState={kingdomId:bkk.id,coronationDay:Engine.getDay(),assassinationRisk:0,revoltRisk:0,foreignVisitTarget:null,courtHeldDay:0,feastHeldDay:0,decreesIssued:0,warsStarted:0,peacesMade:0}; st.occupation='king'; st.citizenshipKingdomId=bkk.id; st.socialRank[bkk.id]=7; st.politicalCapital=10; st.royalAdvisorKingdomId=bkk.id; st.isRoyalAdvisorFromKing=true; st.royalAdvisorBenefits={noTaxes:true,immuneToLaws:true,kingdomNeverSeizes:true,swayOverKing:true}; if(Player.unlockAchievement)Player.unlockAchievement('crowned_king');}} else {st.isKing=false;} if(npcRank>=5){st.lordTownId=target.townId;} else {st.lordTownId=null;} if(npcRank>=6){st.politicalCapital=st.politicalCapital||3; st.royalAdvisorKingdomId=st.citizenshipKingdomId; st.isRoyalAdvisorFromKing=true;} st.traveling=false; st.travelRoute=null; st.travelProgress=0; st.travelDestination=null; st.travelOrigin=null; st.travelPaid=0; st.travelMode=null; st.travelBySea=false; st.travelOffroad=false; st.travelTotalDist=0; target.alive=false; target._deathDay=Engine.getDay(); target._absorbed=true; UI.toast('🔄 You are now '+npcFullName+' ('+npcRankLabel+(isKing?' of '+kingIds[target.id]:'')+')! '+oldName+' is now an Elite Merchant with '+Math.floor(oldClone.gold||0)+'g.','success'); });
-        registerAction('_godPossessNpc', function(_t, d) { window._gmPossessedNpc=d.id; UI.toast('👁️ Possessing ' + ((Engine.getPerson && Engine.getPerson(d.id) || {}).firstName || '?') + '','info') });
+        registerAction('_godBecomeNpc', function(_t, d) {
+            var target = Engine.findPerson ? Engine.findPerson(d.id) : null;
+            if (!target) { UI.toast('NPC not found', 'error'); return; }
+            var rankNames = ['Peasant','Citizen','Burgher','Guildmaster','Minor Noble','Lord','Royal Advisor','King'];
+            var npcRank = 0;
+            var kingIds = {};
+            var kds = Engine.getKingdoms();
+            for (var kki = 0; kki < kds.length; kki++) { if (kds[kki].king) kingIds[kds[kki].king] = kds[kki].name; }
+            var isKing = !!kingIds[target.id];
+            if (isKing) { npcRank = 7; }
+            else if (target.socialRank) {
+                for (var srk in target.socialRank) { if ((target.socialRank[srk] || 0) > npcRank) npcRank = target.socialRank[srk]; }
+            }
+            var npcRankLabel = rankNames[npcRank] || 'Peasant';
+            var npcFullName = target.firstName + ' ' + target.lastName;
+            if (!confirm('Become ' + npcFullName + '?\n\n📋 Status: ' + npcRankLabel + (isKing ? ' of ' + kingIds[target.id] : '') + '\n💰 Gold: ' + Math.floor(target.gold || 0) + '\n🏷️ Occupation: ' + (target.occupation || 'none') + '\n📍 Town: ' + (Engine.findTown(target.townId) ? Engine.findTown(target.townId).name : '?') + '\n🎂 Age: ' + (target.age || '?') + '\n\nYour old character becomes an Elite Merchant.')) { return; }
+            var st = Player.state;
+            var playerId = (typeof Player !== 'undefined' && Player.id) || 'player';
+            var oldPlayerRank = 0;
+            if (st.socialRank) {
+                for (var _ork in st.socialRank) { if ((st.socialRank[_ork] || 0) > oldPlayerRank) oldPlayerRank = st.socialRank[_ork]; }
+            }
+            var oldClone = {
+                id: _makeGodModePersonId('p_former'),
+                firstName: st.firstName,
+                lastName: st.lastName,
+                fullName: (st.firstName || '') + ' ' + (st.lastName || ''),
+                sex: st.sex,
+                age: st.age,
+                gold: st.gold,
+                townId: st.townId,
+                kingdomId: st.citizenshipKingdomId || null,
+                personality: Object.assign({}, st.personality || {}),
+                skills: Object.assign({}, st.skills || {}),
+                socialRank: Object.assign({}, st.socialRank || {}),
+                relationships: Object.assign({}, st.relationships || {}),
+                needs: {food:80,shelter:80,safety:80,wealth:50},
+                alive: true,
+                occupation: st.occupation || 'merchant',
+                isEliteMerchant: true,
+                strategy: oldPlayerRank >= 4 ? 'political_climber' : st.gold > 5000 ? 'trade_network' : 'opportunist',
+                npcMerchantInventory: Object.assign({}, st.inventory || {}),
+                emCaravans: [],
+                _formerPlayer: true,
+                spouseId: st.spouseId || null,
+                childrenIds: (st.childrenIds || []).slice(),
+                parentIds: (st.parentIds || []).slice(),
+                isNoble: st.isNoble || false,
+                houseType: st.houseType || null,
+                reputation: Object.assign({}, st.reputation || {})
+            };
+            var oldName = oldClone.firstName + ' ' + oldClone.lastName;
+            var world = Engine.getWorld();
+            if (world.eliteMerchants) { world.eliteMerchants.push(oldClone); }
+            Engine.addPerson(oldClone);
+
+            var allPeople = Engine.getPeople ? Engine.getPeople() : [];
+            for (var pi = 0; pi < allPeople.length; pi++) {
+                var relPerson = allPeople[pi];
+                if (!relPerson || relPerson.id === target.id) continue;
+                _moveRelationKey(relPerson.relationships, playerId, oldClone.id);
+            }
+            if (oldClone.spouseId) {
+                var oldSpouse = Engine.findPerson(oldClone.spouseId);
+                if (oldSpouse) oldSpouse.spouseId = oldClone.id;
+            }
+            for (var ci = 0; ci < oldClone.childrenIds.length; ci++) {
+                var oldChild = Engine.findPerson(oldClone.childrenIds[ci]);
+                if (oldChild) _replaceIdInList(oldChild.parentIds, playerId, oldClone.id);
+            }
+            for (var pi2 = 0; pi2 < oldClone.parentIds.length; pi2++) {
+                var oldParent = Engine.findPerson(oldClone.parentIds[pi2]);
+                if (oldParent) _replaceIdInList(oldParent.childrenIds, playerId, oldClone.id);
+            }
+
+            st.firstName = target.firstName;
+            st.lastName = target.lastName;
+            st.fullName = (target.firstName || '') + ' ' + (target.lastName || '');
+            st.sex = target.sex;
+            st.age = target.age;
+            st.townId = target.townId;
+            st.gold = target.gold != null ? target.gold : 100;
+            st.personality = Object.assign({}, target.personality || {});
+            st.relationships = Object.assign({}, target.relationships || {});
+            st.spouseId = target.spouseId || null;
+            st.childrenIds = (target.childrenIds || []).slice();
+            st.parentIds = (target.parentIds || []).slice();
+            st.occupation = target.occupation || 'merchant';
+            st.socialRank = target.socialRank ? Object.assign({}, target.socialRank) : {};
+            st.isNoble = npcRank >= 4;
+            st.citizenshipKingdomId = target.kingdomId || target.citizenshipKingdomId || st.citizenshipKingdomId;
+            st.houseType = target.houseType || null;
+
+            for (var pi3 = 0; pi3 < allPeople.length; pi3++) {
+                var newRelPerson = allPeople[pi3];
+                if (!newRelPerson || newRelPerson.id === oldClone.id) continue;
+                _moveRelationKey(newRelPerson.relationships, target.id, playerId);
+            }
+            if (target.spouseId) {
+                var sp = Engine.findPerson(target.spouseId);
+                if (sp) sp.spouseId = playerId;
+            }
+            for (var ci2 = 0; ci2 < st.childrenIds.length; ci2++) {
+                var newChild = Engine.findPerson(st.childrenIds[ci2]);
+                if (newChild) _replaceIdInList(newChild.parentIds, target.id, playerId);
+            }
+            for (var pi4 = 0; pi4 < st.parentIds.length; pi4++) {
+                var newParent = Engine.findPerson(st.parentIds[pi4]);
+                if (newParent) _replaceIdInList(newParent.childrenIds, target.id, playerId);
+            }
+
+            if (isKing) {
+                var bkk = kds.find(function(kk) { return kk.king === target.id; });
+                if (bkk) {
+                    /* v9p33river294: kds came from Engine.getKingdoms() which serializes copies — must mutate the RAW kingdom via findKingdom or the world still treats the old NPC as king. */
+                    var rawBkk = Engine.findKingdom ? Engine.findKingdom(bkk.id) : null;
+                    if (rawBkk) rawBkk.king = 'player_king';
+                    bkk.king = 'player_king';
+                    st.isKing = true;
+                    st.kingdomId = bkk.id;
+                    st.kingState = {kingdomId:bkk.id,coronationDay:Engine.getDay(),assassinationRisk:0,revoltRisk:0,foreignVisitTarget:null,courtHeldDay:0,feastHeldDay:0,decreesIssued:0,warsStarted:0,peacesMade:0};
+                    st.occupation = 'king';
+                    st.citizenshipKingdomId = bkk.id;
+                    st.socialRank[bkk.id] = 7;
+                    st.politicalCapital = 10;
+                    st.royalAdvisorKingdomId = bkk.id;
+                    st.isRoyalAdvisorFromKing = true;
+                    st.royalAdvisorBenefits = {noTaxes:true,immuneToLaws:true,kingdomNeverSeizes:true,swayOverKing:true};
+                    if (Player.unlockAchievement) Player.unlockAchievement('crowned_king');
+                }
+            } else {
+                st.isKing = false;
+            }
+            if (npcRank >= 5) { st.lordTownId = target.townId; } else { st.lordTownId = null; }
+            if (npcRank >= 6) {
+                st.politicalCapital = st.politicalCapital || 3;
+                st.royalAdvisorKingdomId = st.citizenshipKingdomId;
+                st.isRoyalAdvisorFromKing = true;
+            }
+            st.traveling = false;
+            st.travelRoute = null;
+            st.travelProgress = 0;
+            st.travelDestination = null;
+            st.travelOrigin = null;
+            st.travelPaid = 0;
+            st.travelMode = null;
+            st.travelBySea = false;
+            st.travelOffroad = false;
+            st.travelTotalDist = 0;
+            // v9p33river434: retiring the possessed NPC must rewire family/relationship links cleanly before marking them absorbed.
+            target.alive = false;
+            target._deathDay = Engine.getDay();
+            target._absorbed = true;
+            UI.toast('🔄 You are now ' + npcFullName + ' (' + npcRankLabel + (isKing ? ' of ' + kingIds[target.id] : '') + ')! ' + oldName + ' is now an Elite Merchant with ' + Math.floor(oldClone.gold || 0) + 'g.', 'success');
+        });
+        registerAction('_godPossessNpc', function(_t, d) {
+            window._gmPossessedNpc = d.id;
+            // v9p33river434: use Engine.findPerson(id); Engine.getPerson is not a supported API.
+            var possessed = Engine.findPerson ? Engine.findPerson(d.id) : null;
+            UI.toast('👁️ Possessing ' + ((possessed || {}).firstName || '?'), 'info');
+        });
         registerAction('_godForceMarry', function(_t, d) { var oldSp=Player.state.spouseId; if(oldSp){var op=Engine.getPeople().find(function(x){return x.id===oldSp;}); if(op)op.spouseId=null;} Player.state.spouseId=d.id; Player.state.spouseRelationship=50; var pp=Engine.getPeople().find(function(x){return x.id===d.id2;}); if(pp){if(pp.spouseId){var os=Engine.getPeople().find(function(x){return x.id===pp.spouseId;}); if(os)os.spouseId=null;} pp.spouseId='player';} UI.toast('💒 Married ' + (pp ? pp.firstName : '?') + '!','success'); });
         registerAction('_godGiveGoldToNpc', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){pp.gold=(pp.gold||0)+1000; UI.toast('💰+1000g to ' + (pp ? pp.firstName : '?') + '','success');} });
         registerAction('_handler_5', function(_t, d) { var pp=Engine.getPeople().find(function(x){return x.id===d.id;}); if(pp){Engine.killPerson(pp, 'god_mode'); UI.toast('💀 Killed ' + (pp ? pp.firstName : '?') + '','warning');} });
@@ -6924,9 +7220,21 @@ window.UI = (function () {
             defs.push({ id: 'noble_secret', text: 'What\'s your biggest secret?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerNobleSecret(person, agenda); } });
             defs.push({ id: 'noble_threat', text: 'Who do you think threatens the kingdom most?', roleLabel: 'Political question', requiredRel: 80, answer: function() { return _answerNobleThreat(person, kingdom); } });
             defs.push({ id: 'noble_if_king', text: 'If you were king, what would you change first?', roleLabel: 'Political question', requiredRel: 80, answer: function() { return _answerNobleAsKing(agenda); } });
+            // v9p33river435: agenda system
+            defs.push({ id: 'noble_occupied', text: 'What have you been occupied with lately?', roleLabel: 'Court question', requiredRel: 20, answer: function() { return _answerNobleOccupied(person, kingdom); } });
+            defs.push({ id: 'noble_next_business', text: 'What business has your attention next?', roleLabel: 'Political question', requiredRel: 60, answer: function() { return _answerNobleNextBusiness(person, kingdom, agenda); } });
+            defs.push({ id: 'noble_court_allies', text: 'Who has your ear at court?', roleLabel: 'Court question', requiredRel: 60, answer: function() { return _answerNobleCourtAllies(person); } });
+            defs.push({ id: 'noble_favor_hook', text: 'What matter would you like settled?', roleLabel: 'Personal question', requiredRel: 60, answer: function() { return _answerNobleFavorHook(person, kingdom); } });
+            defs.push({ id: 'noble_win_support', text: 'What would win your support?', roleLabel: 'Political question', requiredRel: 60, answer: function() { return _answerNobleWinSupport(person, kingdom, agenda); } });
+            defs.push({ id: 'noble_watch', text: 'Which noble should I watch?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerNobleWatch(person, kingdom); } });
+            defs.push({ id: 'noble_court_forecast', text: 'What is the court likely to do next?', roleLabel: 'Political question', requiredRel: 80, answer: function() { return _answerNobleCourtForecast(person, kingdom, agenda); } });
+            defs.push({ id: 'noble_investment', text: 'Are you looking for investment?', roleLabel: 'Personal question', requiredRel: 80, answer: function() { return _answerNobleInvestment(person, kingdom); } });
         }
 
         if (meta.isEliteMerchant) {
+            // v9p33river435: agenda system
+            var emAgenda = null;
+            try { if (Engine.getEliteMerchantAgenda) emAgenda = Engine.getEliteMerchantAgenda(person.id); } catch(e) {}
             defs.push({ id: 'merchant_best_goods', text: 'What goods are selling best right now?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantBestGoods(person, town); } });
             defs.push({ id: 'merchant_business', text: 'How is business these days?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantBusiness(person); } });
             defs.push({ id: 'merchant_town_trade', text: 'What do you think of this town for trade?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantTownTrade(town); } });
@@ -6939,6 +7247,10 @@ window.UI = (function () {
             defs.push({ id: 'merchant_advice', text: 'Any advice for an ambitious merchant?', roleLabel: 'Mentor question', requiredRel: 80, answer: function() { return _answerMerchantAdvice(person); } });
             defs.push({ id: 'merchant_partnership', text: 'Would you ever go into business together?', roleLabel: 'Personal question', requiredRel: 80, answer: function() { return _answerMerchantPartnership(person, meta.relLevel); } });
             defs.push({ id: 'merchant_risky_deal', text: 'What\'s the riskiest deal you\'ve done?', roleLabel: 'Personal question', requiredRel: 80, answer: function() { return _answerMerchantRiskyDeal(person, town); } });
+            defs.push({ id: 'merchant_buying_next', text: 'What are you buying next?', roleLabel: 'Trade question', requiredRel: 60, answer: function() { return _answerMerchantBuyingNext(person, emAgenda); } });
+            defs.push({ id: 'merchant_trading_with', text: 'Who are you trading with?', roleLabel: 'Trade question', requiredRel: 60, answer: function() { return _answerMerchantTradingWith(person); } });
+            defs.push({ id: 'merchant_market_worry', text: 'What market worries you?', roleLabel: 'Trade question', requiredRel: 60, answer: function() { return _answerMerchantMarketWorry(person, emAgenda); } });
+            defs.push({ id: 'merchant_undercutting', text: 'Who is undercutting you?', roleLabel: 'Trade question', requiredRel: 60, answer: function() { return _answerMerchantUndercutting(person); } });
         }
 
         return defs;
@@ -7572,6 +7884,275 @@ window.UI = (function () {
         if (age < 35) return 'When I was younger, I staked more coin than I should have on a load of ' + itemName + (targetTown ? ' bound for ' + targetTown.name : '') + '. It paid, but only just enough to make the risk sound clever afterward.';
         if ((person.gold || 0) > 8000) return 'I once tied a painful share of my capital to a single convoy of ' + itemName + (targetTown ? ' headed toward ' + targetTown.name : '') + '. Profitable, yes — and the sort of night that teaches you to hate silence on the road.';
         return 'A lean season, borrowed coin, and a cargo of ' + itemName + '. Risk feels romantic only after it works.';
+    }
+
+    // v9p33river435: agenda system
+    function _getNobleAgendaQuestionActionId(agenda) {
+        return agenda && agenda.advice && agenda.advice[0] ? (agenda.advice[0].actionId || '') : '';
+    }
+
+    // v9p33river435: agenda system
+    function _getNobleAgendaQuestionLabel(agenda) {
+        var advice = agenda && agenda.advice && agenda.advice[0] ? agenda.advice[0] : null;
+        var actionId = advice && advice.actionId ? advice.actionId : '';
+        if (actionId === 'lower_taxes') return 'lower taxes';
+        if (actionId === 'war_offensive') return 'decisive military action';
+        if (actionId === 'make_peace') return 'peace negotiations';
+        if (actionId === 'form_alliance') return 'new alliances';
+        if (actionId === 'build_infrastructure') return 'infrastructure investment';
+        if (actionId === 'improve_happiness') return 'relief for the people';
+        if (actionId === 'raise_taxes') return 'higher taxes';
+        if (actionId === 'medical_funding') return 'medical aid';
+        if (actionId === 'build_walls') return 'fortifying border towns';
+        if (actionId === 'declare_war') return advice && advice.text ? advice.text.replace(/^Advocates\s+/i, '').toLowerCase() : 'war';
+        return advice && advice.text ? (advice.text.charAt(0).toLowerCase() + advice.text.slice(1)) : 'change';
+    }
+
+    // v9p33river435: agenda system
+    function _getMerchantAgendaGoodsForQuestions(strategy) {
+        var map = {
+            food_monopoly: ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
+            military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
+            luxury_trader: ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture', 'fine_clothes', 'cloth', 'drum', 'lute', 'harp'],
+            diversified: ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
+            political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
+            war_profiteer: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
+            land_baron: ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
+            trade_network: ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
+            medical_supplier: ['herbs', 'bandages', 'herbal_remedy', 'healing_tonic'],
+            culture_trader: ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy', 'gut_string', 'cloth', 'silk', 'fine_clothes', 'clothes', 'wool', 'dye'],
+            retail_mogul: ['ale', 'mead', 'wine', 'bread', 'meat', 'clothes', 'fine_clothes', 'tools', 'furniture', 'jewelry', 'silk', 'leather']
+        };
+        var goods = map[strategy] || map.diversified;
+        return goods ? goods.slice() : [];
+    }
+
+    // v9p33river435: agenda system
+    function _pickMerchantAgendaGoodsForQuestions(goods) {
+        var pool = (goods || []).slice();
+        if (!pool.length) return [];
+        var rng = null;
+        try { if (Engine.getRng) rng = Engine.getRng(); } catch(e) {}
+        var picks = [];
+        while (pool.length > 0 && picks.length < 2) {
+            var pick = (rng && rng.pick) ? rng.pick(pool) : pool[0];
+            picks.push(pick);
+            var idx = pool.indexOf(pick);
+            if (idx >= 0) pool.splice(idx, 1);
+            else pool.shift();
+            if (picks.length >= 1 && (!rng || !rng.chance || !rng.chance(0.5))) break;
+        }
+        return picks;
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleOccupied(person, kingdom) {
+        var personality = person.personality || {};
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : (personality.loyalty != null ? personality.loyalty : 50);
+        var atWar = kingdom && kingdom.atWar && ((Array.isArray(kingdom.atWar) ? kingdom.atWar.length : kingdom.atWar.size) > 0);
+        var lowHappiness = kingdom && (kingdom.happiness != null ? kingdom.happiness : 50) < 35;
+        if (atWar) {
+            if ((personality.militarism || 50) > 60 || (personality.ambition || 50) > 65) return 'Raising soldiers and pressing war preparations wherever I can.';
+            return 'Managing war logistics and all the tedious shortages that come with them.';
+        }
+        if (lowHappiness) return 'Trying to calm unrest in the countryside before it worsens.';
+        if (loyalty > 70) return 'Attending court regularly, supporting the crown where I can.';
+        if ((personality.ambition || 50) > 65) return 'Expanding my estates and influence while the opportunities are there.';
+        if ((personality.warmth || 50) > 60) return 'Visiting tenants and settling the sort of disputes that never quite solve themselves.';
+        if ((personality.frugality || 50) > 55) return 'Reviewing the accounts and finding places where waste has crept in.';
+        return 'The usual business of the court, managing affairs and staying informed.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleNextBusiness(person, kingdom, agenda) {
+        var personality = person.personality || {};
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : (personality.loyalty != null ? personality.loyalty : 50);
+        var actionId = _getNobleAgendaQuestionActionId(agenda);
+        if (actionId === 'lower_taxes') return 'I intend to push for tax relief. The people are overtaxed.';
+        if (actionId === 'war_offensive') return 'I believe we need decisive military action. I plan to speak to the king.';
+        if (actionId === 'make_peace') return 'I\'m working toward peace negotiations. This war drains us.';
+        if (actionId === 'form_alliance') return 'I\'m reaching out to potential allies. We need friends.';
+        if (actionId === 'build_infrastructure') return 'I want to see roads built and markets improved.';
+        if (actionId === 'improve_happiness') return 'The people need festivals, relief. I plan to petition for it.';
+        if (actionId === 'raise_taxes') return 'The treasury needs filling. I\'ll advocate for fiscal responsibility.';
+        if (actionId === 'medical_funding') return 'The plague demands action. I\'m pushing for medical aid.';
+        if (actionId === 'declare_war' && agenda && agenda.advice && agenda.advice[0] && agenda.advice[0].text) return 'I mean to press this point at court: ' + agenda.advice[0].text + '.';
+        if (actionId === 'build_walls') return 'Our border towns need stronger defenses, and I intend to say so plainly.';
+        if ((personality.ambition || 50) > 65) return 'I\'m positioning for advancement. Court rewards those who move before everyone else notices the opening.';
+        if (loyalty > 60) return 'Supporting the crown as always. Someone has to keep matters steady.';
+        return kingdom && (kingdom.happiness || 50) < 40 ? 'The realm is restless. Restoring order has my attention.' : 'I have a few court matters to settle before the day is out.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleCourtAllies(person) {
+        var ally = _findNobleRelationshipTarget(person, false, true);
+        var rival = _findNobleRelationshipTarget(person, true, true);
+        if (ally && ally.person) {
+            var answer = 'I trust ' + _getQuestionPersonName(ally.person) + ' — we see eye to eye on most matters.';
+            if (rival && rival.person) answer += ' Though I\'d watch out for ' + _getQuestionPersonName(rival.person) + '. We rarely agree.';
+            return answer;
+        }
+        if (rival && rival.person) return 'I keep my own counsel, mostly, though I\'d watch out for ' + _getQuestionPersonName(rival.person) + '. We rarely agree.';
+        return 'I keep my own counsel, mostly.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleFavorHook(person, kingdom) {
+        var personality = person.personality || {};
+        var atWar = kingdom && kingdom.atWar && ((Array.isArray(kingdom.atWar) ? kingdom.atWar.length : kingdom.atWar.size) > 0);
+        if ((personality.selfishness || 50) > 55) return 'There\'s a trade dispute I could use help with — a rival is undercutting my merchants.';
+        if ((personality.ambition || 50) > 60) return 'I need someone to speak well of me at court. Reputation matters.';
+        if ((personality.warmth || 50) > 55) return 'One of my tenants has fallen on hard times. A loan would ease their burden — and mine.';
+        if (atWar) return 'I need reliable supplies for my levies. Good weapons at fair prices.';
+        if (person._financiallyStressed) return 'Frankly? I need an investor. My estates are stretched thin.';
+        return 'Nothing urgent, but a well-placed donation to public works in my town would not go unnoticed.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleWinSupport(person, kingdom, agenda) {
+        var personality = person.personality || {};
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : (personality.loyalty != null ? personality.loyalty : 50);
+        var actionId = _getNobleAgendaQuestionActionId(agenda);
+        if (actionId === 'lower_taxes') return 'Support a tax reduction petition and you\'ll have my vote.';
+        if (actionId === 'war_offensive') return 'Supply our armies. Bring weapons and armor — I\'ll back anyone who strengthens our military.';
+        if (actionId === 'make_peace') return 'Help broker peace. That would earn my lasting gratitude.';
+        if (actionId === 'form_alliance') return 'Facilitate a trade agreement or alliance. Diplomacy is what we need.';
+        if (actionId === 'build_infrastructure') return 'Invest in this kingdom\'s roads, markets, buildings. I back progress.';
+        if (actionId === 'improve_happiness') return 'Ease the burden on the people and I will remember it.';
+        if (actionId === 'raise_taxes') return 'Show me a credible plan to steady the treasury and I\'ll listen.';
+        if (actionId === 'medical_funding') return 'Bring real medical relief to this kingdom and you\'ll have my support.';
+        if (actionId === 'build_walls') return 'Help fortify our border towns and you\'ll find me receptive.';
+        if (loyalty < 35) return 'Give me a reason to believe change is possible. The current regime... leaves much to be desired.';
+        if ((personality.ambition || 50) > 70) return 'Help me rise. Influence, connections, opportunities — that\'s what I value.';
+        return 'Show me you care about this kingdom as much as I do.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleWatch(person, kingdom) {
+        var world = null;
+        var kingdomId = _getNpcQuestionsKingdomId(person);
+        var disloyal = null;
+        var ambitious = null;
+        var lowestLoyalty = 101;
+        var highestAmbition = -1;
+        try { if (Engine.getWorld) world = Engine.getWorld(); } catch(e) {}
+        if (!world || !world.people || !kingdomId) return 'The court seems stable enough. Though one can never be too careful.';
+        for (var i = 0; i < world.people.length; i++) {
+            var other = world.people[i];
+            if (!other || other.id === person.id || other.alive === false) continue;
+            if (kingdom && kingdom.king === other.id) continue;
+            if (!other.socialRank || (other.socialRank[kingdomId] || 0) < 4) continue;
+            var otherLoyalty = other.kingLoyalty != null ? other.kingLoyalty : 50;
+            var otherAmbition = other.personality && other.personality.ambition != null ? other.personality.ambition : 50;
+            if (otherLoyalty < 35 && otherLoyalty < lowestLoyalty) {
+                lowestLoyalty = otherLoyalty;
+                disloyal = other;
+            }
+            if (otherAmbition > 75 && otherAmbition > highestAmbition) {
+                highestAmbition = otherAmbition;
+                ambitious = other;
+            }
+        }
+        if (disloyal) return _getQuestionPersonName(disloyal) + ' bears watching. Their loyalty is... questionable. I\'ve seen them meeting with outsiders.';
+        if (ambitious) return _getQuestionPersonName(ambitious) + ' is dangerously ambitious. They want more than their station allows.';
+        return 'The court seems stable enough. Though one can never be too careful.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleCourtForecast(person, kingdom, agenda) {
+        var atWar = kingdom && kingdom.atWar && ((Array.isArray(kingdom.atWar) ? kingdom.atWar.length : kingdom.atWar.size) > 0);
+        var treasury = kingdom ? (kingdom.gold || 0) : 0;
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        var advice = agenda && agenda.advice && agenda.advice[0] ? agenda.advice[0] : null;
+        var kingPersonality = kingdom && kingdom.kingPersonality ? kingdom.kingPersonality : {};
+        if (atWar) return 'The king will focus on the war. Expect conscription and military spending.';
+        if (treasury < 2000) return 'The treasury is thin. Tax hikes or austerity are coming.';
+        if (happiness < 35) return 'Unrest is growing. The king will need to act — festivals, tax cuts, or force.';
+        if (advice && (advice.weight || 0) >= 60) return 'Many nobles are pushing for ' + _getNobleAgendaQuestionLabel(agenda) + '. The king may listen.';
+        if (kingPersonality.ambition === 'ambitious' && !atWar) return 'The king has expansion in mind. War may be on the horizon.';
+        if (kingPersonality.temperament === 'kind' || kingPersonality.generosity === 'generous') return 'The king cares for the people. Expect investment in welfare.';
+        return 'Hard to say. The court moves slowly these days.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerNobleInvestment(person, kingdom) {
+        if (person._financiallyStressed || (person.gold || 0) < 3000) return 'As a matter of fact, yes. My estates need capital. A loan of even a few hundred gold would help. I pay my debts.';
+        if ((person.personality && person.personality.ambition || 50) > 60) return 'I\'m always looking to expand. If you have gold to invest, I have ventures that could benefit us both.';
+        if (person.buildings && person.buildings.length > 0) return 'I have properties that could use improvement. The right investment could increase their yield.';
+        return 'I\'m comfortable for now, but I appreciate the offer. Perhaps in the future.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerMerchantBuyingNext(person, emAgenda) {
+        if ((emAgenda && emAgenda.financialHealth === 'distressed') || (person.gold || 0) < 1000) return 'Buying? I\'m barely keeping afloat. I need to sell, not buy.';
+        var picks = _pickMerchantAgendaGoodsForQuestions(_getMerchantAgendaGoodsForQuestions(emAgenda && emAgenda.strategy));
+        if (picks.length >= 2) return 'I\'m looking to stock up on ' + _getQuestionResourceName(picks[0]) + ' and ' + _getQuestionResourceName(picks[1]) + '. The margins should be good soon.';
+        if (picks.length === 1) return 'I\'m looking to stock up on ' + _getQuestionResourceName(picks[0]) + '. The margins should be good soon.';
+        return 'Whatever I can turn quickly for a respectable margin.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerMerchantTradingWith(person) {
+        if (person.emCaravans && person.emCaravans.length > 0) {
+            var caravan = person.emCaravans[0];
+            var origin = null;
+            var destination = null;
+            try { if (caravan.fromTownId && Engine.findTown) origin = Engine.findTown(caravan.fromTownId); } catch(e) {}
+            try { if (caravan.toTownId && Engine.findTown) destination = Engine.findTown(caravan.toTownId); } catch(e) {}
+            if ((origin && origin.name) || (destination && destination.name)) return 'I have caravans running between ' + ((origin && origin.name) || 'one town') + ' and ' + ((destination && destination.name) || 'another') + '.';
+        }
+        var tracking = person._competitorTracking || {};
+        var bestId = null;
+        var bestScore = -1;
+        for (var competitorId in tracking) {
+            var entry = tracking[competitorId] || {};
+            var score = (entry.buildings || 0) * 1000 + (entry.gold || 0);
+            if (score > bestScore) {
+                bestScore = score;
+                bestId = competitorId;
+            }
+        }
+        if (bestId) {
+            var competitor = null;
+            try { if (Engine.findPerson) competitor = Engine.findPerson(bestId); } catch(e) {}
+            if (competitor) return 'I keep an eye on ' + _getQuestionPersonName(competitor) + '. They\'re in the same business.';
+        }
+        return 'I trade with whoever has what I need at the right price.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerMerchantMarketWorry(person, emAgenda) {
+        var concerns = emAgenda && emAgenda.concerns ? emAgenda.concerns : [];
+        var concernText = '';
+        for (var i = 0; i < concerns.length; i++) concernText += ' ' + (concerns[i].text || '');
+        if (/war/i.test(concernText)) return 'War is disrupting everything. Trade routes aren\'t safe.';
+        if ((emAgenda && (emAgenda.financialHealth === 'distressed' || emAgenda.financialHealth === 'struggling')) || /bankruptcy|finances under strain/i.test(concernText)) return 'Honestly? My own finances. Times are hard.';
+        if (/plague/i.test(concernText)) return 'The plague. It\'s killing demand and supply both.';
+        if (/rival|merchant/i.test(concernText) || (person._competitorTracking && Object.keys(person._competitorTracking).length > 0)) return 'Too many merchants chasing the same goods.';
+        return 'Markets shift. You have to stay nimble.';
+    }
+
+    // v9p33river435: agenda system
+    function _answerMerchantUndercutting(person) {
+        var tracking = person._competitorTracking || {};
+        var bestId = null;
+        var bestScore = -1;
+        for (var competitorId in tracking) {
+            var entry = tracking[competitorId] || {};
+            var score = (entry.buildings || 0) * 1000 + (entry.gold || 0);
+            if (score > bestScore) {
+                bestScore = score;
+                bestId = competitorId;
+            }
+        }
+        if (bestId) {
+            var competitor = null;
+            var town = null;
+            try { if (Engine.findPerson) competitor = Engine.findPerson(bestId); } catch(e) {}
+            try { if (person.townId && Engine.findTown) town = Engine.findTown(person.townId); } catch(e) {}
+            if (competitor) return _getQuestionPersonName(competitor) + ' has been cutting into my business in ' + ((town && town.name) || 'town') + '. They\'re aggressive.';
+        }
+        return 'No one in particular. But competition is always there.';
     }
 
     // v9p33river355: helper used by the in-place modal refresh.
