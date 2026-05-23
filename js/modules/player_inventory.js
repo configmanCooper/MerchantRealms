@@ -1413,13 +1413,52 @@
         if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId]; // v9p33river430: clean up zero keys
         var remaining = qty - fromCarried;
         var fromStorage = 0;
-        if (remaining > 0 && player.townId && player.townStorage[player.townId]) {
+        if (remaining > 0 && player.townId && player.townStorage && player.townStorage[player.townId]) {
             var stored = player.townStorage[player.townId][resourceId] || 0;
             fromStorage = Math.min(remaining, stored); // v9p33river430: clamp to available stock
             player.townStorage[player.townId][resourceId] = stored - fromStorage;
             if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
+            remaining -= fromStorage;
         }
-        var totalDeducted = fromCarried + fromStorage;
+        // v9p33river433: embargo/smuggling sales can legally target mounted/equipped goods too.
+        if (remaining > 0 && resourceId === 'horses' && player.horses) {
+            while (remaining > 0 && player.horses.length > 0) {
+                var _horseIdx = -1;
+                for (var _hi = player.horses.length - 1; _hi >= 0; _hi--) {
+                    if (!player.horses[_hi].saddled) { _horseIdx = _hi; break; }
+                }
+                if (_horseIdx < 0) _horseIdx = player.horses.length - 1;
+                var _horse = player.horses[_horseIdx];
+                if (_horse && _horse.saddled) player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+                player.horses.splice(_horseIdx, 1);
+                remaining--;
+            }
+            if (player.horses.length === 0) player.travelMode = 'walk';
+        }
+        if (remaining > 0 && player.weapon && typeof player.weapon === 'object' && player.weapon.id && typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.weapons) {
+            var _sellWeapon = EQUIPMENT_TYPES.weapons.find(function(e) { return e.id === player.weapon.id; });
+            if (_sellWeapon && _sellWeapon.resource === resourceId) {
+                player.weapon = null;
+                remaining--;
+            }
+        }
+        if (remaining > 0 && player.armor && typeof player.armor === 'object' && player.armor.id && typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.armor) {
+            var _sellArmor = EQUIPMENT_TYPES.armor.find(function(e) { return e.id === player.armor.id; });
+            if (_sellArmor && _sellArmor.resource === resourceId) {
+                player.armor = null;
+                remaining--;
+            }
+        }
+        if (remaining > 0 && resourceId === 'backpack' && (player._backpack || player.storageContainer === 'backpack')) {
+            player._backpack = false;
+            if (player.storageContainer === 'backpack') player.storageContainer = null;
+            remaining--;
+        }
+        if (remaining > 0 && player.storageContainer && player.storageContainer !== 'backpack' && resourceId === player.storageContainer) {
+            player.storageContainer = player._backpack ? 'backpack' : null;
+            remaining--;
+        }
+        var totalDeducted = qty - remaining;
         return { success: totalDeducted >= qty, deducted: totalDeducted, shortfall: qty - totalDeducted };
     }
 

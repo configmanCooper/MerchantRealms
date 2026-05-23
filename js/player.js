@@ -629,13 +629,15 @@
         for (var i = 0; i < player.debts.length; i++) {
             if (player.debts[i].creditorId === creditorId && player.debts[i].creditorType === creditorType) {
                 player.debts[i].amount += amount;
+                player.debts[i].originalAmount = (player.debts[i].originalAmount || 0) + amount; // v9p33river433: Bug3 keep originalAmount accurate across merges
+                player.debts[i].lastInterestDay = Engine.getDay(); // v9p33river433: Bug4 reset interest clock so merged-in gold earns a full 90-day grace period
                 player.debts[i].reason = reason;
                 Engine.logEvent('💸 Your debt to ' + creditorName + ' increased by ' + Math.floor(amount) + 'g (total: ' + Math.floor(player.debts[i].amount) + 'g).', null, 'my_actions');
                 return;
             }
         }
         var debt = {
-            id: 'debt_' + Engine.getDay() + '_' + Math.floor(Math.random() * 9999),
+            id: 'debt_' + Engine.getDay() + '_' + Engine.getRng().randInt(0, 99999), // v9p33river433: Bug5 use engine RNG not Math.random
             creditorType: creditorType,
             creditorId: creditorId,
             creditorName: creditorName,
@@ -674,13 +676,14 @@
         player.gold -= amount;
         if (player.gold < 0) player.gold = 0;
         debt.amount -= amount;
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + amount; // v9p33river433: Bug2 track debt payments in stats
         logFinance(-amount, 'debt_payment', 'Paid debt to ' + debt.creditorName);
         // Transfer gold to creditor
         if (debt.creditorType === 'kingdom') {
             var k = Engine.findKingdom ? Engine.findKingdom(debt.creditorId) : null;
             if (k) k.gold = (k.gold || 0) + amount;
         } else if (debt.creditorType === 'npc') {
-            var npc = Engine.getPerson ? Engine.getPerson(debt.creditorId) : null;
+            var npc = Engine.findPerson ? Engine.findPerson(debt.creditorId) : null; // v9p33river433: Bug1 getPerson→findPerson
             if (npc) npc.gold = (npc.gold || 0) + amount;
         }
         if (debt.amount <= 0.5) {
@@ -692,42 +695,38 @@
         return { success: true, message: 'Paid ' + Math.floor(amount) + 'g toward debt to ' + debt.creditorName + '. Remaining: ' + Math.floor(debt.amount) + 'g.' };
     }
 
+    // v9p33river433: bankruptcy seizure must clear workers and tolerate town/player building ID drift.
+    function _seizeBankruptBuilding(bld) {
+        if (!bld) return;
+        bld.active = false;
+        if (bld.workers && bld.workers.length > 0) {
+            for (var w = 0; w < bld.workers.length; w++) {
+                var wPerson = Engine.findPerson ? Engine.findPerson(bld.workers[w]) : null;
+                if (wPerson) wPerson.employerId = null;
+                if (player.employees && player.employees.length > 0) {
+                    player.employees = player.employees.filter(function(id) { return id !== bld.workers[w]; });
+                }
+            }
+            bld.workers = [];
+        }
+        var bldTown = Engine.findTown ? Engine.findTown(bld.townId) : null;
+        if (bldTown && bldTown.buildings) {
+            var townBldIdx = bldTown.buildings.findIndex(function(tb) {
+                return tb === bld ||
+                    (tb.id && bld.id && tb.id === bld.id) ||
+                    ((tb.ownerId === 'player' || tb.ownerId === (player.id || 'player')) && tb.type === bld.type);
+            });
+            if (townBldIdx !== -1) bldTown.buildings.splice(townBldIdx, 1);
+        }
+    }
+
     function declareBankruptcy() {
         if (!player.debts || player.debts.length === 0) return { success: false, message: 'No debts to discharge.' };
         if (player.isKing) return { success: false, message: 'As ruler, you cannot declare bankruptcy. Use the royal treasury to pay your debts.' };
         if (player.storyMode && player.storyMode.active && !player.storyMode.complete) return { success: false, message: 'Bankruptcy is not available during the story.' };
-        var totalDebt = getTotalDebt();
-        // Consequences: lose all gold, lose all inventory, rep loss with all creditors
-        player.gold = 0;
-        player.inventory = {};
-        // Seize all buildings and sell them (give nothing to player)
-        var bldCount = (player.buildings || []).length;
-        for (var bi = 0; bi < (player.buildings || []).length; bi++) {
-            var bld = player.buildings[bi];
-            var town = Engine.findTown ? Engine.findTown(bld.townId) : null;
-            if (town && town.buildings) {
-                for (var tj = 0; tj < town.buildings.length; tj++) {
-                    if (town.buildings[tj].id === bld.id) { town.buildings.splice(tj, 1); break; }
-                }
-            }
-        }
-        player.buildings = [];
-        // Rep losses
-        for (var di = 0; di < player.debts.length; di++) {
-            var d = player.debts[di];
-            if (d.creditorType === 'kingdom' && player.reputation) {
-                player.reputation[d.creditorId] = Math.max(0, (player.reputation[d.creditorId] || 50) - 15);
-            } else if (d.creditorType === 'npc' && player.relationships) {
-                var rel = player.relationships[d.creditorId];
-                if (rel) rel.level = Math.max(0, (rel.level || 50) - 25);
-            }
-        }
-        player.debts = [];
-        player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
-        // Cannot rank up penalty is inherent (checked elsewhere)
-        logFinance(0, 'bankruptcy', 'Declared bankruptcy — ' + Math.floor(totalDebt) + 'g discharged');
-        Engine.logEvent('💥 ' + player.fullName + ' declared bankruptcy! ' + Math.floor(totalDebt) + 'g in debts discharged. All assets seized. ' + bldCount + ' buildings lost.', null, 'my_actions');
-        return { success: true, message: 'Declared bankruptcy. ' + Math.floor(totalDebt) + 'g discharged. All gold, inventory, and ' + bldCount + ' buildings seized. Reputation damaged.' };
+        // v9p33river433: keep the legacy API aligned with the full voluntary-bankruptcy flow.
+        triggerBankruptcy('voluntary');
+        return { success: true, message: 'Declared bankruptcy. The kingdom is processing your case.' };
     }
 
     /**
@@ -741,12 +740,12 @@
 
         for (var i = player.debts.length - 1; i >= 0; i--) {
             var debt = player.debts[i];
-            // Interest: 10% every 90 days
-            if (day - (debt.lastInterestDay || debt.dayIncurred) >= 90) {
+            // Interest: 10% every 90 days — catch up all elapsed periods (v9p33river433: Bug6 was single if, missing multi-period catch-up)
+            while (day - (debt.lastInterestDay || debt.dayIncurred) >= 90) {
                 var interest = Math.floor(debt.amount * 0.10);
                 if (interest < 1) interest = 1;
                 debt.amount += interest;
-                debt.lastInterestDay = day;
+                debt.lastInterestDay = (debt.lastInterestDay || debt.dayIncurred) + 90; // advance by one period, not to today
                 Engine.logEvent('📈 Interest: debt to ' + debt.creditorName + ' grew by ' + interest + 'g (now ' + Math.floor(debt.amount) + 'g).', null, 'my_actions');
             }
         }
@@ -1410,6 +1409,19 @@
         }
     }
 
+    function getCollectionCount(collection) {
+        // v9p33river433: raw kingdoms use Sets, but some call paths hand us array copies.
+        if (!collection) return 0;
+        if (Array.isArray(collection)) return collection.length;
+        return typeof collection.size === 'number' ? collection.size : 0;
+    }
+
+    function consumeFoodCohorts(sourceStorage, resourceId, qty) {
+        // v9p33river433: consuming perishables must update the FIFO cohort ledger too.
+        if (!sourceStorage || !qty || qty <= 0 || !Engine.transferFoodCohorts) return;
+        Engine.transferFoodCohorts(sourceStorage, {}, resourceId, qty);
+    }
+
     // ========================================================
     // §4  PLAYER ACTIONS
     // ========================================================
@@ -1439,6 +1451,8 @@
         const tid = townId || player.townId;
         const town = Engine.findTown(tid);
         if (!town) return { success: false, message: 'Town not found.' };
+        // v9p33river433: outposts/junctions can lack a market object entirely.
+        if (!town.market || !town.market.supply || !town.market.prices) return { success: false, message: 'This town has no market.' };
 
         const available = town.market.supply[resourceId] || 0;
         if (available < qty) return { success: false, message: `Not enough supply. Available: ${available}` };
@@ -1474,10 +1488,11 @@
             if (hasSkill('contraband_network')) _embargoDetect2 *= 0.4;
             if (rng && rng.chance(_embargoDetect2)) {
                 const fine = Math.floor((town.market.prices[resourceId] || 1) * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
-                var _embPaid = deductGoldOrDebt(fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Embargo violation fine');
+                var _embargoKingdom = _embargoFromK && Engine.findKingdom ? Engine.findKingdom(_embargoFromK) : null;
+                var _embPaid = deductGoldOrDebt(fine, 'kingdom', _embargoKingdom ? _embargoKingdom.id : (_embargoFromK || 'unknown'), _embargoKingdom ? _embargoKingdom.name : 'Kingdom', 'Embargo violation fine'); // v9p33river433: embargo fines belong to the source kingdom, not the destination.
                 logFinance(-_embPaid, 'fines', 'Embargo fine');
-                if (kingdom) {
-                    player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
+                if (_embargoKingdom) {
+                    player.reputation[_embargoKingdom.id] = Math.max(0, (player.reputation[_embargoKingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
                 }
                 return { success: false, message: `🚫 Caught violating trade embargo! Fined ${fine}g. Smuggling embargoed goods is a serious offense.`, caught: true };
             }
@@ -1610,20 +1625,26 @@
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy || 2);
 
+        let taxPortion = 0;
+        let tariffPortion = 0;
+        let totalKingdomRevenue = 0;
+        if (kingdom) {
+            taxPortion = Math.floor(basePrice * (taxRate + effectiveGoodsTax) * qty);
+            tariffPortion = Math.floor(basePrice * (tariff + foreignSurcharge) * qty);
+            totalKingdomRevenue = taxPortion + tariffPortion;
+        }
+
         // Track first trade day
         if (player.tradingStartDay === 0) player.tradingStartDay = Engine.getDay();
 
         // Execute trade
         player.gold -= totalCost;
         logFinance(-totalCost, 'trading', 'Bought ' + qty + ' ' + resourceId);
-        // v9p33river80/85: gold flowed into market from player
-        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, totalCost);
+        // v9p33river433: only the non-tax portion stays in the market; the tax slice goes to the kingdom.
+        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, Math.max(0, totalCost - totalKingdomRevenue));
 
         // Track tax revenue for kingdom (trade tax + tariff + foreign surcharge)
         if (kingdom) {
-            const taxPortion = Math.floor(basePrice * (taxRate + effectiveGoodsTax) * qty);
-            const tariffPortion = Math.floor(basePrice * (tariff + foreignSurcharge) * qty);
-            const totalKingdomRevenue = taxPortion + tariffPortion;
             kingdom.taxRevenue = (kingdom.taxRevenue || 0) + totalKingdomRevenue;
             kingdom.gold = (kingdom.gold || 0) + totalKingdomRevenue;
             kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + taxPortion;
@@ -1669,8 +1690,13 @@
         // Auto-deposit to town storage if over carry capacity
         if (Player.getCarriedWeight() > maxCarry && player.townId && Player.getTownStorageCapacity(player.townId) > 0) {
             var excess = Player.getCarriedWeight() - maxCarry;
+            if (!player.townStorage) player.townStorage = {}; // v9p33river433: legacy saves can be missing the townStorage map entirely.
             if (!player.townStorage[player.townId]) player.townStorage[player.townId] = {};
             var moved = Math.min(qty, Math.ceil(excess / buyWeight));
+            if (moved > 0 && Engine.transferFoodCohorts) {
+                // v9p33river433: warehouse auto-deposits must preserve food age cohorts.
+                Engine.transferFoodCohorts(player, player.townStorage[player.townId], resourceId, moved);
+            }
             player.inventory[resourceId] -= moved;
             if (player.inventory[resourceId] < 0) player.inventory[resourceId] = 0;
             player.townStorage[player.townId][resourceId] = (player.townStorage[player.townId][resourceId] || 0) + moved;
@@ -1744,7 +1770,8 @@
         if (!town) return { success: false, message: 'Town not found.' };
 
         const held = player.inventory[resourceId] || 0;
-        const storedQty = (player.townStorage[player.townId] || {})[resourceId] || 0;
+        const _sellTownStorage = (player.townStorage && player.townStorage[player.townId]) || null; // v9p33river433: selling from storage must tolerate legacy saves with no townStorage.
+        const storedQty = (_sellTownStorage && _sellTownStorage[resourceId]) || 0;
         // v9p33river266: include mounted horses and equipped weapon/armor in
         // the available pool so they can be sold (player auto-dismounts /
         // auto-unequips to fulfill the order).
@@ -1771,67 +1798,58 @@
         const totalAvailable = held + storedQty + _mountedAvail + _equipWeaponAvail + _equipArmorAvail + _equipBackpackAvail + _equipVehicleAvail;
         if (totalAvailable < qty) return { success: false, message: `Not enough in inventory. Have: ${totalAvailable}` };
 
-        // If carried + stored alone can't cover, dismount/unequip into inventory first
-        let _gap = qty - (held + storedQty);
         const _autoActions = [];
-        if (_gap > 0 && resourceId === 'horses' && _mountedAvail > 0) {
-            const _toDismount = Math.min(_gap, _mountedAvail);
-            // v9p33river296: previously used player.horses.pop() which
-            // grabbed the LAST mounted horse(s), losing their id, name,
-            // stamina, AND any saddle (saddle would vanish from the
-            // world). Mirror dismountHorse semantics: prefer unsaddled
-            // horses first, and if a saddled one must be removed return
-            // its saddle to player inventory.
-            let _dismountedCount = 0;
-            // Pass 1: dismount unsaddled horses first
-            for (let _di = player.horses.length - 1; _di >= 0 && _dismountedCount < _toDismount; _di--) {
-                if (player.horses[_di].saddled) continue;
-                player.horses.splice(_di, 1);
-                _dismountedCount++;
-            }
-            // Pass 2: if we still need more, dismount saddled ones (return saddle)
-            for (let _di2 = player.horses.length - 1; _di2 >= 0 && _dismountedCount < _toDismount; _di2--) {
-                const _h = player.horses[_di2];
-                if (_h.saddled) {
-                    player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+        // v9p33river433: defer auto-dismount/unequip until the sale is actually executing or confiscating goods.
+        function _realizeSellSources(qtyNeeded) {
+            let _gap = qtyNeeded - ((player.inventory[resourceId] || 0) + ((_sellTownStorage && _sellTownStorage[resourceId]) || 0));
+            if (_gap > 0 && resourceId === 'horses' && player.horses && player.horses.length > 0) {
+                const _toDismount = Math.min(_gap, player.horses.length);
+                let _dismountedCount = 0;
+                for (let _di = player.horses.length - 1; _di >= 0 && _dismountedCount < _toDismount; _di--) {
+                    if (player.horses[_di].saddled) continue;
+                    player.horses.splice(_di, 1);
+                    _dismountedCount++;
                 }
-                player.horses.splice(_di2, 1);
-                _dismountedCount++;
+                for (let _di2 = player.horses.length - 1; _di2 >= 0 && _dismountedCount < _toDismount; _di2--) {
+                    const _h = player.horses[_di2];
+                    if (_h.saddled) player.inventory.saddles = (player.inventory.saddles || 0) + 1;
+                    player.horses.splice(_di2, 1);
+                    _dismountedCount++;
+                }
+                if (_dismountedCount > 0) {
+                    player.inventory[resourceId] = (player.inventory[resourceId] || 0) + _dismountedCount;
+                    _gap -= _dismountedCount;
+                    _autoActions.push('🐎 dismounted ' + _dismountedCount + ' horse' + (_dismountedCount === 1 ? '' : 's'));
+                    if (player.horses.length === 0) player.travelMode = 'walk';
+                }
             }
-            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + _dismountedCount;
-            _gap -= _dismountedCount;
-            _autoActions.push('🐎 dismounted ' + _dismountedCount + ' horse' + (_dismountedCount === 1 ? '' : 's'));
-            if (player.horses.length === 0) player.travelMode = 'walk';
+            if (_gap > 0 && _equipWeaponAvail && player.weapon) {
+                player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+                player.weapon = null;
+                _gap -= 1;
+                _autoActions.push('🗡️ unequipped weapon');
+            }
+            if (_gap > 0 && _equipArmorAvail && player.armor) {
+                player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+                player.armor = null;
+                _gap -= 1;
+                _autoActions.push('🛡️ unequipped armor');
+            }
+            if (_gap > 0 && _equipBackpackAvail && (player._backpack || player.storageContainer === 'backpack')) {
+                player._backpack = false;
+                if (player.storageContainer === 'backpack') player.storageContainer = null;
+                player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+                _gap -= 1;
+                _autoActions.push('🎒 unequipped backpack');
+            }
+            if (_gap > 0 && _equipVehicleAvail && player.storageContainer && player.storageContainer !== 'backpack') {
+                player.storageContainer = player._backpack ? 'backpack' : null;
+                player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
+                _gap -= 1;
+                _autoActions.push('🛒 unequipped vehicle');
+            }
+            return player.inventory[resourceId] || 0;
         }
-        if (_gap > 0 && _equipWeaponAvail) {
-            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
-            player.weapon = null;
-            _gap -= 1;
-            _autoActions.push('🗡️ unequipped weapon');
-        }
-        if (_gap > 0 && _equipArmorAvail) {
-            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
-            player.armor = null;
-            _gap -= 1;
-            _autoActions.push('🛡️ unequipped armor');
-        }
-        // v9p33river339: auto-unequip backpack/vehicle to fulfill sell order.
-        if (_gap > 0 && _equipBackpackAvail) {
-            player._backpack = false;
-            if (player.storageContainer === 'backpack') player.storageContainer = null;
-            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
-            _gap -= 1;
-            _autoActions.push('🎒 unequipped backpack');
-        }
-        if (_gap > 0 && _equipVehicleAvail) {
-            // Fall back to backpack as storage if player still has one.
-            player.storageContainer = player._backpack ? 'backpack' : null;
-            player.inventory[resourceId] = (player.inventory[resourceId] || 0) + 1;
-            _gap -= 1;
-            _autoActions.push('🛒 unequipped vehicle');
-        }
-        // Recompute held after possible auto-actions
-        const _heldNow = player.inventory[resourceId] || 0;
 
         let price = town.market.prices[resourceId] || 1;
         // Apply market spread — sell price is less than buy price
@@ -1856,18 +1874,21 @@
             if (hasSkill('contraband_network')) _embargoDetect *= 0.4; // 60% reduction
             if (rng && rng.chance(_embargoDetect)) {
                 const fine = Math.floor(price * qty * CONFIG.EMBARGO_FINE_MULTIPLIER);
-                deductGoldOrDebt(fine, 'kingdom', kingdom ? kingdom.id : 'unknown', kingdom ? kingdom.name : 'Kingdom', 'Embargo violation fine (selling)');
+                var _sellEmbargoKingdom = _sellEmbargoFromK && Engine.findKingdom ? Engine.findKingdom(_sellEmbargoFromK) : null;
+                var _sellEmbPaid = deductGoldOrDebt(fine, 'kingdom', _sellEmbargoKingdom ? _sellEmbargoKingdom.id : (_sellEmbargoFromK || 'unknown'), _sellEmbargoKingdom ? _sellEmbargoKingdom.name : 'Kingdom', 'Embargo violation fine (selling)'); // v9p33river433: sell-side embargo penalties belong to the embargo source and must hit finance.
+                logFinance(-_sellEmbPaid, 'fines', 'Embargo fine');
+                _realizeSellSources(qty);
                 // Seized goods
                 var embargoFromCarried = Math.min(qty, player.inventory[resourceId] || 0);
                 var embargoFromStorage = qty - embargoFromCarried;
                 player.inventory[resourceId] -= embargoFromCarried;
                 if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
-                if (embargoFromStorage > 0 && player.townStorage[player.townId]) {
-                    player.townStorage[player.townId][resourceId] = (player.townStorage[player.townId][resourceId] || 0) - embargoFromStorage;
-                    if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
+                if (embargoFromStorage > 0 && _sellTownStorage) {
+                    _sellTownStorage[resourceId] = (_sellTownStorage[resourceId] || 0) - embargoFromStorage;
+                    if (_sellTownStorage[resourceId] <= 0) delete _sellTownStorage[resourceId];
                 }
-                if (kingdom) {
-                    player.reputation[kingdom.id] = Math.max(0, (player.reputation[kingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
+                if (_sellEmbargoKingdom) {
+                    player.reputation[_sellEmbargoKingdom.id] = Math.max(0, (player.reputation[_sellEmbargoKingdom.id] || 50) - CONFIG.EMBARGO_REP_PENALTY);
                 }
                 Engine.logEvent(`${player.fullName} caught smuggling ${resourceId} past the embargo! Fined ${fine}g.`, null, 'my_actions');
                 return { success: false, message: `🚫 Caught smuggling past the embargo! Goods seized, fined ${fine}g.`, caught: true };
@@ -2027,7 +2048,7 @@
         // War profiteer skill
         const res_check = findResource(resourceId);
         if (hasSkill('war_profiteer') && res_check && res_check.category === 'military') {
-            if (kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
+            if (kingdom && getCollectionCount(kingdom.atWar) > 0) {
                 price *= 1.25;
             }
         }
@@ -2040,12 +2061,19 @@
 
         const effectivePrice = price * (1 + salesBonus);
         const totalRevenue = Math.max(qty > 0 ? 1 : 0, Math.floor(effectivePrice * qty));
+        const baseSellPrice = town.market.prices[resourceId] || 1;
+        const taxPortion = Math.floor(baseSellPrice * (taxRate + effectiveGoodsTax) * qty);
+        const tariffPortion = Math.floor(baseSellPrice * (tariff + foreignSurcharge) * qty);
+        const totalKingdomRevenue = taxPortion + tariffPortion;
 
-        // v9p33river85: refuse the sale if the town market doesn't have enough gold to pay.
+        // v9p33river433: market gold must cover both the seller payout and the tax remitted to the kingdom.
+        var _marketOutflow = totalRevenue + totalKingdomRevenue;
         var _marketAvail = (Engine.getTownMarketGold && town) ? Engine.getTownMarketGold(town.id) : Infinity;
-        if (_marketAvail < totalRevenue) {
-            return { success: false, message: '🪙 The town market only has ' + _marketAvail + 'g — not enough to pay you ' + totalRevenue + 'g for that.' };
+        if (_marketAvail < _marketOutflow) {
+            return { success: false, message: '🪙 The town market only has ' + _marketAvail + 'g — not enough to cover ' + _marketOutflow + 'g for that sale.' };
         }
+
+        const _heldNow = _realizeSellSources(qty);
 
         // Track first trade day
         if (player.tradingStartDay === 0) player.tradingStartDay = Engine.getDay();
@@ -2053,15 +2081,11 @@
         // Execute trade
         player.gold += totalRevenue;
         logFinance(totalRevenue, 'trading', 'Sold ' + qty + ' ' + resourceId);
-        // v9p33river80/85: track market gold delta (gold flowed out of market to player)
-        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -totalRevenue);
+        // v9p33river433: market gold outflow must include the seller payout plus the tax withheld for the kingdom.
+        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -_marketOutflow);
 
         // Track tax revenue for kingdom (trade tax + tariff + foreign surcharge)
         if (kingdom) {
-            const baseSellPrice = town.market.prices[resourceId] || 1;
-            const taxPortion = Math.floor(baseSellPrice * (taxRate + effectiveGoodsTax) * qty);
-            const tariffPortion = Math.floor(baseSellPrice * (tariff + foreignSurcharge) * qty);
-            const totalKingdomRevenue = taxPortion + tariffPortion;
             kingdom.taxRevenue = (kingdom.taxRevenue || 0) + totalKingdomRevenue;
             kingdom.gold = (kingdom.gold || 0) + totalKingdomRevenue;
             kingdom.tradeTaxRevenue = (kingdom.tradeTaxRevenue || 0) + taxPortion;
@@ -2087,14 +2111,14 @@
         var sellFromStorage = qty - sellFromCarried;
         player.inventory[resourceId] -= sellFromCarried;
         if (player.inventory[resourceId] <= 0) delete player.inventory[resourceId];
-        if (sellFromStorage > 0 && player.townStorage[player.townId]) {
-            player.townStorage[player.townId][resourceId] = (player.townStorage[player.townId][resourceId] || 0) - sellFromStorage;
-            if (player.townStorage[player.townId][resourceId] <= 0) delete player.townStorage[player.townId][resourceId];
+        if (sellFromStorage > 0 && _sellTownStorage) {
+            _sellTownStorage[resourceId] = (_sellTownStorage[resourceId] || 0) - sellFromStorage;
+            if (_sellTownStorage[resourceId] <= 0) delete _sellTownStorage[resourceId];
         }
         // Transfer food age from player/storage to market (anti-exploit)
         if (sellFromCarried > 0) Engine.transferFoodCohorts(player, town.market, resourceId, sellFromCarried);
-        if (sellFromStorage > 0 && player.townStorage[player.townId]) {
-            Engine.transferFoodCohorts(player.townStorage[player.townId], town.market, resourceId, sellFromStorage);
+        if (sellFromStorage > 0 && _sellTownStorage) {
+            Engine.transferFoodCohorts(_sellTownStorage, town.market, resourceId, sellFromStorage);
         }
         town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + qty;
         // Market Manipulator: trades have 2x impact on supply (phantom addition)
@@ -2116,7 +2140,7 @@
         }
 
         // Platinum tracking: war profiteering
-        if (kingdom && kingdom.atWar && kingdom.atWar.size > 0 && res_check) {
+        if (kingdom && getCollectionCount(kingdom.atWar) > 0 && res_check) {
             if (!player._platinumTracking) player._platinumTracking = {};
             if (!player._platinumTracking.warProfitByKingdom) player._platinumTracking.warProfitByKingdom = {};
             if (!player._platinumTracking.warProfitByKingdom[kingdom.id]) player._platinumTracking.warProfitByKingdom[kingdom.id] = { sold: 0, bought: 0 };
@@ -2137,9 +2161,10 @@
         // Notoriety for military goods
         const res = findResource(resourceId);
         if (res && res.category === 'military') {
-            if (resourceId === 'swords') player.notoriety += CONFIG.NOTORIETY_WEAPON_SALE * qty;
-            else if (resourceId === 'armor') player.notoriety += CONFIG.NOTORIETY_ARMOR_SALE * qty;
-            else player.notoriety += 2 * qty;
+            var _notorietyGain = resourceId === 'swords' ? CONFIG.NOTORIETY_WEAPON_SALE * qty :
+                (resourceId === 'armor' ? CONFIG.NOTORIETY_ARMOR_SALE * qty : 2 * qty);
+            // v9p33river433: military-sale notoriety is a bounded 0-100 meter.
+            player.notoriety = Math.min(100, (player.notoriety || 0) + _notorietyGain);
         }
 
         // XP & achievement tracking for sell — scale by trade value
@@ -2171,7 +2196,7 @@
         const newPrice = town.market.prices[resourceId] || (res ? res.basePrice : 1);
         if (res && newPrice < res.basePrice * 0.5) unlockAchievement('market_crash');
         // War profiteer achievement
-        if (res && res.category === 'military' && kingdom && kingdom.atWar && kingdom.atWar.size > 0) {
+        if (res && res.category === 'military' && kingdom && getCollectionCount(kingdom.atWar) > 0) {
             unlockAchievement('war_profiteer_ach');
         }
         // Island trader check
@@ -2292,43 +2317,8 @@
             }
         }
 
-        // Calculate material cost from market prices
         var materialCost = 0;
-        if (bt.materials) {
-            for (const [matId, qty] of Object.entries(bt.materials)) {
-                const playerHas = player.inventory[matId] || 0;
-                const townHas = (town.market && town.market.supply[matId]) || 0;
-                if (playerHas + townHas < qty) {
-                    const res = findResource(matId);
-                    const resName = res ? res.name : matId;
-                    return { success: false, message: `Not enough ${resName}. Need ${qty}, have ${playerHas} (inventory) + ${townHas} (market).` };
-                }
-                // Cost for materials player needs to buy from market
-                var needToBuy = Math.max(0, qty - playerHas);
-                if (needToBuy > 0) {
-                    var matPrice = 0;
-                    try { matPrice = Engine.getMarketPrice(tid, matId) || 0; } catch(e) {}
-                    if (matPrice <= 0) { var res2 = findResource(matId); matPrice = res2 ? (res2.basePrice || 5) : 5; }
-                    materialCost += needToBuy * matPrice;
-                }
-            }
-        }
-
-        var buildCost = laborCost + materialCost;
-        if (player.gold < buildCost) return { success: false, message: `Not enough gold. Need ${buildCost}g (labor: ${laborCost}g + materials: ${materialCost}g). Have ${Math.floor(player.gold)}g.` };
-
-        // Check building material requirements
-        if (bt.materials) {
-            for (const [matId, qty] of Object.entries(bt.materials)) {
-                const playerHas = player.inventory[matId] || 0;
-                const townHas = (town.market && town.market.supply[matId]) || 0;
-                if (playerHas + townHas < qty) {
-                    const res = findResource(matId);
-                    const resName = res ? res.name : matId;
-                    return { success: false, message: `Not enough ${resName}. Need ${qty}, have ${playerHas} (inventory) + ${townHas} (market).` };
-                }
-            }
-        }
+        var buildCost = laborCost;
 
         // Check reputation with the kingdom
         const kingdom = Engine.findKingdom(town.kingdomId);
@@ -2423,6 +2413,29 @@
             }
         }
 
+        // v9p33river433: legal/rank/law checks should resolve before we inspect market material availability or pricing.
+        if (bt.materials) {
+            for (const [matId, qty] of Object.entries(bt.materials)) {
+                const playerHas = player.inventory[matId] || 0;
+                const townHas = (town.market && town.market.supply[matId]) || 0;
+                if (playerHas + townHas < qty) {
+                    const res = findResource(matId);
+                    const resName = res ? res.name : matId;
+                    return { success: false, message: `Not enough ${resName}. Need ${qty}, have ${playerHas} (inventory) + ${townHas} (market).` };
+                }
+                var needToBuy = Math.max(0, qty - playerHas);
+                if (needToBuy > 0) {
+                    var matPrice = 0;
+                    try { matPrice = Engine.getMarketPrice(tid, matId) || 0; } catch(e) {}
+                    if (matPrice <= 0) { var res2 = findResource(matId); matPrice = res2 ? (res2.basePrice || 5) : 5; }
+                    materialCost += needToBuy * matPrice;
+                }
+            }
+        }
+
+        buildCost = laborCost + materialCost;
+        if (player.gold < buildCost) return { success: false, message: `Not enough gold. Need ${buildCost}g (labor: ${laborCost}g + materials: ${materialCost}g). Have ${Math.floor(player.gold)}g.` };
+
         // Consume building materials (from inventory first, then town market)
         if (bt.materials) {
             for (const [matId, qty] of Object.entries(bt.materials)) {
@@ -2431,6 +2444,7 @@
                 if (fromInv > 0) {
                     player.inventory[matId] -= fromInv;
                     remaining -= fromInv;
+                    consumeFoodCohorts(player, matId, fromInv); // v9p33river433: consumed inventory food must move its age cohorts too.
                 }
                 if (remaining > 0) {
                     // v9p33river315: clamp at 0 so building construction
@@ -2443,8 +2457,9 @@
         player.gold -= buildCost;
         logFinance(-buildCost, 'buildings', 'Built ' + buildingType);
         player.stats.totalGoldSpent += buildCost;
+        if (materialCost > 0 && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(tid, materialCost); // v9p33river433: bought construction materials must pay the market.
         if (typeof Engine !== 'undefined' && Engine.distributeConstructionWages) {
-            Engine.distributeConstructionWages(tid, buildCost);
+            Engine.distributeConstructionWages(tid, laborCost);
         }
 
         const bld = {
@@ -2602,8 +2617,11 @@
 
         // Create player building record
         var bt = Engine.findBuildingType(bld.type);
+        // v9p33river433: purchased buildings must keep the same id on both the town and player records.
+        var _purchasedBldId = bld.id || bld._id || buildingUid();
+        if (!bld.id) bld.id = _purchasedBldId;
         var playerBld = {
-            id: buildingUid(),
+            id: _purchasedBldId,
             type: bld.type,
             townId: tid,
             workers: [],
@@ -2697,14 +2715,48 @@
             }
         }
 
-        // Deduct player gold
+        var _preserveLevel = bld.level || 1;
+        var _preserveCondition = bld.condition || 'new';
+        var _preserveLastRepairDay = bld.lastRepairDay || 0;
+        var _existingPlayerBldIndex = -1;
+        var _seenOwned = 0;
+        if (bld.ownerId === 'player') {
+            for (var _pbi = 0; _pbi < player.buildings.length; _pbi++) {
+                var _pb = player.buildings[_pbi];
+                if (_pb.townId === tid && _pb.type === bld.type) {
+                    if (_seenOwned === _selectedOwnedOrdinal) { _existingPlayerBldIndex = _pbi; break; }
+                    _seenOwned++;
+                }
+            }
+        }
+
+        var _tempConversionPowder = false;
+        if (blastingPowderSource !== 'inventory') {
+            // v9p33river433: engine-side conversion validation only recognizes inventory powder for players.
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) + 1;
+            _tempConversionPowder = true;
+        }
+
+        // v9p33river433: only charge gold/materials after the engine conversion succeeds.
+        var result = Engine.convertBuilding(town, buildingIndex, newBuildingTypeId, 'player', 'player');
+        if (_tempConversionPowder) {
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
+            if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
+        }
+        if (!result.success) return result;
+
+        if (result.building) {
+            result.building.level = _preserveLevel;
+            result.building.condition = _preserveCondition;
+            result.building.lastRepairDay = _preserveLastRepairDay;
+        }
+
         player.gold -= totalCost;
         player.stats.totalGoldSpent += totalCost;
         // v9p33river313: missing finance ledger — building conversion
         // costs were invisible in the finance report.
         logFinance(-totalCost, 'buildings', 'Building conversion');
 
-        // Deduct blasting powder
         if (blastingPowderSource === 'inventory') {
             player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
             if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
@@ -2712,46 +2764,47 @@
             if (town.market && town.market.supply) {
                 town.market.supply.blasting_powder = Math.max(0, (town.market.supply.blasting_powder || 0) - 1);
             }
-        }
-        // kingdom source: gold already covers it, no inventory change needed
-
-        // If player owned the old building, remove it from player.buildings
-        if (bld.ownerId === 'player') {
-            var pIdx = -1;
-            var _seenOwned = 0;
-            for (var _pbi = 0; _pbi < player.buildings.length; _pbi++) {
-                var _pb = player.buildings[_pbi];
-                if (_pb.townId === tid && _pb.type === bld.type) {
-                    if (_seenOwned === _selectedOwnedOrdinal) { pIdx = _pbi; break; }
-                    _seenOwned++;
-                }
+        } else if (blastingPowderSource === 'kingdom' && kingdom) {
+            kingdom.gold = (kingdom.gold || 0) + blastingPowderCost; // v9p33river433: kingdom powder sales must actually reach the treasury.
+            if (kingdom.goodsStockpile && kingdom.goodsStockpile.blasting_powder) {
+                kingdom.goodsStockpile.blasting_powder = Math.max(0, kingdom.goodsStockpile.blasting_powder - 1);
+                if (kingdom.goodsStockpile.blasting_powder <= 0) delete kingdom.goodsStockpile.blasting_powder;
             }
-            if (pIdx >= 0) {
-                _clearTransferTargetsFor(player.buildings[pIdx].id);
-                player.buildings.splice(pIdx, 1); // v9p33river329: remove selected duplicate by ordinal, not first type match.
+            if (Engine.recordKingdomTransaction) {
+                Engine.recordKingdomTransaction(kingdom, 'income', blastingPowderCost, 'Sold 1 blasting_powder for building conversion in ' + town.name, 'stockpile_sale');
             }
         }
 
-        // Perform conversion via Engine
-        var result = Engine.convertBuilding(town, buildingIndex, newBuildingTypeId, 'player', 'player');
-        if (!result.success) return result;
-
-        // Add new building to player records
-        var playerBld = {
-            id: buildingUid(),
-            type: newBuildingTypeId,
-            townId: tid,
-            workers: [],
-            active: true,
-            level: 1,
-            builtDay: Engine.getDay(),
-            condition: 'new',
-            lastRepairDay: 0,
-            transferTarget: null,
-            transferEnabled: false,
-        };
-        player.buildings.push(playerBld);
-        player.stats.buildingsOwned++;
+        var playerBld = null;
+        if (bld.ownerId === 'player' && _existingPlayerBldIndex >= 0) {
+            playerBld = player.buildings[_existingPlayerBldIndex];
+            _clearTransferTargetsFor(playerBld.id);
+            playerBld.type = newBuildingTypeId;
+            playerBld.level = _preserveLevel;
+            playerBld.condition = _preserveCondition;
+            playerBld.lastRepairDay = _preserveLastRepairDay;
+            playerBld.transferTarget = null;
+            playerBld.transferEnabled = false;
+        } else {
+            var _convertedBldId = (result.building && (result.building.id || result.building._id)) || buildingUid();
+            if (result.building && !result.building.id) result.building.id = _convertedBldId;
+            playerBld = {
+                id: _convertedBldId,
+                type: newBuildingTypeId,
+                townId: tid,
+                workers: [],
+                active: true,
+                level: _preserveLevel,
+                builtDay: (result.building && result.building.builtDay) || Engine.getDay(),
+                condition: _preserveCondition,
+                lastRepairDay: _preserveLastRepairDay,
+                transferTarget: null,
+                transferEnabled: false,
+            };
+            player.buildings.push(playerBld);
+            player.stats.buildingsOwned++;
+        }
+        if (result.building && !result.building.id && playerBld && playerBld.id) result.building.id = playerBld.id;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
         grantXP(XP_REWARDS.BUILD || 10, 'build');
@@ -2889,14 +2942,37 @@
             return { success: false, message: 'Not enough gold. Need ' + totalCost + 'g (demolition: ' + conversionCost + 'g' + (extraCost > 0 ? ' + materials: ' + extraCost + 'g' : '') + ').' };
         }
 
-        // Deduct costs
+        var bt = Engine.findBuildingType(bld.type);
+        var pIdx = -1;
+        var _seenDemolish = 0;
+        for (var _dpbi = 0; _dpbi < player.buildings.length; _dpbi++) {
+            if (player.buildings[_dpbi].townId === tid && player.buildings[_dpbi].type === _demolishType) {
+                if (_seenDemolish === _demolishOwnedOrdinal) { pIdx = _dpbi; break; }
+                _seenDemolish++;
+            }
+        }
+
+        var _tempDemolitionPowder = false;
+        if (demolMethod !== 'bp_inventory') {
+            // v9p33river433: engine-side demolition validation only recognizes inventory powder for players.
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) + 1;
+            _tempDemolitionPowder = true;
+        }
+
+        // v9p33river433: only charge/remove player-side state after the engine demolition succeeds.
+        var result = Engine.demolishBuilding(town, buildingIndex, 'player', 'player');
+        if (_tempDemolitionPowder) {
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
+            if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
+        }
+        if (!result.success) return result;
+
         player.gold -= totalCost;
         player.stats.totalGoldSpent += totalCost;
         // v9p33river313: missing finance ledger — demolition/conversion
         // costs were invisible in the finance report.
         logFinance(-totalCost, 'buildings', 'Demolition / farm conversion');
 
-        // Deduct materials based on method
         if (demolMethod === 'bp_inventory') {
             player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - 1;
             if (player.inventory.blasting_powder <= 0) delete player.inventory.blasting_powder;
@@ -2913,24 +2989,10 @@
             }
         }
 
-        // Remove from player buildings
-        var bt = Engine.findBuildingType(bld.type);
-        var pIdx = -1;
-        var _seenDemolish = 0;
-        for (var _dpbi = 0; _dpbi < player.buildings.length; _dpbi++) {
-            if (player.buildings[_dpbi].townId === tid && player.buildings[_dpbi].type === _demolishType) {
-                if (_seenDemolish === _demolishOwnedOrdinal) { pIdx = _dpbi; break; }
-                _seenDemolish++;
-            }
-        }
         if (pIdx >= 0) {
             _clearTransferTargetsFor(player.buildings[pIdx].id);
             player.buildings.splice(pIdx, 1); // v9p33river329: demolish selected duplicate by ordinal.
         }
-
-        // Perform demolition via Engine
-        var result = Engine.demolishBuilding(town, buildingIndex, 'player', 'player');
-        if (!result.success) return result;
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.build || 10);
         var bldName = bt ? bt.name : bld.type;
@@ -4017,8 +4079,8 @@
         const shipType = CONFIG.SHIP_TYPES[type];
         if (!shipType) return { success: false, message: 'Unknown ship type.' };
 
-        // Dynamic pricing: labor + sum(material × local market price)
-        var shipCost = shipType.laborCost || 100;
+        var shipLaborCost = shipType.laborCost || 100;
+        var shipMaterialCost = 0;
         var materialsNeeded = shipType.materials || {};
         var missingMats = [];
         var materialsBuyFromMarket = {};
@@ -4032,23 +4094,31 @@
             var available = Engine.getResourceSupply ? Engine.getResourceSupply(player.townId, mat) : 999;
             if (needFromMarket > available) missingMats.push(mat + ' (' + qty + ' needed, have ' + playerHas + ', market has ' + available + ')');
             materialsBuyFromMarket[mat] = needFromMarket;
-            shipCost += needFromMarket * price;
+            shipMaterialCost += needFromMarket * price;
         }
         if (missingMats.length > 0) return { success: false, message: 'Insufficient materials: ' + missingMats.join(', ') };
 
-        // Harbor House discount: 10% off ship purchases
+        // Harbor House discount: labor discount only; market-bought materials
+        // should still cost full price.
         var harborHouse = getHouseInTown(player.townId);
         if (harborHouse) {
             var hht = CONFIG.HOUSING_TYPES.find(function(h) { return h.id === harborHouse.type; });
-            if (hht && hht.shipDiscount) shipCost = Math.floor(shipCost * (1 - hht.shipDiscount));
+            // v9p33river433: keep harbor-house discounts off market materials so
+            // only the shipwright labor gets discounted.
+            if (hht && hht.shipDiscount) shipLaborCost = Math.floor(shipLaborCost * (1 - hht.shipDiscount));
         }
+        var shipCost = shipLaborCost + shipMaterialCost;
 
         if (player.gold < shipCost) return { success: false, message: 'Not enough gold. Need ' + shipCost + 'g.' };
 
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.buy_ship || 2);
 
         player.gold -= shipCost;
+        // v9p33river433: commissioning ships spends player gold and should hit
+        // the finance ledger, while market-bought materials should pay the market.
+        logFinance(-shipCost, 'ships', 'Commissioned ' + shipType.name);
         player.stats.totalGoldSpent += shipCost;
+        if (shipMaterialCost > 0 && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(player.townId, shipMaterialCost);
 
         // Consume materials: use player inventory first, then buy from market
         for (var mat2 in materialsNeeded) {
@@ -4057,9 +4127,15 @@
             if (fromInventory > 0) {
                 player.inventory[mat2] -= fromInventory;
                 if (player.inventory[mat2] <= 0) delete player.inventory[mat2];
+                // v9p33river433: remove consumed food cohorts from inventory so
+                // shipbuilding can't leave stale age ledgers behind.
+                if (Engine.removeFoodCohort) Engine.removeFoodCohort(player, mat2, fromInventory);
             }
             var fromMarket = totalNeeded - fromInventory;
-            if (fromMarket > 0 && Engine.consumeResource) Engine.consumeResource(player.townId, mat2, fromMarket);
+            if (fromMarket > 0) {
+                if (Engine.consumeResource) Engine.consumeResource(player.townId, mat2, fromMarket);
+                if (town.market && Engine.removeFoodCohort) Engine.removeFoodCohort(town.market, mat2, fromMarket);
+            }
         }
 
         const ship = {
@@ -4191,10 +4267,27 @@
                     // Caught! Ship seized, player jailed
                     Engine.logEvent('⚠️ You were caught trying to run the blockade! Your ship has been seized!', null, 'travel_events');
                     if (bestShip) {
+                        // v9p33river433: if the seized ship was still tied to a
+                        // caravan, clear that stranded caravan's ship linkage too.
+                        if (bestShip.assignedCaravanId && player.caravans) {
+                            var seizedCaravan = player.caravans.find(function(c) { return c.id === bestShip.assignedCaravanId; });
+                            if (seizedCaravan) {
+                                seizedCaravan.shipId = null;
+                                seizedCaravan.active = false;
+                                seizedCaravan.status = 'destroyed';
+                            }
+                            bestShip.assignedCaravanId = null;
+                        }
+                        bestShip.assignedOffSea = false;
                         player.ships = player.ships.filter(function(s) { return s.id !== bestShip.id; });
                     }
                     player.jailedUntilDay = Engine.getDay() + 30;
                     player.jailReason = 'Running a naval blockade';
+                    // v9p33river433: blockade arrests must reset the rest of the
+                    // player jail state too so stale fast-forward/kingdom fields
+                    // do not leak in from an earlier imprisonment.
+                    player.jailFastForwardAvailable = false;
+                    player.jailKingdomId = (destTown && destTown.kingdomId) || (fromTown && fromTown.kingdomId) || null;
                     return { success: false, message: 'Caught running the blockade! Ship seized and you are jailed for 30 days.' };
                 }
                 Engine.logEvent('🚢 You successfully slipped past the blockade!', null, 'travel_events');
@@ -4210,6 +4303,9 @@
                 return { success: false, message: 'Not enough gold for sea passage. Need ' + CONFIG.SEA_PASSAGE_COST + 'g.' };
             }
             player.gold -= CONFIG.SEA_PASSAGE_COST;
+            // v9p33river433: paid passage is travel spending and belongs in the
+            // finance ledger like other transport costs.
+            logFinance(-CONFIG.SEA_PASSAGE_COST, 'travel', 'Sea passage');
             player.stats.totalGoldSpent += CONFIG.SEA_PASSAGE_COST;
         }
 
@@ -4383,9 +4479,12 @@
         if (!seaRoute) return { success: false, message: 'No sea route between these ports.' };
 
         // Verify player has the goods (check both carried and town storage)
+        var seaTownStorage = (player.townStorage && player.townStorage[fromTownId]) || null;
         for (const [resId, qty] of Object.entries(goods)) {
             var seaCarried = player.inventory[resId] || 0;
-            var seaStored = (player.townStorage[fromTownId] || {})[resId] || 0;
+            // v9p33river433: legacy saves can lack townStorage[fromTownId]; guard
+            // the lookup instead of assuming the nested object exists.
+            var seaStored = seaTownStorage ? (seaTownStorage[resId] || 0) : 0;
             if (seaCarried + seaStored < qty) {
                 return { success: false, message: `Not enough ${resId}. Have: ${seaCarried + seaStored}` };
             }
@@ -4409,12 +4508,15 @@
         var seaCrewWage = CONFIG.CARAVAN_SEA_CARRIER_WAGE || 2;
         var seaCrewHire = (CONFIG.CARAVAN_SEA_CARRIER_HIRE_COST || 10) * carriers;
         var guardHireCost = guards * (CONFIG.CARAVAN_GUARD_HIRE_COST || 30);
-        var guardAdvance = guards * (CONFIG.CARAVAN_GUARD_WAGE || 6) * 5;
+        var guardAdvanceDays = 5;
+        var estimatedRentalDays = Math.max(1, Math.ceil((seaRoute.distance / Math.max(shipSpeed, 0.1)) / Math.max(CONFIG.CARAVAN_BASE_SPEED || 120, 1)));
+        // v9p33river433: rental sea caravans should prepay against the actual
+        // voyage length, not a hard-coded five-day route regardless of distance.
+        var guardAdvance = guards * (CONFIG.CARAVAN_GUARD_WAGE || 6) * guardAdvanceDays;
         var totalCost = seaCrewHire + guardHireCost + guardAdvance;
 
-        // Rental ships: prepay 5 days
         if (rentalShipType) {
-            totalCost += rentalDailyCost * 5;
+            totalCost += rentalDailyCost * estimatedRentalDays;
         }
 
         if (player.gold < totalCost) {
@@ -4426,9 +4528,10 @@
             var seaFromCarried = Math.min(qty, player.inventory[resId] || 0);
             var seaFromStorage = qty - seaFromCarried;
             player.inventory[resId] = (player.inventory[resId] || 0) - seaFromCarried;
-            if (seaFromStorage > 0 && player.townStorage[fromTownId]) {
-                player.townStorage[fromTownId][resId] = (player.townStorage[fromTownId][resId] || 0) - seaFromStorage;
-                if (player.townStorage[fromTownId][resId] <= 0) delete player.townStorage[fromTownId][resId];
+            if (player.inventory[resId] <= 0) delete player.inventory[resId];
+            if (seaFromStorage > 0 && seaTownStorage) {
+                seaTownStorage[resId] = (seaTownStorage[resId] || 0) - seaFromStorage;
+                if (seaTownStorage[resId] <= 0) delete seaTownStorage[resId];
             }
         }
         player.gold -= totalCost;
@@ -5393,6 +5496,14 @@
         if (player.traveling) return { success: false, message: 'Already traveling.' };
         if (player.gold < service.price) return { success: false, message: 'Not enough gold.' };
 
+        var carriedWeight = Player.getCarriedWeight();
+        var portableCapacity = Player.getCarryCapacity();
+        // v9p33river433: paid transport should honor the same carry-capacity
+        // gate as normal travel before any money changes hands.
+        if (carriedWeight > portableCapacity) {
+            return { success: false, message: 'You are carrying too much! (' + Math.round(carriedWeight) + '/' + portableCapacity + '). Deposit items to warehouse storage first.' };
+        }
+
         // Validate route BEFORE charging
         var route = null;
         try { route = Engine.findPath(player.townId, townId); } catch (e) { /* ignore */ }
@@ -5400,14 +5511,21 @@
 
         // Pay for transport
         player.gold -= service.price;
+        logFinance(-service.price, 'travel', 'Transport service: ' + (service.name || service.type || 'travel'));
         player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + service.price;
 
-        // If kingdom transport, pay the kingdom
+        // v9p33river433: keep transport revenue inside the world economy for
+        // both kingdom and non-kingdom services.
         if (service.type === 'kingdom' && service.kingdomId) {
             try {
                 var kingdom = Engine.findKingdom(service.kingdomId);
                 if (kingdom) kingdom.gold = (kingdom.gold || 0) + service.price;
             } catch (e) { /* ignore */ }
+        } else if (service.operatorId && Engine.findPerson) {
+            var transportOperator = Engine.findPerson(service.operatorId);
+            if (transportOperator) transportOperator.gold = (transportOperator.gold || 0) + service.price;
+        } else if (Engine.adjustTownMarketGold && player.townId) {
+            Engine.adjustTownMarketGold(player.townId, service.price);
         }
 
         // Start travel (route already validated above)
@@ -5478,26 +5596,35 @@
             return { success: false, message: 'You already have ' + _currentHorses + '/' + _maxHorses + ' horses. Stable or sell one first.' };
         }
 
-        // Buy the horse
         if (player.gold < cost) return { success: false, message: 'Not enough gold.' };
-        player.gold -= cost;
-        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost;
-        if (currentTown.market && currentTown.market.supply) {
-            currentTown.market.supply.horses = Math.max(0, (currentTown.market.supply.horses || 0) - 1);
-        }
-
-        // Add horse to player
         if (!player.horses) player.horses = [];
-        // v9p33river285: give the horse a stable id so sellHorse / mountSaddle /
-        // dismountHorse (which look up by horse.id) can manage it later.
         var _bhRng = Engine.getRng ? Engine.getRng() : null;
-        player.horses.push({
+        var purchasedHorse = {
             id: 'horse_' + Engine.getDay() + '_' + (_bhRng ? _bhRng.randInt(0, 99999) : Math.floor(Math.random() * 100000)),
             name: 'Horse',
             stamina: 100,
             maxStamina: 100,
             speed: 1.0
-        });
+        };
+        var horseMarket = currentTown.market && currentTown.market.supply ? currentTown.market.supply : null;
+
+        // v9p33river433: stage the purchase, then roll it back if travel never
+        // starts so failed travel checks don't strand the player with a bought horse.
+        player.gold -= cost;
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + cost;
+        if (horseMarket) {
+            horseMarket.horses = Math.max(0, (horseMarket.horses || 0) - 1);
+        }
+        player.horses.push(purchasedHorse);
+
+        var travelResult = Player.travelTo(townId, { mode: 'horse', skipQuarantineCheck: options.skipQuarantineCheck, bringFamily: options.bringFamily });
+        if (!travelResult || !travelResult.success) {
+            player.horses = player.horses.filter(function(h) { return h.id !== purchasedHorse.id; });
+            player.gold += cost;
+            player.stats.totalGoldSpent = Math.max(0, (player.stats.totalGoldSpent || 0) - cost);
+            if (horseMarket) horseMarket.horses = (horseMarket.horses || 0) + 1;
+            return travelResult || { success: false, message: 'Travel could not be started.' };
+        }
 
         Engine.logEvent('🐴 Bought a horse for ' + cost + 'g!', { type: 'purchase' }, 'my_actions');
 
@@ -5505,8 +5632,7 @@
             StoryMode.onPlayerAction('buy_horse', {});
         }
 
-        // Now travel with horse
-        return Player.travelTo(townId, { mode: 'horse', skipQuarantineCheck: options.skipQuarantineCheck, bringFamily: options.bringFamily });
+        return travelResult;
     }
 
     // ========================================================
@@ -5665,9 +5791,29 @@
                         if (player.inventory[sr] > 0) {
                             var lost = Math.floor(player.inventory[sr] * stormCargoLoss);
                             player.inventory[sr] -= lost;
+                            // v9p33river433: storm losses should clean both zero-qty
+                            // inventory keys and any matching food-age cohorts.
+                            if (lost > 0 && Engine.removeFoodCohort) Engine.removeFoodCohort(player, sr, lost);
+                            if (player.inventory[sr] <= 0) delete player.inventory[sr];
                         }
                     }
+                    var stormPos = getPlayerWorldPosition();
                     player.ships = player.ships.filter(function(s) { return s.id !== bestSeaShip.id; });
+                    // v9p33river433: once the ship is gone, clear travel state and
+                    // strand the player ashore instead of leaving them stuck sailing.
+                    cleanupTravelState();
+                    player.traveling = false;
+                    player.travelProgress = 0;
+                    if (stormPos) {
+                        var stormLand = _findNearestLandTile(stormPos.x, stormPos.y);
+                        player.worldX = stormLand.x;
+                        player.worldY = stormLand.y;
+                        player.townId = null;
+                    }
+                    _moveGuardsToPlayer();
+                    Engine.logEvent('🌊 You washed ashore after the storm destroyed your ship.', null, 'travel_events');
+                    if (typeof Engine.pause === 'function') Engine.pause();
+                    return;
                 }
             }
 
@@ -5700,16 +5846,28 @@
                 }
             }
             const roll = function() { return _offroadRng ? _offroadRng.random() : Math.random(); };
+            // v9p33river433: wilderness finds should respect current carry
+            // capacity instead of teleporting overweight goods into inventory.
+            var _offroadAddResource = function(resId, qty) {
+                var resDef = findResource(resId);
+                var unitWeight = resDef ? (resDef.weight || 1) : 1;
+                if (unitWeight <= 0) unitWeight = 1;
+                var remainingCarry = Math.max(0, (Player.getCarryCapacity ? Player.getCarryCapacity() : 0) - (Player.getCarriedWeight ? Player.getCarriedWeight() : 0));
+                var fitQty = Math.min(qty, Math.floor(remainingCarry / unitWeight));
+                if (fitQty <= 0) return 0;
+                player.inventory[resId] = (player.inventory[resId] || 0) + fitQty;
+                return fitQty;
+            };
 
             if (dominantTerrain === TERRAIN.MOUNTAIN.id) {
                 const r = roll();
                 if (r < 0.30) {
                     const qty = 1 + Math.floor(roll() * 3);
-                    player.inventory.iron_ore = (player.inventory.iron_ore || 0) + qty;
-                    Engine.logEvent(`\u26CF\uFE0F You found ${qty} iron ore in the mountain pass!`, { _noToast: true }, "travel_events");
+                    var foundIron = _offroadAddResource('iron_ore', qty);
+                    Engine.logEvent(foundIron > 0 ? `\u26CF\uFE0F You found ${foundIron} iron ore in the mountain pass!` : `🎒 You found iron ore in the mountain pass, but cannot carry any more.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.32) {
-                    player.inventory.gold_ore = (player.inventory.gold_ore || 0) + 1;
-                    Engine.logEvent(`\u2728 You found a gold nugget gleaming in the rocks!`, { _noToast: true }, "travel_events");
+                    var foundGoldOre = _offroadAddResource('gold_ore', 1);
+                    Engine.logEvent(foundGoldOre > 0 ? `\u2728 You found a gold nugget gleaming in the rocks!` : `🎒 You found a gold nugget, but your packs are already full.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.55) {
                     Engine.logEvent(`\uD83D\uDDF3\uFE0F You discovered a dark cave in the mountainside. Best not to venture in alone.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.75) {
@@ -5718,15 +5876,15 @@
                     Engine.logEvent(`\u2694\uFE0F Mountain bandits ambushed you! Lost ${loss}g.`, null, "travel_events");
                 } else {
                     const qty = 1 + Math.floor(roll() * 2);
-                    player.inventory.stone = (player.inventory.stone || 0) + qty;
-                    Engine.logEvent(`\uD83E\uDEA8 You gathered ${qty} stone from the mountain trail.`, { _noToast: true }, "travel_events");
+                    var foundStone = _offroadAddResource('stone', qty);
+                    Engine.logEvent(foundStone > 0 ? `\uD83E\uDEA8 You gathered ${foundStone} stone from the mountain trail.` : `🎒 You found stone on the trail, but cannot carry it.`, { _noToast: true }, "travel_events");
                 }
             } else if (dominantTerrain === TERRAIN.FOREST.id) {
                 const r = roll();
                 if (r < 0.25) {
                     const qty = 1 + Math.floor(roll() * 2);
-                    player.inventory.herbs = (player.inventory.herbs || 0) + qty;
-                    Engine.logEvent(`\uD83C\uDF3F You found ${qty} useful herbs in the forest.`, { _noToast: true }, "travel_events");
+                    var foundForestHerbs = _offroadAddResource('herbs', qty);
+                    Engine.logEvent(foundForestHerbs > 0 ? `\uD83C\uDF3F You found ${foundForestHerbs} useful herbs in the forest.` : `🎒 You spotted useful herbs in the forest, but cannot carry them.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.45) {
                     player.hunger = Math.min(100, (player.hunger || 0) + 10);
                     Engine.logEvent(`\uD83C\uDF53 You found wild berries and restored some hunger.`, { _noToast: true }, "travel_events");
@@ -5738,21 +5896,24 @@
                 } else if (r < 0.75) {
                     const bonus = Math.floor(10 + roll() * 40);
                     player.gold += bonus;
+                    // v9p33river433: off-road gold finds are income and should
+                    // appear in the finance ledger.
+                    logFinance(bonus, 'travel', 'Off-road artifact find');
                     Engine.logEvent(`\uD83C\uDFDB\uFE0F You discovered ancient ruins in the forest and found ${bonus}g worth of artifacts!`, { _noToast: true }, "travel_events");
                 } else {
                     const qty = 1 + Math.floor(roll() * 3);
-                    player.inventory.timber = (player.inventory.timber || 0) + qty;
-                    Engine.logEvent(`\uD83E\uDEB5 You gathered ${qty} timber from fallen trees.`, { _noToast: true }, "travel_events");
+                    var foundTimber = _offroadAddResource('timber', qty);
+                    Engine.logEvent(foundTimber > 0 ? `\uD83E\uDEB5 You gathered ${foundTimber} timber from fallen trees.` : `🎒 You found timber, but cannot carry any more.`, { _noToast: true }, "travel_events");
                 }
             } else if (dominantTerrain === TERRAIN.HILLS.id) {
                 const r = roll();
                 if (r < 0.35) {
                     const qty = 1 + Math.floor(roll() * 2);
-                    player.inventory.herbs = (player.inventory.herbs || 0) + qty;
-                    Engine.logEvent(`\uD83C\uDF3F You found ${qty} wild herbs in the hills.`, { _noToast: true }, "travel_events");
+                    var foundHillHerbs = _offroadAddResource('herbs', qty);
+                    Engine.logEvent(foundHillHerbs > 0 ? `\uD83C\uDF3F You found ${foundHillHerbs} wild herbs in the hills.` : `🎒 You found wild herbs, but cannot carry them.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.55) {
-                    player.inventory.meat = (player.inventory.meat || 0) + 1;
-                    Engine.logEvent(`\uD83C\uDF56 You caught a wild hare in the hills.`, { _noToast: true }, "travel_events");
+                    var foundMeat = _offroadAddResource('meat', 1);
+                    Engine.logEvent(foundMeat > 0 ? `\uD83C\uDF56 You caught a wild hare in the hills.` : `🎒 You caught a wild hare, but have no room to carry it.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.75) {
                     // Discovered hidden path — small speed boost
                     player.travelTotalDist = Math.max(1, player.travelTotalDist * 0.92);
@@ -5772,6 +5933,7 @@
                 } else if (r < 0.60) {
                     const value = Math.floor(30 + roll() * 70);
                     player.gold += value;
+                    logFinance(value, 'travel', 'Off-road desert artifact');
                     Engine.logEvent(`\uD83C\uDFFA You found an ancient artifact half-buried in the sand! Worth ${value}g.`, { _noToast: true }, "travel_events");
                 } else {
                     Engine.logEvent(`\u2600\uFE0F The desert heat is relentless. You press on.`, { _noToast: true }, "travel_events");
@@ -5781,8 +5943,8 @@
                 const r = roll();
                 if (r < 0.4) {
                     const qty = 1 + Math.floor(roll() * 2);
-                    player.inventory.herbs = (player.inventory.herbs || 0) + qty;
-                    Engine.logEvent(`\uD83C\uDF3F You found ${qty} herbs growing by the trail.`, { _noToast: true }, "travel_events");
+                    var foundGrassHerbs = _offroadAddResource('herbs', qty);
+                    Engine.logEvent(foundGrassHerbs > 0 ? `\uD83C\uDF3F You found ${foundGrassHerbs} herbs growing by the trail.` : `🎒 You found herbs by the trail, but cannot carry them.`, { _noToast: true }, "travel_events");
                 } else if (r < 0.6) {
                     player.hunger = Math.min(100, (player.hunger || 0) + 5);
                     Engine.logEvent(`\uD83C\uDF3E You found edible wild plants along the way.`, { _noToast: true }, "travel_events");
@@ -34449,6 +34611,7 @@
                     player.inventory[matId] -= fromInv;
                     if (player.inventory[matId] <= 0) delete player.inventory[matId];
                     remaining -= fromInv;
+                    consumeFoodCohorts(player, matId, fromInv); // v9p33river433: housing materials consumed from inventory must move age cohorts too.
                 }
 
                 // Take from warehouses in this town
@@ -34460,6 +34623,7 @@
                             wh.inventory[matId] -= fromWh;
                             if (wh.inventory[matId] <= 0) delete wh.inventory[matId];
                             remaining -= fromWh;
+                            consumeFoodCohorts(wh.inventory, matId, fromWh); // v9p33river433: warehouse food cohorts must move when construction consumes them.
                         }
                     }
                 }
@@ -34473,6 +34637,7 @@
                             existingH.homeStorage[matId] -= fromHs;
                             if (existingH.homeStorage[matId] <= 0) delete existingH.homeStorage[matId];
                             remaining -= fromHs;
+                            consumeFoodCohorts(existingH.homeStorage, matId, fromHs); // v9p33river433: home-storage food cohorts must move when construction consumes them.
                         }
                     }
                 }
@@ -34488,6 +34653,7 @@
         player.gold -= totalGoldNeeded;
         logFinance(-totalGoldNeeded, 'housing', 'Bought house');
         player.stats.totalGoldSpent += totalGoldNeeded;
+        if (costInfo.materialCost > 0 && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, costInfo.materialCost); // v9p33river433: housing material purchases must pay the market.
 
         var house = { id: houseUid(), type: housingTypeId, townId: townId, purchaseDay: Engine.getDay(), occupants: [], homeStorage: {}, isRental: false, rentAccumulated: 0, purchaseCost: totalGoldNeeded, condition: 'new', builtDay: Engine.getDay(), lastRepairDay: 0 };
         if (!player.houses) player.houses = [];
@@ -34517,6 +34683,14 @@
         if (idx === -1) return { success: false, message: 'House not found.' };
         var house = player.houses[idx];
         var ht = CONFIG.HOUSING_TYPES.find(h => h.id === house.type);
+        var storedKeys = Object.keys(house.homeStorage || {}).filter(function(k) {
+            return k.charAt(0) !== '_' && (house.homeStorage[k] || 0) > 0;
+        });
+        // v9p33river433: block house sales while storage still holds goods so
+        // selling a house can't silently delete everything stored inside it.
+        if (storedKeys.length > 0) {
+            return { success: false, message: 'Withdraw stored goods before selling this house.' };
+        }
         // Sell price is based on material value at current market prices × sell ratio
         var costInfo = getHousingCost(house.type, house.townId);
         var sellPrice = Math.floor(costInfo.total * CONFIG.HOUSING_SELL_RATIO);
@@ -34525,6 +34699,9 @@
             sellPrice = Math.floor(house.purchaseCost * CONFIG.HOUSING_SELL_RATIO);
         }
         player.gold += sellPrice;
+        // v9p33river433: house-sale proceeds are finance income and should be
+        // recorded alongside the event log.
+        logFinance(sellPrice, 'housing', 'Sold house');
         player.stats.totalGoldEarned += sellPrice;
         player.houses.splice(idx, 1);
         if (player.primaryHouseId === houseId) {
@@ -34589,14 +34766,10 @@
         var newCostInfo = getHousingCost(newTypeId, house.townId);
         if (newCostInfo.total <= oldCostInfo.total) return { success: false, message: 'Can only upgrade to a more expensive housing type. Sell and rebuild instead.' };
 
-        if (!newCostInfo.available) return { success: false, message: '🏗️ Cannot upgrade — ' + newCostInfo.reason };
-
         // Credit: recover a portion of old materials value
         var discount = CONFIG.HOUSING_UPGRADE_DISCOUNT || 0.60;
         var credit = Math.floor(oldCostInfo.total * discount);
         var upgradeCost = Math.max(0, newCostInfo.total - credit);
-
-        if (player.gold < upgradeCost) return { success: false, message: 'Need ' + upgradeCost + 'g for upgrade (full cost ' + newCostInfo.total + 'g - ' + credit + 'g credit). You have ' + Math.floor(player.gold) + 'g.' };
 
         // Check rank for new type
         if (newHt.minRank) {
@@ -34608,19 +34781,80 @@
             }
         }
 
-        // Consume materials for new house from player/market
         var town = Engine.findTown(house.townId);
-        if (newHt.materials && town) {
-            for (var matId in newHt.materials) {
-                var qtyNeeded = newHt.materials[matId];
-                var remaining = qtyNeeded;
-                var fromInv = Math.min(player.inventory[matId] || 0, remaining);
-                if (fromInv > 0) { player.inventory[matId] -= fromInv; if (player.inventory[matId] <= 0) delete player.inventory[matId]; remaining -= fromInv; }
-                if (remaining > 0) { town.market.supply[matId] = Math.max(0, (town.market.supply[matId] || 0) - remaining); }
+        if (!town) return { success: false, message: 'Town not found.' };
+        var upgradeMaterials = {};
+        for (var newMatId in (newHt.materials || {})) {
+            var deltaQty = Math.max(0, (newHt.materials[newMatId] || 0) - ((oldHt.materials && oldHt.materials[newMatId]) || 0));
+            if (deltaQty > 0) upgradeMaterials[newMatId] = deltaQty;
+        }
+        // v9p33river433: house upgrades should only require the material delta,
+        // not the full new-house recipe a second time.
+        for (var needMatId in upgradeMaterials) {
+            var qtyNeeded = upgradeMaterials[needMatId];
+            var availableHere = player.inventory[needMatId] || 0;
+            if (player.hiddenWarehouses) {
+                for (var uwi = 0; uwi < player.hiddenWarehouses.length; uwi++) {
+                    var uwh = player.hiddenWarehouses[uwi];
+                    if (uwh.townId === house.townId && uwh.inventory) availableHere += uwh.inventory[needMatId] || 0;
+                }
+            }
+            if (player.houses) {
+                for (var uhi = 0; uhi < player.houses.length; uhi++) {
+                    var uh = player.houses[uhi];
+                    if (uh.townId === house.townId && uh.homeStorage) availableHere += uh.homeStorage[needMatId] || 0;
+                }
+            }
+            var needFromMarket = Math.max(0, qtyNeeded - availableHere);
+            var marketHas = (town.market && town.market.supply && town.market.supply[needMatId]) || 0;
+            if (needFromMarket > marketHas) {
+                return { success: false, message: '🏗️ Cannot upgrade — Missing materials: ' + needMatId + ': need ' + needFromMarket + ', market has ' + marketHas };
+            }
+        }
+
+        if (player.gold < upgradeCost) return { success: false, message: 'Need ' + upgradeCost + 'g for upgrade (full cost ' + newCostInfo.total + 'g - ' + credit + 'g credit). You have ' + Math.floor(player.gold) + 'g.' };
+
+        // v9p33river433: consume only the additional upgrade materials, using
+        // the same inventory/warehouse/home-storage priority as new builds.
+        for (var matId in upgradeMaterials) {
+            var remaining = upgradeMaterials[matId];
+            var fromInv = Math.min(player.inventory[matId] || 0, remaining);
+            if (fromInv > 0) {
+                player.inventory[matId] -= fromInv;
+                if (player.inventory[matId] <= 0) delete player.inventory[matId];
+                remaining -= fromInv;
+            }
+            if (remaining > 0 && player.hiddenWarehouses) {
+                for (var wi = 0; wi < player.hiddenWarehouses.length && remaining > 0; wi++) {
+                    var wh = player.hiddenWarehouses[wi];
+                    if (wh.townId === house.townId && wh.inventory && wh.inventory[matId] > 0) {
+                        var fromWh = Math.min(wh.inventory[matId], remaining);
+                        wh.inventory[matId] -= fromWh;
+                        if (wh.inventory[matId] <= 0) delete wh.inventory[matId];
+                        remaining -= fromWh;
+                    }
+                }
+            }
+            if (remaining > 0 && player.houses) {
+                for (var hi = 0; hi < player.houses.length && remaining > 0; hi++) {
+                    var existingH = player.houses[hi];
+                    if (existingH.townId === house.townId && existingH.homeStorage && existingH.homeStorage[matId] > 0) {
+                        var fromHs = Math.min(existingH.homeStorage[matId], remaining);
+                        existingH.homeStorage[matId] -= fromHs;
+                        if (existingH.homeStorage[matId] <= 0) delete existingH.homeStorage[matId];
+                        remaining -= fromHs;
+                    }
+                }
+            }
+            if (remaining > 0 && town.market && town.market.supply) {
+                town.market.supply[matId] = Math.max(0, (town.market.supply[matId] || 0) - remaining);
             }
         }
 
         player.gold -= upgradeCost;
+        // v9p33river433: housing upgrades spend player gold and belong in the
+        // finance ledger like house purchases.
+        logFinance(-upgradeCost, 'housing', 'Upgraded house to ' + newHt.name);
         player.stats.totalGoldSpent += upgradeCost;
 
         // Upgrade in place — keep same id, townId, occupants
@@ -34672,6 +34906,11 @@
         if (house.isRental && monthlyRent === undefined) {
             // If tenant exists, start eviction (30 days from last payment)
             if (house.tenantId) {
+                // v9p33river433: don't let repeated eviction notices keep
+                // pushing the move-out date farther into the future.
+                if (house.evictionDay && Engine.getDay() < house.evictionDay) {
+                    return { success: true, message: 'Eviction already in progress. Tenant will leave by day ' + house.evictionDay + '.' };
+                }
                 house.evictionDay = (house.lastRentDay || Engine.getDay()) + 30;
                 return { success: true, message: 'Eviction notice sent. Tenant will leave by day ' + house.evictionDay + '.' };
             }
@@ -34744,8 +34983,15 @@
                 if (house.tenantId) {
                     var evicted = Engine.findPerson(house.tenantId);
                     evictedName = evicted ? ((evicted.firstName || '') + ' ' + (evicted.lastName || '')) : 'tenant';
-                    // Clear tenant housing reference
-                    if (evicted) evicted.rentedHouseId = null;
+                    // v9p33river433: fully clear rental tenant state when an
+                    // eviction completes so NPCs don't keep stale housing data.
+                    if (evicted) {
+                        delete evicted.rentedHouseId;
+                        if (evicted.houseType === house.type) evicted.houseType = null;
+                    }
+                }
+                if (player.rentNegotiations) {
+                    player.rentNegotiations = player.rentNegotiations.filter(function(n) { return n.houseId !== house.id; });
                 }
                 house.tenantId = null;
                 house.tenantType = null;
@@ -34766,9 +35012,18 @@
             // Check if tenant can pay
             var tenant = Engine.findPerson(house.tenantId);
             if (!tenant || !tenant.alive) {
-                // Tenant died or disappeared
+                // v9p33river433: clear the tenant's rental metadata as well as
+                // the house fields so dead/missing renters don't keep stale state.
+                if (tenant) {
+                    delete tenant.rentedHouseId;
+                    if (tenant.houseType === house.type) tenant.houseType = null;
+                }
+                if (player.rentNegotiations) {
+                    player.rentNegotiations = player.rentNegotiations.filter(function(n) { return n.houseId !== house.id; });
+                }
                 house.tenantId = null;
                 house.tenantType = null;
+                house.evictionDay = null;
                 Engine.logEvent('🏠 A rental tenant has passed away or left.', null, "my_business");
                 continue;
             }
@@ -34784,7 +35039,14 @@
             } else {
                 // Tenant can't afford — queue negotiation request
                 if (!player.rentNegotiations) player.rentNegotiations = [];
-                var existingNeg = player.rentNegotiations.find(function(n) { return n.houseId === house.id; });
+                var existingNegIdx = player.rentNegotiations.findIndex(function(n) { return n.houseId === house.id; });
+                var existingNeg = existingNegIdx >= 0 ? player.rentNegotiations[existingNegIdx] : null;
+                // v9p33river433: unanswered negotiations should eventually expire
+                // so the tenant can re-ask next cycle instead of one prompt living forever.
+                if (existingNeg && (day - (existingNeg.day || day)) >= 30) {
+                    player.rentNegotiations.splice(existingNegIdx, 1);
+                    existingNeg = null;
+                }
                 if (!existingNeg) {
                     var tenantName = (tenant.firstName || '') + ' ' + (tenant.lastName || '');
                     var desiredRent = Math.floor(rent * 0.7); // tenant asks for 30% less
@@ -34817,15 +35079,19 @@
 
         if (decision === 'accept') {
             house.monthlyRent = neg.requestedRent;
-            house.rentSetDay = Engine.getDay();
+            // v9p33river433: negotiation outcomes shouldn't consume the day's
+            // manual price-change slot; allow the player to correct it afterward.
+            delete house.rentSetDay;
+            house.evictionDay = null;
             Engine.logEvent('🤝 You agreed to lower rent for ' + neg.tenantName + ' to ' + neg.requestedRent + 'g/month.', null, "my_business");
             return { success: true, message: 'Rent lowered to ' + neg.requestedRent + 'g/month.' };
         } else if (decision === 'counter' && counterOffer !== undefined) {
             var offer = Math.max(0, Math.floor(counterOffer));
-            // Tenant evaluates counter offer
-            if (tenant && (tenant.gold || 0) >= offer * 0.8) {
+            // v9p33river433: only accept a counter-offer the tenant can actually pay.
+            if (tenant && (tenant.gold || 0) >= offer) {
                 house.monthlyRent = offer;
-                house.rentSetDay = Engine.getDay();
+                delete house.rentSetDay;
+                house.evictionDay = null;
                 Engine.logEvent('🤝 ' + neg.tenantName + ' accepted your counter-offer of ' + offer + 'g/month.', null, "my_business");
                 return { success: true, message: neg.tenantName + ' accepted ' + offer + 'g/month.' };
             } else {
@@ -34859,6 +35125,11 @@
         if (!house.tenantId) return { success: false, message: 'No tenant to evict.' };
         var tenant = Engine.findPerson(house.tenantId);
         var tenantName = tenant ? ((tenant.firstName || '') + ' ' + (tenant.lastName || '')) : 'tenant';
+        // v9p33river433: once an eviction clock exists, keep it stable instead
+        // of letting repeated notices reset the tenant's deadline.
+        if (house.evictionDay && Engine.getDay() < house.evictionDay) {
+            return { success: true, message: 'Eviction already in progress. ' + tenantName + ' will leave by day ' + house.evictionDay + '.' };
+        }
         house.evictionDay = (house.lastRentDay || Engine.getDay()) + 30;
         Engine.logEvent('🏠 Eviction notice issued to ' + tenantName + '. They will leave by day ' + house.evictionDay + '.', null, "my_business");
         return { success: true, message: 'Eviction notice sent. ' + tenantName + ' will leave by day ' + house.evictionDay + '.' };
@@ -34901,7 +35172,20 @@
         // Also mark the town building as for sale
         var town = Engine.findTown(bld.townId);
         if (town) {
-            var townBld = (town.buildings || []).find(function(tb) { return tb.ownerId === 'player' && tb.type === bld.type; });
+            var townBld = null;
+            var townBuildings = town.buildings || [];
+            for (var tbi = 0; tbi < townBuildings.length; tbi++) {
+                if (townBuildings[tbi].id === bld.id || townBuildings[tbi]._id === bld.id) {
+                    townBld = townBuildings[tbi];
+                    break;
+                }
+            }
+            // v9p33river433: only fall back to owner/type when that match is
+            // unambiguous; otherwise we risk flagging the wrong same-type building.
+            if (!townBld) {
+                var fallbackMatches = townBuildings.filter(function(tb) { return tb.ownerId === 'player' && tb.type === bld.type; });
+                if (fallbackMatches.length === 1) townBld = fallbackMatches[0];
+            }
             if (townBld) {
                 townBld.forSale = true;
                 townBld.salePrice = price;
@@ -34915,21 +35199,24 @@
     }
 
     function listLandForSale(townId, price) {
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Town not found.' };
         if (!player.landOwned || !player.landOwned[townId] || player.landOwned[townId] <= 0) {
             return { success: false, message: 'No land owned in this town.' };
         }
-        // Check no buildings/houses using all land
-        var usedSlots = getUsedLandSlots(townId);
-        if (usedSlots >= player.landOwned[townId]) {
-            return { success: false, message: 'All land is in use. Demolish a building or sell a house first.' };
-        }
-
         if (!player.landForSale) player.landForSale = [];
-        // Check daily limit
-        var day = Engine.getDay();
-        var existing = player.landForSale.find(function(l) { return l.townId === townId; });
-        if (existing && existing.priceSetDay === day) {
-            return { success: false, message: 'You can only change the land price once per day.' };
+        var usedSlots = getUsedLandSlots(townId);
+        var lockedPlots = (player.subsidizedLand && player.subsidizedLand[townId]) ? player.subsidizedLand[townId].length : 0;
+        var existingListings = player.landForSale.filter(function(l) { return l.townId === townId; }).length;
+        var freePlots = Math.max(0, player.landOwned[townId] - usedSlots - existingListings);
+        var sellablePlots = Math.max(0, freePlots - lockedPlots);
+        if (sellablePlots <= 0) {
+            // v9p33river433: only genuinely free, unsubsidized plots can be
+            // listed, and each call should add one listing instead of overwriting.
+            if (freePlots > 0 && lockedPlots > 0) {
+                return { success: false, message: 'Only subsidized/locked land plots remain free here. Buy normal land or use the subsidy for its required building first.' };
+            }
+            return { success: false, message: existingListings > 0 ? 'All sellable land here is already listed or in use.' : 'All land is in use. Demolish a building or sell a house first.' };
         }
 
         var maxPrice = Engine.getPropertyMaxBuyPrice({ type: 'land' }, townId);
@@ -34938,15 +35225,9 @@
         if (price === undefined || price === null) price = recommendedPrice;
         price = Math.max(0, Math.floor(price));
 
-        if (existing) {
-            existing.price = price;
-            existing.priceSetDay = day;
-        } else {
-            player.landForSale.push({ townId: townId, price: price, priceSetDay: day });
-        }
+        player.landForSale.push({ townId: townId, price: price, priceSetDay: Engine.getDay() });
 
-        var town = Engine.findTown(townId);
-        Engine.logEvent('📋 ' + player.fullName + ' listed land in ' + (town ? town.name : 'unknown') + ' for ' + price + 'g.', null, "my_business");
+        Engine.logEvent('📋 ' + player.fullName + ' listed land in ' + town.name + ' for ' + price + 'g.', null, "my_business");
         return { success: true, message: '📋 Land listed for ' + price + 'g. Recommended: ' + recommendedPrice + 'g. Max buyer will pay: ' + (hasSkill('property_appraiser') ? maxPrice + 'g' : '???') + '.', recommendedPrice: recommendedPrice, maxPrice: hasSkill('property_appraiser') ? maxPrice : null };
     }
 
@@ -35737,8 +36018,10 @@
         var name = dismissed.name;
 
         // Return NPC to current town
-        if (dismissed.personId && Engine.getPerson) {
-            var npc = Engine.getPerson(dismissed.personId);
+        // v9p33river433: personal-guard code must use Engine.findPerson; there
+        // is no Engine.getPerson API.
+        if (dismissed.personId && Engine.findPerson) {
+            var npc = Engine.findPerson(dismissed.personId);
             if (npc && npc.alive) {
                 npc.isPlayerGuard = false;
                 npc.occupation = npc.previousOccupation || 'unemployed';
@@ -35761,8 +36044,10 @@
         // Sync guard NPC locations with player + remove dead guards
         for (var gi = player.guards.length - 1; gi >= 0; gi--) {
             var g = player.guards[gi];
-            if (g.personId && Engine.getPerson) {
-                var npc = Engine.getPerson(g.personId);
+            // v9p33river433: use the canonical Engine.findPerson lookup for
+            // live guard NPC syncing/removal.
+            if (g.personId && Engine.findPerson) {
+                var npc = Engine.findPerson(g.personId);
                 if (!npc || !npc.alive) {
                     Engine.logEvent('💀 Your guard ' + g.name + ' has died.', null, "military");
                     player.guards.splice(gi, 1);
@@ -35796,8 +36081,8 @@
                 var dismissed = player.guards.pop();
                 player.gold += (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6);
                 // Return NPC to current town
-                if (dismissed.personId && Engine.getPerson) {
-                    var dnpc = Engine.getPerson(dismissed.personId);
+                if (dismissed.personId && Engine.findPerson) {
+                    var dnpc = Engine.findPerson(dismissed.personId);
                     if (dnpc && dnpc.alive) {
                         dnpc.isPlayerGuard = false;
                         dnpc.occupation = dnpc.previousOccupation || 'unemployed';
@@ -36369,7 +36654,9 @@
             if (isSea && !won) injuryChanceGuard = 0.60;
             for (var _gi = player.guards.length - 1; _gi >= 0; _gi--) {
                 var _guard = player.guards[_gi];
-                var guardNpc = (_guard.personId && Engine.getPerson) ? Engine.getPerson(_guard.personId) : null;
+                // v9p33river433: the same missing Engine.getPerson typo also
+                // breaks guard casualty resolution during encounters.
+                var guardNpc = (_guard.personId && Engine.findPerson) ? Engine.findPerson(_guard.personId) : null;
                 if (!won && rng.chance(deathChanceGuard)) {
                     // Guard killed
                     if (guardNpc) { guardNpc.alive = false; guardNpc.deathDay = Engine.getDay(); guardNpc.deathCause = 'combat'; guardNpc.isPlayerGuard = false; }
@@ -37422,6 +37709,9 @@
         var loanCfg = CONFIG.GUILD_LOAN || {};
         var day = 0;
         try { day = Engine.getDay(); } catch(e) {}
+        // v9p33river433: capture the pre-loan deficit before adding the loan
+        // gold so bankruptcy.debtAmount reflects the real debt being covered.
+        var originalDebtAmount = Math.max(0, -(player.gold || 0));
 
         // Set up the active loan
         player.activeLoan = {
@@ -37453,7 +37743,7 @@
         player.bankruptcy = {
             active: true,
             type: 'guild_loan',
-            debtAmount: Math.abs(player.gold) + offer.amount, // original debt before loan
+            debtAmount: originalDebtAmount,
             startDay: day,
             assetSeizureDay: day,
             loanGuildId: guildId
@@ -37483,10 +37773,10 @@
         // Check if a payment is due
         if (day - loan.lastPaymentDay < interval) return;
 
-        loan.lastPaymentDay = day;
-
         if (player.gold >= loan.monthlyPayment) {
-            // Make payment
+            // v9p33river433: only advance the last-paid marker when a payment
+            // actually clears, so missed installments stay overdue instead of sliding.
+            loan.lastPaymentDay += interval;
             player.gold -= loan.monthlyPayment;
             logFinance(-loan.monthlyPayment, 'loans', 'Loan repayment');
             loan.remainingBalance -= loan.monthlyPayment;
@@ -37588,6 +37878,8 @@
 
         // Also discharge the debt system debts during bankruptcy
         var debtSystemTotal = getTotalDebt();
+        // v9p33river433: Bug19 always increment bankruptcyCount — was only incremented when debt-system debts existed
+        player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
         if (debtSystemTotal > 0) {
             // Apply rep losses from debt system before clearing
             for (var di = 0; di < (player.debts || []).length; di++) {
@@ -37601,7 +37893,6 @@
             }
             player.debts = [];
             player._lastDebtEnforcementDay = 0;
-            player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
         }
 
         var totalOwed = Math.abs(player.gold) + debtSystemTotal;
@@ -37695,21 +37986,7 @@
             if (!bld.active) continue;
             var bt = Engine.findBuildingType(bld.type);
             var bldValue = bt ? Math.floor(bt.cost * (bld.level || 1) * 0.5) : 0;
-            bld.active = false;
-            if (bld.workers) {
-                for (var w = 0; w < bld.workers.length; w++) {
-                    var wPerson = Engine.findPerson(bld.workers[w]);
-                    if (wPerson) wPerson.employerId = null;
-                }
-                bld.workers = [];
-            }
-            // Remove from town
-            var bldTown = Engine.findTown ? Engine.findTown(bld.townId) : null;
-            if (bldTown && bldTown.buildings) {
-                for (var tj = 0; tj < bldTown.buildings.length; tj++) {
-                    if (bldTown.buildings[tj].id === bld.id) { bldTown.buildings.splice(tj, 1); break; }
-                }
-            }
+            _seizeBankruptBuilding(bld); // v9p33river433: use shared seizure cleanup for worker release and town-record fallback.
             player.buildings.splice(bi, 1);
             seized.buildings++;
             payDownDebts(bldValue);
@@ -37856,7 +38133,16 @@
 
         if (player.houses) {
             for (var h = 0; h < player.houses.length; h++) {
+                var house = player.houses[h];
                 value += 200;
+                if (house.homeStorage) {
+                    for (var hResId in house.homeStorage) {
+                        var hQty = house.homeStorage[hResId];
+                        if (typeof hQty !== 'number' || hQty <= 0) continue;
+                        var hRes = findResource(hResId);
+                        if (hRes) value += hRes.basePrice * hQty; // v9p33river433: count house storage in bankruptcy asset valuation.
+                    }
+                }
             }
         }
 
@@ -37882,6 +38168,10 @@
 
         if (player.weapon) value += 50;
         if (player.armor) value += 75;
+        if (player.storageContainer) {
+            var containerRes = findResource(player.storageContainer);
+            if (containerRes) value += containerRes.basePrice; // v9p33river433: include equipped storage containers in bankruptcy valuation.
+        }
 
         return Math.floor(value);
     }
@@ -37895,15 +38185,10 @@
             if (!bld.active) continue;
             var bt = Engine.findBuildingType(bld.type);
             if (bt) totalValue += bt.cost * (bld.level || 1);
-            bld.active = false;
-            if (bld.workers) {
-                for (var w = 0; w < bld.workers.length; w++) {
-                    var wPerson = Engine.findPerson(bld.workers[w]);
-                    if (wPerson) wPerson.employerId = null;
-                }
-                bld.workers = [];
-            }
+            _seizeBankruptBuilding(bld); // v9p33river433: use shared seizure cleanup for worker release and town-record fallback.
+            player.buildings.splice(i, 1);
         }
+        player.buildings = [];
 
         // Fire all remaining employees
         for (var e = 0; e < player.employees.length; e++) {
@@ -37936,7 +38221,18 @@
 
         // Seize houses
         if (player.houses && player.houses.length > 0) {
-            totalValue += player.houses.length * 200;
+            for (var h = 0; h < player.houses.length; h++) {
+                var house = player.houses[h];
+                totalValue += 200;
+                if (house.homeStorage) {
+                    for (var hResId in house.homeStorage) {
+                        var hQty = house.homeStorage[hResId];
+                        if (typeof hQty !== 'number' || hQty <= 0) continue;
+                        var hRes = findResource(hResId);
+                        if (hRes) totalValue += hRes.basePrice * hQty; // v9p33river433: seize and value house storage with the house.
+                    }
+                }
+            }
             player.houses = [];
             player.primaryHouseId = null;
         }
@@ -37969,6 +38265,11 @@
         // Seize weapon and armor
         if (player.weapon) { totalValue += 50; player.weapon = null; }
         if (player.armor) { totalValue += 75; player.armor = null; }
+        if (player.storageContainer) {
+            var seizedContainer = findResource(player.storageContainer);
+            if (seizedContainer) totalValue += seizedContainer.basePrice; // v9p33river433: voluntary bankruptcy must seize equipped storage containers too.
+            player.storageContainer = null;
+        }
 
         return Math.floor(totalValue * 0.25);
     }

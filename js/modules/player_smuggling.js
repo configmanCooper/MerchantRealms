@@ -31,9 +31,22 @@
 
         // v9p33river430: verify player actually has the goods before attempting smuggle
         var _smugAvail = (player.inventory[resourceId] || 0);
-        if (player.townId && player.townStorage[player.townId] && player.townStorage[player.townId][resourceId]) {
-            _smugAvail += player.townStorage[player.townId][resourceId];
+        var _smugTownStorage = player.townStorage && player.townId ? player.townStorage[player.townId] : null;
+        if (_smugTownStorage && _smugTownStorage[resourceId]) {
+            _smugAvail += _smugTownStorage[resourceId];
         }
+        // v9p33river433: sell() can source from mounted/equipped goods too, so smuggling checks must count the same pool without mutating it first.
+        if (resourceId === 'horses') _smugAvail += (player.horses && player.horses.length) || 0;
+        if (player.weapon && typeof player.weapon === 'object' && player.weapon.id && typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.weapons) {
+            var _smugW = EQUIPMENT_TYPES.weapons.find(function(e) { return e.id === player.weapon.id; });
+            if (_smugW && _smugW.resource === resourceId) _smugAvail += 1;
+        }
+        if (player.armor && typeof player.armor === 'object' && player.armor.id && typeof EQUIPMENT_TYPES !== 'undefined' && EQUIPMENT_TYPES.armor) {
+            var _smugA = EQUIPMENT_TYPES.armor.find(function(e) { return e.id === player.armor.id; });
+            if (_smugA && _smugA.resource === resourceId) _smugAvail += 1;
+        }
+        if (resourceId === 'backpack' && (player._backpack || player.storageContainer === 'backpack')) _smugAvail += 1;
+        if (player.storageContainer && player.storageContainer !== 'backpack' && resourceId === player.storageContainer) _smugAvail += 1;
         if (_smugAvail < qty) return { success: false, message: 'You only have ' + _smugAvail + ' ' + ((findResource(resourceId) || {}).name || resourceId) + '.' };
 
         // Nobles cannot smuggle against their own kingdom — it's beneath their station and treasonous
