@@ -1454,26 +1454,58 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     } else if (_conspiracy && !_conspiracy.playerInvolved) {
         // Active conspiracy exists that player could join
         var _cTypeLabel2 = _conspiracy.type === 'revolt_support' ? 'revolt support' : _conspiracy.type;
+        // v9p33river425: guard plotterCount
+        var _cPlotCount = _conspiracy.plotterCount || 0;
         html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
         html += '<div style="font-size:0.85rem;color:#e67e22;">🤫 Rumours of a <strong>' + _cTypeLabel2 + '</strong> plot are circulating...</div>';
         if (_conspiracy.type === 'revolt_support' && _conspiracy.revoltTargetTownName) {
             html += '<div style="font-size:0.75rem;color:#e67e22;margin-top:2px;">Nobles seek to fund revolt in <b>' + escapeHtml(_conspiracy.revoltTargetTownName) + '</b></div>';
         }
-        html += '<div style="font-size:0.78rem;color:#aaa;margin-top:4px;">' + _conspiracy.plotterCount + ' noble' + (_conspiracy.plotterCount > 1 ? 's' : '') + ' are involved. Strength: ' + Math.floor(_conspiracy.strength) + '/80</div>';
+        var _cPlotLabel = _cPlotCount === 1 ? '1 noble is involved' : (_cPlotCount + ' nobles are involved');
+        html += '<div style="font-size:0.78rem;color:#aaa;margin-top:4px;">' + _cPlotLabel + '</div>';
         html += '<div style="margin-top:6px;">';
         html += '<button class="btn-medieval" data-action="playerJoinConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Join the Conspiracy</button>';
         html += '</div></div>';
     } else {
         // No conspiracy — player can form one with a discontented noble
-        var _discontented = nobles.filter(function(n) { return (n.kingLoyalty != null ? n.kingLoyalty : 50) <= 55; });
+        // v9p33river425: use citizen kingdom nobles only, not foreign target nobles
+        var _citizenNobles = [];
+        try {
+            if (typeof Engine !== 'undefined' && Engine.getWorld && Engine.getPeople) {
+                var _cwNobles = Engine.getWorld();
+                var _cwTowns = _cwNobles && _cwNobles.towns ? _cwNobles.towns : [];
+                var _cwPlayerId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+                for (var _cwi = 0; _cwi < _cwTowns.length; _cwi++) {
+                    if (_cwTowns[_cwi].kingdomId !== citizenKingdomId) continue;
+                    var _cwPeople = Engine.getPeople(_cwTowns[_cwi].id);
+                    if (!_cwPeople) continue;
+                    for (var _cwp = 0; _cwp < _cwPeople.length; _cwp++) {
+                        var _cwN = _cwPeople[_cwp];
+                        if (_cwN && _cwN.alive && _cwN.id !== _cwPlayerId && (_cwN.occupation === 'noble' || _cwN.isNoble) && !_cwN.isKing) {
+                            _citizenNobles.push(_cwN);
+                        }
+                    }
+                }
+            }
+        } catch(e) {}
+        var _discontented = _citizenNobles.filter(function(n) { return (n.kingLoyalty != null ? n.kingLoyalty : 50) <= 55; });
         if (_discontented.length > 0) {
             html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:6px;">No active conspiracy. You could form one with a discontented noble.</div>';
             html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
             html += '<select id="conspiracy_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
             for (var _di = 0; _di < _discontented.length; _di++) {
                 var _dn = _discontented[_di];
-                var _dnLoy = _dn.kingLoyalty != null ? Math.floor(_dn.kingLoyalty) : 50;
-                html += '<option value="' + _dn.id + '">' + escapeHtml((_dn.firstName || '?') + ' ' + (_dn.lastName || '')) + ' (loyalty: ' + _dnLoy + ')</option>';
+                // v9p33river425: show loyalty descriptor only at 60+ relationship, never exact number
+                var _dnRel = (typeof Player !== 'undefined' && Player.getRelationship) ? Player.getRelationship(_dn.id) : null;
+                var _dnRelLevel = (_dnRel && _dnRel.level) || 0;
+                var _dnLoyDesc = '';
+                if (_dnRelLevel >= 60) {
+                    var _dnLoy = _dn.kingLoyalty != null ? _dn.kingLoyalty : 50;
+                    if (_dnLoy <= 30) _dnLoyDesc = ' — disloyal';
+                    else if (_dnLoy <= 69) _dnLoyDesc = ' — wavering';
+                    else _dnLoyDesc = ' — loyal';
+                }
+                html += '<option value="' + _dn.id + '">' + escapeHtml((_dn.firstName || '?') + ' ' + (_dn.lastName || '')) + _dnLoyDesc + '</option>';
             }
             html += '</select>';
             html += '<select id="conspiracy_type" style="font-size:0.72rem;padding:2px;">';
