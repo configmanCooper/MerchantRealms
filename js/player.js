@@ -16688,12 +16688,13 @@
         if (!player._discoveredAgendas) player._discoveredAgendas = {};
         var day = Engine.getDay ? Engine.getDay() : 0;
         agendaData = agendaData || {};
+        // v9p33river439: bugfix — store a detached snapshot so later agenda recomputes/mutations do not rewrite discovered intel.
         player._discoveredAgendas[personId] = {
             discoveredDay: day,
-            goals: agendaData.goals ? agendaData.goals.slice(0, 3) : [],
-            advice: agendaData.advice ? agendaData.advice.slice(0, 3) : [],
-            plans: agendaData.plans ? agendaData.plans.slice(0, 3) : [],
-            concerns: agendaData.concerns ? agendaData.concerns.slice(0, 3) : [],
+            goals: Array.isArray(agendaData.goals) ? structuredClone(agendaData.goals.slice(0, 3)) : [],
+            advice: Array.isArray(agendaData.advice) ? structuredClone(agendaData.advice.slice(0, 3)) : [],
+            plans: Array.isArray(agendaData.plans) ? structuredClone(agendaData.plans.slice(0, 3)) : [],
+            concerns: Array.isArray(agendaData.concerns) ? structuredClone(agendaData.concerns.slice(0, 3)) : [],
             strategy: agendaData.strategy || null,
             financialHealth: agendaData.financialHealth || null,
             isVolatile: !!isVolatile,
@@ -20270,7 +20271,8 @@
             nobleIntrigues: structuredClone(player.nobleIntrigues || {}),
             _discoveredSecrets: structuredClone(player._discoveredSecrets || []),
             // v9p33river435: agenda system — persist discovered agendas
-            _discoveredAgendas: player._discoveredAgendas || {},
+            // v9p33river439: bugfix — serialize a detached copy so save snapshots cannot retain live agenda references.
+            _discoveredAgendas: structuredClone(player._discoveredAgendas || {}),
             _schemeCooldowns: structuredClone(player._schemeCooldowns || {}),
             // v9p33river346: per-town cooldown map for the Incite Strikes scheme.
             _inciteStrikesCooldowns: structuredClone(player._inciteStrikesCooldowns || {}),

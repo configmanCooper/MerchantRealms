@@ -12623,10 +12623,14 @@
             var _voteAgenda = getNobleAgenda(noble.id);
             if (_voteAgenda && _voteAgenda.advice && _voteAgenda.advice.length > 0) {
                 var _topAdvice = _voteAgenda.advice[0].actionId;
+                // v9p33river439: bugfix — council tax votes use the shared tax_change type, so inspect the title/description for raise vs lower.
+                var _taxVoteText = ((vote.title || '') + ' ' + (vote.description || '')).toLowerCase();
+                var _isLowerTaxVote = vote.type === 'tax_change' && /\blower\b/.test(_taxVoteText);
+                var _isRaiseTaxVote = vote.type === 'tax_change' && /\braise\b/.test(_taxVoteText);
                 // Map agenda to vote alignment
                 var _agendaVoteMap = {
-                    'lower_taxes': { yes: ['lower_taxes'], no: ['raise_taxes'] },
-                    'raise_taxes': { yes: ['raise_taxes', 'major_policy'], no: ['lower_taxes'] },
+                    'lower_taxes': { yes: _isLowerTaxVote ? ['tax_change'] : [], no: _isRaiseTaxVote ? ['tax_change'] : [] },
+                    'raise_taxes': { yes: (_isRaiseTaxVote ? ['tax_change'] : []).concat(['major_policy']), no: _isLowerTaxVote ? ['tax_change'] : [] },
                     'war_offensive': { yes: ['declare_war', 'annex'], no: ['make_peace'] },
                     'declare_war': { yes: ['declare_war', 'annex'], no: ['make_peace'] },
                     'make_peace': { yes: ['make_peace'], no: ['declare_war'] },
@@ -37024,7 +37028,9 @@
             var k = findKingdom(kingdomId);
             if (!k || !k._conspiracy) return null;
             var c = k._conspiracy;
-            var inConspiracy = c.plotters.indexOf('player') >= 0;
+            // v9p33river439: bugfix — legacy/malformed conspiracy payloads can be missing plotters, which broke the UI gossip/conspiracy panel.
+            var plotters = Array.isArray(c.plotters) ? c.plotters : [];
+            var inConspiracy = plotters.indexOf('player') >= 0;
             var hasSpy = false;
             try {
                 // v9p33river350: 'spy_network' is NOT a skill — it's a
@@ -37048,18 +37054,18 @@
             } catch (e) { /* Player not loaded */ }
             if (!inConspiracy && !hasSpy) return null;
             var plotterNames = [];
-            for (var i = 0; i < c.plotters.length; i++) {
-                if (c.plotters[i] === 'player') {
+            for (var i = 0; i < plotters.length; i++) {
+                if (plotters[i] === 'player') {
                     plotterNames.push('You');
                     continue;
                 }
-                var p = findPerson(c.plotters[i]);
+                var p = findPerson(plotters[i]);
                 if (p && p.alive) plotterNames.push((p.firstName || '?') + ' ' + (p.lastName || ''));
             }
             return {
                 type: c.type,
-                plotters: c.plotters.slice(),
-                plotterCount: c.plotters.length,
+                plotters: plotters.slice(),
+                plotterCount: plotters.length,
                 plotterNames: plotterNames,
                 strength: c.strength,
                 startDay: c.startDay,

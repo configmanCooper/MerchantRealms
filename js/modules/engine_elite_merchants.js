@@ -602,6 +602,8 @@
         war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
+        // v9p33river439: bugfix — medical_supplier was missing here, so the new strategy-goods API fell back to diversified goods.
+        medical_supplier:  ['herbs', 'bandages', 'herbal_remedy', 'healing_tonic'],
         culture_trader:    ['drum', 'flute', 'lute', 'harp', 'hurdy_gurdy', 'gut_string', 'cloth', 'silk', 'fine_clothes', 'clothes', 'wool', 'dye'],
         retail_mogul:      ['ale', 'mead', 'wine', 'bread', 'meat', 'clothes', 'fine_clothes', 'tools', 'furniture', 'jewelry', 'silk', 'leather'],
     };
@@ -7332,7 +7334,8 @@
     Engine.getEliteMerchantAgenda = getEliteMerchantAgenda;
     // v9p33river435: agenda system — expose strategy goods for trade intel
     Engine.getEMStrategyGoods = function(strategy) {
-        return STRATEGY_GOODS[strategy] || STRATEGY_GOODS['diversified'] || [];
+        var goods = STRATEGY_GOODS[strategy] || STRATEGY_GOODS['diversified'] || [];
+        return goods.slice();
     };
 
 })(window.Engine);
