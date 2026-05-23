@@ -2497,8 +2497,12 @@
             } else {
                 _escapeBtn = '<button data-action="attemptJailEscapeUI" style="padding:4px 12px;font-size:0.8rem;background:rgba(139,0,0,0.4);color:#e0d6b8;border:1px solid #8b0000;border-radius:4px;cursor:pointer;" title="' + _escapeChance + '% chance. If caught: more time + fine. 90-day cooldown after attempt.">🔓 Attempt Escape (' + _escapeChance + '%)</button>';
             }
+            // v9p33river450: show crime reason
+            var _jailReason = Player.jailReason || (Player.state && Player.state.jailReason) || null;
+            var _reasonHtml = _jailReason ? '<div style="font-size:0.8rem;color:#e8a040;">📋 ' + _jailReason + '</div>' : '';
             _jailPanel.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;">' +
                 '<div>🔒 <strong style="color:#c44e52;">IMPRISONED</strong> in ' + _jailTownName + '</div>' +
+                _reasonHtml +
                 '<div style="font-size:0.9rem;">⏳ ' + _jailDaysLeft + ' day' + (_jailDaysLeft !== 1 ? 's' : '') + ' remaining</div>' +
                 _escapeBtn +
                 '<button data-action="' + _ffAction + '" style="padding:4px 12px;font-size:0.8rem;background:rgba(50,50,150,0.4);color:#e0d6b8;border:1px solid #4444aa;border-radius:4px;cursor:pointer;">' + _ffLabel + '</button>' +

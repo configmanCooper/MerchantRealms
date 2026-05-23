@@ -32369,6 +32369,8 @@
         var jailDays = 30 + Math.floor(Math.random() * 61);
         // v9p33river446: use canonical Player.jailedUntilDay field (was setting wrong Player.state._jailed)
         Player.jailedUntilDay = world.day + jailDays;
+        // v9p33river450: set jail reason for the jail panel
+        Player.jailReason = plotType === 'revolt_support' ? 'Funding a revolt in ' + k.name : (plotType === 'coup' ? 'Coup attempt against the king of ' + k.name : 'Conspiracy to assassinate the king of ' + k.name);
         logEvent('🔒 You have been imprisoned for ' + jailDays + ' days for your role in the ' + plotType + ' conspiracy in ' + k.name + '!', {
             type: 'player_jailed', kingdomId: kId
         }, 'my_kingdom');

@@ -42913,6 +42913,7 @@
         get conscriptionPending() { return player.conscriptionPending; },
         get jailFastForwardAvailable() { return player.jailFastForwardAvailable; },
         get jailReason() { return player.jailReason; },
+        set jailReason(v) { player.jailReason = v; }, // v9p33river450
 
         // Initialization (call after Engine.generate())
         init(world, firstName, lastName, sex, startTownId, startConfig) {
