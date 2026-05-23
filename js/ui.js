@@ -14522,6 +14522,21 @@ window.UI = (function () {
         else if (healthPct > 40) healthFill.style.background = '#ccb974';
         else if (healthPct > 20) healthFill.style.background = '#e8a040';
         else healthFill.style.background = '#c44e52';
+
+        // v9p33river446: flash health label + bar when low health instead of banner
+        var healthGroup = document.getElementById('healthBarGroup');
+        var healthLabel = healthGroup ? healthGroup.querySelector('.stat-label') : null;
+        if (healthPct < 50) {
+            if (healthFill && !healthFill.style.animation) {
+                healthFill.style.animation = 'healthPulse 1.5s ease-in-out infinite';
+            }
+            if (healthLabel) healthLabel.style.color = healthPct <= 25 ? '#c44e52' : '#e8a040';
+            if (healthValue) healthValue.style.color = healthPct <= 25 ? '#c44e52' : '#e8a040';
+        } else {
+            if (healthFill) healthFill.style.animation = '';
+            if (healthLabel) healthLabel.style.color = '';
+            if (healthValue) healthValue.style.color = '';
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -14610,11 +14625,11 @@ window.UI = (function () {
         var isInjured = Player.injuries && Player.injuries.length > 0;
         var healthLow = (Player.health != null && Player.health < 50);
 
-        if (isSick || isInjured || healthLow) {
+        // v9p33river446: only show banner for sickness/injury, not low health alone
+        if (isSick || isInjured) {
             var msgs = [];
             if (isInjured) msgs.push('injured');
             if (isSick) msgs.push('sick');
-            if (healthLow && !isInjured && !isSick) msgs.push('low health');
             if (alertText) alertText.textContent = 'You are ' + msgs.join(' & ') + '!';
             alertEl.classList.add('visible');
         } else {
