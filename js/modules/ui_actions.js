@@ -1740,7 +1740,40 @@ function showPersonDetail(person) {
         }
     }
 
-    // ── Needs Bars ──
+    // ── Elite Merchant Agenda (requires merchant_agendas skill) ── v9p33river434
+    if (isPlayer && Player.hasSkill && Player.hasSkill('merchant_agendas') && person.isEliteMerchant) {
+        var _emAgenda = null;
+        try { if (Engine.getEliteMerchantAgenda) _emAgenda = Engine.getEliteMerchantAgenda(person.id); } catch(e) {}
+        if (_emAgenda) {
+            var _fhColor = { thriving: '#55a868', stable: '#ccb974', struggling: '#e0a040', distressed: '#c44e52' };
+            var _fhLabel = _emAgenda.financialHealth.charAt(0).toUpperCase() + _emAgenda.financialHealth.slice(1);
+            html += `<div class="detail-section" style="border:1px solid rgba(100,180,255,0.25);background:rgba(100,180,255,0.05);">`;
+            html += `<h3 style="color:#6ab4ff;">📊 Merchant Agenda</h3>`;
+            html += `<div style="font-size:0.72rem;color:#ccc;margin-bottom:6px;">Influence: <span style="color:#d4af37;font-weight:bold;">${_emAgenda.influence.toFixed(1)}</span> | `;
+            html += `Health: <span style="color:${_fhColor[_emAgenda.financialHealth] || '#ccc'};font-weight:bold;">${_fhLabel}</span></div>`;
+
+            if (_emAgenda.goals.length > 0) {
+                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-bottom:3px;">Business Goals:</div>`;
+                for (var _mgi = 0; _mgi < _emAgenda.goals.length; _mgi++) {
+                    html += `<div style="font-size:0.72rem;color:#bbb;padding-left:8px;margin-bottom:2px;">${_emAgenda.goals[_mgi].icon} ${_emAgenda.goals[_mgi].text}</div>`;
+                }
+            }
+            if (_emAgenda.plans.length > 0) {
+                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Current Plans:</div>`;
+                for (var _mpi = 0; _mpi < _emAgenda.plans.length; _mpi++) {
+                    html += `<div style="font-size:0.72rem;color:#8fb8e0;padding-left:8px;margin-bottom:2px;">${_emAgenda.plans[_mpi].icon} ${_emAgenda.plans[_mpi].text}</div>`;
+                }
+            }
+            if (_emAgenda.concerns.length > 0) {
+                html += `<div style="font-size:0.75rem;font-weight:600;color:#ddd;margin-top:6px;margin-bottom:3px;">Concerns:</div>`;
+                for (var _mci = 0; _mci < _emAgenda.concerns.length; _mci++) {
+                    var _mcColor = _emAgenda.concerns[_mci].weight >= 70 ? '#c44e52' : '#ccb974';
+                    html += `<div style="font-size:0.72rem;color:${_mcColor};padding-left:8px;margin-bottom:2px;">${_emAgenda.concerns[_mci].icon} ${_emAgenda.concerns[_mci].text}</div>`;
+                }
+            }
+            html += `</div>`;
+        }
+    }
     if (person.needs) {
         html += `<div class="detail-section"><h3>Needs</h3>`;
         const needNames = ['food', 'shelter', 'safety', 'wealth', 'happiness'];

@@ -7094,4 +7094,215 @@
     // EM-NPC Relationship Favors
     Engine.tickEMRelationshipFavors = tickEMRelationshipFavors;
 
+    // v9p33river434: Elite Merchant Agenda — parallel to getNobleAgenda for nobles
+    function getEliteMerchantAgenda(emId) {
+        _syncState();
+        var em = findPerson(emId);
+        if (!em || !em.alive || !em.isEliteMerchant) return null;
+        ensureEliteMerchantFields(em);
+
+        var p = em.personality || {};
+        var strategy = em.strategy || 'diversified';
+        var kId = em.kingdomId || em.citizenshipKingdomId;
+        var k = kId ? findKingdom(kId) : null;
+        var day = world ? world.day : 0;
+
+        // Financial health assessment
+        var gold = em.gold || 0;
+        var nw = em.netWorth || calculateNetWorth(em);
+        var bldCount = em.buildings ? em.buildings.length : 0;
+        var caravanCount = em.emCaravans ? em.emCaravans.length : 0;
+        var financialHealth = 'stable';
+        if (gold < 1000 || (em._criticalGoldDays || 0) >= 10) financialHealth = 'distressed';
+        else if (gold < 2000 || (em._lowGoldDays || 0) >= 3) financialHealth = 'struggling';
+        else if (gold >= 10000 && bldCount >= 3) financialHealth = 'thriving';
+
+        // Kingdom context
+        var atWar = false;
+        if (k && k.atWar) atWar = (Array.isArray(k.atWar) ? k.atWar.length : k.atWar.size) > 0;
+        var lowTreasury = k && (k.gold || 0) < 2000;
+        var hasPlague = false;
+        try {
+            if (k) {
+                var _emTowns = Engine.getTownsForKingdom ? Engine.getTownsForKingdom(kId) : [];
+                for (var _ti = 0; _ti < _emTowns.length; _ti++) { if (_emTowns[_ti].plagueActive) { hasPlague = true; break; } }
+            }
+        } catch(e) {}
+
+        var goals = [];
+        var plans = [];
+        var concerns = [];
+
+        // ── Strategy-driven goals ──
+        var STRAT_LABELS = {
+            food_monopoly: 'Food Monopolist', military_supplier: 'Military Supplier',
+            luxury_trader: 'Luxury Trader', diversified: 'Diversified Trader',
+            political_climber: 'Political Climber', war_profiteer: 'War Profiteer',
+            land_baron: 'Land Baron', trade_network: 'Trade Network',
+            medical_supplier: 'Medical Supplier', culture_trader: 'Culture Trader',
+            retail_mogul: 'Retail Mogul'
+        };
+        var STRAT_ICONS = {
+            food_monopoly: '🌾', military_supplier: '⚔️', luxury_trader: '💎',
+            diversified: '📦', political_climber: '👑', war_profiteer: '🔥',
+            land_baron: '🏗️', trade_network: '🛤️', medical_supplier: '🏥',
+            culture_trader: '🎵', retail_mogul: '🏪'
+        };
+
+        goals.push({ icon: STRAT_ICONS[strategy] || '🎯', text: 'Pursuing ' + (STRAT_LABELS[strategy] || strategy) + ' strategy', weight: 80 });
+
+        // Personality-driven goals
+        if ((p.ambition || 50) >= 60) {
+            var emRank = 0;
+            if (em.socialRank && kId) emRank = em.socialRank[kId] || 0;
+            if (emRank < 4) {
+                goals.push({ icon: '⬆️', text: 'Seeking noble status through wealth and influence', weight: p.ambition });
+            } else if (emRank < 6) {
+                goals.push({ icon: '👑', text: 'Climbing the ranks of the court', weight: p.ambition });
+            }
+        }
+        if ((p.greed || 50) >= 55) {
+            goals.push({ icon: '💰', text: 'Maximizing profits above all else', weight: p.greed });
+        }
+        if ((p.social || 50) >= 60) {
+            goals.push({ icon: '🤝', text: 'Building a network of trade relationships', weight: p.social });
+        }
+        if ((p.militarism || 50) >= 55 && atWar) {
+            goals.push({ icon: '⚔️', text: 'Profiting from the war effort', weight: p.militarism + 10 });
+        }
+        if ((p.honesty || 50) < 35) {
+            goals.push({ icon: '🎭', text: 'Operating in the shadows — smuggling, bribes', weight: 80 - (p.honesty || 50) });
+        }
+        if ((p.patience || 50) >= 60 && bldCount > 0) {
+            goals.push({ icon: '📊', text: 'Steady growth through careful investment', weight: p.patience });
+        }
+
+        // ── Expansion plans ──
+        var stratBlds = STRATEGY_BUILDINGS[strategy] || [];
+        if (bldCount < 3 && gold >= 3000) {
+            var nextBld = null;
+            for (var sbi = 0; sbi < stratBlds.length; sbi++) {
+                var hasBld = false;
+                if (em.buildings) {
+                    for (var ebi = 0; ebi < em.buildings.length; ebi++) {
+                        if (em.buildings[ebi].type === stratBlds[sbi]) { hasBld = true; break; }
+                    }
+                }
+                if (!hasBld) { nextBld = stratBlds[sbi]; break; }
+            }
+            if (nextBld) {
+                var bldLabel = nextBld.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+                plans.push({ icon: '🏗️', text: 'Looking to build a ' + bldLabel, weight: 70 });
+            }
+        } else if (bldCount >= 3 && gold >= 5000) {
+            plans.push({ icon: '🏰', text: 'Expanding business empire with more buildings', weight: 60 });
+        }
+
+        if (caravanCount === 0 && bldCount >= 1 && gold >= 2000) {
+            plans.push({ icon: '🐪', text: 'Planning to establish trade caravans', weight: 65 });
+        } else if (caravanCount > 0) {
+            plans.push({ icon: '🐪', text: 'Operating ' + caravanCount + ' trade caravan' + (caravanCount !== 1 ? 's' : ''), weight: 50 });
+        }
+
+        // Guild aspirations
+        if (em._guildBonuses && Object.keys(em._guildBonuses).length > 0) {
+            plans.push({ icon: '🏛️', text: 'Leveraging guild connections for advantage', weight: 55 });
+        } else if ((p.social || 50) >= 50) {
+            plans.push({ icon: '🏛️', text: 'Seeking guild membership', weight: 45 });
+        }
+
+        // Kingdom service
+        if (em.ordersCompleted > 0) {
+            plans.push({ icon: '📜', text: 'Fulfilling royal procurement orders (' + em.ordersCompleted + ' completed)', weight: 55 });
+        }
+
+        // Political climbing
+        if (strategy === 'political_climber' && k) {
+            plans.push({ icon: '🍷', text: 'Courting noble favor through luxury gifts', weight: 70 });
+        }
+
+        // Fallback
+        if (plans.length === 0) {
+            plans.push({ icon: '📈', text: 'Conducting daily trade operations', weight: 40 });
+        }
+
+        // ── Concerns ──
+        if (financialHealth === 'distressed') {
+            concerns.push({ icon: '💸', text: 'Facing bankruptcy — selling assets to survive', weight: 95 });
+        } else if (financialHealth === 'struggling') {
+            concerns.push({ icon: '⚠️', text: 'Finances under strain — seeking ways to cut costs', weight: 75 });
+        }
+
+        if (atWar && strategy !== 'war_profiteer' && strategy !== 'military_supplier') {
+            concerns.push({ icon: '⚔️', text: 'War disrupting trade routes and markets', weight: 70 });
+        }
+
+        if (hasPlague) {
+            if (strategy === 'medical_supplier') {
+                plans.push({ icon: '🏥', text: 'Ramping up medical supply production', weight: 80 });
+            } else {
+                concerns.push({ icon: '🦠', text: 'Plague threatening business operations', weight: 65 });
+            }
+        }
+
+        if (lowTreasury && k) {
+            concerns.push({ icon: '🏦', text: 'Kingdom treasury low — tax hikes likely', weight: 60 });
+        }
+
+        if (em._seizureVictim) {
+            concerns.push({ icon: '🔒', text: 'Assets previously seized — rebuilding cautiously', weight: 70 });
+        }
+
+        if (em.crimesCommitted > 0 || (em.criminalRecord && Object.keys(em.criminalRecord).length > 0)) {
+            concerns.push({ icon: '🎭', text: 'Criminal record could attract unwanted attention', weight: 55 });
+        }
+
+        // Competition
+        if (em._competitorTracking && Object.keys(em._competitorTracking).length > 0) {
+            concerns.push({ icon: '🔍', text: 'Watching rival merchants closely', weight: 45 });
+        }
+
+        // Jail risk
+        if ((em._jailedUntilDay || em.jailedUntilDay) && (em._jailedUntilDay || em.jailedUntilDay) > day) {
+            concerns.push({ icon: '⛓️', text: 'Currently imprisoned', weight: 100 });
+        }
+
+        // Fallback
+        if (concerns.length === 0) {
+            if (financialHealth === 'thriving') {
+                concerns.push({ icon: '✅', text: 'Business thriving — no major concerns', weight: 20 });
+            } else {
+                concerns.push({ icon: '📊', text: 'Maintaining steady operations', weight: 30 });
+            }
+        }
+
+        // Sort by weight
+        goals.sort(function(a, b) { return b.weight - a.weight; });
+        plans.sort(function(a, b) { return b.weight - a.weight; });
+        concerns.sort(function(a, b) { return b.weight - a.weight; });
+
+        // Compute market influence (based on wealth, buildings, caravans, rank)
+        var influence = 0;
+        influence += Math.min(30, Math.floor(gold / 1000));
+        influence += bldCount * 8;
+        influence += caravanCount * 5;
+        if (em.socialRank && kId) influence += (em.socialRank[kId] || 0) * 4;
+        if (em.emLevel) influence += em.emLevel * 2;
+        influence = Math.min(100, Math.max(0, influence));
+
+        return {
+            merchantId: emId,
+            kingdomId: kId,
+            strategy: strategy,
+            strategyLabel: STRAT_LABELS[strategy] || strategy,
+            goals: goals.slice(0, 3),
+            plans: plans.slice(0, 3),
+            concerns: concerns.slice(0, 3),
+            financialHealth: financialHealth,
+            netWorth: nw,
+            influence: influence
+        };
+    }
+    Engine.getEliteMerchantAgenda = getEliteMerchantAgenda;
+
 })(window.Engine);
