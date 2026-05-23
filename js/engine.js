@@ -9144,6 +9144,9 @@
         }
         kingdom._kingDeathCause = null;
 
+        // v9p33river455: schedule one-time AI decisions for the day after coronation
+        kingdom._newKingCoronationDay = world.day;
+
         // Toast notification for new king with personality summary
         if (typeof UI !== 'undefined' && UI.toast && world.day > 2) {
             var kpd = kingdom.kingPersonality || {};
@@ -34104,6 +34107,28 @@
             // Kingdom finances — NEVER throttled, treasury drives spending → happiness
             for (const k of world.kingdoms) {
                 Engine.tickKingdomFinances(k);
+            }
+
+            // v9p33river455: new king coronation — run one-time AI decisions the day after
+            for (var _nkci = 0; _nkci < world.kingdoms.length; _nkci++) {
+                var _nkK = world.kingdoms[_nkci];
+                if (_nkK._newKingCoronationDay != null && world.day === _nkK._newKingCoronationDay + 1) {
+                    _nkK._newKingCoronationDay = null; // clear so it only runs once
+                    var _nkIsPlayerKing = false;
+                    try { _nkIsPlayerKing = Player && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === _nkK.id; } catch(e) {}
+                    if (!_nkIsPlayerKing && _nkK.king) {
+                        try { Engine.tickKingEconomicStrategy(_nkK); } catch(e) {}
+                        try { tickKingdomBanPolicy(_nkK); } catch(e) {}
+                        try { Engine.tickKingHealthPolicy(_nkK); } catch(e) {}
+                        try { Engine.tickTreasurySpending(_nkK); } catch(e) {}
+                        try { tickKingdomProcurement(_nkK); } catch(e) {}
+                        try { tickRoyalCommissions(_nkK); } catch(e) {}
+                        try { tickNobleInfluence(_nkK); } catch(e) {}
+                        var _nkKing = findPerson(_nkK.king);
+                        var _nkKingName = _nkKing ? (_nkKing.firstName + ' ' + _nkKing.lastName) : 'The new ruler';
+                        logEvent('👑 ' + _nkKingName + ' holds court for the first time as ruler of ' + _nkK.name + ', issuing new decrees and setting policy.', { type: 'coronation_actions', kingdomId: _nkK.id }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === _nkK.id ? 'my_kingdom' : 'foreign_kingdoms');
+                    }
+                }
             }
 
             // Random inspections daily tick
