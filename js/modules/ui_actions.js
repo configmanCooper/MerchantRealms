@@ -1765,7 +1765,35 @@ function showPersonDetail(person) {
                         html += `<button class="btn-medieval" data-action="exposeDisloyalty" data-id="${person.id}" data-val="${_nobleKId}" title="Report this noble's disloyalty to the king. You gain favor but they become your enemy." style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.25);border-color:rgba(196,78,82,0.5);color:#c44e52;">🕵️ Expose Disloyalty</button>`;
                     }
 
+                    // v9p33river442: Share Your Views button — opens declaration panel for noble memory
+                    if (_playerNobleRank >= 4 && _targetRank >= 4) {
+                        html += `<button class="btn-medieval" data-action="shareViewsWithNoble" data-id="${person.id}" title="Tell this noble what policies you support or oppose." style="font-size:0.72rem;padding:4px 10px;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.4);color:#8fb8e0;">🗣️ Share Your Views</button>`;
+                    }
+
                     html += `</div>`;
+
+                    // v9p33river442: Noble memory summary
+                    if (Engine.getNobleMemoryContext) {
+                        var _memCtx = null;
+                        try { _memCtx = Engine.getNobleMemoryContext(person.id); } catch(e) {}
+                        if (_memCtx && (_memCtx.hasPlayerDeclarations || _memCtx.isWatching)) {
+                            html += '<div style="background:rgba(50,70,90,0.3);border:1px solid rgba(100,160,220,0.3);border-radius:4px;padding:6px 8px;margin-top:6px;font-size:0.8em;">';
+                            html += '<strong style="color:rgba(100,160,220,0.8);">🧠 Noble\'s Memory</strong><br>';
+                            if (_memCtx.recentPlayerDeclarations && _memCtx.recentPlayerDeclarations.length > 0) {
+                                html += '<span style="color:#aaa;">Remembers your views on: </span>';
+                                var _viewLabels = _memCtx.recentPlayerDeclarations.map(function(d) {
+                                    var _sentColor = d.sentiment > 0 ? '#4c4' : (d.sentiment < 0 ? '#f66' : '#cc4');
+                                    return '<span style="color:' + _sentColor + ';">' + escapeHtml(d.label) + '</span>';
+                                });
+                                html += _viewLabels.join(', ');
+                                html += '<br>';
+                            }
+                            if (_memCtx.isWatching) {
+                                html += '<span style="color:#aa7;">👁️ Has been observing your political activities</span>';
+                            }
+                            html += '</div>';
+                        }
+                    }
                 }
             }
         }
@@ -5054,6 +5082,145 @@ function clickTown(townId) {
             var _exposedPerson = Engine.findPerson ? Engine.findPerson(nobleId) : null;
             if (_exposedPerson && typeof showPersonDetail === 'function') showPersonDetail(_exposedPerson);
         } catch(e) {}
+    });
+    // v9p33river442: Share Your Views — player tells a noble what they want
+    UI.registerAction('shareViewsWithNoble', function(_t, d) {
+        var nobleId = d.id;
+        var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
+        if (!noble || !noble.alive) { toast('Noble not found.', 'warning'); return; }
+
+        var DECLARATION_TYPES = {
+            lower_taxes: { label: 'Lower Taxes', icon: '💰' },
+            raise_taxes: { label: 'Raise Taxes', icon: '💰' },
+            seek_peace: { label: 'Seek Peace', icon: '🕊️' },
+            declare_war: { label: 'Prepare for War', icon: '⚔️' },
+            expand_trade: { label: 'Expand Trade', icon: '📈' },
+            build_infrastructure: { label: 'Build Infrastructure', icon: '🏗️' },
+            strengthen_military: { label: 'Strengthen Military', icon: '🛡️' },
+            improve_happiness: { label: 'Improve Public Welfare', icon: '😊' },
+            enforce_law: { label: 'Enforce Law & Order', icon: '⚖️' },
+            promote_noble: { label: 'Promote a Noble', icon: '👑' }
+        };
+
+        var nobleName = escapeHtml(((noble.firstName || '') + ' ' + (noble.lastName || '')).trim() || 'This noble');
+        var nobleFirstName = escapeHtml(noble.firstName || 'this noble');
+        var nobleKingdomId = noble.kingdomId || null;
+        if (!nobleKingdomId && noble.socialRank) {
+            var _nobleRankKeys = Object.keys(noble.socialRank);
+            for (var _nrki = 0; _nrki < _nobleRankKeys.length; _nrki++) {
+                if ((noble.socialRank[_nobleRankKeys[_nrki]] || 0) >= 4) {
+                    nobleKingdomId = _nobleRankKeys[_nrki];
+                    break;
+                }
+            }
+        }
+
+        var html = '<div style="padding:15px;">';
+        html += '<h3 style="color:rgba(100,160,220,0.9);margin-bottom:10px;">🗣️ Share Your Views with ' + nobleName + '</h3>';
+        html += '<p style="color:#aaa;font-size:0.85em;margin-bottom:12px;">Tell ' + nobleFirstName + ' what matters to you. They will remember your words and may act on them.</p>';
+
+        if (Engine.getNobleMemoryContext) {
+            var memCtx = null;
+            try { memCtx = Engine.getNobleMemoryContext(nobleId); } catch(e) {}
+            if (memCtx && memCtx.recentPlayerDeclarations && memCtx.recentPlayerDeclarations.length > 0) {
+                html += '<div style="background:rgba(40,50,60,0.5);border:1px solid #445;border-radius:4px;padding:6px 8px;margin-bottom:10px;font-size:0.8em;">';
+                html += '<strong style="color:#8ab;">🧠 ' + nobleFirstName + ' already remembers:</strong><br>';
+                for (var mi = 0; mi < Math.min(5, memCtx.recentPlayerDeclarations.length); mi++) {
+                    var mem = memCtx.recentPlayerDeclarations[mi];
+                    var sentIcon = mem.sentiment > 0 ? '👍' : (mem.sentiment < 0 ? '👎' : '🤔');
+                    var daysAgo = Engine.getDay() - mem.day;
+                    html += '<div style="color:#999;padding:2px 0;">' + sentIcon + ' ' + escapeHtml(mem.label) + ' <span style="color:#666;">(' + daysAgo + ' days ago)</span></div>';
+                }
+                html += '</div>';
+            }
+        }
+
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+        var categories = Object.keys(DECLARATION_TYPES);
+        for (var di = 0; di < categories.length; di++) {
+            var cat = categories[di];
+            var decl = DECLARATION_TYPES[cat];
+            if (cat === 'promote_noble') continue;
+            html += '<button class="btn-medieval" style="font-size:0.8rem;padding:6px 10px;text-align:left;background:rgba(60,80,100,0.3);border-color:rgba(100,140,180,0.3);" ' +
+                    'data-action="declareToNoble" data-id="' + nobleId + '" data-val="' + cat + '">' +
+                    decl.icon + ' ' + escapeHtml(decl.label) + '</button>';
+        }
+        html += '</div>';
+
+        html += '<div style="margin-top:10px;border-top:1px solid #445;padding-top:8px;">';
+        html += '<strong style="color:#cc9;font-size:0.85em;">👑 Recommend a Noble for Promotion:</strong>';
+
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        if (world && world.people && nobleKingdomId) {
+            var kingdom = null;
+            try { kingdom = Engine.findKingdom ? Engine.findKingdom(nobleKingdomId) : null; } catch(e) {}
+            var promotable = world.people.filter(function(p) {
+                var _rank = (p.socialRank && p.socialRank[nobleKingdomId]) || 0;
+                return p && p.alive && p.kingdomId === nobleKingdomId && p.id !== nobleId &&
+                       _rank >= 4 && _rank < 6 &&
+                       p.id !== (kingdom ? kingdom.king : '');
+            });
+            var playerRankHere = 0;
+            try { playerRankHere = (Player.socialRank && Player.socialRank[nobleKingdomId]) || 0; } catch(e) {}
+
+            if (promotable.length > 0 || (playerRankHere >= 4 && playerRankHere < 6)) {
+                html += '<div style="max-height:120px;overflow-y:auto;margin-top:4px;">';
+                if (playerRankHere >= 4 && playerRankHere < 6) {
+                    html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;margin:2px;background:rgba(200,180,50,0.2);border-color:rgba(200,180,50,0.4);" ' +
+                            'data-action="declarePromoteNoble" data-id="' + nobleId + '" data-val="player">👑 Yourself</button>';
+                }
+                for (var pi = 0; pi < Math.min(10, promotable.length); pi++) {
+                    var pn = promotable[pi];
+                    html += '<button class="btn-medieval" style="font-size:0.75rem;padding:3px 8px;margin:2px;background:rgba(100,100,50,0.2);border-color:rgba(100,100,50,0.3);" ' +
+                            'data-action="declarePromoteNoble" data-id="' + nobleId + '" data-val="' + pn.id + '">' +
+                            '👑 ' + escapeHtml((pn.firstName || '') + ' ' + (pn.lastName || '')) + '</button>';
+                }
+                html += '</div>';
+            } else {
+                html += '<p style="color:#888;font-size:0.8em;">No eligible nobles to promote.</p>';
+            }
+        } else {
+            html += '<p style="color:#888;font-size:0.8em;">No eligible nobles to promote.</p>';
+        }
+        html += '</div>';
+
+        html += '<div style="margin-top:12px;"><button class="btn-medieval" data-action="closeModal" style="padding:6px 16px;">⬅️ Back</button></div>';
+        html += '</div>';
+
+        openModal('Share Your Views', html);
+    });
+    // v9p33river442: Handle declaration to noble
+    UI.registerAction('declareToNoble', function(_t, d) {
+        var nobleId = d.id;
+        var category = d.val;
+        if (!Engine.playerDeclareToNoble) { toast('System not available.', 'warning'); return; }
+        var result = Engine.playerDeclareToNoble(nobleId, category, null);
+        if (!result || !result.success) { toast((result && result.message) || 'Could not share your views.', 'warning'); return; }
+
+        var toastType = 'info';
+        if (result.reaction === 'supportive') toastType = 'success';
+        else if (result.reaction === 'opposed') toastType = 'warning';
+        else if (result.reaction === 'hostile') toastType = 'danger';
+        toast(result.message, toastType);
+
+        var _shareHandler = UI._actionHandlers && UI._actionHandlers.shareViewsWithNoble;
+        if (_shareHandler) _shareHandler(null, { id: nobleId });
+    });
+    // v9p33river442: Handle promote_noble declaration
+    UI.registerAction('declarePromoteNoble', function(_t, d) {
+        var nobleId = d.id;
+        var targetId = d.val;
+        if (!Engine.playerDeclareToNoble) { toast('System not available.', 'warning'); return; }
+        var result = Engine.playerDeclareToNoble(nobleId, 'promote_noble', { targetNobleId: targetId });
+        if (!result || !result.success) { toast((result && result.message) || 'Could not make that recommendation.', 'warning'); return; }
+        var _promoteToastType = 'info';
+        if (result.reaction === 'supportive') _promoteToastType = 'success';
+        else if (result.reaction === 'opposed') _promoteToastType = 'warning';
+        else if (result.reaction === 'hostile') _promoteToastType = 'danger';
+        toast(result.message, _promoteToastType);
+
+        var _shareHandler = UI._actionHandlers && UI._actionHandlers.shareViewsWithNoble;
+        if (_shareHandler) _shareHandler(null, { id: nobleId });
     });
     UI.registerAction('treatCompanionUI', function(_t, d) { UI.treatCompanionUI(d.type, d.id, d.val); });
 
