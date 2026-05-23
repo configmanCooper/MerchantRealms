@@ -1568,8 +1568,16 @@ function showPersonDetail(person) {
         if (_nfs) {
             var _stressColor = _nfs.stressed ? '#c44e52' : '#55a868';
             var _stressLabel = _nfs.stressed ? '💸 Financially Stressed' : '💰 Stable';
-            html += `<div class="detail-row"><span class="label">Treasury</span>
-                <span class="value">${Math.floor(_nfs.gold)}g</span></div>`;
+            // v9p33river426: for kings, show kingdom treasury instead of personal gold
+            if (_nfs.rank >= 7 && _nfs.kingdomTreasury != null) {
+                html += `<div class="detail-row"><span class="label">Kingdom Treasury</span>
+                    <span class="value">${Math.floor(_nfs.kingdomTreasury)}g</span></div>`;
+                html += `<div class="detail-row"><span class="label">Personal Gold</span>
+                    <span class="value" style="font-size:0.78rem;color:#aaa;">${Math.floor(_nfs.gold)}g</span></div>`;
+            } else {
+                html += `<div class="detail-row"><span class="label">Treasury</span>
+                    <span class="value">${Math.floor(_nfs.gold)}g</span></div>`;
+            }
             html += `<div class="detail-row"><span class="label">Status</span>
                 <span class="value" style="color:${_stressColor};font-size:0.8rem;">${_stressLabel}</span></div>`;
         }

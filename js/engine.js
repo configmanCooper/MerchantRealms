@@ -14985,7 +14985,15 @@
                 var stressThreshold = 150;
                 if (rank === 5) stressThreshold = 300;
                 else if (rank >= 6) stressThreshold = 600;
-                noble._financiallyStressed = noble.gold < stressThreshold;
+                // v9p33river426: kings have the kingdom treasury — only stressed if both personal gold AND treasury are low
+                if (rank >= 7) {
+                    var _kingK = null;
+                    if (noble.socialRank) { for (var _skk in noble.socialRank) { if (noble.socialRank[_skk] >= 7) { _kingK = findKingdom(_skk); break; } } }
+                    var _treasuryGold = _kingK ? (_kingK.gold || 0) : 0;
+                    noble._financiallyStressed = (noble.gold + _treasuryGold) < 1000;
+                } else {
+                    noble._financiallyStressed = noble.gold < stressThreshold;
+                }
 
                 // v9p33river248: detect medical desperation — noble is sick or
                 // has a sick close family member AND can't afford treatment.
@@ -35208,6 +35216,8 @@
                 netPer10: totalBuildingIncome + stipendPer10 + tradePer10 - expensePer10,
                 stressed: !!person._financiallyStressed,
                 rank: rank,
+                // v9p33river426: include kingdom treasury for kings
+                kingdomTreasury: rank >= 7 ? (function() { var _kk = null; if (person.socialRank) { for (var _skk in person.socialRank) { if (person.socialRank[_skk] >= 7) { _kk = findKingdom(_skk); break; } } } return _kk ? (_kk.gold || 0) : null; })() : null,
                 isEM: !!person.isEliteMerchant,
                 incomeLog: person._incomeLog || null
             };
