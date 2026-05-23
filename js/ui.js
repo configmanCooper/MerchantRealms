@@ -6821,6 +6821,613 @@ window.UI = (function () {
         }
     }
 
+    function askNpcQuestions(personId) {
+        var person = null;
+        try { person = Engine.getPerson(personId); } catch(e) {}
+        if (!person) {
+            toast('Person not found.', 'warning');
+            return;
+        }
+
+        var rel = Player.getRelationship ? Player.getRelationship(personId) : { level: 0 };
+        var relLevel = Math.round((rel && rel.level) || 0);
+        var npcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
+        var isNoble = npcRank >= 4;
+        var isEliteMerchant = !!person.isEliteMerchant;
+        if (!isNoble && !isEliteMerchant) {
+            toast('No special questions available.', 'info');
+            return;
+        }
+
+        var questionDefs = _buildNpcQuestionDefs(person, {
+            relLevel: relLevel,
+            npcRank: npcRank,
+            isNoble: isNoble,
+            isEliteMerchant: isEliteMerchant
+        });
+        if (!questionDefs.length) {
+            toast('No special questions available.', 'info');
+            return;
+        }
+
+        var personName = ((person.firstName || '') + ' ' + (person.lastName || '')).trim() || 'this person';
+        openModal('❓ Questions for ' + personName, '<div id="npcQuestionsContent"></div>', '');
+
+        var root = document.getElementById('npcQuestionsContent');
+        if (!root) return;
+
+        function renderList() {
+            root.innerHTML = _renderNpcQuestionsList(person, relLevel, questionDefs);
+            var rows = root.querySelectorAll('.npc-questions-row[data-qid]');
+            for (var i = 0; i < rows.length; i++) {
+                rows[i].addEventListener('click', function() {
+                    if (this.getAttribute('data-locked') === '1') return;
+                    var qid = this.getAttribute('data-qid');
+                    for (var qi = 0; qi < questionDefs.length; qi++) {
+                        if (questionDefs[qi].id === qid) {
+                            renderAnswer(questionDefs[qi]);
+                            return;
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderAnswer(questionDef) {
+            if (!questionDef || relLevel < questionDef.requiredRel) return;
+            var answer = questionDef.answer ? questionDef.answer() : 'They choose their words carefully and say little.';
+            root.innerHTML = _renderNpcQuestionAnswer(person, questionDef, answer);
+            var backBtn = root.querySelector('.npc-questions-back');
+            if (backBtn) backBtn.addEventListener('click', renderList);
+        }
+
+        renderList();
+    }
+
+    function _buildNpcQuestionDefs(person, meta) {
+        var defs = [];
+        var kingdomId = _getNpcQuestionsKingdomId(person);
+        var kingdom = null;
+        var town = null;
+        var agenda = null;
+        try { if (kingdomId && Engine.findKingdom) kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+        try { if (person.townId && Engine.findTown) town = Engine.findTown(person.townId); } catch(e) {}
+        try { if (meta.isNoble && Engine.getNobleAgenda) agenda = Engine.getNobleAgenda(person.id); } catch(e) {}
+
+        if (meta.isNoble) {
+            defs.push({ id: 'noble_king_opinion', text: 'What do you think of our king?', roleLabel: 'Court question', requiredRel: 20, answer: function() { return _answerNobleKingOpinion(person, kingdom); } });
+            defs.push({ id: 'noble_court_state', text: 'How are things in court lately?', roleLabel: 'Court question', requiredRel: 20, answer: function() { return _answerNobleCourtState(person, kingdom); } });
+            defs.push({ id: 'noble_matters', text: 'What matters most to you?', roleLabel: 'Personal question', requiredRel: 20, answer: function() { return _answerNoblePriority(person); } });
+            defs.push({ id: 'noble_friends', text: 'Who do you get along with at court?', roleLabel: 'Court question', requiredRel: 20, answer: function() { return _answerNobleCourtFriend(person); } });
+            defs.push({ id: 'noble_enemy', text: 'Is there a noble you can\'t stand?', roleLabel: 'Court question', requiredRel: 60, answer: function() { return _answerNobleCourtEnemy(person); } });
+            defs.push({ id: 'noble_advice', text: 'What would you advise the king to do?', roleLabel: 'Political question', requiredRel: 60, answer: function() { return _answerNobleAdvice(person, agenda); } });
+            defs.push({ id: 'noble_direction', text: 'Do you think the kingdom is headed in the right direction?', roleLabel: 'Political question', requiredRel: 60, answer: function() { return _answerNobleDirection(person, kingdom); } });
+            defs.push({ id: 'noble_ambitions', text: 'What are your ambitions?', roleLabel: 'Personal question', requiredRel: 60, answer: function() { return _answerNobleAmbitions(person, meta.npcRank); } });
+            defs.push({ id: 'noble_move_against_king', text: 'Would you ever move against the king?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerNobleMoveAgainstKing(person); } });
+            defs.push({ id: 'noble_secret', text: 'What\'s your biggest secret?', roleLabel: 'Dangerous question', requiredRel: 80, answer: function() { return _answerNobleSecret(person, agenda); } });
+            defs.push({ id: 'noble_threat', text: 'Who do you think threatens the kingdom most?', roleLabel: 'Political question', requiredRel: 80, answer: function() { return _answerNobleThreat(person, kingdom); } });
+            defs.push({ id: 'noble_if_king', text: 'If you were king, what would you change first?', roleLabel: 'Political question', requiredRel: 80, answer: function() { return _answerNobleAsKing(agenda); } });
+        }
+
+        if (meta.isEliteMerchant) {
+            defs.push({ id: 'merchant_best_goods', text: 'What goods are selling best right now?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantBestGoods(person, town); } });
+            defs.push({ id: 'merchant_business', text: 'How is business these days?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantBusiness(person); } });
+            defs.push({ id: 'merchant_town_trade', text: 'What do you think of this town for trade?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantTownTrade(town); } });
+            defs.push({ id: 'merchant_businesses', text: 'Do you own any businesses?', roleLabel: 'Trade question', requiredRel: 20, answer: function() { return _answerMerchantBusinesses(person); } });
+            defs.push({ id: 'merchant_next_building', text: 'What building will you invest in next?', roleLabel: 'Investment question', requiredRel: 60, answer: function() { return _answerMerchantNextBuilding(person, town); } });
+            defs.push({ id: 'merchant_laws', text: 'What do you think of this kingdom\'s laws?', roleLabel: 'Trade question', requiredRel: 60, answer: function() { return _answerMerchantLaws(person, kingdom); } });
+            defs.push({ id: 'merchant_stay', text: 'Are you planning to stay in this kingdom?', roleLabel: 'Personal question', requiredRel: 60, answer: function() { return _answerMerchantStay(town, kingdom); } });
+            defs.push({ id: 'merchant_competitor', text: 'Who\'s your biggest competitor?', roleLabel: 'Trade question', requiredRel: 60, answer: function() { return _answerMerchantCompetitor(person, kingdomId); } });
+            defs.push({ id: 'merchant_profitable_trade', text: 'What\'s your most profitable trade?', roleLabel: 'Trade question', requiredRel: 80, answer: function() { return _answerMerchantBestTrade(person, town); } });
+            defs.push({ id: 'merchant_advice', text: 'Any advice for an ambitious merchant?', roleLabel: 'Mentor question', requiredRel: 80, answer: function() { return _answerMerchantAdvice(person); } });
+            defs.push({ id: 'merchant_partnership', text: 'Would you ever go into business together?', roleLabel: 'Personal question', requiredRel: 80, answer: function() { return _answerMerchantPartnership(person, meta.relLevel); } });
+            defs.push({ id: 'merchant_risky_deal', text: 'What\'s the riskiest deal you\'ve done?', roleLabel: 'Personal question', requiredRel: 80, answer: function() { return _answerMerchantRiskyDeal(person, town); } });
+        }
+
+        return defs;
+    }
+
+    function _renderNpcQuestionsList(person, relLevel, questionDefs) {
+        var html = '<div style="max-width:520px;padding:6px">';
+        html += '<h3 style="margin:0 0 8px;color:#ffd700">❓ Questions for ' + escapeHtml(((person.firstName || '') + ' ' + (person.lastName || '')).trim() || 'this person') + '</h3>';
+        html += _renderRelTierBadge(person.id);
+        html += '<div style="margin:6px 0 12px;padding:8px 10px;background:rgba(70,70,110,0.15);border:1px solid rgba(120,120,190,0.25);border-radius:6px;font-size:0.82em;color:#bbb;">Ask about court, trade, and personal priorities. The deeper questions unlock as your relationship grows.</div>';
+
+        var tiers = [
+            { rel: 20, label: '🤝 FRIENDLY (20+ Relationship)', color: '#5dade2' },
+            { rel: 60, label: '💚 CLOSE FRIEND (60+ Relationship)', color: '#55a868' },
+            { rel: 80, label: '💜 TRUSTED (80+ Relationship)', color: '#9b59b6' }
+        ];
+        for (var ti = 0; ti < tiers.length; ti++) {
+            var tier = tiers[ti];
+            html += '<div style="margin:12px 0 6px;padding:6px 8px;border-top:1px solid #333;color:' + tier.color + ';font-weight:bold;font-size:0.82em;">' + tier.label + '</div>';
+            for (var qi = 0; qi < questionDefs.length; qi++) {
+                var def = questionDefs[qi];
+                if (def.requiredRel !== tier.rel) continue;
+                var available = relLevel >= def.requiredRel;
+                html += '<div class="npc-questions-row" data-qid="' + escapeHtml(def.id) + '" data-locked="' + (available ? '0' : '1') + '" style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin:5px 0;border:1px solid ' + (available ? tier.color : '#555') + ';border-radius:6px;background:' + (available ? 'rgba(40,40,55,0.75)' : 'rgba(35,35,35,0.65)') + ';cursor:' + (available ? 'pointer' : 'not-allowed') + ';opacity:' + (available ? '1' : '0.5') + ';">';
+                html += '<div style="font-size:1.1em;line-height:1.2;">' + (available ? '❓' : '🔒') + '</div>';
+                html += '<div style="flex:1"><div style="font-weight:bold;color:#eee;">' + escapeHtml(def.text) + '</div><div style="font-size:0.78em;color:#999;margin-top:3px;">' + escapeHtml(available ? (def.roleLabel || 'Question') : ('Requires ' + def.requiredRel + '+ relationship')) + '</div></div>';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function _renderNpcQuestionAnswer(person, questionDef, answerText) {
+        var fullName = ((person.firstName || '') + ' ' + (person.lastName || '')).trim() || 'This person';
+        var html = '<div style="max-width:520px;padding:6px">';
+        html += _renderRelTierBadge(person.id);
+        html += '<div style="margin:6px 0 10px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:6px;border-left:3px solid #6fa8dc;"><div style="font-size:0.75em;color:#8fbbe8;text-transform:uppercase;letter-spacing:0.04em;">You ask</div><div style="margin-top:4px;color:#eee;font-weight:bold;">' + escapeHtml(questionDef.text) + '</div></div>';
+        html += '<div style="padding:10px 12px;background:rgba(120,80,160,0.12);border:1px solid rgba(155,89,182,0.35);border-radius:6px;border-left:3px solid #9b59b6;"><div style="font-weight:bold;color:#d9b3ff;margin-bottom:6px;">' + escapeHtml(fullName) + '</div><div style="font-style:italic;color:#ddd;line-height:1.45;">' + escapeHtml(answerText) + '</div></div>';
+        html += '<button class="btn-medieval npc-questions-back" style="margin-top:12px;">← Back to Questions</button>';
+        html += '</div>';
+        return html;
+    }
+
+    function _getNpcQuestionsKingdomId(person) {
+        if (!person) return null;
+        var bestId = person.kingdomId || person.citizenshipKingdomId || null;
+        var bestRank = -1;
+        if (person.socialRank && typeof person.socialRank === 'object') {
+            for (var kId in person.socialRank) {
+                var rank = person.socialRank[kId] || 0;
+                if (rank > bestRank) {
+                    bestRank = rank;
+                    bestId = kId;
+                }
+            }
+        }
+        return bestId;
+    }
+
+    function _getNpcQuestionTrait(person) {
+        var personality = (person && person.personality) || {};
+        var traitKeys = ['loyalty', 'ambition', 'warmth', 'intelligence', 'honesty', 'selfishness', 'frugality'];
+        var labels = {
+            loyalty: 'loyalty',
+            ambition: 'advancement',
+            warmth: 'people and alliances',
+            intelligence: 'good judgment',
+            honesty: 'honor',
+            selfishness: 'personal advantage',
+            frugality: 'careful stewardship'
+        };
+        var bestKey = 'loyalty';
+        var bestValue = personality.loyalty != null ? personality.loyalty : 50;
+        for (var i = 0; i < traitKeys.length; i++) {
+            var key = traitKeys[i];
+            var value = personality[key] != null ? personality[key] : 50;
+            if (value > bestValue) {
+                bestKey = key;
+                bestValue = value;
+            }
+        }
+        return { key: bestKey, label: labels[bestKey], value: bestValue };
+    }
+
+    function _findNobleRelationshipTarget(person, wantLowest) {
+        var rels = (person && person._nobleRelationships) || null;
+        if (!rels) return null;
+        var best = null;
+        var bestScore = wantLowest ? 101 : -101;
+        for (var otherId in rels) {
+            if (otherId === person.id) continue;
+            var score = rels[otherId];
+            var other = null;
+            try { other = Engine.getPerson(otherId); } catch(e) {}
+            if (!other || other.alive === false) continue;
+            var otherRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(other) : 0;
+            if (otherRank < 4) continue;
+            if ((wantLowest && score < bestScore) || (!wantLowest && score > bestScore)) {
+                bestScore = score;
+                best = { person: other, score: score };
+            }
+        }
+        return best;
+    }
+
+    function _getQuestionPersonName(person) {
+        if (!person) return 'someone';
+        return ((person.firstName || '') + ' ' + (person.lastName || '')).trim() || (person.firstName || person.id || 'someone');
+    }
+
+    function _getQuestionResource(itemId) {
+        if (typeof RESOURCE_TYPES === 'undefined' || !itemId) return null;
+        if (RESOURCE_TYPES[itemId]) return RESOURCE_TYPES[itemId];
+        for (var key in RESOURCE_TYPES) {
+            if (RESOURCE_TYPES[key] && RESOURCE_TYPES[key].id === itemId) return RESOURCE_TYPES[key];
+        }
+        return null;
+    }
+
+    function _getQuestionBuildingType(typeId) {
+        if (typeof BUILDING_TYPES === 'undefined' || !typeId) return null;
+        if (BUILDING_TYPES[typeId]) return BUILDING_TYPES[typeId];
+        for (var key in BUILDING_TYPES) {
+            if (BUILDING_TYPES[key] && BUILDING_TYPES[key].id === typeId) return BUILDING_TYPES[key];
+        }
+        return null;
+    }
+
+    function _getQuestionResourceName(itemId) {
+        var res = _getQuestionResource(itemId);
+        return res ? res.name : itemId;
+    }
+
+    function _getQuestionBuildingName(typeId) {
+        var bt = _getQuestionBuildingType(typeId);
+        if (bt && bt.name) return bt.name;
+        return String(typeId || 'building').replace(/_/g, ' ');
+    }
+
+    function _getHighestInventoryItem(person, byValue) {
+        var inventory = (person && person.npcMerchantInventory) || {};
+        var bestId = null;
+        var bestScore = -1;
+        var bestQty = 0;
+        for (var itemId in inventory) {
+            var qty = inventory[itemId] || 0;
+            if (qty <= 0) continue;
+            var res = _getQuestionResource(itemId);
+            var score = byValue ? ((res && res.basePrice) || 0) : qty;
+            if (score > bestScore || (score === bestScore && qty > bestQty)) {
+                bestId = itemId;
+                bestScore = score;
+                bestQty = qty;
+            }
+        }
+        if (!bestId) return null;
+        return { id: bestId, qty: bestQty, resource: _getQuestionResource(bestId) };
+    }
+
+    function _getTownTradeActivityText(town) {
+        if (!town || !town.market) return 'Trade is thin here, and the market barely stirs.';
+        var prosperity = town.prosperity != null ? town.prosperity : 50;
+        var activeGoods = 0;
+        var prices = town.market.prices || {};
+        var supply = town.market.supply || {};
+        for (var goodId in prices) {
+            if ((prices[goodId] || 0) > 0 || (supply[goodId] || 0) > 0) activeGoods++;
+        }
+        if (prosperity >= 75 && activeGoods >= 8) return 'This town hums from dawn to dusk; caravans actually compete for space in the market.';
+        if (prosperity >= 55 && activeGoods >= 5) return 'It is a respectable market town with enough traffic to keep a sharp merchant busy.';
+        if (prosperity < 35) return 'The coin moves slowly here. Too many stalls wait for buyers instead of the other way around.';
+        return 'It is serviceable, but you need patience and a good nose for timing to make money here.';
+    }
+
+    function _getMerchantStrategyKey(person) {
+        return (person && (person.strategy || person.tradeStrategy)) || 'diversified';
+    }
+
+    function _getMerchantStrategyFamily(person) {
+        var strategy = _getMerchantStrategyKey(person);
+        if (strategy === 'luxury_trader' || strategy === 'culture_trader' || strategy === 'political_climber') return 'luxury';
+        if (strategy === 'food_monopoly' || strategy === 'military_supplier' || strategy === 'medical_supplier' || strategy === 'war_profiteer') return 'bulk';
+        return 'diversified';
+    }
+
+    function _findMerchantCompetitor(person, kingdomId) {
+        var pool = [];
+        try {
+            if (Engine.getEliteMerchants) pool = Engine.getEliteMerchants() || [];
+            else if (Engine.getWorld) pool = (Engine.getWorld().eliteMerchants || []);
+        } catch(e) {}
+        var bestTown = null;
+        var bestKingdom = null;
+        for (var i = 0; i < pool.length; i++) {
+            var other = pool[i];
+            if (!other || other.id === person.id || !other.isEliteMerchant || other.alive === false) continue;
+            if (!bestTown && other.townId && person.townId && other.townId === person.townId) bestTown = other;
+            if (!bestKingdom && kingdomId && ((other.kingdomId || other.citizenshipKingdomId) === kingdomId)) bestKingdom = other;
+        }
+        return bestTown || bestKingdom || null;
+    }
+
+    function _findBestTradeTownForItem(itemId, fromTownId) {
+        if (!itemId || !Engine.getWorld) return null;
+        var world = null;
+        try { world = Engine.getWorld(); } catch(e) {}
+        if (!world || !world.towns) return null;
+        var bestTown = null;
+        var bestScore = -999999;
+        for (var i = 0; i < world.towns.length; i++) {
+            var town = world.towns[i];
+            if (!town || town.id === fromTownId || !town.market) continue;
+            var price = (town.market.prices && town.market.prices[itemId]) || 0;
+            var demand = (town.market.demand && town.market.demand[itemId]) || 0;
+            var score = price + demand * 5 + (town.prosperity || 0);
+            if (score > bestScore) {
+                bestScore = score;
+                bestTown = town;
+            }
+        }
+        return bestTown;
+    }
+
+    function _findWorstKingdomRelation(kingdom) {
+        if (!kingdom || !kingdom.relations) return null;
+        var worstId = null;
+        var worstScore = 1;
+        for (var otherId in kingdom.relations) {
+            var score = kingdom.relations[otherId] || 0;
+            if (score < worstScore) {
+                worstScore = score;
+                worstId = otherId;
+            }
+        }
+        if (!worstId) return null;
+        var otherKingdom = null;
+        try { if (Engine.findKingdom) otherKingdom = Engine.findKingdom(worstId); } catch(e) {}
+        return { kingdom: otherKingdom, score: worstScore };
+    }
+
+    function _isKingdomAtWarForQuestions(kingdom) {
+        if (!kingdom || !kingdom.atWar) return false;
+        if (Array.isArray(kingdom.atWar)) return kingdom.atWar.length > 0;
+        return !!kingdom.atWar.size;
+    }
+
+    function _getMerchantInvestmentSuggestion(person, town) {
+        var current = {};
+        var currentBuildings = (person && person.buildings) || [];
+        for (var i = 0; i < currentBuildings.length; i++) current[currentBuildings[i].type] = true;
+        var townCounts = {};
+        var townBuildings = (town && town.buildings) || [];
+        for (var ti = 0; ti < townBuildings.length; ti++) {
+            var tType = townBuildings[ti].type;
+            townCounts[tType] = (townCounts[tType] || 0) + 1;
+        }
+        var family = _getMerchantStrategyFamily(person);
+        var candidates = family === 'luxury' ? ['jewelers_boutique', 'fine_tailor', 'winery', 'warehouse_small'] : (family === 'bulk' ? ['warehouse_small', 'general_store', 'bakery', 'blacksmith'] : ['general_store', 'warehouse_small', 'tavern', 'weaver']);
+        for (var ci = 0; ci < candidates.length; ci++) {
+            var candidate = candidates[ci];
+            if (!current[candidate] && (!town || !townCounts[candidate])) return candidate;
+        }
+        for (var ci2 = 0; ci2 < candidates.length; ci2++) if (!current[candidates[ci2]]) return candidates[ci2];
+        return candidates[0];
+    }
+
+    function _formatMerchantBuildings(person) {
+        var buildings = (person && person.buildings) || [];
+        if (!buildings.length) return 'No formal businesses yet — only trade contracts and warehouse space';
+        var names = [];
+        for (var i = 0; i < buildings.length && i < 4; i++) {
+            var bld = buildings[i];
+            var name = _getQuestionBuildingName(bld.type);
+            var townName = '';
+            if (bld.townId) {
+                var bTown = null;
+                try { if (Engine.findTown) bTown = Engine.findTown(bld.townId); } catch(e) {}
+                if (bTown && bTown.name) townName = ' in ' + bTown.name;
+            }
+            names.push(name + townName);
+        }
+        if (buildings.length > 4) names.push('and ' + (buildings.length - 4) + ' more');
+        return names.join(', ');
+    }
+
+    function _answerNobleKingOpinion(person, kingdom) {
+        var personality = person.personality || {};
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : (personality.loyalty != null ? personality.loyalty : 50);
+        var kingName = 'the king';
+        if (kingdom && kingdom.king) {
+            var king = null;
+            try { king = Engine.getPerson(kingdom.king); } catch(e) {}
+            if (king) kingName = _getQuestionPersonName(king);
+        }
+        if (loyalty >= 75) return kingName + ' keeps the realm standing, and I respect that. One does not hold a kingdom together without making hard choices.';
+        if (loyalty >= 50) return 'I am loyal enough to ' + kingName + ', though I wish the crown moved a little more decisively. Stability matters more than vanity.';
+        if ((personality.ambition || 50) > 70) return kingName + ' wears the crown, but not always with the strength I would like. If the throne wavers, others will begin imagining themselves fit to steady it.';
+        return 'I serve the realm before I serve ' + kingName + '. The crown has made too many soft decisions for my liking.';
+    }
+
+    function _answerNobleCourtState(person, kingdom) {
+        if (!kingdom) return 'Court is full of whispers, favors, and people pretending not to count each other\'s mistakes.';
+        var war = _isKingdomAtWarForQuestions(kingdom);
+        var happiness = kingdom.happiness != null ? kingdom.happiness : 50;
+        var treasury = kingdom.gold || 0;
+        if (war && happiness < 40) return 'Court is tense. Every conversation bends toward the war, the mood is sour, and the treasury is being watched like a dying candle.';
+        if (war) return 'No one at court speaks of anything for long before it turns to the war. Victories buy smiles, but everyone is counting costs.';
+        if (treasury < 2000) return 'Polite on the surface, anxious underneath. When the treasury thins, every noble suddenly discovers strong opinions about policy.';
+        if (happiness >= 65) return 'Better than usual, honestly. There is still scheming, but the realm is calm enough that people can afford to be gracious.';
+        return 'Busy, watchful, and a little brittle. People smile more with their mouths than with their eyes.';
+    }
+
+    function _answerNoblePriority(person) {
+        var trait = _getNpcQuestionTrait(person);
+        if (trait.key === 'ambition') return 'Advancement. Influence wasted is influence lost, and I do not intend to be forgotten.';
+        if (trait.key === 'warmth') return 'People. Alliances, goodwill, and knowing who actually trusts you matter more than any jeweled title.';
+        if (trait.key === 'intelligence') return 'Good judgment. A realm can survive bad luck more easily than foolish leadership.';
+        if (trait.key === 'honesty') return 'Honor. A court built only on convenience rots from the inside.';
+        if (trait.key === 'selfishness') return 'Securing my house first. Those who pretend otherwise usually have poorer liars around them.';
+        if (trait.key === 'frugality') return 'Stewardship. Waste today becomes weakness tomorrow.';
+        return 'Loyal service. If the crown and the realm hold, the rest can be managed.';
+    }
+
+    function _answerNobleCourtFriend(person) {
+        var best = _findNobleRelationshipTarget(person, false);
+        if (!best || !best.person) return 'A few are pleasant enough, but court friendships are rarely as simple as they look from the gallery.';
+        if (best.score >= 50) return 'I deal best with ' + _getQuestionPersonName(best.person) + '. We understand one another without needing every sentence dressed as a trap.';
+        return _getQuestionPersonName(best.person) + ' is probably the easiest company at court. That is not quite the same thing as trust, but it is close enough for nobles.';
+    }
+
+    function _answerNobleCourtEnemy(person) {
+        var worst = _findNobleRelationshipTarget(person, true);
+        if (!worst || !worst.person) return 'There are tiresome people, certainly, but I have learned not to waste all my energy on one rival.';
+        if (worst.score <= -50) return _getQuestionPersonName(worst.person) + '. Every conversation with them feels like being measured for a coffin.';
+        return 'I have little patience for ' + _getQuestionPersonName(worst.person) + '. Too much pride, not enough sense.';
+    }
+
+    function _answerNobleAdvice(person, agenda) {
+        if (agenda && agenda.advice && agenda.advice.length > 0) return 'My counsel is simple: ' + agenda.advice[0].text + '. A crown that hesitates invites problems to multiply.';
+        return 'I would tell the crown to listen more carefully and act more cleanly. Half of statecraft is seeing what everyone else is too proud to admit.';
+    }
+
+    function _answerNobleDirection(person, kingdom) {
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : 50;
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        if (loyalty >= 65 && happiness >= 55) return 'Yes, more or less. The realm still has problems, but the foundations feel steady.';
+        if (loyalty < 35 && happiness < 45) return 'No. Too many cracks are being painted over instead of repaired.';
+        if (happiness < 40) return 'Not quickly enough. The people feel the strain before courtiers admit it.';
+        if (loyalty < 40) return 'I think the kingdom could be guided better than it is. That is the polite answer.';
+        return 'With caution, yes. We are not doomed, but neither are we safely past danger.';
+    }
+
+    function _answerNobleAmbitions(person, npcRank) {
+        var ambition = (person.personality && person.personality.ambition) || 50;
+        var nextRank = CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[npcRank + 1] ? CONFIG.SOCIAL_RANKS[npcRank + 1].name : 'greater influence';
+        if (ambition >= 80 && npcRank < 7) return 'I mean to rise higher. ' + nextRank + ' is not reserved for fools, and I have no intention of remaining where I am forever.';
+        if (ambition >= 60) return 'More influence, a stronger house, and a voice that cannot be ignored. One does not survive court by being content too early.';
+        if (npcRank >= 6) return 'To keep what I have and leave the realm stronger than I found it. At this rank, survival itself is an ambition.';
+        return 'To serve capably, enlarge my standing when the moment is right, and avoid the sort of ambition that gets a family erased.';
+    }
+
+    function _answerNobleMoveAgainstKing(person) {
+        var personality = person.personality || {};
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : 50;
+        var ambition = personality.ambition != null ? personality.ambition : 50;
+        if (loyalty < 30 && ambition > 70) return 'If the crown endangered the realm badly enough, I would not mistake obedience for virtue. A throne is sacred only while it still protects the kingdom.';
+        if (loyalty >= 65) return 'No. However flawed a king may be, civil fracture is usually worse.';
+        return 'I would rather pressure a king than overthrow one. Once nobles begin solving disagreements with succession games, everyone bleeds.';
+    }
+
+    function _answerNobleSecret(person, agenda) {
+        var personality = person.personality || {};
+        if ((personality.honesty || 50) < 35 && (personality.ambition || 50) > 60) return 'I keep more promises in private than I ever acknowledge in public. Court is easier to survive when your rivals do not know whose ears you already have.';
+        if ((person.kingLoyalty != null ? person.kingLoyalty : 50) < 35) return 'I have doubts about the crown I do not share in open hall. In court, doubt spoken aloud quickly becomes evidence.';
+        if ((personality.selfishness || 50) > 65) return 'I protect my household\'s interests more aggressively than my speeches suggest. Public virtue is often just private accounting in prettier clothes.';
+        if (agenda && agenda.goals && agenda.goals.length > 0) return 'I do not reveal every goal I pursue at court. It is enough to say I plan farther ahead than most people think.';
+        return 'My biggest secret is probably how much I notice while appearing bored. People confess far too much to someone they think is merely being polite.';
+    }
+
+    function _answerNobleThreat(person, kingdom) {
+        var worst = _findWorstKingdomRelation(kingdom);
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        var loyalty = person.kingLoyalty != null ? person.kingLoyalty : 50;
+        if (worst && worst.kingdom && worst.score < -30) return worst.kingdom.name + ' worries me most. External enemies are dangerous precisely because they can make our internal divisions matter.';
+        if (happiness < 40 || loyalty < 35) return 'Our own fracturing court worries me more than any foreign banner. Kingdoms usually weaken from within before anyone rides over the border.';
+        return 'Complacency. A realm that assumes tomorrow will look like today is already inviting sharper enemies to prove it wrong.';
+    }
+
+    function _agendaActionToFirstPerson(agenda) {
+        var text = agenda && agenda.advice && agenda.advice[0] ? (agenda.advice[0].text || '') : '';
+        if (!text) return 'set a clearer course and make the court follow it';
+        if (/making peace/i.test(text)) return 'make peace before pride empties the realm';
+        if (/aggressive military action/i.test(text)) return 'press the war decisively instead of drifting';
+        if (/war against /i.test(text)) return 'declare war against ' + text.replace(/.*war against\s+/i, '');
+        if (/forming alliances/i.test(text)) return 'forge stronger alliances while we still choose them freely';
+        if (/taxes lowered/i.test(text)) return 'lower the tax burden before resentment hardens';
+        if (/fiscal austerity/i.test(text) || /raise taxes/i.test(text)) return 'stabilize the treasury before vanity spending ruins us';
+        if (/action on the plague/i.test(text)) return 'fund a real response to the plague';
+        if (/improve morale/i.test(text)) return 'restore morale before gloom becomes unrest';
+        if (/investing in infrastructure/i.test(text)) return 'invest in roads, workshops, and the bones of the realm';
+        if (/fortifying border towns/i.test(text)) return 'fortify the border towns before someone tests them';
+        return text.charAt(0).toLowerCase() + text.slice(1);
+    }
+
+    function _answerNobleAsKing(agenda) {
+        return 'First, I would ' + _agendaActionToFirstPerson(agenda) + '. A king sets the tone for everything that follows.';
+    }
+
+    function _answerMerchantBestGoods(person, town) {
+        var best = _getHighestInventoryItem(person, false);
+        if (!best) return 'The honest answer? Whatever moves before it spoils and pays before it vanishes.';
+        var goodName = _getQuestionResourceName(best.id);
+        var demand = town && town.market && town.market.demand ? (town.market.demand[best.id] || 0) : 0;
+        if (demand > 10) return goodName + ' is flying off the shelves here. I could unload another cart before sunset if I had one.';
+        return goodName + ' is my fastest mover right now. People keep finding reasons to buy it, and I do not argue with steady coin.';
+    }
+
+    function _answerMerchantBusiness(person) {
+        var gold = person.gold || 0;
+        if (gold >= 10000) return 'Very well. The ledgers are healthy, the caravans are moving, and I can afford to wait for the right opportunities.';
+        if (gold >= 3500) return 'Comfortable enough. Not every venture sings, but the overall tune is profitable.';
+        return 'Tighter than I would like. Trade still turns, but every mistake bites harder when the purse is light.';
+    }
+
+    function _answerMerchantTownTrade(town) {
+        if (!town) return 'A trader can make money almost anywhere, but some towns make you fight harder for every coin.';
+        return _getTownTradeActivityText(town);
+    }
+
+    function _answerMerchantBusinesses(person) {
+        var buildings = _formatMerchantBuildings(person);
+        if (!person || !person.buildings || !person.buildings.length) return buildings + '.';
+        return 'I have stakes in ' + buildings + '.';
+    }
+
+    function _answerMerchantNextBuilding(person, town) {
+        var gold = person.gold || 0;
+        if (gold < 1500) return 'Nothing grand until I thicken the coffers a bit. A merchant who builds too early often winds up selling the roof to pay the masons.';
+        var nextBuilding = _getMerchantInvestmentSuggestion(person, town);
+        var townName = town && town.name ? town.name : 'this town';
+        return 'Probably a ' + _getQuestionBuildingName(nextBuilding) + ' in ' + townName + '. It fits the trade around here and fills a gap I can still exploit.';
+    }
+
+    function _answerMerchantLaws(person, kingdom) {
+        var banned = kingdom && kingdom.laws && kingdom.laws.bannedGoods ? kingdom.laws.bannedGoods : [];
+        var restricted = kingdom && kingdom.laws && kingdom.laws.restrictedGoods ? kingdom.laws.restrictedGoods : [];
+        var inventory = person.npcMerchantInventory || {};
+        for (var bi = 0; bi < banned.length; bi++) {
+            if ((inventory[banned[bi]] || 0) > 0) return 'These laws are bad for profit. When officials ban ' + _getQuestionResourceName(banned[bi]) + ', they mostly create better margins for people willing to take risks.';
+        }
+        for (var ri = 0; ri < restricted.length; ri++) {
+            if ((inventory[restricted[ri]] || 0) > 0) return 'Licenses and seals slow trade, especially on goods like ' + _getQuestionResourceName(restricted[ri]) + '. Still, predictable rules are better than a customs officer inventing them at the gate.';
+        }
+        if (banned.length || restricted.length) return 'The laws are manageable so long as they stay predictable. Merchants can price rules into a deal; we cannot price whim.';
+        return 'Frankly, they are kinder to trade than most. Clear laws make for quick deals.';
+    }
+
+    function _answerMerchantStay(town, kingdom) {
+        var prosperity = town && town.prosperity != null ? town.prosperity : 50;
+        var happiness = kingdom && kingdom.happiness != null ? kingdom.happiness : 50;
+        if (prosperity >= 65 && happiness >= 55) return 'Yes, for now. The town is lively, the mood is decent, and there is still room to profit.';
+        if (prosperity < 40 || happiness < 40) return 'Not forever. I stay where the coin moves, and this place has started to feel heavier than it pays.';
+        return 'I will stay while the numbers keep agreeing with me. Merchants are loyal to good opportunities first.';
+    }
+
+    function _answerMerchantCompetitor(person, kingdomId) {
+        var competitor = _findMerchantCompetitor(person, kingdomId);
+        if (!competitor) return 'No single rival, really. The market is a nest of little knives, not one big sword.';
+        if (competitor.townId && person.townId && competitor.townId === person.townId) return _getQuestionPersonName(competitor) + '. They watch the same customers I do, which makes every bargain feel personal.';
+        return _getQuestionPersonName(competitor) + ' is the closest thing I have to a true rival. Different town, same appetite.';
+    }
+
+    function _answerMerchantBestTrade(person, town) {
+        var best = _getHighestInventoryItem(person, true) || _getHighestInventoryItem(person, false);
+        if (!best) return 'The best trade is the one you can repeat safely, which is a dull answer but a wealthy one.';
+        var targetTown = _findBestTradeTownForItem(best.id, town && town.id);
+        var itemName = _getQuestionResourceName(best.id);
+        if (targetTown) return itemName + '. Move it out of ' + ((town && town.name) || 'town') + ' and into ' + targetTown.name + ' while demand is high, and the ledger starts smiling.';
+        return itemName + '. It keeps its value, travels well enough, and the right buyers always seem to appear when I have it.';
+    }
+
+    function _answerMerchantAdvice(person) {
+        var family = _getMerchantStrategyFamily(person);
+        if (family === 'luxury') return 'Sell rarity, not just weight. Wealthy buyers pay for story, status, and timing long before they pay for raw usefulness.';
+        if (family === 'bulk') return 'Win on volume and reliability. A merchant who can deliver the same staples every week becomes harder to replace than a flashy one-off trader.';
+        return 'Diversify before pride convinces you that one lucky market will last forever. Surviving bad seasons is its own kind of profit.';
+    }
+
+    function _answerMerchantPartnership(person, relLevel) {
+        var personality = person.personality || {};
+        if (relLevel >= 90 && (personality.warmth || 50) >= 60) return 'With the right terms, yes. Trust is rarer than capital, and you have done a fair bit to prove useful on both counts.';
+        if ((personality.selfishness || 50) >= 65) return 'Perhaps on a narrow venture with a very clear ledger. I like partnerships best when every obligation is written plainly.';
+        return 'Possibly, if the numbers made sense. Friendship opens the door; profit decides whether we both walk through it.';
+    }
+
+    function _answerMerchantRiskyDeal(person, town) {
+        var age = person.age || 35;
+        var best = _getHighestInventoryItem(person, true) || _getHighestInventoryItem(person, false);
+        var itemName = best ? _getQuestionResourceName(best.id) : 'cargo';
+        var targetTown = _findBestTradeTownForItem(best ? best.id : null, town && town.id);
+        if (age < 35) return 'When I was younger, I staked more coin than I should have on a load of ' + itemName + (targetTown ? ' bound for ' + targetTown.name : '') + '. It paid, but only just enough to make the risk sound clever afterward.';
+        if ((person.gold || 0) > 8000) return 'I once tied a painful share of my capital to a single convoy of ' + itemName + (targetTown ? ' headed toward ' + targetTown.name : '') + '. Profitable, yes — and the sort of night that teaches you to hate silence on the road.';
+        return 'A lean season, borrowed coin, and a cargo of ' + itemName + '. Risk feels romantic only after it works.';
+    }
+
     // v9p33river355: helper used by the in-place modal refresh.
     function _renderRelTierBadge(personId) {
         var _pRel = Player.state && Player.state.relationships && Player.state.relationships[personId];
@@ -21927,6 +22534,7 @@ window.UI = (function () {
         // Passenger Transport → js/modules/ui_caravans.js
         // NPC Interaction
         talkToPerson,
+        askNpcQuestions,
         showIntroductionOptions,
         doRequestIntroduction,
         requestSameRankIntro,

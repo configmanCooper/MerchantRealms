@@ -2084,9 +2084,20 @@ function showPersonDetail(person) {
                 html += `<button class="btn-medieval" data-action="askTavernAbout" data-id="${person.id}" title="Ask around at the tavern (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
                 html += `</div>`;
             } else {
+                var _socialQuestionsRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
+                var _socialQuestionsEligible = _socialQuestionsRank >= 4 || !!person.isEliteMerchant;
+                var _socialQuestionsRel = Player.getRelationship ? Player.getRelationship(person.id) : { level: 0 };
+                var _socialQuestionsLocked = !_socialQuestionsRel || (_socialQuestionsRel.level || 0) < 20;
                 html += `<div style="display:flex;flex-wrap:wrap;gap:4px;">`;
                 html += `<button class="btn-medieval" data-action="openGiftDialog" data-id="${person.id}" title="Give a gift to improve your relationship" style="font-size:0.75rem;padding:5px 10px;">🎁 Gift</button>`;
                 html += `<button class="btn-medieval" data-action="talkToPerson" data-id="${person.id}" title="Have a conversation to build rapport" style="font-size:0.75rem;padding:5px 10px;">💬 Talk</button>`;
+                if (_socialQuestionsEligible) {
+                    if (_socialQuestionsLocked) {
+                        html += `<button class="btn-medieval" disabled title="Requires 20+ relationship" style="font-size:0.75rem;padding:5px 10px;opacity:0.5;cursor:not-allowed;">❓ Questions</button>`;
+                    } else {
+                        html += `<button class="btn-medieval" data-action="askNpcQuestions" data-id="${person.id}" title="Ask deeper political or trade questions" style="font-size:0.75rem;padding:5px 10px;">❓ Questions</button>`;
+                    }
+                }
                 html += `<button class="btn-medieval" data-action="observePerson" data-id="${person.id}" title="Spend 8 hours watching this person — 30% chance to discover a hidden quirk (free)" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
                 html += `<button class="btn-medieval" data-action="askTavernAbout" data-id="${person.id}" title="Ask around at the tavern for gossip about this person (5g)" style="font-size:0.75rem;padding:5px 10px;">🍺 Ask Around</button>`;
                 html += `<button class="btn-medieval" data-action="hireInvestigator" data-id="${person.id}" title="Hire an investigator to uncover secrets — costly and risky, they may find out!" style="font-size:0.75rem;padding:5px 10px;">🕵️ Investigate</button>`;
@@ -5083,6 +5094,7 @@ function clickTown(townId) {
     UI.registerAction('askTavernAbout', function(_t, d) { UI.askTavernAbout(d.id); });
     UI.registerAction('openGiftDialog', function(_t, d) { UI.openGiftDialog(d.id); });
     UI.registerAction('talkToPerson', function(_t, d) { UI.talkToPerson(d.id); });
+    UI.registerAction('askNpcQuestions', function(_t, d) { UI.askNpcQuestions(d.id); });
     UI.registerAction('hireInvestigator', function(_t, d) { UI.hireInvestigator(d.id); });
     UI.registerAction('requestSameRankIntro', function(_t, d) { UI.requestSameRankIntro(d.id); });
     UI.registerAction('openNobleLoanDialog', function(_t, d) { UI.openNobleLoanDialog(d.id); });
