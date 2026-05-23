@@ -5155,10 +5155,10 @@ function clickTown(townId) {
             var kingdom = null;
             try { kingdom = Engine.findKingdom ? Engine.findKingdom(nobleKingdomId) : null; } catch(e) {}
             var promotable = world.people.filter(function(p) {
-                var _rank = (p.socialRank && p.socialRank[nobleKingdomId]) || 0;
-                return p && p.alive && p.kingdomId === nobleKingdomId && p.id !== nobleId &&
+                var _rank = (p && p.socialRank && p.socialRank[nobleKingdomId]) || 0;
+                return p && p.alive && p.id !== nobleId &&
                        _rank >= 4 && _rank < 6 &&
-                       p.id !== (kingdom ? kingdom.king : '');
+                       p.id !== (kingdom ? kingdom.king : ''); // v9p33river442: bugfix
             });
             var playerRankHere = 0;
             try { playerRankHere = (Player.socialRank && Player.socialRank[nobleKingdomId]) || 0; } catch(e) {}

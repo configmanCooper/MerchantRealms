@@ -1595,7 +1595,12 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         var _cSuccessChance = _coal.successChance || 0;
         var _cStrColor2 = _cSuccessChance >= 0.60 ? '#2ecc71' : _cSuccessChance >= 0.35 ? '#e67e22' : '#c44e52';
         html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
-        html += '<div style="font-size:0.85rem;color:#5dade2;font-weight:bold;">📜 ' + escapeHtml(_coal.causeLabel) + '</div>';
+        var _coalDisplayLabel = _coal.causeLabel;
+        if (_coal.cause === 'promote_noble' && _coal.causeData && _coal.causeData.targetName) {
+            var _coalTargetLabel = (_coal.causeData.targetName === 'you' || _coal.causeData.targetName === 'yourself') ? 'Yourself' : _coal.causeData.targetName;
+            _coalDisplayLabel += ' — ' + _coalTargetLabel; // v9p33river442: bugfix
+        }
+        html += '<div style="font-size:0.85rem;color:#5dade2;font-weight:bold;">📜 ' + escapeHtml(_coalDisplayLabel) + '</div>';
         html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">Members: ' + _coal.memberCount + '</div>';
         html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">';
         for (var _cmi = 0; _cmi < _coal.members.length; _cmi++) {
@@ -1651,8 +1656,13 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     for (var _ri = 0; _ri < _resolvedCoalitions.length; _ri++) {
         var _rCoal = _resolvedCoalitions[_ri];
         var _rColor = (_rCoal.resolutionMessage && _rCoal.resolutionMessage.indexOf('persuaded') >= 0) ? '#2ecc71' : '#c44e52';
+        var _rCoalLabel = _rCoal.causeLabel;
+        if (_rCoal.cause === 'promote_noble' && _rCoal.causeData && _rCoal.causeData.targetName) {
+            var _rCoalTargetLabel = (_rCoal.causeData.targetName === 'you' || _rCoal.causeData.targetName === 'yourself') ? 'Yourself' : _rCoal.causeData.targetName;
+            _rCoalLabel += ' — ' + _rCoalTargetLabel; // v9p33river442: bugfix
+        }
         html += '<div style="font-size:0.75rem;color:' + _rColor + ';padding:4px;opacity:0.7;">';
-        html += '📜 ' + escapeHtml(_rCoal.causeLabel) + ': ' + escapeHtml(_rCoal.resolutionMessage || 'Resolved');
+        html += '📜 ' + escapeHtml(_rCoalLabel) + ': ' + escapeHtml(_rCoal.resolutionMessage || 'Resolved');
         html += '</div>';
     }
     // v9p33river439: NPC coalition invitations
@@ -1660,14 +1670,36 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     try { _invitations = Engine.getCoalitionInvitations(citizenKingdomId) || []; } catch(e) {}
     for (var _invi = 0; _invi < _invitations.length; _invi++) {
         var _inv = _invitations[_invi];
+        var _inviteLabel = _inv.causeLabel;
+        if (_inv.cause === 'promote_noble' && _inv.targetName) {
+            var _inviteTargetLabel = (_inv.targetName === 'you' || _inv.targetName === 'yourself') ? 'Yourself' : _inv.targetName;
+            _inviteLabel += ' — ' + _inviteTargetLabel; // v9p33river442: bugfix
+        }
         html += '<div style="background:rgba(60,100,180,0.15);border:1px solid rgba(60,100,180,0.4);border-radius:6px;padding:8px;margin-bottom:6px;">';
-        html += '<div style="font-size:0.82rem;color:#5dade2;">📩 <b>' + escapeHtml(_inv.inviterName) + '</b> invites you to join a coalition: <b>' + escapeHtml(_inv.causeLabel) + '</b></div>';
+        html += '<div style="font-size:0.82rem;color:#5dade2;">📩 <b>' + escapeHtml(_inv.inviterName) + '</b> invites you to join a coalition: <b>' + escapeHtml(_inviteLabel) + '</b></div>';
         html += '<div style="display:flex;gap:4px;margin-top:4px;">';
         html += '<button class="btn-medieval" data-action="acceptCoalitionInvite" data-id="' + citizenKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">✅ Join</button>';
         html += '<button class="btn-medieval" data-action="declineCoalitionInvite" data-id="' + citizenKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(100,100,100,0.3);border-color:rgba(100,100,100,0.5);">❌ Decline</button>';
         html += '</div></div>';
     }
     if (_activeCoalitions.length < 3) {
+        var _coalPromotionTargets = [];
+        try {
+            var _coalWorld = Engine.getWorld ? Engine.getWorld() : null;
+            var _coalPeople = _coalWorld && _coalWorld.people ? _coalWorld.people : [];
+            var _playerRankHere2 = (typeof Player !== 'undefined' && Player.socialRank) ? (Player.socialRank[citizenKingdomId] || 0) : 0;
+            if (_playerRankHere2 >= 4 && _playerRankHere2 < 6) {
+                _coalPromotionTargets.push({ id: 'player', label: 'Yourself' }); // v9p33river442: bugfix
+            }
+            for (var _cpti = 0; _cpti < _coalPeople.length; _cpti++) {
+                var _cpTarget = _coalPeople[_cpti];
+                var _cpRank = (_cpTarget && _cpTarget.socialRank) ? (_cpTarget.socialRank[citizenKingdomId] || 0) : 0;
+                if (!_cpTarget || !_cpTarget.alive || _cpTarget.id === 'player') continue;
+                if (_coalKingdom && _cpTarget.id === _coalKingdom.king) continue;
+                if (_cpRank < 4 || _cpRank >= 6) continue;
+                _coalPromotionTargets.push({ id: _cpTarget.id, label: ((_cpTarget.firstName || '?') + ' ' + (_cpTarget.lastName || '')).trim() || (_cpTarget.firstName || 'Unnamed Noble') });
+            }
+        } catch(e) {}
         html += '<div style="margin-top:6px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
         html += '<select id="coalition_cause" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
         html += '<option value="lower_taxes">Lower Taxes</option>';
@@ -1680,9 +1712,18 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         html += '<option value="build_walls">Fortify Towns</option>';
         html += '<option value="improve_happiness">Improve Public Welfare</option>';
         html += '<option value="medical_funding">Fund Plague Relief</option>';
+        if (_coalPromotionTargets.length > 0) html += '<option value="promote_noble">Promote a Noble</option>';
         html += '</select>';
+        if (_coalPromotionTargets.length > 0) {
+            html += '<select id="coalition_promote_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;">';
+            for (var _cptj = 0; _cptj < _coalPromotionTargets.length; _cptj++) {
+                html += '<option value="' + _coalPromotionTargets[_cptj].id + '">' + escapeHtml(_coalPromotionTargets[_cptj].label) + '</option>';
+            }
+            html += '</select>';
+        }
         html += '<button class="btn-medieval" data-action="formCoalition" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">📜 Start Coalition</button>';
         html += '</div>';
+        if (_coalPromotionTargets.length > 0) html += '<div style="font-size:0.72rem;color:#8aa;margin-top:4px;">Select a target when starting a promote-noble coalition.</div>';
     } else {
         html += '<div style="font-size:0.75rem;color:#888;font-style:italic;">Maximum active coalitions reached (3).</div>';
     }
@@ -3383,8 +3424,15 @@ function _switchProposeActionTab(tabId, kingdomId) {
     UI.registerAction('formCoalition', function(el) {
         var kId = el.getAttribute('data-id');
         var causeSelect = document.getElementById('coalition_cause');
+        var causeData = null;
         if (!kId || !causeSelect || typeof Engine === 'undefined') return;
-        var result = Engine.playerFormCoalition(kId, causeSelect.value);
+        if (causeSelect.value === 'promote_noble') {
+            var promoteTargetSelect = document.getElementById('coalition_promote_target');
+            if (!promoteTargetSelect || !promoteTargetSelect.value) { toast('Select a noble to promote first.', 'warning'); return; }
+            var promoteTargetLabel = promoteTargetSelect.options[promoteTargetSelect.selectedIndex] ? promoteTargetSelect.options[promoteTargetSelect.selectedIndex].text : 'that noble';
+            causeData = { targetNobleId: promoteTargetSelect.value, targetName: promoteTargetLabel }; // v9p33river442: bugfix
+        }
+        var result = Engine.playerFormCoalition(kId, causeSelect.value, causeData);
         toast(result.message, result.success ? 'success' : 'warning');
         openNobilityDialog();
     });

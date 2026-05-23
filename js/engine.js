@@ -10838,6 +10838,55 @@
             newRankLabel: newRankLabel
         };
     }
+    function _getCoalitionPromotionTargetInfo(kingdomId, targetNobleId, kingdom) {
+        var target;
+        var targetRank;
+        var playerRanks;
+        var ps;
+        if (!kingdomId || !targetNobleId) return { ok: false, message: 'Choose a noble to promote.' };
+        if (targetNobleId === 'player') {
+            ps = (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
+            playerRanks = (typeof Player !== 'undefined' && Player.socialRank) ? Player.socialRank : (ps ? ps.socialRank : null);
+            targetRank = (playerRanks && kingdomId) ? (playerRanks[kingdomId] || 0) : 0;
+            if (targetRank < 4) return { ok: false, message: 'You are not a noble in this kingdom.' };
+            if (targetRank >= 6) return { ok: false, message: 'You already hold the highest promotable rank.' };
+            return { ok: true, isPlayer: true, targetId: 'player', targetName: 'yourself', targetRank: targetRank };
+        }
+        target = findPerson(targetNobleId);
+        if (!target || !target.alive) return { ok: false, message: 'That noble is unavailable.' };
+        if (kingdom && kingdom.king === target.id) return { ok: false, message: 'You cannot petition to promote the king.' };
+        targetRank = (target.socialRank && target.socialRank[kingdomId]) || 0;
+        if (targetRank < 4) return { ok: false, message: (target.firstName || 'This noble') + ' is not a noble in this kingdom.' };
+        if (targetRank >= 6) return { ok: false, message: (target.firstName || 'This noble') + ' already holds the highest promotable rank.' };
+        return {
+            ok: true,
+            isPlayer: false,
+            target: target,
+            targetId: target.id,
+            targetName: ((target.firstName || '') + ' ' + (target.lastName || '')).trim() || (target.firstName || 'that noble'),
+            targetRank: targetRank
+        };
+    }
+    function _applyCoalitionPromotionTarget(kingdom, coalition, category) {
+        var promoInfo = _getCoalitionPromotionTargetInfo(kingdom.id, coalition && coalition.causeData ? coalition.causeData.targetNobleId : null, kingdom);
+        var ps;
+        var playerRanks;
+        if (!promoInfo.ok) return promoInfo;
+        if (promoInfo.isPlayer) {
+            ps = (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
+            if (ps && !ps.socialRank) ps.socialRank = {};
+            playerRanks = (typeof Player !== 'undefined' && Player.socialRank) ? Player.socialRank : (ps ? ps.socialRank : null);
+            if (!playerRanks) return { ok: false, message: 'Player rank data is unavailable.' };
+            playerRanks[kingdom.id] = promoInfo.targetRank + 1;
+            logEvent('👑 You have been promoted by royal decree following political pressure!', { type: 'player_promoted_coalition', kingdomId: kingdom.id }, category);
+            return { ok: true, targetName: promoInfo.targetName };
+        }
+        if (!promoInfo.target.socialRank) promoInfo.target.socialRank = {};
+        promoInfo.target.socialRank[kingdom.id] = promoInfo.targetRank + 1;
+        if (promoInfo.target.socialRank[kingdom.id] === 5) promoInfo.target.houseType = 'manor';
+        logEvent('👑 ' + (promoInfo.target.firstName || 'A noble') + ' has been promoted by royal decree following political pressure!', { type: 'noble_promoted_coalition', kingdomId: kingdom.id }, category);
+        return { ok: true, targetName: promoInfo.targetName };
+    }
     function tickKingFamilyAI(k) {
         if (!k || !k.king) return;
         var rng = world.rng;
@@ -16319,6 +16368,7 @@
                             coalitionId: coalition.id,
                             cause: coalition.cause,
                             causeLabel: coalition.causeLabel,
+                            targetName: coalition.causeData && coalition.causeData.targetName ? coalition.causeData.targetName : '', // v9p33river442: bugfix
                             inviterName: (noble.firstName || '?') + ' ' + (noble.lastName || ''),
                             inviterId: noble.id,
                             day: world.day
@@ -16328,7 +16378,8 @@
 
                     var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
                     var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
-                    logEvent('📜 ' + (noble.firstName || 'A noble') + ' of ' + k.name + ' has organized a coalition to ' + causeLabel.toLowerCase() + ' (' + coalition.members.length + ' members).', {
+                    var _npcCoalitionText = (coalition.cause === 'promote_noble' && coalition.causeData && coalition.causeData.targetName) ? ('promote ' + coalition.causeData.targetName) : causeLabel.toLowerCase(); // v9p33river442: bugfix
+                    logEvent('📜 ' + (noble.firstName || 'A noble') + ' of ' + k.name + ' has organized a coalition to ' + _npcCoalitionText + ' (' + coalition.members.length + ' members).', {
                         type: 'npc_coalition_formed', kingdomId: kId, cause: topAdvice.actionId
                     }, category);
                 }
@@ -16350,32 +16401,28 @@
                 if (strength >= threshold * 0.7) {
                     var successChance = _computeCoalitionSuccessChance(coal, k2);
                     if (rng.chance(successChance)) {
-                        // v9p33river442: support promotion coalitions with explicit target data.
+                        var _coalCategory = (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k2.id) ? 'my_kingdom' : 'foreign_kingdoms';
+                        var _coalActionText = coal.causeLabel.toLowerCase();
+                        var _coalSuccessLabel = coal.causeLabel;
                         if (coal.cause === 'promote_noble' && coal.causeData && coal.causeData.targetNobleId) {
-                            var _promoCategory = (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k2.id) ? 'my_kingdom' : 'foreign_kingdoms';
-                            if (coal.causeData.targetNobleId === 'player') {
-                                if (typeof Player !== 'undefined' && Player.socialRank && (Player.socialRank[k2.id] || 0) < 6) {
-                                    Player.socialRank[k2.id] = (Player.socialRank[k2.id] || 0) + 1;
-                                    logEvent('👑 You have been promoted by royal decree following political pressure!', { type: 'player_promoted_coalition', kingdomId: k2.id }, _promoCategory);
-                                }
-                            } else {
-                                var _promoTarget = findPerson(coal.causeData.targetNobleId);
-                                if (_promoTarget && _promoTarget.alive) {
-                                    var _promoRank = (_promoTarget.socialRank && _promoTarget.socialRank[k2.id]) || 0;
-                                    if (_promoRank < 6) {
-                                        if (!_promoTarget.socialRank) _promoTarget.socialRank = {};
-                                        _promoTarget.socialRank[k2.id] = _promoRank + 1;
-                                        if (_promoTarget.socialRank[k2.id] === 5) _promoTarget.houseType = 'manor';
-                                        logEvent('👑 ' + (_promoTarget.firstName || 'A noble') + ' has been promoted by royal decree following political pressure!', { type: 'noble_promoted_coalition', kingdomId: k2.id }, _promoCategory);
-                                    }
-                                }
+                            var _promoOutcome = _applyCoalitionPromotionTarget(k2, coal, _coalCategory); // v9p33river442: bugfix
+                            if (!_promoOutcome.ok) {
+                                coal.status = 'dissolved';
+                                coal.resolvedDay = world.day;
+                                coal.resolutionMessage = _promoOutcome.message;
+                                logEvent('📜 A coalition in ' + k2.name + ' lost momentum: ' + _promoOutcome.message, {
+                                    type: 'npc_coalition_dissolved', kingdomId: k2.id, cause: coal.cause
+                                }, _coalCategory);
+                                continue;
                             }
+                            _coalActionText = 'promote ' + _promoOutcome.targetName;
+                            _coalSuccessLabel = 'Promote ' + _promoOutcome.targetName;
                         } else {
                             _executeNobleAdvisedAction(k2, coal.cause, rng);
                         }
                         coal.status = 'resolved';
                         coal.resolvedDay = world.day;
-                        coal.resolutionMessage = 'The king was persuaded! Coalition achieved: ' + coal.causeLabel;
+                        coal.resolutionMessage = 'The king was persuaded! Coalition achieved: ' + _coalSuccessLabel;
 
                         for (var _smi = 0; _smi < coal.members.length; _smi++) {
                             for (var _smj = _smi + 1; _smj < coal.members.length; _smj++) {
@@ -16390,10 +16437,9 @@
                             }
                         }
 
-                        var isPlayerK2 = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k2.id;
-                        logEvent('👑 A coalition in ' + k2.name + ' successfully petitioned the king to ' + coal.causeLabel.toLowerCase() + '!', {
+                        logEvent('👑 A coalition in ' + k2.name + ' successfully petitioned the king to ' + _coalActionText + '!', {
                             type: 'npc_coalition_success', kingdomId: k2.id
-                        }, isPlayerK2 ? 'my_kingdom' : 'foreign_kingdoms');
+                        }, _coalCategory);
                     } else {
                         coal.status = 'resolved';
                         coal.resolvedDay = world.day;
@@ -34422,6 +34468,10 @@
                     id: c.id,
                     cause: c.cause,
                     causeLabel: c.causeLabel,
+                    causeData: c.causeData ? {
+                        targetNobleId: c.causeData.targetNobleId || null,
+                        targetName: c.causeData.targetName || ''
+                    } : null, // v9p33river442: bugfix
                     organizer: c.organizer,
                     members: (c.members || []).slice(),
                     memberCount: (c.members || []).length,
@@ -34466,7 +34516,8 @@
             if (k._coalitionInvitations) {
                 k._coalitionInvitations = k._coalitionInvitations.filter(function(inv) { return inv.coalitionId !== coalitionId; });
             }
-            return { success: true, message: 'You have joined the coalition to ' + coal.causeLabel.toLowerCase() + '!' };
+            var _joinedCauseText = (coal.cause === 'promote_noble' && coal.causeData && coal.causeData.targetName) ? ('promote ' + coal.causeData.targetName) : coal.causeLabel.toLowerCase(); // v9p33river442: bugfix
+            return { success: true, message: 'You have joined the coalition to ' + _joinedCauseText + '!' };
         },
         // v9p33river439: respond to NPC coalition invitation
         playerDeclineCoalitionInvite: function(kingdomId, coalitionId) {
@@ -34481,18 +34532,18 @@
         // v9p33river435: noble coalition — form a public lobbying bloc around a policy cause
         playerFormCoalition(kingdomId, cause, causeData) {
             var k = findKingdom(kingdomId);
+            var causeLabels;
+            var activeCount;
+            var coalition;
+            var promoTargetInfo = null;
+            var coalitionLabel;
+            var coalitionActionText;
+            var coalitionDetail;
             if (!k) return { success: false, message: 'Kingdom not found.' };
             if (!k.king) return { success: false, message: 'This kingdom has no king to petition.' };
             if (k.king === 'player' || k.king === 'player_king') return { success: false, message: 'You are the king — you can simply enact policy directly.' };
             if (!k._nobleCoalitions) k._nobleCoalitions = [];
-            for (var i = 0; i < k._nobleCoalitions.length; i++) {
-                if (k._nobleCoalitions[i].cause === cause && k._nobleCoalitions[i].status === 'forming') {
-                    return { success: false, message: 'A coalition for this cause already exists. Try recruiting more members instead.' };
-                }
-            }
-            var activeCount = k._nobleCoalitions.filter(function(c) { return c.status === 'forming'; }).length;
-            if (activeCount >= 3) return { success: false, message: 'Too many active coalitions in this kingdom. Wait for one to resolve.' };
-            var causeLabels = {
+            causeLabels = {
                 lower_taxes: 'Lower Taxes',
                 raise_taxes: 'Raise Taxes',
                 make_peace: 'Seek Peace',
@@ -34506,26 +34557,45 @@
                 promote_noble: 'Promote a Noble' // v9p33river442
             };
             if (!causeLabels[cause]) return { success: false, message: 'Invalid cause for a coalition.' };
-            var coalition = {
+            if (cause === 'promote_noble') {
+                promoTargetInfo = _getCoalitionPromotionTargetInfo(kingdomId, (causeData && causeData.targetNobleId) ? causeData.targetNobleId : 'player', k); // v9p33river442: bugfix
+                if (!promoTargetInfo.ok) return { success: false, message: promoTargetInfo.message };
+            }
+            for (var i = 0; i < k._nobleCoalitions.length; i++) {
+                var existingCoalition = k._nobleCoalitions[i];
+                if (!existingCoalition || existingCoalition.status !== 'forming' || existingCoalition.cause !== cause) continue;
+                if (cause !== 'promote_noble') {
+                    return { success: false, message: 'A coalition for this cause already exists. Try recruiting more members instead.' };
+                }
+                if (existingCoalition.causeData && existingCoalition.causeData.targetNobleId === promoTargetInfo.targetId) {
+                    return { success: false, message: 'A coalition to promote ' + promoTargetInfo.targetName + ' already exists. Try recruiting more members instead.' };
+                }
+            }
+            activeCount = k._nobleCoalitions.filter(function(c) { return c.status === 'forming'; }).length;
+            if (activeCount >= 3) return { success: false, message: 'Too many active coalitions in this kingdom. Wait for one to resolve.' };
+            coalitionLabel = promoTargetInfo ? ('Promote ' + promoTargetInfo.targetName) : causeLabels[cause];
+            coalitionActionText = promoTargetInfo ? ('promote ' + promoTargetInfo.targetName) : causeLabels[cause].toLowerCase();
+            coalitionDetail = promoTargetInfo ? ('Formed a coalition to promote ' + promoTargetInfo.targetName) : ('Formed a coalition for ' + causeLabels[cause]);
+            coalition = {
                 // v9p33river439: bugfix — cause+day ids collide if the same cause is re-formed before the old coalition is purged.
                 id: uid('coalition') + '_' + cause,
                 cause: cause,
                 causeLabel: causeLabels[cause],
-                causeData: cause === 'promote_noble' ? {
-                    targetNobleId: (causeData && causeData.targetNobleId) ? causeData.targetNobleId : 'player',
-                    targetName: (causeData && causeData.targetName) ? causeData.targetName : 'the player'
-                } : null, // v9p33river442
+                causeData: promoTargetInfo ? {
+                    targetNobleId: promoTargetInfo.targetId,
+                    targetName: promoTargetInfo.targetName
+                } : null, // v9p33river442: bugfix
                 organizer: 'player',
                 members: [{ id: 'player', name: 'You', influence: 1.0 }],
                 formedDay: world.day,
                 status: 'forming'
             };
             k._nobleCoalitions.push(coalition);
-            if (Engine.recordNobleObservation) Engine.recordNobleObservation('coalition_formed', { actorId: 'player', actorName: 'the player', category: 'coalition_formed', detail: 'Formed a coalition for ' + causeLabels[cause], targetId: cause, kingdomId: k.id }, null); // v9p33river442
-            logEvent('📜 You have started a political coalition in ' + k.name + ' to advocate for: ' + causeLabels[cause] + '.', {
+            if (Engine.recordNobleObservation) Engine.recordNobleObservation('coalition_formed', { actorId: 'player', actorName: 'the player', category: 'coalition_formed', detail: coalitionDetail, targetId: cause, kingdomId: k.id }, null); // v9p33river442
+            logEvent('📜 You have started a political coalition in ' + k.name + ' to advocate for: ' + coalitionLabel + '.', {
                 type: 'coalition_formed', kingdomId: k.id, cause: cause
             }, 'my_kingdom');
-            return { success: true, message: 'You have formed a coalition to ' + causeLabels[cause].toLowerCase() + ' in ' + k.name + '. Recruit nobles to strengthen your cause.' };
+            return { success: true, message: 'You have formed a coalition to ' + coalitionActionText + ' in ' + k.name + '. Recruit nobles to strengthen your cause.' };
         },
 
         // v9p33river435: noble coalition — recruit a noble into an open political movement
@@ -34629,30 +34699,25 @@
             var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdomId;
             var category = isPlayerK ? 'my_kingdom' : 'foreign_kingdoms';
             if (rng.chance(successChance)) {
-                // v9p33river442: support promotion coalitions with explicit target data.
+                var _playerCoalActionText = coalition.causeLabel.toLowerCase();
+                var _playerCoalSuccessLabel = coalition.causeLabel;
                 if (coalition.cause === 'promote_noble' && coalition.causeData && coalition.causeData.targetNobleId) {
-                    if (coalition.causeData.targetNobleId === 'player') {
-                        if (typeof Player !== 'undefined' && Player.socialRank && (Player.socialRank[k.id] || 0) < 6) {
-                            Player.socialRank[k.id] = (Player.socialRank[k.id] || 0) + 1;
-                            logEvent('👑 You have been promoted by royal decree following political pressure!', { type: 'player_promoted_coalition', kingdomId: k.id }, category);
-                        }
-                    } else {
-                        var _playerCoalPromo = findPerson(coalition.causeData.targetNobleId);
-                        if (_playerCoalPromo && _playerCoalPromo.alive) {
-                            var _playerCoalRank = (_playerCoalPromo.socialRank && _playerCoalPromo.socialRank[k.id]) || 0;
-                            if (_playerCoalRank < 6) {
-                                if (!_playerCoalPromo.socialRank) _playerCoalPromo.socialRank = {};
-                                _playerCoalPromo.socialRank[k.id] = _playerCoalRank + 1;
-                                if (_playerCoalPromo.socialRank[k.id] === 5) _playerCoalPromo.houseType = 'manor';
-                                logEvent('👑 ' + (_playerCoalPromo.firstName || 'A noble') + ' has been promoted by royal decree following political pressure!', { type: 'noble_promoted_coalition', kingdomId: k.id }, category);
-                            }
-                        }
+                    var _playerPromoOutcome = _applyCoalitionPromotionTarget(k, coalition, category); // v9p33river442: bugfix
+                    if (!_playerPromoOutcome.ok) {
+                        coalition.status = 'dissolved';
+                        coalition.resolutionMessage = _playerPromoOutcome.message;
+                        logEvent('📜 Your coalition in ' + k.name + ' lost momentum: ' + _playerPromoOutcome.message, {
+                            type: 'coalition_dissolved', kingdomId: k.id, cause: coalition.cause
+                        }, category);
+                        return { success: false, message: coalition.resolutionMessage };
                     }
+                    _playerCoalActionText = 'promote ' + _playerPromoOutcome.targetName;
+                    _playerCoalSuccessLabel = 'Promote ' + _playerPromoOutcome.targetName;
                 } else {
                     _executeNobleAdvisedAction(k, coalition.cause, rng);
                 }
-                coalition.resolutionMessage = 'The king was persuaded! Your coalition achieved: ' + coalition.causeLabel;
-                logEvent('👑 The king of ' + k.name + ' was convinced by a coalition of ' + coalition.members.length + ' to ' + coalition.causeLabel.toLowerCase() + '!', {
+                coalition.resolutionMessage = 'The king was persuaded! Your coalition achieved: ' + _playerCoalSuccessLabel;
+                logEvent('👑 The king of ' + k.name + ' was convinced by a coalition of ' + coalition.members.length + ' to ' + _playerCoalActionText + '!', {
                     type: 'coalition_success', kingdomId: k.id, cause: coalition.cause
                 }, category);
                 // v9p33river439: coalition success — organizer gets massive boost, members get smaller boost

@@ -227,6 +227,29 @@
         }
         return { targetId: targetId, targetName: targetName };
     }
+    function _getPromotionTargetInfo(kingdomId, targetId) {
+        var target;
+        var targetRank;
+        var targetKingdomId;
+        var kingdom;
+        if (!kingdomId || !targetId) return { ok: false, message: 'Choose a noble to promote.' };
+        if (targetId === 'player') {
+            targetRank = _getPlayerRank(kingdomId);
+            if (targetRank < 4) return { ok: false, message: 'Only nobles may seek promotion through court politics.' };
+            if (targetRank >= 6) return { ok: false, message: 'You already hold the highest promotable rank.' };
+            return { ok: true, targetId: 'player', targetName: _getTargetName('player') };
+        }
+        target = Engine.findPerson ? Engine.findPerson(targetId) : null;
+        if (!target || !target.alive) return { ok: false, message: 'That noble is unavailable.' };
+        targetKingdomId = _getNobleKingdomId(target);
+        if (targetKingdomId !== kingdomId) return { ok: false, message: _getNobleName(target) + ' is not a noble in this kingdom.' };
+        targetRank = _getNobleRank(target, kingdomId);
+        if (targetRank < 4) return { ok: false, message: _getNobleName(target) + ' is not a noble in this kingdom.' };
+        if (targetRank >= 6) return { ok: false, message: _getNobleName(target) + ' already holds the highest promotable rank.' };
+        kingdom = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
+        if (kingdom && kingdom.king === target.id) return { ok: false, message: 'You cannot petition to promote the king.' };
+        return { ok: true, targetId: target.id, targetName: _getNobleName(target) };
+    }
     function _buildDeclarationDetail(category, targetInfo) {
         var label = _getCategoryLabel(category);
         if (category === 'promote_noble' && targetInfo && targetInfo.targetName) {
@@ -558,6 +581,7 @@
             coalitionId: coalition.id,
             cause: coalition.cause,
             causeLabel: coalition.causeLabel,
+            targetName: coalition.causeData && coalition.causeData.targetName ? coalition.causeData.targetName : '', // v9p33river442: bugfix
             inviterName: _getNobleName(organizer),
             inviterId: organizer.id,
             day: _getDay()
@@ -568,12 +592,17 @@
         var rng = _getRng();
         var nobles;
         var coalition;
+        var promoteTargetInfo = null;
         var i;
         if (!k || !organizer || !organizer.alive || !cause || !rng) return null;
         if (!k._nobleCoalitions) k._nobleCoalitions = [];
         if (_hasActiveCoalition(k, cause, causeData && causeData.targetNobleId ? causeData.targetNobleId : null)) return null;
         if (k._nobleCoalitions.filter(function(entry) { return entry.status === 'forming'; }).length >= 3) return null;
         if (!_getCauseLabel(cause)) return null;
+        if (cause === 'promote_noble') {
+            promoteTargetInfo = _getPromotionTargetInfo(k.id, causeData && causeData.targetNobleId ? causeData.targetNobleId : null); // v9p33river442: bugfix
+            if (!promoteTargetInfo.ok) return null;
+        }
 
         coalition = {
             id: 'mem_coal_' + _getDay() + '_' + organizer.id + '_' + cause,
@@ -585,8 +614,8 @@
             formedDay: _getDay(),
             status: 'forming'
         };
-        if (cause === 'promote_noble' && causeData && causeData.targetNobleId) {
-            coalition.causeData = { targetNobleId: causeData.targetNobleId, targetName: causeData.targetName || _getTargetName(causeData.targetNobleId) };
+        if (cause === 'promote_noble' && promoteTargetInfo) {
+            coalition.causeData = { targetNobleId: promoteTargetInfo.targetId, targetName: promoteTargetInfo.targetName };
         }
 
         nobles = _getNoblesInKingdom(k.id);
@@ -610,8 +639,10 @@
             relScore = _getNobleRelationshipScore(organizer, recruit.id);
             recruitChance += (relScore - 50) * 0.003;
             recruitChance += Math.min(0.18, _rememberedCauseCount(_getRecentNobleMemories(recruit, _cfg('NOBLE_MEMORY_ACTIONABLE_DAYS', 90)), cause) * 0.06);
-            if ((recruit.personality && recruit.personality.warmth || 50) > 70 && cause !== 'declare_war' && cause !== 'war_offensive') recruitChance += 0.05;
-            if ((recruit.personality && recruit.personality.frugality || 50) > 70) recruitChance -= 0.03;
+            var recruitWarmth = recruit.personality ? (recruit.personality.warmth || 50) : 50; // v9p33river442: bugfix
+            var recruitFrugality = recruit.personality ? (recruit.personality.frugality || 50) : 50; // v9p33river442: bugfix
+            if (recruitWarmth > 70 && cause !== 'declare_war' && cause !== 'war_offensive') recruitChance += 0.05;
+            if (recruitFrugality > 70) recruitChance -= 0.03;
             recruitChance = _chance(recruitChance);
             if (rng.chance(recruitChance)) {
                 coalition.members.push({ id: recruit.id, name: _getNobleName(recruit), influence: _computeInfluence(recruit, k.id) });
@@ -634,9 +665,11 @@
     function playerDeclareToNoble(nobleId, category, targetData) {
         var noble = Engine.findPerson ? Engine.findPerson(nobleId) : null;
         var kingdomId;
+        var nobleRank;
         var playerTownId;
         var playerRank;
         var targetInfo;
+        var promotionTargetInfo;
         var playerRel;
         var alignmentScore;
         var sentiment = 0;
@@ -650,10 +683,18 @@
         playerTownId = _getPlayerTownId();
         playerRank = _getPlayerRank(kingdomId);
         if (!kingdomId) return { success: false, message: 'That noble has no recognized kingdom.' };
+        nobleRank = _getNobleRank(noble, kingdomId);
+        if (nobleRank < 4 && noble.occupation !== 'noble') return { success: false, message: 'That person is not part of the noble court.' }; // v9p33river442: bugfix
         if (!playerTownId || noble.townId !== playerTownId) return { success: false, message: 'You must speak to this noble in person.' };
         if (playerRank < 4) return { success: false, message: 'Only nobles may engage in this kind of political declaration.' };
 
         targetInfo = _getTargetInfo(category, targetData, kingdomId);
+        if (category === 'promote_noble') {
+            promotionTargetInfo = _getPromotionTargetInfo(kingdomId, targetInfo.targetId); // v9p33river442: bugfix
+            if (!promotionTargetInfo.ok) return { success: false, message: promotionTargetInfo.message };
+            targetInfo.targetId = promotionTargetInfo.targetId;
+            targetInfo.targetName = promotionTargetInfo.targetName;
+        }
         alignmentScore = _scoreDeclarationAlignment(noble, kingdomId, category, targetInfo);
         playerRel = _getPlayerRelationshipLevel(noble.id);
 
