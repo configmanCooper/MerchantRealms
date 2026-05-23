@@ -9216,6 +9216,251 @@
         }
     }
 
+    // v9p33river456: New king reviews all existing kingdom policies and changes
+    // what they disagree with based on personality. Also considers what nobles
+    // they like (including coalition causes) wanted.
+    function _newKingPolicyReview(kingdom) {
+        if (!kingdom || !kingdom.king) return;
+        var king = findPerson(kingdom.king);
+        if (!king || !king.alive) return;
+        var rng = world.rng;
+        var kId = kingdom.id;
+        var p = king.personality || {};
+        var kp = kingdom.kingPersonality || {};
+        var warmth = p.warmth || 50;
+        var intelligence = p.intelligence || 50;
+        var ambition = p.ambition || 50;
+        var frugality = p.frugality || 50;
+        var honesty = p.honesty || 50;
+        var isGenerous = kp.generosity === 'generous' || warmth > 60;
+        var isGreedy = kp.greed === 'greedy' || kp.greed === 'corrupt' || warmth < 35;
+        var isWarlike = kp.militarism === 'aggressive';
+        var isPeaceful = kp.militarism === 'peaceful' || kp.militarism === 'defensive';
+        var isProgressive = kp.tradition === 'progressive';
+        var isTraditional = kp.tradition === 'traditional';
+        var isJust = kp.justice === 'just';
+        var isPlayerKingdom = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
+        var logCategory = isPlayerKingdom ? 'my_kingdom' : 'foreign_kingdoms';
+        var kingName = king.firstName + ' ' + king.lastName;
+        var changes = [];
+        var maxChanges = 5;
+        var atWar = kingdom.atWar && (kingdom.atWar instanceof Set ? kingdom.atWar.size > 0 : (Array.isArray(kingdom.atWar) ? kingdom.atWar.length > 0 : false));
+        var treasury = kingdom.gold || 0;
+        var happiness = kingdom.happiness != null ? kingdom.happiness : 50;
+
+        // ── 1. Noble coalition influence — check what nobles the king likes wanted ──
+        var coalitionInfluence = {};  // cause → weight
+        try {
+            var coalitions = kingdom._nobleCoalitions || [];
+            for (var ci = 0; ci < coalitions.length; ci++) {
+                var coal = coalitions[ci];
+                if (coal.status !== 'forming' || !coal.cause) continue;
+                var coalWeight = 0;
+                var members = coal.members || [];
+                for (var mi = 0; mi < members.length; mi++) {
+                    var mId = members[mi];
+                    if (typeof mId === 'object') mId = mId.id || mId;
+                    if (!mId) continue;
+                    var mNoble = findPerson(mId);
+                    if (!mNoble || !mNoble.alive) continue;
+                    var mRank = (mNoble.socialRank && mNoble.socialRank[kId]) || 0;
+                    var mLoyalty = mNoble.kingLoyalty != null ? mNoble.kingLoyalty : 50;
+                    // Higher-rank and more loyal nobles have more influence on new king
+                    coalWeight += (mRank >= 6 ? 3 : mRank >= 5 ? 2 : 1) * (mLoyalty > 50 ? 1.5 : 1.0);
+                }
+                // Player in coalition
+                if (coal.organizer === 'player' || members.indexOf('player') >= 0) {
+                    var playerRel = 50;
+                    try {
+                        if (typeof Player !== 'undefined' && Player.getRelationship) {
+                            var pr = Player.getRelationship(king.id);
+                            playerRel = (pr && pr.level) || 50;
+                        }
+                    } catch(e) {}
+                    if (playerRel > 50) coalWeight += playerRel * 0.05;
+                }
+                coalitionInfluence[coal.cause] = (coalitionInfluence[coal.cause] || 0) + coalWeight;
+            }
+        } catch(e) {}
+
+        // ── 2. Tax rate review ──
+        var taxRate = kingdom.taxRate || 0.10;
+        if (changes.length < maxChanges) {
+            var wantLowerTax = (isGenerous && taxRate > 0.10) || (coalitionInfluence['lower_taxes'] || 0) > 3;
+            var wantHigherTax = (isGreedy && taxRate < 0.12) || (treasury < 2000 && taxRate < 0.10);
+            var coalLowerWeight = coalitionInfluence['lower_taxes'] || 0;
+            var coalRaiseWeight = coalitionInfluence['raise_taxes'] || 0;
+
+            if (wantLowerTax && !wantHigherTax) {
+                var newTax = Math.max(0.03, taxRate - (0.02 + rng.randFloat(0, 0.03)));
+                newTax = Math.round(newTax * 100) / 100;
+                if (newTax < taxRate) {
+                    var oldTax = taxRate;
+                    kingdom.taxRate = newTax;
+                    changes.push('lowered taxes from ' + Math.round(oldTax * 100) + '% to ' + Math.round(newTax * 100) + '%');
+                }
+            } else if (wantHigherTax && !wantLowerTax) {
+                var newTax2 = Math.min(0.25, taxRate + (0.02 + rng.randFloat(0, 0.03)));
+                newTax2 = Math.round(newTax2 * 100) / 100;
+                if (newTax2 > taxRate) {
+                    var oldTax2 = taxRate;
+                    kingdom.taxRate = newTax2;
+                    changes.push('raised taxes from ' + Math.round(oldTax2 * 100) + '% to ' + Math.round(newTax2 * 100) + '%');
+                }
+            } else if (coalLowerWeight > coalRaiseWeight && coalLowerWeight > 3) {
+                var newTax3 = Math.max(0.03, taxRate - 0.02);
+                if (newTax3 < taxRate) {
+                    kingdom.taxRate = newTax3;
+                    changes.push('lowered taxes to ' + Math.round(newTax3 * 100) + '% (heeding noble pressure)');
+                }
+            } else if (coalRaiseWeight > coalLowerWeight && coalRaiseWeight > 3) {
+                var newTax4 = Math.min(0.25, taxRate + 0.02);
+                if (newTax4 > taxRate) {
+                    kingdom.taxRate = newTax4;
+                    changes.push('raised taxes to ' + Math.round(newTax4 * 100) + '% (heeding noble pressure)');
+                }
+            }
+        }
+
+        // ── 3. Banned goods review ──
+        if (changes.length < maxChanges && kingdom.laws) {
+            var banned = kingdom.laws.bannedGoods || [];
+            if (banned.length > 0) {
+                var weaponBases = ['swords', 'armor', 'horses', 'blasting_powder', 'demolition_tools'];
+                var luxuryBases = ['wine', 'jewelry'];
+                var liftedItems = [];
+
+                // Warlike king at war → lift weapon bans to get supply flowing
+                if (isWarlike && atWar) {
+                    for (var wi = 0; wi < weaponBases.length; wi++) {
+                        if (banned.indexOf(weaponBases[wi]) >= 0) {
+                            liftedItems.push(weaponBases[wi]);
+                        }
+                    }
+                }
+                // Generous/progressive king → lift luxury bans
+                if ((isGenerous || isProgressive) && !isTraditional) {
+                    for (var li = 0; li < luxuryBases.length; li++) {
+                        if (banned.indexOf(luxuryBases[li]) >= 0) {
+                            liftedItems.push(luxuryBases[li]);
+                        }
+                    }
+                }
+                // Progressive king → lift all non-essential bans
+                if (isProgressive && intelligence > 60) {
+                    for (var pi = 0; pi < weaponBases.length; pi++) {
+                        if (banned.indexOf(weaponBases[pi]) >= 0 && liftedItems.indexOf(weaponBases[pi]) === -1) {
+                            if (rng.chance(0.4)) liftedItems.push(weaponBases[pi]);
+                        }
+                    }
+                }
+
+                if (liftedItems.length > 0 && changes.length < maxChanges) {
+                    // Remove lifted items and their tier variants
+                    var removeSet = typeof _expandGoodsToTiers === 'function' ? _expandGoodsToTiers(liftedItems) : liftedItems;
+                    var newBanned = banned.filter(function(g) { return removeSet.indexOf(g) === -1; });
+                    kingdom.laws.bannedGoods = newBanned;
+                    changes.push('lifted trade bans on ' + liftedItems.join(', '));
+                }
+            }
+        }
+
+        // ── 4. Special laws review ──
+        if (changes.length < maxChanges && kingdom.laws && kingdom.laws.specialLaws) {
+            var specialLaws = kingdom.laws.specialLaws;
+            var repealedLaws = [];
+            for (var si = specialLaws.length - 1; si >= 0; si--) {
+                if (changes.length + repealedLaws.length >= maxChanges) break;
+                var law = specialLaws[si];
+                if (!law || !law.id) continue;
+                var shouldRepeal = false;
+
+                // Traditional king dislikes progressive laws
+                if (isTraditional && law.id === 'female_heir_law') shouldRepeal = rng.chance(0.6);
+                // Greedy/corrupt king dislikes price controls
+                if (isGreedy && law.id === 'price_controls') shouldRepeal = rng.chance(0.7);
+                // Unjust king dislikes fair governance laws
+                if (!isJust && law.id === 'fair_trial_law') shouldRepeal = rng.chance(0.4);
+                // Progressive king keeps everything — don't repeal
+                if (isProgressive) shouldRepeal = false;
+
+                if (shouldRepeal) {
+                    repealedLaws.push(law.name || law.id);
+                    specialLaws.splice(si, 1);
+                }
+            }
+            if (repealedLaws.length > 0) {
+                changes.push('repealed ' + repealedLaws.join(', '));
+            }
+        }
+
+        // ── 5. Health policy review ──
+        if (changes.length < maxChanges && kingdom.healthPolicies && kingdom.healthPolicies.length > 0) {
+            var hasSickness = false;
+            try {
+                var kTowns = getTownsForKingdom(kId);
+                for (var ti = 0; ti < kTowns.length; ti++) {
+                    if (kTowns[ti].plagueActive) { hasSickness = true; break; }
+                    // Check town-level sickness
+                    var tPeople = getPeopleInKingdom ? null : null;
+                    if (kTowns[ti].sickCount && kTowns[ti].sickCount > 5) { hasSickness = true; break; }
+                }
+            } catch(e) {}
+
+            if (!hasSickness && (isGreedy || frugality > 65)) {
+                // Frugal/greedy king cancels expensive health policies when no plague
+                var cancelledPolicies = [];
+                for (var hi = kingdom.healthPolicies.length - 1; hi >= 0; hi--) {
+                    var hp = kingdom.healthPolicies[hi];
+                    if (!hp.active) continue;
+                    if ((hp.costPerDay || 0) > 5) {
+                        cancelledPolicies.push(hp.type.replace(/_/g, ' '));
+                        kingdom.healthPolicies.splice(hi, 1);
+                    }
+                }
+                if (cancelledPolicies.length > 0 && changes.length < maxChanges) {
+                    changes.push('ended health programs: ' + cancelledPolicies.join(', '));
+                }
+            } else if (hasSickness && isGenerous) {
+                // Kind king keeps all policies — no changes, but note it
+            }
+        }
+
+        // ── 6. Coalition-driven policy actions ──
+        if (changes.length < maxChanges) {
+            // build_infrastructure coalition + smart king → log intent
+            if ((coalitionInfluence['build_infrastructure'] || 0) > 3 && intelligence > 50) {
+                // Allocate a small treasury amount for infrastructure
+                var infraBudget = Math.min(treasury * 0.1, 500);
+                if (infraBudget > 50) {
+                    changes.push('allocated ' + Math.floor(infraBudget) + 'g for infrastructure (noble petition)');
+                    // The actual spending will be handled by tickTreasurySpending
+                }
+            }
+            // improve_happiness coalition + kind king
+            if ((coalitionInfluence['improve_happiness'] || 0) > 3 && warmth > 45 && changes.length < maxChanges) {
+                if (kingdom.taxRate > 0.08) {
+                    kingdom.taxRate = Math.max(0.05, kingdom.taxRate - 0.02);
+                    changes.push('cut taxes for public welfare (noble petition)');
+                }
+            }
+            // medical_funding coalition
+            if ((coalitionInfluence['medical_funding'] || 0) > 3 && warmth > 40 && changes.length < maxChanges) {
+                changes.push('pledged medical funding (noble petition)');
+            }
+        }
+
+        // ── Log summary ──
+        if (changes.length > 0) {
+            var changeList = changes.join('; ');
+            logEvent('📜 ' + kingName + ' reviews the laws of ' + kingdom.name + ': ' + changeList + '.', {
+                type: 'new_king_policy_review',
+                kingdomId: kId,
+                changes: changes
+            }, logCategory);
+        }
+    }
+
     function _checkPlayerIsAdvisor(kingdom) {
         if (typeof Player === 'undefined') return null;
         const p = Player.state;
@@ -34110,9 +34355,10 @@
             }
 
             // v9p33river455: new king coronation — run one-time AI decisions the day after
+            // v9p33river456: only after first 30 in-game days (skip world-gen churn)
             for (var _nkci = 0; _nkci < world.kingdoms.length; _nkci++) {
                 var _nkK = world.kingdoms[_nkci];
-                if (_nkK._newKingCoronationDay != null && world.day === _nkK._newKingCoronationDay + 1) {
+                if (_nkK._newKingCoronationDay != null && world.day === _nkK._newKingCoronationDay + 1 && world.day > 30) {
                     _nkK._newKingCoronationDay = null; // clear so it only runs once
                     var _nkIsPlayerKing = false;
                     try { _nkIsPlayerKing = Player && Player.isPlayerKing && Player.isPlayerKing() && Player.state && Player.state.kingState && Player.state.kingState.kingdomId === _nkK.id; } catch(e) {}
@@ -34124,10 +34370,14 @@
                         try { tickKingdomProcurement(_nkK); } catch(e) {}
                         try { tickRoyalCommissions(_nkK); } catch(e) {}
                         try { tickNobleInfluence(_nkK); } catch(e) {}
+                        // v9p33river456: new king reviews and changes existing policies
+                        try { _newKingPolicyReview(_nkK); } catch(e) {}
                         var _nkKing = findPerson(_nkK.king);
                         var _nkKingName = _nkKing ? (_nkKing.firstName + ' ' + _nkKing.lastName) : 'The new ruler';
                         logEvent('👑 ' + _nkKingName + ' holds court for the first time as ruler of ' + _nkK.name + ', issuing new decrees and setting policy.', { type: 'coronation_actions', kingdomId: _nkK.id }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === _nkK.id ? 'my_kingdom' : 'foreign_kingdoms');
                     }
+                } else if (_nkK._newKingCoronationDay != null && world.day > _nkK._newKingCoronationDay + 1) {
+                    _nkK._newKingCoronationDay = null; // expired, clear stale flag
                 }
             }
 
