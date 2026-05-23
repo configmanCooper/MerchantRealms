@@ -1453,8 +1453,10 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         }
         html += _detailHtml;
         if (_conspiracy.strength >= 80) {
-            var _readyMsg = _conspiracy.type === 'revolt_support' ? '⚡ Resources are ready to deliver to the rebels!' : '⚡ The conspirators are ready to act! The plot will unfold soon.';
+            var _readyMsg = _conspiracy.type === 'revolt_support' ? '⚡ Resources are ready to deliver to the rebels!' : '⚡ The conspirators are ready to act!';
             html += '<div style="font-size:0.78rem;color:#2ecc71;margin-top:4px;font-weight:bold;">' + _readyMsg + '</div>';
+            // v9p33river449: manual execute button
+            html += '<button class="btn-medieval" data-action="executeConspiracy" data-id="' + citizenKingdomId + '" style="margin-top:6px;font-size:0.82rem;padding:6px 16px;background:rgba(200,50,50,0.4);border-color:rgba(200,50,50,0.6);color:#ff6666;font-weight:bold;">⚔️ Execute the Plot Now</button>';
         }
         // v9p33river435: enhanced conspiracy — recruit nobles to conspiracy
         var _availableNobles = [];
@@ -3554,6 +3556,15 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var kId = el.getAttribute('data-id');
         if (!kId || typeof Engine === 'undefined') return;
         var result = Engine.playerDisbandConspiracy(kId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        openNobilityDialog();
+    });
+
+    // v9p33river449: manually execute the conspiracy plot
+    UI.registerAction('executeConspiracy', function(el) {
+        var kId = el.getAttribute('data-id');
+        if (!kId || typeof Engine === 'undefined') return;
+        var result = Engine.playerExecuteConspiracy(kId);
         toast(result.message, result.success ? 'success' : 'warning');
         openNobilityDialog();
     });

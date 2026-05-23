@@ -34889,6 +34889,21 @@
             return { success: true, message: 'You disbanded the conspiracy. All plotters have been released from their oaths.' };
         },
 
+        // v9p33river449: player manually triggers the conspiracy plot
+        playerExecuteConspiracy(kingdomId) {
+            var k = findKingdom(kingdomId);
+            if (!k || !k._conspiracy) return { success: false, message: 'No active conspiracy.' };
+            var plotters = k._conspiracy.plotters || [];
+            if (plotters.indexOf('player') < 0) return { success: false, message: 'You are not part of this conspiracy.' };
+            if ((k._conspiracy.strength || 0) < 80) return { success: false, message: 'The conspiracy is not strong enough yet (need 80+ strength).' };
+            if (k._conspiracy.type === 'revolt_support') {
+                _executeRevoltSupport(k, k._conspiracy);
+            } else {
+                _attemptConspiracyPlot(k, k._conspiracy);
+            }
+            return { success: true, message: 'The plot has been set in motion!' };
+        },
+
         // v9p33river435: noble coalition — recruit a noble into an open political movement
         playerRecruitToCoalition(kingdomId, coalitionId, nobleId) {
             var k = findKingdom(kingdomId);
