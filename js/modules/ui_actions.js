@@ -1765,11 +1765,6 @@ function showPersonDetail(person) {
                         html += `<button class="btn-medieval" data-action="exposeDisloyalty" data-id="${person.id}" data-val="${_nobleKId}" title="Report this noble's disloyalty to the king. You gain favor but they become your enemy." style="font-size:0.72rem;padding:4px 10px;background:rgba(196,78,82,0.25);border-color:rgba(196,78,82,0.5);color:#c44e52;">🕵️ Expose Disloyalty</button>`;
                     }
 
-                    // v9p33river442: Share Your Views button — opens declaration panel for noble memory
-                    if (_playerNobleRank >= 4 && _targetRank >= 4) {
-                        html += `<button class="btn-medieval" data-action="shareViewsWithNoble" data-id="${person.id}" title="Tell this noble what policies you support or oppose." style="font-size:0.72rem;padding:4px 10px;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.4);color:#8fb8e0;">🗣️ Share Your Views</button>`;
-                    }
-
                     html += `</div>`;
 
                     // v9p33river442: Noble memory summary
@@ -2254,6 +2249,17 @@ function showPersonDetail(person) {
                         html += `<button class="btn-medieval" disabled title="Requires 20+ relationship" style="font-size:0.75rem;padding:5px 10px;opacity:0.5;cursor:not-allowed;">❓ Questions</button>`;
                     } else {
                         html += `<button class="btn-medieval" data-action="askNpcQuestions" data-id="${person.id}" title="Ask deeper political or trade questions" style="font-size:0.75rem;padding:5px 10px;">❓ Questions</button>`;
+                    }
+                    // v9p33river444: Share Your Views — next to Questions in Social section
+                    var _svPlayerRank = 0;
+                    try { if (Player.socialRank && person.kingdomId) _svPlayerRank = Player.socialRank[person.kingdomId] || 0; } catch(e) {}
+                    var _svNpcRank = Player.getNPCSocialRank ? Player.getNPCSocialRank(person) : 0;
+                    if (_svPlayerRank >= 4 && _svNpcRank >= 4) {
+                        if (_socialQuestionsLocked) {
+                            html += `<button class="btn-medieval" disabled title="Requires 20+ relationship" style="font-size:0.75rem;padding:5px 10px;opacity:0.5;cursor:not-allowed;">🗣️ Share Views</button>`;
+                        } else {
+                            html += `<button class="btn-medieval" data-action="shareViewsWithNoble" data-id="${person.id}" title="Tell this noble what policies you support or oppose" style="font-size:0.75rem;padding:5px 10px;background:rgba(100,160,220,0.15);border-color:rgba(100,160,220,0.4);color:#8fb8e0;">🗣️ Share Views</button>`;
+                        }
                     }
                 }
                 html += `<button class="btn-medieval" data-action="observePerson" data-id="${person.id}" title="Spend 8 hours watching this person — 30% chance to discover a hidden quirk (free)" style="font-size:0.75rem;padding:5px 10px;">👀 Observe</button>`;
