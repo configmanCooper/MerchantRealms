@@ -7176,6 +7176,30 @@ window.UI = (function () {
             root.innerHTML = _renderNpcQuestionAnswer(person, questionDef, answer);
             var backBtn = root.querySelector('.npc-questions-back');
             if (backBtn) backBtn.addEventListener('click', renderList);
+            // v9p33river463: create a memory that the player had a conversation with this NPC
+            try {
+                if (person && person.id && typeof Engine !== 'undefined') {
+                    var _convDay = Engine.getDay ? Engine.getDay() : 0;
+                    var _convEntry = {
+                        type: 'conversation', source: 'direct', category: 'conversation',
+                        detail: 'Player asked: "' + (questionDef.text || 'a question') + '"',
+                        label: 'Conversation', actorId: 'player', targetId: person.id,
+                        day: _convDay, sentiment: 0, kingdomId: person.kingdomId || ''
+                    };
+                    if (person.nobleMemory || (person.socialRank && typeof person.socialRank === 'object')) {
+                        if (!person.nobleMemory) person.nobleMemory = { playerActions: [], nobleActions: [] };
+                        if (!Array.isArray(person.nobleMemory.playerActions)) person.nobleMemory.playerActions = [];
+                        person.nobleMemory.playerActions.push(_convEntry);
+                        while (person.nobleMemory.playerActions.length > 50) person.nobleMemory.playerActions.shift();
+                    }
+                    if (person.isEliteMerchant) {
+                        if (!person._emMemory) person._emMemory = { playerActions: [], nobleActions: [] };
+                        if (!Array.isArray(person._emMemory.playerActions)) person._emMemory.playerActions = [];
+                        person._emMemory.playerActions.push(_convEntry);
+                        while (person._emMemory.playerActions.length > 50) person._emMemory.playerActions.shift();
+                    }
+                }
+            } catch(_convErr) {}
         }
 
         renderList();

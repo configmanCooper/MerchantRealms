@@ -6131,6 +6131,84 @@
             player.schemeCooldowns[cdKey] = day + Math.floor(baseCd * catchMult) + escalation;
         }
 
+        // v9p33river462: create NPC memory when player schemes against them and is caught
+        if (_engaged && result.caught && params && params[0]) {
+            // Map of schemes whose params[0] is a target person ID
+            var _personTargetSchemes = {
+                blackmail: 0, spread_rumors: 0, frame_competitor: 0,
+                assassinate_competitor: 0, assassinate_guard_captain: 0, assassinate_king: 0,
+                assassinate_passenger: 0, poison: 0, hire_assassin_npc: 0, direct_kill: 0,
+                pickpocket: 0, steal_goods: 0, plant_evidence: 0,
+                pit_nobles: 0, turn_noble_against_king: 0, discredit_noble: 0,
+                manipulate_vote: 0, expose_secrets: 0, double_noble_agent: 0,
+                bribe_advisor: 0, cultivate_heir: 0, rob_traveler: 0
+            };
+            if (actionId in _personTargetSchemes) {
+                var _schemeTargetId = params[0];
+                try {
+                    var _schemeTarget = Engine.findPerson(_schemeTargetId);
+                    if (_schemeTarget && _schemeTarget.alive !== false) {
+                        var _schemeSentiment = -2;
+                        // Violent schemes are worse
+                        if (actionId === 'poison' || actionId === 'direct_kill' || actionId === 'hire_assassin_npc' ||
+                            actionId === 'assassinate_competitor' || actionId === 'assassinate_guard_captain' ||
+                            actionId === 'assassinate_king' || actionId === 'assassinate_passenger') {
+                            _schemeSentiment = -3;
+                        } else if (actionId === 'pickpocket' || actionId === 'steal_goods' || actionId === 'rob_traveler') {
+                            _schemeSentiment = -1;
+                        }
+                        var _schemeLabel = actionId.replace(/_/g, ' ');
+                        // Noble memory
+                        if (_schemeTarget.nobleMemory || (_schemeTarget.socialRank && typeof _schemeTarget.socialRank === 'object')) {
+                            if (!_schemeTarget.nobleMemory) _schemeTarget.nobleMemory = { playerActions: [], nobleActions: [] };
+                            if (!Array.isArray(_schemeTarget.nobleMemory.playerActions)) _schemeTarget.nobleMemory.playerActions = [];
+                            _schemeTarget.nobleMemory.playerActions.push({
+                                type: 'scheme_caught', source: 'direct', category: 'scheme_' + actionId,
+                                detail: 'Player was caught attempting: ' + _schemeLabel,
+                                label: 'Scheme: ' + _schemeLabel,
+                                actorId: 'player', targetId: _schemeTargetId,
+                                day: day, sentiment: _schemeSentiment,
+                                kingdomId: _schemeTarget.kingdomId || ''
+                            });
+                            while (_schemeTarget.nobleMemory.playerActions.length > 50) _schemeTarget.nobleMemory.playerActions.shift();
+                        }
+                        // EM memory
+                        if (_schemeTarget.isEliteMerchant) {
+                            if (!_schemeTarget._emMemory) _schemeTarget._emMemory = { playerActions: [], nobleActions: [] };
+                            _schemeTarget._emMemory.playerActions.push({
+                                type: 'scheme_caught', source: 'direct', category: 'scheme_' + actionId,
+                                detail: 'Player was caught attempting: ' + _schemeLabel,
+                                label: 'Scheme: ' + _schemeLabel,
+                                actorId: 'player', targetId: _schemeTargetId,
+                                day: day, sentiment: _schemeSentiment,
+                                kingdomId: _schemeTarget.kingdomId || ''
+                            });
+                            while (_schemeTarget._emMemory.playerActions.length > 50) _schemeTarget._emMemory.playerActions.shift();
+                        }
+                    }
+                } catch(_memErr) {}
+            }
+            // pit_nobles also has a second target
+            if (actionId === 'pit_nobles' && params[1]) {
+                try {
+                    var _pitTarget2 = Engine.findPerson(params[1]);
+                    if (_pitTarget2 && _pitTarget2.alive !== false) {
+                        if (_pitTarget2.nobleMemory || (_pitTarget2.socialRank && typeof _pitTarget2.socialRank === 'object')) {
+                            if (!_pitTarget2.nobleMemory) _pitTarget2.nobleMemory = { playerActions: [], nobleActions: [] };
+                            if (!Array.isArray(_pitTarget2.nobleMemory.playerActions)) _pitTarget2.nobleMemory.playerActions = [];
+                            _pitTarget2.nobleMemory.playerActions.push({
+                                type: 'scheme_caught', source: 'direct', category: 'scheme_pit_nobles',
+                                detail: 'Player was caught trying to pit nobles against each other',
+                                label: 'Scheme: pit nobles', actorId: 'player', targetId: params[1],
+                                day: day, sentiment: -2, kingdomId: _pitTarget2.kingdomId || ''
+                            });
+                            while (_pitTarget2.nobleMemory.playerActions.length > 50) _pitTarget2.nobleMemory.playerActions.shift();
+                        }
+                    }
+                } catch(_memErr2) {}
+            }
+        }
+
         return result;
     }
 

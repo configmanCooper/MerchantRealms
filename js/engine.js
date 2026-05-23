@@ -29931,6 +29931,8 @@
                 if (!pPerson._nobleRelationships) pPerson._nobleRelationships = {};
                 pPerson._nobleRelationships[target.id] = Math.min(100, (pPerson._nobleRelationships[target.id] || 0) + rng.randInt(2, 6));
                 result = { success: true, message: 'You networked with ' + tName + ' and improved your relationship.' };
+                // v9p33river463: memory — target remembers networking at court
+                _addFeastCourtMemory(target, 'court_networked', 'Player networked with them at court', 1, kingdomId);
                 EventTypes.emit('COURT_NETWORK', { npcName: tName });
                 break;
             }
@@ -29956,6 +29958,8 @@
                 // Player relationship improves with target
                 try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(praiseTarget.id, 3); } catch(e) {}
                 result = { success: true, message: 'You praised ' + praiseName + '\'s loyalty to the king. (+' + praiseBoost + ' perceived loyalty)' };
+                // v9p33river463: memory — praised noble remembers player's public praise at court
+                _addFeastCourtMemory(praiseTarget, 'court_praised', 'Player publicly praised their loyalty at court', 2, kingdomId);
                 logEvent('🏅 You spoke well of ' + praiseName + ' at court.', null, 'my_kingdom');
                 break;
             }
@@ -30450,6 +30454,8 @@
                 logEvent('🍷 At the feast in ' + k.name + ', the king raised a toast to ' + toasteeName + '.', {
                     type: 'feast_event', kingdomId: k.id, _noToast: true
                 }, category);
+                // v9p33river463: toastee remembers being toasted by the king
+                _addFeastCourtMemory(toastee, 'feast_king_toast', 'The king raised a toast to them at a feast', 2, k.id, k.king);
             }
         } else if (eventType === 1) {
             // Nobles Argue — 2 random nobles lose 10 mutual relationship
@@ -30470,6 +30476,9 @@
                     logEvent('😤 At the feast in ' + k.name + ', ' + n1 + ' and ' + n2 + ' got into a heated argument.', {
                         type: 'feast_event', kingdomId: k.id, _noToast: true
                     }, category);
+                    // v9p33river463: both arguers remember the argument
+                    _addFeastCourtMemory(arguer1, 'feast_argument', 'Got into a heated argument with ' + n2 + ' at a feast', -1, k.id, arguer2Id);
+                    _addFeastCourtMemory(arguer2, 'feast_argument', 'Got into a heated argument with ' + n1 + ' at a feast', -1, k.id, arguer1Id);
                 }
             }
         } else if (eventType === 2) {
@@ -30484,6 +30493,8 @@
                 logEvent('👑 At the feast in ' + k.name + ', the king granted ' + audName + ' a private audience.', {
                     type: 'feast_event', kingdomId: k.id, _noToast: true
                 }, category);
+                // v9p33river463: noble remembers being granted a private audience
+                _addFeastCourtMemory(audiencee, 'feast_private_audience', 'The king granted them a private audience at a feast', 2, k.id, k.king);
             }
         } else if (eventType === 3) {
             // Entertainment — all attendees get +2 happiness
@@ -30511,6 +30522,8 @@
                     if (listener && listener.personality && listener.personality.warmth < 50) {
                         if (!listener._nobleRelationships) listener._nobleRelationships = {};
                         listener._nobleRelationships[braggart.id] = Math.max(-100, (listener._nobleRelationships[braggart.id] || 0) - 3);
+                        // v9p33river463: annoyed listener remembers the braggart
+                        _addFeastCourtMemory(listener, 'feast_boast_annoyed', braggartName + ' boasted loudly and annoyed them at a feast', -1, k.id, braggart.id);
                     }
                 }
                 feast.events.push(braggartName + ' boasted loudly, annoying some nobles.');
@@ -30518,6 +30531,37 @@
                     type: 'feast_event', kingdomId: k.id, _noToast: true
                 }, category);
             }
+        }
+    }
+
+    // v9p33river463: helper — create a noble memory for feast/court interactions
+    function _addFeastCourtMemory(person, category, detail, sentiment, kingdomId, actorId) {
+        if (!person || person.alive === false) return;
+        var day = world.day || 0;
+        var entry = {
+            type: 'feast_court', source: 'direct', category: category,
+            detail: detail, label: detail,
+            actorId: actorId || 'player', targetId: person.id,
+            day: day, sentiment: sentiment, kingdomId: kingdomId || ''
+        };
+        if (person.nobleMemory || (person.socialRank && typeof person.socialRank === 'object')) {
+            if (!person.nobleMemory) person.nobleMemory = { playerActions: [], nobleActions: [] };
+            if (!Array.isArray(person.nobleMemory.playerActions)) person.nobleMemory.playerActions = [];
+            var arr = (actorId && actorId !== 'player') ? person.nobleMemory.nobleActions : person.nobleMemory.playerActions;
+            if (!Array.isArray(arr)) arr = [];
+            arr.push(entry);
+            while (arr.length > 50) arr.shift();
+            if (actorId && actorId !== 'player') person.nobleMemory.nobleActions = arr;
+            else person.nobleMemory.playerActions = arr;
+        }
+        if (person.isEliteMerchant) {
+            if (!person._emMemory) person._emMemory = { playerActions: [], nobleActions: [] };
+            var emArr = (actorId && actorId !== 'player') ? person._emMemory.nobleActions : person._emMemory.playerActions;
+            if (!Array.isArray(emArr)) emArr = [];
+            emArr.push(entry);
+            while (emArr.length > 50) emArr.shift();
+            if (actorId && actorId !== 'player') person._emMemory.nobleActions = emArr;
+            else person._emMemory.playerActions = emArr;
         }
     }
 
@@ -30571,6 +30615,8 @@
             var mingName = mingPerson ? (mingPerson.firstName || 'a noble') : 'a noble';
             feast.events.push('You mingled with ' + mingName + '.');
             result = { success: true, message: 'You mingled with ' + mingName + '. (+' + mingBonus + ' relationship)' };
+            // v9p33river463: memory — target remembers player mingling
+            _addFeastCourtMemory(mingPerson, 'feast_mingle', 'Player mingled with them at a feast', 1, k.id);
 
         } else if (actionId === 'toast_king') {
             try {
@@ -30629,6 +30675,8 @@
             } catch(e) {}
             feast.events.push(chatMsg);
             result = { success: true, message: chatMsg };
+            // v9p33river463: memory — target remembers private chat at feast
+            _addFeastCourtMemory(chatPerson, 'feast_private_chat', 'Player had a pleasant private chat at a feast', 1, k.id);
 
         } else if (actionId === 'eavesdrop') {
             if (rng.chance(0.40)) {
@@ -30681,6 +30729,8 @@
                     var catcherName = catcherPerson ? (catcherPerson.firstName || 'a noble') : 'a noble';
                     feast.events.push('You were caught eavesdropping by ' + catcherName + '!');
                     result = { success: false, message: 'You were caught eavesdropping by ' + catcherName + '! (-5 relationship)' };
+                    // v9p33river463: memory — catcher remembers player eavesdropping
+                    _addFeastCourtMemory(catcherPerson, 'feast_eavesdrop_caught', 'Caught the player eavesdropping at a feast', -1, k.id);
                 } else {
                     feast.events.push('You tried to eavesdrop but heard nothing useful.');
                     result = { success: false, message: 'You tried to eavesdrop but heard nothing useful.' };
@@ -30755,6 +30805,8 @@
                     var rumorCatcherName = rumorCatcherP ? (rumorCatcherP.firstName || 'a noble') : 'a noble';
                     result.message += ' But ' + rumorCatcherName + ' saw through your deception! (-10 relationship)';
                     feast.events.push(rumorCatcherName + ' caught you spreading rumors!');
+                    // v9p33river463: memory — catcher remembers player spreading rumors at feast
+                    _addFeastCourtMemory(rumorCatcherP, 'feast_rumor_caught', 'Caught the player spreading rumors at a feast', -2, k.id);
                 }
             } else {
                 feast.events.push('Your rumor about ' + targetName + ' didn\'t gain traction.');
@@ -30825,6 +30877,8 @@
                     var caughtByName = caughtByP ? (caughtByP.firstName || 'a noble') : 'a noble';
                     result.message += ' But ' + caughtByName + ' realized your scheme! (-15 relationship)';
                     feast.events.push(caughtByName + ' discovered your manipulation!');
+                    // v9p33river463: memory — noble remembers player pitting nobles at feast
+                    _addFeastCourtMemory(caughtByP, 'feast_manipulation_caught', 'Caught the player manipulating nobles against each other at a feast', -2, k.id);
                 }
             } else {
                 feast.events.push('Your attempt to pit ' + pitNameA + ' against ' + pitNameB + ' failed.');
@@ -30853,6 +30907,8 @@
             try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(champTarget, 5); } catch(e) {}
             feast.events.push('You publicly championed ' + champName.trim() + ' before the king.');
             result = { success: true, message: '🏅 You championed ' + champName.trim() + '\'s service to the crown. (+' + champBoost + ' perceived loyalty, +5 relationship with you)' };
+            // v9p33river463: memory — championed noble remembers player's support
+            _addFeastCourtMemory(champPerson, 'feast_championed', 'Player publicly championed them at a feast', 2, k.id);
 
         } else if (actionId === 'introduce_noble') {
             // Bring a minor noble to the king's personal attention
@@ -30877,6 +30933,8 @@
             try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(introTarget, 3); } catch(e) {}
             feast.events.push('You introduced ' + introName.trim() + ' to the king.');
             result = { success: true, message: '🎩 You introduced ' + introName.trim() + ' to the king. (+' + introBoost + ' perceived loyalty, +reputation)' };
+            // v9p33river463: memory — introduced noble remembers player's introduction
+            _addFeastCourtMemory(introPerson, 'feast_introduced', 'Player introduced them to the king at a feast', 2, k.id);
 
         // ── King-specific feast actions ──
         } else if (actionId === 'royal_toast') {
@@ -30896,10 +30954,14 @@
                 var _rtNoble = findPerson(otherAttendees[_rti]);
                 if (_rtNoble && _rtNoble.personality && (_rtNoble.personality.ambition || 50) > 65) {
                     _rtNoble.kingLoyalty = Math.max(0, (_rtNoble.kingLoyalty || 50) - 2);
+                    // v9p33river463: jealous noble remembers being snubbed at feast
+                    _addFeastCourtMemory(_rtNoble, 'feast_jealous', 'Felt snubbed when the king toasted another noble at a feast', -1, k.id);
                 }
             }
             feast.events.push('The king raised a grand toast to ' + toastName.trim() + '!');
             result = { success: true, message: '🥂 You raised a grand toast to ' + toastName.trim() + '! (+12 loyalty, +8 relationship). Ambitious nobles grow envious.' };
+            // v9p33river463: toasted noble remembers the honor
+            _addFeastCourtMemory(toastPerson, 'feast_royal_toast', 'The king raised a grand toast to them at a feast', 2, k.id);
 
         } else if (actionId === 'royal_decree') {
             // King makes an announcement at the feast
@@ -31870,6 +31932,9 @@
                             if (!noble._nobleRelationships) noble._nobleRelationships = {};
                             noble._nobleRelationships[ally.id] = Math.min(100, (noble._nobleRelationships[ally.id] || 0) + 5);
                             action = nName + ' and ' + (ally.firstName || 'a noble') + ' bonded over shared loyalty to the crown.';
+                            // v9p33river463: both remember bonding at feast
+                            _addFeastCourtMemory(noble, 'feast_bonded', 'Bonded with ' + (ally.firstName || 'a noble') + ' over loyalty at a feast', 1, k.id, ally.id);
+                            _addFeastCourtMemory(ally, 'feast_bonded', 'Bonded with ' + nName + ' over loyalty at a feast', 1, k.id, nobleId);
                         }
                     }
                 }
@@ -31886,6 +31951,9 @@
                         if (!conspirator._nobleRelationships) conspirator._nobleRelationships = {};
                         conspirator._nobleRelationships[nobleId] = Math.min(100, (conspirator._nobleRelationships[nobleId] || 0) + 8);
                         action = nName + ' and ' + (conspirator.firstName || 'a noble') + ' were seen whispering in a dark corner.';
+                        // v9p33river463: both remember conspiring at feast
+                        _addFeastCourtMemory(noble, 'feast_conspired', 'Conspired with ' + (conspirator.firstName || 'a noble') + ' at a feast', 1, k.id, conspirator.id);
+                        _addFeastCourtMemory(conspirator, 'feast_conspired', 'Conspired with ' + nName + ' at a feast', 1, k.id, nobleId);
                     }
                 } else {
                     action = nName + ' made thinly veiled criticisms of royal policy.';
@@ -31908,10 +31976,15 @@
                             if (outcome) {
                                 noble._nobleRelationships[rival.id] = Math.min(100, (noble._nobleRelationships[rival.id] || 0) + 3);
                                 action = nName + ' challenged ' + (rival.firstName || 'a noble') + ' to a friendly contest and won gracefully.';
+                                // v9p33river463: rival remembers graceful contest
+                                _addFeastCourtMemory(rival, 'feast_contest', nName + ' won a friendly contest against them at a feast', 0, k.id, nobleId);
                             } else {
                                 noble._nobleRelationships[rival.id] = Math.max(-100, (noble._nobleRelationships[rival.id] || 0) - 5);
                                 rival._nobleRelationships[nobleId] = Math.max(-100, (rival._nobleRelationships[nobleId] || 0) - 3);
                                 action = nName + ' challenged ' + (rival.firstName || 'a noble') + ' to a contest that turned into a bitter argument!';
+                                // v9p33river463: both remember the bitter argument
+                                _addFeastCourtMemory(noble, 'feast_bitter_contest', 'Got into a bitter argument with ' + (rival.firstName || 'a noble') + ' at a feast', -1, k.id, rival.id);
+                                _addFeastCourtMemory(rival, 'feast_bitter_contest', nName + ' provoked a bitter argument at a feast', -1, k.id, nobleId);
                             }
                         }
                     }
@@ -31927,6 +32000,9 @@
                         if (!friend._nobleRelationships) friend._nobleRelationships = {};
                         friend._nobleRelationships[nobleId] = Math.min(100, (friend._nobleRelationships[nobleId] || 0) + 3);
                         action = nName + ' charmed ' + (friend.firstName || 'a noble') + ' with witty conversation.';
+                        // v9p33river463: both remember pleasant conversation at feast
+                        _addFeastCourtMemory(noble, 'feast_charmed', 'Charmed ' + (friend.firstName || 'a noble') + ' with conversation at a feast', 1, k.id, friend.id);
+                        _addFeastCourtMemory(friend, 'feast_charmed', nName + ' charmed them with conversation at a feast', 1, k.id, nobleId);
                     }
                 }
             } else if (fear >= 60 && rng.chance(0.30)) {
