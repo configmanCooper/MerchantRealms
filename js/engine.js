@@ -9214,6 +9214,66 @@
                 }
             }
         }
+
+        // v9p33river465: All nobles redetermine loyalty to the new king
+        _redetermineNobleLoyalty(kingdom, newKing.id, cause, rng);
+    }
+
+    // v9p33river465: When a new king takes the throne, all nobles redetermine
+    // their loyalty based on personality, relationship with the new king, and
+    // whether a plot was involved. The new king also forms perceived loyalty
+    // opinions — trusting plotters who helped them and being wary of others.
+    function _redetermineNobleLoyalty(kingdom, newKingId, cause, rng) {
+        var nobles = getNoblesInKingdom(kingdom.id);
+        if (!nobles || nobles.length === 0) return;
+
+        var plotterIds = (kingdom._conspiracy && Array.isArray(kingdom._conspiracy.plotters))
+            ? kingdom._conspiracy.plotters : [];
+        var wasPlot = (cause === 'coup' || cause === 'assassination') && plotterIds.length > 0;
+
+        for (var _rli = 0; _rli < nobles.length; _rli++) {
+            var noble = nobles[_rli];
+            if (!noble || !noble.alive || noble.id === newKingId) continue;
+
+            var nP = noble.personality || {};
+            var loyaltyTrait = nP.loyalty || 50;
+            var ambitionTrait = nP.ambition || 50;
+
+            // Base: personality influence
+            var newLoyalty = 50;
+            newLoyalty += (loyaltyTrait - 50) * 0.4;
+            newLoyalty -= (ambitionTrait - 50) * 0.2;
+
+            // Relationship with new king
+            var relToKing = (noble._nobleRelationships && noble._nobleRelationships[newKingId]) || 0;
+            newLoyalty += relToKing * 0.3;
+
+            // Plot involvement
+            var wasPlotter = wasPlot && plotterIds.indexOf(noble.id) >= 0;
+            if (wasPlot) {
+                if (wasPlotter) {
+                    newLoyalty += 20 + rng.randInt(0, 15);
+                } else {
+                    newLoyalty -= 5 + rng.randInt(0, 10);
+                }
+            }
+
+            newLoyalty += rng.randInt(-5, 5);
+            noble.kingLoyalty = Math.max(0, Math.min(100, Math.round(newLoyalty)));
+
+            // Perceived loyalty: what the new king believes about each noble
+            var perceived = noble.kingLoyalty + rng.randInt(-8, 8);
+            if (wasPlot) {
+                if (wasPlotter) {
+                    // King trusts their co-conspirators highly
+                    perceived = Math.max(perceived, 70 + rng.randInt(0, 20));
+                } else {
+                    // King is wary of those who weren't in the plot
+                    perceived = Math.min(perceived, perceived - rng.randInt(5, 15));
+                }
+            }
+            noble.perceivedKingLoyalty = Math.max(0, Math.min(100, Math.round(perceived)));
+        }
     }
 
     // v9p33river456: New king reviews all existing kingdom policies and changes
@@ -33732,6 +33792,8 @@
                     logEvent('👑 ' + (leader.firstName || 'The new ruler') + ' ' + (leader.lastName || '') + ' seizes the throne of ' + k.name + '!', {
                         type: 'new_king_coup', kingdomId: kId
                     }, category);
+                    // v9p33river465: nobles redetermine loyalty after coup
+                    _redetermineNobleLoyalty(k, leader.id, 'coup', rng);
                 }
 
                 k._conspiracy = null;
