@@ -377,6 +377,8 @@
             }
 
             em._dealDesires = desires;
+            em._cachedDealOffers = null;
+            em._cachedDealOffersDay = null;
 
             // ── Check existing deals ──
             var activeDeals = getActiveDealsForEM(em.id);
@@ -529,6 +531,12 @@
         var desires = em._dealDesires || [];
         if (desires.length === 0) return [];
 
+        // Cache offers for ~7 days so deals don't change every time UI opens
+        if (em._cachedDealOffers && em._cachedDealOffersDay != null &&
+            (world.day - em._cachedDealOffersDay) < 7) {
+            return em._cachedDealOffers;
+        }
+
         var rel = _getPlayerRelationship(emId);
         var relLevel = rel.level || 0;
         var personality = em.personality || {};
@@ -641,12 +649,11 @@
             });
         }
 
+        em._cachedDealOffers = offers;
+        em._cachedDealOffersDay = world.day;
+
         return offers;
     }
-
-    // ================================================================
-    // 6. acceptDeal — player accepts a deal offer
-    // ================================================================
     function acceptDeal(emId, dealOffer) {
         _syncState();
         if (!world) return { success: false, message: 'World not loaded.' };
@@ -693,6 +700,10 @@
         };
 
         world.emDeals.push(deal);
+
+        // Invalidate cached offers so re-opening deals UI shows fresh options
+        em._cachedDealOffers = null;
+        em._cachedDealOffersDay = null;
 
         _modifyRelationship(emId, RELATIONSHIP_DEAL_ACCEPT);
         _addEMMemory(emId, 'deal_accepted', 'Player accepted a trade deal', 1);

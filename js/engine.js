@@ -5699,6 +5699,34 @@
                 // Skip input consumption and output here to avoid double-processing
                 if (bld.ownerId === 'player') continue;
 
+                // ═══════════════════════════════════════════════
+                // BANNED GOODS ENFORCEMENT — NPC/EM buildings
+                // ═══════════════════════════════════════════════
+                if (activeProduces && kingdom && kingdom.laws && kingdom.laws.bannedGoods &&
+                    kingdom.laws.bannedGoods.indexOf(activeProduces) >= 0 &&
+                    !bld.bannedGoodsProducer) {
+                    var _bgOwner = bld.ownerId ? findPerson(bld.ownerId) : null;
+                    var _bgIsEM = _bgOwner && _bgOwner.isEliteMerchant;
+                    if (_bgIsEM) {
+                        var _bgEmPermits = _bgOwner.productionPermits &&
+                            _bgOwner.productionPermits[kingdom.id] &&
+                            _bgOwner.productionPermits[kingdom.id].indexOf(activeProduces) >= 0;
+                        if (!_bgEmPermits) {
+                            var _bgEmCatch = 0.02;
+                            var _bgEmNoble = _bgOwner.socialRank && _bgOwner.socialRank[kingdom.id];
+                            if (_bgEmNoble >= 4) _bgEmCatch -= 0.01;
+                            _bgEmCatch = Math.max(0, _bgEmCatch);
+                            if (rng.random() < _bgEmCatch) {
+                                bld._disabledUntil = world.day + 30;
+                                var _bgEmFine = 200;
+                                _bgOwner.gold = Math.max(0, (_bgOwner.gold || 0) - _bgEmFine);
+                                var _bgEmResName = findResourceById(activeProduces);
+                                logEvent('🚫 ' + (_bgOwner.name || 'An elite merchant') + '\'s ' + (bt.name || bld.type) + ' in ' + town.name + ' was shut down for producing banned ' + (_bgEmResName ? _bgEmResName.name : activeProduces) + '. Fined ' + _bgEmFine + 'g.', null, 'kingdoms');
+                            }
+                        }
+                    }
+                }
+
                 // Check inputs available
                 let canProduce = true;
                 for (const [resId, qty] of Object.entries(activeConsumes)) {

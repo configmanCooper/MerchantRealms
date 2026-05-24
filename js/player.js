@@ -6649,6 +6649,65 @@
             const town = Engine.findTown(bld.townId);
             if (!town) continue;
 
+            // ═══════════════════════════════════════════════════════════
+            // BANNED GOODS ENFORCEMENT — daily chance of getting caught
+            // producing banned goods without a production permit
+            // ═══════════════════════════════════════════════════════════
+            if (_activeProduces && town.kingdomId) {
+                var _bgKingdom = null;
+                try { _bgKingdom = Engine.findKingdom(town.kingdomId); } catch(e) {}
+                if (_bgKingdom && _bgKingdom.laws && _bgKingdom.laws.bannedGoods &&
+                    _bgKingdom.laws.bannedGoods.indexOf(_activeProduces) >= 0) {
+                    // Check production permits
+                    var _bgKid = town.kingdomId;
+                    var _bgPermitExp = (player._productionPermitExpiry || {})[_bgKid] || 0;
+                    var _bgHasWild = player.productionPermits &&
+                        player.productionPermits[_bgKid] &&
+                        player.productionPermits[_bgKid].includes('__wildcard__') &&
+                        _bgPermitExp > day;
+                    var _bgHasPermit = _bgHasWild || (player.productionPermits &&
+                        player.productionPermits[_bgKid] &&
+                        player.productionPermits[_bgKid].includes(_activeProduces));
+                    var _bgMilExempt = false;
+                    try { _bgMilExempt = Player._isMilitaryOrHorse(_activeProduces) && Player.hasMilitaryExemption(_bgKid); } catch(e) {}
+
+                    if (!_bgHasPermit && !_bgMilExempt) {
+                        var _bgCatchChance = 0.03;
+                        if (hasSkill('master_smuggler')) _bgCatchChance -= 0.015;
+                        if (hasSkill('discrete')) _bgCatchChance -= 0.005;
+                        if (hasSkill('shadow_dealings')) _bgCatchChance -= 0.005;
+                        if (hasSkill('contraband_network')) _bgCatchChance -= 0.005;
+                        if (hasSkill('black_market_contacts')) _bgCatchChance -= 0.003;
+                        var _bgRankIdx = (player.socialRank[_bgKid] != null) ? player.socialRank[_bgKid] : 0;
+                        if (_bgRankIdx >= 5) _bgCatchChance -= 0.015;
+                        else if (_bgRankIdx >= 4) _bgCatchChance -= 0.01;
+                        _bgCatchChance = Math.max(0, _bgCatchChance);
+
+                        var _bgRng = Engine.getRng();
+                        var _bgRoll = _bgRng ? _bgRng.random() : Math.random();
+                        if (_bgRoll < _bgCatchChance) {
+                            bld._disabledUntil = day + 30;
+                            var _bgPunishment = getCrimePunishment(_bgKid, 'smuggling');
+                            var _bgFine = _bgPunishment.fine || 200;
+                            var _bgJailDays = _bgPunishment.jailDays || 5;
+                            if (hasSkill('jail_break')) _bgJailDays = Math.max(1, Math.floor(_bgJailDays * 0.5));
+                            deductGoldOrDebt(_bgFine, 'kingdom', _bgKid, _bgKingdom.name, 'Banned goods production fine');
+                            player.jailedUntilDay = day + _bgJailDays;
+                            player.jailReason = 'Producing banned goods (' + _activeProduces + ')';
+                            if (!player.criminalRecord) player.criminalRecord = {};
+                            if (!player.criminalRecord[_bgKid]) player.criminalRecord[_bgKid] = {};
+                            player.criminalRecord[_bgKid].smuggling = (player.criminalRecord[_bgKid].smuggling || 0) + 1;
+                            player.notoriety = Math.min(100, (player.notoriety || 0) + 5);
+                            var _bgResName = findResource(_activeProduces);
+                            var _bgMsg = '🚫 CAUGHT! Your ' + (bt.name || bld.type) + ' in ' + (town.name || 'town') + ' was caught producing banned goods (' + (_bgResName ? _bgResName.name : _activeProduces) + ')! Building shut down for 30 days. Fined ' + _bgFine + 'g, jailed ' + _bgJailDays + ' days.';
+                            Engine.logEvent(_bgMsg, null, 'my_actions');
+                            if (typeof UI !== 'undefined' && UI.toast) UI.toast(_bgMsg, 'danger', 'critical');
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // Worker fraction: extra workers from upgrades scale proportionally against base
             var effectiveWorkerCap = bt.workers + ((bld.level || 1) - 1);
             var _baseWorkers = Math.max(bt.workers, 1);
