@@ -2508,6 +2508,9 @@
 
         Engine.logEvent(`The merchant builds a ${bt.name} in ${town.name}.`, null, 'my_business');
         autoJournalCapture('building', 'I built a ' + bt.name + ' in ' + town.name + '. My empire grows.', { mood: 'hopeful' });
+        try {
+            _recordSpouseMilestoneMemory('building_purchased', 'You acquired a ' + bt.name + ' in ' + town.name + '.', 2, 'New Property', town.kingdomId);
+        } catch(e) {}
         grantXP(XP_REWARDS.BUILD, 'build');
         Player.consumeEnergy(ENERGY_CONFIG.BUILD_COST || 5);
         // Story Mode: notify of building construction
@@ -2638,6 +2641,9 @@
 
         var bName = bt ? bt.name : bld.type;
         Engine.logEvent('The merchant purchased a ' + bName + ' in ' + town.name + ' for ' + result.price + 'g.', null, 'my_business');
+        try {
+            _recordSpouseMilestoneMemory('building_purchased', 'You purchased a ' + bName + ' in ' + town.name + '.', 2, 'New Property', town.kingdomId);
+        } catch(e) {}
         grantXP(XP_REWARDS.BUILD || 10, 'build');
         return { success: true, message: 'Purchased ' + bName + ' for ' + result.price + 'g.', building: playerBld };
     }
@@ -15602,6 +15608,10 @@
                 player.rankSince[playerKingdomForMarriage] = Engine.getDay();
                 var rankName = CONFIG.SOCIAL_RANKS[newRank] ? CONFIG.SOCIAL_RANKS[newRank].name : 'noble';
                 Engine.logEvent('🏰 Through marriage, ' + player.fullName + ' has been elevated to ' + rankName + '!', null, "my_actions");
+                try {
+                    var _marriageRankKingdom = Engine.findKingdom ? Engine.findKingdom(playerKingdomForMarriage) : null;
+                    _recordSpouseMilestoneMemory('player_promoted', 'You were elevated to ' + rankName + ' through marriage in ' + (_marriageRankKingdom ? _marriageRankKingdom.name : 'the kingdom') + '.', 3, 'Your Rise', playerKingdomForMarriage);
+                } catch(e) {}
 
                 // Grant noble benefits if reaching Minor Noble+ (rank 4+)
                 if (newRank >= 4 && !player.isNoble) {
@@ -16240,6 +16250,9 @@
                 const town = Engine.findTown(player.townId);
                 if (town) town.population++;
                 player.pregnantDay = 0;
+                try {
+                    _recordSpouseMilestoneMemory('child_born', 'You welcomed a new ' + (childSex === 'M' ? 'son' : 'daughter') + ' into the family.', 4, 'Our Child', child.kingdomId || (town ? town.kingdomId : ''));
+                } catch(e) {}
 
                 // Check if spouse has names_children quirk
                 var _spouseNamesChild = false;
@@ -24548,6 +24561,10 @@
         }
 
         const rank = CONFIG.SOCIAL_RANKS[newIdx];
+        try {
+            var _petitionPromoKingdom = Engine.findKingdom ? Engine.findKingdom(kId) : null;
+            _recordSpouseMilestoneMemory('player_promoted', 'You were promoted to ' + (rank && rank.name ? rank.name : 'a higher rank') + ' in ' + (_petitionPromoKingdom ? _petitionPromoKingdom.name : 'the kingdom') + '.', 3, 'Your Promotion', kId);
+        } catch(e) {}
         grantXP(XP_REWARDS.NEW_RANK || 100, 'rank');
         Engine.logEvent(`\uD83C\uDF96\uFE0F ${player.fullName} has been promoted to ${rank.name} in ${Engine.findKingdom(kId) ? Engine.findKingdom(kId).name : 'the kingdom'}!`, null, "my_actions");
         autoJournalCapture('rank', 'I have been promoted to ' + rank.name + '! The kingdom recognizes my worth.', { mood: 'triumphant' });
@@ -26009,6 +26026,45 @@
         player.reputation[kingdomId] = Math.max(0, Math.min(100, (player.reputation[kingdomId] || 50) + amount));
     }
 
+    function _isImmediateFamilyMember(personId) {
+        if (!personId) return false;
+        if (player.spouseId === personId) return true;
+        if (player.parentIds && player.parentIds.indexOf(personId) !== -1) return true;
+        if (player.childrenIds && player.childrenIds.indexOf(personId) !== -1) return true;
+        if (player.siblingIds && player.siblingIds.indexOf(personId) !== -1) return true;
+        return false;
+    }
+
+    function _recordPlayerFamilyMemory(person, category, detail, sentiment, label, kingdomId) {
+        if (!person || person.alive === false || !Engine._addPlayerMemory) return;
+        Engine._addPlayerMemory(person, {
+            type: 'observation', source: 'player',
+            category: category,
+            detail: detail,
+            actorId: 'player', targetId: person.id,
+            day: Engine.getDay(), sentiment: sentiment,
+            kingdomId: kingdomId || player.citizenshipKingdomId || person.kingdomId || '',
+            label: label
+        });
+    }
+
+    function _recordSpouseMilestoneMemory(category, detail, sentiment, label, kingdomId) {
+        var spouse = player.spouseId ? Engine.findPerson(player.spouseId) : null;
+        if (!spouse || spouse.alive === false) return;
+        _recordPlayerFamilyMemory(spouse, category, detail, sentiment, label, kingdomId);
+    }
+
+    function _recordGiftMemoryForFamilyMember(person, resource, qty, gain) {
+        if (!person || !resource || !_isImmediateFamilyMember(person.id)) return;
+        var isSpouse = player.spouseId === person.id;
+        var category = isSpouse ? 'spouse_gift' : 'family_gift';
+        var label = isSpouse ? 'A Gift From You' : 'Family Gift';
+        var detail = 'You gave ' + qty + ' ' + resource.name + ' to ' + person.firstName + ' as a gift.';
+        if (gain >= 5) detail += ' It clearly meant a lot.';
+        else if (gain <= -3) detail += ' It landed poorly.';
+        _recordPlayerFamilyMemory(person, category, detail, gain >= 5 ? 3 : (gain <= -3 ? -2 : 1), label);
+    }
+
     function giveGift(personId, resourceId, qty) {
         qty = Number(qty);
         if (!qty || !isFinite(qty) || qty <= 0) return { success: false, message: 'Invalid quantity.' };
@@ -26098,6 +26154,9 @@
                 Player.recordNpcMemory(person, _gMemKind, qty + ' ' + res.name, { sentiment: _gMemSent });
             }
         } catch (_eGMem) { /* defensive */ }
+        try {
+            _recordGiftMemoryForFamilyMember(person, res, qty, gain);
+        } catch(e) {}
         return { success: true, message: 'Gave ' + qty + ' ' + res.name + ' to ' + person.firstName + '. Relationship ' + gainStr + '.' + prefMessage };
     }
 

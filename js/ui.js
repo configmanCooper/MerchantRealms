@@ -6518,6 +6518,172 @@ window.UI = (function () {
             ]
         },
 
+        // Spouse talks about player's goods/inventory
+        {
+            id: 'q_spouse_goods',
+            summary: 'spouse discussing your trade goods',
+            askFor: function(ctx) {
+                if (!ctx.person || ctx.family !== 'spouse') return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps || !ps.inventory) return null;
+                var totalGoods = 0;
+                for (var g in ps.inventory) { totalGoods += (ps.inventory[g] || 0); }
+                if (totalGoods > 50) return 'My love, the warehouse is bursting with goods! ' + totalGoods + ' items stockpiled. Are you planning something big?';
+                if (totalGoods > 20) return 'I see you have been stocking up on trade goods. Business going well?';
+                if (totalGoods < 3 && ps.gold < 100) return 'The shelves are looking rather bare, my love. Are we going to be alright?';
+                return null;
+            },
+            options: [
+                { label: '"I have a plan, trust me."', kind: 'truth', relGain: 3,
+                  reactions: ['*warm smile* I do trust you. Always have.', '*nods* You have not steered us wrong yet.'] },
+                { label: '"We are doing fine, do not worry."', kind: 'truth', relGain: 2,
+                  reactions: ['*relieved* Good. I just like to know where we stand.', '*squeezes your arm* Alright. I believe you.'] },
+                { label: '"Things are tight, but we will manage."', kind: 'truth', relGain: 4,
+                  reactions: ['*serious* Then we manage together. That is what family does.', '*determined* We have been through worse. We will get through this too.'] }
+            ]
+        },
+
+        // Spouse talks about workers/employees
+        {
+            id: 'q_spouse_workers',
+            summary: 'spouse discussing your workers',
+            askFor: function(ctx) {
+                if (!ctx.person || ctx.family !== 'spouse') return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps || !ps.employees || ps.employees.length < 3) return null;
+                return 'You have ' + ps.employees.length + ' people working for you now. I remember when it was just the two of us. How times have changed!';
+            },
+            options: [
+                { label: '"We built this together."', kind: 'truth', relGain: 5,
+                  reactions: ['*beams* That we did. And I would not change a thing.', '*emotional* You always know how to make me feel valued.'] },
+                { label: '"Good help is hard to find."', kind: 'truth', relGain: 2,
+                  reactions: ['*laughs* Is that your way of saying you appreciate them?', '*amused* You sound like an old merchant already.'] },
+                { label: '"Every one of them earns their keep."', kind: 'truth', relGain: 3,
+                  reactions: ['*nods* Fair but firm. That is good management.', 'Just make sure you are not working them too hard. Or yourself.'] }
+            ]
+        },
+
+        // Spouse comments on player's gold
+        {
+            id: 'q_spouse_gold',
+            summary: 'spouse discussing your wealth',
+            askFor: function(ctx) {
+                if (!ctx.person || ctx.family !== 'spouse') return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps) return null;
+                if (ps.gold > 10000) return 'We have more gold than I ever dreamed possible. ' + Math.floor(ps.gold) + ' coins! Promise me it will not change who we are.';
+                if (ps.gold > 3000) return 'The coffers are looking healthy, my love. ' + Math.floor(ps.gold) + ' gold! Should we invest in something?';
+                if (ps.gold < 50) return '*worried* My love... we are running very low on gold. Only ' + Math.floor(ps.gold) + ' coins left. What should we do?';
+                return null;
+            },
+            options: [
+                { label: '"We will be wise with it."', kind: 'truth', relGain: 3,
+                  reactions: ['*reassured* That is all I needed to hear.', '*nods* I know I can trust your judgment.'] },
+                { label: '"Money comes and goes."', kind: 'deflect', relGain: 1,
+                  reactions: ['*slight frown* Easy for you to say...', '*sighs* I suppose that is true. But I still worry.'] },
+                { label: '"Everything I do, I do for us."', kind: 'truth', relGain: 5,
+                  reactions: ['*tears up* I know. And I love you for it.', '*takes your hand* And I will always stand by your side.'] }
+            ]
+        },
+
+        // Spouse/family talks about player's caravans
+        {
+            id: 'q_spouse_caravans',
+            summary: 'spouse discussing trade routes',
+            askFor: function(ctx) {
+                if (!ctx.person || ctx.family !== 'spouse') return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps || !ps.caravans || ps.caravans.length < 2) return null;
+                return 'You have ' + ps.caravans.length + ' caravans on the roads now. I worry about bandits, you know. Are the guards enough?';
+            },
+            options: [
+                { label: '"They are well-protected, I promise."', kind: 'truth', relGain: 3,
+                  reactions: ['*relieved* Good. I could not bear it if something happened.', 'You always were thorough about security. I appreciate that.'] },
+                { label: '"The profits outweigh the risks."', kind: 'truth', relGain: 1,
+                  reactions: ['*uneasy* I know profits matter, but so do lives.', '*reluctantly* I suppose you are right. Just... be careful.'] },
+                { label: '"I will add more guards if it helps you sleep."', kind: 'truth', relGain: 4,
+                  reactions: ['*touched* You really do listen to me.', '*smiles* That would ease my mind, yes.'] }
+            ]
+        },
+
+        // Child discusses parent's rank
+        {
+            id: 'q_child_pride',
+            summary: 'your child discussing your status',
+            askFor: function(ctx) {
+                if (!ctx.person || (ctx.family !== 'son' && ctx.family !== 'daughter')) return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps) return null;
+                var maxR = 0;
+                if (ps.socialRank) { for (var rk in ps.socialRank) { if ((ps.socialRank[rk] || 0) > maxR) maxR = ps.socialRank[rk]; } }
+                if (maxR >= 5) return 'The other children at court say our family is one of the most powerful. Is that true?';
+                if (maxR >= 4) return 'I told my friends that my parent is a noble. They were so impressed!';
+                if (ps.buildings && ps.buildings.length >= 5) return 'You own so many buildings! Will I inherit them someday?';
+                if (ps.gold > 5000) return 'Are we rich? Some of the other children say we must be very wealthy.';
+                return null;
+            },
+            options: [
+                { label: '"What matters is that we are a good family."', kind: 'truth', relGain: 4,
+                  reactions: ['*thoughtful* You are right. I just wanted to understand.', '*nods* I will try to remember that.'] },
+                { label: '"Someday this will all be yours."', kind: 'truth', relGain: 3,
+                  reactions: ['*eyes wide* Really?! I will work hard to deserve it!', '*excited* I promise I will take care of everything!'] },
+                { label: '"Power is a responsibility, not a prize."', kind: 'truth', relGain: 3,
+                  reactions: ['*solemn* I understand. You sound like the tutors.', '*impressed* That is very wise. I will remember it.'] }
+            ]
+        },
+
+        // NPC (non-family, 20+ rel) comments on player's reputation/standing
+        {
+            id: 'q_npc_reputation',
+            summary: 'commenting on your reputation',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cold') return null;
+                if (ctx.npcRank < 1 && !ctx.npcIsEM) return null;
+                if (ctx.family) return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps) return null;
+                var relLevel = 0;
+                try { if (ps.relationships && ps.relationships[ctx.person.id]) relLevel = ps.relationships[ctx.person.id].level || 0; } catch(e) {}
+                if (relLevel < 20) return null;
+                var rep = 0;
+                if (ps.citizenshipKingdomId && ps.reputation) rep = ps.reputation[ps.citizenshipKingdomId] || 0;
+                if (rep > 80) return 'Your reputation precedes you, ' + ctx.playerName + '. ' + Math.floor(rep) + ' reputation in this kingdom! People speak highly of you.';
+                if (rep > 50) return 'You have built quite a name for yourself, ' + ctx.playerName + '. People in the kingdom notice.';
+                if (rep < 20 && rep > 0) return 'If I may speak frankly, ' + ctx.playerName + '... your reputation could use some work. People talk.';
+                return null;
+            },
+            options: [
+                { label: '"Reputation is earned through actions."', kind: 'truth', relGain: 3,
+                  reactions: ['*approving* Well said. And your actions speak volumes.', '*nods* Indeed. Keep on the path you are on.'] },
+                { label: '"I care more about true friends than public opinion."', kind: 'truth', relGain: 4,
+                  reactions: ['*touched* Then count me among them.', '*warm* A sentiment I share.'] },
+                { label: '"Tell me what people are saying."', kind: 'truth', relGain: 2,
+                  reactions: ['*leans in* Well, they say you are shrewd but fair. Could be worse.', '*thoughtful* Mostly good things. A few jealous tongues, of course.'] }
+            ]
+        },
+
+        // Spouse remembers having children together
+        {
+            id: 'q_spouse_children',
+            summary: 'spouse discussing your children',
+            askFor: function(ctx) {
+                if (!ctx.person || ctx.family !== 'spouse') return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps || !ps.childrenIds || ps.childrenIds.length === 0) return null;
+                if (ps.childrenIds.length >= 3) return 'Our family has grown so much... ' + ps.childrenIds.length + ' children! The house is never quiet anymore.';
+                if (ps.childrenIds.length === 1) return 'I watch our little one growing up so fast. Do you think about having another?';
+                return 'The children ask about you when you are away trading. They miss you.';
+            },
+            options: [
+                { label: '"They are my greatest treasure."', kind: 'truth', relGain: 5,
+                  reactions: ['*melts* Oh, my love... that is beautiful.', '*tearful smile* And mine. Every single one of them.'] },
+                { label: '"I will try to be home more."', kind: 'truth', relGain: 4,
+                  reactions: ['*hopeful* They would love that. We all would.', '*gentle* Do not promise what you cannot keep. But... I hope you do.'] },
+                { label: '"Tell them I am building a future for them."', kind: 'truth', relGain: 3,
+                  reactions: ['*nods slowly* I do tell them. They are proud of you.', '*understanding* They know. But they need your presence too, not just your gold.'] }
+            ]
+        },
+
         // Family member comments
         {
             id: 'q_family_bond',

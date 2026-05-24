@@ -1220,9 +1220,50 @@ function openNobilityDialog() {
         _prevScroll = _mb.scrollTop;
     }
     openModal('👑 Nobility — ' + (rankDef.name || 'Noble'), html, footerHtml);
+    // v9p33river476: initialize coalition cause dropdown (scripts in innerHTML don't execute)
+    _initCoalitionCauseDropdown();
     if (_prevScroll > 0 && _mb) {
         _mb.scrollTop = _prevScroll;
     }
+}
+
+function _initCoalitionCauseDropdown() {
+    var cs = document.getElementById('coalition_cause');
+    var st = document.getElementById('coalition_secondary_target');
+    var hint = document.getElementById('coalition_cause_hint');
+    if (!cs || !st) return;
+    var promoData = [];
+    try { promoData = JSON.parse((document.getElementById('coalition_promo_data') || {}).textContent || '[]'); } catch(e) {}
+    var kingdomData = [];
+    try { kingdomData = JSON.parse((document.getElementById('coalition_kingdom_data') || {}).textContent || '[]'); } catch(e) {}
+    function update() {
+        if (!cs || !st) return;
+        var v = cs.value;
+        st.innerHTML = '';
+        st.style.display = 'none';
+        if (hint) hint.textContent = '';
+        if (v === 'promote_noble' && promoData.length > 0) {
+            for (var i = 0; i < promoData.length; i++) {
+                var o = document.createElement('option');
+                o.value = promoData[i].id;
+                o.textContent = promoData[i].label;
+                st.appendChild(o);
+            }
+            st.style.display = '';
+            if (hint) hint.textContent = 'Select a noble to promote.';
+        } else if ((v === 'declare_war' || v === 'make_peace' || v === 'form_alliance') && kingdomData.length > 0) {
+            for (var j = 0; j < kingdomData.length; j++) {
+                var o2 = document.createElement('option');
+                o2.value = kingdomData[j].id;
+                o2.textContent = kingdomData[j].label;
+                st.appendChild(o2);
+            }
+            st.style.display = '';
+            if (hint) hint.textContent = 'Select a target kingdom.';
+        }
+    }
+    cs.addEventListener('change', update);
+    update();
 }
 
 // ── Noble Influence Tab Builder ──
@@ -1808,29 +1849,6 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         // Embed target data for JS to populate the secondary dropdown
         html += '<script type="text/json" id="coalition_promo_data">' + JSON.stringify(_coalPromotionTargets) + '</scr' + 'ipt>';
         html += '<script type="text/json" id="coalition_kingdom_data">' + JSON.stringify(_coalKingdomTargets) + '</scr' + 'ipt>';
-        // v9p33river445: JS to update secondary dropdown based on cause selection
-        html += '<scr' + 'ipt>';
-        html += '(function(){';
-        html += 'var cs=document.getElementById("coalition_cause");';
-        html += 'var st=document.getElementById("coalition_secondary_target");';
-        html += 'var hint=document.getElementById("coalition_cause_hint");';
-        html += 'var promoData=[];try{promoData=JSON.parse(document.getElementById("coalition_promo_data").textContent||"[]");}catch(e){}';
-        html += 'var kingdomData=[];try{kingdomData=JSON.parse(document.getElementById("coalition_kingdom_data").textContent||"[]");}catch(e){}';
-        html += 'function update(){';
-        html += 'if(!cs||!st)return;';
-        html += 'var v=cs.value;st.innerHTML="";st.style.display="none";';
-        html += 'if(hint)hint.textContent="";';
-        html += 'if(v==="promote_noble"&&promoData.length>0){';
-        html += 'for(var i=0;i<promoData.length;i++){var o=document.createElement("option");o.value=promoData[i].id;o.textContent=promoData[i].label;st.appendChild(o);}';
-        html += 'st.style.display="";if(hint)hint.textContent="Select a noble to promote.";';
-        html += '}else if((v==="declare_war"||v==="make_peace"||v==="form_alliance")&&kingdomData.length>0){';
-        html += 'for(var j=0;j<kingdomData.length;j++){var o2=document.createElement("option");o2.value=kingdomData[j].id;o2.textContent=kingdomData[j].label;st.appendChild(o2);}';
-        html += 'st.style.display="";if(hint)hint.textContent="Select a target kingdom.";';
-        html += '}}';
-        html += 'if(cs)cs.addEventListener("change",update);';
-        html += 'update();';
-        html += '})();';
-        html += '</scr' + 'ipt>';
     } else {
         html += '<div style="font-size:0.75rem;color:#888;font-style:italic;">Maximum active coalitions reached (3).</div>';
     }

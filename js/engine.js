@@ -17425,8 +17425,8 @@
         var procNeeds = (kingdom.procurement && kingdom.procurement.needs) || {};
         for (var eg in prodMap) {
             var em = prodMap[eg];
-            var totalDemand = em.demand + (procNeeds[eg] || 0);
-            if (totalDemand <= 0) continue;
+            var totalDemand = (em.demand || 0) + (procNeeds[eg] || 0);
+            if (!totalDemand || totalDemand <= 0 || isNaN(totalDemand)) continue;
             // Calculate total supply across kingdom
             var totalSupply = 0;
             for (var sti = 0; sti < kTowns.length; sti++) {
@@ -17434,12 +17434,13 @@
                     totalSupply += (kTowns[sti].market.supply[eg] || 0);
                 }
             }
+            if (isNaN(totalSupply)) totalSupply = 0;
             var deficit = totalDemand - totalSupply;
-            if (deficit <= 2) continue;
+            if (deficit <= 2 || isNaN(deficit)) continue;
             var eres = findResourceById(eg);
             var eName = eres ? eres.name : eg;
             var _scaledNeed = Math.ceil(deficit * 0.25);
-            if (_scaledNeed < 1) _scaledNeed = 1;
+            if (isNaN(_scaledNeed) || _scaledNeed < 1) _scaledNeed = 1;
             enticements.push({
                 goodId: eg,
                 goodName: eName,
