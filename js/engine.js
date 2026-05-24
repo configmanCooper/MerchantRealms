@@ -16237,6 +16237,17 @@
             }
         }
 
+        // v9p33river469: include negotiated demands (from threaten/entice agreements)
+        if (noble._negotiatedDemands && noble._negotiatedDemands.length > 0) {
+            var _causeLabels = { lower_taxes: 'Lower Taxes', raise_taxes: 'Raise Taxes', make_peace: 'Seek Peace', declare_war: 'Declare War', form_alliance: 'Form Alliance', build_infrastructure: 'Build Infrastructure', build_walls: 'Fortify Towns', improve_happiness: 'Improve Welfare', medical_funding: 'Plague Relief', lower_tariffs: 'Lower Tariffs', raise_tariffs: 'Raise Tariffs', pass_law: 'Pass a Law', repeal_law: 'Repeal a Law', quarantine_town: 'Quarantine Town', lift_all_quarantines: 'Lift All Quarantines', lift_quarantine: 'Lift Quarantine', build_route: 'Build Route', build_sea_route: 'Build Sea Route' };
+            for (var _ndi = 0; _ndi < noble._negotiatedDemands.length; _ndi++) {
+                var _nd = noble._negotiatedDemands[_ndi];
+                if (_nd.expiresDay && _nd.expiresDay <= world.day) continue;
+                var _ndLabel = _causeLabels[_nd.actionId] || _nd.actionId.replace(/_/g, ' ');
+                advice.push({ icon: '⚖️', text: 'Pledged to push: ' + _ndLabel, weight: 90, actionId: _nd.actionId });
+            }
+        }
+
         // Sort by weight and pick priority
         advice.sort(function(a, b) { return b.weight - a.weight; });
         goals.sort(function(a, b) { return b.weight - a.weight; });
