@@ -1421,8 +1421,9 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     } catch(e) {}
 
     // ═══ Conspiracy Participation Section ═══
+    // v9p33river465: use targetKingdomId so switching kingdom dropdown updates nobles
     var _conspiracy = null;
-    try { _conspiracy = Engine.getKingdomConspiracy(citizenKingdomId); } catch(e) {}
+    try { _conspiracy = Engine.getKingdomConspiracy(targetKingdomId); } catch(e) {}
 
     html += '<div style="background:rgba(139,69,19,0.12);border:1px solid rgba(139,69,19,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
     html += '<div style="font-size:0.95rem;font-weight:bold;color:#d4a76a;margin-bottom:6px;">🗡️ Conspiracies</div>';
@@ -1442,7 +1443,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         // v9p33river435: enhanced conspiracy — show detailed info
         var _detailHtml = '';
         var _conspDetails = null;
-        try { _conspDetails = Engine.getConspiracyDetails(citizenKingdomId); } catch(e) {}
+        try { _conspDetails = Engine.getConspiracyDetails(targetKingdomId); } catch(e) {}
         if (_conspDetails) {
             var _typeExplain = {
                 assassination: '🗡️ <b>Assassination:</b> Eliminate the king. Success depends on plotter count vs royal guards. High risk, high reward.',
@@ -1464,21 +1465,21 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             var _readyMsg = _conspiracy.type === 'revolt_support' ? '⚡ Resources are ready to deliver to the rebels!' : '⚡ The conspirators are ready to act!';
             html += '<div style="font-size:0.78rem;color:#2ecc71;margin-top:4px;font-weight:bold;">' + _readyMsg + '</div>';
             // v9p33river449: manual execute button
-            html += '<button class="btn-medieval" data-action="executeConspiracy" data-id="' + citizenKingdomId + '" style="margin-top:6px;font-size:0.82rem;padding:6px 16px;background:rgba(200,50,50,0.4);border-color:rgba(200,50,50,0.6);color:#ff6666;font-weight:bold;">⚔️ Execute the Plot Now</button>';
+            html += '<button class="btn-medieval" data-action="executeConspiracy" data-id="' + targetKingdomId + '" style="margin-top:6px;font-size:0.82rem;padding:6px 16px;background:rgba(200,50,50,0.4);border-color:rgba(200,50,50,0.6);color:#ff6666;font-weight:bold;">⚔️ Execute the Plot Now</button>';
         }
         // v9p33river435: enhanced conspiracy — recruit nobles to conspiracy
         var _availableNobles = [];
         try {
-            var _recKNobles = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(citizenKingdomId) : [];
+            var _recKNobles = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(targetKingdomId) : [];
             if (!_recKNobles.length && Engine.getWorld) {
                 var _recWorld = Engine.getWorld();
                 var _recPeople = _recWorld ? _recWorld.people : [];
                 _recKNobles = _recPeople.filter(function(p) {
-                    return p && p.alive && p.socialRank && (p.socialRank[citizenKingdomId] || 0) >= 4 && p.id !== 'player';
+                    return p && p.alive && p.socialRank && (p.socialRank[targetKingdomId] || 0) >= 4 && p.id !== 'player';
                 });
             }
             var _recPlotters = Array.isArray(_conspiracy.plotters) ? _conspiracy.plotters : [];
-            var _recKingdom = Engine.findKingdom ? Engine.findKingdom(citizenKingdomId) : null;
+            var _recKingdom = Engine.findKingdom ? Engine.findKingdom(targetKingdomId) : null;
             for (var _rni = 0; _rni < _recKNobles.length; _rni++) {
                 var _rn = _recKNobles[_rni];
                 if (!_rn || !_rn.alive) continue;
@@ -1528,14 +1529,14 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                 html += '<option value="' + _rsn.id + '"' + (!_rsnLocal ? ' style="color:#888;"' : '') + '>' + escapeHtml((_rsn.firstName || '?') + ' ' + (_rsn.lastName || '')) + _rsnLoyHint + _rsnLocTag + '</option>';
             }
             html += '</select>';
-            html += '<button class="btn-medieval" data-action="recruitConspirator" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Recruit</button>';
+            html += '<button class="btn-medieval" data-action="recruitConspirator" data-id="' + targetKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Recruit</button>';
             html += '</div></div>';
         }
         html += '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">';
-        html += '<button class="btn-medieval" data-action="playerLeaveConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚪 Withdraw from Conspiracy</button>';
+        html += '<button class="btn-medieval" data-action="playerLeaveConspiracy" data-id="' + targetKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚪 Withdraw from Conspiracy</button>';
         // v9p33river445: disband conspiracy if player is the organizer (plotters[0])
         if (_conspiracy.plotters && _conspiracy.plotters[0] === 'player') {
-            html += '<button class="btn-medieval" data-action="disbandConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(160,40,40,0.4);border-color:rgba(160,40,40,0.6);color:#ff8888;">💀 Disband Conspiracy</button>';
+            html += '<button class="btn-medieval" data-action="disbandConspiracy" data-id="' + targetKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(160,40,40,0.4);border-color:rgba(160,40,40,0.6);color:#ff8888;">💀 Disband Conspiracy</button>';
         }
         html += '</div></div>';
     } else if (_conspiracy && !_conspiracy.playerInvolved) {
@@ -1551,11 +1552,11 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         var _cPlotLabel = _cPlotCount === 1 ? '1 noble is involved' : (_cPlotCount + ' nobles are involved');
         html += '<div style="font-size:0.78rem;color:#aaa;margin-top:4px;">' + _cPlotLabel + '</div>';
         html += '<div style="margin-top:6px;">';
-        html += '<button class="btn-medieval" data-action="playerJoinConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Join the Conspiracy</button>';
+        html += '<button class="btn-medieval" data-action="playerJoinConspiracy" data-id="' + targetKingdomId + '" style="font-size:0.75rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Join the Conspiracy</button>';
         html += '</div></div>';
     } else {
         // No conspiracy — player can form one with a discontented noble
-        // v9p33river425: use citizen kingdom nobles only, not foreign target nobles
+        // v9p33river425: use target kingdom nobles, updated by kingdom dropdown
         var _citizenNobles = [];
         try {
             if (typeof Engine !== 'undefined' && Engine.getWorld && Engine.getPeople) {
@@ -1563,13 +1564,13 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                 var _cwTowns = _cwNobles && _cwNobles.towns ? _cwNobles.towns : [];
                 var _cwPlayerId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
                 for (var _cwi = 0; _cwi < _cwTowns.length; _cwi++) {
-                    if (_cwTowns[_cwi].kingdomId !== citizenKingdomId) continue;
+                    if (_cwTowns[_cwi].kingdomId !== targetKingdomId) continue;
                     var _cwPeople = Engine.getPeople(_cwTowns[_cwi].id);
                     if (!_cwPeople) continue;
                     for (var _cwp = 0; _cwp < _cwPeople.length; _cwp++) {
                         var _cwN = _cwPeople[_cwp];
                         // v9p33river445: filter to nobles ranked in THIS kingdom only
-                        if (_cwN && _cwN.alive && _cwN.id !== _cwPlayerId && _cwN.socialRank && (_cwN.socialRank[citizenKingdomId] || 0) >= 4 && !_cwN.isKing) {
+                        if (_cwN && _cwN.alive && _cwN.id !== _cwPlayerId && _cwN.socialRank && (_cwN.socialRank[targetKingdomId] || 0) >= 4 && !_cwN.isKing) {
                             _citizenNobles.push(_cwN);
                         }
                     }
@@ -1613,7 +1614,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             html += '<option value="coup">Coup</option>';
             html += '<option value="revolt_support">Revolt Support</option>';
             html += '</select>';
-            html += '<button class="btn-medieval" data-action="playerFormConspiracy" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Form Plot</button>';
+            html += '<button class="btn-medieval" data-action="playerFormConspiracy" data-id="' + targetKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(139,69,19,0.3);border-color:rgba(139,69,19,0.6);">🗡️ Form Plot</button>';
             html += '</div>';
         } else {
             html += '<div style="font-size:0.8rem;color:#888;font-style:italic;">No discontented nobles available to conspire with. Nobles must have low loyalty to the king.</div>';
@@ -1626,11 +1627,11 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     html += '<div style="font-size:0.95rem;font-weight:bold;color:#5dade2;margin-bottom:6px;">📜 Noble Coalitions</div>';
     html += '<div style="font-size:0.72rem;color:#8aa;margin-bottom:6px;">Organize nobles around a common cause to petition the king. Legitimate political action — no risk of arrest.</div>';
     var _coalitions = [];
-    try { _coalitions = Engine.getKingdomCoalitions(citizenKingdomId) || []; } catch(e) {}
+    try { _coalitions = Engine.getKingdomCoalitions(targetKingdomId) || []; } catch(e) {}
     var _activeCoalitions = _coalitions.filter(function(c) { return c.status === 'forming'; });
     var _resolvedCoalitions = _coalitions.filter(function(c) { return c.status === 'resolved' || c.status === 'dissolved'; });
     var _coalKingdom = null;
-    try { _coalKingdom = Engine.findKingdom ? Engine.findKingdom(citizenKingdomId) : null; } catch(e) {}
+    try { _coalKingdom = Engine.findKingdom ? Engine.findKingdom(targetKingdomId) : null; } catch(e) {}
     for (var _ci = 0; _ci < _activeCoalitions.length; _ci++) {
         var _coal = _activeCoalitions[_ci];
         var _cStrength = _coal.strength || 0;
@@ -1660,14 +1661,14 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:6px;">';
         var _coalNobles = [];
         try {
-            var _coalCandidates = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(citizenKingdomId) : [];
+            var _coalCandidates = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(targetKingdomId) : [];
             if (!_coalCandidates.length && Engine.getWorld) {
                 var _cnWorld = Engine.getWorld();
                 var _cnPeople = _cnWorld ? _cnWorld.people : [];
                 for (var _cni = 0; _cni < _cnPeople.length; _cni++) {
                     var _cnP = _cnPeople[_cni];
                     if (!_cnP || !_cnP.alive) continue;
-                    if (!_cnP.socialRank || (_cnP.socialRank[citizenKingdomId] || 0) < 4) continue;
+                    if (!_cnP.socialRank || (_cnP.socialRank[targetKingdomId] || 0) < 4) continue;
                     _coalCandidates.push(_cnP);
                 }
             }
@@ -1705,14 +1706,14 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
                 html += '<option value="' + _crNoble.id + '"' + (!_crLocal ? ' style="color:#888;"' : '') + '>' + escapeHtml((_crNoble.firstName || '?') + ' ' + (_crNoble.lastName || '')) + _crLocTag + '</option>';
             }
             html += '</select>';
-            html += '<button class="btn-medieval" data-action="recruitToCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" data-idx="' + _ci + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">🤝 Recruit</button>';
+            html += '<button class="btn-medieval" data-action="recruitToCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" data-idx="' + _ci + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">🤝 Recruit</button>';
         }
         if (_coal.memberCount >= 2) {
-            html += '<button class="btn-medieval" data-action="presentCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">👑 Present to King</button>';
+            html += '<button class="btn-medieval" data-action="presentCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">👑 Present to King</button>';
         }
         // v9p33river445: disband button for player-organized coalitions
         if (_coal.organizer === 'player') {
-            html += '<button class="btn-medieval" data-action="disbandCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚫 Disband</button>';
+            html += '<button class="btn-medieval" data-action="disbandCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚫 Disband</button>';
         }
         // v9p33river445: withdraw from coalition (player stays out, coalition continues)
         var _playerInCoal = false;
@@ -1720,7 +1721,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             if (_coal.members[_pci].id === 'player') { _playerInCoal = true; break; }
         }
         if (_playerInCoal) {
-            html += '<button class="btn-medieval" data-action="withdrawFromCoalition" data-id="' + citizenKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(150,120,50,0.3);border-color:rgba(150,120,50,0.5);">🚪 Withdraw</button>';
+            html += '<button class="btn-medieval" data-action="withdrawFromCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(150,120,50,0.3);border-color:rgba(150,120,50,0.5);">🚪 Withdraw</button>';
         }
         html += '</div></div>';
     }
@@ -1738,7 +1739,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     }
     // v9p33river439: NPC coalition invitations
     var _invitations = [];
-    try { _invitations = Engine.getCoalitionInvitations(citizenKingdomId) || []; } catch(e) {}
+    try { _invitations = Engine.getCoalitionInvitations(targetKingdomId) || []; } catch(e) {}
     for (var _invi = 0; _invi < _invitations.length; _invi++) {
         var _inv = _invitations[_invi];
         var _inviteLabel = _inv.causeLabel;
@@ -1749,8 +1750,8 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         html += '<div style="background:rgba(60,100,180,0.15);border:1px solid rgba(60,100,180,0.4);border-radius:6px;padding:8px;margin-bottom:6px;">';
         html += '<div style="font-size:0.82rem;color:#5dade2;">📩 <b>' + escapeHtml(_inv.inviterName) + '</b> invites you to join a coalition: <b>' + escapeHtml(_inviteLabel) + '</b></div>';
         html += '<div style="display:flex;gap:4px;margin-top:4px;">';
-        html += '<button class="btn-medieval" data-action="acceptCoalitionInvite" data-id="' + citizenKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">✅ Join</button>';
-        html += '<button class="btn-medieval" data-action="declineCoalitionInvite" data-id="' + citizenKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(100,100,100,0.3);border-color:rgba(100,100,100,0.5);">❌ Decline</button>';
+        html += '<button class="btn-medieval" data-action="acceptCoalitionInvite" data-id="' + targetKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">✅ Join</button>';
+        html += '<button class="btn-medieval" data-action="declineCoalitionInvite" data-id="' + targetKingdomId + '" data-val="' + _inv.coalitionId + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(100,100,100,0.3);border-color:rgba(100,100,100,0.5);">❌ Decline</button>';
         html += '</div></div>';
     }
     if (_activeCoalitions.length < 3) {
@@ -1760,13 +1761,13 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         try {
             var _coalWorld = Engine.getWorld ? Engine.getWorld() : null;
             var _coalPeople = _coalWorld && _coalWorld.people ? _coalWorld.people : [];
-            var _playerRankHere2 = (typeof Player !== 'undefined' && Player.socialRank) ? (Player.socialRank[citizenKingdomId] || 0) : 0;
+            var _playerRankHere2 = (typeof Player !== 'undefined' && Player.socialRank) ? (Player.socialRank[targetKingdomId] || 0) : 0;
             if (_playerRankHere2 >= 4 && _playerRankHere2 < 6) {
                 _coalPromotionTargets.push({ id: 'player', label: 'Yourself' });
             }
             for (var _cpti = 0; _cpti < _coalPeople.length; _cpti++) {
                 var _cpTarget = _coalPeople[_cpti];
-                var _cpRank = (_cpTarget && _cpTarget.socialRank) ? (_cpTarget.socialRank[citizenKingdomId] || 0) : 0;
+                var _cpRank = (_cpTarget && _cpTarget.socialRank) ? (_cpTarget.socialRank[targetKingdomId] || 0) : 0;
                 if (!_cpTarget || !_cpTarget.alive || _cpTarget.id === 'player') continue;
                 if (_coalKingdom && _cpTarget.id === _coalKingdom.king) continue;
                 if (_cpRank < 4 || _cpRank >= 6) continue;
@@ -1778,7 +1779,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             if (_coalWorld && _coalWorld.kingdoms) {
                 for (var _cki = 0; _cki < _coalWorld.kingdoms.length; _cki++) {
                     var _ckTarget = _coalWorld.kingdoms[_cki];
-                    if (!_ckTarget || _ckTarget.id === citizenKingdomId) continue;
+                    if (!_ckTarget || _ckTarget.id === targetKingdomId) continue;
                     _coalKingdomTargets.push({ id: _ckTarget.id, label: _ckTarget.name || _ckTarget.id });
                 }
             }
@@ -1800,7 +1801,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         // v9p33river445: context-sensitive second dropdown — hidden by default, shown via JS
         html += '<select id="coalition_secondary_target" style="font-size:0.72rem;padding:2px;flex:1;min-width:120px;display:none;">';
         html += '</select>';
-        html += '<button class="btn-medieval" data-action="formCoalition" data-id="' + citizenKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">📜 Start Coalition</button>';
+        html += '<button class="btn-medieval" data-action="formCoalition" data-id="' + targetKingdomId + '" style="font-size:0.72rem;padding:4px 10px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">📜 Start Coalition</button>';
         html += '</div>';
         // v9p33river445: context hint that updates with cause selection
         html += '<div id="coalition_cause_hint" style="font-size:0.72rem;color:#8aa;margin-top:4px;"></div>';
@@ -1838,7 +1839,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     // ═══ Revolt Support Section ═══
     var _revoltRequests = (typeof Player !== 'undefined' && Player.state && Player.state._revoltSupportRequests) || [];
     var _brewingRevolts = [];
-    try { _brewingRevolts = Engine.getBrewingRevolts(citizenKingdomId) || []; } catch(e) {}
+    try { _brewingRevolts = Engine.getBrewingRevolts(targetKingdomId) || []; } catch(e) {}
     var _supportedRevolt = (typeof Player !== 'undefined' && Player.state) ? Player.state._supportedRevolt : null;
 
     if (_revoltRequests.length > 0 || _brewingRevolts.length > 0 || _supportedRevolt) {
@@ -1846,7 +1847,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         html += '<div style="font-size:0.95rem;font-weight:bold;color:#e67e22;margin-bottom:6px;">🔥 Revolt Support</div>';
 
         // Active support pledge
-        if (_supportedRevolt && _supportedRevolt.kingdomId === citizenKingdomId) {
+        if (_supportedRevolt && _supportedRevolt.kingdomId === targetKingdomId) {
             html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
             html += '<div style="font-size:0.82rem;color:#e67e22;">You are supporting dissidents in <b>' + escapeHtml(_supportedRevolt.townName) + '</b></div>';
             html += '<div style="font-size:0.75rem;color:#aaa;margin-top:2px;">Pledged: ' + (_supportedRevolt.gold || 0) + 'g on day ' + (_supportedRevolt.day || '?') + '</div>';
@@ -1856,7 +1857,7 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         // Incoming requests from revolt organizers
         for (var _rri = 0; _rri < _revoltRequests.length; _rri++) {
             var _rr = _revoltRequests[_rri];
-            if (_rr.kingdomId !== citizenKingdomId) continue;
+            if (_rr.kingdomId !== targetKingdomId) continue;
             html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
             html += '<div style="font-size:0.85rem;color:#f0d0a0;">📜 Citizens of <b>' + escapeHtml(_rr.townName) + '</b> seek your support!</div>';
             html += '<div style="font-size:0.75rem;color:#aaa;margin-top:2px;">';
