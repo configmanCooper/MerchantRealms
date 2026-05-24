@@ -14249,7 +14249,7 @@
                         }
                     } else if (rng.chance(0.4 + rebellionIntensity * 0.2)) {
                         killPerson(king, 'coup');
-                        handleKingDeath(k, 'coup');
+                        // handleKingDeath is already called inside killPerson
                         var _newKingPerson = findPerson(k.king);
                         var _newKingName = _newKingPerson ? ((_newKingPerson.firstName || '?') + ' ' + (_newKingPerson.lastName || '')) : 'an unknown ruler';
                         logEvent('👑 The king of ' + k.name + ' has been overthrown! A new ruler rises.', {
@@ -33384,7 +33384,7 @@
                     if (kingPerson && kingPerson.alive) {
                         killPerson(kingPerson, 'assassination');
                     }
-                    handleKingDeath(k, 'assassination');
+                    // handleKingDeath is already called inside killPerson
 
                     if (wasCaught) {
                         killPerson(sNoble, 'executed');
@@ -33753,7 +33753,7 @@
                 if (kingPerson && kingPerson.alive) {
                     killPerson(kingPerson, 'assassination');
                 }
-                handleKingDeath(k, 'assassination');
+                // handleKingDeath is already called inside killPerson (line 8459)
 
                 if (wasCaught) {
                     // Each plotter faces execution — blame split among them
