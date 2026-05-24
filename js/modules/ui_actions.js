@@ -5163,6 +5163,9 @@ function clickTown(townId) {
             lower_tariffs: { label: 'Lower Tariffs', icon: '📉' },
             raise_tariffs: { label: 'Raise Tariffs', icon: '📈' },
             lift_all_quarantines: { label: 'Lift All Quarantines', icon: '🔓' },
+            // v9p33river468: route declarations need a route picker instead of a blind button.
+            build_route: { label: 'Build a Route', icon: '🛤️' },
+            build_sea_route: { label: 'Build a Sea Route', icon: '⚓' },
             promote_noble: { label: 'Promote a Noble', icon: '👑' }
         };
 
@@ -5204,7 +5207,7 @@ function clickTown(townId) {
         for (var di = 0; di < categories.length; di++) {
             var cat = categories[di];
             var decl = DECLARATION_TYPES[cat];
-            if (cat === 'promote_noble') continue;
+            if (cat === 'promote_noble' || cat === 'build_route' || cat === 'build_sea_route') continue;
             html += '<button class="btn-medieval" style="font-size:0.8rem;padding:6px 10px;text-align:left;background:rgba(60,80,100,0.3);border-color:rgba(100,140,180,0.3);" ' +
                     'data-action="declareToNoble" data-id="' + nobleId + '" data-val="' + cat + '">' +
                     decl.icon + ' ' + escapeHtml(decl.label) + '</button>';
@@ -5288,6 +5291,36 @@ function clickTown(townId) {
                 }
                 html += '</select>';
                 html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="lift_quarantine" data-sel="sv_lift_quarantine" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,80,50,0.3);border-color:rgba(140,100,60,0.3);">Share</button>';
+                html += '</div>';
+            }
+
+            var routeDemands = [];
+            try {
+                if (Engine.getAvailableNegotiationDemands) routeDemands = Engine.getAvailableNegotiationDemands(nobleKingdomId) || [];
+            } catch(e) {}
+            var roadDemands = routeDemands.filter(function(demand) { return demand.id === 'build_route'; });
+            if (roadDemands.length > 0) {
+                // v9p33river468: share-views must expose the new route demand types too.
+                html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<span style="font-size:0.82em;color:#cc9;">🛤️ Build Route:</span>';
+                html += '<select id="sv_build_route" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:180px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+                for (var brdi = 0; brdi < roadDemands.length; brdi++) {
+                    html += '<option value="' + roadDemands[brdi].param + '">' + escapeHtml(roadDemands[brdi].label) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="build_route" data-sel="sv_build_route" style="font-size:0.75rem;padding:4px 10px;background:rgba(90,110,70,0.3);border-color:rgba(120,150,90,0.3);">Share</button>';
+                html += '</div>';
+            }
+            var seaRouteDemands = routeDemands.filter(function(demand) { return demand.id === 'build_sea_route'; });
+            if (seaRouteDemands.length > 0) {
+                html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">';
+                html += '<span style="font-size:0.82em;color:#cc9;">⚓ Build Sea Route:</span>';
+                html += '<select id="sv_build_sea_route" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:180px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">';
+                for (var bsrdi = 0; bsrdi < seaRouteDemands.length; bsrdi++) {
+                    html += '<option value="' + seaRouteDemands[bsrdi].param + '">' + escapeHtml(seaRouteDemands[bsrdi].label) + '</option>';
+                }
+                html += '</select>';
+                html += '<button class="btn-medieval" data-action="declareWithParam" data-id="' + nobleId + '" data-val="build_sea_route" data-sel="sv_build_sea_route" style="font-size:0.75rem;padding:4px 10px;background:rgba(70,110,120,0.3);border-color:rgba(90,150,170,0.3);">Share</button>';
                 html += '</div>';
             }
             html += '</div>';

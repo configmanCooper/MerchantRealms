@@ -16735,6 +16735,9 @@
                             }
                             _coalActionText = 'promote ' + _promoOutcome.targetName;
                             _coalSuccessLabel = 'Promote ' + _promoOutcome.targetName;
+                        } else if ((coal.cause === 'declare_war' || coal.cause === 'make_peace' || coal.cause === 'form_alliance') && coal.causeData && coal.causeData.targetKingdomId) {
+                            // v9p33river468: targeted diplomatic coalitions must act on their chosen kingdom.
+                            _executeNobleAdvisedActionWithParam(k2, coal.cause, rng, coal.causeData.targetKingdomId);
                         } else {
                             _executeNobleAdvisedAction(k2, coal.cause, rng);
                         }
@@ -36348,6 +36351,9 @@
                     }
                     _playerCoalActionText = 'promote ' + _playerPromoOutcome.targetName;
                     _playerCoalSuccessLabel = 'Promote ' + _playerPromoOutcome.targetName;
+                } else if ((coalition.cause === 'declare_war' || coalition.cause === 'make_peace' || coalition.cause === 'form_alliance') && coalition.causeData && coalition.causeData.targetKingdomId) {
+                    // v9p33river468: player coalitions must use their selected diplomatic target.
+                    _executeNobleAdvisedActionWithParam(k, coalition.cause, rng, coalition.causeData.targetKingdomId);
                 } else {
                     _executeNobleAdvisedAction(k, coalition.cause, rng);
                 }

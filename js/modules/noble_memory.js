@@ -20,7 +20,10 @@
         repeal_law: { label: 'Repeal a Law', icon: '🚫', opposite: 'pass_law' },
         quarantine_town: { label: 'Quarantine a Town', icon: '🔒', opposite: 'lift_all_quarantines' },
         lift_all_quarantines: { label: 'Lift All Quarantines', icon: '🔓', opposite: 'quarantine_town' },
-        lift_quarantine: { label: 'Lift Quarantine', icon: '🔓', opposite: 'quarantine_town' }
+        lift_quarantine: { label: 'Lift Quarantine', icon: '🔓', opposite: 'quarantine_town' },
+        // v9p33river468: route declarations must recognize the new targeted route demands.
+        build_route: { label: 'Build a Route', icon: '🛤️', opposite: null },
+        build_sea_route: { label: 'Build a Sea Route', icon: '⚓', opposite: null }
     };
     var DECLARATION_TO_CAUSE = {
         lower_taxes: 'lower_taxes',
@@ -39,7 +42,9 @@
         repeal_law: 'repeal_law',
         quarantine_town: 'quarantine_town',
         lift_all_quarantines: 'lift_all_quarantines',
-        lift_quarantine: 'lift_quarantine'
+        lift_quarantine: 'lift_quarantine',
+        build_route: 'build_route',
+        build_sea_route: 'build_sea_route'
     };
     var CAUSE_LABELS = {
         lower_taxes: 'Lower Taxes',
@@ -59,7 +64,9 @@
         repeal_law: 'Repeal a Law',
         quarantine_town: 'Quarantine a Town',
         lift_all_quarantines: 'Lift All Quarantines',
-        lift_quarantine: 'Lift Quarantine'
+        lift_quarantine: 'Lift Quarantine',
+        build_route: 'Build a Route',
+        build_sea_route: 'Build a Sea Route'
     };
     var NOBLE_QUESTION_DEFS = [
         { id: 'king_opinion', text: 'What do you think of our king?', tags: ['court'], trustRequired: -20, extract: function(target, kingdom, asker) { return _extractNobleKingOpinionFact(target, kingdom, asker); } },
@@ -323,7 +330,8 @@
         if ((category === 'declare_war' || category === 'seek_peace') && targetInfo && targetInfo.targetName) {
             return 'The player declared support for ' + label + ' with ' + targetInfo.targetName + '.';
         }
-        if ((category === 'pass_law' || category === 'repeal_law' || category === 'quarantine_town' || category === 'lift_quarantine') && targetInfo && targetInfo.paramLabel) {
+        if ((category === 'pass_law' || category === 'repeal_law' || category === 'quarantine_town' || category === 'lift_quarantine' || category === 'build_route' || category === 'build_sea_route') && targetInfo && targetInfo.paramLabel) {
+            // v9p33river468: targeted declaration memories should name the requested route too.
             return 'The player declared support for ' + label + ': ' + targetInfo.paramLabel + '.';
         }
         return 'The player declared support for: ' + label + '.';
@@ -515,6 +523,13 @@
             case 'lift_quarantine':
                 if ((np.ambition || 50) > 60) score += 1;
                 if ((np.frugality || 50) > 60) score += 1;
+                break;
+            case 'build_route':
+                // v9p33river468: road-building asks should score like concrete infrastructure requests.
+                if ((np.intelligence || 50) > 60 || (np.frugality || 50) > 55) score += 1;
+                break;
+            case 'build_sea_route':
+                if ((np.intelligence || 50) > 60 || (np.warmth || 50) > 55) score += 1;
                 break;
         }
 
