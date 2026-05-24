@@ -6323,7 +6323,7 @@ window.UI = (function () {
                 { label: '"I did what I had to."', kind: 'truth', relGain: 0,
                   reactions: ['*tight jaw* We all do. Just remember — I do too.', 'Hmph. At least you own it.'] },
                 { label: '"Water under the bridge?"', kind: 'deflect', relGain: 2,
-                  reactions: ['*long pause* ...Perhaps. Time will tell.', '*sighs* Fine. But I have a long memory, ' + ctx.playerName + '.'] }
+                  reactions: ['*long pause* ...Perhaps. Time will tell.', '*sighs* Fine. But I have a long memory, friend.'] }
             ]
         },
 
@@ -6378,7 +6378,7 @@ window.UI = (function () {
                 { label: '"Knowledge is power, after all."', kind: 'truth', relGain: 1,
                   reactions: ['*raised eyebrow* Hah. A pragmatist through and through.', '*slight concern* Is that all our conversations are to you?'] },
                 { label: '"I enjoy our talks."', kind: 'truth', relGain: 3,
-                  reactions: ['*beams* As do I! It is refreshing to speak with someone genuine.', 'Likewise, ' + ctx.playerName + '. Truly.'] }
+                  reactions: ['*beams* As do I! It is refreshing to speak with someone genuine.', 'Likewise, friend. Truly.'] }
             ]
         },
 
