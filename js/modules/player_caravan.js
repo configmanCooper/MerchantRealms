@@ -2375,8 +2375,8 @@
                     var _ecToTown = Engine.findTown(caravan.returnTrip ? caravan.fromTownId : caravan.toTownId);
                     if (_ecFromTown && _ecToTown && _ecFromTown.kingdomId !== _ecToTown.kingdomId) {
                         var _ecRng = Engine.getRng();
-                        // Base detection: 40%
-                        var _ecDetect = 0.40;
+                        // Base detection: 20%
+                        var _ecDetect = 0.20;
                         // More guards reduce detection
                         _ecDetect -= Math.min(0.15, (caravan.guards || 0) * 0.03);
                         // More wagons help hide contraband
@@ -2392,7 +2392,7 @@
                         // Skills
                         if (hasSkill('master_smuggler')) _ecDetect -= 0.15;
                         else if (hasSkill('smugglers_run')) _ecDetect -= 0.08;
-                        _ecDetect = Math.max(0.05, Math.min(0.90, _ecDetect));
+                        _ecDetect = Math.max(0.01, Math.min(0.90, _ecDetect));
 
                         if ((_ecRng ? _ecRng.random() : Math.random()) < _ecDetect) {
                             // CAUGHT — caravan seized

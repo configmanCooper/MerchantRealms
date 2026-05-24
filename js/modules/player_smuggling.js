@@ -77,7 +77,7 @@
                 break;
             }
         }
-        detectionChance = Math.max(0.05, detectionChance);
+        detectionChance = Math.max(0.01, detectionChance);
 
         // Special law: night_market — halve detection at night
         if (hasSpecialLaw(kingdom, 'night_market') && isNightTime()) {

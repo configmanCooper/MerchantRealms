@@ -1040,13 +1040,13 @@
                 if (caravan.status === 'traveling') {
                     // Export contraband check for EM caravans
                     if (caravan._exportContraband && caravan._exportRestrictionKingdomId) {
-                        var _ecEmDetect = 0.30; // Lower base for NPC caravans
+                        var _ecEmDetect = 0.20;
                         var _ecEmOwner = world.people.find(function(p) { return p.id === caravan.ownerId; });
                         // Noble EMs get reduced detection
                         if (_ecEmOwner && _ecEmOwner.socialRank && (_ecEmOwner.socialRank[caravan._exportRestrictionKingdomId] || 0) >= 4) {
                             _ecEmDetect -= 0.15;
                         }
-                        _ecEmDetect = Math.max(0.05, _ecEmDetect);
+                        _ecEmDetect = Math.max(0.01, _ecEmDetect);
                         if (rng.random() < _ecEmDetect) {
                             // Caught — confiscate restricted goods, fine EM
                             var _ecEmK = findKingdom(caravan._exportRestrictionKingdomId);
