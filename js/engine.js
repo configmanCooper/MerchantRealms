@@ -9101,7 +9101,8 @@
             generosity: warmVal >= 60 ? 'generous' : warmVal >= 40 ? 'fair' : 'greedy',
             militarism: ambVal >= 70 ? 'aggressive' : loyVal >= 60 ? 'defensive' : 'peaceful',
             justice: honVal >= 60 ? 'just' : 'pragmatic',
-            tradition: intVal >= 60 ? 'progressive' : 'moderate',
+            // v9p33river465: succession personality must still produce traditional kings for policy review.
+            tradition: intVal >= 60 ? 'progressive' : intVal < 35 ? 'traditional' : 'moderate',
             icon: (kingdom.kingPersonality && kingdom.kingPersonality.icon) || '👑',
             intelligence: intVal >= 80 ? 'brilliant' : intVal >= 60 ? 'clever' : intVal >= 40 ? 'average' : intVal >= 20 ? 'dim' : 'foolish',
             temperament: warmVal >= 75 ? 'kind' : warmVal >= 50 ? 'fair' : warmVal >= 25 ? 'stern' : 'cruel',
@@ -30564,6 +30565,8 @@
         var _praiseMod = getKingMoodModifiers(k).praiseMod || 1;
 
         if (eventType === 0) {
+            // v9p33river465: feast state can outlive a dead king during succession; skip king-only events.
+            if (!k.king) return;
             // King's Toast — king toasts someone, loyalty boost scaled by mood
             var toasteeId = rng.pick(feast.attendees);
             var toastee = findPerson(toasteeId);
@@ -30603,6 +30606,8 @@
                 }
             }
         } else if (eventType === 2) {
+            // v9p33river465: feast state can outlive a dead king during succession; skip king-only events.
+            if (!k.king) return;
             // Private Audience — king picks an attendee, loyalty boost scaled by mood
             var audienceId = rng.pick(feast.attendees);
             var audiencee = findPerson(audienceId);

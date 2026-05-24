@@ -12025,8 +12025,9 @@ window.UI = (function () {
             if (nameEntries.length === 0) return msgHtml;
             // Sort longest first so "Everett Longmire" matches before "Everett"
             nameEntries.sort(function(a, b) { return b.name.length - a.name.length; });
-            // Replace each name (only first occurrence to avoid mangling)
+            // v9p33river465: replace with placeholders first so shared first names do not nest inside prior links.
             var used = {};
+            var placeholders = [];
             for (var ni = 0; ni < nameEntries.length; ni++) {
                 var ne = nameEntries[ni];
                 if (used[ne.id]) continue;
@@ -12036,8 +12037,13 @@ window.UI = (function () {
                 var before = msgHtml.substring(0, idx);
                 if (before.lastIndexOf('<') > before.lastIndexOf('>')) continue;
                 var link = '<span data-action="showPersonLink" data-id="' + ne.id + '" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:#e0c080;">' + ne.name + '</span>';
-                msgHtml = msgHtml.substring(0, idx) + link + msgHtml.substring(idx + ne.name.length);
+                var token = '__MR_PERSON_LINK_' + placeholders.length + '__';
+                placeholders.push({ token: token, html: link });
+                msgHtml = msgHtml.substring(0, idx) + token + msgHtml.substring(idx + ne.name.length);
                 used[ne.id] = true;
+            }
+            for (var pi = 0; pi < placeholders.length; pi++) {
+                msgHtml = msgHtml.replace(placeholders[pi].token, placeholders[pi].html);
             }
         } catch(e) {}
         return msgHtml;
