@@ -33954,6 +33954,20 @@
                 if (kingPerson && kingPerson.alive) {
                     killPerson(kingPerson, 'assassination');
                 }
+                // Add memory to all noble plotters about the successful conspiracy
+                for (var _mpi = 0; _mpi < plotterPersons.length; _mpi++) {
+                    try {
+                        if (Engine._addPlayerMemory) {
+                            Engine._addPlayerMemory(plotterPersons[_mpi], {
+                                type: 'observation', source: 'player',
+                                category: 'conspiracy_success',
+                                detail: 'Participated in successful assassination conspiracy in ' + k.name,
+                                actorId: 'player', targetId: plotterPersons[_mpi].id,
+                                day: world.day, sentiment: 1, kingdomId: kId
+                            });
+                        }
+                    } catch(e) {}
+                }
                 // handleKingDeath is already called inside killPerson (line 8459)
 
                 if (wasCaught) {
@@ -33985,6 +33999,19 @@
                 // Assassination fails — higher catch chance on failure (+15%)
                 var failCaught = rng.chance(Math.min(0.95, caughtChance + 0.15));
                 _conspiracyFails(k, conspiracy, category, failCaught, plotterPersons, allNobles, plotterCount);
+                for (var _mfi = 0; _mfi < plotterPersons.length; _mfi++) {
+                    try {
+                        if (Engine._addPlayerMemory) {
+                            Engine._addPlayerMemory(plotterPersons[_mfi], {
+                                type: 'observation', source: 'player',
+                                category: 'conspiracy_failure',
+                                detail: 'Participated in failed assassination conspiracy in ' + k.name,
+                                actorId: 'player', targetId: plotterPersons[_mfi].id,
+                                day: world.day, sentiment: -2, kingdomId: kId
+                            });
+                        }
+                    } catch(e) {}
+                }
             }
 
         } else if (conspiracy.type === 'coup') {
@@ -34038,12 +34065,38 @@
                     // v9p33river465: nobles redetermine loyalty after coup
                     _redetermineNobleLoyalty(k, leader.id, 'coup', rng);
                 }
+                for (var _cpsi = 0; _cpsi < plotterPersons.length; _cpsi++) {
+                    try {
+                        if (Engine._addPlayerMemory) {
+                            Engine._addPlayerMemory(plotterPersons[_cpsi], {
+                                type: 'observation', source: 'player',
+                                category: 'conspiracy_success',
+                                detail: 'Participated in successful coup in ' + k.name,
+                                actorId: 'player', targetId: plotterPersons[_cpsi].id,
+                                day: world.day, sentiment: 1, kingdomId: kId
+                            });
+                        }
+                    } catch(e) {}
+                }
 
                 k._conspiracy = null;
             } else {
                 // Coup fails — catch chance applies
                 var coupFailCaught = rng.chance(Math.min(0.95, caughtChance + 0.10));
                 _conspiracyFails(k, conspiracy, category, coupFailCaught, plotterPersons, allNobles, plotterCount);
+                for (var _cpfi = 0; _cpfi < plotterPersons.length; _cpfi++) {
+                    try {
+                        if (Engine._addPlayerMemory) {
+                            Engine._addPlayerMemory(plotterPersons[_cpfi], {
+                                type: 'observation', source: 'player',
+                                category: 'conspiracy_failure',
+                                detail: 'Participated in failed coup in ' + k.name,
+                                actorId: 'player', targetId: plotterPersons[_cpfi].id,
+                                day: world.day, sentiment: -2, kingdomId: kId
+                            });
+                        }
+                    } catch(e) {}
+                }
             }
         }
     }
@@ -36172,6 +36225,27 @@
             var agenda = null;
             try { agenda = getNobleAgenda(nobleId); } catch (e) {}
             if (agenda && agenda.loyalty < 35) recruitChance += 0.10;
+            // Past conspiracy/coalition memory modifiers
+            try {
+                if (Engine._getRecentPlayerMemories) {
+                    var _rcMems = Engine._getRecentPlayerMemories(noble, 365);
+                    for (var _rmi = 0; _rmi < _rcMems.length; _rmi++) {
+                        if (_rcMems[_rmi].category === 'conspiracy_success' || _rcMems[_rmi].category === 'coalition_success') {
+                            recruitChance += 0.15; break;
+                        }
+                    }
+                    for (var _rmi2 = 0; _rmi2 < _rcMems.length; _rmi2++) {
+                        if (_rcMems[_rmi2].category === 'conspiracy_failure') {
+                            recruitChance -= 0.20; break;
+                        }
+                    }
+                    for (var _rmi3 = 0; _rmi3 < _rcMems.length; _rmi3++) {
+                        if (_rcMems[_rmi3].category === 'coalition_failure') {
+                            recruitChance -= 0.10; break;
+                        }
+                    }
+                }
+            } catch(e) {}
             recruitChance = Math.max(0.05, Math.min(0.90, recruitChance));
 
             if (rng.chance(reportChance)) {
@@ -36596,6 +36670,23 @@
                 logEvent('👑 The king of ' + k.name + ' was convinced by a coalition of ' + coalition.members.length + ' to ' + _playerCoalActionText + '!', {
                     type: 'coalition_success', kingdomId: k.id, cause: coalition.cause
                 }, category);
+                // Memory: coalition success for all noble members
+                for (var _csmi = 0; _csmi < coalition.members.length; _csmi++) {
+                    var _csMember = findPerson(coalition.members[_csmi].id);
+                    if (_csMember && _csMember.alive && coalition.members[_csmi].id !== 'player') {
+                        try {
+                            if (Engine._addPlayerMemory) {
+                                Engine._addPlayerMemory(_csMember, {
+                                    type: 'observation', source: 'player',
+                                    category: 'coalition_success',
+                                    detail: 'Coalition to ' + (coalition.causeLabel || coalition.cause) + ' succeeded',
+                                    actorId: 'player', targetId: _csMember.id,
+                                    day: world.day, sentiment: 2, kingdomId: kingdomId
+                                });
+                            }
+                        } catch(e) {}
+                    }
+                }
                 // v9p33river439: coalition success — organizer gets massive boost, members get smaller boost
                 for (var mi = 0; mi < coalition.members.length; mi++) {
                     var member = findPerson(coalition.members[mi].id);
@@ -36632,6 +36723,23 @@
             logEvent('👑 The king of ' + k.name + ' rejected a coalition petition to ' + coalition.causeLabel.toLowerCase() + '.', {
                 type: 'coalition_rejected', kingdomId: k.id, cause: coalition.cause
             }, category);
+            // Memory: coalition failure for all noble members
+            for (var _cfmi = 0; _cfmi < coalition.members.length; _cfmi++) {
+                var _cfMember = findPerson(coalition.members[_cfmi].id);
+                if (_cfMember && _cfMember.alive && coalition.members[_cfmi].id !== 'player') {
+                    try {
+                        if (Engine._addPlayerMemory) {
+                            Engine._addPlayerMemory(_cfMember, {
+                                type: 'observation', source: 'player',
+                                category: 'coalition_failure',
+                                detail: 'Coalition to ' + (coalition.causeLabel || coalition.cause) + ' was rejected by king',
+                                actorId: 'player', targetId: _cfMember.id,
+                                day: world.day, sentiment: -1, kingdomId: kingdomId
+                            });
+                        }
+                    } catch(e) {}
+                }
+            }
             return { success: false, message: coalition.resolutionMessage };
         },
 

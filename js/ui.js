@@ -6208,6 +6208,216 @@ window.UI = (function () {
                   reactions: ['*understanding* Too heavy for drinking? Fair enough.', '*backs off* I overstepped. Another round?']
                 }
             ]
+        },
+
+        // Memory: conspiracy together
+        {
+            id: 'q_remember_conspiracy',
+            summary: 'remembering a conspiracy together',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                if (ctx.npcRank < 4 && !ctx.npcIsEM) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                try {
+                    if (Engine._getRecentPlayerMemories) {
+                        var mems = Engine._getRecentPlayerMemories(person, 365);
+                        for (var i = 0; i < mems.length; i++) {
+                            if (mems[i].category === 'conspiracy_success') {
+                                return 'We did what had to be done, you and I. I have not forgotten... have you?';
+                            }
+                            if (mems[i].category === 'conspiracy_failure' || mems[i].category === 'conspiracy_joined' || mems[i].category === 'conspiracy_formed') {
+                                return 'I still think about what we tried to do. That conspiracy... it weighs on me.';
+                            }
+                        }
+                    }
+                } catch(e) {}
+                return null;
+            },
+            options: [
+                { label: '"We did what was necessary."', kind: 'truth', relGain: 3,
+                  reactions: ['*nods slowly* Yes. Necessary. That is the word I keep telling myself.', '*quiet* I suppose you are right. We cannot undo it now.'] },
+                { label: '"Best not to speak of it."', kind: 'deflect', relGain: 1,
+                  reactions: ['*glances around* You are wise. Walls have ears.', '*lowers voice* Of course. Forget I mentioned it.'] },
+                { label: '"I regret nothing."', kind: 'truth', relGain: 2,
+                  reactions: ['*surprised* Bold. I respect that.', 'Ha. You always were the fearless one.'] }
+            ]
+        },
+
+        // Memory: coalition together
+        {
+            id: 'q_remember_coalition',
+            summary: 'remembering a political coalition',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                if (ctx.npcRank < 4 && !ctx.npcIsEM) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                try {
+                    if (Engine._getRecentPlayerMemories) {
+                        var mems = Engine._getRecentPlayerMemories(person, 365);
+                        for (var i = 0; i < mems.length; i++) {
+                            if (mems[i].category === 'coalition_success') {
+                                return 'Remember when we petitioned the king together? That was a fine day for our cause.';
+                            }
+                            if (mems[i].category === 'coalition_failure' || mems[i].category === 'coalition_formed') {
+                                return 'That coalition we formed... do you think we could have done more?';
+                            }
+                        }
+                    }
+                } catch(e) {}
+                return null;
+            },
+            options: [
+                { label: '"We made our voices heard."', kind: 'truth', relGain: 3,
+                  reactions: ['*smiles* That we did. Perhaps we can work together again sometime.', 'Indeed. The king cannot ignore us forever.'] },
+                { label: '"Politics is a long game."', kind: 'truth', relGain: 2,
+                  reactions: ['*nods* Patience and persistence. I like your thinking.', 'True enough. Rome was not built in a day, as they say.'] },
+                { label: '"I have moved on to other matters."', kind: 'deflect', relGain: 0,
+                  reactions: ['*slight frown* I see. Well, I hope you remember your allies when you need them.', 'Mm. Fair enough.'] }
+            ]
+        },
+
+        // Memory: economic threat
+        {
+            id: 'q_remember_threat',
+            summary: 'remembering an economic threat',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4 && !ctx.npcIsEM) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                var mem = person.nobleMemory || person._emMemory;
+                if (!mem || !mem.playerActions) return null;
+                for (var i = 0; i < mem.playerActions.length; i++) {
+                    var m = mem.playerActions[i];
+                    if (m.category === 'economic_threat' || m.category === 'economic_threat_fulfilled' || m.category === 'economic_bluff' || m.category === 'economic_threat_empty') {
+                        if (m.sentiment < 0) return 'I have not forgotten what you tried to do to my business. That... threat you made.';
+                        return 'You drive a hard bargain, ' + ctx.playerName + '. I remember our... arrangement.';
+                    }
+                }
+                return null;
+            },
+            options: [
+                { label: '"It was just business."', kind: 'truth', relGain: 1,
+                  reactions: ['*cold stare* Business. Is that what you call it?', '*grudgingly* I suppose it was. But do not try it again.'] },
+                { label: '"I did what I had to."', kind: 'truth', relGain: 0,
+                  reactions: ['*tight jaw* We all do. Just remember — I do too.', 'Hmph. At least you own it.'] },
+                { label: '"Water under the bridge?"', kind: 'deflect', relGain: 2,
+                  reactions: ['*long pause* ...Perhaps. Time will tell.', '*sighs* Fine. But I have a long memory, ' + ctx.playerName + '.'] }
+            ]
+        },
+
+        // Memory: entice / positive deal
+        {
+            id: 'q_remember_entice',
+            summary: 'remembering a successful deal',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4 && !ctx.npcIsEM) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                var mem = person.nobleMemory || person._emMemory;
+                if (!mem || !mem.playerActions) return null;
+                for (var i = 0; i < mem.playerActions.length; i++) {
+                    var m = mem.playerActions[i];
+                    if (m.category === 'economic_entice_fulfilled' || m.category === 'economic_entice_success') {
+                        return 'I must say, ' + ctx.playerName + ', you kept your word on our arrangement. That means something.';
+                    }
+                }
+                return null;
+            },
+            options: [
+                { label: '"I always keep my word."', kind: 'truth', relGain: 4,
+                  reactions: ['*genuine smile* That you do. It is rare and valuable.', 'I believe you. And that is saying something in this kingdom.'] },
+                { label: '"It was mutually beneficial."', kind: 'truth', relGain: 3,
+                  reactions: ['*nods* Indeed it was. Perhaps we can find another such arrangement.', 'Smart and honest. A rare combination.'] },
+                { label: '"I hope we can work together again."', kind: 'truth', relGain: 3,
+                  reactions: ['*warm* I would like that very much.', 'As do I. Come to me when you have a proposal.'] }
+            ]
+        },
+
+        // Memory: chat/conversation memories
+        {
+            id: 'q_remember_chat',
+            summary: 'remembering past conversations',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4 && !ctx.npcIsEM) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                var mem = person.nobleMemory || person._emMemory;
+                if (!mem || !mem.playerActions) return null;
+                var chatCount = 0;
+                for (var i = 0; i < mem.playerActions.length; i++) {
+                    if (mem.playerActions[i].category === 'chat' || mem.playerActions[i].category === 'compliment' || mem.playerActions[i].category === 'share_views') chatCount++;
+                }
+                if (chatCount < 3) return null;
+                return 'You know, we have had quite a few conversations now, ' + ctx.playerName + '. I feel like I know you.';
+            },
+            options: [
+                { label: '"And I feel I know you as well."', kind: 'truth', relGain: 4,
+                  reactions: ['*pleased* That warms my heart. True friendships are built on such things.', '*smiles* Good. I value our talks.'] },
+                { label: '"Knowledge is power, after all."', kind: 'truth', relGain: 1,
+                  reactions: ['*raised eyebrow* Hah. A pragmatist through and through.', '*slight concern* Is that all our conversations are to you?'] },
+                { label: '"I enjoy our talks."', kind: 'truth', relGain: 3,
+                  reactions: ['*beams* As do I! It is refreshing to speak with someone genuine.', 'Likewise, ' + ctx.playerName + '. Truly.'] }
+            ]
+        },
+
+        // Memory: feast/court events
+        {
+            id: 'q_remember_feast',
+            summary: 'remembering feast or court events',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                var mem = person.nobleMemory;
+                if (!mem || !mem.playerActions) return null;
+                for (var i = 0; i < mem.playerActions.length; i++) {
+                    var m = mem.playerActions[i];
+                    if (m.category === 'feast_toast' || m.category === 'feast_dance' || m.category === 'feast_gift' || m.category === 'court_speech' || m.category === 'court_support' || m.category === 'court_oppose') {
+                        if (m.sentiment > 0) return 'I still think about what you did at that feast. It was... memorable, in a good way.';
+                        if (m.sentiment < 0) return 'I remember what happened at court. You made quite an impression — and not a favorable one.';
+                    }
+                }
+                return null;
+            },
+            options: [
+                { label: '"I do what I believe is right."', kind: 'truth', relGain: 2,
+                  reactions: ['*thoughtful* Conviction. I can respect that, even when I disagree.', '*nods* At least you stand for something.'] },
+                { label: '"Court is a stage. We all play our parts."', kind: 'deflect', relGain: 1,
+                  reactions: ['*wry smile* How diplomatic of you.', '*chuckles* A politician\'s answer. Well played.'] },
+                { label: '"I hope I did not offend."', kind: 'truth', relGain: 2,
+                  reactions: ['*waves hand* What is done is done. Let us look forward.', '*measured* Offense is part of court life. I have learned to accept it.'] }
+            ]
+        },
+
+        // Memory: schemes/dark deeds caught
+        {
+            id: 'q_remember_scheme',
+            summary: 'remembering schemes against them',
+            askFor: function(ctx) {
+                if (ctx.npcRank < 4 && !ctx.npcIsEM) return null;
+                var person = ctx.person;
+                if (!person) return null;
+                var mem = person.nobleMemory || person._emMemory;
+                if (!mem || !mem.playerActions) return null;
+                for (var i = 0; i < mem.playerActions.length; i++) {
+                    var m = mem.playerActions[i];
+                    if (m.category === 'scheme_caught' || m.category === 'scheme_against' || m.category === 'sabotage_caught' || m.category === 'blackmail_attempt') {
+                        return 'Do not think I have forgotten what you did. The scheming, the plotting against me...';
+                    }
+                }
+                return null;
+            },
+            options: [
+                { label: '"I was desperate. I am sorry."', kind: 'truth', relGain: 3,
+                  reactions: ['*long silence* ...Apologies do not undo the damage. But I hear you.', '*grudgingly* At least you have the decency to admit it.'] },
+                { label: '"You cannot prove anything."', kind: 'lie', relGain: -2, relIfCaught: -5,
+                  reactions: ['*angry* We both know the truth. Do not insult me.', '*narrowed eyes* Playing innocent? How bold.'],
+                  reactionsCaught: ['*furious* You dare lie to my face? I SAW the evidence!', '*cold* And there it is. The same dishonesty that started all this.'] },
+                { label: '"That was the old me. I have changed."', kind: 'truth', relGain: 2,
+                  reactions: ['*skeptical* Have you? Time will tell, I suppose.', '*cautious* Words are cheap. Show me through actions.'] }
+            ]
         }
 
     ];
@@ -6224,6 +6434,7 @@ window.UI = (function () {
     // Build a context with extra hooks for question askFor predicates.
     function _questionContext(person) {
         var ctx = _interactionPickerContext(person);
+        ctx.person = person;
         var p = (typeof Player !== 'undefined') ? Player.state : null;
         // Memory inspection helper
         ctx.hasMemoryKind = function(kind) {

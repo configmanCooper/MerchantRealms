@@ -628,7 +628,7 @@
     function _isSuspiciousMemory(memory) {
         var detail = memory && memory.detail ? String(memory.detail).toLowerCase() : '';
         if (!memory) return false;
-        if (memory.category === 'conspiracy_joined' || memory.category === 'conspiracy_formed' || memory.category === 'move_against_king_suspicion') return true;
+        if (memory.category === 'conspiracy_joined' || memory.category === 'conspiracy_formed' || memory.category === 'conspiracy_success' || memory.category === 'conspiracy_failure' || memory.category === 'move_against_king_suspicion') return true;
         if (memory.type === 'question_answer' && memory.category === 'move_against_king' && detail === 'willing') return true;
         if (memory.category === 'feast_behavior' && (detail.indexOf('whisper') >= 0 || detail.indexOf('dark corner') >= 0 || detail.indexOf('criticisms') >= 0)) return true;
         return false;
