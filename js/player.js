@@ -15459,6 +15459,20 @@
             player.familyMembers.push({ npcId: plan.fianceId, role: 'spouse', name: person.firstName + ' ' + person.lastName });
         }
 
+        // Promote spouse to elite merchant if not already noble/EM
+        var _spouseIsNoble = false;
+        if (person.socialRank) {
+            for (var _snk in person.socialRank) {
+                if ((person.socialRank[_snk] || 0) >= 4) { _spouseIsNoble = true; break; }
+            }
+        }
+        if (!person.isEliteMerchant && !_spouseIsNoble) {
+            person.isEliteMerchant = true;
+            if (!person._emMemory) person._emMemory = { playerActions: [], nobleActions: [] };
+            person.occupation = person.occupation || 'merchant';
+            Engine.logEvent('📈 ' + person.firstName + ' ' + person.lastName + ' has become an Elite Merchant through marriage.', null, "my_actions");
+        }
+
         // Adopt spouse's existing children from prior relationships
         if (person.childrenIds && person.childrenIds.length > 0) {
             if (!player.childrenIds) player.childrenIds = [];
@@ -15504,6 +15518,20 @@
             totalCost: totalCost,
             guests: feast.guests || 5,
         };
+
+        // Give spouse a memory of the wedding choices
+        try {
+            if (Engine._addPlayerMemory) {
+                Engine._addPlayerMemory(person, {
+                    type: 'observation', source: 'player',
+                    category: 'wedding',
+                    detail: 'Married at ' + venue.name + ' with ' + feast.name.toLowerCase() + ' and ' + vow.name.toLowerCase() + ' vows',
+                    actorId: 'player', targetId: person.id,
+                    day: Engine.getDay(), sentiment: 3, kingdomId: player.citizenshipKingdomId,
+                    label: 'Our Wedding'
+                });
+            }
+        } catch(e) {}
 
         // Generate wedding journal entry prose
         var journalText = 'Today I married ' + person.firstName + ' ' + person.lastName + '. ';

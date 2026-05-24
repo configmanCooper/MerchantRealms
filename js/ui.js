@@ -1654,17 +1654,11 @@ window.UI = (function () {
                 if (el.playerCharInfo) {
                     const sexIcon = Player.sex === 'F' ? '♀' : '♂';
                     let charInfo = `${sexIcon} Age ${Player.age || '?'}`;
-                    // Show rank (primary kingdom or highest rank)
+                    // Show rank in ACTIVE kingdom only
                     if (CONFIG.SOCIAL_RANKS) {
                         let displayRankIdx = 0;
                         if (Player.citizenshipKingdomId && Player.socialRank) {
                             displayRankIdx = Player.socialRank[Player.citizenshipKingdomId] || 0;
-                        }
-                        // Also check for higher rank in any kingdom
-                        if (Player.socialRank) {
-                            for (const kId in Player.socialRank) {
-                                if ((Player.socialRank[kId] || 0) > displayRankIdx) displayRankIdx = Player.socialRank[kId];
-                            }
                         }
                         const rank = CONFIG.SOCIAL_RANKS[displayRankIdx];
                         if (rank) charInfo += ` | ${rank.icon} ${rank.name}`;
@@ -1779,10 +1773,41 @@ window.UI = (function () {
                     el.playerTown.textContent = '🏕️ Wilderness';
                 }
 
-                // Employees, buildings, caravans
-                el.employeeCount.textContent = Player.employees ? Player.employees.length : 0;
-                el.buildingCount.textContent = Player.buildings ? Player.buildings.length : 0;
-                el.caravanCount.textContent = Player.caravans ? Player.caravans.length : 0;
+                // Count employees, buildings, caravans in active kingdom only
+                var _ledgerKId = Player.citizenshipKingdomId || null;
+                var _ledgerWorkers = 0;
+                var _ledgerBuildings = 0;
+                var _ledgerCaravans = 0;
+                if (_ledgerKId && Player.buildings) {
+                    for (var _lbi = 0; _lbi < Player.buildings.length; _lbi++) {
+                        var _lb = Player.buildings[_lbi];
+                        if (!_lb) continue;
+                        var _lbTown = Engine.findTown ? Engine.findTown(_lb.townId) : null;
+                        if (_lbTown && _lbTown.kingdomId === _ledgerKId) {
+                            _ledgerBuildings++;
+                            _ledgerWorkers += (_lb.workers ? (Array.isArray(_lb.workers) ? _lb.workers.length : (_lb.workers || 0)) : (_lb.hiredWorkers || 0));
+                        }
+                    }
+                } else {
+                    _ledgerBuildings = Player.buildings ? Player.buildings.length : 0;
+                    _ledgerWorkers = Player.employees ? Player.employees.length : 0;
+                }
+                if (_ledgerKId && Player.caravans) {
+                    for (var _lci = 0; _lci < Player.caravans.length; _lci++) {
+                        var _lc = Player.caravans[_lci];
+                        if (!_lc) continue;
+                        var _lcFrom = Engine.findTown ? Engine.findTown(_lc.fromTownId) : null;
+                        var _lcTo = Engine.findTown ? Engine.findTown(_lc.toTownId) : null;
+                        if ((_lcFrom && _lcFrom.kingdomId === _ledgerKId) || (_lcTo && _lcTo.kingdomId === _ledgerKId)) {
+                            _ledgerCaravans++;
+                        }
+                    }
+                } else {
+                    _ledgerCaravans = Player.caravans ? Player.caravans.length : 0;
+                }
+                el.employeeCount.textContent = _ledgerWorkers;
+                el.buildingCount.textContent = _ledgerBuildings;
+                el.caravanCount.textContent = _ledgerCaravans;
 
                 // Notoriety meter (moved to character menu — guard references)
                 if (el.notorietyFill && el.notorietyValue) {
@@ -1866,17 +1891,12 @@ window.UI = (function () {
                 const btnDeposits = document.getElementById('btnDeposits');
                 if (btnDeposits) btnDeposits.style.display = 'none';
 
-                // Nobility button — visible at rank 4+ (Minor Noble), glow on actionable items
+                // Nobility button — visible at rank 4+ (Minor Noble) in ACTIVE kingdom only
                 const btnNobility = document.getElementById('btnNobility');
                 if (btnNobility) {
                     var _nobleRank = 0;
                     if (Player.citizenshipKingdomId && Player.socialRank) {
                         _nobleRank = Player.socialRank[Player.citizenshipKingdomId] || 0;
-                    }
-                    if (Player.socialRank) {
-                        for (var _nk in Player.socialRank) {
-                            if ((Player.socialRank[_nk] || 0) > _nobleRank) _nobleRank = Player.socialRank[_nk];
-                        }
                     }
                     // Hide nobility button when player is king (king panel subsumes it)
                     var _playerIsKingNow = typeof Player !== 'undefined' && Player.isPlayerKing && Player.isPlayerKing();
@@ -6417,6 +6437,132 @@ window.UI = (function () {
                   reactionsCaught: ['*furious* You dare lie to my face? I SAW the evidence!', '*cold* And there it is. The same dishonesty that started all this.'] },
                 { label: '"That was the old me. I have changed."', kind: 'truth', relGain: 2,
                   reactions: ['*skeptical* Have you? Time will tell, I suppose.', '*cautious* Words are cheap. Show me through actions.'] }
+            ]
+        },
+
+        // Memory: wedding — spouse remembers wedding choices
+        {
+            id: 'q_remember_wedding',
+            summary: 'remembering the wedding',
+            askFor: function(ctx) {
+                if (!ctx.person) return null;
+                if (ctx.person.spouseId !== 'player') return null;
+                var mem = ctx.person.nobleMemory || ctx.person._emMemory;
+                if (!mem || !mem.playerActions) return null;
+                for (var i = 0; i < mem.playerActions.length; i++) {
+                    if (mem.playerActions[i].category === 'wedding') {
+                        var detail = mem.playerActions[i].detail || '';
+                        return 'Do you remember our wedding? ' + detail + '... I think about that day often.';
+                    }
+                }
+                return null;
+            },
+            options: [
+                { label: '"It was the best day of my life."', kind: 'truth', relGain: 5,
+                  reactions: ['*beams* Mine too. Every single moment.', '*eyes shining* You always know just what to say.'] },
+                { label: '"I remember it fondly."', kind: 'truth', relGain: 3,
+                  reactions: ['*warm smile* As do I, my love.', '*squeezes your hand* Those were simpler times.'] },
+                { label: '"We should focus on the present."', kind: 'deflect', relGain: 0,
+                  reactions: ['*slight frown* I suppose you are right... but memories matter too.', '*quiet* Of course. Always forward with you.'] }
+            ]
+        },
+
+        // NPC comments on player's rank/social status
+        {
+            id: 'q_player_rank',
+            summary: 'commenting on your social status',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cold') return null;
+                if (ctx.npcRank < 1 && !ctx.npcIsEM) return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps || !ps.socialRank) return null;
+                var maxRank = 0;
+                for (var k in ps.socialRank) { if ((ps.socialRank[k] || 0) > maxRank) maxRank = ps.socialRank[k]; }
+                if (maxRank >= 5) return ctx.playerName + ', your rise through the ranks has been remarkable. A Lord, no less! How does it feel?';
+                if (maxRank >= 4) return 'I hear you have been elevated to the nobility, ' + ctx.playerName + '. Quite an achievement.';
+                if (maxRank >= 3) return 'A Guildmaster now, are you? ' + ctx.playerName + ', you have come a long way.';
+                if (maxRank >= 2) return 'You have done well for yourself, ' + ctx.playerName + '. A proper Burgher with a reputation.';
+                return null;
+            },
+            options: [
+                { label: '"Hard work and good fortune."', kind: 'truth', relGain: 3,
+                  reactions: ['*nods approvingly* Modest, too. That will serve you well.', 'A wise answer. The humble ones last longest.'] },
+                { label: '"This is only the beginning."', kind: 'truth', relGain: 2,
+                  reactions: ['*raised eyebrow* Ambitious! I like that.', '*chuckles* Careful — ambition has a price.'] },
+                { label: '"I had help along the way."', kind: 'truth', relGain: 4,
+                  reactions: ['*pleased* Gracious. That speaks well of your character.', '*warm* And we are glad to have helped.'] }
+            ]
+        },
+
+        // NPC comments on player's buildings
+        {
+            id: 'q_player_buildings',
+            summary: 'commenting on your businesses',
+            askFor: function(ctx) {
+                if (ctx.relTier === 'hostile') return null;
+                if (ctx.npcRank < 1 && !ctx.npcIsEM) return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps || !ps.buildings || ps.buildings.length < 3) return null;
+                var count = ps.buildings.length;
+                if (count >= 7) return 'You own quite the empire, ' + ctx.playerName + '. ' + count + ' buildings! How do you manage them all?';
+                if (count >= 5) return 'I have noticed you have been buying up property, ' + ctx.playerName + '. ' + count + ' buildings now, is it?';
+                return ctx.playerName + ', I see you have a few establishments now. Business must be good.';
+            },
+            options: [
+                { label: '"Each one is an investment in the future."', kind: 'truth', relGain: 3,
+                  reactions: ['*impressed* A merchant who thinks long-term. Rare breed.', '*nods* Sound strategy. Location is everything.'] },
+                { label: '"It keeps me busy, that is for certain."', kind: 'truth', relGain: 2,
+                  reactions: ['*laughs* I can only imagine! Managing people is the hardest part.', 'Busy hands, full purse — as they say.'] },
+                { label: '"Perhaps we could do business together."', kind: 'truth', relGain: 4,
+                  reactions: ['*interested* Now that is a proposition I would consider. Let us talk sometime.', '*leans in* I am listening. What did you have in mind?'] }
+            ]
+        },
+
+        // Family member comments
+        {
+            id: 'q_family_bond',
+            summary: 'family connection',
+            askFor: function(ctx) {
+                if (!ctx.person) return null;
+                var ps = (typeof Player !== 'undefined') ? Player.state : null;
+                if (!ps) return null;
+                var isFamily = false;
+                if (ctx.person.spouseId === 'player') isFamily = true;
+                if (!isFamily && ps.childrenIds) {
+                    for (var i = 0; i < ps.childrenIds.length; i++) {
+                        if (ps.childrenIds[i] === ctx.person.id) { isFamily = true; break; }
+                    }
+                }
+                if (!isFamily && ps.parentIds) {
+                    for (var j = 0; j < ps.parentIds.length; j++) {
+                        if (ps.parentIds[j] === ctx.person.id) { isFamily = true; break; }
+                    }
+                }
+                if (!isFamily) return null;
+                if (ctx.person.spouseId === 'player') {
+                    if (ps.buildings && ps.buildings.length >= 3) return 'I am proud of what we have built together, my love. ' + ps.buildings.length + ' businesses!';
+                    return 'No matter what happens out there, know that I believe in you.';
+                }
+                // Children
+                if (ps.childrenIds) {
+                    for (var ci = 0; ci < ps.childrenIds.length; ci++) {
+                        if (ps.childrenIds[ci] === ctx.person.id) {
+                            var maxR = 0;
+                            if (ps.socialRank) { for (var rk in ps.socialRank) { if ((ps.socialRank[rk]||0) > maxR) maxR = ps.socialRank[rk]; } }
+                            if (maxR >= 4) return 'Father... er, I mean, my Lord. I am proud to be your child.';
+                            return 'Are you going to be home for dinner tonight?';
+                        }
+                    }
+                }
+                return 'Family is everything. Never forget that.';
+            },
+            options: [
+                { label: '"Family comes first. Always."', kind: 'truth', relGain: 5,
+                  reactions: ['*touched* That means everything to hear.', '*hugs* I know you mean it.'] },
+                { label: '"We will build a legacy together."', kind: 'truth', relGain: 3,
+                  reactions: ['*eyes light up* A legacy... I like the sound of that.', '*determined nod* Yes. For our family.'] },
+                { label: '"I am doing my best."', kind: 'truth', relGain: 3,
+                  reactions: ['*gentle* I know you are. And it is enough.', '*reassuring* Your best is more than most could manage.'] }
             ]
         }
 
