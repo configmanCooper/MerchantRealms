@@ -17442,6 +17442,10 @@
                         chance -= 0.15;
                         break;
                     }
+                    if (mems[mi2].category === 'economic_threat_empty') {
+                        chance -= 0.08;
+                        break;
+                    }
                 }
             }
         } catch(e) {}
@@ -17743,6 +17747,21 @@
                             }
                         }
                         logEvent('⚔️ ' + nobleName + ' realizes your threat was a bluff. They will not forget this.', null, category);
+                    } else if (!neg.agreed && neg.type === 'threaten') {
+                        // Failed threat + player didn't follow through — noble notes the empty threat
+                        try {
+                            if (Engine._addPlayerMemory) {
+                                Engine._addPlayerMemory(person, {
+                                    type: 'observation', source: 'player',
+                                    category: 'economic_threat_empty',
+                                    detail: 'Player threatened but never followed through regarding ' + neg.leverageGood,
+                                    actorId: 'player', targetId: person.id,
+                                    day: world.day, sentiment: -1,
+                                    kingdomId: kId
+                                });
+                            }
+                        } catch(e) {}
+                        logEvent('⚔️ ' + nobleName + ' notes you never followed through on your threat.', null, category);
                     } else if (neg.agreed && neg.type === 'entice') {
                         logEvent('🎁 ' + nobleName + ' waited but you did not deliver. The deal is off.', null, category);
                     }
