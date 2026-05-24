@@ -5995,6 +5995,10 @@
                         type: 'economic_strategy', cause: `Severe ${goodName} shortage domestically`,
                         effects: [`${goodName} cannot be exported from ${kingdom.name}`, 'Domestic prices stabilize', 'Trade partners may be upset']
                     }, _eventKingdomCategory(kingdom.id));
+                    // Queue notification for affected player caravans
+                    if (typeof Player !== 'undefined' && Player._notifyCaravansExportRestriction) {
+                        try { Player._notifyCaravansExportRestriction(kingdom.id, strat.good); } catch(e) {}
+                    }
                     actionsThisCycle++;
                     break;
                 }
@@ -7403,6 +7407,9 @@
                 logEvent('🚫 ' + kingdom.name + ' restricts export of ' + _goodName + ' to protect domestic supply!',  {
                     type: 'economic_strategy', kingdomId: kingdom.id, effects: [_goodName + ' cannot be exported']
                 }, _eventKingdomCategory(kingdom.id));
+                if (typeof Player !== 'undefined' && Player._notifyCaravansExportRestriction) {
+                    try { Player._notifyCaravansExportRestriction(kingdom.id, strat.good); } catch(e) {}
+                }
                 break;
             case 'tariff_adjustment':
                 if (kingdom.laws && kingdom.laws.tradeTariff > 0.02) {

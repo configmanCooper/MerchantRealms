@@ -2368,6 +2368,67 @@
 
     function _processCaravanArrival(caravan) {
         _sync();
+                // Export contraband check — intercept before goods are sold
+                if (caravan._exportContraband && !caravan._exportCheckDone) {
+                    caravan._exportCheckDone = true;
+                    var _ecFromTown = Engine.findTown(caravan.returnTrip ? caravan.toTownId : caravan.fromTownId);
+                    var _ecToTown = Engine.findTown(caravan.returnTrip ? caravan.fromTownId : caravan.toTownId);
+                    if (_ecFromTown && _ecToTown && _ecFromTown.kingdomId !== _ecToTown.kingdomId) {
+                        var _ecRng = Engine.getRng();
+                        // Base detection: 40%
+                        var _ecDetect = 0.40;
+                        // More guards reduce detection
+                        _ecDetect -= Math.min(0.15, (caravan.guards || 0) * 0.03);
+                        // More wagons help hide contraband
+                        _ecDetect -= Math.min(0.10, (caravan.wagons || 0) * 0.05);
+                        // Fortified flag
+                        if (caravan.fortified) _ecDetect -= 0.10;
+                        // Decoy
+                        if (caravan.decoy) _ecDetect -= 0.08;
+                        // Player noble rank in source kingdom
+                        var _ecRank = (player.socialRank && player.socialRank[caravan._exportRestrictionKingdomId]) || 0;
+                        if (_ecRank >= 5) _ecDetect -= 0.20;
+                        else if (_ecRank >= 4) _ecDetect -= 0.10;
+                        // Skills
+                        if (hasSkill('master_smuggler')) _ecDetect -= 0.15;
+                        else if (hasSkill('smugglers_run')) _ecDetect -= 0.08;
+                        _ecDetect = Math.max(0.05, Math.min(0.90, _ecDetect));
+
+                        if ((_ecRng ? _ecRng.random() : Math.random()) < _ecDetect) {
+                            // CAUGHT — caravan seized
+                            var _ecKName = '';
+                            var _ecK = Engine.findKingdom ? Engine.findKingdom(caravan._exportRestrictionKingdomId) : null;
+                            if (_ecK) _ecKName = _ecK.name;
+                            var confGoods = [];
+                            for (var _egi = 0; _egi < (caravan._exportRestrictedGoods || []).length; _egi++) {
+                                var _egId = caravan._exportRestrictedGoods[_egi];
+                                if (caravan.goods[_egId] && caravan.goods[_egId] > 0) {
+                                    confGoods.push(caravan.goods[_egId] + 'x ' + _egId);
+                                    delete caravan.goods[_egId];
+                                }
+                            }
+                            // Fine the player
+                            var _ecFine = 200 + Math.floor((player.gold || 0) * 0.05);
+                            Player.modifyGold(-_ecFine);
+                            if (_ecK) { _ecK.gold = (_ecK.gold || 0) + _ecFine; }
+                            // Criminal record
+                            if (!player.criminalRecord) player.criminalRecord = {};
+                            if (!player.criminalRecord[caravan._exportRestrictionKingdomId]) player.criminalRecord[caravan._exportRestrictionKingdomId] = {};
+                            player.criminalRecord[caravan._exportRestrictionKingdomId].export_violation = (player.criminalRecord[caravan._exportRestrictionKingdomId].export_violation || 0) + 1;
+                            // Disband caravan
+                            caravan.status = 'arrived';
+                            caravan.active = false;
+                            caravan.recurring = false;
+                            var _ecMsg = '🚫 Caravan seized at ' + _ecKName + ' border for export violation! Confiscated: ' + confGoods.join(', ') + '. Fined ' + _ecFine + 'g. Caravan disbanded.';
+                            logCaravan(caravan, _ecMsg);
+                            Engine.logEvent(_ecMsg, null, 'my_business');
+                            if (typeof UI !== 'undefined' && UI.toast) UI.toast(_ecMsg, 'danger', 'critical');
+                            return;
+                        }
+                        // Not caught — log success
+                        logCaravan(caravan, '🥷 Caravan smuggled export-restricted goods past the ' + (_ecK ? _ecK.name : '') + ' border checkpoint.');
+                    }
+                }
                 caravan.progress = 1.0;
                 caravan.tripCount = (caravan.tripCount || 0) + 1;
 

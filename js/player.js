@@ -3465,6 +3465,29 @@
         }
         var hireCost = carriers * (CONFIG.CARAVAN_CARRIER_HIRE_COST || 20) + guardCount * (CONFIG.CARAVAN_GUARD_HIRE_COST || 30);
 
+        // Export restriction contraband detection — double costs if smuggling restricted goods
+        var _exportContraband = false;
+        var _exportRestrictionKingdomId = null;
+        var _exportRestrictedGoods = [];
+        if (fromTown && toTown && fromTown.kingdomId !== toTown.kingdomId) {
+            var _srcK = Engine.findKingdom ? Engine.findKingdom(fromTown.kingdomId) : null;
+            if (_srcK && _srcK.exportRestrictions && _srcK.exportRestrictions.length > 0) {
+                for (var _egi = 0; _egi < _srcK.exportRestrictions.length; _egi++) {
+                    if (goods[_srcK.exportRestrictions[_egi]] && goods[_srcK.exportRestrictions[_egi]] > 0) {
+                        _exportRestrictedGoods.push(_srcK.exportRestrictions[_egi]);
+                    }
+                }
+                if (_exportRestrictedGoods.length > 0) {
+                    _exportContraband = true;
+                    _exportRestrictionKingdomId = fromTown.kingdomId;
+                    hireCost = Math.floor(hireCost * 2);
+                    carrierWage = Math.floor(carrierWage * 2);
+                    guardWage = Math.floor(guardWage * 2);
+                    Engine.logEvent('🚢 Caravan costs doubled — smuggling export-restricted goods out of ' + _srcK.name + '.', { _noToast: true }, 'my_business');
+                }
+            }
+        }
+
         // Carts and wagons come from inventory
         var invCarts = player.inventory['cart'] || 0;
         var invWagons = player.inventory['wagon'] || 0;
@@ -3570,6 +3593,10 @@
             autoPickupTravelers: options.autoPickupTravelers || false,
             passengers: [],
             autoDisbandConditions: options.autoDisbandConditions ? structuredClone(options.autoDisbandConditions) : [],
+            _exportContraband: _exportContraband,
+            _exportRestrictionKingdomId: _exportRestrictionKingdomId,
+            _exportRestrictedGoods: _exportRestrictedGoods,
+            _exportCheckDone: false,
         };
         player.caravans.push(caravan);
 
@@ -4519,6 +4546,31 @@
         // v9p33river433: rental sea caravans should prepay against the actual
         // voyage length, not a hard-coded five-day route regardless of distance.
         var guardAdvance = guards * (CONFIG.CARAVAN_GUARD_WAGE || 6) * guardAdvanceDays;
+
+        // Export restriction contraband detection for sea caravans
+        var _seaExportContraband = false;
+        var _seaExportKingdomId = null;
+        var _seaExportGoods = [];
+        if (fromTown && toTown && fromTown.kingdomId !== toTown.kingdomId) {
+            var _seaSrcK = Engine.findKingdom ? Engine.findKingdom(fromTown.kingdomId) : null;
+            if (_seaSrcK && _seaSrcK.exportRestrictions && _seaSrcK.exportRestrictions.length > 0) {
+                for (var _segi = 0; _segi < _seaSrcK.exportRestrictions.length; _segi++) {
+                    if (goods[_seaSrcK.exportRestrictions[_segi]] && goods[_seaSrcK.exportRestrictions[_segi]] > 0) {
+                        _seaExportGoods.push(_seaSrcK.exportRestrictions[_segi]);
+                    }
+                }
+                if (_seaExportGoods.length > 0) {
+                    _seaExportContraband = true;
+                    _seaExportKingdomId = fromTown.kingdomId;
+                    seaCrewHire = Math.floor(seaCrewHire * 2);
+                    guardHireCost = Math.floor(guardHireCost * 2);
+                    guardAdvance = Math.floor(guardAdvance * 2);
+                    seaCrewWage = Math.floor(seaCrewWage * 2);
+                    Engine.logEvent('🚢 Sea caravan costs doubled — smuggling export-restricted goods out of ' + _seaSrcK.name + '.', { _noToast: true }, 'my_business');
+                }
+            }
+        }
+
         var totalCost = seaCrewHire + guardHireCost + guardAdvance;
 
         if (rentalShipType) {
@@ -4591,6 +4643,10 @@
             tripCount: 0,
             autoPickupTravelers: options.autoPickupTravelers || false,
             passengers: [],
+            _exportContraband: _seaExportContraband,
+            _exportRestrictionKingdomId: _seaExportKingdomId,
+            _exportRestrictedGoods: _seaExportGoods,
+            _exportCheckDone: false,
         };
         player.caravans.push(caravan);
 
@@ -11634,6 +11690,8 @@
             } catch(e) {}
             kingdom.exportRestrictions.push(data.good);
             Engine.logEvent('🚢 Export ban: ' + data.good + ' → ' + targetName, null, 'my_kingdom');
+            // Notify player about affected caravans
+            _notifyCaravansExportRestriction(kingdom.id, data.good);
             return { success: true, message: 'Export ban set: ' + data.good + ' to ' + targetName + '.' };
         }
         if (action === 'export_unban') {
@@ -21955,6 +22013,236 @@
         }
 
         return result;
+    }
+
+    // ── Export restriction enforcement ──
+
+    /** Check if the player is carrying export-restricted goods when leaving a kingdom */
+    function getExportRestrictedGoods(kingdomId) {
+        if (!kingdomId) return [];
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null;
+        if (!kingdom || !kingdom.exportRestrictions || kingdom.exportRestrictions.length === 0) return [];
+        var inv = player.inventory || {};
+        var restricted = [];
+        for (var i = 0; i < kingdom.exportRestrictions.length; i++) {
+            var goodId = kingdom.exportRestrictions[i];
+            if ((inv[goodId] || 0) > 0) {
+                var res = (typeof Engine !== 'undefined' && Engine.findResourceById) ? Engine.findResourceById(goodId) : null;
+                restricted.push({ goodId: goodId, qty: inv[goodId], name: res ? res.name : goodId });
+            }
+        }
+        return restricted;
+    }
+
+    /** Get export checkpoint info for UI display */
+    function getExportCheckpointInfo(originKingdomId) {
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(originKingdomId) : null;
+        if (!kingdom) return null;
+        var restricted = getExportRestrictedGoods(originKingdomId);
+        if (restricted.length === 0) return null;
+
+        var rng = Engine.getRng();
+        var isCitizen = isPlayerCitizenOf(originKingdomId);
+        var rank = (player.socialRank && player.socialRank[originKingdomId]) || 0;
+
+        // Base detection chance: 60%
+        var baseDetect = 0.60;
+        // Skill modifiers
+        var sneakModifiers = [];
+        if (hasSkill('master_smuggler')) { baseDetect -= 0.20; sneakModifiers.push({ name: 'Master Smuggler', bonus: 20 }); }
+        else if (hasSkill('smugglers_run')) { baseDetect -= 0.10; sneakModifiers.push({ name: "Smuggler's Run", bonus: 10 }); }
+        if (hasSkill('discrete')) { baseDetect -= 0.10; sneakModifiers.push({ name: 'Discrete', bonus: 10 }); }
+        if (hasSkill('master_disguise')) { baseDetect -= 0.10; sneakModifiers.push({ name: 'Master Disguise', bonus: 10 }); }
+        // Noble rank in the restricting kingdom reduces detection
+        if (rank >= 5) { baseDetect -= 0.25; sneakModifiers.push({ name: 'Lord+ Rank', bonus: 25 }); }
+        else if (rank >= 4) { baseDetect -= 0.15; sneakModifiers.push({ name: 'Noble Rank', bonus: 15 }); }
+        else if (rank >= 3) { baseDetect -= 0.05; sneakModifiers.push({ name: 'Guildmaster', bonus: 5 }); }
+        // Nighttime
+        var hour = (typeof Engine !== 'undefined' && Engine.getHour) ? Engine.getHour() : 12;
+        if (hour >= 20 || hour < 5) { baseDetect -= 0.10; sneakModifiers.push({ name: 'Nighttime', bonus: 10 }); }
+        // Notoriety increases detection
+        var notorietyPenalty = Math.min(0.10, (player.notoriety || 0) / 500);
+        if (notorietyPenalty > 0.01) baseDetect += notorietyPenalty;
+
+        baseDetect = Math.max(0.05, Math.min(0.95, baseDetect));
+        var sneakChance = 1 - baseDetect;
+
+        // Punishments from crime config
+        var punishment = getCrimePunishment(originKingdomId, 'export_violation');
+
+        // Bribe tiers
+        var baseBribe = punishment.fine || 200;
+        var bribes = [
+            { tier: 'low', label: 'Small Bribe', cost: Math.floor(baseBribe * 0.5), chance: Math.min(0.95, sneakChance * 0.6) },
+            { tier: 'medium', label: 'Standard Bribe', cost: baseBribe, chance: Math.min(0.95, sneakChance * 0.8 + 0.15) },
+            { tier: 'high', label: 'Generous Bribe', cost: Math.floor(baseBribe * 2), chance: Math.min(0.98, sneakChance + 0.30) }
+        ];
+        var bribeModifiers = [];
+        if (rank >= 4) bribeModifiers.push({ name: 'Noble Status', bonus: 10 });
+
+        return {
+            kingdomId: originKingdomId,
+            kingdomName: kingdom.name || 'Unknown',
+            restricted: restricted,
+            sneakChance: sneakChance,
+            sneakModifiers: sneakModifiers,
+            bribes: bribes,
+            bribeModifiers: bribeModifiers,
+            punishment: punishment,
+            sneakFine: punishment.fine || 200,
+            sneakJailDays: punishment.jailDays || 5,
+            bribeFine: Math.floor((punishment.fine || 200) * 1.5),
+            bribeJailDays: (punishment.jailDays || 5) + 5
+        };
+    }
+
+    /** Attempt to sneak restricted goods past the export checkpoint */
+    function attemptExportSneak(originKingdomId) {
+        var info = getExportCheckpointInfo(originKingdomId);
+        if (!info) return { allowed: true };
+
+        var rng = Engine.getRng();
+        var roll = rng ? rng.random() : Math.random();
+
+        if (roll < info.sneakChance) {
+            // Success — slipped through
+            Engine.logEvent('🥷 You smuggled restricted goods past the export checkpoint!', null, 'my_actions');
+            return { allowed: true, smuggled: true, message: 'You slipped past the export guards with your contraband!' };
+        }
+
+        // Caught!
+        var kingdom = Engine.findKingdom(originKingdomId);
+        var kName = kingdom ? kingdom.name : 'the kingdom';
+
+        // Confiscate restricted goods
+        var confiscated = [];
+        for (var i = 0; i < info.restricted.length; i++) {
+            var r = info.restricted[i];
+            if ((player.inventory[r.goodId] || 0) > 0) {
+                confiscated.push(r.qty + 'x ' + r.name);
+                player.inventory[r.goodId] = 0;
+            }
+        }
+
+        // Apply punishment
+        var fine = info.punishment.fine || 200;
+        var jailDays = info.punishment.jailDays || 5;
+        if (hasSkill('jail_break')) jailDays = Math.max(1, Math.floor(jailDays * 0.5));
+        player.jailedUntilDay = Engine.getDay() + jailDays;
+        player.jailReason = 'Export violation';
+        deductGoldOrDebt(fine, 'kingdom', originKingdomId, kName, 'Export violation fine');
+
+        // Record crime
+        if (!player.criminalRecord) player.criminalRecord = {};
+        if (!player.criminalRecord[originKingdomId]) player.criminalRecord[originKingdomId] = {};
+        player.criminalRecord[originKingdomId].export_violation = (player.criminalRecord[originKingdomId].export_violation || 0) + 1;
+        player.notoriety = Math.min(100, (player.notoriety || 0) + 5);
+
+        var msg = '🚫 CAUGHT! Export violation in ' + kName + '! Confiscated: ' + confiscated.join(', ') + '. Fined ' + fine + 'g, jailed ' + jailDays + ' days.';
+        Engine.logEvent(msg, null, 'my_actions');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, 'danger', 'critical');
+
+        return { allowed: false, caught: true, message: msg };
+    }
+
+    /** Attempt to bribe past the export checkpoint */
+    function attemptExportBribe(originKingdomId, tier, bribeCost) {
+        var info = getExportCheckpointInfo(originKingdomId);
+        if (!info) return { allowed: true };
+
+        // Pay bribe
+        if ((player.gold || 0) < bribeCost) {
+            return { allowed: false, caught: false, message: 'Not enough gold for the bribe.' };
+        }
+        deductGoldOrDebt(bribeCost, 'kingdom', originKingdomId, info.kingdomName, 'Export checkpoint bribe');
+
+        // Find the matching bribe tier
+        var bribe = null;
+        for (var i = 0; i < info.bribes.length; i++) {
+            if (info.bribes[i].tier === tier) { bribe = info.bribes[i]; break; }
+        }
+        if (!bribe) return { allowed: false, message: 'Invalid bribe tier.' };
+
+        var rng = Engine.getRng();
+        var roll = rng ? rng.random() : Math.random();
+
+        if (roll < bribe.chance) {
+            Engine.logEvent('💰 You bribed the export checkpoint guards with ' + bribeCost + 'g.', null, 'my_actions');
+            return { allowed: true, bribed: true, message: 'The guard pockets your gold and waves you through.' };
+        }
+
+        // Bribe failed — caught with additional bribery charge
+        var kingdom = Engine.findKingdom(originKingdomId);
+        var kName = kingdom ? kingdom.name : 'the kingdom';
+
+        // Confiscate restricted goods
+        var confiscated = [];
+        for (var i = 0; i < info.restricted.length; i++) {
+            var r = info.restricted[i];
+            if ((player.inventory[r.goodId] || 0) > 0) {
+                confiscated.push(r.qty + 'x ' + r.name);
+                player.inventory[r.goodId] = 0;
+            }
+        }
+
+        // Heavier punishment for failed bribe
+        var fine = info.bribeFine || 300;
+        var jailDays = info.bribeJailDays || 10;
+        if (hasSkill('jail_break')) jailDays = Math.max(1, Math.floor(jailDays * 0.5));
+        player.jailedUntilDay = Engine.getDay() + jailDays;
+        player.jailReason = 'Export violation + bribery';
+        deductGoldOrDebt(fine, 'kingdom', originKingdomId, kName, 'Export violation + bribery fine');
+
+        if (!player.criminalRecord) player.criminalRecord = {};
+        if (!player.criminalRecord[originKingdomId]) player.criminalRecord[originKingdomId] = {};
+        player.criminalRecord[originKingdomId].export_violation = (player.criminalRecord[originKingdomId].export_violation || 0) + 1;
+        player.criminalRecord[originKingdomId].bribery = (player.criminalRecord[originKingdomId].bribery || 0) + 1;
+        player.notoriety = Math.min(100, (player.notoriety || 0) + 8);
+
+        var msg = '🚫 CAUGHT! Bribe rejected at export checkpoint in ' + kName + '! Confiscated: ' + confiscated.join(', ') + '. Fined ' + fine + 'g, jailed ' + jailDays + ' days.';
+        Engine.logEvent(msg, null, 'my_actions');
+        if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, 'danger', 'critical');
+
+        return { allowed: false, caught: true, message: msg };
+    }
+
+    /** Notify player about caravans affected by a new export restriction */
+    function _notifyCaravansExportRestriction(kingdomId, goodId) {
+        if (!player.caravans || player.caravans.length === 0) return;
+        var affected = [];
+        for (var ci = 0; ci < player.caravans.length; ci++) {
+            var c = player.caravans[ci];
+            if (!c.active || c.status === 'arrived') continue;
+            var fromTown = Engine.findTown(c.fromTownId);
+            var toTown = Engine.findTown(c.toTownId);
+            if (!fromTown || !toTown) continue;
+            // Check if caravan originates from this kingdom and goes outside
+            var crossesBorder = (fromTown.kingdomId === kingdomId && toTown.kingdomId !== kingdomId) ||
+                                (toTown.kingdomId === kingdomId && fromTown.kingdomId !== kingdomId);
+            if (!crossesBorder) continue;
+            // Check if caravan carries the restricted good
+            if ((c.goods && c.goods[goodId] && c.goods[goodId] > 0) ||
+                (c.originalGoods && c.originalGoods[goodId] && c.originalGoods[goodId] > 0) ||
+                (c.orders && c.orders.some(function(o) { return o.good === goodId; }))) {
+                // Mark caravan as contraband
+                c._exportContraband = true;
+                c._exportRestrictionKingdomId = kingdomId;
+                if (!c._exportRestrictedGoods) c._exportRestrictedGoods = [];
+                if (c._exportRestrictedGoods.indexOf(goodId) < 0) c._exportRestrictedGoods.push(goodId);
+                c._exportCheckDone = false;
+                affected.push(c);
+            }
+        }
+        if (affected.length > 0) {
+            var resName = goodId;
+            if (typeof Engine !== 'undefined' && Engine.findResourceById) {
+                var res = Engine.findResourceById(goodId);
+                if (res) resName = res.name;
+            }
+            var msg = '⚠️ New export ban on ' + resName + ' affects ' + affected.length + ' active caravan' + (affected.length > 1 ? 's' : '') + '! They now risk seizure at the border. Edit caravan orders to remove restricted goods.';
+            Engine.logEvent(msg, null, 'my_business');
+            if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, 'warning', 'critical');
+        }
     }
 
     /** Check and attempt border crossing when borders are closed */
@@ -43284,6 +43572,11 @@
         getShipRentalCost,
         handlePirateEncounter,
         attemptBorderCrossing,
+        getExportRestrictedGoods,
+        getExportCheckpointInfo,
+        attemptExportSneak,
+        attemptExportBribe,
+        _notifyCaravansExportRestriction,
 
         // Encounter System (Bandits/Pirates/Wartime)
         hirePersonalGuard,

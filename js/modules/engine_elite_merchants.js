@@ -920,8 +920,24 @@
                 maxCapacity += _wagonBonus;
 
                 // Score based on goods we can send from inventory
+                // Check export restrictions for cross-kingdom trades
+                var _emSrcK = town.kingdomId ? findKingdom(town.kingdomId) : null;
+                var _emExportBan = (_emSrcK && _emSrcK.exportRestrictions) ? _emSrcK.exportRestrictions : [];
+                var _emIsNobleInSrcK = false;
+                if (_emSrcK && em.socialRank && (em.socialRank[_emSrcK.id] || 0) >= 4) _emIsNobleInSrcK = true;
+                var _emCrossKingdom = town.kingdomId !== dest.kingdomId;
+
                 for (var resId in inv) {
                     if ((inv[resId] || 0) <= 2) continue;
+                    // Export restriction filter
+                    if (_emCrossKingdom && _emExportBan.indexOf(resId) >= 0) {
+                        // Noble EMs can ignore with 70% chance (connections)
+                        if (_emIsNobleInSrcK && rng.random() < 0.70) {
+                            // Noble EM smuggles — mark caravan for catch check
+                        } else {
+                            continue; // Skip restricted goods
+                        }
+                    }
                     var localPrice = (town.market.prices[resId] || 0);
                     var destPrice = (dest.market.prices[resId] || 0);
 
@@ -973,6 +989,14 @@
                     mode = 'one_way';
                 }
 
+                // Detect if caravan is smuggling export-restricted goods
+                var _emHasContraband = false;
+                if (_emCrossKingdom && _emExportBan.length > 0) {
+                    for (var _bgk in bestGoods) {
+                        if (_emExportBan.indexOf(_bgk) >= 0) { _emHasContraband = true; break; }
+                    }
+                }
+
                 world.npcCaravans.push({
                     id: 'npc_caravan_' + world.day + '_' + ei,
                     ownerId: em.id,
@@ -980,10 +1004,6 @@
                     fromTownId: em.townId,
                     toTownId: bestDest,
                     goods: bestGoods,
-                    // v9p33river311: spawn now uses the same wealth-aware
-                    // formula the scoring loop computed in `maxCapacity`,
-                    // so a low-wealth merchant can't launch a 200+wagon-
-                    // bonus caravan they couldn't actually have planned.
                     capacity: maxCapacity,
                     progress: 0,
                     speed: CONFIG.EM_CARAVAN_SPEED || 0.08,
@@ -992,6 +1012,8 @@
                     mode: mode,
                     returnGoods: {},
                     tripCount: 0,
+                    _exportContraband: _emHasContraband,
+                    _exportRestrictionKingdomId: _emHasContraband ? town.kingdomId : null,
                 });
                 emitTrackedEMNotification(em, 'hired a caravan to ' + ((findTown(bestDest) || {}).name || 'unknown'), { townId: em.townId });
             }
@@ -1016,6 +1038,38 @@
                 caravan.progress = 0;
 
                 if (caravan.status === 'traveling') {
+                    // Export contraband check for EM caravans
+                    if (caravan._exportContraband && caravan._exportRestrictionKingdomId) {
+                        var _ecEmDetect = 0.30; // Lower base for NPC caravans
+                        var _ecEmOwner = world.people.find(function(p) { return p.id === caravan.ownerId; });
+                        // Noble EMs get reduced detection
+                        if (_ecEmOwner && _ecEmOwner.socialRank && (_ecEmOwner.socialRank[caravan._exportRestrictionKingdomId] || 0) >= 4) {
+                            _ecEmDetect -= 0.15;
+                        }
+                        _ecEmDetect = Math.max(0.05, _ecEmDetect);
+                        if (rng.random() < _ecEmDetect) {
+                            // Caught — confiscate restricted goods, fine EM
+                            var _ecEmK = findKingdom(caravan._exportRestrictionKingdomId);
+                            var _ecEmKName = _ecEmK ? _ecEmK.name : 'the kingdom';
+                            var _ecEmFine = 100 + Math.floor((_ecEmOwner ? _ecEmOwner.gold || 0 : 0) * 0.05);
+                            if (_ecEmOwner) _ecEmOwner.gold = Math.max(0, (_ecEmOwner.gold || 0) - _ecEmFine);
+                            if (_ecEmK) _ecEmK.gold = (_ecEmK.gold || 0) + _ecEmFine;
+                            var _ecEmConf = [];
+                            var _ecEmBans = _ecEmK ? (_ecEmK.exportRestrictions || []) : [];
+                            for (var _ecgi in caravan.goods) {
+                                if (_ecEmBans.indexOf(_ecgi) >= 0 && caravan.goods[_ecgi] > 0) {
+                                    _ecEmConf.push(caravan.goods[_ecgi] + 'x ' + _ecgi);
+                                    delete caravan.goods[_ecgi];
+                                }
+                            }
+                            logEvent('🚫 ' + (_ecEmOwner ? _ecEmOwner.firstName + ' ' + (_ecEmOwner.lastName || '') : 'An elite merchant') + "'s caravan was caught smuggling export-restricted goods out of " + _ecEmKName + '! Fined ' + _ecEmFine + 'g, goods confiscated.',  { category: 'npc_activity', _noToast: true }, 'npc_activity');
+                            emitTrackedEMNotification(_ecEmOwner || {}, 'caravan caught smuggling! Fined ' + _ecEmFine + 'g.', { townId: caravan.fromTownId });
+                            caravan._exportContraband = false;
+                        } else {
+                            caravan._exportContraband = false; // Passed the check
+                        }
+                    }
+
                     // Arrived at destination — sell goods
                     var destTown = findTown(caravan.toTownId);
                     if (destTown && destTown.market) {

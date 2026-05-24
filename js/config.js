@@ -4840,6 +4840,7 @@ CONFIG.CRIME_TYPES = [
     { id: 'counterfeiting', name: 'Counterfeiting', icon: '🪙', defaultPunishment: 'jail', defaultJailDays: 60, defaultFine: 2000, description: 'Creating counterfeit coins' },
     { id: 'poison', name: 'Poisoning', icon: '☠️', defaultPunishment: 'execution', defaultJailDays: 180, defaultFine: 3000, description: 'Poisoning food, water, or people' },
     { id: 'blackmail', name: 'Blackmail', icon: '📬', defaultPunishment: 'jail', defaultJailDays: 15, defaultFine: 500, description: 'Extorting others through threats' },
+    { id: 'export_violation', name: 'Export Violation', icon: '🚢', defaultPunishment: 'jail', defaultJailDays: 5, defaultFine: 200, description: 'Exporting goods restricted by the kingdom' },
 ];
 
 // ============================================================

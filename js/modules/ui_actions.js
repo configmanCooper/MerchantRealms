@@ -3802,7 +3802,20 @@ function _confirmTravelAfterOriginChecks(townId, optionId) {
         }
     }
 
-    // No quarantine or siege — execute travel
+    // ===== EXPORT RESTRICTION CHECK =====
+    if (optionId !== 'god_warp' && typeof Player !== 'undefined' && Player.getExportCheckpointInfo) {
+        var _originTown2 = Player.townId ? Engine.findTown(Player.townId) : null;
+        var _destTown2 = Engine.findTown(townId);
+        if (_originTown2 && _destTown2 && _originTown2.kingdomId && _destTown2.kingdomId !== _originTown2.kingdomId) {
+            var exportInfo = Player.getExportCheckpointInfo(_originTown2.kingdomId);
+            if (exportInfo && exportInfo.restricted.length > 0) {
+                _showExportCheckpointPopup(townId, optionId, exportInfo);
+                return;
+            }
+        }
+    }
+
+    // No quarantine, siege, or export restriction — execute travel
     _executeTravel(townId, opt);
 }
 
@@ -4552,6 +4565,170 @@ function _quarantineDoctorPersuade(townId, optionId) {
         var town = Engine.getTown(townId);
         if (town) Renderer.panTo(town.x, town.y);
     }
+}
+
+// ── EXPORT CHECKPOINT POPUP ──
+function _showExportCheckpointPopup(townId, optionId, info) {
+    var playerGold = Player.gold || 0;
+    var sneakPct = Math.round(info.sneakChance * 100);
+
+    var html = '<div style="max-height:500px;overflow-y:auto;padding:4px;">';
+
+    html += '<div style="text-align:center;margin-bottom:10px;font-size:0.9rem;color:var(--parchment);">🛡️ Border Patrol of <strong style="color:var(--gold);">' + info.kingdomName + '</strong></div>';
+
+    html += '<div style="background:rgba(196,78,82,0.15);border:1px solid rgba(196,78,82,0.3);border-radius:6px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.85rem;color:var(--parchment);margin-bottom:6px;">⚠️ You are carrying goods restricted for export by ' + info.kingdomName + ':</div>';
+    for (var ri = 0; ri < info.restricted.length; ri++) {
+        var rg = info.restricted[ri];
+        html += '<div style="font-size:0.82rem;color:#e67e22;padding-left:12px;">• <strong>' + rg.name + '</strong> × ' + rg.qty + '</div>';
+    }
+    html += '<div style="font-size:0.78rem;color:var(--text-muted);margin-top:6px;">Taking these goods outside the kingdom is a criminal offense. You can leave the goods behind, try to sneak them past, or bribe the guards.</div>';
+    html += '</div>';
+
+    // === Sneak Past ===
+    html += '<div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:4px;">🤫 Smuggle Past the Guards</div>';
+    var barColor = sneakPct >= 50 ? '#55a868' : (sneakPct >= 30 ? '#e67e22' : '#c44e52');
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
+    html += '<div style="font-size:0.8rem;color:var(--text-muted);min-width:90px;">Sneak chance:</div>';
+    html += '<div style="flex:1;height:14px;background:rgba(0,0,0,0.3);border-radius:7px;overflow:hidden;">';
+    html += '<div style="width:' + sneakPct + '%;height:100%;background:' + barColor + ';border-radius:7px;"></div>';
+    html += '</div>';
+    html += '<div style="font-size:0.9rem;font-weight:bold;color:' + barColor + ';min-width:40px;text-align:right;">' + sneakPct + '%</div>';
+    html += '</div>';
+    if (info.sneakModifiers && info.sneakModifiers.length > 0) {
+        html += '<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:4px;">Bonuses: ';
+        var smParts = [];
+        for (var smi = 0; smi < info.sneakModifiers.length; smi++) {
+            smParts.push(info.sneakModifiers[smi].name + ' (+' + info.sneakModifiers[smi].bonus + '%)');
+        }
+        html += smParts.join(', ') + '</div>';
+    }
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.9rem;background:rgba(196,78,82,0.25);border:2px solid rgba(196,78,82,0.6);color:#f0e6d2;" data-action="_exportSneakAttempt" data-id="' + townId + '" data-val="' + optionId + '" data-type="' + info.kingdomId + '">🤫 <strong style="color:#fff;">Try to Smuggle</strong> (<span style="color:#e67e22;font-weight:bold;">' + sneakPct + '%</span>)</button>';
+    html += '</div>';
+
+    // === Bribe ===
+    html += '<div style="background:rgba(218,165,32,0.08);border:1px solid rgba(218,165,32,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:6px;">💰 Bribe the Guards</div>';
+    if (info.bribes && info.bribes.length > 0) {
+        var bribeColors = { low: '#c44e52', medium: '#e67e22', high: '#55a868' };
+        for (var bi = 0; bi < info.bribes.length; bi++) {
+            var b = info.bribes[bi];
+            var bPct = Math.round(b.chance * 100);
+            var bColor = bribeColors[b.tier] || '#888';
+            var bDisabled = playerGold < b.cost;
+            var bStyle = 'width:100%;padding:8px 10px;font-size:0.85rem;margin-bottom:4px;';
+            if (bDisabled) {
+                bStyle += 'opacity:0.4;cursor:not-allowed;background:rgba(100,100,100,0.2);border-color:rgba(100,100,100,0.3);color:#888;';
+            } else {
+                bStyle += 'background:rgba(' + (b.tier === 'low' ? '196,78,82' : (b.tier === 'medium' ? '230,126,34' : '85,168,104')) + ',0.25);border:2px solid ' + bColor + ';color:#f0e6d2;';
+            }
+            html += '<button class="btn-medieval" style="' + bStyle + '"';
+            if (bDisabled) {
+                html += ' disabled';
+            } else {
+                html += ' data-action="_exportBribeAttempt" data-id="' + townId + '" data-val="' + optionId + '" data-type="' + b.tier + '" data-cost="' + b.cost + '" data-kingdom="' + info.kingdomId + '"';
+            }
+            html += '>';
+            html += '<strong style="color:#fff;">' + b.label + '</strong> — <strong style="color:#ffd700;">' + b.cost + 'g</strong> (<span style="color:' + bColor + ';font-weight:bold;font-size:1rem;">' + bPct + '%</span>)';
+            if (bDisabled) html += ' <span style="font-size:0.75rem;color:#888;">(not enough gold)</span>';
+            html += '</button>';
+        }
+    }
+    html += '</div>';
+
+    // === Drop Goods ===
+    html += '<div style="background:rgba(85,168,104,0.08);border:1px solid rgba(85,168,104,0.25);border-radius:6px;padding:10px;margin-bottom:10px;">';
+    html += '<div style="font-size:0.85rem;color:var(--gold);font-weight:bold;margin-bottom:4px;">📦 Drop Restricted Goods</div>';
+    html += '<div style="font-size:0.8rem;color:var(--parchment);margin-bottom:6px;">Leave the restricted goods behind and pass through legally.</div>';
+    html += '<button class="btn-medieval" style="width:100%;padding:8px 10px;font-size:0.85rem;background:rgba(85,168,104,0.25);border:2px solid #55a868;color:#f0e6d2;" data-action="_exportDropGoods" data-id="' + townId + '" data-val="' + optionId + '" data-type="' + info.kingdomId + '">📦 <strong style="color:#fff;">Drop Goods & Pass</strong></button>';
+    html += '</div>';
+
+    // === Consequences Warning ===
+    html += '<div style="background:rgba(139,69,19,0.12);border:1px solid rgba(139,69,19,0.3);border-radius:6px;padding:8px;margin-bottom:10px;font-size:0.78rem;color:var(--text-muted);">';
+    html += '<div style="font-weight:bold;color:var(--gold);margin-bottom:3px;">⚠️ Consequences if Caught</div>';
+    html += '<div>Smuggling: Goods confiscated, <strong>' + (info.sneakFine || 0) + 'g</strong> fine, <strong>' + (info.sneakJailDays || 0) + '</strong> days jail</div>';
+    html += '<div>Failed bribe: Goods confiscated, <strong>' + (info.bribeFine || 0) + 'g</strong> fine, <strong>' + (info.bribeJailDays || 0) + '</strong> days jail + bribery charge</div>';
+    html += '</div>';
+
+    // Turn Back
+    html += '<div style="text-align:center;">';
+    html += '<button class="btn-medieval" style="padding:8px 24px;font-size:0.9rem;" data-action="closeModal">🚫 Turn Back</button>';
+    html += '</div>';
+
+    html += '</div>';
+    openModal('🚢 Export Checkpoint', html);
+}
+
+function _exportSneakAttempt(townId, optionId, kingdomId) {
+    closeModal();
+    var result = Player.attemptExportSneak(kingdomId);
+    if (result && !result.allowed) return;
+
+    var options = _travelOptions || [];
+    var opt = null;
+    for (var i = 0; i < options.length; i++) {
+        if (options[i].id === optionId) { opt = options[i]; break; }
+    }
+    if (!opt || !opt.action) return;
+    if (result && result.allowed && result.message) toast(result.message, 'success', 'travel_events');
+
+    closeRightPanel();
+    try {
+        var travelResult = _executeTravelAction(townId, opt);
+        if (travelResult && travelResult.success === false) { toast(travelResult.message || 'Travel failed.', 'danger'); return; }
+    } catch (e) { toast('Travel error: ' + (e.message || e), 'danger'); return; }
+    if (typeof Renderer !== 'undefined') { var town = Engine.getTown(townId); if (town) Renderer.panTo(town.x, town.y); }
+}
+
+function _exportBribeAttempt(townId, optionId, tier, bribeCost, kingdomId) {
+    closeModal();
+    var result = Player.attemptExportBribe(kingdomId, tier, parseInt(bribeCost));
+    if (result && !result.allowed) return;
+
+    var options = _travelOptions || [];
+    var opt = null;
+    for (var i = 0; i < options.length; i++) {
+        if (options[i].id === optionId) { opt = options[i]; break; }
+    }
+    if (!opt || !opt.action) return;
+    if (result && result.allowed && result.message) toast(result.message, 'success', 'travel_events');
+
+    closeRightPanel();
+    try {
+        var travelResult = _executeTravelAction(townId, opt);
+        if (travelResult && travelResult.success === false) { toast(travelResult.message || 'Travel failed.', 'danger'); return; }
+    } catch (e) { toast('Travel error: ' + (e.message || e), 'danger'); return; }
+    if (typeof Renderer !== 'undefined') { var town = Engine.getTown(townId); if (town) Renderer.panTo(town.x, town.y); }
+}
+
+function _exportDropGoods(townId, optionId, kingdomId) {
+    closeModal();
+    var restricted = Player.getExportRestrictedGoods(kingdomId);
+    var dropped = [];
+    for (var i = 0; i < restricted.length; i++) {
+        var r = restricted[i];
+        var inv = Player.inventory || (Player.state ? Player.state.inventory : null);
+        if (inv && (inv[r.goodId] || 0) > 0) {
+            dropped.push(r.qty + 'x ' + r.name);
+            inv[r.goodId] = 0;
+        }
+    }
+    if (dropped.length > 0) toast('📦 Dropped: ' + dropped.join(', '), 'info', 'travel_events');
+
+    var options = _travelOptions || [];
+    var opt = null;
+    for (var i = 0; i < options.length; i++) {
+        if (options[i].id === optionId) { opt = options[i]; break; }
+    }
+    if (!opt || !opt.action) return;
+
+    closeRightPanel();
+    try {
+        var travelResult = _executeTravelAction(townId, opt);
+        if (travelResult && travelResult.success === false) { toast(travelResult.message || 'Travel failed.', 'danger'); return; }
+    } catch (e) { toast('Travel error: ' + (e.message || e), 'danger'); return; }
+    if (typeof Renderer !== 'undefined') { var town = Engine.getTown(townId); if (town) Renderer.panTo(town.x, town.y); }
 }
 
 function _executeTravelAction(townId, opt) {
@@ -5918,6 +6095,9 @@ function clickTown(townId) {
     UI.registerAction('confirmTravel', function(_t, d) { UI.confirmTravel(d.id, d.val); });
     UI.registerAction('_quarantineSneakAttempt', function(_t, d) { UI._quarantineSneakAttempt(d.id, d.val); });
     UI.registerAction('_quarantineDoctorPersuade', function(_t, d) { UI._quarantineDoctorPersuade(d.id, d.val); });
+    UI.registerAction('_exportSneakAttempt', function(_t, d) { _exportSneakAttempt(d.id, d.val, d.type); });
+    UI.registerAction('_exportBribeAttempt', function(_t, d) { _exportBribeAttempt(d.id, d.val, d.type, d.cost, d.kingdom); });
+    UI.registerAction('_exportDropGoods', function(_t, d) { _exportDropGoods(d.id, d.val, d.type); });
     UI.registerAction('_siegeSneakAttempt', function(_t, d) { UI._siegeSneakAttempt(d.id, d.val); });
     UI.registerAction('_siegeJoinSide', function(_t, d) { UI._siegeJoinSide(d.id, d.val, d.side, d.win); });
     UI.registerAction('_siegeTurnBack', function() { UI._siegeTurnBack(); });
