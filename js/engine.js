@@ -17540,21 +17540,25 @@
             }
         }
 
-        // Store tracking on noble
-        if (!noble._economicNegotiations) noble._economicNegotiations = [];
-        noble._economicNegotiations.push({
-            type: negType,
-            leverageGood: leverageGoodId,
-            leverageLocation: leverageLocation || kId,
-            demandAction: demandAction,
-            demandParam: demandParam || null,
-            agreed: agreed,
-            startDay: world.day,
-            expiresDay: world.day + 14,
-            baselineSupply: baselineSupply,
-            amountNeeded: (leverage && leverage.amountNeeded) ? leverage.amountNeeded : 0,
-            resolved: false
-        });
+        // Store tracking on noble — skip for successful threats (noble already
+        // added demand to agenda immediately). Only monitor failed threats
+        // (to see if player follows through) and all entices.
+        if (!(agreed && negType === 'threaten')) {
+            if (!noble._economicNegotiations) noble._economicNegotiations = [];
+            noble._economicNegotiations.push({
+                type: negType,
+                leverageGood: leverageGoodId,
+                leverageLocation: leverageLocation || kId,
+                demandAction: demandAction,
+                demandParam: demandParam || null,
+                agreed: agreed,
+                startDay: world.day,
+                expiresDay: world.day + 14,
+                baselineSupply: baselineSupply,
+                amountNeeded: (leverage && leverage.amountNeeded) ? leverage.amountNeeded : 0,
+                resolved: false
+            });
+        }
 
         // Relationship change
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
