@@ -9304,7 +9304,7 @@
         var logCategory = isPlayerKingdom ? 'my_kingdom' : 'foreign_kingdoms';
         var kingName = king.firstName + ' ' + king.lastName;
         var changes = [];
-        var maxChanges = 5;
+        var maxChanges = 10;
         var atWar = kingdom.atWar && (kingdom.atWar instanceof Set ? kingdom.atWar.size > 0 : (Array.isArray(kingdom.atWar) ? kingdom.atWar.length > 0 : false));
         var treasury = kingdom.gold || 0;
         var happiness = kingdom.happiness != null ? kingdom.happiness : 50;
@@ -9513,6 +9513,207 @@
             // medical_funding coalition
             if ((coalitionInfluence['medical_funding'] || 0) > 3 && warmth > 40 && changes.length < maxChanges) {
                 changes.push('pledged medical funding (noble petition)');
+            }
+        }
+
+        // ── 7. Tariff review ──
+        if (changes.length < maxChanges && kingdom.laws) {
+            var currentTariff = kingdom.laws.tradeTariff != null ? kingdom.laws.tradeTariff : 0.05;
+            var coalLowerTariff = coalitionInfluence['lower_tariffs'] || 0;
+            var coalRaiseTariff = coalitionInfluence['raise_tariffs'] || 0;
+            var wantLowerTariff = (isGenerous || isProgressive) && currentTariff > 0.03;
+            var wantRaiseTariff = (isGreedy || (isTraditional && !isGenerous)) && currentTariff < 0.12;
+
+            if (coalLowerTariff > coalRaiseTariff && coalLowerTariff > 3) {
+                var newTariff = Math.max(0, currentTariff - 0.03);
+                kingdom.laws.tradeTariff = Math.round(newTariff * 100) / 100;
+                changes.push('lowered tariffs to ' + Math.round(newTariff * 100) + '% (noble petition)');
+            } else if (coalRaiseTariff > coalLowerTariff && coalRaiseTariff > 3) {
+                var newTariff2 = Math.min(0.20, currentTariff + 0.03);
+                kingdom.laws.tradeTariff = Math.round(newTariff2 * 100) / 100;
+                changes.push('raised tariffs to ' + Math.round(newTariff2 * 100) + '% (noble petition)');
+            } else if (wantLowerTariff && !wantRaiseTariff) {
+                var newTariff3 = Math.max(0.01, currentTariff - (0.02 + rng.randFloat(0, 0.02)));
+                newTariff3 = Math.round(newTariff3 * 100) / 100;
+                if (newTariff3 < currentTariff) {
+                    kingdom.laws.tradeTariff = newTariff3;
+                    changes.push('lowered tariffs from ' + Math.round(currentTariff * 100) + '% to ' + Math.round(newTariff3 * 100) + '%');
+                }
+            } else if (wantRaiseTariff && !wantLowerTariff) {
+                var newTariff4 = Math.min(0.20, currentTariff + (0.02 + rng.randFloat(0, 0.02)));
+                newTariff4 = Math.round(newTariff4 * 100) / 100;
+                if (newTariff4 > currentTariff) {
+                    kingdom.laws.tradeTariff = newTariff4;
+                    changes.push('raised tariffs from ' + Math.round(currentTariff * 100) + '% to ' + Math.round(newTariff4 * 100) + '%');
+                }
+            }
+        }
+
+        // ── 8. War & peace review ──
+        if (changes.length < maxChanges && atWar) {
+            var warEnemies = kingdom.atWar instanceof Set ? Array.from(kingdom.atWar) : (Array.isArray(kingdom.atWar) ? kingdom.atWar : []);
+            var coalMakePeace = coalitionInfluence['make_peace'] || 0;
+            for (var wei = 0; wei < warEnemies.length && changes.length < maxChanges; wei++) {
+                var enemyKId = warEnemies[wei];
+                var enemyK = findKingdom(enemyKId);
+                if (!enemyK) continue;
+                var wantPeace = false;
+                if (isPeaceful) wantPeace = rng.chance(0.6);
+                else if (coalMakePeace > 3) wantPeace = rng.chance(0.5);
+                else if (!isWarlike && treasury < 1000) wantPeace = rng.chance(0.35);
+                if (wantPeace) {
+                    try { Engine.makePeace(kingdom, enemyK, false, null, true); } catch(e) {}
+                    changes.push('sued for peace with ' + enemyK.name);
+                }
+            }
+        }
+
+        // ── 9. Alliance review ──
+        if (changes.length < maxChanges && kingdom.alliances) {
+            var allies = kingdom.alliances instanceof Set ? Array.from(kingdom.alliances) : (Array.isArray(kingdom.alliances) ? kingdom.alliances.slice() : []);
+            for (var ali = 0; ali < allies.length && changes.length < maxChanges; ali++) {
+                var allyKId = allies[ali];
+                var allyK = findKingdom(allyKId);
+                if (!allyK) continue;
+                var breakChance = 0;
+                // Warlike king at war with ally's ally → break
+                if (isWarlike && allyK.atWar) {
+                    var allyEnemies = allyK.atWar instanceof Set ? Array.from(allyK.atWar) : (Array.isArray(allyK.atWar) ? allyK.atWar : []);
+                    for (var aei = 0; aei < allyEnemies.length; aei++) {
+                        if (allyEnemies[aei] === kId) { breakChance += 0.8; break; }
+                    }
+                }
+                // Check king's personal relationship with ally's king
+                if (allyK.king && king) {
+                    var allyRel = (king._nobleRelationships && king._nobleRelationships[allyK.king]) || 0;
+                    if (allyRel < -30) breakChance += 0.3;
+                }
+                if (breakChance > 0 && rng.chance(Math.min(0.8, breakChance))) {
+                    // Break alliance
+                    if (kingdom.alliances instanceof Set) kingdom.alliances.delete(allyKId);
+                    else if (Array.isArray(kingdom.alliances)) kingdom.alliances = kingdom.alliances.filter(function(id) { return id !== allyKId; });
+                    if (allyK.alliances) {
+                        if (allyK.alliances instanceof Set) allyK.alliances.delete(kId);
+                        else if (Array.isArray(allyK.alliances)) allyK.alliances = allyK.alliances.filter(function(id) { return id !== kId; });
+                    }
+                    changes.push('broke alliance with ' + allyK.name);
+                }
+            }
+        }
+
+        // ── 10. Trade agreement review ──
+        if (changes.length < maxChanges && world.treaties) {
+            for (var tri = world.treaties.length - 1; tri >= 0 && changes.length < maxChanges; tri--) {
+                var treaty = world.treaties[tri];
+                if (!treaty || !treaty.active) continue;
+                if (!treaty.signatories || treaty.signatories.indexOf(kId) < 0) continue;
+                var otherSig = null;
+                for (var tsi = 0; tsi < treaty.signatories.length; tsi++) {
+                    if (treaty.signatories[tsi] !== kId) { otherSig = treaty.signatories[tsi]; break; }
+                }
+                if (!otherSig) continue;
+                var otherK = findKingdom(otherSig);
+                if (!otherK) continue;
+                // Isolationist/greedy king may cancel trade deals
+                var cancelChance = 0;
+                if (isTraditional && isGreedy) cancelChance = 0.4;
+                else if (isGreedy) cancelChance = 0.2;
+                // Check if at war with this trade partner
+                var atWarWith = false;
+                if (kingdom.atWar) {
+                    atWarWith = kingdom.atWar instanceof Set ? kingdom.atWar.has(otherSig) : (Array.isArray(kingdom.atWar) ? kingdom.atWar.indexOf(otherSig) >= 0 : false);
+                }
+                if (atWarWith) cancelChance = 0.9;
+                if (cancelChance > 0 && rng.chance(cancelChance)) {
+                    treaty.active = false;
+                    changes.push('cancelled trade agreement with ' + otherK.name);
+                }
+            }
+        }
+
+        // ── 11. Export restriction review ──
+        if (changes.length < maxChanges && kingdom.exportRestrictions && kingdom.exportRestrictions.length > 0) {
+            if ((isGenerous || isProgressive) && !atWar) {
+                var liftedExports = kingdom.exportRestrictions.splice(0);
+                if (liftedExports.length > 0) {
+                    changes.push('lifted export restrictions on ' + liftedExports.slice(0, 3).join(', ') + (liftedExports.length > 3 ? ' and ' + (liftedExports.length - 3) + ' more' : ''));
+                }
+            }
+        } else if (changes.length < maxChanges && isWarlike && atWar) {
+            // Warlike king at war may restrict food exports to preserve supply
+            if (!kingdom.exportRestrictions) kingdom.exportRestrictions = [];
+            var warExports = ['bread', 'wheat', 'meat'];
+            var addedExports = [];
+            for (var exi = 0; exi < warExports.length; exi++) {
+                if (kingdom.exportRestrictions.indexOf(warExports[exi]) < 0) {
+                    kingdom.exportRestrictions.push(warExports[exi]);
+                    addedExports.push(warExports[exi]);
+                }
+            }
+            if (addedExports.length > 0) {
+                changes.push('restricted exports of ' + addedExports.join(', ') + ' (wartime measure)');
+            }
+        }
+
+        // ── 12. Pass new laws ──
+        if (changes.length < maxChanges && kingdom.laws) {
+            if (!kingdom.laws.specialLaws) kingdom.laws.specialLaws = [];
+            var existingLawIds = {};
+            for (var eli = 0; eli < kingdom.laws.specialLaws.length; eli++) {
+                existingLawIds[kingdom.laws.specialLaws[eli].id] = true;
+            }
+            var passedLaws = [];
+            var availableLaws = CONFIG.SPECIAL_LAWS || [];
+            // Progressive king → pass progressive laws
+            if (isProgressive && !existingLawIds['female_heir_law'] && rng.chance(0.5)) {
+                var flDef = availableLaws.find(function(l) { return l.id === 'female_heir_law'; });
+                if (flDef) { kingdom.laws.specialLaws.push({ id: flDef.id, name: flDef.name, passedDay: world.day }); passedLaws.push(flDef.name); existingLawIds[flDef.id] = true; }
+            }
+            if (isProgressive && !existingLawIds['free_trade'] && rng.chance(0.35)) {
+                var ftDef = availableLaws.find(function(l) { return l.id === 'free_trade'; });
+                if (ftDef) { kingdom.laws.specialLaws.push({ id: ftDef.id, name: ftDef.name, passedDay: world.day }); passedLaws.push(ftDef.name); existingLawIds[ftDef.id] = true; }
+            }
+            if (isProgressive && !existingLawIds['right_to_camps'] && rng.chance(0.3)) {
+                var rcDef = availableLaws.find(function(l) { return l.id === 'right_to_camps'; });
+                if (rcDef) { kingdom.laws.specialLaws.push({ id: rcDef.id, name: rcDef.name, passedDay: world.day }); passedLaws.push(rcDef.name); existingLawIds[rcDef.id] = true; }
+            }
+            // Just king → fair trial
+            if (isJust && !existingLawIds['fair_trial_law'] && rng.chance(0.4)) {
+                var fjDef = availableLaws.find(function(l) { return l.id === 'fair_trial_law'; });
+                if (fjDef) { kingdom.laws.specialLaws.push({ id: fjDef.id, name: fjDef.name, passedDay: world.day }); passedLaws.push(fjDef.name); existingLawIds[fjDef.id] = true; }
+            }
+            // Warlike king at war → conscription
+            if (isWarlike && atWar && !existingLawIds['conscription_law'] && rng.chance(0.6)) {
+                var clDef = availableLaws.find(function(l) { return l.id === 'conscription_law'; });
+                if (clDef) { kingdom.laws.specialLaws.push({ id: clDef.id, name: clDef.name, passedDay: world.day }); passedLaws.push(clDef.name); existingLawIds[clDef.id] = true; }
+            }
+            // Traditional/greedy king → sumptuary laws, guild monopoly
+            if (isTraditional && !existingLawIds['sumptuary_laws'] && rng.chance(0.35)) {
+                var slDef = availableLaws.find(function(l) { return l.id === 'sumptuary_laws'; });
+                if (slDef) { kingdom.laws.specialLaws.push({ id: slDef.id, name: slDef.name, passedDay: world.day }); passedLaws.push(slDef.name); existingLawIds[slDef.id] = true; }
+            }
+            if (isGreedy && !existingLawIds['inheritance_tax'] && rng.chance(0.4)) {
+                var itDef = availableLaws.find(function(l) { return l.id === 'inheritance_tax'; });
+                if (itDef) { kingdom.laws.specialLaws.push({ id: itDef.id, name: itDef.name, passedDay: world.day }); passedLaws.push(itDef.name); existingLawIds[itDef.id] = true; }
+            }
+            // Ambitious king → noble council (consolidate power through formalization)
+            if (ambition > 70 && !existingLawIds['noble_council'] && rng.chance(0.25)) {
+                var ncDef = availableLaws.find(function(l) { return l.id === 'noble_council'; });
+                if (ncDef) { kingdom.laws.specialLaws.push({ id: ncDef.id, name: ncDef.name, passedDay: world.day }); passedLaws.push(ncDef.name); existingLawIds[ncDef.id] = true; }
+            }
+            // Coalition-driven: pass_law
+            if ((coalitionInfluence['pass_law'] || 0) > 3 && changes.length < maxChanges) {
+                // Find a law nobles might want that isn't already passed
+                var coalLawCandidates = ['price_controls', 'market_day', 'sanctuary_law', 'blood_price'];
+                for (var cli2 = 0; cli2 < coalLawCandidates.length; cli2++) {
+                    if (!existingLawIds[coalLawCandidates[cli2]] && rng.chance(0.4)) {
+                        var coalLawDef = availableLaws.find(function(l) { return l.id === coalLawCandidates[cli2]; });
+                        if (coalLawDef) { kingdom.laws.specialLaws.push({ id: coalLawDef.id, name: coalLawDef.name, passedDay: world.day }); passedLaws.push(coalLawDef.name + ' (noble petition)'); existingLawIds[coalLawDef.id] = true; break; }
+                    }
+                }
+            }
+            if (passedLaws.length > 0 && changes.length < maxChanges) {
+                changes.push('passed ' + passedLaws.join(', '));
             }
         }
 
