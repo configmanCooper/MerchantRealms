@@ -86,8 +86,11 @@
     // ========================================================
     function createEliteMerchantFromNPC(npc) {
         npc.isEliteMerchant = true;
-        // Preserve noble occupation — nobles can be elite merchants too
-        if (npc.occupation !== 'noble') npc.occupation = 'merchant';
+        // Store prior occupation before overwriting
+        if (npc.occupation && npc.occupation !== 'merchant') {
+            npc.priorOccupation = npc.occupation;
+        }
+        npc.occupation = 'merchant';
         npc.wealthClass = 'upper';
         npc.name = (npc.firstName || '') + ' ' + (npc.lastName || '');
         if (!npc.npcMerchantInventory) npc.npcMerchantInventory = {};
@@ -277,8 +280,8 @@
                 if (qk && (qk.gold || 0) > 500) {
                     // Find wealthy NPC merchants in that town or nearby
                     var candidates = world.people.filter(function(p) {
-                        return p.alive && (p.occupation === 'merchant' || p.occupation === 'noble') && !p.isEliteMerchant 
-                            && p.townId === candidateTown.id && (p.gold || 0) > 200;
+                        return p.alive && !p.isEliteMerchant 
+                            && p.townId === candidateTown.id && (p.gold || 0) > 2000;
                     });
                     // Also check connected towns if none found locally
                     if (candidates.length === 0) {
@@ -292,8 +295,8 @@
                             if (_ctId && findTown(_ctId) && connTowns.indexOf(_ctId) < 0) connTowns.push(_ctId);
                         }
                         candidates = world.people.filter(function(p) {
-                            return p.alive && (p.occupation === 'merchant' || p.occupation === 'noble') && !p.isEliteMerchant 
-                                && connTowns.indexOf(p.townId) >= 0 && (p.gold || 0) > 200;
+                            return p.alive && !p.isEliteMerchant 
+                                && connTowns.indexOf(p.townId) >= 0 && (p.gold || 0) > 2000;
                         });
                     }
                     candidates.sort(function(a, b) {
@@ -346,8 +349,8 @@
                     if (world.rng.random() < 0.08) { // 8% chance per thriving town per check
                         var _tt = thrivingTowns[_tti];
                         var _ttCands = world.people.filter(function(p) {
-                            return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant 
-                                && p.townId === _tt.id && (p.gold || 0) > 150;
+                            return p.alive && !p.isEliteMerchant 
+                                && p.townId === _tt.id && (p.gold || 0) > 1000;
                         });
                         _ttCands.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
                         if (_ttCands.length > 0) {
@@ -368,7 +371,7 @@
             // Fallback: if BELOW minimum active EMs, still force-fill (game needs some EMs)
             if (activeEmCount < CONFIG.ELITE_MERCHANT_MIN) {
                 var fallbackCandidates = world.people.filter(function(p) {
-                    return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant && (p.gold || 0) > 200;
+                    return p.alive && !p.isEliteMerchant && (p.gold || 0) > 200;
                 });
                 fallbackCandidates.sort(function(a, b) { return (b.gold || 0) - (a.gold || 0); });
                 if (fallbackCandidates.length > 0) {
@@ -425,7 +428,7 @@
         // Refill only to minimum — dynamic target is reached organically via tickEliteMerchantDynamics
         while (world.eliteMerchants.length < CONFIG.ELITE_MERCHANT_MIN) {
             var merchants = world.people.filter(function(p) {
-                return p.alive && p.occupation === 'merchant' && !p.isEliteMerchant;
+                return p.alive && !p.isEliteMerchant;
             });
             // Calculate value: gold + building count * 500 as rough proxy
             merchants.sort(function(a, b) {

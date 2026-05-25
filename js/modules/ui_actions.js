@@ -1449,7 +1449,7 @@ function showPersonDetail(person) {
     html += '<div class="detail-row"><span class="label">Social Rank</span><span class="value">' + (_npcSRDef.icon || '') + ' ' + (_npcSRDef.name || 'Peasant') + _npcKingdomLabel + '</span></div>';
     if (_npcPlayerKingdomRank) html += _npcPlayerKingdomRank;
     html += `<div class="detail-row"><span class="label">Occupation</span>
-            <span class="value">${occInfo.name || occ}</span></div>
+            <span class="value">${occInfo.name || occ}${person.priorOccupation ? ' <span style="font-size:0.8em;color:#aaa;">(formerly ' + (person.priorOccupation.charAt(0).toUpperCase() + person.priorOccupation.slice(1)) + ')</span>' : ''}</span></div>
         <div class="detail-row"><span class="label">Town</span>
             <span class="value">${townName}</span></div>
         <div class="detail-row"><span class="label">Gold</span>
