@@ -3789,12 +3789,27 @@
             if (targetBld.townId !== bld.townId) return { success: false, message: 'Target must be in the same town.' };
             if (targetBld.id === bld.id) return { success: false, message: 'Cannot transfer to itself.' };
             
-            // Check if transfer makes sense
+            // Check if transfer makes sense — check both base consumes
+            // and the target's active recipe consumes (availableProducts)
             const targetBt = Engine.findBuildingType(targetBld.type);
-            if (targetBt && targetBt.consumes) {
-                const consumesProduced = Object.keys(targetBt.consumes).includes(bt.produces);
+            if (targetBt) {
+                var _activeConsumes = targetBt.consumes || {};
+                var _targetRecipe = targetBld.currentProduct || targetBld.productionChoice;
+                if (_targetRecipe && targetBt.availableProducts && targetBt.availableProducts[_targetRecipe] && targetBt.availableProducts[_targetRecipe].consumes) {
+                    _activeConsumes = targetBt.availableProducts[_targetRecipe].consumes;
+                }
+                var _srcProduces = bld.currentProduct || bld.productionChoice || bt.produces;
+                if (_srcProduces && targetBt.availableProducts && targetBt.availableProducts[_srcProduces] && targetBt.availableProducts[_srcProduces].produces) {
+                    _srcProduces = targetBt.availableProducts[_srcProduces].produces;
+                }
+                var _actualProduces = bt.produces;
+                var _srcRecipe = bld.currentProduct || bld.productionChoice;
+                if (_srcRecipe && bt.availableProducts && bt.availableProducts[_srcRecipe] && bt.availableProducts[_srcRecipe].produces) {
+                    _actualProduces = bt.availableProducts[_srcRecipe].produces;
+                }
+                var consumesProduced = _activeConsumes && Object.keys(_activeConsumes).indexOf(_actualProduces) >= 0;
                 if (!consumesProduced) {
-                    warning = ' ⚠️ Warning: ' + targetBt.name + ' does not consume ' + bt.produces + '. Transfer will still work but goods will go to market supply.';
+                    warning = ' ⚠️ Warning: ' + targetBt.name + ' does not consume ' + _actualProduces + '. Transfer will still work but goods will go to market supply.';
                 }
             }
         }
