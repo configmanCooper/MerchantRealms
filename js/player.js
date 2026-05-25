@@ -14198,7 +14198,7 @@
             narrative: function(name, kingdom) {
                 return '<div style="padding:15px;">' +
                     '<div style="text-align:center;margin-bottom:15px;">' +
-                    '<div style="font-size:2.5em;">⚖️🏪</div>' +
+                    '<div style="font-size:2.5em;">⚖️</div>' +
                     '<h3 style="color:var(--gold);margin:5px 0;">Burgher of ' + kingdom + '!</h3>' +
                     '</div>' +
                     '<p style="font-style:italic;color:var(--text-secondary);margin:10px 0;text-align:center;">' +
