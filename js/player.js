@@ -36212,13 +36212,19 @@
 
         // Check for background gossip first (30% chance if gossip exists for this area)
         var gossipResult = _tryShareBackgroundGossip(town, kingdom, npcName, rng);
-        if (gossipResult) return gossipResult;
 
-        if (isUseful) {
-            return _generateUsefulInfo(town, kingdom, npc, npcName, npcOccupation, rng);
+        var result;
+        if (gossipResult) {
+            result = gossipResult;
+        } else if (isUseful) {
+            result = _generateUsefulInfo(town, kingdom, npc, npcName, npcOccupation, rng);
         } else {
-            return _generateFlavorText(town, kingdom, npc, npcName, npcOccupation, npcGender, rng);
+            result = _generateFlavorText(town, kingdom, npc, npcName, npcOccupation, npcGender, rng);
         }
+
+        // Attach NPC id so UI can open the full interaction panel
+        if (result && npc) result.npcId = npc.id;
+        return result;
     }
 
     function _tryShareBackgroundGossip(town, kingdom, npcName, rng) {

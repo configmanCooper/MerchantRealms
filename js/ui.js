@@ -7217,8 +7217,9 @@ window.UI = (function () {
         ];
     }
 
-    function talkToPerson(personId) {
+    function talkToPerson(personId, opts) {
         if (typeof Player === 'undefined' || !Player.getAvailableInteractions) return;
+        opts = opts || {};
         var interactions = Player.getAvailableInteractions(personId);
         if (!interactions || interactions.length === 0) {
             toast('No interactions available.', 'warning');
@@ -7236,7 +7237,20 @@ window.UI = (function () {
         // dialog responses can replace the greeting line without
         // closing the modal.
         html += '<div id="npcInteractionDialog" data-person="' + personId + '">';
-        html += _getNpcGreeting(person, personName);
+        // v9p33river489: if opened from townsfolk talk, show the intro
+        // flavor text above the normal greeting
+        if (opts.introText) {
+            var _introIcon = opts.introIcon || '💬';
+            var _introType = opts.introType || 'flavor';
+            html += '<div style="background:rgba(255,255,255,0.05);border-left:3px solid ' + (_introType === 'useful' ? 'var(--gold)' : (_introType === 'gossip' ? '#9b59b6' : 'rgba(255,255,255,0.2)')) + ';padding:8px 12px;border-radius:4px;font-style:italic;font-size:0.82rem;line-height:1.5;margin-bottom:8px;">';
+            html += _introIcon + ' ' + opts.introText;
+            html += '</div>';
+            if (_introType === 'useful') {
+                html += '<div style="text-align:center;font-size:0.7rem;color:var(--gold);margin-bottom:6px;">📌 Useful information!</div>';
+            }
+        } else {
+            html += _getNpcGreeting(person, personName);
+        }
         html += '</div>';
 
         // Relationship tier badge
@@ -7405,6 +7419,13 @@ window.UI = (function () {
                 html += '</div></div></div>';
             }
         } catch(e) {}
+
+        // v9p33river489: "Talk to Someone Else" button for townsfolk mode
+        if (opts.showSwitchButton) {
+            html += '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #333;text-align:center;">';
+            html += '<button class="btn-medieval" data-action="talkToTownsfolk" style="padding:6px 16px;">🔄 Talk to Someone Else</button>';
+            html += '</div>';
+        }
         html += '</div>';        // close max-width:420px wrapper
 
         openModal('💬 Interact with ' + personName, html, '');
@@ -17425,6 +17446,28 @@ window.UI = (function () {
             toast((result && result.message) || 'Nobody wants to talk right now.', 'warning');
             return;
         }
+
+        // v9p33river489: open full NPC interaction panel instead of
+        // simple quote modal.  If we got a real NPC, show their detail
+        // panel on the right and open the interaction modal with the
+        // intro flavor text + social buttons.
+        if (result.npcId) {
+            var npc = null;
+            try { npc = Engine.getPerson(result.npcId); } catch(e) {}
+            if (npc) {
+                // Show NPC detail panel on the right
+                if (UI.showPersonDetail) UI.showPersonDetail(npc);
+                // Open interaction modal with intro text + switch button
+                talkToPerson(result.npcId, {
+                    introText: result.message,
+                    introIcon: result.icon || '💬',
+                    introType: result.type || 'flavor',
+                    showSwitchButton: true
+                });
+                return;
+            }
+        }
+        // Fallback for null NPC (empty/tiny towns)
         _showTalkResult(result);
     }
 
