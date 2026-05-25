@@ -4,6 +4,55 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [ExportEnforcement] - v9p33river478 → v9p33river488 — export enforcement, EM promotion rework, noble advisory (11 commits)
+
+### Added — Export Restriction Criminal Enforcement (v478)
+- **Border checkpoint system** — cross-kingdom travel with export-restricted goods triggers an interception popup with options: turn back, sneak past, or bribe guards
+- **Caravan contraband detection** — player caravans carrying restricted goods face 20% base detection at arrival (reduced by skills, noble rank, guard count)
+- **EM caravan/trade filtering** — elite merchant AI respects export restrictions with personality-aware risk decisions
+- **`export_violation` crime type** — carries same penalties as smuggling (fines, jail, criminal record)
+- **Detection modifiers** — master_smuggler (-20%), smugglers_run (-10%), discrete (-10%), master_disguise (-10%), noble rank 4+ (-15%/25%), nighttime (-10%)
+
+### Added — Building Banned Goods Enforcement (v479)
+- **Player building daily catch** — 3% daily chance of getting caught when producing banned goods; honors production permits (including wildcard + expiry) and military exemptions
+- **Skill reductions** — master_smuggler -1.5%, discrete -0.5%, shadow_dealings -0.5%, contraband_network -0.5%, black_market_contacts -0.3%
+- **Noble rank reduction** — rank 4+ = -1%, rank 5+ = -1.5%
+- **EM building enforcement** — personality-aware: cautious/honest EMs voluntarily shut down (60-day disable), risky EMs continue with 2% base catch
+- **Punishment** — building disabled 30 days, smuggling crime via `getCrimePunishment()`, fine, jail, criminal record
+
+### Added — EM Deals UI Caching (v479)
+- Deal offers cached for 7 days on each EM (`_cachedDealOffers` + `_cachedDealOffersDay`)
+- Cache invalidated when desires refresh in `tickEMDealAI()` and when deal accepted
+
+### Changed — Detection Chance Rebalancing (v480)
+- Caravan export smuggling: 40% → **20%** base detection
+- Selling banned/restricted goods: 30% → **10%** base detection
+- All detection floors lowered to **1%** (was 2–5%)
+
+### Added — EM Personality-Aware Illegal Activity (v481)
+- **EM caravan export decisions** — personality-gated: noble EMs scale with risk_tolerance (70%/40%/won't attempt), non-noble EMs need risk>65 + honesty<40
+- **EM building banned goods** — cautious/honest EMs voluntarily shut down, risky EMs continue with skill/rank modifiers
+
+### Changed — Noble Advisory System (v482, v485)
+- Advisory influence tick runs every **30 days** (was 45)
+- Extracted `_processNobleAdvisoryPressure()` shared helper
+- **Nobles now lobby the king at court sessions** (all attending kingdom nobles)
+- **Nobles now lobby the king at feasts** (only accepted/arrived nobles)
+- Demands from threaten/entice resolve faster with more frequent pressure opportunities
+
+### Changed — Elite Merchant Promotion Rework (v484)
+- **Any occupation** can now be promoted to elite merchant (was merchant/noble only)
+- Organic promotion gold threshold raised to **2,000g** (was 200g)
+- Economic boom threshold set to **1,000g** (was 150g)
+- Prior occupation stored as `priorOccupation` on the NPC
+- NPC detail panel shows *"(formerly Blacksmith)"* etc. next to occupation
+
+### Fixed
+- **Question-answer banner persisting** (v483) — green NPC response text now clears on next social interaction
+- **Outposts on water** (v486) — core `foundOutpost()` rejects water terrain; NPC spot selection also filters water tiles
+- **False supply chain warning** (v487) — transfer warning now checks the target building's active recipe inputs, not just base building type consumes
+- **Sailing travel UI** (v488) — hides Forage and Found Outpost buttons while at sea; Camp renamed to ⚓ Rest
+
 ## [EventSystem] - v9p33river376 → v9p33river381 — event system overhaul + courtship bonding (6 commits)
 
 ### Added — Event System
