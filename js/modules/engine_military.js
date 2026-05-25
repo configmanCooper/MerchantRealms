@@ -49,6 +49,18 @@
         var cfg = CONFIG.OUTPOST_CONFIG;
         if (!opts || !opts.founderId || !opts.name) return { success: false, message: 'Invalid outpost parameters.' };
 
+        // Water check — cannot build outposts on water
+        if (world.terrain && world.gridCols) {
+            var _otx = Math.floor((opts.x || 0) / (CONFIG.TILE_SIZE || 16));
+            var _oty = Math.floor((opts.y || 0) / (CONFIG.TILE_SIZE || 16));
+            if (_otx >= 0 && _oty >= 0 && _otx < world.gridCols && _oty < world.gridRows) {
+                var _oTerrain = world.terrain[_oty * world.gridCols + _otx];
+                if (_oTerrain === TERRAIN.WATER.id) {
+                    return { success: false, message: 'Cannot build an outpost on water.' };
+                }
+            }
+        }
+
         // Minimum distance check — must be at least N tiles from any existing location
         var minDistTiles = cfg.minDistanceTiles || 10;
         var minDistPx = minDistTiles * (CONFIG.TILE_SIZE || 16);
@@ -1287,6 +1299,8 @@
 
         // v9p33river123: helper — does any existing town sit within minDist of (x,y)?
         function _spotIsClear(x, y) {
+            // Reject water tiles
+            if (_terrainAt(x, y) === TERRAIN.WATER.id) return false;
             for (var ci = 0; ci < world.towns.length; ci++) {
                 var ct = world.towns[ci];
                 if (ct.abandoned || ct.destroyed) continue;
