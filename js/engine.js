@@ -16774,7 +16774,7 @@
     // Nobles with high influence sway the king toward policy decisions
     // ========================================================
     function tickNobleAdvisoryInfluence() {
-        if (world.day % 45 !== 7) return; // runs every 45 days offset from personality tick
+        if (world.day % 30 !== 7) return; // runs every 30 days offset from personality tick
         var rng = world.rng;
 
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
