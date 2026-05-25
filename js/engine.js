@@ -18184,13 +18184,33 @@
                 // Use the terrain pathfinder
                 var path = null;
                 try { path = Engine.findTerrainPath(fromTown.x, fromTown.y, toTown.x, toTown.y, 'land'); } catch(e) {}
-                if (!path || path.length < 2) {
+                // v9p33river491: findTerrainPath returns an OBJECT {waypoints, bridgeSegments},
+                // not an array. The old check `path.length < 2` always passed because
+                // object.length is undefined and `undefined < 2` → false (NaN comparison).
+                // This allowed roads to be created across oceans.
+                if (!path || !path.waypoints || path.waypoints.length < 2) {
                     logEvent('🛤️ No viable land path from ' + fromTown.name + ' to ' + toTown.name + '.', null, category);
                     k.gold += roadCost;
                     break;
                 }
-                // v9p33river464: new negotiation-built roads must use canonical route fields.
-                world.roads.push({ fromTownId: routeParts[0], toTownId: routeParts[1], path: path, type: 'road' });
+                var _nobRoadBridges = createBridgeObjects(path.waypoints);
+                // v9p33river491: use canonical road fields (waypoints, bridges)
+                // instead of raw path object.
+                world.roads.push({
+                    fromTownId: routeParts[0],
+                    toTownId: routeParts[1],
+                    quality: 2,
+                    safe: true,
+                    hasBridge: _nobRoadBridges.length > 0,
+                    bridgeDestroyed: false,
+                    bridgeSegments: path.bridgeSegments || [],
+                    bridges: _nobRoadBridges,
+                    waypoints: path.waypoints,
+                    condition: 'new',
+                    builtDay: world.day,
+                    builtBy: k.id || null,
+                    ownerId: k.id || null,
+                });
                 logEvent('🛤️ Under noble pressure, ' + k.name + ' built a road from ' + fromTown.name + ' to ' + toTown.name + '.', null, category);
                 break;
             }
@@ -38554,22 +38574,32 @@
                             world.roads.splice(rk, 1);
                         }
                     }
-                    world.roads.push({
-                        fromTownId: fixTown.id,
-                        toTownId: nearestForRoad.id,
-                        quality: 1,
-                        safe: true,
-                        hasBridge: false,
-                        bridgeDestroyed: false,
-                        bridgeSegments: [],
-                        condition: 'new',
-                        builtDay: world.day || 0,
-                        builtBy: null,
-                        banditThreat: 0
-                    });
-                    // Add this town to main component so subsequent towns can connect to it
-                    _mainComponent.add(fixTown.id);
-                    _mainTowns.push(fixTown);
+                    // v9p33river491: validate that a land path actually exists
+                    // before creating the recovery road. Use findTerrainPath
+                    // to avoid creating cross-ocean phantom roads.
+                    var _recPath = null;
+                    try { _recPath = findTerrainPath(fixTown.x, fixTown.y, nearestForRoad.x, nearestForRoad.y, 'land'); } catch(_e) {}
+                    if (_recPath && _recPath.waypoints && _recPath.waypoints.length >= 2) {
+                        var _recBridges = createBridgeObjects(_recPath.waypoints);
+                        world.roads.push({
+                            fromTownId: fixTown.id,
+                            toTownId: nearestForRoad.id,
+                            quality: 1,
+                            safe: true,
+                            hasBridge: _recBridges.length > 0,
+                            bridgeDestroyed: false,
+                            bridgeSegments: _recPath.bridgeSegments || [],
+                            bridges: _recBridges,
+                            waypoints: _recPath.waypoints,
+                            condition: 'new',
+                            builtDay: world.day || 0,
+                            builtBy: null,
+                            banditThreat: 0
+                        });
+                        // Add this town to main component so subsequent towns can connect to it
+                        _mainComponent.add(fixTown.id);
+                        _mainTowns.push(fixTown);
+                    }
                 }
             }
             for (var ri = 0; ri < world.roads.length; ri++) {
@@ -38607,6 +38637,37 @@
             // v9p33river188: splice through-town roads into segments on load too
             try { spliceRoadsThroughTowns({ tilesNear: 1 }); } catch(e) { /* defensive */ }
             try { repairSparseRoadWaypoints(); } catch(e) { /* defensive */ }
+
+            // v9p33river491: remove roads whose endpoints are separated by
+            // too much water (cross-ocean phantom roads created by the
+            // broken noble-advisory road builder before this version).
+            try {
+                var _preRoadCount = world.roads.length;
+                world.roads = world.roads.filter(function(_rd) {
+                    var _from = findTown(_rd.fromTownId);
+                    var _to = findTown(_rd.toTownId);
+                    if (!_from || !_to) return true; // keep orphan roads for other cleanup
+                    // Quick check: if road already has valid waypoints, trust it
+                    if (_rd.waypoints && _rd.waypoints.length >= 2) return true;
+                    // Road has no waypoints — try to regenerate with findTerrainPath
+                    var _regen = null;
+                    try { _regen = findTerrainPath(_from.x, _from.y, _to.x, _to.y, 'land'); } catch(_e) {}
+                    if (_regen && _regen.waypoints && _regen.waypoints.length >= 2) {
+                        // Path is valid — repair the road in place
+                        _rd.waypoints = _regen.waypoints;
+                        _rd.bridgeSegments = _regen.bridgeSegments || [];
+                        var _rb = createBridgeObjects(_regen.waypoints);
+                        _rd.bridges = _rb;
+                        _rd.hasBridge = _rb.length > 0;
+                        return true;
+                    }
+                    // No valid land path — remove this phantom road
+                    return false;
+                });
+                if (world.roads.length < _preRoadCount) {
+                    logEvent('🛤️ Removed ' + (_preRoadCount - world.roads.length) + ' invalid cross-water road(s) on load.', null, 'world_economy');
+                }
+            } catch(e) { /* defensive */ }
 
             // Post-load town recovery: un-abandon towns that still have viable population
             for (var _tri = 0; _tri < world.towns.length; _tri++) {
