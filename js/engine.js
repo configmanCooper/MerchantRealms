@@ -17250,6 +17250,7 @@
                 }
                 break;
             }
+            case 'war_offensive':
             case 'declare_war': {
                 var worstRel = 0, worstK = null;
                 for (var rk in (k.relations || {})) {
@@ -18237,13 +18238,15 @@
                 k.gold -= seaCost;
                 var seaPath = null;
                 try { seaPath = Engine.findTerrainPath(fromPort.x, fromPort.y, toPort.x, toPort.y, 'sea'); } catch(e) {}
-                if (!seaPath || seaPath.length < 2) {
+                // v9p33river492: findTerrainPath returns OBJECT {waypoints, bridgeSegments},
+                // not array. seaPath.length was always undefined → validation always passed.
+                if (!seaPath || !seaPath.waypoints || seaPath.waypoints.length < 2) {
                     logEvent('⚓ No viable sea path from ' + fromPort.name + ' to ' + toPort.name + '.', null, category);
                     k.gold += seaCost;
                     break;
                 }
-                // v9p33river464: new negotiation-built sea routes must use canonical route fields.
-                world.seaRoutes.push({ fromTownId: seaParts[0], toTownId: seaParts[1], path: seaPath, type: 'sea' });
+                var _seaDist = Math.round(Math.sqrt(Math.pow(fromPort.x - toPort.x, 2) + Math.pow(fromPort.y - toPort.y, 2)));
+                world.seaRoutes.push({ fromTownId: seaParts[0], toTownId: seaParts[1], waypoints: seaPath.waypoints, type: 'sea', distance: _seaDist, safe: true });
                 logEvent('⚓ Under noble pressure, ' + k.name + ' established a sea route from ' + fromPort.name + ' to ' + toPort.name + '.', null, category);
                 break;
             }
