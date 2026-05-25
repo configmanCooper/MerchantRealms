@@ -5403,7 +5403,7 @@ window.UI = (function () {
             id: 'q_where_been',
             summary: 'where you have been lately',
             askFor: function(ctx) {
-                if (ctx.relTier === 'hostile') return null;
+                if (ctx.rel < 20) return null;
                 return 'Where have you been keeping yourself, ' + ctx.playerName + '? I have not seen you around.';
             },
             options: [
