@@ -463,6 +463,13 @@ window.UI = (function () {
         registerAction('openHireDialog', function() { openHireDialog(); });
         registerAction('openCaravanDialog', function() { UI.openCaravanDialog(); });
         registerAction('openCharacterDialog', function() { openCharacterDialog(); });
+        registerAction('goToPromotionPetition', function() {
+            openCharacterDialog();
+            setTimeout(function() {
+                var el = document.getElementById('promotionPetitionSection');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        });
         registerAction('charTabSwitch', function(_t, d) { if (d.id) _applyCharTab(d.id); });
         registerAction('turnInUnsolicitedQuest', function(_t, d) {
             var quest = null;
@@ -14668,7 +14675,7 @@ window.UI = (function () {
                 ? 'margin-top:8px;font-size:0.85rem;padding:6px 16px;background:linear-gradient(180deg,#5aad35,#3a7a24);border-color:#5aad35;color:#fff;animation:petitionGlow 1.5s ease-in-out infinite;'
                 : 'margin-top:8px;font-size:0.85rem;padding:6px 16px;';
 
-            html += `<div class="detail-section"><h3>Next: ${nextRank.icon} ${nextRank.name}</h3>
+            html += `<div class="detail-section" id="promotionPetitionSection"><h3>Next: ${nextRank.icon} ${nextRank.name}</h3>
                 <div class="progress-row"><span class="label">Gold Earned</span>
                     <div class="progress-bar"><div class="progress-fill" style="width:${goldPct}%"></div></div>
                     <span class="value">${Math.floor(goldEarned).toLocaleString()}/${nextRank.goldReq.toLocaleString()}</span></div>
@@ -14982,9 +14989,10 @@ window.UI = (function () {
         if (typeof Player !== 'undefined' && Player.citizenshipKingdomId && typeof Engine !== 'undefined' && Engine.findKingdom) {
             try { var _akK = Engine.findKingdom(Player.citizenshipKingdomId); if (_akK) _activeKName = ' (' + _akK.name + ')'; } catch(e) {}
         }
-        var html = '<div style="font-size:10px;color:#d4af37;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;cursor:help;" title="To see privileges of the next rank, or to proceed once you meet all requirements, go to the Character menu.">';
+        var _readyClick = data.allMet ? ' data-action="goToPromotionPetition" style="font-size:10px;color:#d4af37;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" title="Click to petition for promotion!"' : ' style="font-size:10px;color:#d4af37;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;cursor:help;" title="To see privileges of the next rank, or to proceed once you meet all requirements, go to the Character menu."';
+        var html = '<div' + _readyClick + '>';
         html += '<span>Progress to ' + (data.nextRank.icon || '📈') + ' ' + data.nextRank.name + ' Promotion' + _activeKName + '</span>';
-        if (data.allMet) html += '<span style="color:#5a5;font-size:9px;">✅ Ready!</span>';
+        if (data.allMet) html += '<span style="color:#5a5;font-size:9px;text-decoration:underline;">✅ Ready! (click)</span>';
         html += '</div>';
         for (var i = 0; i < data.bars.length; i++) {
             var b = data.bars[i];
