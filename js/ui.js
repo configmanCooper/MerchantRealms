@@ -7599,6 +7599,9 @@ window.UI = (function () {
                         if (dlgEl && personObj) {
                             dlgEl.innerHTML = _renderInteractionDialog(personObj, iid, result);
                         }
+                        // Clear previous question-answer banner so it doesn't linger
+                        var qBanner = document.getElementById('npcQuestionBanner');
+                        if (qBanner) qBanner.style.display = 'none';
                         // Refresh relationship tier badge
                         var badge = document.getElementById('npcInteractionRelBadge');
                         if (badge && personObj) {
