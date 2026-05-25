@@ -2422,12 +2422,14 @@
         var actionsDiv = document.getElementById('travelActions');
         if (actionsDiv) {
             var btns = '';
+            var _isSailing = Player.travelMode === 'sea_passage' || Player.travelMode === 'sail_own' || Player.travelOffSea;
             if (!Player.travelPaid) {
                 btns += '<button class="btn-travel" data-action="turnBackUI">\uD83D\uDD04 Turn Back</button>';
                 btns += '<button class="btn-travel" data-action="stopTravelUI">\u23F9\uFE0F Stop Here</button>';
             }
-            btns += '<button class="btn-travel" data-action="openTravelRest">\uD83C\uDFD5\uFE0F Camp</button>';
+            btns += '<button class="btn-travel" data-action="openTravelRest">' + (_isSailing ? '\u2693 Rest' : '\uD83C\uDFD5\uFE0F Camp') + '</button>';
             btns += '<button class="btn-travel" data-action="openCharacterDialog">\uD83D\uDC64 Status</button>';
+            if (!_isSailing) {
             // Forage while traveling button
             var forageLabel = '\uD83C\uDF3F Forage';
             if (typeof Player !== 'undefined' && Player.hasSkill && Player.hasSkill('soil_knowledge')) {
@@ -2442,6 +2444,7 @@
             btns += '<button class="btn-travel" data-action="forageNearby" style="background:rgba(85,168,104,0.15);border-color:rgba(85,168,104,0.3);">' + forageLabel + '</button>';
             // Found Outpost while traveling
             btns += '<button class="btn-travel" data-action="foundOutpostFromTravel" style="background:rgba(74,124,59,0.15);border-color:rgba(74,124,59,0.3);">\u26FA Found Outpost</button>';
+            }
             // Only rebuild DOM when content changes to prevent button flicker
             if (actionsDiv._lastBtns !== btns) {
                 actionsDiv.innerHTML = btns;
