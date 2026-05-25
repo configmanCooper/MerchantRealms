@@ -931,9 +931,19 @@
                     if ((inv[resId] || 0) <= 2) continue;
                     // Export restriction filter
                     if (_emCrossKingdom && _emExportBan.indexOf(resId) >= 0) {
-                        // Noble EMs can ignore with 70% chance (connections)
-                        if (_emIsNobleInSrcK && rng.random() < 0.70) {
-                            // Noble EM smuggles — mark caravan for catch check
+                        var _emPers = em.personality || {};
+                        var _emRisk = _emPers.risk_tolerance || 50;
+                        var _emHonesty = _emPers.honesty || 50;
+                        if (_emIsNobleInSrcK) {
+                            // Noble EMs: chance to ignore scales with risk tolerance
+                            var _emNobleSmugChance = _emRisk > 60 ? 0.70 : _emRisk > 40 ? 0.40 : 0;
+                            if (_emNobleSmugChance > 0 && rng.random() < _emNobleSmugChance) {
+                                // Noble EM smuggles — mark caravan for catch check
+                            } else {
+                                continue; // Too cautious or failed nerve check
+                            }
+                        } else if (_emRisk > 65 && _emHonesty < 40 && rng.random() < 0.30) {
+                            // Non-noble but daring & dishonest — attempt smuggling
                         } else {
                             continue; // Skip restricted goods
                         }

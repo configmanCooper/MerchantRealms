@@ -5712,16 +5712,33 @@
                             _bgOwner.productionPermits[kingdom.id] &&
                             _bgOwner.productionPermits[kingdom.id].indexOf(activeProduces) >= 0;
                         if (!_bgEmPermits) {
-                            var _bgEmCatch = 0.02;
-                            var _bgEmNoble = _bgOwner.socialRank && _bgOwner.socialRank[kingdom.id];
-                            if (_bgEmNoble >= 4) _bgEmCatch -= 0.01;
-                            _bgEmCatch = Math.max(0, _bgEmCatch);
-                            if (rng.random() < _bgEmCatch) {
-                                bld._disabledUntil = world.day + 30;
-                                var _bgEmFine = 200;
-                                _bgOwner.gold = Math.max(0, (_bgOwner.gold || 0) - _bgEmFine);
-                                var _bgEmResName = findResourceById(activeProduces);
-                                logEvent('🚫 ' + (_bgOwner.name || 'An elite merchant') + '\'s ' + (bt.name || bld.type) + ' in ' + town.name + ' was shut down for producing banned ' + (_bgEmResName ? _bgEmResName.name : activeProduces) + '. Fined ' + _bgEmFine + 'g.', null, 'kingdoms');
+                            var _bgEmPers = _bgOwner.personality || {};
+                            var _bgEmRisk = _bgEmPers.risk_tolerance || 50;
+                            var _bgEmHonesty = _bgEmPers.honesty || 50;
+                            // Low risk or honest EMs voluntarily shut down banned production
+                            if (_bgEmRisk < 40 || _bgEmHonesty > 60) {
+                                bld._disabledUntil = world.day + 60;
+                                var _bgShutResName = findResourceById(activeProduces);
+                                logEvent('🏭 ' + (_bgOwner.name || 'An elite merchant') + ' voluntarily shut down their ' + (bt.name || bld.type) + ' in ' + town.name + ' — producing ' + (_bgShutResName ? _bgShutResName.name : activeProduces) + ' is now banned.', null, 'kingdoms');
+                            } else {
+                                // Risky EMs keep producing — daily catch chance
+                                var _bgEmCatch = 0.02;
+                                var _bgEmNoble = _bgOwner.socialRank && _bgOwner.socialRank[kingdom.id];
+                                if (_bgEmNoble >= 4) _bgEmCatch -= 0.01;
+                                // High risk tolerance = better at hiding
+                                if (_bgEmRisk > 70) _bgEmCatch -= 0.005;
+                                if (_bgOwner.skills && _bgOwner.skills.indexOf('master_smuggler') >= 0) _bgEmCatch -= 0.005;
+                                if (_bgOwner.skills && _bgOwner.skills.indexOf('discrete') >= 0) _bgEmCatch -= 0.003;
+                                _bgEmCatch = Math.max(0.001, _bgEmCatch);
+                                if (rng.random() < _bgEmCatch) {
+                                    bld._disabledUntil = world.day + 30;
+                                    var _bgEmFine = 200;
+                                    _bgOwner.gold = Math.max(0, (_bgOwner.gold || 0) - _bgEmFine);
+                                    if (!_bgOwner.criminalRecord) _bgOwner.criminalRecord = {};
+                                    _bgOwner.criminalRecord[kingdom.id] = (_bgOwner.criminalRecord[kingdom.id] || 0) + 1;
+                                    var _bgEmResName = findResourceById(activeProduces);
+                                    logEvent('🚫 ' + (_bgOwner.name || 'An elite merchant') + '\'s ' + (bt.name || bld.type) + ' in ' + town.name + ' was shut down for producing banned ' + (_bgEmResName ? _bgEmResName.name : activeProduces) + '. Fined ' + _bgEmFine + 'g.', null, 'kingdoms');
+                                }
                             }
                         }
                     }
