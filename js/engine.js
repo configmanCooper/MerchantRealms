@@ -16780,40 +16780,43 @@
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
             var k = world.kingdoms[ki];
             if (!k.king) continue;
-            var kId = k.id;
-            var nobles = getNoblesInKingdom(kId);
+            var nobles = getNoblesInKingdom(k.id);
             if (nobles.length === 0) continue;
+            _processNobleAdvisoryPressure(k, nobles);
+        }
+    }
 
-            // Gather all noble advisory pressure
-            var pressureMap = {}; // actionId -> total weighted pressure
-            for (var ni = 0; ni < nobles.length; ni++) {
-                var noble = nobles[ni];
-                var influence = _computeNobleInfluence(noble, k);
-                var agenda = getNobleAgenda(noble.id);
-                if (!agenda || !agenda.advice) continue;
-                for (var ai = 0; ai < agenda.advice.length; ai++) {
-                    var adv = agenda.advice[ai];
-                    if (!adv.actionId) continue;
-                    if (!pressureMap[adv.actionId]) pressureMap[adv.actionId] = 0;
-                    // Weight by influence and how strongly they feel about it (weight normalized)
-                    pressureMap[adv.actionId] += influence * (adv.weight / 100);
-                }
+    // Shared helper: gather advisory pressure from a set of nobles and
+    // check if it exceeds the king's stubbornness.  Called from the
+    // periodic tick AND from court/feast events for attending nobles.
+    function _processNobleAdvisoryPressure(k, nobles) {
+        if (!k || !k.king || !nobles || nobles.length === 0) return;
+        var rng = world.rng;
+
+        var pressureMap = {};
+        for (var ni = 0; ni < nobles.length; ni++) {
+            var noble = nobles[ni];
+            var influence = _computeNobleInfluence(noble, k);
+            var agenda = getNobleAgenda(noble.id);
+            if (!agenda || !agenda.advice) continue;
+            for (var ai = 0; ai < agenda.advice.length; ai++) {
+                var adv = agenda.advice[ai];
+                if (!adv.actionId) continue;
+                if (!pressureMap[adv.actionId]) pressureMap[adv.actionId] = 0;
+                pressureMap[adv.actionId] += influence * (adv.weight / 100);
             }
+        }
 
-            // Check if any action has enough pressure to sway the king
-            var stubbornness = _computeKingStubbornness(k);
+        var stubbornness = _computeKingStubbornness(k);
 
-            for (var actionId in pressureMap) {
-                var totalPressure = pressureMap[actionId];
-                if (totalPressure < stubbornness) continue;
-                // Probability scales with how much pressure exceeds threshold
-                var swayChance = Math.min(0.6, (totalPressure - stubbornness) * 0.15);
-                if (!rng.chance(swayChance)) continue;
+        for (var actionId in pressureMap) {
+            var totalPressure = pressureMap[actionId];
+            if (totalPressure < stubbornness) continue;
+            var swayChance = Math.min(0.6, (totalPressure - stubbornness) * 0.15);
+            if (!rng.chance(swayChance)) continue;
 
-                // Noble pressure succeeded — king acts on this advice
-                _executeNobleAdvisedAction(k, actionId, rng);
-                break; // one action per tick maximum
-            }
+            _executeNobleAdvisedAction(k, actionId, rng);
+            break; // one action per event maximum
         }
     }
 
@@ -30066,6 +30069,11 @@
             effects: courtEvents.slice(0, 3) // show first 3 petitions
         }, category);
 
+        // Nobles attending court press the king on their agenda
+        if (kNobles.length > 0) {
+            _processNobleAdvisoryPressure(k, kNobles);
+        }
+
         // M1: Schedule next court — smarter timing based on king personality and situation
         var _courtBaseMin = 25, _courtBaseMax = 50; // tighter range (was 30-60)
         var _kp = k.kingPersonality || {};
@@ -30480,6 +30488,16 @@
                     }
                 }
             } catch (e) { /* Player not loaded */ }
+
+            // Attending nobles press the king on their agenda during the feast
+            if (arrivedNobles.length > 0) {
+                var _feastNobles = [];
+                for (var _fni = 0; _fni < arrivedNobles.length; _fni++) {
+                    var _fn = findPerson(arrivedNobles[_fni]);
+                    if (_fn && _fn.alive) _feastNobles.push(_fn);
+                }
+                if (_feastNobles.length > 0) _processNobleAdvisoryPressure(k, _feastNobles);
+            }
 
             k._pendingFeast = null;
         }
