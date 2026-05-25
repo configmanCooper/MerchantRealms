@@ -5033,7 +5033,9 @@
             // the player's current port (or that player is mid off-sea
             // travel returning to it) — previously a remote shipId could
             // start off-sea travel from any town.
-            if (ship && !player.travelOffSea && ship.townId !== player.townId) {
+            // v9p33river490: also allow if player is currently embarked on
+            // this ship (boarded at coast tile, player.townId is null).
+            if (ship && !player.travelOffSea && ship.townId !== player.townId && player.embarkedShipId !== shipId) {
                 return { success: false, message: 'That ship is not at this port.' };
             }
         } else {
@@ -5334,6 +5336,8 @@
         player.worldY = ship.dockedCoords.y;
         player.townId = null;
         ship.dockedCoords = null;
+        // v9p33river490: clear ship townId since it's no longer at a port
+        ship.townId = null;
         // v9p33river60: mark the player as embarked so the context menu can offer
         // "Sail Here" on water without requiring a port town.
         player.embarkedShipId = ship.id;
