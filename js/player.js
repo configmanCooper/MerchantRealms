@@ -33906,8 +33906,12 @@
         if (!npc || !npc.alive) return { signed: false, chance: 0, message: 'Person not found or not alive.' };
         if (npc.townId !== player.townId) return { signed: false, chance: 0, message: 'That person is not in your current town.' };
         if (npc.kingdomId !== petition.kingdomId) return { signed: false, chance: 0, message: 'That person is not a citizen of the petition\'s kingdom.' };
-        // v9p33river440: only citizens or above can sign petitions (socialRank >= 1)
-        var _npcRank = (npc.socialRank != null) ? npc.socialRank : 0;
+        // v9p33river504: socialRank is an OBJECT keyed by kingdomId, not a
+        // number. Old check compared the whole object to 1 (always NaN) so
+        // only npcs with completely missing socialRank ever hit this branch.
+        var _npcRank = (npc.socialRank && typeof npc.socialRank === 'object')
+                       ? (npc.socialRank[petition.kingdomId] || 0)
+                       : 0;
         if (_npcRank < 1 && !npc.isEliteMerchant) return { signed: false, chance: 0, message: npc.firstName + ' is a peasant and cannot sign petitions. Only citizens or above may sign.' };
         if (!petition.signatures) petition.signatures = [];
         if (petition.signatures.includes(npcId)) return { signed: false, chance: 0, message: npc.firstName + ' has already signed this petition.' };
@@ -34040,11 +34044,18 @@
                 for (var a = 0; a < attempts; a++) {
                     // Find eligible NPCs in petitioner's current town
                     var eligible = world.people.filter(function(p) {
-                        return p.alive && p.townId === ptr.currentTownId &&
-                               p.kingdomId === petition.kingdomId &&
-                               // v9p33river440: only citizens or above can sign
-                               ((p.socialRank != null ? p.socialRank : 0) >= 1 || p.isEliteMerchant) &&
-                               !(petition.signatures || []).includes(p.id);
+                        if (!p.alive || p.townId !== ptr.currentTownId) return false;
+                        if (p.kingdomId !== petition.kingdomId) return false;
+                        // v9p33river504: socialRank is keyed by kingdomId.
+                        // Old comparison (whole object >= 1) was always NaN,
+                        // so petitioners found zero eligible NPCs and never
+                        // gathered any signatures.
+                        var _r = (p.socialRank && typeof p.socialRank === 'object')
+                                 ? (p.socialRank[petition.kingdomId] || 0)
+                                 : 0;
+                        if (_r < 1 && !p.isEliteMerchant) return false;
+                        if ((petition.signatures || []).includes(p.id)) return false;
+                        return true;
                     });
                     if (eligible.length === 0) break;
                     var npc = eligible[Math.floor(Math.random() * eligible.length)];
@@ -34091,8 +34102,13 @@
         for (var i = 0; i < petition.signatures.length; i++) {
             var npc = world.people.find(function(p) { return p.id === petition.signatures[i]; });
             if (!npc) { total += 0.5; continue; }
+            // v9p33river504: socialRank is an object keyed by kingdomId.
+            // Old code assigned the whole object to rankIdx; rankIdx >= 5
+            // was always false, so noble signatures never counted as noble.
             var rankIdx = 0;
-            if (npc.socialRank != null) rankIdx = npc.socialRank;
+            if (npc.socialRank && typeof npc.socialRank === 'object') {
+                rankIdx = npc.socialRank[petition.kingdomId] || 0;
+            }
             if (rankIdx >= 5 || (npc.occupation === 'noble' || npc.wealthClass === 'upper')) {
                 total += CONFIG.PETITION_NOBLE_SIGNATURE_WEIGHT;
             } else if (npc.isEliteMerchant) {
