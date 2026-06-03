@@ -38656,18 +38656,27 @@
             // safety net was silently re-connecting them, which felt like the
             // kingdom built a free road. Outpost connectivity is the player's
             // own concern (they can pay to add a road later via the outpost UI).
-            // v9p33river496: DISABLED entirely. The user reported that loading
-            // a save was silently building new roads — this safety net was the
-            // culprit. Worldgen and runtime systems already handle connectivity;
-            // the loader should leave road topology untouched.
+            // v9p33river496: DISABLED for towns that already have some road
+            // connectivity — the user reported the loader silently building
+            // "free roads" between towns that already had paths.
+            // v9p33river501: re-enable narrowly for TRULY isolated towns
+            // (zero road connections). Without this, a town that legitimately
+            // has no roads at all (e.g., the user's previous safety-net road
+            // was removed by the v491 phantom-road filter) ends up requiring
+            // a 100+ day offroad slog for every visit. Truly-orphaned towns
+            // still get reconnected; everything else stays untouched.
             var _mainTowns = world.towns.filter(function(t) { return _mainComponent.has(t.id); });
-            // (loop intentionally elided — see note above)
-            if (false) {
             for (var rfi = 0; rfi < world.towns.length; rfi++) {
                 var fixTown = world.towns[rfi];
                 if (fixTown.destroyed || fixTown.abandoned || fixTown.isIsland) continue;
                 if (fixTown.isOutpost) continue;
                 if (_mainComponent.has(fixTown.id)) continue;
+                // v9p33river501: skip towns that have at least one road or sea
+                // route — only reconnect zero-connection orphans. The original
+                // v496 complaint was about adding roads to already-connected
+                // towns; that case is now gated out.
+                var _fixConnCount = (_fixAdj[fixTown.id] || []).length;
+                if (_fixConnCount > 0) continue;
                 // Find nearest town in the main component
                 var nearestForRoad = null;
                 var nearestRoadDist = Infinity;
@@ -38719,7 +38728,7 @@
                     }
                 }
             }
-            } // end if(false) — v9p33river496
+            // v9p33river501: end of narrowed safety-net loop.
             for (var ri = 0; ri < world.roads.length; ri++) {
                 var road = world.roads[ri];
                 var fromTown = world.towns.find(function(t) { return t.id === road.fromTownId; });

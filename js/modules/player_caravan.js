@@ -1072,18 +1072,12 @@
             // Bringing cart without horse — 40% slower
             totalDist *= 1.4;
             cartMsg = ' 🛒 Dragging ' + container.name + ' by hand — slower travel!';
-        } else if (isCartType && !options.leaveCart && hasHorse) {
-            // v9p33river497: hauling a wagon/cart even with a horse slows you down.
-            // Wagons are heavier than carts. This makes ETAs match what the
-            // player actually experiences — previously wagons were treated as
-            // weightless when a horse was hitched.
-            var _cartSlow = (player.storageContainer === 'large_wagon') ? 1.25
-                          : (player.storageContainer === 'wagon') ? 1.18
-                          : (player.storageContainer === 'small_wagon') ? 1.12
-                          : 1.08; // cart
-            totalDist *= _cartSlow;
-            cartMsg = ' 🛒 Hauling ' + container.name + (_cartSlow > 1.15 ? ' — heavy load slows the pace.' : '');
         }
+        // v9p33river501: reverted v497's wagon-weight penalty (1.08-1.25x totalDist).
+        // The travel-selection UI advertises "no speed penalty" for bringing a
+        // wagon with a horse, so the engine must not silently add one — that
+        // mismatch made actual trips noticeably longer than the dialog's ETA.
+        // Horse-pulled carts now travel at unmodified speed, matching the UI.
 
         // If route includes sea segments, delegate to travelBySea for proper ship handling
         if (isSea && !isOffroad && route.length === 1 && route[0].type === 'sea') {
