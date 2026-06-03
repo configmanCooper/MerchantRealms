@@ -402,12 +402,19 @@
                 var _askDay = (typeof Engine !== 'undefined') ? Engine.getDay() : 0;
                 var _askCounts = (petition._askCountsDay === _askDay && petition._askCounts) ? petition._askCounts : {};
                 var townNpcs = world.people.filter(function(p) {
-                    return p.alive && p.townId === Player.townId &&
-                           p.kingdomId === petition.kingdomId &&
-                           // v9p33river440: only citizens or above (socialRank >= 1) can sign
-                           ((p.socialRank != null ? p.socialRank : 0) >= 1 || p.isEliteMerchant) &&
-                           !(petition.signatures || []).includes(p.id) &&
-                           (_askCounts[p.id] || 0) < 2;
+                    if (!p.alive) return false;
+                    if (p.townId !== Player.townId) return false;
+                    // v9p33river496: kingdomId match is the primary filter.
+                    // Previously also required socialRank>=1 numerically, but
+                    // person.socialRank is an OBJECT keyed by kingdomId — that
+                    // comparison was always false, making ALL townsfolk
+                    // ineligible. Now: anyone of the petition's kingdom who
+                    // physically lives in this town can sign; nobles/EMs still
+                    // carry more weight via weighted-signature calculations.
+                    if (p.kingdomId !== petition.kingdomId) return false;
+                    if ((petition.signatures || []).includes(p.id)) return false;
+                    if ((_askCounts[p.id] || 0) >= 2) return false;
+                    return true;
                 });
                 if (townNpcs.length === 0) {
                     html += '<p style="color:#aaa;font-size:0.85em;">No eligible NPCs in this town to ask.</p>';

@@ -5612,6 +5612,7 @@
 
             // ---- Production from buildings ----
             for (const bld of town.buildings) {
+                try {
                 const bt = findBuildingType(bld.type);
                 if (!bt || (!bt.produces && !bt.availableProducts)) continue;
 
@@ -6108,6 +6109,24 @@
                             bld._profitTracker = { revenue: 0, costs: 0, days: 0 };
                         }
                     }
+                }
+                } catch(_tickEconErr) {
+                    // v9p33river496: defensive catch — a single misconfigured
+                    // building must not crash the entire economy tick for the
+                    // whole world. Log once per building+day and continue.
+                    try {
+                        var _teKey = '_tickEconErr_' + (bld && bld.id) + '_' + world.day;
+                        if (!world._loggedTickErrs) world._loggedTickErrs = {};
+                        if (!world._loggedTickErrs[_teKey]) {
+                            world._loggedTickErrs[_teKey] = true;
+                            console.error('[tickEconomy] building error',
+                                (bld && bld.type) || '?',
+                                'in', (town && town.name) || '?',
+                                'currentProduct=', bld && bld.currentProduct,
+                                'productionChoice=', bld && bld.productionChoice,
+                                ':', _tickEconErr && _tickEconErr.message);
+                        }
+                    } catch(_) {}
                 }
             }
 
@@ -38548,7 +38567,13 @@
             // safety net was silently re-connecting them, which felt like the
             // kingdom built a free road. Outpost connectivity is the player's
             // own concern (they can pay to add a road later via the outpost UI).
+            // v9p33river496: DISABLED entirely. The user reported that loading
+            // a save was silently building new roads — this safety net was the
+            // culprit. Worldgen and runtime systems already handle connectivity;
+            // the loader should leave road topology untouched.
             var _mainTowns = world.towns.filter(function(t) { return _mainComponent.has(t.id); });
+            // (loop intentionally elided — see note above)
+            if (false) {
             for (var rfi = 0; rfi < world.towns.length; rfi++) {
                 var fixTown = world.towns[rfi];
                 if (fixTown.destroyed || fixTown.abandoned || fixTown.isIsland) continue;
@@ -38605,6 +38630,7 @@
                     }
                 }
             }
+            } // end if(false) — v9p33river496
             for (var ri = 0; ri < world.roads.length; ri++) {
                 var road = world.roads[ri];
                 var fromTown = world.towns.find(function(t) { return t.id === road.fromTownId; });
