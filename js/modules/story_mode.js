@@ -762,7 +762,17 @@ var StoryMode = (function () {
                 var _valdrenK2 = _valdrenId && Engine.findKingdom ? Engine.findKingdom(_valdrenId) : null;
                 if (_valdrenK2) {
                     var _courtDay = Engine.getDay() + 4;
-                    var _courtTownId = _valdrenK2.capitalTownId || (_valdrenK2.territories && _valdrenK2.territories.size > 0 ? Array.from(_valdrenK2.territories)[0] : null);
+                    // v9p33river503: capital first, then highest-population town fallback.
+                    var _courtTownId = _valdrenK2.capitalTownId || null;
+                    if (!_courtTownId && _valdrenK2.territories) {
+                        var _bestT = null;
+                        _valdrenK2.territories.forEach(function(_tid){
+                            var _tt = Engine.findTown ? Engine.findTown(_tid) : null;
+                            if (!_tt || _tt.destroyed || _tt.abandoned || _tt.isOutpost) return;
+                            if (!_bestT || (_tt.population || 0) > (_bestT.population || 0)) _bestT = _tt;
+                        });
+                        if (_bestT) _courtTownId = _bestT.id;
+                    }
                     var _courtTownName = 'the capital';
                     try { var _ct = Engine.findTown(_courtTownId); if (_ct) _courtTownName = _ct.name; } catch(e2) {}
                     _valdrenK2._pendingCourt = {
@@ -2290,7 +2300,17 @@ var StoryMode = (function () {
                         }
                         if (_feastObj && _feastObj.done && _courtObj && !_courtObj.done && !valdren._pendingCourt) {
                             var _courtDay16 = Engine.getDay() + 4;
-                            var _ct16Id = valdren.capitalTownId || (valdren.territories && valdren.territories.size > 0 ? Array.from(valdren.territories)[0] : null);
+                            // v9p33river503: capital first, highest-pop fallback.
+                            var _ct16Id = valdren.capitalTownId || null;
+                            if (!_ct16Id && valdren.territories) {
+                                var _ct16Best = null;
+                                valdren.territories.forEach(function(_tid2){
+                                    var _ttt = Engine.findTown ? Engine.findTown(_tid2) : null;
+                                    if (!_ttt || _ttt.destroyed || _ttt.abandoned || _ttt.isOutpost) return;
+                                    if (!_ct16Best || (_ttt.population || 0) > (_ct16Best.population || 0)) _ct16Best = _ttt;
+                                });
+                                if (_ct16Best) _ct16Id = _ct16Best.id;
+                            }
                             var _ct16Name = 'the capital';
                             try { var _ct16 = Engine.findTown(_ct16Id); if (_ct16) _ct16Name = _ct16.name; } catch(e3) {}
                             valdren._pendingCourt = {

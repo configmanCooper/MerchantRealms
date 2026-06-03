@@ -31950,7 +31950,25 @@
         });
         var foreignKingdoms = (world.kingdoms || []).filter(function(fk) { return fk.id !== k.id; });
 
-        var courtTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
+        // v9p33river503: court must be held at the capital, or the
+        // highest-population town in the kingdom if no capital is set.
+        // Previously fell back to "first territory" (arbitrary order) which
+        // produced screenshots showing court in Elmcrest/Blackfen/Twinbrook
+        // instead of each kingdom's actual capital.
+        var courtTownId = null;
+        if (k.capitalTownId && findTown(k.capitalTownId)) {
+            var _capT = findTown(k.capitalTownId);
+            if (!_capT.destroyed && !_capT.abandoned) courtTownId = _capT.id;
+        }
+        if (!courtTownId && k.territories) {
+            var _bestTown = null;
+            k.territories.forEach(function(_tId) {
+                var _t = findTown(_tId);
+                if (!_t || _t.destroyed || _t.abandoned || _t.isOutpost) return;
+                if (!_bestTown || (_t.population || 0) > (_bestTown.population || 0)) _bestTown = _t;
+            });
+            if (_bestTown) courtTownId = _bestTown.id;
+        }
         var courtTown = courtTownId ? findTown(courtTownId) : null;
         var courtTownName = courtTown ? courtTown.name : 'the capital';
 
@@ -38796,6 +38814,39 @@
                 }
             } catch(e) { /* defensive */ }
 
+            // v9p33river503: retarget any already-scheduled court that is
+            // pointing at a non-capital town. Older versions used arbitrary
+            // territory ordering, which landed courts in random towns.
+            try {
+                for (var _ckI = 0; _ckI < (world.kingdoms || []).length; _ckI++) {
+                    var _ck = world.kingdoms[_ckI];
+                    if (!_ck || !_ck._pendingCourt) continue;
+                    var _properId = null;
+                    if (_ck.capitalTownId) {
+                        var _cTn = findTown(_ck.capitalTownId);
+                        if (_cTn && !_cTn.destroyed && !_cTn.abandoned) _properId = _cTn.id;
+                    }
+                    if (!_properId && _ck.territories) {
+                        var _bT = null;
+                        _ck.territories.forEach(function(_tid){
+                            var _tt2 = findTown(_tid);
+                            if (!_tt2 || _tt2.destroyed || _tt2.abandoned || _tt2.isOutpost) return;
+                            if (!_bT || (_tt2.population || 0) > (_bT.population || 0)) _bT = _tt2;
+                        });
+                        if (_bT) _properId = _bT.id;
+                    }
+                    if (_properId && _ck._pendingCourt.townId !== _properId) {
+                        var _propTown = findTown(_properId);
+                        _ck._pendingCourt.townId = _properId;
+                        _ck._pendingCourt.townName = _propTown ? _propTown.name : _ck._pendingCourt.townName;
+                        if (_ck._pendingCourt.invitedNobles) {
+                            for (var _inI = 0; _inI < _ck._pendingCourt.invitedNobles.length; _inI++) {
+                                _ck._pendingCourt.invitedNobles[_inI].townId = _properId;
+                            }
+                        }
+                    }
+                }
+            } catch(e) { /* defensive */ }
             // Post-load town recovery: un-abandon towns that still have viable population
             for (var _tri = 0; _tri < world.towns.length; _tri++) {
                 var _tt = world.towns[_tri];
