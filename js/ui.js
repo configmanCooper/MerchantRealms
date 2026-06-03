@@ -2624,6 +2624,16 @@ window.UI = (function () {
         const mb = el.modalBody || document.getElementById('modalBody');
         const mf = el.modalFooter || document.getElementById('modalFooter');
         const mo = el.modalOverlay || document.getElementById('modalOverlay');
+        // v9p33river500: always restore the close button when opening a new
+        // modal. Several flows (encounter, bankruptcy, conquest, heir pick,
+        // name child) hide btnCloseModal via display='none' and rely on a
+        // cleanup path to restore it. If the modal is closed by some other
+        // path (e.g. closeAndOpen-other-dialog, history back, overlay click,
+        // chained UI refresh), the X stays hidden FOREVER on every subsequent
+        // modal — health modal, settings, anything. Restore here so any
+        // modal that doesn't actually need a lock always has an X.
+        var _ocCloseBtn = document.getElementById('btnCloseModal');
+        if (_ocCloseBtn) _ocCloseBtn.style.display = '';
         if (mt) mt.textContent = title;
         if (mb) mb.innerHTML = bodyHtml;
         if (mf) mf.innerHTML = footerHtml || '';
