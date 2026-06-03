@@ -5605,6 +5605,9 @@
         const day = world.day;
         const winter = isWinter(day);
         const farmBoost = isFarmSeason(day);
+        // v9p33river499: local rng alias — historically code in this function
+        // assumed a `rng` in scope. Keep both world.rng and local rng safe.
+        var rng = world.rng;
 
         for (const town of world.towns) {
             // Cache town housing productivity modifier
@@ -5747,7 +5750,10 @@
                                 if (_bgHasSmuggler) _bgEmCatch -= 0.005;
                                 if (_bgHasDiscrete) _bgEmCatch -= 0.003;
                                 _bgEmCatch = Math.max(0.001, _bgEmCatch);
-                                if (rng.random() < _bgEmCatch) {
+                                // v9p33river499: tickEconomy doesn't define a
+                                // local rng — use world.rng directly. Previously
+                                // referenced bare `rng` which threw ReferenceError.
+                                if (world.rng.random() < _bgEmCatch) {
                                     bld._disabledUntil = world.day + 30;
                                     var _bgEmFine = 200;
                                     _bgOwner.gold = Math.max(0, (_bgOwner.gold || 0) - _bgEmFine);
