@@ -3048,12 +3048,12 @@ window.UI = (function () {
                 if (match) trendTag = '<span style="color:#e67e22;font-size:0.7rem;margin-left:4px;cursor:help;" title="This good is currently fashionable, boosting demand and prices by +' + match.demandBonus + '%. Trends change over time.">🔥 Trending! +' + match.demandBonus + '%</span>';
             }
 
-            var effectiveCap = carryCapacity;
-            if (Player.getTownStorageCapacity && Player.getTownStorageUsed) {
-                var freeStorage = (Player.getTownStorageCapacity() || 0) - (Player.getTownStorageUsed() || 0);
-                if (freeStorage > 0) effectiveCap += freeStorage;
-            }
-            const remainingCapacity = Math.max(0, effectiveCap - carriedWeight);
+            // v9p33river502: Buy Max now uses ONLY the player's personal carry
+            // capacity. Previously it also added free town-storage/warehouse
+            // room, which let the player accidentally drain a market into
+            // their warehouse (filling thousands of slots) when they meant
+            // to top off what they could carry on their person.
+            const remainingCapacity = Math.max(0, carryCapacity - carriedWeight);
             const resWeight = res.weight || 1;
             const maxByCapacity = Math.floor(remainingCapacity / resWeight);
 
