@@ -5728,8 +5728,24 @@
                                 if (_bgEmNoble >= 4) _bgEmCatch -= 0.01;
                                 // High risk tolerance = better at hiding
                                 if (_bgEmRisk > 70) _bgEmCatch -= 0.005;
-                                if (_bgOwner.skills && _bgOwner.skills.indexOf('master_smuggler') >= 0) _bgEmCatch -= 0.005;
-                                if (_bgOwner.skills && _bgOwner.skills.indexOf('discrete') >= 0) _bgEmCatch -= 0.003;
+                                // v9p33river498: EM/NPC skills can be either an
+                                // array OR an object map ({skill_id: 1}). The
+                                // player and any promoted-from-player NPCs use
+                                // the object form, which threw TypeError on
+                                // .indexOf — caught daily by the v496 wrap.
+                                var _bgEmSkills = _bgOwner.skills;
+                                var _bgHasSmuggler = false, _bgHasDiscrete = false;
+                                if (_bgEmSkills) {
+                                    if (Array.isArray(_bgEmSkills)) {
+                                        _bgHasSmuggler = _bgEmSkills.indexOf('master_smuggler') >= 0;
+                                        _bgHasDiscrete = _bgEmSkills.indexOf('discrete') >= 0;
+                                    } else if (typeof _bgEmSkills === 'object') {
+                                        _bgHasSmuggler = !!_bgEmSkills.master_smuggler;
+                                        _bgHasDiscrete = !!_bgEmSkills.discrete;
+                                    }
+                                }
+                                if (_bgHasSmuggler) _bgEmCatch -= 0.005;
+                                if (_bgHasDiscrete) _bgEmCatch -= 0.003;
                                 _bgEmCatch = Math.max(0.001, _bgEmCatch);
                                 if (rng.random() < _bgEmCatch) {
                                     bld._disabledUntil = world.day + 30;
