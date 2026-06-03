@@ -670,7 +670,7 @@
         if (currentProc > 0 && k._procurementOrders.length < 5) {
             var atWar = k.atWar && k.atWar.size > 0;
             if (atWar) {
-                var milNeeds = ['swords', 'armor', 'bows', 'arrows'];
+                var milNeeds = ['swords', 'armor', 'shields', 'bows', 'arrows'];
                 for (var mi = 0; mi < milNeeds.length; mi++) {
                     var stock = (k.militaryStockpile || {})[milNeeds[mi]] || 0;
                     if (stock < 30 && k._procurementOrders.filter(function(o) { return o.goodId === milNeeds[mi] && o.remaining > 0; }).length === 0) {

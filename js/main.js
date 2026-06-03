@@ -2158,6 +2158,18 @@ window.Game = (function () {
             canvas.addEventListener('touchstart', onTouchStart, { passive: false });
             canvas.addEventListener('touchmove', onTouchMove, { passive: false });
             canvas.addEventListener('touchend', onTouchEnd);
+            // v9p33river497: iPad fix — bind touchcancel and reset stuck touch
+            // state on visibility change. Without this, an iOS interruption
+            // (incoming call, app switch, alert) can leave touchIsDragging=true
+            // forever, making subsequent taps silently fail.
+            canvas.addEventListener('touchcancel', function(e) {
+                if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+                touchStartPos = null;
+                touchStartDist = null;
+                touchLastPos = null;
+                touchIsDragging = false;
+                touchVelocity = { x: 0, y: 0 };
+            });
         }
         canvas.focus({ preventScroll: true });
 
@@ -2273,6 +2285,14 @@ window.Game = (function () {
         if (state !== 'playing' && state !== 'paused') return;
         if (typeof Renderer === 'undefined') return;
         e.preventDefault();
+        // v9p33river497: clear any stale state from an interrupted prior touch
+        // session (iOS can drop touchend if the system interrupts). Without
+        // this, touchIsDragging stuck true from a prior session means a fresh
+        // tap is treated as the tail of a drag and never opens panels.
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (e.touches.length === 1 && !touchLastPos) {
+            touchIsDragging = false;
+        }
         // Cancel any ongoing momentum panning
         if (momentumId) { cancelAnimationFrame(momentumId); momentumId = null; }
         if (Renderer.getMapMode && Renderer.getMapMode() === 2) return;

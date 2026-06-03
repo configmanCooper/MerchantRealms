@@ -1778,6 +1778,7 @@ const RESOURCE_TYPES = {
     LIVESTOCK_COW:    { id: 'livestock_cow',    name: 'Cow',            category: 'livestock', basePrice: 40, icon: '🐄', weight: 8 },
     LIVESTOCK_PIG:    { id: 'livestock_pig',    name: 'Pig',            category: 'livestock', basePrice: 25, icon: '🐷', weight: 4 },
     LIVESTOCK_CHICKEN:{ id: 'livestock_chicken', name: 'Chicken',       category: 'livestock', basePrice: 15, icon: '🐔', weight: 1 },
+    LIVESTOCK_SHEEP:  { id: 'livestock_sheep',   name: 'Sheep',         category: 'livestock', basePrice: 30, icon: '🐑', weight: 5 },
     POISON:           { id: 'poison',            name: 'Poison',         category: 'contraband', basePrice: 50, icon: '☠️', weight: 0.5 },
 
     // --- Musical instruments & components ---
@@ -1797,6 +1798,11 @@ const RESOURCE_TYPES = {
     BOWS_EXCELLENT:   { id: 'bows_excellent',     name: 'Excellent Bows',   category: 'military', basePrice: 225, icon: '🏹🟣', weight: 2, tier: 'excellent', baseItem: 'bows' },
     ARROWS_GOOD:      { id: 'arrows_good',        name: 'Good Arrows',      category: 'military', basePrice: 15,  icon: '➳🔵',  weight: 1, tier: 'good',      baseItem: 'arrows' },
     ARROWS_EXCELLENT: { id: 'arrows_excellent',    name: 'Excellent Arrows', category: 'military', basePrice: 45,  icon: '➳🟣',  weight: 1, tier: 'excellent', baseItem: 'arrows' },
+    // v9p33river497: shields — new defensive military good. Half the
+    // protective effect of armor at each tier but cheaper to produce.
+    SHIELDS:          { id: 'shields',           name: 'Shields',          category: 'military', basePrice: 80,  icon: '🛡️',  weight: 4, baseItem: 'shields' },
+    SHIELDS_GOOD:     { id: 'shields_good',      name: 'Good Shields',     category: 'military', basePrice: 165, icon: '🛡️🔵', weight: 4, tier: 'good',      baseItem: 'shields' },
+    SHIELDS_GREAT:    { id: 'shields_great',     name: 'Great Shields',    category: 'military', basePrice: 480, icon: '🛡️🟣', weight: 4, tier: 'excellent', baseItem: 'shields' },
 
     // --- Demolition & Sabotage goods ---
     BLASTING_POWDER:  { id: 'blasting_powder',  name: 'Blasting Powder',  category: 'military', basePrice: 50, icon: '💥', weight: 2 },
@@ -1867,14 +1873,27 @@ for (var _riKey in RESOURCE_TYPES) {
 
 const BUILDING_TYPES = {
     WHEAT_FARM:    { id: 'wheat_farm',    name: 'Wheat Farm',    cost: 200,  workers: 3, produces: 'wheat',    consumes: {},                       rate: 8, category: 'farm',       storage: 80, optionalBoost: { resource: 'manure', bonusPct: 25, consumeRate: 1, storageName: 'Manure Storage', storageMax: 20 }, materials: { wood: 10, stone: 5 } },
-    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide'], byproduct: { resource: 'manure', rate: 3 }, byproductStorage: 30, materials: { wood: 15, planks: 5 },
+    CATTLE_RANCH:  { id: 'cattle_ranch',  name: 'Cattle Ranch',  cost: 350,  workers: 3, produces: 'meat',     consumes: { wheat: 2 },             rate: 4, category: 'farm',       storage: 60, canProduce: ['meat', 'hide', 'livestock_cow'], byproduct: { resource: 'manure', rate: 3 }, byproductStorage: 30, materials: { wood: 15, planks: 5 },
         availableProducts: {
             meat: { produces: 'meat', consumes: { wheat: 2 }, rate: 4 },
             hide: { produces: 'hide', consumes: { wheat: 2 }, rate: 3 },
+            livestock_cow: { produces: 'livestock_cow', consumes: { wheat: 4 }, rate: 1 },
         },
     },
-    SHEEP_FARM:    { id: 'sheep_farm',    name: 'Sheep Farm',    cost: 250,  workers: 2, produces: 'wool',     consumes: { wheat: 1 },             rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 } },
-    CHICKEN_FARM:  { id: 'chicken_farm',  name: 'Chicken Farm',  cost: 150,  workers: 2, produces: 'eggs',     consumes: { wheat: 1 },             rate: 10, category: 'farm',      storage: 60, byproduct: { resource: 'manure', rate: 1 }, byproductStorage: 30, materials: { wood: 8 } },
+    SHEEP_FARM:    { id: 'sheep_farm',    name: 'Sheep Farm',    cost: 250,  workers: 2, produces: 'wool',     consumes: { wheat: 1 },             rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 },
+        canProduce: ['wool', 'livestock_sheep'],
+        availableProducts: {
+            wool:             { produces: 'wool',             consumes: { wheat: 1 }, rate: 5 },
+            livestock_sheep:  { produces: 'livestock_sheep',  consumes: { wheat: 2 }, rate: 2 },
+        },
+    },
+    CHICKEN_FARM:  { id: 'chicken_farm',  name: 'Chicken Farm',  cost: 150,  workers: 2, produces: 'eggs',     consumes: { wheat: 1 },             rate: 10, category: 'farm',      storage: 60, byproduct: { resource: 'manure', rate: 1 }, byproductStorage: 30, materials: { wood: 8 },
+        canProduce: ['eggs', 'livestock_chicken'],
+        availableProducts: {
+            eggs:                { produces: 'eggs',                consumes: { wheat: 1 },   rate: 10 },
+            livestock_chicken:   { produces: 'livestock_chicken',   consumes: { wheat: 0.5 }, rate: 4 },
+        },
+    },
     IRON_MINE:     { id: 'iron_mine',     name: 'Iron Mine',     cost: 500,  workers: 5, produces: 'iron_ore', consumes: {},                       rate: 5, category: 'mine',       storage: 80, materials: { wood: 20, stone: 15, tools: 3 } },
     GOLD_MINE:     { id: 'gold_mine',     name: 'Gold Mine',     cost: 800,  workers: 5, produces: 'gold_ore', consumes: {},                       rate: 2, category: 'mine',       storage: 40, materials: { wood: 25, stone: 20, tools: 5, iron: 3 } },
     LUMBER_CAMP:   { id: 'lumber_camp',   name: 'Lumber Camp',   cost: 200,  workers: 4, produces: 'wood',     consumes: {},                       rate: 7, category: 'harvest',    storage: 100, materials: { stone: 5, tools: 2 } },
@@ -1924,11 +1943,14 @@ const BUILDING_TYPES = {
             demolition_tools: { produces: 'demolition_tools', consumes: { iron: 3, rope: 2, wood: 3 },    rate: 1 },
         },
     },
-    ARMORER:       { id: 'armorer',       name: 'Armorer',       cost: 700,  workers: 3, produces: 'armor',    consumes: { iron: 3, leather: 2 },  rate: 2, category: 'military',   storage: 40, materials: { stone: 20, iron: 8, bricks: 10 }, canProduce: ['armor', 'armor_good', 'armor_excellent'],
+    ARMORER:       { id: 'armorer',       name: 'Armorer',       cost: 700,  workers: 3, produces: 'armor',    consumes: { iron: 3, leather: 2 },  rate: 2, category: 'military',   storage: 40, materials: { stone: 20, iron: 8, bricks: 10 }, canProduce: ['armor', 'armor_good', 'armor_excellent', 'shields', 'shields_good', 'shields_great'],
         availableProducts: {
             armor:            { produces: 'armor',            consumes: { iron: 3, leather: 2 },           rate: 2 },
             armor_good:       { produces: 'armor_good',       consumes: { iron: 5, leather: 3 },           rate: 1 },
             armor_excellent:  { produces: 'armor_excellent',   consumes: { steel: 2, iron: 2, leather: 3 }, rate: 1 },
+            shields:          { produces: 'shields',          consumes: { wood: 3 },                        rate: 3 },
+            shields_good:     { produces: 'shields_good',     consumes: { iron: 2, wood: 1 },              rate: 2 },
+            shields_great:    { produces: 'shields_great',    consumes: { steel: 2, iron: 1 },             rate: 1 },
         },
     },
     WAREHOUSE:     { id: 'warehouse',     name: 'Warehouse',     cost: 500,  workers: 1, produces: null,       consumes: {},                       rate: 0, category: 'storage',    storage: 800, materials: { wood: 20, stone: 10, planks: 10, bricks: 5 } },
@@ -2003,7 +2025,13 @@ const BUILDING_TYPES = {
             blasting_powder_from_coal: { produces: 'blasting_powder', consumes: { saltpeter: 2, coal: 1, sulfur: 1 },       rate: 2, name: 'Blasting Powder (from Coal)' },
         },
     },
-    PIG_FARM:      { id: 'pig_farm',      name: 'Pig Farm',      cost: 200,  workers: 2, produces: 'meat',           consumes: { wheat: 2 },                rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 } },
+    PIG_FARM:      { id: 'pig_farm',      name: 'Pig Farm',      cost: 200,  workers: 2, produces: 'meat',           consumes: { wheat: 2 },                rate: 5, category: 'farm',       storage: 60, byproduct: { resource: 'manure', rate: 2 }, byproductStorage: 30, materials: { wood: 10, stone: 3 },
+        canProduce: ['meat', 'livestock_pig'],
+        availableProducts: {
+            meat:              { produces: 'meat',              consumes: { wheat: 2 }, rate: 5 },
+            livestock_pig:     { produces: 'livestock_pig',     consumes: { wheat: 3 }, rate: 2 },
+        },
+    },
     PASTURE:       { id: 'pasture',       name: 'Pasture',       cost: 100,  workers: 1, produces: null,             consumes: { wheat: 1 },                rate: 0, category: 'farm',       livestockCapacity: 10, materials: { wood: 5 } },
     WATCHTOWER:    { id: 'watchtower',    name: 'Watchtower',    cost: 500,  workers: 2, produces: null,             consumes: {},                          rate: 0, category: 'military',   archerBonus: 0.5, materials: { stone: 30, wood: 15, bricks: 15 } },
     BARRACKS:      { id: 'barracks',      name: 'Barracks',      cost: 600,  workers: 3, produces: null,             consumes: {},                          rate: 0, category: 'military',   recruitBonus: 2,  materials: { stone: 40, wood: 30, bricks: 10 } },
@@ -3302,7 +3330,7 @@ const MULTISTEP_ACTIONS = {
 // ============================================================
 
 const MILITARY_UNITS = {
-    infantry: { name: 'Infantry', equipGoods: ['swords', 'armor'],            attackMult: 1.0, defenseMult: 1.2, icon: '⚔️' },
+    infantry: { name: 'Infantry', equipGoods: ['swords', 'armor', 'shields'],            attackMult: 1.0, defenseMult: 1.2, icon: '⚔️' },
     archer:   { name: 'Archer',   equipGoods: ['bows', 'arrows'],             attackMult: 0.7, defenseMult: 1.5, icon: '🏹' },
     cavalry:  { name: 'Cavalry',  equipGoods: ['horses', 'swords', 'saddles'], attackMult: 1.8, defenseMult: 0.6, icon: '🐴' },
 };
@@ -5179,6 +5207,14 @@ const EQUIPMENT_TYPES = {
         { id: 'chain_mail', name: 'Chain Mail', resource: 'armor', quality: 'basic', combatBonus: 0.30, priceMultiplier: 1.0 },
         { id: 'plate_armor', name: 'Plate Armor', resource: 'armor_good', quality: 'good', combatBonus: 0.40, priceMultiplier: 1.0 },
         { id: 'royal_plate', name: 'Royal Plate Armor', resource: 'armor_excellent', quality: 'excellent', combatBonus: 0.50, priceMultiplier: 1.0 },
+    ],
+    // v9p33river497: shields — equippable in the same slot as armor, but with
+    // ~half the protective effect of the matching tier. (Game uses a single
+    // armor slot; shields function as a lighter alternative.)
+    shields: [
+        { id: 'wooden_shield',  name: 'Wooden Shield',  resource: 'shields',        quality: 'basic',     combatBonus: 0.10, priceMultiplier: 1.0 },
+        { id: 'good_shield',    name: 'Good Shield',    resource: 'shields_good',   quality: 'good',      combatBonus: 0.20, priceMultiplier: 1.0 },
+        { id: 'great_shield',   name: 'Great Shield',   resource: 'shields_great',  quality: 'excellent', combatBonus: 0.25, priceMultiplier: 1.0 },
     ]
 };
 CONFIG.EQUIPMENT_TYPES = EQUIPMENT_TYPES;

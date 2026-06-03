@@ -1945,7 +1945,7 @@
         const isCitizenOfWarring = isPlayerCitizenOf(kingdomA) || isPlayerCitizenOf(kingdomB);
 
         // Player owns military-related buildings or has military inventory?
-        const militaryGoods = ['swords', 'armor', 'bows', 'arrows', 'horses', 'saddles'];
+        const militaryGoods = ['swords', 'armor', 'shields', 'bows', 'arrows', 'horses', 'saddles'];
         const hasMilitaryInventory = militaryGoods.some(g => (player.inventory[g] || 0) > 0);
         const hasMilitaryBuildings = player.buildings.some(b => {
             const bt = Engine.findBuildingType(b.type);

@@ -1072,6 +1072,17 @@
             // Bringing cart without horse — 40% slower
             totalDist *= 1.4;
             cartMsg = ' 🛒 Dragging ' + container.name + ' by hand — slower travel!';
+        } else if (isCartType && !options.leaveCart && hasHorse) {
+            // v9p33river497: hauling a wagon/cart even with a horse slows you down.
+            // Wagons are heavier than carts. This makes ETAs match what the
+            // player actually experiences — previously wagons were treated as
+            // weightless when a horse was hitched.
+            var _cartSlow = (player.storageContainer === 'large_wagon') ? 1.25
+                          : (player.storageContainer === 'wagon') ? 1.18
+                          : (player.storageContainer === 'small_wagon') ? 1.12
+                          : 1.08; // cart
+            totalDist *= _cartSlow;
+            cartMsg = ' 🛒 Hauling ' + container.name + (_cartSlow > 1.15 ? ' — heavy load slows the pace.' : '');
         }
 
         // If route includes sea segments, delegate to travelBySea for proper ship handling
@@ -1134,7 +1145,15 @@
 
         // Travel energy is now handled per-tick in tickTravel (no upfront cost)
 
-        var estimatedDays = Math.max(1, Math.ceil(totalDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5)));
+        // v9p33river497: factor in-flight speed bonuses into the estimate so
+        // displayed ETA matches reality. tickTravel adds expert_navigator/
+        // road_knowledge/cartographer multiplicatively on top of base speed,
+        // so the previous estimate was too pessimistic for skilled travelers.
+        var _etaSpeedMult = 1.0;
+        if (isSea && hasSkill('expert_navigator')) _etaSpeedMult *= 1.20;
+        if (!isSea && hasSkill('road_knowledge')) _etaSpeedMult *= 1.15;
+        if (!isSea && hasSkill('cartographer')) _etaSpeedMult *= 1.05;
+        var estimatedDays = Math.max(1, Math.ceil(totalDist / (CONFIG.CARAVAN_BASE_SPEED * 1.5 * _etaSpeedMult)));
 
         const dest = Engine.findTown(townId);
         const horseMsg = hasHorse ? (hasSaddle ? ' 🐴 (Horse + Saddle bonus!)' : ' 🐴 (Horse bonus!)') : '';

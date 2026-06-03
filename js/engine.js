@@ -1250,7 +1250,7 @@
                     preferredMerchants: {},
                     lastAssessmentDay: 0,
                 },
-                militaryStockpile: { swords: 0, armor: 0, bows: 0, arrows: 0, horses: 0 },
+                militaryStockpile: { swords: 0, armor: 0, shields: 0, bows: 0, arrows: 0, horses: 0 },
                 goodsStockpile: {},
                 lastTaxIncreaseDay: 0,  // day of most recent tax increase (for tax collector job availability)
                 tournament: null,       // { active, startDay, entryFee, townId } or null — king-sponsored tournament
@@ -6585,6 +6585,28 @@
             for (var _espk in _totalProdCount) {
                 if (_totalProdCount[_espk] > 1 && _emProdCount[_espk]) {
                     town._emSupplyShare[_espk] = _emProdCount[_espk] / _totalProdCount[_espk];
+                }
+            }
+
+            // v9p33river497: market-surplus tracking. When a good's supply
+            // exceeds 2000/5000/9000 in this town's market, flag it so EM,
+            // NPC merchant, kingdom procurement, and caravan AIs prioritize
+            // moving the surplus OUT to other markets. Also nudge local
+            // demand upward slightly to keep the price floor from collapsing
+            // completely (acts as the "export market" demand the user
+            // requested when their towns are flooded with goods).
+            town._surplusGoods = town._surplusGoods || {};
+            for (var _srKey in RESOURCE_TYPES) {
+                var _srR = RESOURCE_TYPES[_srKey];
+                var _srSupply = (town.market.supply[_srR.id] || 0);
+                if (_srSupply >= 2000) {
+                    var _srTier = 1, _srDemandMult = 1.10, _srExportPri = 1.25;
+                    if (_srSupply >= 9000) { _srTier = 3; _srDemandMult = 1.75; _srExportPri = 3.0; }
+                    else if (_srSupply >= 5000) { _srTier = 2; _srDemandMult = 1.40; _srExportPri = 2.0; }
+                    town._surplusGoods[_srR.id] = { tier: _srTier, supply: _srSupply, exportPriority: _srExportPri };
+                    town.market.demand[_srR.id] = Math.ceil((town.market.demand[_srR.id] || 0) * _srDemandMult);
+                } else if (town._surplusGoods[_srR.id]) {
+                    delete town._surplusGoods[_srR.id];
                 }
             }
 
@@ -11929,7 +11951,7 @@
 
         // Military needs
         if (k.atWar && k.atWar.size > 0) {
-            var milGoods = ['swords', 'armor', 'bows', 'arrows'];
+            var milGoods = ['swords', 'armor', 'shields', 'bows', 'arrows'];
             for (var mi = 0; mi < milGoods.length; mi++) {
                 var stock = k.militaryStockpile ? (k.militaryStockpile[milGoods[mi]] || 0) : 0;
                 if (stock < 50) {
@@ -12000,6 +12022,21 @@
         var _commRewardMoodMod = (CONFIG.KING_MOOD && CONFIG.KING_MOOD.rewardMod && k.kingMood) ? (CONFIG.KING_MOOD.rewardMod[k.kingMood.current] || 1) : 1;
         var reward = Math.floor(baseValue * cfg.baseReward * _commRewardMoodMod);
 
+        // v9p33river497: scale reputation reward by commission difficulty.
+        // Was always cfg.repReward (default 1). Now ranges 1–10 based on
+        // gold value, type (military > goods > building), and quantity.
+        var _repReward = cfg.repReward || 1;
+        if (baseValue >= 5000)      _repReward = 10;
+        else if (baseValue >= 3000) _repReward = 8;
+        else if (baseValue >= 2000) _repReward = 6;
+        else if (baseValue >= 1000) _repReward = 5;
+        else if (baseValue >= 500)  _repReward = 3;
+        else if (baseValue >= 200)  _repReward = 2;
+        if (chosen.type === 'military_supply') _repReward = Math.min(10, _repReward + 2);
+        if (chosen.type === 'building_request') _repReward = Math.min(10, _repReward + 1);
+        if (chosen.quantity && chosen.quantity >= 50) _repReward = Math.min(10, _repReward + 1);
+        _repReward = Math.max(1, Math.min(10, _repReward));
+
         var commission = {
             id: 'rc_' + k.id + '_' + world.day,
             kingdomId: k.id,
@@ -12009,7 +12046,7 @@
             townId: chosen.townId || null,
             quantity: chosen.quantity || 0,
             reward: reward,
-            repReward: cfg.repReward,
+            repReward: _repReward,
             issuedDay: world.day,
             expiresDay: world.day + cfg.expirationDays,
             status: 'open',
@@ -16841,18 +16878,24 @@
 
     // v9p33river435: noble coalition — tick function for coalition decay and resolution
     function tickNobleCoalitions() {
-        if (world.day % 30 !== 15) return;
-
+        // v9p33river497: run daily (was every 30 days) and auto-disband at
+        // 90 days (was 180) per design request — coalitions need a tighter
+        // window so they feel time-limited and force decisions.
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
             var k = world.kingdoms[ki];
             if (!k._nobleCoalitions) continue;
 
             k._nobleCoalitions = k._nobleCoalitions.filter(function(c) {
                 if ((c.status === 'resolved' || c.status === 'dissolved') && c.resolvedDay != null && world.day - c.resolvedDay > 30) return false;
-                if (c.status === 'forming' && world.day - c.formedDay > 180) {
+                if (c.status === 'forming' && world.day - c.formedDay > 90) {
                     c.status = 'dissolved';
                     c.resolvedDay = world.day;
-                    c.resolutionMessage = c.resolutionMessage || 'The coalition lost momentum and dissolved.';
+                    c.resolutionMessage = c.resolutionMessage || 'The coalition expired after 90 days without being presented.';
+                    var _isPlayerCoal = c.organizer === 'player';
+                    var _isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
+                    logEvent('📜 The coalition for ' + (c.causeLabel || c.cause) + ' in ' + k.name + ' has expired (90 days elapsed).', {
+                        type: 'coalition_expired', kingdomId: k.id, cause: c.cause
+                    }, _isPlayerCoal || _isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
                     return true;
                 }
                 return true;
@@ -36490,6 +36533,14 @@
             if (!k.king) return { success: false, message: 'This kingdom has no king to petition.' };
             if (k.king === 'player' || k.king === 'player_king') return { success: false, message: 'You are the king — you can simply enact policy directly.' };
             if (!k._nobleCoalitions) k._nobleCoalitions = [];
+            // v9p33river497: 30-day cooldown between starting coalitions.
+            if (typeof Player !== 'undefined' && Player.state) {
+                var _lastCoStart = Player.state._lastCoalitionStartDay || 0;
+                var _coCooldownLeft = (_lastCoStart + 30) - world.day;
+                if (_coCooldownLeft > 0) {
+                    return { success: false, message: 'You must wait ' + _coCooldownLeft + ' more day' + (_coCooldownLeft === 1 ? '' : 's') + ' before starting another coalition.' };
+                }
+            }
             causeLabels = {
                 lower_taxes: 'Lower Taxes',
                 raise_taxes: 'Raise Taxes',
@@ -36563,6 +36614,10 @@
                 status: 'forming'
             };
             k._nobleCoalitions.push(coalition);
+            // v9p33river497: track player's coalition starts for 30-day cooldown.
+            if (typeof Player !== 'undefined' && Player.state) {
+                Player.state._lastCoalitionStartDay = world.day;
+            }
             if (Engine.recordNobleObservation) Engine.recordNobleObservation('coalition_formed', { actorId: 'player', actorName: 'the player', category: 'coalition_formed', detail: coalitionDetail, targetId: cause, kingdomId: k.id }, null); // v9p33river442
             logEvent('📜 You have started a political coalition in ' + k.name + ' to advocate for: ' + coalitionLabel + '.', {
                 type: 'coalition_formed', kingdomId: k.id, cause: cause
@@ -36673,6 +36728,13 @@
             if (nobleRank < 4) return { success: false, message: noble.firstName + ' is not a noble in this kingdom.' };
             // v9p33river451: age gate
             if (noble.age != null && noble.age < 18) return { success: false, message: noble.firstName + ' is too young to participate in political coalitions.' };
+            // v9p33river497: 7-day cooldown to re-ask a refused noble.
+            if (coalition._refusalDays && coalition._refusalDays[nobleId]) {
+                var _refDaysLeft = (coalition._refusalDays[nobleId] + 7) - world.day;
+                if (_refDaysLeft > 0) {
+                    return { success: false, message: noble.firstName + ' refused recently. Wait ' + _refDaysLeft + ' more day' + (_refDaysLeft === 1 ? '' : 's') + ' before asking again.' };
+                }
+            }
             var rng = world.rng;
             var recruitChance = 0.30;
             var agenda = getNobleAgenda(nobleId);
@@ -36708,6 +36770,9 @@
             }
             recruitChance = Math.max(0.05, Math.min(0.95, recruitChance));
             if (!rng.chance(recruitChance)) {
+                // v9p33river497: record refusal day so we can enforce 7-day cooldown.
+                if (!coalition._refusalDays) coalition._refusalDays = {};
+                coalition._refusalDays[nobleId] = world.day;
                 var refusalReasons = [
                     noble.firstName + ' listens politely but declines. "I appreciate your passion, but I\'m not ready to take sides."',
                     noble.firstName + ' shakes their head. "The king knows what he\'s doing. I won\'t second-guess him."',
@@ -36744,6 +36809,8 @@
             }
             if (!coalition) return { success: false, message: 'Coalition not found.' };
             if (coalition.status !== 'forming') return { success: false, message: 'This coalition has already been presented.' };
+            // v9p33river497: only the original founder may present to the king.
+            if (coalition.organizer !== 'player') return { success: false, message: 'Only the founder of the coalition can present it to the king. You may suggest action to the founder, but only they may petition.' };
             if (coalition.members.length < 2) return { success: false, message: 'You need at least one noble ally to present your case to the king.' };
             var rng = world.rng;
             var successChance = _computeCoalitionSuccessChance(coalition, k);

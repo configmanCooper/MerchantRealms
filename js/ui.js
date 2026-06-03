@@ -12416,11 +12416,21 @@ window.UI = (function () {
         var vSlider = document.getElementById('settingsVolumeSlider');
         var vLabel = document.getElementById('settingsVolLabel');
         if (vSlider) {
-            vSlider.addEventListener('input', function (e) {
-                var val = parseInt(e.target.value, 10);
+            var _vsApply = function(val) {
+                val = parseInt(val, 10);
+                if (isNaN(val)) return;
                 if (vLabel) vLabel.textContent = val + '%';
                 if (typeof Music !== 'undefined') { Music.init(); Music.setVolume(val / 100); }
-            });
+            };
+            vSlider.addEventListener('input', function (e) { _vsApply(e.target.value); });
+            // v9p33river497: iPad fix — bind change + touchend as fallback
+            // since iOS Safari sometimes drops the 'input' event during touch
+            // drags inside modals. Also stop touch propagation so the modal's
+            // swipe-to-close handler doesn't close the panel mid-drag.
+            vSlider.addEventListener('change', function (e) { _vsApply(e.target.value); });
+            vSlider.addEventListener('touchend', function (e) { _vsApply(e.target.value); e.stopPropagation(); }, { passive: true });
+            vSlider.addEventListener('touchmove', function (e) { _vsApply(e.target.value); e.stopPropagation(); }, { passive: true });
+            vSlider.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
         }
     }
 

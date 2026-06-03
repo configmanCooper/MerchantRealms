@@ -3212,6 +3212,23 @@
             return { success: false, message: (person.firstName || 'Worker') + ' is still traveling. Wait for them to arrive.' };
         }
 
+        // v9p33river497: spouse-only work-assignment rank gate.
+        // Player at Minor Noble (rank 5) or higher cannot put their spouse
+        // to work — at that rank the household has servants and the spouse
+        // managing a shop becomes socially untenable. Allowed up through
+        // Guildmaster (rank 4) and below.
+        if (person && person.spouseId === 'player') {
+            var _maxSR = 0;
+            if (player.socialRank) {
+                for (var _srK in player.socialRank) {
+                    if (player.socialRank[_srK] > _maxSR) _maxSR = player.socialRank[_srK];
+                }
+            }
+            if (_maxSR >= 5) {
+                return { success: false, message: 'As ' + ((CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[_maxSR] && CONFIG.SOCIAL_RANKS[_maxSR].name) || 'noble') + ', it would be unseemly for your spouse to labor at a shop. Spouses can only be assigned to work if you are Guildmaster rank or lower.' };
+            }
+        }
+
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.assign_worker || 1);
 
         // Remove from any other building first
@@ -4724,6 +4741,40 @@
 
         // Fallback: interpolate from town route
         if (player.travelRoute && player.travelRoute.length > 0) {
+            // v9p33river497: a route may be a flat route object {waypoints, ...}
+            // or an array of route legs. Walk all waypoints in order so the
+            // diamond marker follows the actual road bends, not a straight
+            // line between origin and destination towns.
+            var rwps = [];
+            var legs = player.travelRoute;
+            for (var ri = 0; ri < legs.length; ri++) {
+                var leg = legs[ri];
+                if (leg && leg.waypoints && leg.waypoints.length > 0) {
+                    for (var rj = 0; rj < leg.waypoints.length; rj++) {
+                        rwps.push({ x: leg.waypoints[rj].x, y: leg.waypoints[rj].y });
+                    }
+                }
+            }
+            if (rwps.length >= 2) {
+                var prog2 = player.travelProgress || 0;
+                var tot2 = 0; var seg2 = [];
+                for (var ri2 = 1; ri2 < rwps.length; ri2++) {
+                    var d2 = Math.hypot(rwps[ri2].x - rwps[ri2-1].x, rwps[ri2].y - rwps[ri2-1].y);
+                    seg2.push(d2); tot2 += d2;
+                }
+                var tgt2 = prog2 * tot2; var acc2 = 0;
+                for (var rk = 0; rk < seg2.length; rk++) {
+                    if (acc2 + seg2[rk] >= tgt2) {
+                        var t2 = seg2[rk] > 0 ? (tgt2 - acc2) / seg2[rk] : 0;
+                        return {
+                            x: rwps[rk].x + (rwps[rk+1].x - rwps[rk].x) * t2,
+                            y: rwps[rk].y + (rwps[rk+1].y - rwps[rk].y) * t2
+                        };
+                    }
+                    acc2 += seg2[rk];
+                }
+                return rwps[rwps.length - 1];
+            }
             var origin = Engine.findTown(player.travelOrigin || player.townId);
             var dest = Engine.findTown(player.travelDestination);
             if (origin && dest) {
@@ -7184,7 +7235,17 @@
         const victories = [];
 
         // 1. Top Merchant — reach #1 on leaderboard
-        const leaderboard = getMerchantLeaderboard();
+        // v9p33river497: use Engine.getLeaderboard (authoritative net-worth
+        // ranking) instead of Player.getMerchantLeaderboard, which inflated
+        // the player by counting building cost + inventory value while elites
+        // were valued at gold + buildings*300. Old path could mark the player
+        // as #1 here while the Rankings UI showed them at #3.
+        var leaderboard;
+        if (typeof Engine !== 'undefined' && Engine.getLeaderboard) {
+            leaderboard = Engine.getLeaderboard();
+        } else {
+            leaderboard = getMerchantLeaderboard();
+        }
         if (leaderboard.length > 0 && leaderboard[0].isPlayer) {
             player.topMerchantDays = (player.topMerchantDays || 0) + 1;
             victories.push('Top Merchant');
@@ -19137,6 +19198,10 @@
         var resId = 'armor';
         if (typeof player.armor === 'object' && player.armor.id) {
             var eqDef = EQUIPMENT_TYPES.armor.find(function(e) { return e.id === player.armor.id; });
+            // v9p33river497: also recognize shield IDs (they use the armor slot).
+            if (!eqDef && EQUIPMENT_TYPES.shields) {
+                eqDef = EQUIPMENT_TYPES.shields.find(function(e) { return e.id === player.armor.id; });
+            }
             if (eqDef) resId = eqDef.resource;
         }
         player.inventory[resId] = (player.inventory[resId] || 0) + 1;
@@ -19166,6 +19231,16 @@
             if (EQUIPMENT_TYPES.armor[ai].resource === resourceId) {
                 if (!armorDef || EQUIPMENT_TYPES.armor[ai].combatBonus > armorDef.combatBonus) {
                     armorDef = EQUIPMENT_TYPES.armor[ai];
+                }
+            }
+        }
+        // v9p33river497: shields equip into the armor slot (half-effect alt).
+        if (EQUIPMENT_TYPES.shields) {
+            for (var sii = 0; sii < EQUIPMENT_TYPES.shields.length; sii++) {
+                if (EQUIPMENT_TYPES.shields[sii].resource === resourceId) {
+                    if (!armorDef || EQUIPMENT_TYPES.shields[sii].combatBonus > armorDef.combatBonus) {
+                        armorDef = EQUIPMENT_TYPES.shields[sii];
+                    }
                 }
             }
         }
@@ -28227,6 +28302,26 @@
             // Family modifier — slower decay but still present
             if (isFamily) {
                 baseDecay *= 0.5;
+            }
+
+            // v9p33river497: spouse must be tended weekly to stay near 100.
+            // If it's been >7 days since the last positive interaction with
+            // your spouse, decay accelerates substantially (and scales the
+            // longer you neglect them). At >100% of weekly window the spouse
+            // decays at the same rate as a non-family relationship; at 4+
+            // weeks of neglect the decay is brutal. Reset by talking, gifts,
+            // dates, courtship — anything that pushes relationship up.
+            if (rel.type === 'spouse') {
+                var _lastInt = (player._lastInteractionDay && player._lastInteractionDay[personId]) || 0;
+                var _curDay = 0; try { _curDay = Engine.getDay(); } catch(e) {}
+                var _daysSince = Math.max(0, _curDay - _lastInt);
+                if (_daysSince > 7) {
+                    // Undo the isFamily 0.5 reduction and the sameTown reduction,
+                    // then scale up further the longer they're neglected.
+                    var _neglectMult = 2.0; // immediately restore full base rate
+                    _neglectMult += Math.min(8, (_daysSince - 7) / 7); // +1 per neglected week, cap +8
+                    baseDecay *= _neglectMult;
+                }
             }
 
             // Skill: smooth_talker halves decay

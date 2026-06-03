@@ -92,7 +92,7 @@
 
     // ── Resources & helpers ──
     var DELIVERY_GOODS = ['bread','meat','fish','wine','ale','cloth','silk','iron','tools','leather','planks','bricks','stone','honey','salt','eggs','vegetables'];
-    var MILITARY_GOODS = ['swords','bows','arrows','armor','bandages'];
+    var MILITARY_GOODS = ['swords','bows','arrows','armor','shields','bandages'];
     var LUXURY_GOODS = ['wine','silk','jewelry'];
 
     function _basePrice(resId) {

@@ -103,16 +103,17 @@
             var curRank = npc.socialRank[emKingdomId] || 0;
             if (curRank < 2) npc.socialRank[emKingdomId] = 2;
         }
-        // Promotion gold bonus — ensure EMs start with enough capital to operate
-        var minGold = 2000;
+        // v9p33river497: EMs need real starting capital to compete with the player.
+        // Promotion gold bonus — ensure EMs start with enough capital to operate.
+        var minGold = 5000;
         var age = npc.age || 30;
-        if (age <= 35) minGold = 1500;
-        else if (age <= 50) minGold = 3000;
-        else minGold = 5000;
-        // Promotion bonus: +500g on top of whatever they have
-        npc.gold = (npc.gold || 0) + 500;
+        if (age <= 35) minGold = 5000;
+        else if (age <= 50) minGold = 12000;
+        else minGold = 25000;
+        // Promotion bonus: +1500g on top of whatever they have
+        npc.gold = (npc.gold || 0) + 1500;
         if (npc.gold < minGold) {
-            npc.gold = minGold + Math.floor((world.rng ? world.rng.random() : Math.random()) * 2000);
+            npc.gold = minGold + Math.floor((world.rng ? world.rng.random() : Math.random()) * (minGold * 0.6));
         }
         // Assign unused heraldry
         if (!npc.heraldry && typeof ELITE_MERCHANT_HERALDRY !== 'undefined' && ELITE_MERCHANT_HERALDRY.length > 0) {
@@ -158,9 +159,10 @@
         var lastName = rng.pick(NAMES.surnames);
         var age = rng.randInt(25, 55);
         var gold;
-        if (age <= 35) gold = rng.randInt(500, 2000);
-        else if (age <= 50) gold = rng.randInt(2000, 8000);
-        else gold = rng.randInt(5000, 15000);
+        // v9p33river497: bumped starting gold so fresh EMs can actually compete.
+        if (age <= 35) gold = rng.randInt(4000, 12000);
+        else if (age <= 50) gold = rng.randInt(12000, 35000);
+        else gold = rng.randInt(25000, 60000);
 
         var person = {
             id: uid('p'),
@@ -598,11 +600,11 @@
 
     const STRATEGY_GOODS = {
         food_monopoly:     ['wheat', 'bread', 'meat', 'fish', 'eggs', 'flour', 'preserved_food'],
-        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
+        military_supplier: ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'shields', 'shields_good', 'shields_great', 'bows', 'bows_good', 'bows_excellent', 'iron', 'iron_ore', 'tools', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
         luxury_trader:     ['jewelry', 'wine', 'silk', 'spices', 'gold_ore', 'dye', 'furniture', 'fine_clothes', 'cloth', 'drum', 'lute', 'harp'],
         diversified:       ['wheat', 'cloth', 'tools', 'iron', 'wood', 'bread', 'wool'],
         political_climber: ['wine', 'jewelry', 'silk', 'furniture', 'spices'],
-        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
+        war_profiteer:     ['swords', 'swords_good', 'swords_excellent', 'armor', 'armor_good', 'armor_excellent', 'shields', 'shields_good', 'shields_great', 'bows', 'bows_good', 'bows_excellent', 'bread', 'preserved_food', 'iron', 'blasting_powder', 'demolition_tools', 'arrows', 'arrows_good', 'steel', 'charcoal', 'coal'],
         land_baron:        ['wheat', 'wood', 'stone', 'wool', 'iron_ore'],
         trade_network:     ['cloth', 'tools', 'salt', 'spices', 'wine', 'dye', 'leather', 'preserved_food', 'ale'],
         // v9p33river439: bugfix — medical_supplier was missing here, so the new strategy-goods API fell back to diversified goods.
@@ -1992,8 +1994,19 @@
 
             // ---- 3. BUILD DECISIONS (strategy + ambition driven) ----
             var buildInterval = Math.max(5, Math.floor(sMod.buildFreq * ((personality.ambition || 50) > 65 ? 0.7 : 1.0)));
+            // v9p33river497: wealthy idle EMs build aggressively. The player
+            // typically reinvests gold into new buildings as fast as they can
+            // afford them — EMs should do the same when sitting on capital.
+            var _emGoldNow = em.gold || 0;
+            var _emBldCount = (em.buildings || []).length;
+            var _wealthyIdle = _emGoldNow > 25000 && _emBldCount < 8;
+            var _veryWealthyIdle = _emGoldNow > 75000 && _emBldCount < 15;
+            if (_veryWealthyIdle) buildInterval = Math.max(2, Math.floor(buildInterval * 0.25));
+            else if (_wealthyIdle) buildInterval = Math.max(3, Math.floor(buildInterval * 0.4));
             if (day % buildInterval === 0) {
                 eliteBuildAI(em, town, rng, strategy);
+                // v9p33river497: very wealthy EMs may try a second building same tick.
+                if (_veryWealthyIdle && rng.chance(0.5)) eliteBuildAI(em, town, rng, strategy);
             }
 
             // ---- 3a. TRANSPORT ACQUISITION (every 15 days) ----
@@ -2478,7 +2491,7 @@
         if (strategy === 'war_profiteer') {
             var warringKingdoms = world.kingdoms.filter(function(kk) { return kk.atWar && kk.atWar.size > 0; });
             if (warringKingdoms.length > 0) {
-                var militaryGoods = ['swords', 'armor', 'bows', 'arrows', 'horses', 'iron', 'preserved_food'];
+                var militaryGoods = ['swords', 'armor', 'shields', 'bows', 'arrows', 'horses', 'iron', 'preserved_food'];
                 var isInWarZone = warringKingdoms.some(function(kk) { return kk.id === town.kingdomId; });
                 inv = em.npcMerchantInventory;
 
@@ -2608,6 +2621,17 @@
                     var osDemand = destTown.market.demand[gId] || 0;
                     var osSupply = destTown.market.supply[gId] || 0;
                     if (osSupply === 0 && osDemand >= 10) score += 25;
+                }
+
+                // v9p33river497: surplus signal. If the CURRENT town has a
+                // glut of this good (>=2000 supply), strongly prefer
+                // destinations that will absorb it. And if the destination
+                // itself has surplus we should AVOID dumping more there.
+                if (currentTown._surplusGoods && currentTown._surplusGoods[gId]) {
+                    score += Math.floor(15 * currentTown._surplusGoods[gId].exportPriority);
+                }
+                if (destTown._surplusGoods && destTown._surplusGoods[gId]) {
+                    score -= Math.floor(10 * destTown._surplusGoods[gId].exportPriority);
                 }
 
                 // Cross-kingdom arbitrage: evaluate actual profit after tariffs (requires trade_network or global_trade_intel)
