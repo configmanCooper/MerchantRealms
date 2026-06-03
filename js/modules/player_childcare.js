@@ -154,6 +154,14 @@
         if (player._activeNanny) return { success: false, message: 'You already have a nanny.' };
         var town = _findTown(player.townId);
         if (!town) return { success: false, message: 'You must be in a town to hire a nanny.' };
+        // v9p33river506: spouse takes precedence over a paid nanny. If the
+        // spouse is currently in the right town and willing/able to care
+        // for the kids, there's no reason to pay 100g/wk for a nanny.
+        var _spouseNow = _spouseCaregiver();
+        if (_spouseNow) {
+            var _spName = ((_spouseNow.firstName || '') + ' ' + (_spouseNow.lastName || '')).trim() || 'Your spouse';
+            return { success: false, message: _spName + ' is already caring for the children. No nanny needed.' };
+        }
         if ((player.gold || 0) < NANNY_WEEKLY_COST) {
             return { success: false, message: 'You need at least ' + NANNY_WEEKLY_COST + 'g for the first week.' };
         }
@@ -276,6 +284,17 @@
 
         // Nanny: weekly auto-charge; if cannot pay, nanny leaves
         if (player._activeNanny) {
+            // v9p33river506: if the spouse is now able to care for the kids,
+            // auto-dismiss the paid nanny — no need to keep paying when the
+            // spouse moved into the same town / became available again.
+            var _spouseCovers = _spouseCaregiver();
+            if (_spouseCovers) {
+                var _firedName = player._activeNanny.name || 'The nanny';
+                var _spFullName = ((_spouseCovers.firstName || '') + ' ' + (_spouseCovers.lastName || '')).trim() || 'your spouse';
+                player._activeNanny = null;
+                _logEvent('👶 Dismissed ' + _firedName + ' — ' + _spFullName + ' is now caring for the children.', null, 'my_actions');
+                _toast(_firedName + ' dismissed — ' + _spFullName + ' is now caring for the children.', 'info');
+            } else {
             // v9p33river366: a nanny hired on day 0 should not be charged again on day 1.
             if (player._lastNannyChargeDay == null || day - player._lastNannyChargeDay >= 7) {
                 if ((player.gold || 0) >= NANNY_WEEKLY_COST) {
@@ -288,6 +307,7 @@
                     _logEvent('👶 ' + nName + ' has left — you could not afford their wages.', null, 'my_actions');
                     _toast(nName + ' left because you could not pay. Your children are unattended!', 'warning');
                 }
+            }
             }
         }
 
