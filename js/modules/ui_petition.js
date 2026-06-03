@@ -404,14 +404,14 @@
                 var townNpcs = world.people.filter(function(p) {
                     if (!p.alive) return false;
                     if (p.townId !== Player.townId) return false;
-                    // v9p33river496: kingdomId match is the primary filter.
-                    // Previously also required socialRank>=1 numerically, but
-                    // person.socialRank is an OBJECT keyed by kingdomId — that
-                    // comparison was always false, making ALL townsfolk
-                    // ineligible. Now: anyone of the petition's kingdom who
-                    // physically lives in this town can sign; nobles/EMs still
-                    // carry more weight via weighted-signature calculations.
+                    // v9p33river504: must be a citizen (socialRank >= 1) of the
+                    // petition's kingdom. socialRank is an object keyed by
+                    // kingdomId. Elite merchants are auto-citizens by status.
                     if (p.kingdomId !== petition.kingdomId) return false;
+                    var _rank = (p.socialRank && typeof p.socialRank === 'object')
+                                ? (p.socialRank[petition.kingdomId] || 0)
+                                : 0;
+                    if (_rank < 1 && !p.isEliteMerchant) return false;
                     if ((petition.signatures || []).includes(p.id)) return false;
                     if ((_askCounts[p.id] || 0) >= 2) return false;
                     return true;
