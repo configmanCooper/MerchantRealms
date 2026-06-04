@@ -30626,16 +30626,20 @@
                     var _pfPlayerRank = (Player.state && Player.state.socialRank && Player.state.socialRank[k.id]) || 0;
                     if (!_pfIsKing && (_pfPlayerRank >= 4 || (_pfPerson && _pfPerson.socialRank && _pfPerson.socialRank[k.id] >= 4))) {
                         if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
-                        Player.state._feastInvitations.push({
-                            kingdomId: k.id,
-                            feastId: k._activeFeast.id,
-                            townId: pf.townId,
-                            townName: pf.townName || k.name,
-                            kingdomName: k.name,
-                            endDay: k._activeFeast.endDay,
-                            inviteDay: world.day
-                        });
-                        logEvent('📨 You have been invited to the Royal Feast in ' + (pf.townName || k.name) + '! Open the Nobility panel to RSVP.', null, 'my_kingdom');
+                        // v9p33river510: don't double-create — auto-feasts now create a pending invitation 5 days early.
+                        var _alreadyInvitedForThis = Player.state._feastInvitations.some(function(inv) { return inv && inv.feastId === k._activeFeast.id; });
+                        if (!_alreadyInvitedForThis) {
+                            Player.state._feastInvitations.push({
+                                kingdomId: k.id,
+                                feastId: k._activeFeast.id,
+                                townId: pf.townId,
+                                townName: pf.townName || k.name,
+                                kingdomName: k.name,
+                                endDay: k._activeFeast.endDay,
+                                inviteDay: world.day
+                            });
+                            logEvent('📨 You have been invited to the Royal Feast in ' + (pf.townName || k.name) + '! Open the Nobility panel to RSVP.', null, 'my_kingdom');
+                        }
                     }
                 }
             } catch (e) { /* Player not loaded */ }
@@ -30783,6 +30787,10 @@
         }
 
         // Start new feast (NPC kingdom auto-feast — skip if player is king, they schedule manually)
+        // v9p33river510: route auto-feasts through `_pendingFeast` with a 5-day lead time so that
+        // the nobility panel can show "Upcoming Feast" announcements. Previously NPC auto-feasts
+        // jumped straight to `_activeFeast` with zero advance notice, which made players think
+        // their king "never schedules feasts" because they could only see the 3-day active window.
         var _isPlayerKingForFeast = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === k.id;
         if (!_isPlayerKingForFeast && !k._activeFeast && !k._pendingFeast && !k._pendingCourt && !(k._courtSession && k._courtSession.cases && k._courtSession.cases.some(function(c) { return !c.resolved; })) && world.day >= k._nextFeastDay) {
             var feastTownId = k.capitalTownId || (k.territories && k.territories.size > 0 ? Array.from(k.territories)[0] : null);
@@ -30794,78 +30802,82 @@
             if (feastTownId) {
             var feastTown = findTown(feastTownId);
             var feastTownName = feastTown ? feastTown.name : 'the capital';
-
-            k._activeFeast = {
-                // v9p33river429: include kingdom id so same-day feasts in different kingdoms do not share an id.
-                id: 'feast_' + k.id + '_' + world.day,
-                townId: feastTownId,
-                startDay: world.day,
-                endDay: world.day + 3,
-                attendees: [],
-                events: [],
-                _playerActionsToday: 0,
-                _playerActionDay: 0
-            };
+            var _feastLead = 5; // days of advance notice
+            var _feastStartDay = world.day + _feastLead;
+            var _feastEndDay = _feastStartDay + 3;
+            var _feastId = 'feast_' + k.id + '_' + _feastStartDay;
 
             // Populate attendees: all alive nobles rank 4-7 in this kingdom
             var kId = k.id;
             var allNobles = world.people.filter(function(p) {
                 return p.alive && p.socialRank && p.socialRank[kId] >= 4 && p.socialRank[kId] <= 7;
             });
-
-            // Random attendance based on personality, loyalty, and relationship with king
-            var attendRate = (rng.randInt(60, 80)) / 100;
             var shuffled = rng.shuffle(allNobles.slice());
-            var attendCount = Math.max(1, Math.floor(shuffled.length * attendRate));
 
-            // L5: If player is king, check for custom invitation list
+            // L5: If player is king, check for custom invitation list (legacy, kept for safety)
             var _playerIsKing = false;
             try {
                 _playerIsKing = typeof Player !== 'undefined' && Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
             } catch(e) {}
+
+            // Build invitedNobles list — personality-based RSVP at announcement time.
+            var _invitedNobles = [];
             if (_playerIsKing && k._playerFeastInvites && k._playerFeastInvites.length > 0) {
-                // Use player's custom invite list
                 for (var _pfi = 0; _pfi < k._playerFeastInvites.length; _pfi++) {
-                    k._activeFeast.attendees.push(k._playerFeastInvites[_pfi]);
+                    var _pfNoble = findPerson(k._playerFeastInvites[_pfi]);
+                    _invitedNobles.push({
+                        id: k._playerFeastInvites[_pfi],
+                        name: _pfNoble ? (((_pfNoble.firstName || '') + ' ' + (_pfNoble.lastName || '')).trim()) : '',
+                        accepted: true,
+                        arrivalDay: _feastStartDay
+                    });
                 }
-                k._playerFeastInvites = null; // consumed
+                k._playerFeastInvites = null;
             } else {
-                // Personality-based attendance using shared function
                 for (var ai = 0; ai < shuffled.length; ai++) {
                     var _fNoble = shuffled[ai];
                     var _fAttendChance = _computeNobleAttendChance(_fNoble, 'feast', 0);
-                    if (rng.chance(_fAttendChance)) {
-                        k._activeFeast.attendees.push(_fNoble.id);
-                    }
+                    var _willAttend = rng.chance(_fAttendChance);
+                    _invitedNobles.push({
+                        id: _fNoble.id,
+                        name: ((_fNoble.firstName || '') + ' ' + (_fNoble.lastName || '')).trim(),
+                        accepted: _willAttend,
+                        arrivalDay: _feastStartDay
+                    });
                 }
             }
 
-            // Player feast invitation: if player is noble (not king), create invitation instead of auto-adding
+            k._pendingFeast = {
+                id: _feastId,
+                townId: feastTownId,
+                townName: feastTownName,
+                startDay: _feastStartDay,
+                endDay: _feastEndDay,
+                invitedNobles: _invitedNobles,
+                _kingHosted: true,
+                _maxActionsPerDay: 5,
+                _invitedEMs: []
+            };
+
+            // Player feast invitation (noble): give player advance notice so they can travel.
             try {
                 if (typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId) {
                     var playerPersonId = Player.personId || 'player';
                     var playerPerson = findPerson(playerPersonId);
-                    // Player is NOT in world.people — use Player.state for rank check
                     var _playerRankForFeast = (Player.state && Player.state.socialRank && Player.state.socialRank[kId]) || 0;
                     var _pIsKing = Player.state && Player.state.isKing && Player.state.kingState && Player.state.kingState.kingdomId === kId;
-                    if (_pIsKing) {
-                        // King always attends their own feast
-                        if (k._activeFeast.attendees.indexOf(playerPersonId) < 0) {
-                            k._activeFeast.attendees.push(playerPersonId);
-                        }
-                    } else if (_playerRankForFeast >= 4 || (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4)) {
-                        // Noble player gets an invitation they can accept/decline
+                    if (!_pIsKing && (_playerRankForFeast >= 4 || (playerPerson && playerPerson.socialRank && playerPerson.socialRank[kId] >= 4))) {
                         if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
                         Player.state._feastInvitations.push({
                             kingdomId: kId,
-                            feastId: k._activeFeast.id,
+                            feastId: _feastId,
                             townId: feastTownId,
                             townName: feastTownName,
                             kingdomName: k.name,
-                            endDay: k._activeFeast.endDay,
+                            endDay: _feastEndDay,
                             inviteDay: world.day
                         });
-                        logEvent('📨 You have been invited to a Royal Feast in ' + feastTownName + '! Open the Noble panel to RSVP.', null, 'my_kingdom');
+                        logEvent('📨 You have been invited to a Royal Feast in ' + feastTownName + ' beginning in ' + _feastLead + ' days! Open the Nobility panel to RSVP.', null, 'my_kingdom');
                     }
                 }
             } catch (e) { /* Player not loaded */ }
@@ -30873,79 +30885,71 @@
             // ── Noble invitations to Elite Merchants and non-noble player ──
             // Nobles attending the feast may invite EMs or the player (burgher+ rank) if they have good relationships
             try {
-                var _feastAttendees = k._activeFeast.attendees;
                 var _invitedEMs = [];
-                // Check each attending noble for EM/player relationships
-                for (var _ini = 0; _ini < _feastAttendees.length; _ini++) {
-                    var _invNoble = findPerson(_feastAttendees[_ini]);
+                for (var _ini = 0; _ini < _invitedNobles.length; _ini++) {
+                    if (!_invitedNobles[_ini].accepted) continue;
+                    var _invNoble = findPerson(_invitedNobles[_ini].id);
                     if (!_invNoble || !_invNoble._nobleRelationships) continue;
                     var _invNp = _invNoble.personality || {};
-                    // Social/warm nobles are more likely to invite
                     var _invBaseChance = 0.15;
                     if ((_invNp.social || 50) > 60) _invBaseChance += 0.10;
                     if ((_invNp.warmth || 50) > 60) _invBaseChance += 0.05;
-                    if ((_invNp.ambition || 50) > 65) _invBaseChance += 0.05; // ambitious nobles network
+                    if ((_invNp.ambition || 50) > 65) _invBaseChance += 0.05;
 
-                    // Check EMs this noble has relationship with
                     if (world.eliteMerchants) {
                         for (var _emi = 0; _emi < world.eliteMerchants.length; _emi++) {
                             var _em = world.eliteMerchants[_emi];
                             if (!_em || !_em.alive || !_em.id) continue;
-                            if (_invitedEMs.indexOf(_em.id) >= 0) continue; // already invited
-                            // EM must be at least burgher (rank 3) in this kingdom
+                            if (_invitedEMs.indexOf(_em.id) >= 0) continue;
                             var _emRank = (_em.socialRank && _em.socialRank[kId]) || 0;
                             if (_emRank < 3) continue;
-                            // Check relationship
                             var _emRel = _invNoble._nobleRelationships[_em.id] || 0;
-                            if (_emRel < 30) continue; // need decent relationship
-                            // Calculate invite chance
+                            if (_emRel < 30) continue;
                             var _emInvChance = _invBaseChance;
                             if (_emRel > 60) _emInvChance += 0.15;
                             else if (_emRel > 45) _emInvChance += 0.08;
-                            if (_emRank >= 4) _emInvChance += 0.10; // guildmaster more likely
+                            if (_emRank >= 4) _emInvChance += 0.10;
                             if (rng.chance(_emInvChance)) {
                                 _invitedEMs.push(_em.id);
-                                k._activeFeast.attendees.push(_em.id);
-                                // Mark the EM as feast-invited for AI behavior
                                 if (!_em._feastInvitation) _em._feastInvitation = {};
-                                _em._feastInvitation = { kingdomId: kId, feastId: k._activeFeast.id, townId: feastTownId, invitedBy: _invNoble.id, endDay: k._activeFeast.endDay };
+                                _em._feastInvitation = { kingdomId: kId, feastId: _feastId, townId: feastTownId, invitedBy: _invNoble.id, endDay: _feastEndDay };
                             }
                         }
                     }
 
-                    // Check if this noble wants to invite the player (non-noble, burgher+ rank)
                     try {
                         if (typeof Player !== 'undefined' && Player.personId) {
                             var _pPersonId2 = Player.personId;
                             var _pPerson2 = findPerson(_pPersonId2);
                             var _pRank2 = (_pPerson2 && _pPerson2.socialRank && _pPerson2.socialRank[kId]) || 0;
+                            // For Player not in world.people, fall back to Player.state.socialRank
+                            if (!_pRank2 && Player.state && Player.state.socialRank) _pRank2 = Player.state.socialRank[kId] || 0;
                             var _pIsKingAlready2 = Player.state && Player.state.isKing;
-                            // Only invite if player is burgher/guildmaster (rank 3-4), not already a noble (5+), not king
-                            if (!_pIsKingAlready2 && _pRank2 >= 3 && _pRank2 < 5 && k._activeFeast.attendees.indexOf(_pPersonId2) < 0) {
+                            if (!_pIsKingAlready2 && _pRank2 >= 3 && _pRank2 < 5) {
                                 var _pRel2 = _invNoble._nobleRelationships[_pPersonId2] || 0;
                                 if (_pRel2 >= 30) {
                                     var _pInvChance2 = _invBaseChance;
                                     if (_pRel2 > 60) _pInvChance2 += 0.15;
                                     else if (_pRel2 > 45) _pInvChance2 += 0.08;
-                                    if (_pRank2 >= 4) _pInvChance2 += 0.10; // guildmaster
+                                    if (_pRank2 >= 4) _pInvChance2 += 0.10;
                                     if (rng.chance(_pInvChance2)) {
                                         if (!Player.state._feastInvitations) Player.state._feastInvitations = [];
-                                        var _alreadyInvited2 = Player.state._feastInvitations.some(function(inv) { return inv.feastId === k._activeFeast.id; });
+                                        var _alreadyInvited2 = Player.state._feastInvitations.some(function(inv) { return inv.feastId === _feastId; });
                                         if (!_alreadyInvited2) {
                                             var _invName2 = (_invNoble.firstName || 'A noble') + ' ' + (_invNoble.lastName || '');
                                             Player.state._feastInvitations.push({
                                                 kingdomId: kId,
-                                                feastId: k._activeFeast.id,
+                                                feastId: _feastId,
                                                 townId: feastTownId,
                                                 townName: feastTownName,
                                                 kingdomName: k.name,
-                                                endDay: k._activeFeast.endDay,
+                                                endDay: _feastEndDay,
                                                 inviteDay: world.day,
                                                 invitedBy: _invNoble.id,
                                                 inviterName: _invName2.trim(),
                                                 isMerchantInvite: true
                                             });
-                                            logEvent('📨 ' + _invName2.trim() + ' has invited you to the Royal Feast in ' + feastTownName + '! You must travel there to attend.', null, 'my_kingdom');
+                                            logEvent('📨 ' + _invName2.trim() + ' has invited you to the Royal Feast in ' + feastTownName + ' beginning in ' + _feastLead + ' days! Travel there before it begins to attend.', null, 'my_kingdom');
                                         }
                                     }
                                 }
@@ -30954,16 +30958,16 @@
                     } catch(e2) {}
                 }
                 if (_invitedEMs.length > 0) {
-                    k._activeFeast._invitedEMs = _invitedEMs;
+                    k._pendingFeast._invitedEMs = _invitedEMs;
                 }
             } catch(e3) { /* EM invitation error */ }
 
             var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id;
-            logEvent('🎪 The king of ' + k.name + ' is hosting a Royal Feast in ' + feastTownName + '! (3 days)', {
-                type: 'feast_started', kingdomId: k.id, townId: feastTownId,
+            logEvent('📅 The king of ' + k.name + ' has announced a Royal Feast in ' + feastTownName + ' beginning in ' + _feastLead + ' days! (3-day feast)', {
+                type: 'feast_announced', kingdomId: k.id, townId: feastTownId,
                 cause: 'The king has called a Royal Feast',
-                effects: ['Nobles gather in ' + feastTownName, 'The feast lasts 3 days'],
-                _noToast: true
+                effects: ['Nobles will gather in ' + feastTownName + ' in ' + _feastLead + ' days', 'The feast will last 3 days'],
+                _noToast: false
             }, isPlayerK ? 'my_kingdom' : 'foreign_kingdoms');
 
             // M1: Smarter feast scheduling based on king personality and kingdom state
@@ -30991,7 +30995,8 @@
             }
             _feastBaseMin = Math.max(30, _feastBaseMin); // 30-day cooldown per user request
             _feastBaseMax = Math.max(_feastBaseMin + 10, _feastBaseMax);
-            k._nextFeastDay = world.day + rng.randInt(_feastBaseMin, _feastBaseMax);
+            // v9p33river510: schedule next from the END of this feast, not from announcement day.
+            k._nextFeastDay = _feastEndDay + rng.randInt(_feastBaseMin, _feastBaseMax);
             } // close v9p33river312 `if (feastTownId)` block
         }
 

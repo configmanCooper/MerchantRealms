@@ -638,7 +638,7 @@ function openNobilityDialog() {
         html += '</div>';
     }
 
-    // ── COURT INTELLIGENCE (M2 — noble relationship viewer) ──
+    // ── COURT INTELLIGENCE (v9p33river510 — scrollable, clickable, word-range) ──
     try {
         var _myKingdomId = null;
         for (var _ck = 0; _ck < kingdoms.length; _ck++) {
@@ -647,46 +647,8 @@ function openNobilityDialog() {
                 break;
             }
         }
-        if (_myKingdomId && typeof Engine !== 'undefined' && Engine.getWorld && Engine.getPeople) {
-            var _ciTowns = Engine.getWorld().towns || [];
-            var _courtNobles = [];
-            var _ciPlayerPId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
-            for (var _cti = 0; _cti < _ciTowns.length; _cti++) {
-                if (_ciTowns[_cti].kingdomId !== _myKingdomId) continue;
-                var _ciPeople = Engine.getPeople(_ciTowns[_cti].id);
-                if (!_ciPeople) continue;
-                for (var _cn = 0; _cn < _ciPeople.length; _cn++) {
-                    var _p = _ciPeople[_cn];
-                    if (_p && _p.alive && _p.id !== _ciPlayerPId && (_p.occupation === 'noble' || _p.isNoble) && !_p.isKing) {
-                        _courtNobles.push(_p);
-                    }
-                }
-            }
-            if (_courtNobles.length > 0) {
-                html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(108,155,209,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
-                html += '<div style="font-size:0.85rem;color:#6c9bd1;margin-bottom:6px;">🏛️ Court Intelligence (' + _courtNobles.length + ' nobles)</div>';
-                var _kingPerson = null;
-                var _myK = Engine.findKingdom ? Engine.findKingdom(_myKingdomId) : null;
-                if (_myK && _myK.king) _kingPerson = Engine.findPerson ? Engine.findPerson(_myK.king) : null;
-                for (var _ci = 0; _ci < Math.min(8, _courtNobles.length); _ci++) {
-                    var _cn2 = _courtNobles[_ci];
-                    var _cnRank = (_cn2.socialRank && _cn2.socialRank[_myKingdomId]) || 4;
-                    var _cnRankLabel = _cnRank >= 6 ? 'RA' : _cnRank >= 5 ? 'Lord' : 'Noble';
-                    var _cnLoyalty = _cn2._nobleRelationships && _kingPerson ? (_cn2._nobleRelationships[_kingPerson.id] || 0) : 0;
-                    var _cnLoyColor = _cnLoyalty >= 30 ? '#55a868' : _cnLoyalty >= 0 ? '#ccb974' : '#c44e52';
-                    var _cnRep = (_cn2.reputation && _cn2.reputation[_myKingdomId]) ? _cn2.reputation[_myKingdomId] : 50;
-                    var _cnScan = _cn2._scandalized ? ' 💥' : '';
-                    var _cnFaction = _cn2._faction ? (' [' + _cn2._faction.charAt(0).toUpperCase() + _cn2._faction.slice(1) + ']') : '';
-                    html += '<div style="font-size:0.78rem;padding:2px 0;color:#ccc;">';
-                    html += '<b>' + escapeHtml(_cn2.firstName || '?') + '</b> [' + _cnRankLabel + ']';
-                    html += ' — King rel: <span style="color:' + _cnLoyColor + ';">' + _cnLoyalty + '</span>';
-                    html += ' | Rep: ' + Math.floor(_cnRep) + _cnScan + _cnFaction;
-                    html += '</div>';
-                }
-                if (_courtNobles.length > 8) html += '<div style="font-size:0.7rem;color:#888;">...and ' + (_courtNobles.length - 8) + ' more</div>';
-                html += '<div style="font-size:0.65rem;color:#888;margin-top:4px;">Shows noble-to-king relationships and reputation. Use schemes to shift the balance of power.</div>';
-                html += '</div>';
-            }
+        if (_myKingdomId) {
+            html += _renderCourtIntelligencePanel(_myKingdomId);
         }
     } catch(e) {}
 
@@ -2043,36 +2005,10 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         }
     }
 
-    // Court Intelligence (also show here for easy reference)
+    // Court Intelligence (v9p33river510 — shared scrollable panel)
     try {
-        if (nobles.length > 0) {
-            html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(108,155,209,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
-            html += '<div style="font-size:0.85rem;color:#6c9bd1;margin-bottom:6px;">🏛️ Court Intelligence (' + nobles.length + ' nobles)</div>';
-            var _kingPerson = null;
-            if (kingdom && kingdom.king && typeof Engine !== 'undefined' && Engine.findPerson) _kingPerson = Engine.findPerson(kingdom.king);
-            for (var _ci = 0; _ci < Math.min(12, nobles.length); _ci++) {
-                var _cn = nobles[_ci];
-                var _cnRank = (_cn.socialRank && _cn.socialRank[targetKingdomId]) || 4;
-                var _cnRL = _cnRank >= 6 ? 'RA' : _cnRank >= 5 ? 'Lord' : 'Noble';
-                var _cnLoy = _cn._nobleRelationships && _kingPerson ? (_cn._nobleRelationships[_kingPerson.id] || 0) : 0;
-                var _cnLC = _cnLoy >= 30 ? '#55a868' : _cnLoy >= 0 ? '#ccb974' : '#c44e52';
-                var _cnRep = (_cn.reputation && _cn.reputation[targetKingdomId]) ? Math.floor(_cn.reputation[targetKingdomId]) : 50;
-                var _cnScan = _cn._scandalized ? ' 💥' : '';
-                var _cnFact2 = _cn._faction ? (' [' + _cn._faction.charAt(0).toUpperCase() + _cn._faction.slice(1) + ']') : '';
-                // Player relationship
-                var _cnPRel = 0;
-                try { var _pr = Player.getRelationship ? Player.getRelationship(_cn.id) : null; _cnPRel = _pr ? _pr.level : 0; } catch(e) {}
-                var _cnPRC = _cnPRel >= 40 ? '#55a868' : _cnPRel >= 10 ? '#ccb974' : _cnPRel > -10 ? '#aaa' : '#c44e52';
-                html += '<div style="font-size:0.75rem;padding:2px 0;color:#ccc;">';
-                html += '<b>' + escapeHtml(_cn.firstName || '?') + '</b> [' + _cnRL + ']';
-                html += ' — King: <span style="color:' + _cnLC + ';">' + _cnLoy + '</span>';
-                html += ' | Rep: ' + _cnRep + _cnScan;
-                html += ' | You: <span style="color:' + _cnPRC + ';">' + _cnPRel + '</span>';
-                html += _cnFact2;
-                html += '</div>';
-            }
-            if (nobles.length > 12) html += '<div style="font-size:0.7rem;color:#888;">...and ' + (nobles.length - 12) + ' more</div>';
-            html += '</div>';
+        if (targetKingdomId) {
+            html += _renderCourtIntelligencePanel(targetKingdomId);
         }
     } catch(e) {}
 
@@ -3879,6 +3815,130 @@ function _switchProposeActionTab(tabId, kingdomId) {
     });
     UI.registerAction('_switchKQTab', function(_t, d) { UI._switchKQTab(d.tab, d.kingdom); });
     UI.registerAction('_attemptKQActionUI', function(_t, d) { if (d.id && d.kingdom) UI._attemptKQActionUI(d.id, d.kingdom); });
+
+    // v9p33river510: shared Court Intelligence panel renderer
+    // ─────────────────────────────────────────────────────────
+    // Used by both Status and Influence tabs in the Nobility dialog. Renders a
+    // scrollable list of all nobles in `kingdomId`, with clickable names that open
+    // each NPC's right-panel detail view (the nobility modal stays open). Replaces
+    // the long decimal numbers with word-range descriptions.
+    function _courtRangeWord(val, scale) {
+        var n = Math.max(0, Math.min(100, Math.round(val || 0)));
+        var bucket = n < 25 ? 0 : n < 50 ? 1 : n < 75 ? 2 : 3;
+        return scale[bucket];
+    }
+    var _CR_KING_REL    = ['Estranged', 'Distant', 'Warm', 'Devoted'];
+    var _CR_KING_RELCOL = ['#c44e52', '#ccb974', '#7dd087', '#55a868'];
+    var _CR_PERCEIVED   = ['Suspect', 'Wavering', 'Trusted', 'Beloved'];
+    var _CR_ACTUAL      = ['Disloyal', 'Unsteady', 'Loyal', 'Devoted'];
+    function _courtRangeBucket(val) {
+        var n = Math.max(0, Math.min(100, Math.round(val || 0)));
+        return n < 25 ? 0 : n < 50 ? 1 : n < 75 ? 2 : 3;
+    }
+    var _STANCE_LABELS = {
+        loyalist:      { name: 'Loyalist',      tip: 'Defers to the crown. Tends to vote with the king on most issues.' },
+        reformist:     { name: 'Reformist',     tip: 'Pushes for policy reforms and infrastructure; opposes wars and harsh laws.' },
+        expansionist:  { name: 'Expansionist',  tip: 'Favors aggressive expansion. Votes for wars, annexations, and military spending.' },
+        traditionalist:{ name: 'Traditionalist',tip: 'Resists change; upholds old customs and the established order.' }
+    };
+
+    function _renderCourtIntelligencePanel(myKingdomId, opts) {
+        opts = opts || {};
+        if (!myKingdomId) return '';
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(myKingdomId) : null;
+        if (!kingdom) return '';
+        var kingPerson = (kingdom.king && Engine.findPerson) ? Engine.findPerson(kingdom.king) : null;
+        var playerPId = (typeof Player !== 'undefined' && Player.personId) ? Player.personId : 'player';
+
+        // Collect nobles directly from world.people (more reliable than per-town walk).
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        var people = (world && world.people) ? world.people : [];
+        var nobles = [];
+        for (var ni = 0; ni < people.length; ni++) {
+            var p = people[ni];
+            if (!p || !p.alive || p.id === playerPId) continue;
+            if (p.isKing) continue;
+            var rank = (p.socialRank && p.socialRank[myKingdomId]) || 0;
+            if (rank < 4) continue;
+            nobles.push(p);
+        }
+        if (nobles.length === 0) return '';
+
+        // Sort by rank desc, then by king-relationship desc
+        nobles.sort(function(a, b) {
+            var rA = (a.socialRank && a.socialRank[myKingdomId]) || 0;
+            var rB = (b.socialRank && b.socialRank[myKingdomId]) || 0;
+            if (rB !== rA) return rB - rA;
+            var lA = (kingPerson && a._nobleRelationships && a._nobleRelationships[kingPerson.id]) || 0;
+            var lB = (kingPerson && b._nobleRelationships && b._nobleRelationships[kingPerson.id]) || 0;
+            return lB - lA;
+        });
+
+        var html = '';
+        html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(108,155,209,0.15);border-radius:8px;padding:10px;margin-bottom:10px;">';
+        html += '<div style="font-size:0.85rem;color:#6c9bd1;margin-bottom:6px;">🏛️ Court Intelligence (' + nobles.length + ' nobles)</div>';
+        html += '<div style="max-height:260px;overflow-y:auto;padding-right:4px;">';
+        for (var i = 0; i < nobles.length; i++) {
+            var n2 = nobles[i];
+            var rank2 = (n2.socialRank && n2.socialRank[myKingdomId]) || 4;
+            var rankLabel = rank2 >= 6 ? 'RA' : rank2 >= 5 ? 'Lord' : 'Noble';
+            var kingRel = (kingPerson && n2._nobleRelationships && n2._nobleRelationships[kingPerson.id]) || 0;
+            var kingRelBucket = _courtRangeBucket(kingRel);
+            var kingRelWord = _CR_KING_REL[kingRelBucket];
+            var kingRelCol = _CR_KING_RELCOL[kingRelBucket];
+            var rep = (n2.reputation && n2.reputation[myKingdomId] != null) ? Math.floor(n2.reputation[myKingdomId]) : 50;
+            var scandalMark = n2._scandalized ? ' 💥' : '';
+            var stanceKey = n2._faction || '';
+            var stanceInfo = _STANCE_LABELS[stanceKey] || null;
+            // Player relationship with this noble — to decide whether to reveal actual loyalty
+            var playerRel = 0;
+            try {
+                if (typeof Player !== 'undefined' && Player.getRelationship) {
+                    var _r = Player.getRelationship(n2.id);
+                    playerRel = (_r && _r.level) || 0;
+                }
+            } catch(e) {}
+            var perceivedLoy = (n2.perceivedKingLoyalty != null) ? n2.perceivedKingLoyalty : (n2.kingLoyalty || 50);
+            var perceivedWord = _CR_PERCEIVED[_courtRangeBucket(perceivedLoy)];
+            var actualWord = null;
+            if (playerRel >= 60 && n2.kingLoyalty != null) {
+                actualWord = _CR_ACTUAL[_courtRangeBucket(n2.kingLoyalty)];
+            }
+            var portrait = '';
+            try {
+                if (typeof Player !== 'undefined' && Player.getPersonPortrait) portrait = Player.getPersonPortrait(n2);
+            } catch(e) {}
+            var fullName = ((n2.firstName || '') + ' ' + (n2.lastName || '')).trim() || (n2.firstName || '?');
+
+            html += '<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid rgba(108,155,209,0.08);font-size:0.78rem;color:#ccc;">';
+            html += '<div style="font-size:1.2rem;line-height:1.1;flex-shrink:0;width:1.4rem;text-align:center;">' + (portrait || '👤') + '</div>';
+            html += '<div style="flex:1;min-width:0;">';
+            // Clickable name — UI.showPersonDetail writes into the right panel, leaving the nobility modal open.
+            html += '<a href="javascript:void(0)" data-action="showPersonLink" data-id="' + n2.id + '" style="color:#e8c76a;font-weight:bold;text-decoration:none;cursor:pointer;">' + escapeHtml(fullName) + '</a>';
+            html += ' <span style="color:#aaa;font-size:0.72rem;">[' + rankLabel + ']</span>';
+            html += scandalMark;
+            html += '<div style="font-size:0.72rem;color:#bbb;margin-top:1px;">';
+            html += 'King rel: <span style="color:' + kingRelCol + ';">' + kingRelWord + '</span>';
+            html += ' · Rep: ' + rep;
+            html += ' · Perceived loyalty: <span style="color:#9cb;">' + perceivedWord + '</span>';
+            if (actualWord) {
+                html += ' · <span title="Visible because you are close enough to this noble to know their true feelings (relationship 60+).">Actual: <span style="color:#d4af37;">' + actualWord + '</span></span>';
+            }
+            html += '</div>';
+            if (stanceInfo) {
+                html += '<div style="font-size:0.72rem;color:#bbb;margin-top:1px;">';
+                html += '<span title="' + escapeHtml(stanceInfo.tip) + '" style="cursor:help;border-bottom:1px dotted #888;">Stance:</span> ';
+                html += '<span style="color:#a5b9d6;" title="' + escapeHtml(stanceInfo.tip) + '">' + stanceInfo.name + '</span>';
+                html += '</div>';
+            }
+            html += '</div>';
+            html += '</div>';
+        }
+        html += '</div>'; // scroll container
+        html += '<div style="font-size:0.65rem;color:#888;margin-top:6px;">Click a noble\'s name to view their details. Relationship 60+ reveals their true loyalty. Use schemes to shift the balance of power.</div>';
+        html += '</div>';
+        return html;
+    }
 
     // Court petition modal: select a petition type and present it directly to the king
     function _openCourtPetitionModal(kingdomId) {
