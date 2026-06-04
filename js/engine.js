@@ -16770,77 +16770,187 @@
         };
     }
 
-    // Compute how much influence a noble has over the king's decisions
+    // v9p33river514: Compute how much influence a noble has over the king's
+    // decisions. Output is on a 1-8 scale based on (a) noble's rank, (b) their
+    // relationship with the king (approximated by actual kingLoyalty), and
+    // (c) the king's perceived loyalty of that noble. Intelligence/warmth and
+    // king's own intelligence give smaller modifiers on top.
     function _computeNobleInfluence(noble, kingdom) {
-        if (!noble || !kingdom) return 0;
+        if (!noble || !kingdom) return 1;
         var kId = kingdom.id;
         var nRank = (noble.socialRank && noble.socialRank[kId]) || 4;
-        var loyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
-        var perceivedLoyalty = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : loyalty;
+        var actualLoyalty = noble.kingLoyalty != null ? noble.kingLoyalty : 50;
+        var perceivedLoyalty = noble.perceivedKingLoyalty != null ? noble.perceivedKingLoyalty : actualLoyalty;
         var nP = noble.personality || {};
 
-        // Base influence from rank: Minor Noble 1, Lord 2, RA 4
-        var baseInfluence = nRank === 6 ? 4 : nRank === 5 ? 2 : 1;
+        // Base influence from rank: Minor Noble (4) = 1.5, Lord (5) = 3, Royal Advisor (6+) = 5
+        var base = nRank >= 6 ? 5 : nRank === 5 ? 3 : 1.5;
 
-        // Perceived loyalty multiplier: king trusts loyal nobles more
-        var loyaltyMult = 0.5 + (perceivedLoyalty / 100) * 1.0; // 0.5 at 0 loyalty, 1.5 at 100
+        // Noble's relationship with the king (approximated by actual loyalty)
+        var relBonus = ((actualLoyalty - 50) / 100) * 1.5; // ±0.75
 
-        // Intelligence gives more convincing arguments
-        var intBonus = ((nP.intelligence || 50) - 50) * 0.01; // ±0.5
+        // King's perceived loyalty of the noble — kings trust those they
+        // believe loyal and weigh their advice more heavily.
+        var percBonus = ((perceivedLoyalty - 50) / 100) * 1.5; // ±0.75
 
-        // Warmth/charisma makes the noble more persuasive
-        var warmthBonus = ((nP.warmth || 50) - 50) * 0.008; // ±0.4
+        // Personality modifiers (small)
+        var intBonus = ((nP.intelligence || 50) - 50) * 0.012; // ±0.6
+        var warmthBonus = ((nP.warmth || 50) - 50) * 0.008;   // ±0.4
 
-        // King personality interaction: foolish kings influenced more easily
+        // King personality: foolish/dim kings are more easily swayed
         var kp = kingdom.kingPersonality || {};
         var kingMult = 1.0;
-        if (kp.intelligence === 'dim' || kp.intelligence === 'foolish') kingMult = 1.3;
-        else if (kp.intelligence === 'brilliant') kingMult = 0.7;
+        if (kp.intelligence === 'dim' || kp.intelligence === 'foolish') kingMult = 1.15;
+        else if (kp.intelligence === 'brilliant') kingMult = 0.9;
 
-        return Math.max(0.1, (baseInfluence * loyaltyMult + intBonus + warmthBonus) * kingMult);
+        var raw = (base + relBonus + percBonus + intBonus + warmthBonus) * kingMult;
+        return Math.max(1, Math.min(8, Math.round(raw * 10) / 10));
+    }
+
+    // v9p33river514: Compute the player's influence in a kingdom's court on
+    // the same 1-8 scale used for nobles. Driven by player social rank,
+    // relationship with the king, and kingdom reputation (which stands in for
+    // the king's perceived loyalty of the player).
+    function _computePlayerInfluence(kingdom) {
+        if (!kingdom) return 1;
+        var kId = kingdom.id;
+        var pRank = 0;
+        var rel = 50;
+        var rep = 0;
+        try {
+            if (typeof Player !== 'undefined') {
+                var ps = Player.state || {};
+                if (ps.socialRank && ps.socialRank[kId] != null) pRank = ps.socialRank[kId];
+                if (kingdom.king && Player.getRelationship) {
+                    var r = Player.getRelationship(kingdom.king);
+                    if (r && r.level != null) rel = r.level;
+                }
+                if (ps.reputation && ps.reputation[kId] != null) rep = ps.reputation[kId];
+            }
+        } catch (e) {}
+
+        var base = pRank >= 6 ? 5 : pRank === 5 ? 3 : pRank === 4 ? 1.5 : 1;
+        var relBonus = ((rel - 50) / 100) * 2.0; // ±1.0 — relationship matters more for player
+        var repBonus = ((rep - 50) / 100) * 1.5; // ±0.75 — kingdom reputation stands in for perceived loyalty
+
+        var kp = kingdom.kingPersonality || {};
+        var kingMult = 1.0;
+        if (kp.intelligence === 'dim' || kp.intelligence === 'foolish') kingMult = 1.15;
+        else if (kp.intelligence === 'brilliant') kingMult = 0.9;
+
+        var raw = (base + relBonus + repBonus) * kingMult;
+        return Math.max(1, Math.min(8, Math.round(raw * 10) / 10));
     }
 
     // v9p33river435: noble coalition helpers
+    // v9p33river514: recompute each member's influence live (so loyalty drift
+    // is reflected) and use the new player influence helper rather than a raw
+    // reputation/50 fallback.
     function _computeCoalitionStrength(coalition, kingdom) {
         if (!coalition || !coalition.members) return 0;
         var total = 0;
         for (var i = 0; i < coalition.members.length; i++) {
             var m = coalition.members[i];
             if (m.id === 'player') {
-                var pRep = 50;
-                try {
-                    if (typeof Player !== 'undefined') {
-                        if (Player.getReputation) pRep = Player.getReputation(kingdom.id) || 50;
-                        else {
-                            var pRepMap = (Player.state && Player.state.reputation) || Player.reputation || null;
-                            if (pRepMap && pRepMap[kingdom.id] != null) pRep = pRepMap[kingdom.id];
-                        }
-                    }
-                } catch (e) {}
-                // v9p33river439: bugfix — Player.getReputation is not canonical here; fall back to stored kingdom reputation.
-                total += Math.max(0.5, pRep / 50);
+                total += _computePlayerInfluence(kingdom);
             } else {
-                total += m.influence || 0;
+                var noble = findPerson(m.id);
+                if (noble && noble.alive) {
+                    total += _computeNobleInfluence(noble, kingdom);
+                } else {
+                    total += m.influence || 1;
+                }
             }
         }
         return total;
     }
 
     // v9p33river435: noble coalition helpers
-    function _computeKingStubbornness(kingdom) {
+    // v9p33river514: when a `cause` is supplied (i.e., for a specific coalition)
+    // the threshold ranges 3-50 based on the drama/cost of the action, king's
+    // personality alignment, kingdom treasury, and king's mood. When no cause is
+    // supplied (general noble advisory tick) the legacy 2-5 range is preserved
+    // so existing AI balance is not silently rebalanced.
+    function _computeKingStubbornness(kingdom, cause) {
         var kp = kingdom.kingPersonality || {};
-        var stubbornness = 3.0;
-        if (kp.intelligence === 'brilliant') stubbornness = 4.0;
-        if (kp.intelligence === 'dim') stubbornness = 2.0;
-        if (kp.temperament === 'cruel') stubbornness += 0.5;
-        if (kp.ambition === 'content') stubbornness += 1.0;
-        return stubbornness;
+
+        if (!cause) {
+            var legacy = 3.0;
+            if (kp.intelligence === 'brilliant') legacy = 4.0;
+            if (kp.intelligence === 'dim') legacy = 2.0;
+            if (kp.temperament === 'cruel') legacy += 0.5;
+            if (kp.ambition === 'content') legacy += 1.0;
+            return legacy;
+        }
+
+        // Drama / consequentiality of the action (rough cost-to-throne)
+        var dramaMap = {
+            lower_taxes: 8,
+            raise_taxes: 10,
+            make_peace: 20,
+            declare_war: 35,
+            war_offensive: 28,
+            form_alliance: 18,
+            build_infrastructure: 6,
+            build_walls: 8,
+            improve_happiness: 5,
+            medical_funding: 5,
+            promote_noble: 15,
+            pass_law: 10,
+            repeal_law: 9,
+            lower_tariffs: 7,
+            raise_tariffs: 8
+        };
+        var base = dramaMap[cause] != null ? dramaMap[cause] : 12;
+
+        // King's intelligence: brilliant kings harder to sway
+        var intMult = 1.0;
+        if (kp.intelligence === 'brilliant') intMult = 1.3;
+        else if (kp.intelligence === 'dim' || kp.intelligence === 'foolish') intMult = 0.75;
+
+        // Temperament / ambition: stubborn kings push back harder
+        if (kp.temperament === 'cruel') base += 4;
+        if (kp.ambition === 'content') base += 4;
+
+        // King personality alignment with the cause. Numeric kingPersonality
+        // fields (generosity, militarism, tradition) range 0-100.
+        var generosity = (typeof kp.generosity === 'number') ? kp.generosity : 50;
+        var militarism = (typeof kp.militarism === 'number') ? kp.militarism : 50;
+        var tradition  = (typeof kp.tradition  === 'number') ? kp.tradition  : 50;
+        if (cause === 'lower_taxes')              base += (generosity - 50) * -0.12;
+        else if (cause === 'raise_taxes')         base += (generosity - 50) * 0.12;
+        else if (cause === 'declare_war' || cause === 'war_offensive') base += (militarism - 50) * -0.15;
+        else if (cause === 'make_peace')          base += (militarism - 50) * 0.15;
+        else if (cause === 'form_alliance')       base += (militarism - 50) * 0.05;
+        else if (cause === 'improve_happiness' || cause === 'medical_funding') base += (generosity - 50) * -0.10;
+        else if (cause === 'build_walls')         base += (militarism - 50) * -0.08;
+        else if (cause === 'build_infrastructure') base += (tradition - 50) * 0.05;
+        else if (cause === 'promote_noble')       base += (tradition - 50) * -0.05;
+
+        // King's mood: angry kings reject petitions outright; jubilant ones grant favors
+        var mood = (kingdom.kingMood && kingdom.kingMood.current) || 'content';
+        if (mood === 'enraged' || mood === 'furious') base += 8;
+        else if (mood === 'angry' || mood === 'displeased') base += 4;
+        else if (mood === 'pleased' || mood === 'happy') base -= 3;
+        else if (mood === 'jubilant' || mood === 'elated') base -= 6;
+
+        // Kingdom treasury affects what the crown can afford
+        var treasury = kingdom.gold || 0;
+        if (cause === 'raise_taxes' && treasury < 3000) base -= 5;
+        if (cause === 'lower_taxes' && treasury < 3000) base += 5;
+        if ((cause === 'medical_funding' || cause === 'build_infrastructure' ||
+             cause === 'build_walls'      || cause === 'improve_happiness') && treasury < 3000) base += 5;
+
+        base *= intMult;
+        return Math.max(3, Math.min(50, base));
     }
 
     // v9p33river435: noble coalition helpers
+    // v9p33river514: pass the coalition's cause into stubbornness so the
+    // threshold scales with drama/treasury/mood/alignment.
     function _computeCoalitionSuccessChance(coalition, kingdom) {
         var strength = _computeCoalitionStrength(coalition, kingdom);
-        var threshold = _computeKingStubbornness(kingdom);
+        var threshold = _computeKingStubbornness(kingdom, coalition && coalition.cause);
         if (strength >= threshold * 1.5) return 0.85;
         if (strength >= threshold) return 0.60;
         if (strength >= threshold * 0.7) return 0.35;
@@ -36597,7 +36707,7 @@
             for (var j = 0; j < coal.members.length; j++) {
                 if (coal.members[j].id === 'player') return { success: false, message: 'You are already a member.' };
             }
-            coal.members.push({ id: 'player', name: 'You', influence: 1.0 });
+            coal.members.push({ id: 'player', name: 'You', influence: _computePlayerInfluence(k) }); // v9p33river514
             if (k._coalitionInvitations) {
                 k._coalitionInvitations = k._coalitionInvitations.filter(function(inv) { return inv.coalitionId !== coalitionId; });
             }
@@ -36704,7 +36814,7 @@
                 causeLabel: causeLabels[cause],
                 causeData: _coalCauseData,
                 organizer: 'player',
-                members: [{ id: 'player', name: 'You', influence: 1.0 }],
+                members: [{ id: 'player', name: 'You', influence: _computePlayerInfluence(k) }], // v9p33river514
                 formedDay: world.day,
                 status: 'forming'
             };

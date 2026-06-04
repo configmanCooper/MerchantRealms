@@ -24928,7 +24928,21 @@
             bars.push({ label: '🏘️ Towns w/ Property', current: townsWPL, required: nextRank.minTownsWithProperty || 4, pct: Math.min(100, Math.floor(townsWPL / (nextRank.minTownsWithProperty || 4) * 100)), met: townsWPL >= (nextRank.minTownsWithProperty || 4) });
             var totalW = _countMyWorkers(null);
             bars.push({ label: '👷 Total Workers', current: totalW, required: nextRank.minTotalWorkers || 40, pct: Math.min(100, Math.floor(totalW / (nextRank.minTotalWorkers || 40) * 100)), met: totalW >= (nextRank.minTotalWorkers || 40) });
-            var infraC = (player.roadsBuilt || 0) + (player.bridgesBuilt || 0) + (player.seaRoutesBuilt || 0);
+            // v9p33river514: player-founded outposts that the kingdom has promoted to a village (or higher) count as infrastructure.
+            var infraVillages = 0;
+            try {
+                var _pId = player.id || 'player';
+                var _allTowns = Engine.getWorld ? (Engine.getWorld().towns || []) : [];
+                for (var _itx = 0; _itx < _allTowns.length; _itx++) {
+                    var _ot = _allTowns[_itx];
+                    if (!_ot || _ot.isOutpost) continue;
+                    if (_ot.founderId !== _pId) continue;
+                    if (_ot.kingdomId !== kId) continue;
+                    if (_ot.category === 'outpost') continue;
+                    infraVillages++;
+                }
+            } catch(e) {}
+            var infraC = (player.roadsBuilt || 0) + (player.bridgesBuilt || 0) + (player.seaRoutesBuilt || 0) + infraVillages;
             bars.push({ label: '🛤️ Infrastructure', current: infraC, required: nextRank.minInfrastructure || 2, pct: Math.min(100, Math.floor(infraC / (nextRank.minInfrastructure || 2) * 100)), met: infraC >= (nextRank.minInfrastructure || 2) });
         }
 

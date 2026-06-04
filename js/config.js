@@ -770,8 +770,8 @@ const CONFIG = {
     PATHFIND_STEP: 2,                      // Tile step size for A* (reduces search space)
 
     // Toll Routes
-    TOLL_ROAD_BASE_COST: 5000,             // Base gold cost for player to build a toll road
-    TOLL_ROAD_DIST_COST: 10,               // Gold per unit distance
+    TOLL_ROAD_BASE_COST: 2500,             // v9p33river514: halved from 5000 to make toll roads more accessible
+    TOLL_ROAD_DIST_COST: 5,                // v9p33river514: halved from 10 (gold per unit distance)
     TOLL_ROAD_WATER_MULTIPLIER: 3,         // Cost multiplier for water crossings
     TOLL_ROAD_MAX_WATER_FRACTION: 0.15,    // Can't build if >15% water
     TOLL_ROAD_TIMBER_PER_100: 5,           // Timber per 100 distance

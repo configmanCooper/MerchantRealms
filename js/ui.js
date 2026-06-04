@@ -15049,7 +15049,7 @@ window.UI = (function () {
                 '📜 Petitions': 'Successful petitions to the king. Visit the kingdom court to submit petitions.',
                 '👑 Noble Endorsements': 'Nobles with 60+ relationship. Build friendships with Minor Nobles and above.',
                 '👷 Total Workers': 'All employees across the kingdom. Hire more workers at your various buildings.',
-                '🛤️ Infrastructure': 'Roads, bridges, or sea routes you have built. Invest in kingdom infrastructure.',
+                '🛤️ Infrastructure': 'Roads, bridges, sea routes, and player-founded outposts the kingdom has promoted to a village (or higher) all count toward this requirement.',
                 '👑 King Relationship': 'Your personal relationship with the king. Attend court and complete royal commissions.'
             };
             var tooltip = tooltipMap[b.label] || '';
