@@ -6655,62 +6655,7 @@ return { title: def.title, icon: def.icon, text: lead, choices: [{ id: 'leave', 
             },
             applyEffect: function(effectKey, params, ctx) { _applyUnsolicitedEffect(this, effectKey, params, ctx); }
         },
-        {
-            id: "protection_racket",
-            title: "Protection Racket",
-            icon: "💸",
-            category: "crime",
-            rarity: "common",
-            weight: 10,
-            template: "crime_scene",
-            condition: function(ctx) { return _passesCondition(ctx, this); },
-            generate: function(ctx) {
-                var extra = _derivedExtra(this);
-                var rng = ctx && ctx.rng;
-                var base;
-                var npc;
-                var resourceId;
-                var params;
-                if (!ctx || !rng || !player || !ctx.town) return null;
-                base = _rarityBase(this.rarity);
-                npc = _pickNpc(ctx, extra.npcRole);
-                var npc2 = _pickNpc(ctx, null);
-                if (npc2 && npc && npc2.id === npc.id) npc2 = _pickNpc(ctx, null);
-                resourceId = _chooseFromGroup(this, ctx);
-                params = {
-                    townName: ctx.townName,
-                    kingdomName: ctx.kingdomName,
-                    playerName: ctx.playerName,
-                    npcName: npc ? (npc.firstName || 'a stranger') : 'a stranger',
-                    npc2Name: (npc2 && npc2.firstName && (!npc || npc2.id !== npc.id)) ? npc2.firstName : 'a local merchant',
-                    goldAmount: _roll(rng, base.gold),
-                    repAmount: _roll(rng, base.rep),
-                    relAmount: _roll(rng, base.rel),
-                    energyAmount: _roll(rng, base.energy),
-                    itemQty: _roll(rng, base.qty),
-                    waitDays: _roll(rng, base.wait),
-                    waitDays2: _roll(rng, [1, Math.max(2, base.wait[1])]),
-                    resourceId: resourceId,
-                    resourceName: RESOURCE_NAMES[resourceId] || resourceId,
-                    costGold: Math.max(6, Math.floor(_roll(rng, base.gold) * 0.5)),
-                    rewardGold: Math.max(10, Math.floor(_roll(rng, base.gold) * 1.2))
-                };
-                return {
-                    id: 'ue_' + (player._nextUnsolicitedEventId++),
-                    defId: this.id,
-                    stepIndex: 0,
-                    params: params,
-                    generatedDay: ctx.day,
-                    dueDay: ctx.day,
-                    status: 'pending',
-                    choiceHistory: [],
-                    townId: ctx.town ? ctx.town.id : null,
-                    kingdomId: ctx.kingdomId || null,
-                    npcId: npc ? npc.id : null
-                };
-            },
-            applyEffect: function(effectKey, params, ctx) { _applyUnsolicitedEffect(this, effectKey, params, ctx); }
-        },
+        // v9p33river548: removed "protection_racket" unsolicited crime-scene event (extortion theme retired).
         {
             id: "stolen_goods_found",
             title: "Stolen Goods Found",

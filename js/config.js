@@ -883,15 +883,7 @@ const CONFIG = {
     BANDIT_ATTACK_CHANCE_FACTOR: 0.005,
     BANDIT_THREAT_DANGER_THRESHOLD: 50,
 
-    // Protection Racket
-    PROTECTION_RACKET_NOTORIETY_THRESHOLD: 30,
-    PROTECTION_RACKET_GOLD_THRESHOLD: 10000,
-    PROTECTION_RACKET_FEE: 100,
-    PROTECTION_RACKET_REP_PENALTY: 2,
-    PROTECTION_RACKET_ATTACK_BONUS: 0.15,
-    PROTECTION_RACKET_THEFT_BONUS: 0.03,
-    PROTECTION_RACKET_INTIMIDATE_CHANCE: 0.50,
-    PROTECTION_RACKET_CHECK_INTERVAL: 30,
+    // v9p33river548: removed PROTECTION_RACKET_* consts (criminal-faction-extorts-player feature retired).
 
     // Kingdom Tax Spending
     KINGDOM_GUARD_HIRE_THRESHOLD: 3000,
@@ -3823,8 +3815,7 @@ const ACHIEVEMENTS = {
     licensed_dealer:     { name: 'Licensed Dealer',     desc: 'Hold licenses in 3 different kingdoms.',          xp: 160, tier: 'gold', icon: '📋', category: 'kingdom' },
     security_conscious:  { name: 'Security Conscious',  desc: 'Hire guards for 5 buildings.',                    xp: 80 , tier: 'silver', icon: '🛡️', category: 'building' },
     fort_knox:           { name: 'Fort Knox',            desc: 'Have locked storage on 10 buildings.',            xp: 175, tier: 'gold', icon: '🔒', category: 'building' },
-    protection_paid:     { name: 'Protection Paid',      desc: 'Pay protection money for a full year.',           xp: 75 , tier: 'silver', icon: '💀', category: 'underworld' },
-    racket_breaker:      { name: 'Racket Breaker',       desc: 'Intimidate the protection racket away.',          xp: 170, tier: 'gold', icon: '💪', category: 'underworld' },
+    // v9p33river548: removed protection_paid + racket_breaker achievements (extortion feature retired).
     repeat_offender:     { name: 'Repeat Offender',      desc: 'Accumulate 5+ offenses in a single kingdom.',     xp: 75 , tier: 'silver', icon: '⛓️', category: 'underworld' },
     tax_evader:          { name: 'Tax Evader',           desc: 'Trade restricted goods without a license 10 times.', xp: 80 , tier: 'silver', icon: '🏴‍☠️', category: 'underworld' },
 

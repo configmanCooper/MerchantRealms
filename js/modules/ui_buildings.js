@@ -492,23 +492,7 @@
         }
         html += '</div>';
 
-        // Protection racket status
-        if (Player.protectionRacket && Player.protectionRacket.active) {
-            html += '<div style="border-top:1px solid var(--border);padding-top:8px;margin-top:12px;">';
-            html += '<h4 style="font-size:0.8rem;color:var(--danger);margin-bottom:6px;">💀 Protection Racket</h4>';
-            if (Player.protectionRacket.paying) {
-                html += `<div style="font-size:0.78rem;">Currently paying ${CONFIG.PROTECTION_RACKET_FEE}g/season.</div>`;
-                html += `<button class="btn-trade sell" style="font-size:0.7rem;margin-top:4px;" data-action="racketResponse" data-val="refuse">Stop Paying</button>`;
-            } else {
-                html += `<div style="font-size:0.78rem;color:var(--danger);">The criminal faction demands ${CONFIG.PROTECTION_RACKET_FEE}g/season for protection.</div>`;
-                html += `<div style="display:flex;gap:8px;margin-top:6px;">
-                    <button class="btn-trade buy" style="font-size:0.7rem;" data-action="racketResponse" data-val="pay">💰 Pay</button>
-                    <button class="btn-trade sell" style="font-size:0.7rem;" data-action="racketResponse" data-val="refuse">✋ Refuse</button>
-                    ${Player.hasSkill('intimidating_presence') ? '<button class="btn-trade" style="font-size:0.7rem;background:#4682b4;color:#fff;" data-action="racketResponse" data-val="intimidate">💪 Intimidate</button>' : ''}
-                </div>`;
-            }
-            html += '</div>';
-        }
+        // v9p33river548: removed criminal-faction "Protection Racket" panel + Pay/Refuse/Intimidate buttons.
 
         openModal('🏗️ Building Management', html);
     }
@@ -2367,11 +2351,7 @@
         if (result.success) openWarehouseSecurityDialog(buildingId);
     }
 
-    function racketResponse(response) {
-        const result = Player.respondToRacket(response);
-        toast(result.message, result.success ? 'success' : 'warning');
-        openBuildingManagement();
-    }
+    // v9p33river548: removed racketResponse handler (criminal-faction extortion feature retired).
 
     // Register functions on UI namespace
     UI.openBuildDialog = openBuildDialog;
@@ -2412,7 +2392,6 @@
     UI.toggleFarmFallow = toggleFarmFallow;
     UI.openWarehouseSecurityDialog = openWarehouseSecurityDialog;
     UI.installWarehouseSecurity = installWarehouseSecurity;
-    UI.racketResponse = racketResponse;
 
     // ── Action delegation registrations ──
     UI.registerAction('filterBuildings', function(_t, d) { UI.filterBuildings(d.id); });
@@ -2421,7 +2400,6 @@
     UI.registerAction('openFarmConvertUI', function(_t, d) { UI.openFarmConvertUI(parseInt(d.idx), d.id); });
     UI.registerAction('listLandForSaleUI', function(_t, d) { UI.listLandForSaleUI(d.id); });
     UI.registerAction('showBuildingDetail', function(_t, d) { UI.showBuildingDetail(d.id); });
-    UI.registerAction('racketResponse', function(_t, d) { UI.racketResponse(d.val); });
     UI.registerAction('purchaseNPCBuildingUI', function(_t, d) { UI.purchaseNPCBuildingUI(parseInt(d.idx), d.id); });
     UI.registerAction('buyApartmentUnit', function(_t, d) { UI.buyApartmentUnit(d.id); });
     UI.registerAction('buyTentSlot', function(_t, d) { UI.buyTentSlot(d.id); });

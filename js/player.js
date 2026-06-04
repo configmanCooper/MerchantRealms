@@ -207,14 +207,8 @@
         offenseCount: {},       // kingdomId → number — escalating penalties
         // Building Security
         // (hasGuard, lockedStorage, damaged, repairDay stored on each building object)
-        // Protection Racket
-        protectionRacket: {
-            active: false,      // whether racket is currently demanding payment
-            paying: false,      // whether player is paying
-            intimidated: false, // whether player intimidated them away
-            lastCheckDay: 0,    // last day the racket checked in
-            daysSincePaying: 0, // seasons of payment for achievement tracking
-        },
+        // v9p33river548: removed `protectionRacket` (criminal-faction-extorts-player) feature.
+        // The dark-deeds player-as-racketeer feature uses `protectionRackets` (plural) and is unaffected.
         // Restricted goods trade tracking
         restrictedTradesWithoutLicense: 0,
         // War allegiance system
@@ -20590,7 +20584,6 @@
             // permit immediately stopped working.
             _productionPermitExpiry: structuredClone(player._productionPermitExpiry || {}),
             offenseCount: { ...player.offenseCount },
-            protectionRacket: { ...player.protectionRacket },
             restrictedTradesWithoutLicense: player.restrictedTradesWithoutLicense || 0,
             // War allegiance & win tracking
             warAllegiances: structuredClone(player.warAllegiances || {}),
@@ -21254,10 +21247,6 @@
         // v9p33river343: restore the quest-wildcard permit expiry map.
         player._productionPermitExpiry = data._productionPermitExpiry || {};
         player.offenseCount = data.offenseCount || {};
-        player.protectionRacket = data.protectionRacket || {
-            active: false, paying: false, intimidated: false,
-            lastCheckDay: 0, daysSincePaying: 0,
-        };
         player.restrictedTradesWithoutLicense = data.restrictedTradesWithoutLicense || 0;
         // War allegiance & win tracking
         player.warAllegiances = data.warAllegiances || {};
@@ -23378,9 +23367,6 @@
         Player.tickLeftCartTheft();
         Player.tickWorkerTheft();
         Player.tickParkedVehicleTheft();
-
-        // Protection racket check
-        tickProtectionRacket();
 
         // Forced requisition check (corrupt kingdoms seize goods)
         tickForcedRequisition();
@@ -29486,11 +29472,6 @@
                 let theftChance = bld.hasGuard ? CONFIG.BUILDING_THEFT_CHANCE_GUARDED : CONFIG.BUILDING_THEFT_CHANCE;
                 if (bld.lockedStorage) theftChance *= (1 - CONFIG.BUILDING_LOCKED_STORAGE_REDUCTION);
 
-                // Protection racket effect
-                if (player.protectionRacket.active && !player.protectionRacket.paying && !player.protectionRacket.intimidated) {
-                    theftChance += CONFIG.PROTECTION_RACKET_THEFT_BONUS;
-                }
-
                 if (rng.chance(theftChance)) {
                     const bt = Engine.findBuildingType(bld.type);
                     if (bt && bt.produces) {
@@ -29539,92 +29520,8 @@
     }
 
     // ========================================================
-    // §12G3 PROTECTION RACKET
+    // §12G3 — PROTECTION RACKET (criminal-faction-extorts-player) removed in v9p33river548.
     // ========================================================
-    function tickProtectionRacket() {
-        const rng = Engine.getRng();
-        if (!rng) return;
-        const day = Engine.getDay();
-
-        // Check if racket should activate
-        if (!player.protectionRacket.active && !player.protectionRacket.intimidated) {
-            if (day - (player.protectionRacket.lastCheckDay || 0) >= CONFIG.PROTECTION_RACKET_CHECK_INTERVAL) {
-                player.protectionRacket.lastCheckDay = day;
-                if (player.notoriety > CONFIG.PROTECTION_RACKET_NOTORIETY_THRESHOLD ||
-                    player.gold > CONFIG.PROTECTION_RACKET_GOLD_THRESHOLD) {
-                    player.protectionRacket.active = true;
-                    player.protectionRacket.daysSincePaying = 0;
-                    if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast('💀 A criminal faction demands protection money: ' + CONFIG.PROTECTION_RACKET_FEE + 'g/season.', 'danger', 'my_business');
-                    }
-                    Engine.logEvent('A criminal organization has demanded protection money from ' + player.fullName + '.', null, "my_business");
-                }
-            }
-        }
-
-        // Process payments (once per season)
-        if (player.protectionRacket.active && player.protectionRacket.paying) {
-            if (day % (CONFIG.DAYS_PER_SEASON || 30) === 0) {
-                if (player.gold >= CONFIG.PROTECTION_RACKET_FEE) {
-                    player.gold -= CONFIG.PROTECTION_RACKET_FEE;
-                    player.protectionRacket.daysSincePaying = (player.protectionRacket.daysSincePaying || 0) + 1;
-                    // Rep hit with current kingdom
-                    if (player.citizenshipKingdomId) {
-                        player.reputation[player.citizenshipKingdomId] = Math.max(0,
-                            (player.reputation[player.citizenshipKingdomId] || 50) - CONFIG.PROTECTION_RACKET_REP_PENALTY
-                        );
-                    }
-                    // Achievement for paying a full year (4 seasons)
-                    if (player.protectionRacket.daysSincePaying >= 4) {
-                        unlockAchievement('protection_paid');
-                    }
-                } else {
-                    player.protectionRacket.paying = false;
-                    if (typeof UI !== 'undefined' && UI.toast) {
-                        UI.toast('💀 Cannot afford protection payment. Consequences will follow.', 'danger', 'my_business');
-                    }
-                }
-            }
-        }
-    }
-
-    function respondToRacket(response) {
-        if (response === 'pay') {
-            player.protectionRacket.paying = true;
-            if (typeof UI !== 'undefined' && UI.toast) {
-                UI.toast('You agreed to pay protection money.', 'warning');
-            }
-            return { success: true, message: 'You are now paying protection money.' };
-        } else if (response === 'refuse') {
-            player.protectionRacket.paying = false;
-            if (typeof UI !== 'undefined' && UI.toast) {
-                UI.toast('You refused the protection racket. Expect consequences.', 'danger');
-            }
-            return { success: true, message: 'You refused. Expect increased attacks.' };
-        } else if (response === 'intimidate') {
-            if (!hasSkill('intimidating_presence')) {
-                return { success: false, message: 'You lack the Intimidating Presence skill.' };
-            }
-            const rng = Engine.getRng();
-            if (rng && rng.chance(CONFIG.PROTECTION_RACKET_INTIMIDATE_CHANCE)) {
-                player.protectionRacket.active = false;
-                player.protectionRacket.paying = false;
-                player.protectionRacket.intimidated = true;
-                unlockAchievement('racket_breaker');
-                Engine.logEvent(player.fullName + ' intimidated the criminal faction into leaving!', null, "combat");
-                if (typeof UI !== 'undefined' && UI.toast) {
-                    UI.toast('💪 You intimidated the racket away!', 'success');
-                }
-                return { success: true, message: 'You intimidated them away!' };
-            } else {
-                if (typeof UI !== 'undefined' && UI.toast) {
-                    UI.toast('Your intimidation attempt failed. They are not pleased.', 'danger');
-                }
-                return { success: false, message: 'Intimidation failed. They will retaliate.' };
-            }
-        }
-        return { success: false, message: 'Invalid response.' };
-    }
 
     // ========================================================
     // §12G4 FORCED REQUISITION — CORRUPT KINGDOM SEIZURES
@@ -43616,7 +43513,6 @@
         get licenses() { return player.licenses; },
         get productionPermits() { return player.productionPermits || {}; },
         get offenseCount() { return player.offenseCount; },
-        get protectionRacket() { return player.protectionRacket; },
         get workingUntilTick() { return player.workingUntilTick || 0; },
         get workDaysCompleted() { return player.workDaysCompleted || 0; },
         get warAllegiances() { return player.warAllegiances; },
@@ -44049,9 +43945,6 @@
         removeWorkerFromBuilding,
         getBuildingStatus,
         // qualityCraftChance — moved to js/modules/player_caravan.js
-
-        // Protection Racket
-        respondToRacket,
 
         // Noble Army Leadership
         respondToArmyLeaderOrder,

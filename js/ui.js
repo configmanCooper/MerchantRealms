@@ -23322,9 +23322,9 @@ window.UI = (function () {
         // authoritative figure, and fall back to scanning the tradeLog only
         // when that field is missing (legacy saves).
         var milGoodsIds = ['swords', 'armor', 'bows', 'arrows', 'horses', 'iron', 'steel', 'swords_good', 'swords_excellent', 'armor_good', 'armor_excellent', 'bows_good', 'bows_excellent', 'arrows_good', 'arrows_excellent', 'shields', 'shields_good', 'shields_great', 'bandages', 'blasting_powder', 'demolition_tools'];
+        var tradeLog = p.tradeLog || []; // v9p33river548: hoisted out of the !_militarySalesTotal block so the Medical/Food sections below (which scan tradeLog unconditionally) don't crash with "Cannot read properties of undefined (reading 'length')" on saves where _militarySalesTotal is set.
         var playerMilSales = (typeof p._militarySalesTotal === 'number') ? p._militarySalesTotal : 0;
         if (!p._militarySalesTotal) {
-            var tradeLog = p.tradeLog || [];
             for (var tli = 0; tli < tradeLog.length; tli++) {
                 var tl = tradeLog[tli];
                 if (tl.type === 'sell' && milGoodsIds.indexOf(tl.resource) >= 0) {
