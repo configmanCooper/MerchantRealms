@@ -34396,6 +34396,24 @@
         };
     }
 
+    // v9p33river529: public read-only accessor so the petition UI can know
+    // whether the player has an unconsumed royal-favor token for a given
+    // kingdom (so it can offer the Submit button regardless of signatures).
+    // Mirrors the validity rules inside submitPetition: coup-king favors only
+    // count while the same king reigns. Does NOT mutate state.
+    function hasGuaranteedPetition(kingdomId) {
+        if (!kingdomId) return false;
+        if (!player || !player.guaranteedPetition) return false;
+        var token = player.guaranteedPetition[kingdomId];
+        if (!token) return false;
+        if (typeof token === 'object' && token.source === 'coup_king_favor') {
+            var k = null;
+            try { k = Engine.findKingdom ? Engine.findKingdom(kingdomId) : null; } catch(e) {}
+            return !!(k && k.king === token.kingId);
+        }
+        return true;
+    }
+
     function submitPetition(petitionId) {
         if (!player.petitions) return { success: false, message: 'No petitions.' };
         // v9p33river329: if the player has become king while a petition
@@ -34424,17 +34442,6 @@
             }
         }
 
-        var estimate = getPetitionChanceEstimate(petitionId);
-        if (!estimate || estimate.chance === 0) {
-            petition.status = 'rejected';
-            var pType = PETITION_TYPES.find(function(t) { return t.id === petition.typeId; });
-            Engine.logEvent('📜 Your petition for ' + (pType ? pType.name : petition.typeId) + ' was rejected — not enough signatures.', null, "my_kingdom");
-            return { success: false, approved: false, message: 'Petition rejected: not enough signatures. Need at least ' + CONFIG.PETITION_MIN_SIGNATURES_PCT + '% of the kingdom population.' };
-        }
-
-        var roll = Math.random();
-        var pType = PETITION_TYPES.find(function(t) { return t.id === petition.typeId; });
-
         // v9p33river340: honor the Royal Decree guaranteed-petition token
         // (granted by king's-favor `guaranteed_petition` reward at
         // player.js:37666). Token is per-kingdom; auto-approves the next
@@ -34443,6 +34450,10 @@
         // object { source, kingId, grantedDay } for coup-king favors. Coup
         // favors only honor while the same king reigns; if they've been
         // deposed/died, the favor evaporates instead of auto-approving.
+        // v9p33river529: detect favor BEFORE the signature gate so a guaranteed
+        // petition skips the signature requirement entirely (was: signatures
+        // gate rejected the petition with "not enough signatures" before the
+        // favor check ever ran).
         var _royalDecreeUsed = false;
         var _royalDecreeSource = null;
         if (player.guaranteedPetition && player.guaranteedPetition[petition.kingdomId]) {
@@ -34464,6 +34475,19 @@
                 delete player.guaranteedPetition[petition.kingdomId];
             }
         }
+
+        var estimate = getPetitionChanceEstimate(petitionId);
+        // v9p33river529: a royal-favor petition bypasses the signature requirement
+        // — it lands on the king's desk directly with 100% approval.
+        if (!_royalDecreeUsed && (!estimate || estimate.chance === 0)) {
+            petition.status = 'rejected';
+            var pType = PETITION_TYPES.find(function(t) { return t.id === petition.typeId; });
+            Engine.logEvent('📜 Your petition for ' + (pType ? pType.name : petition.typeId) + ' was rejected — not enough signatures.', null, "my_kingdom");
+            return { success: false, approved: false, message: 'Petition rejected: not enough signatures. Need at least ' + CONFIG.PETITION_MIN_SIGNATURES_PCT + '% of the kingdom population.' };
+        }
+
+        var roll = Math.random();
+        var pType = PETITION_TYPES.find(function(t) { return t.id === petition.typeId; });
 
         if (_royalDecreeUsed || roll < estimate.chance) {
             petition.status = 'approved';
@@ -44064,6 +44088,7 @@
         getPetitionChanceEstimate,
         getActivePetitions,
         getPetitionHistory,
+        hasGuaranteedPetition,
 
         // War Allegiance & Kingdom Donations — moved to js/modules/player_inventory.js
 

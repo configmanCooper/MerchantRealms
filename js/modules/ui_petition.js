@@ -67,7 +67,13 @@
                 html += '</div></div>';
                 html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
                 html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;" data-action="showPetitionDetail" data-id="' + p.id + '">📋 Manage</button>';
-                if (estimate && estimate.chance > 0) {
+                // v9p33river529: royal-favor petitions bypass the signature gate
+                // — surface the Submit button (and tag it as Guaranteed) even
+                // when signatures are below 5%.
+                var _hasFavor = (Player.hasGuaranteedPetition && Player.hasGuaranteedPetition(p.kingdomId));
+                if (_hasFavor) {
+                    html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(212,160,23,0.25);border-color:rgba(212,160,23,0.6);color:#ffd700;" data-action="submitPetitionUI" data-id="' + p.id + '" title="Royal Favor active — bypasses signatures, 100% approval">📜 Submit (Royal Favor)</button>';
+                } else if (estimate && estimate.chance > 0) {
                     html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" data-action="submitPetitionUI" data-id="' + p.id + '">✅ Submit (~' + Math.floor(estimate.chance * 100) + '%)</button>';
                 }
                 html += '<button class="btn-medieval" style="font-size:0.75rem;padding:4px 10px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" data-action="cancelPetitionUI" data-id="' + p.id + '">❌ Cancel</button>';
@@ -462,7 +468,11 @@
 
             // Action buttons
             html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">';
-            if (estimate && estimate.chance > 0) {
+            // v9p33river529: royal-favor petitions bypass the signature gate.
+            var _hasFavorD = (Player.hasGuaranteedPetition && Player.hasGuaranteedPetition(petition.kingdomId));
+            if (_hasFavorD) {
+                html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(212,160,23,0.25);border-color:rgba(212,160,23,0.6);color:#ffd700;" data-action="submitPetitionUI" data-id="' + petition.id + '" title="Royal Favor active — bypasses signatures, 100% approval">📜 Submit (Royal Favor — Guaranteed)</button>';
+            } else if (estimate && estimate.chance > 0) {
                 html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(100,200,100,0.2);border-color:rgba(100,200,100,0.4);" data-action="submitPetitionUI" data-id="' + petition.id + '">✅ Submit Petition (~' + Math.floor(estimate.chance * 100) + '% chance)</button>';
             }
             html += '<button class="btn-medieval" style="padding:8px 16px;background:rgba(200,60,50,0.3);border-color:rgba(200,60,50,0.55);" data-action="cancelPetitionUI" data-id="' + petition.id + '">❌ Cancel Petition</button>';
