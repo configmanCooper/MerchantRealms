@@ -1944,9 +1944,39 @@
         try { commissions = Engine.getRoyalCommissions(kingdomId) || []; } catch(e) {}
         var openComms = commissions.filter(function(c) { return c.status === 'open'; });
 
+        // v9p33river514: also surface the directed player commission (if pending
+        // or accepted) so the player-targeted commission and the open commission
+        // list line up in one place.
+        var directedComm = null;
+        try { directedComm = Engine.getDirectedPlayerCommission ? Engine.getDirectedPlayerCommission(kingdomId) : null; } catch(e) {}
+        var showDirected = directedComm && (directedComm.status === 'pending' || directedComm.status === 'accepted');
+
         var html = '<div style="max-height:500px;overflow-y:auto;">';
-        if (openComms.length === 0) {
+
+        if (showDirected) {
+            var _dpcDaysLeft = (directedComm.deadlineDay || 0) - (typeof Engine !== 'undefined' && Engine.getDay ? Engine.getDay() : 0);
+            var _dpcStatusColor = directedComm.status === 'pending' ? '#ff9f43' : '#5dade2';
+            var _dpcStatusLabel = directedComm.status === 'pending' ? '⚠️ Awaiting Your Response' : '📦 Accepted — In Progress';
+            var _dpcUrgColor = directedComm.urgency === 'desperate' ? '#e74c3c' : directedComm.urgency === 'urgent' ? '#ff9f43' : '#ccb974';
+            var _dpcUrgLabel = directedComm.urgency === 'desperate' ? '🔴 DESPERATE' : directedComm.urgency === 'urgent' ? '🟠 URGENT' : '🟢 NORMAL';
+            html += '<div style="background:linear-gradient(135deg,rgba(255,215,0,0.18),rgba(255,165,0,0.10));padding:12px;border-radius:8px;margin-bottom:10px;border:2px solid rgba(255,215,0,0.45);">';
+            html += '<div style="font-size:0.72rem;color:#d4af37;font-weight:bold;margin-bottom:4px;">👑 PERSONAL COMMISSION FROM THE KING</div>';
+            html += '<div style="font-size:0.95rem;font-weight:bold;color:#fff;">' + escapeHtml(directedComm.description) + '</div>';
+            html += '<div style="margin-top:6px;font-size:0.8rem;">';
+            html += '<span style="color:' + _dpcUrgColor + ';font-weight:bold;">' + _dpcUrgLabel + '</span> | ';
+            html += '<span style="color:#ffd700;">💰 ' + (directedComm.reward || 0) + 'g</span> | ';
+            html += '<span style="color:#6bff6b;">⭐ +' + (directedComm.repReward || 0) + ' rep</span> | ';
+            html += '<span class="text-dim">⏳ ' + Math.max(0, _dpcDaysLeft) + ' days left</span>';
+            html += '</div>';
+            html += '<div style="margin-top:6px;font-size:0.78rem;color:' + _dpcStatusColor + ';">' + _dpcStatusLabel + '</div>';
+            html += '<button class="btn-medieval" data-action="openKingCommissionDialog" data-id="' + kingdomId + '" style="font-size:0.78rem;padding:4px 12px;margin-top:8px;background:rgba(255,215,0,0.2) !important;border-color:rgba(255,215,0,0.45) !important;">📋 Open Commission Details</button>';
+            html += '</div>';
+        }
+
+        if (openComms.length === 0 && !showDirected) {
             html += '<p class="text-dim">No active royal commissions. Check back later.</p>';
+        } else if (openComms.length === 0 && showDirected) {
+            html += '<p class="text-dim" style="font-size:0.78rem;">No additional open commissions for the public right now.</p>';
         } else {
             var inv = (typeof Player !== 'undefined' && Player.state) ? (Player.state.inventory || {}) : {};
             for (var ci = 0; ci < openComms.length; ci++) {

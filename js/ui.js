@@ -3651,6 +3651,9 @@ window.UI = (function () {
     // ── HIRE DIALOG ──
 
     let _cachedUnemployed = [];
+    // v9p33river514: persist hire-dialog filter/sort/search/tab across rebuilds
+    // (hire, fire, refresh) so the player's chosen filter sticks.
+    let _hireFilterState = { skill: 'all', sort: 'skill_desc', search: '', tab: 'available' };
 
     function openHireDialog() {
         if (typeof Player === 'undefined' || Player.townId == null) {
@@ -3786,34 +3789,48 @@ window.UI = (function () {
 
         const filterBar = `<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
             <select id="workerFilterSkill" onchange="UI.filterWorkerList()" style="padding:4px 8px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;font-size:0.8rem;">
-                <option value="all">All Skills</option>
-                <option value="farming">Farming</option>
-                <option value="mining">Mining</option>
-                <option value="crafting">Crafting</option>
-                <option value="trading">Trading</option>
-                <option value="combat">Combat</option>
+                <option value="all"${_hireFilterState.skill === 'all' ? ' selected' : ''}>All Skills</option>
+                <option value="farming"${_hireFilterState.skill === 'farming' ? ' selected' : ''}>Farming</option>
+                <option value="mining"${_hireFilterState.skill === 'mining' ? ' selected' : ''}>Mining</option>
+                <option value="crafting"${_hireFilterState.skill === 'crafting' ? ' selected' : ''}>Crafting</option>
+                <option value="trading"${_hireFilterState.skill === 'trading' ? ' selected' : ''}>Trading</option>
+                <option value="combat"${_hireFilterState.skill === 'combat' ? ' selected' : ''}>Combat</option>
             </select>
             <select id="workerSortBy" onchange="UI.filterWorkerList()" style="padding:4px 8px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;font-size:0.8rem;">
-                <option value="skill_desc">Best Skill ↓</option>
-                <option value="skill_asc">Best Skill ↑</option>
-                <option value="wage_asc">Lowest Wage ↑</option>
-                <option value="wage_desc">Highest Wage ↓</option>
-                <option value="age_asc">Youngest ↑</option>
-                <option value="age_desc">Oldest ↓</option>
+                <option value="skill_desc"${_hireFilterState.sort === 'skill_desc' ? ' selected' : ''}>Best Skill ↓</option>
+                <option value="skill_asc"${_hireFilterState.sort === 'skill_asc' ? ' selected' : ''}>Best Skill ↑</option>
+                <option value="wage_asc"${_hireFilterState.sort === 'wage_asc' ? ' selected' : ''}>Lowest Wage ↑</option>
+                <option value="wage_desc"${_hireFilterState.sort === 'wage_desc' ? ' selected' : ''}>Highest Wage ↓</option>
+                <option value="age_asc"${_hireFilterState.sort === 'age_asc' ? ' selected' : ''}>Youngest ↑</option>
+                <option value="age_desc"${_hireFilterState.sort === 'age_desc' ? ' selected' : ''}>Oldest ↓</option>
             </select>
-            <input type="text" id="workerSearchName" placeholder="Search name..." oninput="UI.filterWorkerList()" style="padding:4px 8px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;font-size:0.8rem;flex:1;min-width:100px;">
+            <input type="text" id="workerSearchName" placeholder="Search name..." value="${(_hireFilterState.search || '').replace(/"/g, '&quot;')}" oninput="UI.filterWorkerList()" style="padding:4px 8px;background:#2a2a2a;color:#ddd;border:1px solid #555;border-radius:4px;font-size:0.8rem;flex:1;min-width:100px;">
         </div>`;
 
+        // v9p33river514: tab buttons reflect the persisted active tab
+        const _tabActAv = _hireFilterState.tab === 'available' ? ' active' : '';
+        const _tabActEm = _hireFilterState.tab === 'employees' ? ' active' : '';
+        const _tabActMa = _hireFilterState.tab === 'marriage' ? ' active' : '';
+        const _dispAv = _hireFilterState.tab === 'available' ? '' : 'none';
+        const _dispEm = _hireFilterState.tab === 'employees' ? '' : 'none';
+        const _dispMa = _hireFilterState.tab === 'marriage' ? '' : 'none';
+
         const html = `<div class="hire-tabs">
-            <button class="btn-tab active" data-action="switchHireTab" data-tab="available">Available (${_cachedUnemployed.length})</button>
-            <button class="btn-tab" data-action="switchHireTab" data-tab="employees">Employees (${employees.length})</button>
-            <button class="btn-tab" data-action="switchHireTab" data-tab="marriage">💍 Marriage</button>
+            <button class="btn-tab${_tabActAv}" data-action="switchHireTab" data-tab="available">Available (${_cachedUnemployed.length})</button>
+            <button class="btn-tab${_tabActEm}" data-action="switchHireTab" data-tab="employees">Employees (${employees.length})</button>
+            <button class="btn-tab${_tabActMa}" data-action="switchHireTab" data-tab="marriage">💍 Marriage</button>
         </div>
-        <div id="hireTabAvailable">${filterBar}<div id="workerListContainer" class="worker-list">${availableHtml}</div></div>
-        <div id="hireTabEmployees" class="worker-list" style="display:none">${employeeHtml}</div>
-        <div id="hireTabMarriage" class="worker-list" style="display:none">${buildMarriageTab()}</div>`;
+        <div id="hireTabAvailable" style="display:${_dispAv}">${filterBar}<div id="workerListContainer" class="worker-list">${availableHtml}</div></div>
+        <div id="hireTabEmployees" class="worker-list" style="display:${_dispEm}">${employeeHtml}</div>
+        <div id="hireTabMarriage" class="worker-list" style="display:${_dispMa}">${buildMarriageTab()}</div>`;
 
         openModal('👥 Hire Workers', html);
+
+        // v9p33river514: re-apply the saved filter/sort/search so the listed
+        // workers match what was visible before the refresh.
+        if (_hireFilterState.tab === 'available' && (_hireFilterState.skill !== 'all' || _hireFilterState.sort !== 'skill_desc' || _hireFilterState.search)) {
+            filterWorkerList();
+        }
     }
 
     function getWorkerBestSkill(p) {
@@ -3955,6 +3972,11 @@ window.UI = (function () {
         const sortBy = sortEl ? sortEl.value : 'skill_desc';
         const searchName = searchEl ? searchEl.value.toLowerCase() : '';
 
+        // v9p33river514: persist so the next openHireDialog() rebuild restores them.
+        _hireFilterState.skill = filterSkill;
+        _hireFilterState.sort = sortBy;
+        _hireFilterState.search = searchEl ? searchEl.value : '';
+
         let filtered = _cachedUnemployed.slice();
 
         // Name filter
@@ -3987,6 +4009,8 @@ window.UI = (function () {
     }
 
     function switchHireTab(tab) {
+        // v9p33river514: persist the active tab across rebuilds.
+        _hireFilterState.tab = tab;
         const btns = document.querySelectorAll('.hire-tabs .btn-tab');
         btns.forEach((btn, i) => {
             const tabs = ['available', 'employees', 'marriage'];
