@@ -18614,6 +18614,17 @@
             player.deathCause = 'Heir died during regency — the legacy ends';
             Engine.logEvent('The heir has died during regency. The legacy ends.', null, "my_actions");
             player.alive = false;
+            // v9p33river534: tear down regency overlay + restore speed before the defeat
+            // screen, otherwise the regency fast-forward overlay stays stuck on top of it.
+            if (typeof UI !== 'undefined') {
+                UI._regencyToastsSuppressed = false;
+                UI._funeralLocked = false;
+                if (UI.hideRegencyFastForward) UI.hideRegencyFastForward();
+            }
+            if (typeof Game !== 'undefined' && Game.setSpeed) {
+                Game.setSpeed(player._regencyPreSpeed || 1);
+                delete player._regencyPreSpeed;
+            }
             if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
             if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
             return;
@@ -18781,6 +18792,16 @@
                 player.alive = false;
                 player.regencyMode = false;
                 player.regencyData = null;
+                // v9p33river534: tear down regency overlay + restore speed before defeat.
+                if (typeof UI !== 'undefined') {
+                    UI._regencyToastsSuppressed = false;
+                    UI._funeralLocked = false;
+                    if (UI.hideRegencyFastForward) UI.hideRegencyFastForward();
+                }
+                if (typeof Game !== 'undefined' && Game.setSpeed) {
+                    Game.setSpeed(player._regencyPreSpeed || 1);
+                    delete player._regencyPreSpeed;
+                }
                 if (typeof Game !== 'undefined' && Game.setState) Game.setState('lost');
                 if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
                 return;
