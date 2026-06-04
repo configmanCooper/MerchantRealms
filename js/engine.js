@@ -9192,7 +9192,7 @@
         // Now grant the personal-purse coronation bonus AFTER asset transfer
         newKing.gold = (newKing.gold || 0) + 100;
 
-        if (!cause || cause !== 'election') {
+        if (!cause || (cause !== 'election' && cause !== 'coup')) {
             logEvent(`${newKing.firstName} ${newKing.lastName} becomes the new ruler of ${kingdom.name}.`, { type: 'succession', kingdomId: kingdom.id, }, typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id ? 'my_kingdom' : 'foreign_kingdoms');
         }
 
@@ -9268,7 +9268,7 @@
             var traitStr = traits.length > 0 ? ' (' + traits.join(', ') + ')' : '';
             var isPlayerKingdom = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kingdom.id;
             var howText = cause === 'election' ? 'elected ruler' : cause === 'emergency' ? 'seized the throne' :
-                cause === 'succession_crisis' ? 'claimed the throne' : 'crowned ruler';
+                cause === 'succession_crisis' ? 'claimed the throne' : cause === 'coup' ? 'seized the throne by coup' : 'crowned ruler';
             if (isPlayerKingdom) {
                 UI.toast('👑 ' + newKing.firstName + ' ' + newKing.lastName + ' ' + howText + ' of ' + kingdom.name + traitStr, 'warning', 'critical');
             } else {
@@ -9284,6 +9284,16 @@
         // ========================================================
         var isRegimeChange = (cause === 'coup' || cause === 'rebellion' || cause === 'battle' || cause === 'assassination');
         if (isRegimeChange && typeof Player !== 'undefined' && Player.state && Player.state.alive) {
+            // v9p33river544: skip regime-change consequences when the player
+            // was a plotter in the coup that installed this king — the new
+            // king is their ally, not a threat. Coup-ally rewards (royal
+            // favor, +30 relationship, introductions) run separately in the
+            // conspiracy resolution block.
+            var _pIsPlotterAlly = false;
+            if (cause === 'coup' && kingdom._conspiracy && Array.isArray(kingdom._conspiracy.plotters)) {
+                _pIsPlotterAlly = kingdom._conspiracy.plotters.indexOf('player') >= 0;
+            }
+            if (!_pIsPlotterAlly) {
             var pState = Player.state;
             var pRank = (pState.socialRank && pState.socialRank[kingdom.id]) || 0;
             var newKingPers = newKing.personality || {};
@@ -9322,6 +9332,7 @@
                     Player._handleRegimeChangeConsequence(kingdom.id, 'lord_demotion', { jailDays: rcLordJail, goldSeizePct: rcLordGold });
                 }
             }
+            } // end !_pIsPlotterAlly
         }
 
         // v9p33river465: All nobles redetermine loyalty to the new king
@@ -34651,19 +34662,34 @@
 
                 // Install new king
                 if (leader) {
-                    leader.socialRank[kId] = 7;
-                    leader.occupation = leader.sex === 'F' ? 'reigning_queen' : 'king';
-                    k.king = leader.id;
+                    // v9p33river544: route the coup install through the canonical
+                    // installNewKing() helper so the new king gets the FULL
+                    // coronation treatment (most importantly kingPersonality
+                    // recompute from the new king's NPC traits, plus capital
+                    // relocation, spouse/children updates, succession rebuild,
+                    // royal-advisor refresh, and diplomacy shuffle). Previously
+                    // the coup path only set k.king + socialRank + occupation,
+                    // leaving kingdom.kingPersonality pointing at the OLD king's
+                    // traits — so the next-day _newKingPolicyReview at
+                    // engine.js:36554 would read stale personality and almost
+                    // never actually change laws. _newKingCoronationDay is set
+                    // by installNewKing as well, so the daily review still fires.
+                    installNewKing(k, leader, 'coup');
+                    // Coup-specific overrides that installNewKing doesn't apply:
                     leader.kingLoyalty = 100;
+                    // installNewKing demotes the deposed king to rank 5 (lord);
+                    // the coup pre-install set them to rank 4 (noble — a harsher
+                    // demotion). Restore the coup-specific rank.
+                    if (kingPerson && kingPerson.alive && kingPerson.id !== leader.id) {
+                        if (kingPerson.socialRank) kingPerson.socialRank[kId] = 4;
+                        kingPerson.kingLoyalty = 10;
+                    }
                     logEvent('👑 ' + (leader.firstName || 'The new ruler') + ' ' + (leader.lastName || '') + ' seizes the throne of ' + k.name + '!', {
                         type: 'new_king_coup', kingdomId: kId
                     }, category);
-                    // v9p33river528: schedule next-day policy review (matches the
-                    // post-assassination installNewKing path) so the new king reviews
-                    // the kingdom's laws/policies/diplomacy and makes their own changes.
-                    k._newKingCoronationDay = world.day;
-                    // v9p33river465: nobles redetermine loyalty after coup
-                    _redetermineNobleLoyalty(k, leader.id, 'coup', rng);
+                    // v9p33river465 + v9p33river544: noble loyalty redetermined by
+                    // installNewKing() above (which calls _redetermineNobleLoyalty
+                    // with cause='coup'). No need to call it again.
                 }
                 // v9p33river528: founder-sensitive plotter memories.
                 // Only credit the player when they actually participated; founder
