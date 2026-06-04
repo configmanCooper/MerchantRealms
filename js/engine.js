@@ -36762,6 +36762,7 @@
                         targetName: c.causeData.targetName || ''
                     } : null, // v9p33river442: bugfix
                     organizer: c.organizer,
+                    organizerName: c.organizerName || (c.organizer === 'player' ? 'You' : ''), // v9p33river519
                     members: (c.members || []).slice(),
                     memberCount: (c.members || []).length,
                     formedDay: c.formedDay,
@@ -36908,6 +36909,7 @@
                 causeLabel: causeLabels[cause],
                 causeData: _coalCauseData,
                 organizer: 'player',
+                organizerName: 'You', // v9p33river519
                 members: [{ id: 'player', name: 'You', influence: _computePlayerInfluence(k) }], // v9p33river514
                 formedDay: world.day,
                 status: 'forming'

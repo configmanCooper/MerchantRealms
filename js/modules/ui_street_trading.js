@@ -1648,6 +1648,9 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             _coalDisplayLabel += ' — ' + _coalTargetLabel; // v9p33river442: bugfix
         }
         html += '<div style="font-size:0.85rem;color:#5dade2;font-weight:bold;">📜 ' + escapeHtml(_coalDisplayLabel) + '</div>';
+        // v9p33river519: show founder name (member who organized this coalition)
+        var _coalFounderLabel = _coal.organizerName || (_coal.organizer === 'player' ? 'You' : 'Unknown');
+        html += '<div style="font-size:0.72rem;color:#caa965;margin-top:2px;">👑 Founder: ' + escapeHtml(_coalFounderLabel) + '</div>';
         html += '<div style="font-size:0.78rem;color:#ccc;margin-top:4px;">Members: ' + _coal.memberCount + '</div>';
         html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">';
         for (var _cmi = 0; _cmi < _coal.members.length; _cmi++) {

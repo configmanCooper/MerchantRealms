@@ -865,7 +865,7 @@
             return { success: false, message: 'That offer is no longer available.' };
         }
         if (offerNpc.townId !== player.townId) return { success: false, message: 'You must be in the same town as ' + offer.npcName + ' to accept this offer.' }; // v9p33river431: Bug 77 — same-town requirement must still hold on accept
-        if (!_canTalkTo(offer.npcId)) return { success: false, message: 'You cannot speak to ' + offer.npcName + ' right now.' }; // v9p33river431: Bug 77 — honor talkability gates on accept
+        if (!_canTalkToNpc(offer.npcId)) return { success: false, message: 'You cannot speak to ' + offer.npcName + ' right now.' }; // v9p33river519: was _canTalkTo (undefined); local helper is _canTalkToNpc
         var quest = {
             id: 'uq_' + (player._nextUnsolicitedQuestId++),
             npcId: offer.npcId,
