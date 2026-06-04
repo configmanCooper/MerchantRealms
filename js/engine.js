@@ -34157,6 +34157,10 @@
                 plotters: plotterIds,
                 type: plotType,
                 startDay: world.day,
+                // v9p33river528: record founder so the coup-success path can grant
+                // stronger memories to plotters / harsher penalties from loyalists.
+                // For NPC-driven plots the founder is the most ambitious dissident.
+                founder: (compatiblePlotters[0] && compatiblePlotters[0].id) || (plotterIds[0] || null),
                 // v9p33river271: seed initial strength so the World Analytics
                 // doesn't show "Strength 0/80" right at conspiracy formation.
                 // Each plotter brings some inherent loyalty/network strength
@@ -34480,6 +34484,16 @@
             coupChance = Math.max(0.05, coupChance - _coupRGReduction);
 
             if (rng.chance(coupChance)) {
+                // v9p33river528: snapshot kingLoyalty BEFORE _redetermineNobleLoyalty
+                // rewrites it, so we can identify nobles who were loyal to the deposed king.
+                var _preCoupLoyalty = {};
+                for (var _plsi = 0; _plsi < allNobles.length; _plsi++) {
+                    var _pln = allNobles[_plsi];
+                    if (_pln && _pln.alive) {
+                        _preCoupLoyalty[_pln.id] = _pln.kingLoyalty != null ? _pln.kingLoyalty : 50;
+                    }
+                }
+
                 // Coup succeeds — find leader (highest ambition)
                 var leader = null;
                 var highestAmbition = -1;
@@ -34585,21 +34599,35 @@
                     logEvent('👑 ' + (leader.firstName || 'The new ruler') + ' ' + (leader.lastName || '') + ' seizes the throne of ' + k.name + '!', {
                         type: 'new_king_coup', kingdomId: kId
                     }, category);
+                    // v9p33river528: schedule next-day policy review (matches the
+                    // post-assassination installNewKing path) so the new king reviews
+                    // the kingdom's laws/policies/diplomacy and makes their own changes.
+                    k._newKingCoronationDay = world.day;
                     // v9p33river465: nobles redetermine loyalty after coup
                     _redetermineNobleLoyalty(k, leader.id, 'coup', rng);
                 }
-                for (var _cpsi = 0; _cpsi < plotterPersons.length; _cpsi++) {
-                    try {
-                        if (Engine._addPlayerMemory) {
-                            Engine._addPlayerMemory(plotterPersons[_cpsi], {
-                                type: 'observation', source: 'player',
-                                category: 'conspiracy_success',
-                                detail: 'Participated in successful coup in ' + k.name,
-                                actorId: 'player', targetId: plotterPersons[_cpsi].id,
-                                day: world.day, sentiment: 1, kingdomId: kId
-                            });
-                        }
-                    } catch(e) {}
+                // v9p33river528: founder-sensitive plotter memories.
+                // Only credit the player when they actually participated; founder
+                // (player started the conspiracy) gets a markedly stronger sentiment.
+                var _playerFoundedCoup = playerIsPlotter && conspiracy.founder === 'player';
+                if (playerIsPlotter) {
+                    var _plotterSent = _playerFoundedCoup ? 3 : 1;
+                    var _plotterDetail = _playerFoundedCoup
+                        ? 'Player founded the coup that installed our new king of ' + k.name
+                        : 'Player joined our successful coup in ' + k.name;
+                    for (var _cpsi = 0; _cpsi < plotterPersons.length; _cpsi++) {
+                        try {
+                            if (Engine._addPlayerMemory) {
+                                Engine._addPlayerMemory(plotterPersons[_cpsi], {
+                                    type: 'observation', source: 'player',
+                                    category: 'conspiracy_success',
+                                    detail: _plotterDetail,
+                                    actorId: 'player', targetId: plotterPersons[_cpsi].id,
+                                    day: world.day, sentiment: _plotterSent, kingdomId: kId
+                                });
+                            }
+                        } catch(e) {}
+                    }
                 }
 
                 // v9p33river524: player coup-ally rewards — relationships, introductions, royal favor
@@ -34636,6 +34664,44 @@
                                 Player.modifyRelationship(_crp.id, 10, undefined, 'coup_ally_' + kId);
                             }
                             Player.state.introductions[_crp.id] = true;
+                        }
+                    } catch(e) {}
+                }
+
+                // v9p33river528: nobles who didn't join the coup but were loyal to the
+                // deposed king blame the player for their role. Founder of the coup
+                // gets a stronger memory hit and a bigger relationship drop.
+                if (playerIsPlotter) {
+                    try {
+                        var _founderMemSent = _playerFoundedCoup ? -4 : -2;
+                        var _founderRelHit = _playerFoundedCoup ? -25 : -12;
+                        var _loyalDetail = _playerFoundedCoup
+                            ? 'Player founded the coup that overthrew our rightful king of ' + k.name
+                            : 'Player joined the coup that overthrew our rightful king of ' + k.name;
+                        var _plotterIdSet = {};
+                        for (var _piiSet = 0; _piiSet < plotterPersons.length; _piiSet++) {
+                            if (plotterPersons[_piiSet]) _plotterIdSet[plotterPersons[_piiSet].id] = true;
+                        }
+                        for (var _lni = 0; _lni < allNobles.length; _lni++) {
+                            var _ln = allNobles[_lni];
+                            if (!_ln || !_ln.alive) continue;
+                            if (_plotterIdSet[_ln.id]) continue;
+                            if (kingPerson && _ln.id === kingPerson.id) continue; // skip deposed king (handled above)
+                            if (leader && _ln.id === leader.id) continue; // skip new king
+                            var _preLoyalty = _preCoupLoyalty[_ln.id] != null ? _preCoupLoyalty[_ln.id] : 50;
+                            if (_preLoyalty < 60) continue; // only loyalists react
+                            if (Engine._addPlayerMemory) {
+                                Engine._addPlayerMemory(_ln, {
+                                    type: 'observation', source: 'player',
+                                    category: 'coup_betrayal',
+                                    detail: _loyalDetail,
+                                    actorId: 'player', targetId: _ln.id,
+                                    day: world.day, sentiment: _founderMemSent, kingdomId: kId
+                                });
+                            }
+                            if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                                Player.modifyRelationship(_ln.id, _founderRelHit, undefined, 'coup_betrayal_' + kId);
+                            }
                         }
                     } catch(e) {}
                 }
@@ -36673,6 +36739,8 @@
                 plotters: ['player', targetNobleId],
                 type: type,
                 startDay: world.day,
+                // v9p33river528: player-formed conspiracies are founded by the player.
+                founder: 'player',
                 strength: 20,
                 detected: false,
                 revoltTargetTownId: revoltTargetTownId,
