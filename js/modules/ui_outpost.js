@@ -1034,10 +1034,10 @@
             var canJunction = gold >= totalJunction;
             for (var jrmk in totalJMats) { if ((inv[jrmk] || 0) < totalJMats[jrmk]) canJunction = false; }
             html += '<div style="border:1px solid #6688aa;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,40,50,0.8)">';
-            html += '<div style="font-size:12px;color:#88bbdd;margin-bottom:4px">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via ' + roadConn.connectTownName + '</div>';
+            html += '<div style="font-size:12px;color:#88bbdd;margin-bottom:4px">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via new junction</div>';
             html += '<div style="font-size:11px;color:#888">Road passes ~' + roadConn.perpDist + ' away (cheaper than ' + nearDist + ' to ' + nearestSettle.name + '). Total: ' + totalJunction + 'g + ' + _formatMats(totalJMats) + '</div>';
             html += '<div style="font-size:10px;color:#55a868">+15% NPC recruitment bonus with road!</div>';
-            html += '<button class="btn-medieval" data-action="_foundOutpostAtLocation" data-x="' + destX + '" data-y="' + destY + '" data-road="true" data-connect="' + roadConn.connectTownId + '" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
+            html += '<button class="btn-medieval" data-action="_foundOutpostAtLocation" data-x="' + destX + '" data-y="' + destY + '" data-road="true" data-junction="true" style="margin-top:5px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
             if (!canJunction) html += _shortageText(totalJunction, totalJMats);
             html += '</div>';
         }
@@ -1047,7 +1047,7 @@
         openModal('⛺ Found Outpost Here', html, footer);
     }
 
-    function _foundOutpostAtLocation(destX, destY, buildWithRoad, roadTargetTownId) {
+    function _foundOutpostAtLocation(destX, destY, buildWithRoad, roadTargetTownId, viaJunction) {
         closeModal();
         // Start travel to location, then found on arrival
         var result = Player.travelToCoords ? Player.travelToCoords(destX, destY) : null;
@@ -1058,17 +1058,28 @@
         Player.state._pendingOutpostFound = true;
         Player.state._pendingOutpostRoad = !!buildWithRoad;
         if (roadTargetTownId) Player.state._pendingOutpostRoadTarget = roadTargetTownId;
+        // v9p33river542: remember junction-connect intent so the post-travel
+        // modal/click takes the junction-split path (not a long road build).
+        if (viaJunction) Player.state._pendingOutpostJunction = true;
         toast('⛺ Traveling to location... Outpost founding will begin on arrival.', 'info');
     }
 
-    function foundOutpostUI(buildWithRoad, roadTargetOverride) {
+    function foundOutpostUI(buildWithRoad, roadTargetOverride, isJunction) {
         var name = prompt('Name your outpost:');
         if (!name || name.trim() === '') return;
         var opts = { buildWithRoad: !!buildWithRoad };
-        // Check for road target override (junction connection)
+        // v9p33river542: pending-junction flag survives travel-then-found
+        var junctionMode = !!isJunction || !!(Player.state && Player.state._pendingOutpostJunction);
+        if (Player.state && Player.state._pendingOutpostJunction) delete Player.state._pendingOutpostJunction;
+        // Check for road target override (legacy junction param — no-op now)
         var targetOverride = roadTargetOverride || (Player.state._pendingOutpostRoadTarget || null);
         if (targetOverride) delete Player.state._pendingOutpostRoadTarget;
-        if (buildWithRoad) {
+        if (junctionMode) {
+            // v9p33river542: junction-connect path — base outpost cost only;
+            // road cost handled by connectOutpostToRoad after outpost is founded.
+            opts.buildWithRoad = false;
+            opts.connectViaJunction = true;
+        } else if (buildWithRoad) {
             var cfg = CONFIG.OUTPOST_CONFIG || {};
             var allTowns = Engine.getTowns ? Engine.getTowns() : [];
             var px = Player.worldX || 0, py = Player.worldY || 0;
@@ -1213,9 +1224,9 @@
             var canJunction = gold >= totalJGold;
             for (var jrmk in totalJMats) { if ((inv[jrmk] || 0) < totalJMats[jrmk]) canJunction = false; }
             html += '<div style="border:1px solid #6688aa;padding:8px;margin:6px 0;border-radius:5px;background:rgba(30,40,50,0.6)">';
-            html += '<div style="font-size:12px;color:#88bbdd">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via ' + roadConn.connectTownName + '</div>';
+            html += '<div style="font-size:12px;color:#88bbdd">🔗 Connect to ' + roadConn.fromTownName + '–' + roadConn.toTownName + ' Road via new junction</div>';
             html += '<div style="font-size:11px;color:#888">Road passes ~' + roadConn.perpDist + ' away (cheaper than ' + Math.floor(nearDist) + ' to ' + nearestSettle.name + '). Total: ' + totalJGold + 'g + ' + _formatMats(totalJMats) + '</div>';
-            html += '<button class="btn-medieval" data-action="foundOutpostUIConnect" data-id="' + roadConn.connectTownId + '" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
+            html += '<button class="btn-medieval" data-action="foundOutpostUIConnect" data-junction="true" style="margin-top:4px;padding:4px 14px;font-size:11px;background:rgba(59,89,124,0.3);border-color:rgba(59,89,124,0.5)' + (canJunction ? '' : ';opacity:0.5') + '"' + (canJunction ? '' : ' disabled') + '>🔗 Found (Connect to Road)</button>';
             if (!canJunction) html += _shortageText(totalJGold, totalJMats);
             html += '</div>';
         }
@@ -1603,10 +1614,10 @@
     // ── Delegated action handlers (data-action) ──
     UI.registerAction('_opOutpostWithdraw', function(_t, d) { UI._opOutpostWithdraw(d.id, d.val, Number(d.qty)); });
     UI.registerAction('_opOutpostDeposit', function(_t, d) { UI._opOutpostDeposit(d.id, d.val, Number(d.qty)); });
-    UI.registerAction('_foundOutpostAtLocation', function(_t, d) { UI._foundOutpostAtLocation(Number(d.x), Number(d.y), d.road === 'true', d.connect || undefined); });
+    UI.registerAction('_foundOutpostAtLocation', function(_t, d) { UI._foundOutpostAtLocation(Number(d.x), Number(d.y), d.road === 'true', d.connect || undefined, d.junction === 'true'); });
     UI.registerAction('foundOutpostUINoRoad', function() { UI.foundOutpostUI(false); });
     UI.registerAction('foundOutpostUIWithRoad', function() { UI.foundOutpostUI(true); });
-    UI.registerAction('foundOutpostUIConnect', function(_t, d) { UI.foundOutpostUI(true, d.id); });
+    UI.registerAction('foundOutpostUIConnect', function(_t, d) { UI.foundOutpostUI(true, d.id, d.junction === 'true'); });
     UI.registerAction('_confirmOffSea', function(_t, d) { UI._confirmOffSea(Number(d.x), Number(d.y), d.id); });
     UI.registerAction('_executeLanding', function(_t, d) { UI._executeLanding(Number(d.x), Number(d.y)); });
     UI.registerAction('toggleAbilityAndRefresh', function(_t, d) { (new Function(d.toggle.replace(/&quot;/g, '"')))(); UI.openSkillsDialog('_abilities'); });

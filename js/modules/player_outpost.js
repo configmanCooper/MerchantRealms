@@ -161,6 +161,20 @@
             player.worldY = result.outpost.y;
 
             unlockAchievement('frontier_founder');
+
+            // v9p33river542: junction-connect path — split nearest road and
+            // build a short connector instead of a long road to a town. This
+            // mirrors the standalone connectOutpostToRoad workflow (which is
+            // the one users reported as working). The connector charges its
+            // own gold/materials.
+            if (opts.connectViaJunction) {
+                var connRes = connectOutpostToRoad(result.outpost.id);
+                if (connRes && !connRes.success) {
+                    result.message = (result.message || '') + ' (Road connection failed: ' + (connRes.message || 'unknown error') + ' — connect manually from outpost.)';
+                } else if (connRes && connRes.success) {
+                    result.message = (result.message || '') + ' ' + (connRes.message || '');
+                }
+            }
         }
 
         return result;
@@ -778,6 +792,16 @@
                 var d = Math.hypot(ox - px, oy - py);
                 if (d < bestDist) {
                     bestDist = d;
+                    // v9p33river542: also expose the nearer endpoint as
+                    // connectTownId / connectTownName so the UI label and
+                    // the foundOutpostUI cost matcher can find the right
+                    // road target. Previously these were undefined and the
+                    // modal rendered "via undefined" / the button passed
+                    // data-id="undefined" which triggered a 200-distance
+                    // fallback in foundOutpostUI (60 wood vs 43 displayed).
+                    var dFromEnd = Math.hypot(ox - fromT.x, oy - fromT.y);
+                    var dToEnd = Math.hypot(ox - toT.x, oy - toT.y);
+                    var nearerEnd = dFromEnd <= dToEnd ? fromT : toT;
                     best = {
                         road: road,
                         perpDist: Math.floor(d),
@@ -787,6 +811,8 @@
                         toTownId: road.toTownId,
                         fromTownName: fromT.name,
                         toTownName: toT.name,
+                        connectTownId: nearerEnd.id,
+                        connectTownName: nearerEnd.name,
                     };
                 }
             }

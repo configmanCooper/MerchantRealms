@@ -5537,6 +5537,10 @@
             player.worldY = pos.y;
             player.townId = null;
             Engine.logEvent('\u2693 ' + (player.firstName || 'You') + ' dropped anchor in open water.', { type: 'travel_stop' }, 'travel_events');
+            // v9p33river542: recenter camera on sea-stop position too
+            if (typeof Renderer !== 'undefined' && Renderer.centerOnPlayer) {
+                Renderer.centerOnPlayer();
+            }
             return { success: true, inWilderness: true, atSea: true };
         }
 
@@ -5569,6 +5573,12 @@
         }
 
         cleanupTravelState();
+        // v9p33river542: recenter the camera on the stop point so the diamond
+        // doesn't drift off-screen. Without this, the camera stays wherever
+        // it was during travel, and the player can lose sight of themselves.
+        if (typeof Renderer !== 'undefined' && Renderer.centerOnPlayer) {
+            Renderer.centerOnPlayer();
+        }
         return { success: true, atTown: player.townId ? ((Engine.findTown(player.townId) || {}).name || null) : null, inWilderness: !player.townId };
     }
 
@@ -6163,6 +6173,14 @@
                 _moveGuardsToPlayer();
                 cleanupTravelState();
                 Player.completeTransport();
+                // v9p33river542: recenter the camera on the arrival point so
+                // the player can actually see where they ended up. Previously
+                // the camera stayed wherever it was when travel began, and
+                // free-travel arrival in the wilderness left the diamond
+                // off-screen.
+                if (typeof Renderer !== 'undefined' && Renderer.centerOnPlayer) {
+                    Renderer.centerOnPlayer();
+                }
                 // Check for pending outpost founding
                 if (player._pendingOutpostFound) {
                     player._pendingOutpostFound = false;
@@ -20891,6 +20909,7 @@
             _pendingOutpostFound: !!player._pendingOutpostFound,
             _pendingOutpostRoad: !!player._pendingOutpostRoad,
             _pendingOutpostRoadTarget: player._pendingOutpostRoadTarget || null,
+            _pendingOutpostJunction: !!player._pendingOutpostJunction,
             _pendingCustomsFind: player._pendingCustomsFind ? structuredClone(player._pendingCustomsFind) : null,
             _kingdomTravelBan: structuredClone(player._kingdomTravelBan || {}),
             _warFrozenAssets: structuredClone(player._warFrozenAssets || []),
@@ -21007,6 +21026,7 @@
         player._pendingOutpostFound = !!data._pendingOutpostFound;
         player._pendingOutpostRoad = !!data._pendingOutpostRoad;
         player._pendingOutpostRoadTarget = data._pendingOutpostRoadTarget || null;
+        player._pendingOutpostJunction = !!data._pendingOutpostJunction;
         player._pendingCustomsFind = data._pendingCustomsFind ? structuredClone(data._pendingCustomsFind) : null;
         player._kingdomTravelBan = data._kingdomTravelBan ? structuredClone(data._kingdomTravelBan) : {};
         player._warFrozenAssets = data._warFrozenAssets ? structuredClone(data._warFrozenAssets) : [];
