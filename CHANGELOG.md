@@ -4,6 +4,58 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [TabletPolishAndOutpostMaturity] - v9p33river537 → v9p33river552 — iPad layout, court intrigue depth, outpost lifecycle, sea travel polish (16 commits)
+
+### Added — Feast Court-Intrigue Target Pickers (v545)
+- **Forge Alliance, Pit Nobles, Spread Rumor, Private Conversation, Champion a Noble, Introduce a Noble to King** now all open a target picker listing the nobles in attendance instead of picking randomly
+- **Forge Alliance** lets the player choose any attending noble with 60+ relationship and start a **new coalition** together — higher-than-normal acceptance chance (feast bonus), and the recruited noble immediately tries to draw in 2–3 more of their high-relationship attendees
+- **Spread Rumor** now also lowers the king's *perceived loyalty* of the target noble (in addition to relationship damage)
+- **Mingle & Socialize** distributes +3–4 relationship across 3–4 random attending nobles (was a single-target nudge)
+- All six scheme outcomes write **memories** to every NPC involved with the correct positive/negative sentiment
+
+### Added — Coup-Installed Kings Run Law Review (v544)
+- Coup-installed kings now route through the canonical `installNewKing` pipeline, triggering the same personality-driven law/policy/ministerial review that assassination-succession kings get
+- Previously a coup left the new king's policies frozen at the predecessor's settings until manually edited
+
+### Added — Outpost Recruit UX (v543)
+- Outpost recruit panel now shows **100 candidates** sorted by accept chance (was 25 unsorted)
+- **Gold is refunded if the recruit declines** — no more "pay 50g, get nothing" silent failures
+
+### Added — Outpost Lifecycle: Promote-to-Village Fully Realized (v547, v549, v550)
+- **Petition-promoted outposts now credit the Lord-rank Infrastructure counter** (v547) — was broken because the petition handler only flipped `category='village'` but left `isOutpost=true`, blocking the Infrastructure gate. New canonical helper `Player.applyVillagePromotion(townId)` does the full conversion (clears `isOutpost`, sets `annexed`, bumps building slots + garrison, releases outpost staff, grants land to the founder, removes from `player.outposts`).
+- **Coastal promoted villages auto-become seaports** (v550) — `applyVillagePromotion` now calls `Engine.townHasOceanNearby` and, if true, sets `isPort=true` + adds dock/fishery + seeds fish/salt supply (mirrors `reconcilePortStatus`'s promote shape).
+- **Outpost docks require *ocean*, not just water** (v550) — `buildOutpostDocks` switched from any-water tile-scan to `Engine.townHasOceanNearby` (ocean-connected via mask). Inland lakes/ponds no longer falsely satisfy the "near water" check.
+- **Player Impact "Outposts Founded" is now a lifetime count** (v549) — scans `towns` for `founderId === player.id` instead of reading the live `player.outposts` array, which empties as outposts get promoted. Subtitle shows `(X active, Y promoted)` breakdown.
+
+### Added — Off Route Sea Travel + Sea-Route Rebalance (v551, v552)
+- **Sea route gold cost halved** (v551) — `TOLL_SEA_BASE_COST` 15000→7500, `TOLL_SEA_DOCK_COST` 5000→2500, distance gold 5g/px→2.5g/px. Outpost path `(200 + dist*0.8) * 0.5` also halved.
+- **Materials swapped from timber/stone/iron (or rope/planks/cloth on outposts) to demolition_tools + blasting_powder** (v551) — 1 blasting powder per 250 distance, 2 demolition tools per 250 distance. Cartographer 25% discount preserved.
+- **"Off-Sea Travel" renamed to "Off Route Sea Travel"** (v552) throughout the UI (modal title, modal description, right-click water menu). Internal field names (`travelOffSea` etc.) unchanged.
+- **Off-route sea travel now auto-docks at the targeted port on arrival** (v552) — picking "Sail to {Port}" from a town's right-click menu now reliably lands the player inside that port. The port-search in `startOffSeaTravel` previously only ran for land-tile destinations, so coastal ports whose center sits on a water tile (e.g. Port Cliff) never set `_sailTargetPortId` and the player would arrive in open water with no auto-dock. Search now runs regardless of land/water, uses a ~5-tile radius, and picks the nearest port (was first-match).
+
+### Added — Tablet/iPad Layout (v537, v538, v539)
+- Top bar now spans the full iPad viewport with reliable ledger tap (v537, v539)
+- Volume sliders hidden on iPad/tablet form factors (v538)
+- iPad layout + audio fixes (v537)
+
+### Changed — Economic Threat & Negotiation Cooldown (v540, v541)
+- **Economic threat fulfillment correctly detects halted production** (v540) — was reading stale production snapshots and undercounting compliance
+- **7-day negotiation cooldown** (v541) — players can no longer spam re-negotiate offers; "Entice" now tracks the player's actual current production for the requested good
+
+### Fixed — Spouse Relationship Decay (v546)
+- Spouse relationship now **decays when neglected even when the player is in the same city** — was previously only decaying when the player was traveling/away, so a player could ignore their spouse indefinitely while in-town and keep maxed relationship
+
+### Fixed — Outpost Connect-to-Road Junction + Travel Camera (v542)
+- **Connect-to-Road** action now correctly creates a junction node and connects to the nearest road segment (was failing silently on certain road geometries)
+- **Camera recenters on the player at travel arrival/stop** so the player can see where they ended up
+
+### Removed — Criminal-Faction Protection Racket (v548)
+- The criminal-faction-extorts-player feature ("Pay 100g or refuse" dialog from random crime_scene events) is fully removed: state field, serialize/deserialize, tick, handler, config consts, achievements, UI panel, and the standalone `protection_racket` unsolicited event are all gone
+- **Player-AS-racketeer "Protection Racket" dark deed is KEPT** (different feature — `player.protectionRackets` plural)
+
+### Fixed — Player Impact Panel Crash (v548)
+- "Cannot read properties of undefined (reading 'length')" when opening Player Impact with a non-empty `_militarySalesTotal` — `var tradeLog = p.tradeLog || []` was declared *inside* an `if (!p._militarySalesTotal)` block, hoisting to `undefined` whenever the if was skipped. Hoisted the declaration out so medical/food sections can read `tradeLog.length` unconditionally.
+
 ## [CoupAndCourtPolitics] - v9p33river513 → v9p33river536 — coup mechanics, court politics, regression sweep (24 commits)
 
 ### Added — Conspiracy & Coup System (v522–v528, v532–v533)
