@@ -1596,7 +1596,7 @@
                         <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerDayOffAction" data-id="${wId}" data-val="${bld.id}">🏖️ Day Off</button>
                         <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerBonusAction" data-id="${wId}" data-val="${bld.id}">💰 Bonus</button>
                         <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerRaiseAction" data-id="${wId}" data-val="${bld.id}">⬆️ Raise</button>
-                        <button class="btn-trade sell" style="font-size:0.65rem;padding:1px 5px;" data-action="removeWorkerUI" data-id="${wId}" data-val="${bld.id}">✕ Remove</button>
+                        <button class="btn-trade sell" style="font-size:0.65rem;padding:1px 5px;" data-action="removeWorkerUI" data-id="${wId}" data-val="${bld.id}" title="Fires this worker (removes from payroll + all buildings)">🔥 Fire</button>
                     </div>
                 </div>`;
             }
@@ -2286,7 +2286,11 @@
     }
 
     function removeWorkerUI(personId, buildingId) {
-        const result = Player.removeWorkerFromBuilding(personId, buildingId);
+        // v9p33river516: Remove now also fires the worker entirely (per user
+        // request) — previously it only unassigned them from this building
+        // while keeping them on payroll. fireWorker handles building cleanup
+        // internally (splices personId out of every bld.workers).
+        const result = Player.fireWorker(personId);
         toast(result.message, result.success ? 'success' : 'warning');
         if (result.success) showBuildingDetail(buildingId);
     }
