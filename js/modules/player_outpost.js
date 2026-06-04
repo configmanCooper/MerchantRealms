@@ -1121,18 +1121,19 @@
         // Set cooldown
         player._outpostRecruitCooldowns[cooldownKey] = Engine.getDay();
 
-        // Deduct gold incentive
-        if (goldIncentive > 0) {
-            player.gold -= goldIncentive;
-            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldIncentive;
-            // v9p33river432: recruitment incentives should reach the NPC instead of disappearing on failed rolls.
-            npc.gold = (npc.gold || 0) + goldIncentive;
-        }
-
+        // v9p33river542: defer gold deduction until AFTER the roll. Previously
+        // the gold was always spent (and given to the NPC) even on a decline,
+        // which felt punitive. Now: only deduct + transfer if they agree.
         // Roll
         var rng = Engine.getRng();
         var roll = rng.random();
         if (roll < chance) {
+            // Deduct gold incentive ONLY on success (and give it to the NPC)
+            if (goldIncentive > 0) {
+                player.gold -= goldIncentive;
+                player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + goldIncentive;
+                npc.gold = (npc.gold || 0) + goldIncentive;
+            }
             // Success — NPC agrees to move
             var oldTown = Engine.findTown(npc.townId);
             if (oldTown && oldTown.id !== town.id) {
@@ -1186,7 +1187,7 @@
                 npcId: npc.id,
                 _noToast: true
             });
-            return { success: false, message: '😔 ' + npc.firstName + ' declined. (' + Math.round(chance * 100) + '% chance)' + (goldIncentive > 0 ? ' Gold spent.' : ''), chance: chance };
+            return { success: false, message: '😔 ' + npc.firstName + ' declined. (' + Math.round(chance * 100) + '% chance)' + (goldIncentive > 0 ? ' Gold refunded.' : ''), chance: chance };
         }
     }
 

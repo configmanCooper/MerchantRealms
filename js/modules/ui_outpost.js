@@ -575,20 +575,38 @@
                     body += '<div style="font-size:11px;color:#c44e52">⚠️ Population cap reached (' + maxPop + '). Cannot recruit more.</div>';
                 } else {
                     body += '<div style="font-size:11px;color:#aaa;margin-bottom:6px">Recruit people from <strong>' + _recruitFromTown.name + '</strong> to your outpost.</div>';
-                    body += '<div style="max-height:200px;overflow-y:auto">';
+                    body += '<div style="max-height:280px;overflow-y:auto">';
+                    // v9p33river542: precompute recruitment chance for each candidate and
+                    // sort by chance descending so the best prospects show up first. Also
+                    // bumped visible count from 20 → 100 per user request.
                     var _recruitShown = 0;
-                    var _maxShow = 20;
-                    for (var _rpi = 0; _rpi < _recruitPeople.length && _recruitShown < _maxShow; _rpi++) {
-                        var _rp = _recruitPeople[_rpi];
+                    var _maxShow = 100;
+                    var _curDay = Engine.getDay();
+                    var _cdDays = cfg.recruitCooldownDays || 7;
+                    var _recruitDecorated = [];
+                    for (var _rpi0 = 0; _rpi0 < _recruitPeople.length; _rpi0++) {
+                        var _rp0 = _recruitPeople[_rpi0];
+                        var _rpCdKey0 = _rp0.id + '_' + townId;
+                        var _rpLastAsked0 = (Player.state._outpostRecruitCooldowns || {})[_rpCdKey0] || 0;
+                        var _rpDaysLeft0 = Math.max(0, _cdDays - (_curDay - _rpLastAsked0));
+                        var _rpOnCd0 = _rpLastAsked0 > 0 && _rpDaysLeft0 > 0;
+                        var _rpChance0 = Player.getOutpostRecruitChance ? Player.getOutpostRecruitChance(_rp0.id, townId) : 0.10;
+                        _recruitDecorated.push({ p: _rp0, chance: _rpChance0, onCd: _rpOnCd0, daysLeft: _rpDaysLeft0 });
+                    }
+                    _recruitDecorated.sort(function(a, b) {
+                        // Available candidates first, then by chance desc
+                        if (a.onCd !== b.onCd) return a.onCd ? 1 : -1;
+                        return b.chance - a.chance;
+                    });
+                    for (var _rpi = 0; _rpi < _recruitDecorated.length && _recruitShown < _maxShow; _rpi++) {
+                        var _rec = _recruitDecorated[_rpi];
+                        var _rp = _rec.p;
                         var _rpOcc = _rp.occupation ? capitalize(_rp.occupation) : 'None';
                         var _rpRel = Player.getRelationship ? Player.getRelationship(_rp.id) : { level: 0 };
                         var _rpRelLvl = _rpRel.level || 0;
-                        // Check cooldown
-                        var _rpCdKey = _rp.id + '_' + townId;
-                        var _rpLastAsked = (Player.state._outpostRecruitCooldowns || {})[_rpCdKey] || 0;
-                        var _rpDaysLeft = Math.max(0, (cfg.recruitCooldownDays || 7) - (Engine.getDay() - _rpLastAsked));
-                        var _rpOnCd = _rpLastAsked > 0 && _rpDaysLeft > 0;
-                        var _rpChance = Player.getOutpostRecruitChance ? Player.getOutpostRecruitChance(_rp.id, townId) : 0.10;
+                        var _rpDaysLeft = _rec.daysLeft;
+                        var _rpOnCd = _rec.onCd;
+                        var _rpChance = _rec.chance;
                         var _rpChancePct = Math.round(_rpChance * 100);
                         var _rpChanceColor = _rpChancePct >= 30 ? '#55a868' : _rpChancePct >= 15 ? '#ccaa33' : '#c44e52';
 
@@ -610,7 +628,9 @@
                     }
                     body += '</div>';
                     if (_recruitPeople.length > _maxShow) {
-                        body += '<div style="font-size:10px;color:#666;margin-top:4px">Showing first ' + _maxShow + ' of ' + _recruitPeople.length + ' eligible people.</div>';
+                        body += '<div style="font-size:10px;color:#666;margin-top:4px">Showing first ' + _maxShow + ' of ' + _recruitPeople.length + ' eligible people (sorted by chance).</div>';
+                    } else if (_recruitPeople.length > 0) {
+                        body += '<div style="font-size:10px;color:#666;margin-top:4px">Sorted by recruitment chance.</div>';
                     }
                 }
                 body += '</div>';
