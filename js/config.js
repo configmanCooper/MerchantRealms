@@ -493,7 +493,7 @@ const CONFIG = {
 
     // Naval / Sea travel
     SEA_ROUTE_MAX_DISTANCE: 3000,
-    SEA_ROUTE_MIN_WATER_FRACTION: 0.95,    // Open-water portion must be >=95% water (coastal approach excluded)
+    SEA_ROUTE_MIN_WATER_FRACTION: 0.80,    // v9p33river553: relaxed from 0.95 — was rejecting plausible coast-hugging routes that briefly skim a peninsula; auto-tile-conversion in buildNewSeaRoute fixes any non-water sections after the route is accepted.
     SEA_SPEED_MULTIPLIER: 1.5,
     STORM_RISK_PER_TRIP: 0.05,
     STORM_LOSS_MIN: 0.10,

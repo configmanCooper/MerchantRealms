@@ -33588,11 +33588,10 @@
         if ((player.inventory.blasting_powder || 0) < blastingNeeded) return { success: false, message: `Need ${blastingNeeded} blasting powder (have ${player.inventory.blasting_powder || 0}).` };
         if ((player.inventory.demolition_tools || 0) < demoNeeded) return { success: false, message: `Need ${demoNeeded} demolition tools (have ${player.inventory.demolition_tools || 0}).` };
 
-        player.gold -= totalCost;
-        player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - blastingNeeded;
-        player.inventory.demolition_tools = (player.inventory.demolition_tools || 0) - demoNeeded;
-        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
-
+        // v9p33river553: build the route FIRST and only charge gold/supplies if the
+        // engine accepts it. Previously the player was charged before validation,
+        // so a "Not enough open water between these ports" rejection still drained
+        // their inventory and gold.
         const result = Engine.buildNewSeaRoute(player.townId, targetTownId, 'player', {
             ownerId: 'player',
             tollRate: CONFIG.TOLL_DEFAULT_RATE,
@@ -33600,6 +33599,10 @@
         });
 
         if (result.success) {
+            player.gold -= totalCost;
+            player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - blastingNeeded;
+            player.inventory.demolition_tools = (player.inventory.demolition_tools || 0) - demoNeeded;
+            player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
             grantXP(200, 'sea route establishment');
             modifyTownReputation(player.townId, 30);
             modifyTownReputation(targetTownId, 30);
