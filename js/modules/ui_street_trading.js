@@ -1292,8 +1292,40 @@ function _buildNobleInfluenceTab(citizenKingdomId, kingdom, playerRank) {
     }
 
     // ── Loyalty Manipulation Actions ──
+    // v9p33river556: gate behind 20+ relationship with king AND being in a capital of the kingdom
+    var _lmAllowed = false;
+    var _lmReason = '';
+    var _lmRelLevel = 0;
+    try {
+        var _lmTown = Player.townId ? (Engine.findTown ? Engine.findTown(Player.townId) : null) : null;
+        if (kingdom && kingdom.king && typeof Player.getRelationship === 'function') {
+            var _lmRel = Player.getRelationship(kingdom.king);
+            if (_lmRel && typeof _lmRel.level === 'number') _lmRelLevel = _lmRel.level;
+        }
+        var _lmAtCapital = !!(_lmTown && _lmTown.category === 'capital_city' && _lmTown.kingdomId === citizenKingdomId);
+        if (!_lmAtCapital) {
+            _lmReason = 'You must be in a capital city of ' + ((kingdom && kingdom.name) || 'your kingdom') + ' to whisper at court.';
+        } else if (_lmRelLevel < 20) {
+            _lmReason = 'The king barely knows you (relationship ' + Math.floor(_lmRelLevel) + '/100). Build to at least 20 before attempting court manipulation.';
+        } else {
+            _lmAllowed = true;
+        }
+    } catch(e) {
+        _lmReason = 'Unable to verify court access.';
+    }
+
     html += '<div style="background:rgba(0,0,0,0.2);border:1px solid rgba(201,168,76,0.2);border-radius:8px;padding:10px;margin-bottom:10px;">';
     html += '<h3 style="margin:0 0 8px 0;font-size:0.95rem;color:var(--gold);">🎭 Loyalty Manipulation</h3>';
+
+    if (!_lmAllowed) {
+        html += '<div style="padding:10px;background:rgba(80,80,80,0.18);border:1px dashed rgba(201,168,76,0.25);border-radius:6px;color:#bbb;font-size:0.82rem;">';
+        html += '🔒 <b>Locked.</b> ' + escapeHtml(_lmReason);
+        html += '<div style="margin-top:6px;color:#888;font-size:0.74rem;">Requires: being in a capital city of your kingdom AND ≥20 relationship with the current king.</div>';
+        html += '</div>';
+        html += '</div>';
+        return html;
+    }
+
     html += '<p style="color:#bbb;font-size:0.8rem;margin:0 0 8px 0;">Influence how the king perceives you and other nobles. Risky — you may be discovered!</p>';
 
     // Flatter the King

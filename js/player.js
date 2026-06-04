@@ -10756,6 +10756,25 @@
     // ── Noble Loyalty Missions ──
 
     // ── Player-Noble Loyalty Manipulation (when player is noble, not king) ──
+    // v9p33river556: shared gate — must be in a capital of the kingdom AND have 20+ rel with king
+    function _checkLoyaltyManipulationGate(kId) {
+        var k = Engine.findKingdom ? Engine.findKingdom(kId) : null;
+        var kName = (k && k.name) || 'your kingdom';
+        var town = player.townId && Engine.findTown ? Engine.findTown(player.townId) : null;
+        var atCapital = !!(town && town.category === 'capital_city' && town.kingdomId === kId);
+        if (!atCapital) {
+            return { ok: false, message: 'You must be in a capital city of ' + kName + ' to influence the court.' };
+        }
+        if (k && k.king && typeof Player !== 'undefined' && Player.getRelationship) {
+            var rel = Player.getRelationship(k.king);
+            var level = (rel && typeof rel.level === 'number') ? rel.level : 0;
+            if (level < 20) {
+                return { ok: false, message: 'The king barely knows you (relationship ' + Math.floor(level) + '/100). Build to at least 20 first.' };
+            }
+        }
+        return { ok: true };
+    }
+
     function nobleFlatterKing() {
         // Player (as noble) flatters the king to boost own perceived loyalty
         // Player is NOT in world.people — use player state directly
@@ -10765,6 +10784,10 @@
         var rank = (pPerson.socialRank && pPerson.socialRank[kId]) || 0;
         if (rank < 4) return { success: false, message: 'You must be at least a Minor Noble to flatter the king.' };
         if (player.isKing) return { success: false, message: 'You ARE the king. No need to flatter yourself.' };
+
+        // v9p33river556: must be in a capital city of the kingdom AND have 20+ rel with king
+        var _lmGate = _checkLoyaltyManipulationGate(kId);
+        if (!_lmGate.ok) return { success: false, message: _lmGate.message };
 
         // Cooldown: once per 5 days
         if (!player._flatterCooldown) player._flatterCooldown = 0;
@@ -10802,6 +10825,10 @@
         var rank = (pPerson.socialRank && pPerson.socialRank[kId]) || 0;
         if (rank < 4) return { success: false, message: 'Must be at least Minor Noble.' };
         if (player.isKing) return { success: false, message: 'Use the Investigate function as king instead.' };
+
+        // v9p33river556: must be in a capital city of the kingdom AND have 20+ rel with king
+        var _lmGate = _checkLoyaltyManipulationGate(kId);
+        if (!_lmGate.ok) return { success: false, message: _lmGate.message };
 
         var target = Engine.findPerson(targetNobleId);
         if (!target || !target.alive) return { success: false, message: 'Target not found.' };
@@ -10849,6 +10876,10 @@
             return { success: false, message: 'Must be at least Minor Noble.' };
         }
         if (player.isKing) return { success: false, message: 'Use king actions instead.' };
+
+        // v9p33river556: must be in a capital city of the kingdom AND have 20+ rel with king
+        var _lmGate = _checkLoyaltyManipulationGate(kId);
+        if (!_lmGate.ok) return { success: false, message: _lmGate.message };
 
         var target = Engine.findPerson(targetNobleId);
         if (!target || !target.alive) return { success: false, message: 'Target not found.' };
