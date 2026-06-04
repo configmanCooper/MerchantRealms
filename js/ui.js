@@ -23165,13 +23165,19 @@ window.UI = (function () {
 
         // ── MILITARY IMPACT ──
         // v9p33river399: fixed invalid ids (weapons, shields, crossbows, pikes, war_horses); added quality variants
-        var milGoodsIds = ['swords', 'armor', 'bows', 'arrows', 'horses', 'iron', 'steel', 'swords_good', 'swords_excellent', 'armor_good', 'armor_excellent', 'bows_good', 'bows_excellent', 'arrows_good', 'arrows_excellent', 'bandages', 'blasting_powder'];
-        var playerMilSales = 0;
-        var tradeLog = p.tradeLog || [];
-        for (var tli = 0; tli < tradeLog.length; tli++) {
-            var tl = tradeLog[tli];
-            if (tl.type === 'sell' && milGoodsIds.indexOf(tl.resource) >= 0) {
-                playerMilSales += (tl.qty || 0);
+        // v9p33river517: tradeLog is capped at 50 entries so it loses old sales —
+        // use the persistent `_militarySalesTotal` lifetime counter as the
+        // authoritative figure, and fall back to scanning the tradeLog only
+        // when that field is missing (legacy saves).
+        var milGoodsIds = ['swords', 'armor', 'bows', 'arrows', 'horses', 'iron', 'steel', 'swords_good', 'swords_excellent', 'armor_good', 'armor_excellent', 'bows_good', 'bows_excellent', 'arrows_good', 'arrows_excellent', 'shields', 'shields_good', 'shields_great', 'bandages', 'blasting_powder', 'demolition_tools'];
+        var playerMilSales = (typeof p._militarySalesTotal === 'number') ? p._militarySalesTotal : 0;
+        if (!p._militarySalesTotal) {
+            var tradeLog = p.tradeLog || [];
+            for (var tli = 0; tli < tradeLog.length; tli++) {
+                var tl = tradeLog[tli];
+                if (tl.type === 'sell' && milGoodsIds.indexOf(tl.resource) >= 0) {
+                    playerMilSales += (tl.qty || 0);
+                }
             }
         }
         // Also check war trade ledger
