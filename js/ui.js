@@ -22,6 +22,20 @@ window.UI = (function () {
             .replace(/'/g, '&#39;');
     }
 
+    // v507: Mobile-layout detector — matches the responsive CSS media query.
+    // True for narrow phones (<=600w), portrait tablets up to 1024w, and
+    // small landscape devices up to 900w. Keeps JS drawer/HUD behavior in
+    // sync with the CSS chrome on iPad portrait, foldables, etc.
+    function _isMobileLayout() {
+        var w = window.innerWidth || 0;
+        var h = window.innerHeight || 0;
+        if (w <= 600) return true;
+        var portrait = h >= w;
+        if (portrait && w <= 1024) return true;
+        if (!portrait && w <= 900) return true;
+        return false;
+    }
+
     // ── Element references ──
     const el = {};
     let notifications = [];
@@ -2173,7 +2187,7 @@ window.UI = (function () {
 
     function _makeModalDraggable(dlgEl) {
         // Disable dragging on mobile — full-screen modals don't need repositioning
-        if (window.innerWidth <= 600) return;
+        if (_isMobileLayout()) return;
         var header = dlgEl.querySelector('.modal-header');
         if (!header) return;
         // Avoid re-binding if already draggable
@@ -2640,7 +2654,7 @@ window.UI = (function () {
         if (mo) mo.classList.remove('hidden');
 
         // Push history state for back-button-closes-modal on mobile
-        if (window.innerWidth <= 600 && !_modalHistoryPushed) {
+        if (_isMobileLayout() && !_modalHistoryPushed) {
             history.pushState({ modal: true }, '');
             _modalHistoryPushed = true;
         }
@@ -15215,7 +15229,7 @@ window.UI = (function () {
     }
 
     function updateMobileHud() {
-        if (window.innerWidth > 600) return;
+        if (!_isMobileLayout()) return;
         if (typeof Player === 'undefined') return;
         var goldEl = document.getElementById('hudGoldVal');
         if (goldEl) goldEl.textContent = _abbreviateGold(Player.gold);
@@ -15757,12 +15771,12 @@ window.UI = (function () {
         var modalDialog = document.getElementById('modalDialog');
         if (modalDialog) {
             modalDialog.addEventListener('touchstart', function(e) {
-                if (window.innerWidth > 600) return;
+                if (!_isMobileLayout()) return;
                 _modalSwipeStartY = e.touches[0].clientY;
             }, { passive: true });
 
             modalDialog.addEventListener('touchend', function(e) {
-                if (window.innerWidth > 600) return;
+                if (!_isMobileLayout()) return;
                 var deltaY = e.changedTouches[0].clientY - _modalSwipeStartY;
                 if (deltaY > 120) {
                     closeModal();
@@ -15821,7 +15835,7 @@ window.UI = (function () {
     // ═══════════════════════════════════════════════════════════
 
     function _addTradePresets(containerId, resourceId, type) {
-        if (window.innerWidth > 600) return;
+        if (!_isMobileLayout()) return;
         var container = document.getElementById(containerId);
         if (!container) return;
         var presets = [1, 5, 10];
