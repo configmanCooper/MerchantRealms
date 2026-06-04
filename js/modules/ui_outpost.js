@@ -519,32 +519,27 @@
                 body += '<div style="margin-top:6px;font-size:12px"><strong>Build Sea Route:</strong></div>';
                 for (var sti = 0; sti < Math.min(seaTargets.length, 8); sti++) {
                     var st = seaTargets[sti];
-                    var sGold = Math.floor(200 + st.dist * 0.8);
-                    // v9p33river304: backend also requires rope/planks/cloth
-                    // (player_outpost.js:609-625). Show them in the UI and
-                    // disable Build if any material is insufficient — was
-                    // previously always-enabled and silently failed on click.
-                    var sRope = Math.floor(10 + st.dist * 0.05);
-                    var sPlanks = Math.floor(15 + st.dist * 0.08);
-                    var sCloth = Math.floor(5 + st.dist * 0.03);
+                    // v9p33river551: gold cost halved; rope/planks/cloth replaced with
+                    // blasting_powder (1 per 250 dist) + demolition_tools (2 per 250 dist).
+                    var sGold = Math.floor((200 + st.dist * 0.8) * 0.5);
+                    var _stPer250 = Math.max(1, Math.ceil(st.dist / 250));
+                    var sBlasting = _stPer250 * (CONFIG.TOLL_SEA_BLASTING_POWDER_PER_250 || 1);
+                    var sDemo = _stPer250 * (CONFIG.TOLL_SEA_DEMOLITION_TOOLS_PER_250 || 2);
                     if (Player.skills && Player.skills.cartographer) {
                         sGold = Math.floor(sGold * 0.75);
-                        sRope = Math.floor(sRope * 0.75);
-                        sPlanks = Math.floor(sPlanks * 0.75);
-                        sCloth = Math.floor(sCloth * 0.75);
+                        sBlasting = Math.max(1, Math.floor(sBlasting * 0.75));
+                        sDemo = Math.max(1, Math.floor(sDemo * 0.75));
                     }
                     var _pInv = (Player.inventory) || {};
                     var _haveGold = (Player.gold || 0) >= sGold;
-                    var _haveRope = (_pInv.rope || 0) >= sRope;
-                    var _havePlanks = (_pInv.planks || 0) >= sPlanks;
-                    var _haveCloth = (_pInv.cloth || 0) >= sCloth;
-                    var _canBuildSr = _haveGold && _haveRope && _havePlanks && _haveCloth;
+                    var _haveBp = (_pInv.blasting_powder || 0) >= sBlasting;
+                    var _haveDt = (_pInv.demolition_tools || 0) >= sDemo;
+                    var _canBuildSr = _haveGold && _haveBp && _haveDt;
                     body += '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;flex-wrap:wrap">';
                     body += '<button data-action="_opBuildSeaRoute" data-id="' + townId + '" data-val="' + st.townId + '" style="padding:2px 8px;font-size:11px;cursor:pointer' + (_canBuildSr ? '' : ';opacity:0.5') + '"' + (_canBuildSr ? '' : ' disabled') + '>Build</button>';
                     body += '<span style="font-size:11px">🚢 ' + st.name + ' <span style="color:' + (_haveGold ? '#888' : '#c44e52') + '">(' + sGold + 'g</span>';
-                    body += ' <span style="color:' + (_haveRope ? '#888' : '#c44e52') + '">+ ' + sRope + ' rope</span>';
-                    body += ' <span style="color:' + (_havePlanks ? '#888' : '#c44e52') + '">+ ' + sPlanks + ' planks</span>';
-                    body += ' <span style="color:' + (_haveCloth ? '#888' : '#c44e52') + '">+ ' + sCloth + ' cloth)</span></span>';
+                    body += ' <span style="color:' + (_haveBp ? '#888' : '#c44e52') + '">+ ' + sBlasting + ' blasting powder</span>';
+                    body += ' <span style="color:' + (_haveDt ? '#888' : '#c44e52') + '">+ ' + sDemo + ' demolition tools)</span></span>';
                     body += '</div>';
                 }
             }

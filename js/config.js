@@ -777,12 +777,13 @@ const CONFIG = {
     TOLL_ROAD_TIMBER_PER_100: 5,           // Timber per 100 distance
     TOLL_ROAD_STONE_PER_100: 3,            // Stone per 100 distance
     TOLL_ROAD_IRON_PER_100: 1,             // Iron per 100 distance
-    TOLL_SEA_BASE_COST: 15000,             // Base gold for sea route
-    TOLL_SEA_DOCK_COST: 5000,              // Cost per dock (need 2)
+    // v9p33river551: sea route base+dock gold halved; material reqs replaced.
+    TOLL_SEA_BASE_COST: 7500,              // Base gold for sea route (was 15000)
+    TOLL_SEA_DOCK_COST: 2500,              // Cost per dock (need 2) (was 5000)
     TOLL_SEA_SHIP_REQUIRED: true,          // Must own at least 1 ship
-    TOLL_SEA_TIMBER_NEEDED: 50,            // Timber for docks
-    TOLL_SEA_STONE_NEEDED: 30,             // Stone for docks
-    TOLL_SEA_IRON_NEEDED: 15,              // Iron for docks/anchors
+    TOLL_SEA_DISTANCE_GOLD_PER_PX: 2.5,    // Gold per pixel of distance (was effectively 5; halved)
+    TOLL_SEA_BLASTING_POWDER_PER_250: 1,   // Blasting powder per 250 distance (replaces timber/stone/iron)
+    TOLL_SEA_DEMOLITION_TOOLS_PER_250: 2,  // Demolition tools per 250 distance (replaces timber/stone/iron)
     TOLL_DEFAULT_RATE: 5,                  // Default toll rate in gold per use
     TOLL_MAX_RATE: 50,                     // Max toll rate
     TOLL_MIN_RATE: 1,                      // Min toll rate

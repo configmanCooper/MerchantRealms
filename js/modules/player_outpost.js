@@ -705,22 +705,26 @@
         if (toT.isOutpost && toT.founderId === (player.id || 'player')) isOwner = true;
         if (!isOwner) return { success: false, message: 'You must own at least one of the connected port outposts.' };
         var dist = Math.hypot(fromT.x - toT.x, fromT.y - toT.y);
-        var baseCost = Math.floor(200 + dist * 0.8);
-        var ropeCost = Math.floor(10 + dist * 0.05);
-        var planksCost = Math.floor(15 + dist * 0.08);
-        var clothCost = Math.floor(5 + dist * 0.03);
-        if (hasSkill('cartographer')) { baseCost = Math.floor(baseCost * 0.75); ropeCost = Math.floor(ropeCost * 0.75); planksCost = Math.floor(planksCost * 0.75); clothCost = Math.floor(clothCost * 0.75); }
+        // v9p33river551: halved gold cost; replaced rope/planks/cloth with
+        // demolition_tools (2 per 250 dist) + blasting_powder (1 per 250 dist).
+        var baseCost = Math.floor((200 + dist * 0.8) * 0.5);
+        var _per250 = Math.max(1, Math.ceil(dist / 250));
+        var blastingCost = _per250 * (CONFIG.TOLL_SEA_BLASTING_POWDER_PER_250 || 1);
+        var demoCost = _per250 * (CONFIG.TOLL_SEA_DEMOLITION_TOOLS_PER_250 || 2);
+        if (hasSkill('cartographer')) {
+            baseCost = Math.floor(baseCost * 0.75);
+            blastingCost = Math.max(1, Math.floor(blastingCost * 0.75));
+            demoCost = Math.max(1, Math.floor(demoCost * 0.75));
+        }
         if (player.gold < baseCost) return { success: false, message: 'Need ' + baseCost + 'g (have ' + Math.floor(player.gold) + 'g).' };
         var inv = player.inventory || {};
-        if ((inv.rope || 0) < ropeCost) return { success: false, message: 'Need ' + ropeCost + ' rope (have ' + (inv.rope || 0) + ').' };
-        if ((inv.planks || 0) < planksCost) return { success: false, message: 'Need ' + planksCost + ' planks (have ' + (inv.planks || 0) + ').' };
-        if ((inv.cloth || 0) < clothCost) return { success: false, message: 'Need ' + clothCost + ' cloth (have ' + (inv.cloth || 0) + ').' };
+        if ((inv.blasting_powder || 0) < blastingCost) return { success: false, message: 'Need ' + blastingCost + ' blasting powder (have ' + (inv.blasting_powder || 0) + ').' };
+        if ((inv.demolition_tools || 0) < demoCost) return { success: false, message: 'Need ' + demoCost + ' demolition tools (have ' + (inv.demolition_tools || 0) + ').' };
         var result = Engine.buildNewSeaRoute(fromTownId, toTownId, player.id || 'player', { ownerId: player.id || 'player' });
         if (!result.success) return result;
         player.gold -= baseCost;
-        inv.rope = (inv.rope || 0) - ropeCost;
-        inv.planks = (inv.planks || 0) - planksCost;
-        inv.cloth = (inv.cloth || 0) - clothCost;
+        inv.blasting_powder = (inv.blasting_powder || 0) - blastingCost;
+        inv.demolition_tools = (inv.demolition_tools || 0) - demoCost;
         return { success: true, message: '⚓ Sea route established to ' + toT.name + '!' };
     }
 

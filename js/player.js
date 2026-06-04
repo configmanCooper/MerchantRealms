@@ -33568,24 +33568,24 @@
 
         const d = Math.hypot(currentTown.x - targetTown.x, currentTown.y - targetTown.y);
 
+        // v9p33river551: halved gold cost; replaced timber/stone/iron with
+        // demolition_tools + blasting_powder (distance-scaled).
         const baseCost = CONFIG.TOLL_SEA_BASE_COST;
         const dockCost = CONFIG.TOLL_SEA_DOCK_COST * 2;
-        const distCost = Math.floor(d * 5);
+        const distCost = Math.floor(d * (CONFIG.TOLL_SEA_DISTANCE_GOLD_PER_PX || 2.5));
         const totalCost = baseCost + dockCost + distCost;
 
-        const timberNeeded = CONFIG.TOLL_SEA_TIMBER_NEEDED;
-        const stoneNeeded = CONFIG.TOLL_SEA_STONE_NEEDED;
-        const ironNeeded = CONFIG.TOLL_SEA_IRON_NEEDED;
+        const _per250 = Math.max(1, Math.ceil(d / 250));
+        const blastingNeeded = _per250 * (CONFIG.TOLL_SEA_BLASTING_POWDER_PER_250 || 1);
+        const demoNeeded = _per250 * (CONFIG.TOLL_SEA_DEMOLITION_TOOLS_PER_250 || 2);
 
         if (player.gold < totalCost) return { success: false, message: `Need ${totalCost.toLocaleString()}g (Base: ${baseCost}, Docks: ${dockCost}, Distance: ${distCost}).` };
-        if ((player.inventory.timber || 0) < timberNeeded) return { success: false, message: `Need ${timberNeeded} timber (have ${player.inventory.timber || 0}).` };
-        if ((player.inventory.stone || 0) < stoneNeeded) return { success: false, message: `Need ${stoneNeeded} stone (have ${player.inventory.stone || 0}).` };
-        if ((player.inventory.iron_ore || 0) < ironNeeded) return { success: false, message: `Need ${ironNeeded} iron ore (have ${player.inventory.iron_ore || 0}).` };
+        if ((player.inventory.blasting_powder || 0) < blastingNeeded) return { success: false, message: `Need ${blastingNeeded} blasting powder (have ${player.inventory.blasting_powder || 0}).` };
+        if ((player.inventory.demolition_tools || 0) < demoNeeded) return { success: false, message: `Need ${demoNeeded} demolition tools (have ${player.inventory.demolition_tools || 0}).` };
 
         player.gold -= totalCost;
-        player.inventory.timber = (player.inventory.timber || 0) - timberNeeded;
-        player.inventory.stone = (player.inventory.stone || 0) - stoneNeeded;
-        player.inventory.iron_ore = (player.inventory.iron_ore || 0) - ironNeeded;
+        player.inventory.blasting_powder = (player.inventory.blasting_powder || 0) - blastingNeeded;
+        player.inventory.demolition_tools = (player.inventory.demolition_tools || 0) - demoNeeded;
         player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + totalCost;
 
         const result = Engine.buildNewSeaRoute(player.townId, targetTownId, 'player', {

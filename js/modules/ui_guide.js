@@ -1444,8 +1444,13 @@
                     costEstimate = '<span style="color:#ccc;">~' + cost.toLocaleString() + 'g + ' + timberNeeded + ' timber, ' + stoneNeeded + ' stone, ' + ironNeeded + ' iron</span>';
                 }
             } else if (type === 'sea_route') {
-                var seaCost = CONFIG.TOLL_SEA_BASE_COST + CONFIG.TOLL_SEA_DOCK_COST * 2 + Math.floor(d * 5);
-                costEstimate = '<span style="color:#ccc;">~' + seaCost.toLocaleString() + 'g + ' + CONFIG.TOLL_SEA_TIMBER_NEEDED + ' timber, ' + CONFIG.TOLL_SEA_STONE_NEEDED + ' stone, ' + CONFIG.TOLL_SEA_IRON_NEEDED + ' iron</span>';
+                // v9p33river551: distance-cost halved (was * 5) and timber/stone/iron replaced
+                // with demolition_tools + blasting_powder (distance-scaled).
+                var seaCost = CONFIG.TOLL_SEA_BASE_COST + CONFIG.TOLL_SEA_DOCK_COST * 2 + Math.floor(d * (CONFIG.TOLL_SEA_DISTANCE_GOLD_PER_PX || 2.5));
+                var _seaPer250 = Math.max(1, Math.ceil(d / 250));
+                var _seaBp = _seaPer250 * (CONFIG.TOLL_SEA_BLASTING_POWDER_PER_250 || 1);
+                var _seaDt = _seaPer250 * (CONFIG.TOLL_SEA_DEMOLITION_TOOLS_PER_250 || 2);
+                costEstimate = '<span style="color:#ccc;">~' + seaCost.toLocaleString() + 'g + ' + _seaBp + ' blasting powder, ' + _seaDt + ' demolition tools</span>';
             } else if (type === 'petition') {
                 var fullCost = CONFIG.TOLL_ROAD_BASE_COST + Math.floor(d * CONFIG.TOLL_ROAD_DIST_COST);
                 var playerCost = Math.floor(fullCost * CONFIG.KING_INFLUENCE_COST_FRACTION);
