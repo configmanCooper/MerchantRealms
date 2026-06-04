@@ -34434,10 +34434,30 @@
         // (granted by king's-favor `guaranteed_petition` reward at
         // player.js:37666). Token is per-kingdom; auto-approves the next
         // petition in that kingdom and is then consumed.
+        // v9p33river524: token may be a boolean (legacy / quest-granted) OR an
+        // object { source, kingId, grantedDay } for coup-king favors. Coup
+        // favors only honor while the same king reigns; if they've been
+        // deposed/died, the favor evaporates instead of auto-approving.
         var _royalDecreeUsed = false;
+        var _royalDecreeSource = null;
         if (player.guaranteedPetition && player.guaranteedPetition[petition.kingdomId]) {
-            _royalDecreeUsed = true;
-            delete player.guaranteedPetition[petition.kingdomId];
+            var _gpVal = player.guaranteedPetition[petition.kingdomId];
+            if (_gpVal && typeof _gpVal === 'object' && _gpVal.source === 'coup_king_favor') {
+                var _gpKingdom = null;
+                try { _gpKingdom = Engine.findKingdom ? Engine.findKingdom(petition.kingdomId) : null; } catch(e) {}
+                if (_gpKingdom && _gpKingdom.king === _gpVal.kingId) {
+                    _royalDecreeUsed = true;
+                    _royalDecreeSource = 'coup_king_favor';
+                    delete player.guaranteedPetition[petition.kingdomId];
+                } else {
+                    // The ally king is no longer on the throne — favor expires unhonored
+                    delete player.guaranteedPetition[petition.kingdomId];
+                    try { Engine.logEvent('📜 Your coup-ally king is no longer on the throne — the royal favor has expired without being used.', null, 'my_kingdom'); } catch(e) {}
+                }
+            } else {
+                _royalDecreeUsed = true;
+                delete player.guaranteedPetition[petition.kingdomId];
+            }
         }
 
         if (_royalDecreeUsed || roll < estimate.chance) {
@@ -34453,8 +34473,9 @@
                 if (petition.typeId === 'build_defense') player._platinumTracking.defensePetitions = (player._platinumTracking.defensePetitions || 0) + 1;
             }
             if (_royalDecreeUsed) {
-                Engine.logEvent('📜 Your Royal Decree was honored! Petition for ' + (pType ? pType.name : petition.typeId) + ' AUTOMATICALLY APPROVED.', null, "my_kingdom");
-                return { success: true, approved: true, chance: 1.0, royalDecree: true, message: '📜 Royal Decree honored! ' + (pType ? pType.name : '') + ' approved automatically.' };
+                var _decreeLabel = _royalDecreeSource === 'coup_king_favor' ? 'coup-ally king\'s favor' : 'Royal Decree';
+                Engine.logEvent('📜 Your ' + _decreeLabel + ' was honored! Petition for ' + (pType ? pType.name : petition.typeId) + ' AUTOMATICALLY APPROVED.', null, "my_kingdom");
+                return { success: true, approved: true, chance: 1.0, royalDecree: true, royalDecreeSource: _royalDecreeSource || 'royal_decree', message: '📜 ' + (_decreeLabel.charAt(0).toUpperCase() + _decreeLabel.slice(1)) + ' honored! ' + (pType ? pType.name : '') + ' approved automatically.' };
             }
             Engine.logEvent('📜 Your petition for ' + (pType ? pType.name : petition.typeId) + ' was APPROVED by the king! 🎉', null, "my_kingdom");
             return { success: true, approved: true, chance: estimate.chance, message: 'The king approved your petition! ' + (pType ? pType.name : '') + ' will be carried out.' };

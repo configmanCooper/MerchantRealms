@@ -34533,6 +34533,44 @@
                     } catch(e) {}
                 }
 
+                // v9p33river524: player coup-ally rewards — relationships, introductions, royal favor
+                if (playerIsPlotter && typeof Player !== 'undefined' && Player.state) {
+                    try {
+                        Player.state.introductions = Player.state.introductions || {};
+                        if (leader) {
+                            // +30 with the noble the player helped become king
+                            if (Player.modifyRelationship) {
+                                Player.modifyRelationship(leader.id, 30, undefined, 'coup_ally_king_' + kId);
+                            }
+                            // Introduction granted regardless of player rank
+                            Player.state.introductions[leader.id] = true;
+                            // Royal favor: guaranteed next petition while this king reigns
+                            Player.state.guaranteedPetition = Player.state.guaranteedPetition || {};
+                            Player.state.guaranteedPetition[kId] = {
+                                source: 'coup_king_favor',
+                                kingId: leader.id,
+                                grantedDay: world.day
+                            };
+                            var _coupKingFullName = ((leader.firstName || '') + ' ' + (leader.lastName || '')).trim() || 'The new king';
+                            logEvent('👑 Royal Favor: ' + _coupKingFullName + ' owes you for the coup in ' + k.name + '. Your next petition there is GUARANTEED (no signatures needed) as long as they sit the throne.', {
+                                type: 'royal_favor_granted', kingdomId: kId, source: 'coup'
+                            }, category);
+                            if (typeof UI !== 'undefined' && UI.toast) {
+                                UI.toast('📜 Royal Favor granted by ' + _coupKingFullName + ' — your next petition in ' + k.name + ' is guaranteed!', 'success');
+                            }
+                        }
+                        // +10 with every other plotter who survived; introductions all around
+                        for (var _crpi = 0; _crpi < plotterPersons.length; _crpi++) {
+                            var _crp = plotterPersons[_crpi];
+                            if (!_crp || !_crp.alive || _crp.id === (leader && leader.id)) continue;
+                            if (Player.modifyRelationship) {
+                                Player.modifyRelationship(_crp.id, 10, undefined, 'coup_ally_' + kId);
+                            }
+                            Player.state.introductions[_crp.id] = true;
+                        }
+                    } catch(e) {}
+                }
+
                 k._conspiracy = null;
                 // v9p33river523: stash outcome so playerExecuteConspiracy can report it.
                 k._lastConspiracyOutcome = {
