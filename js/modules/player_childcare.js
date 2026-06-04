@@ -278,6 +278,14 @@
     // ──────────────────────────────────────────────────────────
     function tickChildcare() {
         _ensureState();
+        // v9p33river535: never run childcare while the player is dead or in regency.
+        // The regent (spouse) is the canonical caregiver during regency, but
+        // _spouseCaregiver compares player.townId to the spouse's townId — once
+        // the player is dead/regency-ed, that lookup returns null and every child
+        // is flagged as unattended. The neglect death roll uses cause='neglect'
+        // which BYPASSES the child-protection ladder in killPerson, so the heir
+        // would die within seconds of regency starting at 300× speed.
+        if (player && (player.alive === false || player.regencyMode)) return;
         var day = _getDay();
         var kids = _livingDependentChildren();
         if (!kids.length) return;

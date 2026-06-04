@@ -36398,7 +36398,12 @@
                     try { Player.tryGenerateDailyUnsolicitedEvent(); } catch (_eUe2) { /* defensive */ }
                 }
                 // v9p33river358: spouse + childcare ticks
-                if (Player.tickChildcare) {
+                // v9p33river535: skip childcare during regency — the regent (spouse) is
+                // caring for the heir by design. Running tickChildcare during regency
+                // could not detect the regent as a caregiver (player is dead, townId
+                // logic breaks) and killed the heir with cause='neglect', which bypasses
+                // child protection and ended the dynasty within minutes.
+                if (Player.tickChildcare && !_rFF && !(Player.state && (Player.state.regencyMode || !Player.state.alive))) {
                     try { Player.tickChildcare(); } catch (_eCc) { /* defensive */ }
                 }
                 if (Player.tickSpouseAssassinations) {
