@@ -12266,6 +12266,56 @@
         return k.directedPlayerCommission || null;
     }
 
+    // v9p33river515: Compute the breakdown of how many units of a directed
+    // commission's resource the player has access to right now.
+    //   carried        — player carrying inventory
+    //   townStorage    — player's town-storage cache at current town
+    //   buildingStorage — sum across player-owned buildings in current town
+    //   locationOK     — true if player is in a town belonging to the commission's kingdom
+    //                    (building storage only counts when this is true)
+    function getDirectedCommissionAvailableQty(kingdomId) {
+        var k = findKingdom(kingdomId);
+        if (!k || !k.directedPlayerCommission) return null;
+        var comm = k.directedPlayerCommission;
+        if (typeof Player === 'undefined' || !Player.state) {
+            return { carried: 0, townStorage: 0, buildingStorage: 0, total: 0, locationOK: false, resourceId: comm.resourceId };
+        }
+        var inv = Player.state.inventory || {};
+        var carried = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
+        var townId = Player.state.townId;
+        var townStorage = 0;
+        if (townId && Player.state.townStorage && Player.state.townStorage[townId]) {
+            townStorage = Player.state.townStorage[townId][comm.resourceId] || 0;
+        }
+        // Building storage only counts when the player is currently in a town
+        // belonging to the commission's kingdom.
+        var locationOK = false;
+        var buildingStorage = 0;
+        try {
+            var curTown = townId ? findTown(townId) : null;
+            if (curTown && curTown.kingdomId === kingdomId) {
+                locationOK = true;
+                var pBldgs = Player.state.buildings || [];
+                for (var bi = 0; bi < pBldgs.length; bi++) {
+                    var b = pBldgs[bi];
+                    if (!b || b.townId !== townId) continue;
+                    if (b.inventory && b.inventory[comm.resourceId]) {
+                        buildingStorage += b.inventory[comm.resourceId] || 0;
+                    }
+                }
+            }
+        } catch (e) {}
+        var total = carried + townStorage + buildingStorage;
+        return {
+            carried: carried,
+            townStorage: townStorage,
+            buildingStorage: buildingStorage,
+            total: total,
+            locationOK: locationOK,
+            resourceId: comm.resourceId
+        };
+    }
+
     function respondToDirectedCommission(kingdomId, accepted) {
         var k = findKingdom(kingdomId);
         if (!k || !k.directedPlayerCommission) return { success: false, reason: 'No active commission' };
@@ -12298,25 +12348,40 @@
         var comm = k.directedPlayerCommission;
         if (comm.status !== 'accepted') return { success: false, reason: 'Commission not accepted' };
 
-        // Check if player has the goods (inventory + town storage)
+        // v9p33river515: Check player has the goods across inventory + town storage
+        //   + player-owned building storage at current town (kingdom-matched).
         if (typeof Player === 'undefined' || !Player.state) return { success: false, reason: 'Player not available' };
-        var inv = Player.state.inventory || {};
-        var held = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
-        var storedQty = 0;
-        var townId = Player.state.townId;
-        if (townId && Player.state.townStorage && Player.state.townStorage[townId]) {
-            storedQty = Player.state.townStorage[townId][comm.resourceId] || 0;
-        }
-        var totalAvailable = held + storedQty;
-        if (totalAvailable < comm.quantity) return { success: false, reason: 'Not enough ' + (comm.resourceId || 'goods') + ' (have ' + totalAvailable + ', need ' + comm.quantity + ')' };
+        var avail = getDirectedCommissionAvailableQty(kingdomId);
+        if (!avail) return { success: false, reason: 'Commission missing' };
+        if (avail.total < comm.quantity) return { success: false, reason: 'Not enough ' + (comm.resourceId || 'goods') + ' (have ' + avail.total + ', need ' + comm.quantity + ')' };
 
-        // Deduct goods — from carried inventory first, then town storage
+        // Deduct goods — carried inventory first, then town storage, then
+        // player-owned building storage at the current town (only when the
+        // current town is in this commission's kingdom).
+        var townId = Player.state.townId;
         var remaining = comm.quantity;
-        var fromCarried = Math.min(remaining, held);
-        Player.state.inventory[comm.resourceId] = (Player.state.inventory[comm.resourceId] || 0) - fromCarried;
-        remaining -= fromCarried;
-        if (remaining > 0 && townId && Player.state.townStorage && Player.state.townStorage[townId]) {
-            Player.state.townStorage[townId][comm.resourceId] = (Player.state.townStorage[townId][comm.resourceId] || 0) - remaining;
+        var fromCarried = Math.min(remaining, avail.carried);
+        if (fromCarried > 0) {
+            Player.state.inventory[comm.resourceId] = (Player.state.inventory[comm.resourceId] || 0) - fromCarried;
+            remaining -= fromCarried;
+        }
+        if (remaining > 0 && avail.townStorage > 0 && townId && Player.state.townStorage && Player.state.townStorage[townId]) {
+            var fromTown = Math.min(remaining, avail.townStorage);
+            Player.state.townStorage[townId][comm.resourceId] = (Player.state.townStorage[townId][comm.resourceId] || 0) - fromTown;
+            remaining -= fromTown;
+        }
+        if (remaining > 0 && avail.locationOK && avail.buildingStorage > 0 && Player.state.buildings) {
+            var pBldgs2 = Player.state.buildings;
+            for (var _bi2 = 0; _bi2 < pBldgs2.length && remaining > 0; _bi2++) {
+                var _b2 = pBldgs2[_bi2];
+                if (!_b2 || _b2.townId !== townId) continue;
+                if (!_b2.inventory) continue;
+                var _have = _b2.inventory[comm.resourceId] || 0;
+                if (_have <= 0) continue;
+                var _take = Math.min(remaining, _have);
+                _b2.inventory[comm.resourceId] = _have - _take;
+                remaining -= _take;
+            }
         }
 
         // Grant rewards
@@ -37890,6 +37955,7 @@
 
         // Directed Player Commission API
         getDirectedPlayerCommission: getDirectedPlayerCommission,
+        getDirectedCommissionAvailableQty: getDirectedCommissionAvailableQty,
         respondToDirectedCommission: respondToDirectedCommission,
         deliverDirectedCommission: deliverDirectedCommission,
         checkDirectedCommissionDeadline: checkDirectedCommissionDeadline,

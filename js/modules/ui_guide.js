@@ -723,14 +723,36 @@
             html += '<button class="btn-medieval" style="flex:1;background:var(--danger,#8a2a2a);" data-action="refuseCommissionUI" data-id="' + kingdomId + '">❌ Refuse</button>';
             html += '</div>';
         } else if (comm.status === 'accepted') {
-            // Show delivery status
-            var inv = Player.state ? Player.state.inventory || {} : {};
-            var has = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
+            // v9p33river515: progress now counts inventory + town storage +
+            // player-owned building storage at current town (kingdom-matched).
+            var _availInfo = null;
+            try { _availInfo = Engine.getDirectedCommissionAvailableQty(kingdomId); } catch (e) {}
+            var has, _carried = 0, _stored = 0, _bldgQty = 0, _locOK = false;
+            if (_availInfo) {
+                has = _availInfo.total;
+                _carried = _availInfo.carried;
+                _stored = _availInfo.townStorage;
+                _bldgQty = _availInfo.buildingStorage;
+                _locOK = _availInfo.locationOK;
+            } else {
+                var inv = Player.state ? Player.state.inventory || {} : {};
+                has = comm.resourceId ? (inv[comm.resourceId] || 0) : 0;
+                _carried = has;
+            }
             var pct = comm.quantity > 0 ? Math.min(100, Math.floor((has / comm.quantity) * 100)) : 0;
             var canDeliver = has >= comm.quantity;
 
             html += '<div style="margin:10px 0;">';
             html += '<div style="margin-bottom:5px;"><b>Progress:</b> ' + has + ' / ' + comm.quantity + ' (' + pct + '%)</div>';
+            // Breakdown of sources contributing to progress
+            var _parts = [];
+            _parts.push('🎒 ' + _carried + ' carried');
+            if (_stored > 0) _parts.push('🏪 ' + _stored + ' in town storage');
+            if (_locOK && _bldgQty > 0) _parts.push('🏭 ' + _bldgQty + ' in your buildings here');
+            html += '<div style="font-size:0.8em;color:var(--text-secondary);margin-bottom:5px;">' + _parts.join(' &middot; ') + '</div>';
+            if (!_locOK) {
+                html += '<div style="font-size:0.75em;color:var(--text-secondary);margin-bottom:5px;font-style:italic;">Travel to a town in ' + kName + ' to also count goods stored in your buildings there.</div>';
+            }
             html += '<div style="background:rgba(255,255,255,0.1);border-radius:4px;height:12px;overflow:hidden;">';
             html += '<div style="background:' + (canDeliver ? '#4caf50' : '#ffa500') + ';height:100%;width:' + pct + '%;transition:width 0.3s;"></div>';
             html += '</div>';
