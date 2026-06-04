@@ -23547,6 +23547,20 @@ window.UI = (function () {
         }
         var avgOutpostProsp = pOutposts.length > 0 ? outpostProsperity / pOutposts.length : 0;
 
+        // v9p33river549: "Outposts Founded" is lifetime — scan all towns the player founded
+        // (founderId persists through outpost→village promotion), so promoted villages still count.
+        var _pIdImpact = p.id || 'player';
+        var lifetimeOutpostsFounded = 0;
+        var activeOutpostCount = 0;
+        var promotedToVillageCount = 0;
+        for (var liti = 0; liti < towns.length; liti++) {
+            var litTown = towns[liti];
+            if (!litTown || litTown.founderId !== _pIdImpact) continue;
+            lifetimeOutpostsFounded++;
+            if (litTown.isOutpost) activeOutpostCount++;
+            else promotedToVillageCount++;
+        }
+
         var roadPct = totalRoads > 0 ? (playerRoads / totalRoads) * 100 : 0;
         var infraScore = Math.min(100, (roadPct * 0.25) + Math.min(30, pOutposts.length * 15) * 0.3 + Math.min(30, outpostPop * 0.5) * 0.25 + Math.min(30, (playerSeaRoutes * 10)) * 0.2);
 
@@ -23568,7 +23582,10 @@ window.UI = (function () {
         html += _impactBar(Math.min(100, avgOutpostProsp), 'Avg Outpost Prosperity', '#2ecc71');
         html += '</div>';
         html += '<div style="flex:1;min-width:200px;">';
-        html += _statRow('Outposts Founded', pOutposts.length);
+        var _foundedNote = promotedToVillageCount > 0
+            ? '(' + activeOutpostCount + ' active, ' + promotedToVillageCount + ' promoted)'
+            : '';
+        html += _statRow('Outposts Founded', lifetimeOutpostsFounded, _foundedNote);
         html += _statRow('Outpost Population', _waNum(outpostPop));
         html += _statRow('Outpost Upgrades', outpostUpgradeCount);
         html += _statRow('Roads Built', playerRoads + ' / ' + totalRoads + ' total', '(' + (p.roadsBuilt || 0) + ' lifetime)');
