@@ -1125,7 +1125,18 @@ window.UI = (function () {
         registerAction('switchSchemesTab', function(_t, d) { if (d.id) UI.switchSchemesTab(d.id); });
         registerAction('offerNobleLoan', function(_t, d) { var amt=parseInt(document.getElementById('loanAmountInput').value);var r=Player.offerNobleLoan(d.id,amt);UI.toast(r.message,r.success?'success':'warning');if(r.success)UI.closeModal();else UI.openNobleLoanDialog(d.id2); });
         registerAction('closeAndOpenNobilityDialog', function() { UI.closeModal(); UI.openNobilityDialog(); });
-        registerAction('doFeastAction', function(_t, d) { var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');if(r&&r.success&&typeof StoryMode!=='undefined'&&StoryMode.onPlayerAction)StoryMode.onPlayerAction('attend_feast',{kingdom:d.kingdom,action:d.id});UI.openFeastDialog(d.kingdom); });
+        registerAction('doFeastAction', function(_t, d) {
+            // v9p33river545: forward target/cause selections from feast modal into engine state
+            try {
+                var _ns1 = document.getElementById('_feastNobleSelect');
+                if (Engine.setFeastSelectedNoble) Engine.setFeastSelectedNoble(d.kingdom, _ns1 && _ns1.value ? _ns1.value : null);
+                var _ns2 = document.getElementById('_feastNobleSelect2');
+                if (Engine.setFeastSelectedNoble2) Engine.setFeastSelectedNoble2(d.kingdom, _ns2 && _ns2.value ? _ns2.value : null);
+                var _cs = document.getElementById('_feastCauseSelect');
+                if (Engine.setFeastSelectedCause) Engine.setFeastSelectedCause(d.kingdom, _cs && _cs.value ? _cs.value : null);
+            } catch(e) {}
+            var r=Engine.doFeastAction ? Engine.doFeastAction(d.kingdom,d.id) : null;UI.toast(r&&r.message?r.message:'Action performed.',r&&r.success?'success':'warning');if(r&&r.success&&typeof StoryMode!=='undefined'&&StoryMode.onPlayerAction)StoryMode.onPlayerAction('attend_feast',{kingdom:d.kingdom,action:d.id});UI.openFeastDialog(d.kingdom);
+        });
         registerAction('skipFeastDay', function(_t, d) {
             var kId = d.kingdom;
             if (!kId) return;
@@ -19514,24 +19525,59 @@ window.UI = (function () {
             html += '</div></div>';
         }
 
-        // King-specific noble selector
-        if (isKing) {
-            html += '<div style="background:rgba(200,150,50,0.08);border:1px solid rgba(200,150,50,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
-            html += '<div style="font-size:0.75rem;color:#f0c040;margin-bottom:4px;">👑 Target Noble (for royal actions):</div>';
-            html += '<select id="_feastNobleSelect" style="width:100%;background:#1a1a2e;color:#eee;border:1px solid rgba(200,150,50,0.3);border-radius:4px;padding:4px 8px;font-size:0.75rem;">';
-            html += '<option value="">— Random attendee —</option>';
-            for (var ns = 0; ns < attendees.length; ns++) {
-                var nsPerson = null;
-                try { nsPerson = Engine.getPerson(attendees[ns]); } catch(e) {}
-                if (!nsPerson) continue;
-                var playerPId = '';
-                try { playerPId = Player.personId || 'player'; } catch(e) {}
-                if (attendees[ns] === playerPId || attendees[ns] === 'player') continue;
-                html += '<option value="' + attendees[ns] + '">' + escapeHtml(nsPerson.firstName) + ' ' + escapeHtml(nsPerson.lastName) + '</option>';
+        // v9p33river545: target/cause selectors — visible to ALL players.
+        // Schemes (Spread Rumor, Forge Alliance, Pit Nobles), social (Private Chat,
+        // Champion Noble, Introduce Noble), and royal actions all read these.
+        html += '<div style="background:rgba(200,150,50,0.08);border:1px solid rgba(200,150,50,0.2);border-radius:6px;padding:8px;margin-bottom:8px;">';
+        html += '<div style="font-size:0.75rem;color:#f0c040;margin-bottom:4px;">🎯 Target Noble' + (isKing ? ' (for royal & scheme actions)' : ' (for scheme & social actions)') + ':</div>';
+        html += '<select id="_feastNobleSelect" style="width:100%;background:#1a1a2e;color:#eee;border:1px solid rgba(200,150,50,0.3);border-radius:4px;padding:4px 8px;font-size:0.75rem;">';
+        html += '<option value="">— Random attendee —</option>';
+        var _feastPlayerPId = '';
+        try { _feastPlayerPId = Player.personId || 'player'; } catch(e) {}
+        for (var ns = 0; ns < attendees.length; ns++) {
+            var nsPerson = null;
+            try { nsPerson = Engine.getPerson(attendees[ns]); } catch(e) {}
+            if (!nsPerson) continue;
+            if (attendees[ns] === _feastPlayerPId || attendees[ns] === 'player') continue;
+            html += '<option value="' + attendees[ns] + '">' + escapeHtml(nsPerson.firstName) + ' ' + escapeHtml(nsPerson.lastName) + '</option>';
+        }
+        html += '</select>';
+        // Secondary target — used by Pit Nobles (needs two targets)
+        html += '<div style="font-size:0.7rem;color:#bbb;margin-top:6px;margin-bottom:2px;">Second target (for Pit Nobles):</div>';
+        html += '<select id="_feastNobleSelect2" style="width:100%;background:#1a1a2e;color:#eee;border:1px solid rgba(200,150,50,0.3);border-radius:4px;padding:4px 8px;font-size:0.75rem;">';
+        html += '<option value="">— Random attendee —</option>';
+        for (var ns2 = 0; ns2 < attendees.length; ns2++) {
+            var nsPerson2 = null;
+            try { nsPerson2 = Engine.getPerson(attendees[ns2]); } catch(e) {}
+            if (!nsPerson2) continue;
+            if (attendees[ns2] === _feastPlayerPId || attendees[ns2] === 'player') continue;
+            html += '<option value="' + attendees[ns2] + '">' + escapeHtml(nsPerson2.firstName) + ' ' + escapeHtml(nsPerson2.lastName) + '</option>';
+        }
+        html += '</select>';
+        // Coalition cause — used by Forge Alliance (non-king path)
+        if (!isKing) {
+            html += '<div style="font-size:0.7rem;color:#bbb;margin-top:6px;margin-bottom:2px;">Coalition cause (for Forge Alliance):</div>';
+            html += '<select id="_feastCauseSelect" style="width:100%;background:#1a1a2e;color:#eee;border:1px solid rgba(200,150,50,0.3);border-radius:4px;padding:4px 8px;font-size:0.75rem;">';
+            html += '<option value="">— Pick a cause —</option>';
+            var _feastCauses = [
+                { id: 'lower_taxes', label: 'Lower Taxes' },
+                { id: 'raise_taxes', label: 'Raise Taxes' },
+                { id: 'make_peace', label: 'Seek Peace' },
+                { id: 'declare_war', label: 'Declare War' },
+                { id: 'war_offensive', label: 'Military Offensive' },
+                { id: 'form_alliance', label: 'Form Foreign Alliance' },
+                { id: 'build_infrastructure', label: 'Build Infrastructure' },
+                { id: 'build_walls', label: 'Fortify Towns' },
+                { id: 'improve_happiness', label: 'Improve Public Welfare' },
+                { id: 'medical_funding', label: 'Fund Plague Relief' }
+            ];
+            for (var _fci = 0; _fci < _feastCauses.length; _fci++) {
+                html += '<option value="' + _feastCauses[_fci].id + '">' + escapeHtml(_feastCauses[_fci].label) + '</option>';
             }
             html += '</select>';
-            html += '</div>';
+            html += '<div style="font-size:0.66rem;color:#888;margin-top:4px;line-height:1.3;">Forge Alliance needs a 60+ relationship target and a cause. Pit Nobles needs two different targets. Spread Rumor uses the primary target as the rumor subject.</div>';
         }
+        html += '</div>';
 
         // Standard feast actions
         var feastActions = [

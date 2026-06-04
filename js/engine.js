@@ -31466,19 +31466,31 @@
 
         if (actionId === 'mingle') {
             if (otherAttendees.length === 0) return { success: false, message: 'No one to mingle with.' };
-            var mingTarget = rng.pick(otherAttendees);
-            var mingPerson = findPerson(mingTarget);
-            var mingBonus = rng.randInt(3, 8);
-            try {
-                if (typeof Player !== 'undefined' && Player.modifyRelationship) {
-                    Player.modifyRelationship(mingTarget, mingBonus);
-                }
-            } catch (e) { /* Player not loaded */ }
-            var mingName = mingPerson ? (mingPerson.firstName || 'a noble') : 'a noble';
-            feast.events.push('You mingled with ' + mingName + '.');
-            result = { success: true, message: 'You mingled with ' + mingName + '. (+' + mingBonus + ' relationship)' };
-            // v9p33river463: memory — target remembers player mingling
-            _addFeastCourtMemory(mingPerson, 'feast_mingle', 'Player mingled with them at a feast', 1, k.id);
+            // v9p33river545: mingle with 3-4 random distinct attendees (was 1)
+            var mingleCount = Math.min(otherAttendees.length, rng.randInt(3, 4));
+            var minglePool = otherAttendees.slice();
+            var mingledNames = [];
+            var mingleSummary = [];
+            for (var _mi = 0; _mi < mingleCount; _mi++) {
+                if (minglePool.length === 0) break;
+                var _mIdx = rng.randInt(0, minglePool.length - 1);
+                var _mTargetId = minglePool.splice(_mIdx, 1)[0];
+                var _mPerson = findPerson(_mTargetId);
+                if (!_mPerson) continue;
+                var _mBonus = rng.randInt(3, 4);
+                try {
+                    if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                        Player.modifyRelationship(_mTargetId, _mBonus);
+                    }
+                } catch (e) { /* Player not loaded */ }
+                var _mName = _mPerson.firstName || 'a noble';
+                mingledNames.push(_mName);
+                mingleSummary.push(_mName + ' +' + _mBonus);
+                _addFeastCourtMemory(_mPerson, 'feast_mingle', 'Player mingled with them at a feast', 1, k.id);
+            }
+            if (mingledNames.length === 0) return { success: false, message: 'No one to mingle with.' };
+            feast.events.push('You mingled with ' + mingledNames.join(', ') + '.');
+            result = { success: true, message: 'You mingled with ' + mingledNames.join(', ') + '. (' + mingleSummary.join(', ') + ' relationship)' };
 
         } else if (actionId === 'toast_king') {
             try {
@@ -31494,7 +31506,9 @@
 
         } else if (actionId === 'private_chat') {
             if (otherAttendees.length === 0) return { success: false, message: 'No one to chat with.' };
-            var chatTarget = rng.pick(otherAttendees);
+            // v9p33river545: use selected target if provided
+            var chatTarget = (feast._selectedNobleId && otherAttendees.indexOf(feast._selectedNobleId) >= 0) ? feast._selectedNobleId : rng.pick(otherAttendees);
+            feast._selectedNobleId = null;
             var chatPerson = findPerson(chatTarget);
             var chatBonus = rng.randInt(5, 10);
             try {
@@ -31637,23 +31651,35 @@
 
         } else if (actionId === 'spread_rumor') {
             if (otherAttendees.length < 2) return { success: false, message: 'Not enough nobles to spread rumors about.' };
-            var rumorTarget = rng.pick(otherAttendees);
-            var rumorOthers = otherAttendees.filter(function(id) { return id !== rumorTarget; });
-            var rumorAbout = rng.pick(rumorOthers);
+            // v9p33river545: player picks the SUBJECT of the rumor (selected target).
+            // Listener is random from the rest. Rumor also lowers king's perceived loyalty of subject.
+            var rumorAbout = (feast._selectedNobleId && otherAttendees.indexOf(feast._selectedNobleId) >= 0) ? feast._selectedNobleId : rng.pick(otherAttendees);
+            feast._selectedNobleId = null;
+            var rumorListeners = otherAttendees.filter(function(id) { return id !== rumorAbout; });
+            if (rumorListeners.length === 0) return { success: false, message: 'No one to spread rumors to.' };
+            var rumorTarget = rng.pick(rumorListeners);
             var rumorTargetP = findPerson(rumorTarget);
             var rumorAboutP = findPerson(rumorAbout);
             var targetName = rumorTargetP ? (rumorTargetP.firstName || 'a noble') : 'a noble';
             var aboutName = rumorAboutP ? (rumorAboutP.firstName || 'another noble') : 'another noble';
 
             if (rng.chance(0.50)) {
-                // Success: target loses relationship with the other
+                // Success: listener loses relationship with subject
                 var rumorLoss = rng.randInt(5, 10);
                 if (rumorTargetP) {
                     if (!rumorTargetP._nobleRelationships) rumorTargetP._nobleRelationships = {};
                     rumorTargetP._nobleRelationships[rumorAbout] = Math.max(-100, (rumorTargetP._nobleRelationships[rumorAbout] || 0) - rumorLoss);
                 }
-                feast.events.push('You spread a rumor that turned ' + targetName + ' against ' + aboutName + '.');
-                result = { success: true, message: 'You spread a rumor. ' + targetName + ' now thinks less of ' + aboutName + '. (-' + rumorLoss + ')' };
+                // v9p33river545: king's perceived loyalty of the subject also drops
+                var rumorPercDrop = rng.randInt(8, 14);
+                if (rumorAboutP) {
+                    if (rumorAboutP.perceivedKingLoyalty == null) rumorAboutP.perceivedKingLoyalty = rumorAboutP.kingLoyalty || 50;
+                    rumorAboutP.perceivedKingLoyalty = Math.max(0, rumorAboutP.perceivedKingLoyalty - rumorPercDrop);
+                }
+                feast.events.push('You spread a rumor about ' + aboutName + ' that turned ' + targetName + ' against them.');
+                result = { success: true, message: 'You spread a rumor about ' + aboutName + '. ' + targetName + ' now thinks less of them (-' + rumorLoss + '). The king\'s perceived loyalty of ' + aboutName + ' dropped (-' + rumorPercDrop + ').' };
+                // v9p33river545: subject of the rumor holds a grudge against player
+                _addFeastCourtMemory(rumorAboutP, 'feast_rumor_target', 'Was the subject of a damaging rumor the player spread at a feast', -2, k.id);
 
                 // 30% chance caught
                 if (rng.chance(0.30) && otherAttendees.length > 0) {
@@ -31671,17 +31697,37 @@
                     _addFeastCourtMemory(rumorCatcherP, 'feast_rumor_caught', 'Caught the player spreading rumors at a feast', -2, k.id);
                 }
             } else {
-                feast.events.push('Your rumor about ' + targetName + ' didn\'t gain traction.');
-                result = { success: false, message: 'Your rumor about ' + targetName + ' didn\'t gain traction.' };
+                feast.events.push('Your rumor about ' + aboutName + ' didn\'t gain traction.');
+                result = { success: false, message: 'Your rumor about ' + aboutName + ' didn\'t gain traction.' };
             }
 
         } else if (actionId === 'forge_alliance') {
             if (otherAttendees.length === 0) return { success: false, message: 'No nobles to forge an alliance with.' };
-            var allyTarget = rng.pick(otherAttendees);
-            var allyPerson = findPerson(allyTarget);
-            var allyName = allyPerson ? (allyPerson.firstName || 'a noble') : 'a noble';
+            // v9p33river545: player must pick a 60+ relationship target AND a coalition cause.
+            // On accept, a new coalition is formed and the ally tries to rally other attendees
+            // they have a good relationship with (50+) into the coalition.
+            var allyTarget = (feast._selectedNobleId && otherAttendees.indexOf(feast._selectedNobleId) >= 0) ? feast._selectedNobleId : null;
+            feast._selectedNobleId = null;
+            if (!allyTarget) return { success: false, message: 'Pick a specific noble (relationship 60+) in the Target Noble dropdown to forge an alliance.' };
 
-            // Check relationship > 60
+            var allyCauseLabels = {
+                lower_taxes: 'Lower Taxes', raise_taxes: 'Raise Taxes',
+                make_peace: 'Seek Peace', declare_war: 'Declare War',
+                war_offensive: 'Military Offensive', form_alliance: 'Form Alliance',
+                build_infrastructure: 'Build Infrastructure', build_walls: 'Fortify Towns',
+                improve_happiness: 'Improve Public Welfare', medical_funding: 'Fund Plague Relief'
+            };
+            var allyCause = feast._selectedCause || null;
+            feast._selectedCause = null;
+            if (!allyCause || !allyCauseLabels[allyCause]) {
+                return { success: false, message: 'Pick a coalition cause in the Coalition cause dropdown to forge an alliance.' };
+            }
+
+            var allyPerson = findPerson(allyTarget);
+            var allyName = allyPerson ? ((allyPerson.firstName || 'a noble') + ' ' + (allyPerson.lastName || '')).trim() : 'a noble';
+            if (!allyPerson || !allyPerson.alive) return { success: false, message: 'Selected noble is not available.' };
+
+            // Relationship gate
             var allyRel = 0;
             try {
                 if (typeof Player !== 'undefined' && Player.getRelationship) {
@@ -31689,26 +31735,112 @@
                     allyRel = relData ? (relData.level || 0) : 0;
                 }
             } catch (e) { /* Player not loaded */ }
+            if (allyRel < 60) {
+                return { success: false, message: 'Your relationship with ' + allyName + ' is not strong enough (need ≥ 60, have ' + allyRel + ').' };
+            }
 
-            if (allyRel <= 60) {
-                result = { success: false, message: 'Your relationship with ' + allyName + ' is not strong enough (need > 60, have ' + allyRel + ').' };
-            } else if (rng.chance(0.60)) {
-                // Mark as ally
-                if (allyPerson) {
-                    if (!allyPerson._playerAlly) allyPerson._playerAlly = true;
+            // Must have a king to petition (you can't coalition against yourself)
+            if (!k.king || k.king === 'player' || k.king === 'player_king') {
+                return { success: false, message: 'You are the king — you can simply enact policy directly.' };
+            }
+
+            // 30-day cooldown shared with playerFormCoalition
+            if (typeof Player !== 'undefined' && Player.state) {
+                var _lastCoStartF = Player.state._lastCoalitionStartDay || 0;
+                var _coCooldownLeftF = (_lastCoStartF + 30) - world.day;
+                if (_coCooldownLeftF > 0) {
+                    return { success: false, message: 'You must wait ' + _coCooldownLeftF + ' more day' + (_coCooldownLeftF === 1 ? '' : 's') + ' before starting another coalition.' };
                 }
-                feast.events.push('You forged an alliance with ' + allyName + '!');
-                result = { success: true, message: 'You forged an alliance with ' + allyName + '!' };
+            }
+
+            // Active-coalition cap shared with playerFormCoalition
+            if (!k._nobleCoalitions) k._nobleCoalitions = [];
+            var _existingCoForge = k._nobleCoalitions.filter(function(c) { return c.status === 'forming'; }).length;
+            if (_existingCoForge >= 3) {
+                return { success: false, message: 'Too many active coalitions in this kingdom. Wait for one to resolve before forging another.' };
+            }
+
+            // Feast-warmth bonus to acceptance: 80% (vs ~30% for normal recruitment)
+            if (rng.chance(0.80)) {
+                var allyCauseLabel = allyCauseLabels[allyCause];
+                var coalition = {
+                    id: uid('coalition') + '_' + allyCause,
+                    cause: allyCause,
+                    causeLabel: allyCauseLabel,
+                    causeData: null,
+                    organizer: 'player',
+                    organizerName: 'You',
+                    members: [
+                        { id: 'player', name: 'You', influence: _computePlayerInfluence(k) },
+                        { id: allyTarget, name: ((allyPerson.firstName || '?') + ' ' + (allyPerson.lastName || '')).trim(), influence: _computeNobleInfluence(allyPerson, k) }
+                    ],
+                    formedDay: world.day,
+                    status: 'forming'
+                };
+                k._nobleCoalitions.push(coalition);
+                if (typeof Player !== 'undefined' && Player.state) Player.state._lastCoalitionStartDay = world.day;
+                allyPerson._playerAlly = true;
+                try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(allyTarget, 5); } catch (e) {}
+                _addFeastCourtMemory(allyPerson, 'feast_alliance', 'Joined the player\'s new coalition (' + allyCauseLabel + ') at a feast', 2, k.id);
+
+                // v9p33river545: ally auto-recruits other attending nobles they have rel >= 50 with
+                var autoRecruited = [];
+                var allyRels = (allyPerson._nobleRelationships && typeof allyPerson._nobleRelationships === 'object') ? allyPerson._nobleRelationships : {};
+                for (var _ari = 0; _ari < otherAttendees.length; _ari++) {
+                    var _arNobleId = otherAttendees[_ari];
+                    if (_arNobleId === allyTarget) continue;
+                    if (_arNobleId === k.king) continue;
+                    var _arAlready = false;
+                    for (var _mci = 0; _mci < coalition.members.length; _mci++) {
+                        if (coalition.members[_mci].id === _arNobleId) { _arAlready = true; break; }
+                    }
+                    if (_arAlready) continue;
+                    var _arNoble = findPerson(_arNobleId);
+                    if (!_arNoble || !_arNoble.alive) continue;
+                    var _arRank = (_arNoble.socialRank && _arNoble.socialRank[k.id]) || 0;
+                    if (_arRank < 4) continue;
+                    var _arRel = allyRels[_arNobleId];
+                    if (_arRel == null || _arRel < 50) continue;
+                    var _arChance = 0.40 + ((_arRel - 50) * 0.008);
+                    var _arLoy = _arNoble.kingLoyalty != null ? _arNoble.kingLoyalty : 50;
+                    if (_arLoy < 50) _arChance += (50 - _arLoy) * 0.005;
+                    if ((_arNoble.personality && (_arNoble.personality.ambition || 50) > 60)) _arChance += 0.05;
+                    _arChance = Math.max(0.10, Math.min(0.85, _arChance));
+                    if (rng.chance(_arChance)) {
+                        coalition.members.push({
+                            id: _arNobleId,
+                            name: ((_arNoble.firstName || '?') + ' ' + (_arNoble.lastName || '')).trim(),
+                            influence: _computeNobleInfluence(_arNoble, k)
+                        });
+                        autoRecruited.push(_arNoble.firstName || 'a noble');
+                        _addFeastCourtMemory(_arNoble, 'feast_alliance', 'Joined a new coalition (' + allyCauseLabel + ') at a feast at ' + allyName + '\'s urging', 1, k.id, allyTarget);
+                    }
+                }
+
+                var recruitMsg = autoRecruited.length > 0 ? (' ' + allyName + ' rallied ' + autoRecruited.join(', ') + ' to the cause!') : '';
+                feast.events.push('You forged an alliance with ' + allyName + ' to push for ' + allyCauseLabel + '.' + recruitMsg);
+                result = { success: true, message: '🤝 You forged an alliance with ' + allyName + ' and started a coalition for ' + allyCauseLabel + '!' + recruitMsg };
+                try {
+                    logEvent('📜 You forged a feast alliance with ' + allyName + ' to advocate for ' + allyCauseLabel + ' in ' + k.name + '.', {
+                        type: 'coalition_formed', kingdomId: k.id, cause: allyCause
+                    }, 'my_kingdom');
+                } catch(e) {}
             } else {
                 feast.events.push(allyName + ' politely declined your alliance proposal.');
-                result = { success: false, message: allyName + ' politely declined your alliance proposal.' };
+                result = { success: false, message: allyName + ' politely declined your alliance proposal for ' + allyCauseLabels[allyCause] + '.' };
+                _addFeastCourtMemory(allyPerson, 'feast_alliance_declined', 'Declined the player\'s alliance proposal at a feast', 0, k.id);
             }
 
         } else if (actionId === 'pit_nobles') {
             if (otherAttendees.length < 2) return { success: false, message: 'Not enough nobles to pit against each other.' };
-            var pitA = rng.pick(otherAttendees);
-            var pitRemaining = otherAttendees.filter(function(id) { return id !== pitA; });
-            var pitB = rng.pick(pitRemaining);
+            // v9p33river545: player must pick TWO different targets
+            var pitA = (feast._selectedNobleId && otherAttendees.indexOf(feast._selectedNobleId) >= 0) ? feast._selectedNobleId : null;
+            feast._selectedNobleId = null;
+            var pitB = (feast._selectedNobleId2 && otherAttendees.indexOf(feast._selectedNobleId2) >= 0) ? feast._selectedNobleId2 : null;
+            feast._selectedNobleId2 = null;
+            if (!pitA || !pitB || pitA === pitB) {
+                return { success: false, message: 'Pick two different nobles in the Target Noble and Second target dropdowns to pit against each other.' };
+            }
             var pitPersonA = findPerson(pitA);
             var pitPersonB = findPerson(pitB);
             var pitNameA = pitPersonA ? (pitPersonA.firstName || 'Noble A') : 'Noble A';
@@ -40180,6 +40312,16 @@
         setFeastSelectedNoble: function(kingdomId, nobleId) {
             var k = findKingdom(kingdomId);
             if (k && k._activeFeast) k._activeFeast._selectedNobleId = nobleId;
+        },
+        // v9p33river545: secondary target for Pit Nobles
+        setFeastSelectedNoble2: function(kingdomId, nobleId) {
+            var k = findKingdom(kingdomId);
+            if (k && k._activeFeast) k._activeFeast._selectedNobleId2 = nobleId;
+        },
+        // v9p33river545: coalition cause for Forge Alliance
+        setFeastSelectedCause: function(kingdomId, cause) {
+            var k = findKingdom(kingdomId);
+            if (k && k._activeFeast) k._activeFeast._selectedCause = cause;
         },
         setFeastSelectedDecree: function(kingdomId, decreeId) {
             var k = findKingdom(kingdomId);
