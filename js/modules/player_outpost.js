@@ -1254,6 +1254,75 @@
     }
 
     /**
+     * v9p33river547: Canonical outpost→village field conversion (no payment, no kingdom logic).
+     * Sets isOutpost=false, annexed=true, category='village', slots, garrison, and if the
+     * founder is the player, also cleans up player.outposts, releases staff, clears residents,
+     * grants land + town rep. Used by both the player-side petition path and the king-side
+     * petition execution path so infrastructure credit (player.js getPromotionBars) lands.
+     */
+    function applyVillagePromotion(townId) {
+        _sync();
+        var town = Engine.findTown(townId);
+        if (!town) return { success: false, message: 'Town not found.' };
+        if (!town.isOutpost && town.category === 'village') return { success: true, message: 'Already a village.' };
+        var cfg = (CONFIG && CONFIG.OUTPOST_CONFIG) || {};
+
+        town.isOutpost = false;
+        town.annexed = true;
+        town.category = 'village';
+        try {
+            if (CONFIG && CONFIG.TOWN_CATEGORIES && CONFIG.TOWN_CATEGORIES.village) {
+                town.maxBuildingSlots = Math.max(town.landPlots || 4, CONFIG.TOWN_CATEGORIES.village.maxBuildingSlots);
+            }
+        } catch (_eMbs) {}
+        town.garrison = Math.max(town.garrison || 0, 3);
+
+        var _pid = (player.id || 'player');
+        if (town.founderId === _pid) {
+            if (!player.townReputation) player.townReputation = {};
+            if ((player.townReputation[town.id] || 0) < (cfg.villageConversionBaseRep || 80)) {
+                player.townReputation[town.id] = cfg.villageConversionBaseRep || 80;
+            }
+
+            var minRel = cfg.villageConversionMinRelationship || 20;
+            if (town.outpostResidents) {
+                for (var ri = 0; ri < town.outpostResidents.length; ri++) {
+                    var resId = town.outpostResidents[ri];
+                    var resNpc = Engine.findPerson(resId);
+                    if (resNpc) {
+                        if (!player.relationships) player.relationships = {};
+                        if (!player.relationships[resId]) {
+                            player.relationships[resId] = { level: minRel, type: 'acquaintance' };
+                        } else if ((player.relationships[resId].level || 0) < minRel) {
+                            player.relationships[resId].level = minRel;
+                        }
+                    }
+                }
+            }
+
+            try { _releaseOutpostStaff(town); } catch (_eRs) {}
+            town.outpostResidents = [];
+            try {
+                town.population = Engine.getPeopleInTown ? (Engine.getPeopleInTown(town.id) || []).length : (town.population || 0);
+            } catch (_ePop) {}
+
+            if (player.outposts) {
+                for (var oi = 0; oi < player.outposts.length; oi++) {
+                    if (player.outposts[oi].townId === town.id) {
+                        player.outposts.splice(oi, 1);
+                        break;
+                    }
+                }
+            }
+
+            if (!player.landOwned) player.landOwned = {};
+            if (!player.landOwned[town.id]) player.landOwned[town.id] = town.landPlots || 4;
+        }
+
+        return { success: true, message: town.name + ' converted to village.' };
+    }
+
+    /**
      * Petition the king to convert an outpost to a village.
      */
     function petitionOutpostToVillage(townId) {
@@ -1787,6 +1856,7 @@
     Player.recruitNpcToOutpost = recruitNpcToOutpost;
     Player.getOutpostRecruitChance = getOutpostRecruitChance;
     Player.petitionOutpostToVillage = petitionOutpostToVillage;
+    Player.applyVillagePromotion = applyVillagePromotion;
     Player.getOutpostHousingInfo = getOutpostHousingInfo;
     Player.depositToOutpostStorage = depositToOutpostStorage;
     Player.withdrawFromOutpostStorage = withdrawFromOutpostStorage;

@@ -34924,7 +34924,18 @@
                     var town = Engine.findTown(td.townId);
                     if (town && town.kingdomId !== petition.kingdomId) break; // v9p33river423: block action on foreign towns
                     if (town && town.category === 'outpost' && (town.population || 0) >= 20) {
-                        town.category = 'village';
+                        // v9p33river547: was only flipping `category` to 'village' but leaving
+                        // `isOutpost = true`, which blocked the Lord-rank Infrastructure counter
+                        // (player.js:25021) and other systems that gate on isOutpost. Route through
+                        // the canonical helper so isOutpost / annexed / slots / garrison and the
+                        // player-side cleanup all happen consistently with petitionOutpostToVillage.
+                        if (Player.applyVillagePromotion) {
+                            Player.applyVillagePromotion(town.id);
+                        } else {
+                            town.isOutpost = false;
+                            town.annexed = true;
+                            town.category = 'village';
+                        }
                         town.prosperity = Math.min(100, (town.prosperity || 30) + 10);
                         town.happiness = Math.min(100, (town.happiness || 50) + 10);
                         Engine.logEvent('🏘️ ' + town.name + ' has been officially promoted from outpost to village by royal decree!', null, "my_kingdom");
