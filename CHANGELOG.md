@@ -4,6 +4,57 @@ All notable changes to Merchant Realms will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [CoupAndCourtPolitics] - v9p33river513 → v9p33river536 — coup mechanics, court politics, regression sweep (24 commits)
+
+### Added — Conspiracy & Coup System (v522–v528, v532–v533)
+- **`Form Plot` UI overhaul** (v522) — conspiracies are now visible state, no more "form plot when one already exists" desync
+- **Explicit coup outcome reporting** (v523, v532) — `playerExecuteConspiracy` reports specific success/failure with a single deduped event-log entry carrying `personIds: [{id, role}]` so name-click and "👤 View …" buttons both open the correct NPC
+- **Ally rewards** (v524) — coup co-plotters get +15 rel (+25 leader/founder), the new king gets +30 rel and grants the player one **guaranteed petition** with no signatures required (king's favor)
+- **Deposed king's fate** (v525) — successful coup exiles the previous king outside the kingdom OR imprisons them at the capital's highest-population city
+- **Mercy demotion** (v526) — if the new king is merciful and the old king is not vengeful, the deposed king can instead be spared and demoted to Minor Noble (kingdom kept intact)
+- **Coup-success policy review** (v528) — the new king runs a personality-driven law/policy/ministerial review the day after coronation, mirroring the assassination-succession path
+- **Full coup memory web** (v533) — plotter↔plotter, plotter↔deposed king (sentiment scaled for leader/founder), loyalist↔plotter penalties, and player↔deposed-king relationship hit; deposed king takes -50 rel vs founder / -20 vs members and gains a strong negative `playerActions` entry
+- **Coup-event inline-name linkifier** (v533) — `_linkifyPersonNames(msg, eventDetails)` now reads `personIds` and well-known ID keys to bind names to the correct NPC instance, fixing the long-standing "clicking Baldric Jasperwell opens the wrong Baldric" bug
+
+### Added — Court Politics & Petitions (v529, v531)
+- **Guaranteed petition flow** (v529) — guaranteed petitions (from the coup king's favor or other sources) now bypass the signature gate in both the UI and `submitPetition()`; auto-100% approval as long as the favor-granting king still reigns
+- **Cross-border sea route petitions** (v531) — sea routes that span two kingdoms now route through petition + refund the player's favor on silent rejection (was: the petition vanished and the favor was burned)
+
+### Added — Recruit Fighting Men Multi-Day Drive (v513)
+- "Recruit Fighting Men" is no longer instant — it runs as a multi-day NPC enlistment drive at the player's town, attracting realistic recruits based on rank, reputation, and gold offered
+
+### Added — Coalition System Rework (v514, v519–v520)
+- Coalition influence rework with proper button gating and founder display
+- Lord-promotion infrastructure laid down for future house lord mechanics
+- Toll road costs reduced
+- Fixed `_canTalkTo` ReferenceError on unsolicited-quest accept (v520)
+
+### Added — Outpost Promotion Picker (v530)
+- "Promote Outpost to Village" now opens a picker that lists **only your kingdom's outposts**, with sub-20-population outposts grayed out (cannot be promoted yet)
+
+### Changed — Relationship Milestones (v527)
+- Milestone notifications now use the NPC's full name and the underlined name is click-bound to the correct NPC (same fix pattern as the coup linkifier)
+
+### Fixed — Regency & Childcare (v534, v535, v535b)
+- **Regency overlay teardown on heir death** (v534) — when the heir dies during regency fast-forward, the regency overlay, suppressed-toast flag, funeral lock, and game speed are all torn down before the defeat screen renders. No more frozen "Waiting for updates…" panel on top of the DEFEAT screen
+- **Heir dies instantly during regency** (v535) — root cause: `Player.tickChildcare` kept ticking while the player was dead/regent, and `_spouseCaregiver` requires `sp.townId === player.townId`. A dead player has no meaningful townId, so the regent was never detected as a caregiver, and after 3 in-game days the neglect death roll started firing. `cause='neglect'` bypasses the killPerson child-protection ladder, so the age-1 heir died within real-time seconds at 300× regency speed. Fix: `tickChildcare` now early-returns when `player.alive===false || player.regencyMode`, and the engine call site gates the call with the same condition.
+- **Spouse stops caring for kids when player travels** (v535b) — same root pattern. `_spouseCaregiver` and `_nannyCaregiver` both compared against `player.townId` instead of the kids' actual location. New `_kidsTownId()` helper. Spouse/nanny coverage now keyed off the kids' town, so traveling away no longer "abandons" the kids.
+- **`hireNanny` now hires where the kids are** (v535b) — previously hired in `player.townId`, so recruiting in a capital while kids were back home left them uncovered
+
+### Fixed — Caravan Store-at-Building Never Worked (v536)
+- Caravans with a `store` order targeting a specific player building (e.g. "drop off honey at warehouse in Coldspring") were silently failing every trip with "Target building not found in <town>. Keeping goods on caravan."
+- Root cause: `_populateBuildingDropdown` emitted option values of the form `<type>_<townBuildingsIndex>` (e.g. `warehouse_small_31`), but the order processor looks up via `player.buildings.find(b => b.id === o.buildingId)`, and `b.id` is the canonical `pbld_NN`. The strings never matched.
+- Fix: dropdown now emits the actual `b.id`. The order processor also accepts the legacy `<type>_<idx>` form for backward compatibility — parses the type prefix, resolves via `town.buildings[idx]` first then first-player-building-of-type fallback, and auto-migrates `o.buildingId` to the canonical id. **Existing saved caravan orders self-heal on the next run** — no need to recreate them.
+
+### Fixed — Inventory Metadata Hidden (v521)
+- `_foodAge` / `_staleFood` metadata fields are no longer rendered in the player inventory panel
+
+### Fixed — Building & Worker Management (v515–v518)
+- **Hire filter persistence** (v515) — building hire panel filters persist between visits; directed commissions surface in the royal commissions panel
+- **Town storage counts toward commissions** (v516) — kingdom commissions now count goods in the current town's building storage, not just personal inventory
+- **"Remove" worker button actually fires the worker** (v517) — the Remove action now hits the same code path as Fire (instead of silently no-opping)
+- **Player Effectiveness — Military Goods Sold** (v518) — score now uses a persistent counter so historic sales aren't lost on save/load
+
 ## [ExportEnforcement] - v9p33river478 → v9p33river488 — export enforcement, EM promotion rework, noble advisory (11 commits)
 
 ### Added — Export Restriction Criminal Enforcement (v478)
