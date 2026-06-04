@@ -166,14 +166,38 @@
             html += '<h4 style="color:#ccc;">Select a Town:</h4>';
             var towns = (typeof Engine !== 'undefined' && Engine.getTowns) ? Engine.getTowns() : [];
             var kTowns = towns.filter(function(t) { return t.kingdomId === playerKingdomId; });
+            // v9p33river530: promote_outpost should ONLY show outposts in the
+            // player's kingdom. Outposts under 20 pop appear grayed out so the
+            // player can see growth progress toward eligibility (the king
+            // approves at 20+ residents per config.js:4847).
+            var _promoteMin = 20;
+            if (typeId === 'promote_outpost') {
+                kTowns = kTowns.filter(function(t) { return t.category === 'outpost'; });
+                kTowns.sort(function(a, b) { return (b.population || 0) - (a.population || 0); });
+            }
             for (var i = 0; i < kTowns.length; i++) {
                 // v9p33river367: names go through data-* attrs; backslash-escaping apostrophes
                 // leaks into dataset values and still leaves other HTML chars unescaped.
                 var _townName = kTowns[i].name || kTowns[i].id;
-                html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
-                html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-townid="' + kTowns[i].id + '" data-townname="' + escapeHtml(_townName) + '">';
-                html += '🏘️ ' + escapeHtml(_townName);
-                html += '</button>';
+                var _pop = kTowns[i].population || 0;
+                var _eligible = typeId !== 'promote_outpost' || _pop >= _promoteMin;
+                if (_eligible) {
+                    html += '<button class="btn-medieval" style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;" ';
+                    html += 'data-action="confirmCreatePetition" data-type="' + typeId + '" data-townid="' + kTowns[i].id + '" data-townname="' + escapeHtml(_townName) + '">';
+                    html += '🏘️ ' + escapeHtml(_townName);
+                    if (typeId === 'promote_outpost') html += ' <span style="color:#3a2a10;font-size:0.78rem;">(pop ' + _pop + ')</span>';
+                    html += '</button>';
+                } else {
+                    // Grayed-out, non-clickable button — visible so the player can track growth
+                    html += '<button class="btn-medieval" disabled style="display:block;width:100%;text-align:left;padding:6px 12px;margin:3px 0;font-size:0.85rem;opacity:0.45;cursor:not-allowed;filter:grayscale(60%);" ';
+                    html += 'title="Needs at least ' + _promoteMin + ' residents to be promoted to a village (currently ' + _pop + ').">';
+                    html += '🏘️ ' + escapeHtml(_townName);
+                    html += ' <span style="color:#3a2a10;font-size:0.78rem;">(pop ' + _pop + ' / ' + _promoteMin + ')</span>';
+                    html += '</button>';
+                }
+            }
+            if (typeId === 'promote_outpost' && kTowns.length === 0) {
+                html += '<p style="color:#aaa;font-size:0.85em;">Your kingdom has no outposts to promote.</p>';
             }
         } else if (pt.targetType === 'town_pair') {
             html += '<h4 style="color:#ccc;">Select Towns:</h4>';
