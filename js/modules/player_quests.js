@@ -1214,6 +1214,20 @@
         var rewardKingRel = qt.reward.kingRel || 5;
         var rewardXp = qt.reward.xp || 30;
 
+        // v9p33river513: Recruit Fighting Men — rewards scale with the rolled
+        // count (5 → 30 recruits). Higher targets = far better rep / kingRel /
+        // gold. Time limit also bumped so 30-recruit drives are actually
+        // achievable across many recruitment days. Note: kingdomRep is later
+        // multiplied by 0.6 in completeKingdomQuest, so we scale rep generously.
+        if (actionReq && actionReq.type === 'recruit_npcs') {
+            var _recScale = Math.max(0, Math.min(1, (actionReq.count - 5) / 25));
+            rewardGold = Math.round((300 + _recScale * 1200) * moodRewardMod);
+            rewardRep = Math.max(2, Math.round(2 + _recScale * 10));      // 2 → 12 stored (≈1 → 7 after 0.6 nerf)
+            rewardKingRel = Math.max(3, Math.round(3 + _recScale * 9));   // 3 → 12
+            rewardXp = Math.max(20, Math.round(20 + _recScale * 40));     // 20 → 60
+            timeLimit = Math.max(timeLimit, actionReq.count * 2 + 5);     // 15d @ 5 recruits → 65d @ 30 recruits
+        }
+
         // Mood urgency bias — stressed/angry kings upgrade urgency
         var moodUrgBias = (moodCfg.urgencyBias && moodCfg.urgencyBias[mood]) || 0;
         var finalUrgency = qt.urgency || 'normal';
@@ -1959,6 +1973,226 @@
         player._kqActionDone[questId] = true;
     }
 
+    // v9p33river513: Compute daily cost for "Recruit Fighting Men" drive in
+    // a given town. Range roughly 20-200g/day; over a typical 8-day drive
+    // that's ~150-1500g total, matching the user-facing spec range.
+    // Memoized per-town on the quest to prevent intra-day economic drift
+    // from changing the rate the player sees mid-mission. Exposed at module
+    // scope so the UI can preview the cost before the player commits.
+    function _calcRecruitDailyCost(quest, town) {
+        if (!town) return 50;
+        if (!quest._recruitDailyCostsByTown) quest._recruitDailyCostsByTown = {};
+        if (quest._recruitDailyCostsByTown[town.id]) return quest._recruitDailyCostsByTown[town.id];
+        var prosp = (typeof town.prosperity === 'number') ? Math.max(0, Math.min(100, town.prosperity)) : 50;
+        var mGold = 0;
+        try { mGold = Math.max(0, (Engine.getTownMarketGold ? Engine.getTownMarketGold(town.id) : 0) || 0); } catch(e) {}
+        var raw = 15 + prosp * 1.2 + Math.min(80, mGold / 200);
+        var daily = Math.max(20, Math.min(200, Math.round(raw)));
+        quest._recruitDailyCostsByTown[town.id] = daily;
+        return daily;
+    }
+    Player._calcRecruitDailyCost = _calcRecruitDailyCost; // expose to UI
+
+    // v9p33river513: spend one day attempting to recruit volunteers in the
+    // player's current town. Returns a result shape compatible with
+    // _executeKQAction's result-modal renderer.
+    function _attemptRecruitDriveDay(quest, kingdomId) {
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        var actionReq = quest.requirements && quest.requirements.action;
+        var target = (actionReq && actionReq.count) || 1;
+
+        // Already done?
+        if (player._kqActionDone && player._kqActionDone[quest.id]) {
+            return { success: false, message: 'Recruitment quota already met!' };
+        }
+
+        // Must be stationed in a town (not traveling)
+        if (player.traveling) {
+            return { success: false, message: '📍 You must be in a town to recruit soldiers. Stop traveling first.' };
+        }
+        var town = null;
+        try { town = Engine.findTown(player.townId); } catch(e) {}
+        if (!town) {
+            return { success: false, message: '📍 You must be in a town to recruit soldiers.' };
+        }
+        // Same kingdom only — can't recruit foreigners into your king's army.
+        if (town.kingdomId !== kingdomId) {
+            return { success: false, message: '📍 You can only recruit within the issuing kingdom. Travel to one of its towns.' };
+        }
+
+        var kingdom = null;
+        try { kingdom = Engine.findKingdom(kingdomId); } catch(e) {}
+
+        // Build candidate pool
+        var candidates = [];
+        if (world && world.people) {
+            for (var pi = 0; pi < world.people.length; pi++) {
+                var p = world.people[pi];
+                if (!p || !p.alive) continue;
+                if (p.id === 'player' || p.isPlayer) continue;
+                if (p.townId !== town.id) continue;
+                if (p.kingdomId !== kingdomId) continue;
+                if (p.sex !== 'M') continue;
+                if (typeof p.age !== 'number' || p.age < 16 || p.age > 45) continue;
+                if (p.occupation === 'soldier' || p.occupation === 'guard') continue;
+                if (p.occupation === 'noble' || p.isKing || p.isNoble) continue;
+                if (p.isEliteMerchant) continue;
+                if (p.conscripted) continue;
+                if (p.status === 'indentured') continue;
+                if (p.id === player.spouseId) continue;
+                if (p.isPlayerGuard) continue;
+                if (p.employerId === 'player' || (player.id && p.employerId === player.id)) continue;
+                if (p.spouseId && p.dependents && p.dependents.length > 3) continue; // too many mouths to feed at home
+                // Filter out by socialRank object — nobles excluded above by occupation, but doubly enforce
+                var pRank = (p.socialRank && typeof p.socialRank === 'object') ? (p.socialRank[kingdomId] || 0) : 0;
+                if (pRank >= 4) continue; // minor noble+ won't enlist as common soldier
+                candidates.push({ p: p, rank: pRank });
+            }
+        }
+
+        if (candidates.length === 0) {
+            return { success: false, message: '🤷 No eligible townsfolk to recruit here. Try a different town with more young, working-age men.' };
+        }
+
+        // Daily cost — based on this town's prosperity & market gold
+        var dailyCost = _calcRecruitDailyCost(quest, town);
+        if ((player.gold || 0) < dailyCost) {
+            return { success: false, message: '💰 You need ' + dailyCost + 'g to fund a day of recruitment in ' + town.name + '. You have ' + Math.floor(player.gold || 0) + 'g.' };
+        }
+
+        // Count social-branch skills for caps + bonuses
+        var socialSkillCount = 0;
+        if (player.skills && typeof PLAYER_SKILLS !== 'undefined') {
+            for (var skId in player.skills) {
+                if (!player.skills[skId]) continue;
+                var skDef = PLAYER_SKILLS[skId];
+                if (skDef && skDef.branch === 'social') socialSkillCount++;
+            }
+        }
+        var perDayCap = Math.min(5, 1 + Math.floor(socialSkillCount / 2)); // 1-5 per day
+
+        // Deduct gold + advance one day
+        player.gold -= dailyCost;
+        player.stats.totalGoldSpent = (player.stats.totalGoldSpent || 0) + dailyCost;
+        if (Player.logFinance) { try { Player.logFinance(-dailyCost, 'quests', 'Recruitment drive in ' + town.name); } catch(e) {} }
+        var ticksPerDay = (typeof CONFIG !== 'undefined' && CONFIG.TICKS_PER_DAY) ? CONFIG.TICKS_PER_DAY : 60;
+        if (typeof Game !== 'undefined' && Game.advanceTicks) {
+            Game.advanceTicks(ticksPerDay);
+        }
+
+        // Track per-town progress + attempts
+        if (!quest._recruitedByTown) quest._recruitedByTown = {};
+        if (!quest._recruitProgress) quest._recruitProgress = 0;
+        if (!player._kqActionAttempts) player._kqActionAttempts = {};
+        player._kqActionAttempts[quest.id] = (player._kqActionAttempts[quest.id] || 0) + 1;
+
+        // Shuffle candidates so each day's recruits aren't deterministic by ID order
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        for (var ci = candidates.length - 1; ci > 0; ci--) {
+            var ji = rng ? rng.randInt(0, ci) : Math.floor(Math.random() * (ci + 1));
+            var tmp = candidates[ci]; candidates[ci] = candidates[ji]; candidates[ji] = tmp;
+        }
+
+        // Town-drain soft cap: if more than 10% of town's pop has been drained by this drive, sign chance plummets.
+        var townPop = town.population || candidates.length;
+        var drainedSoFar = quest._recruitedByTown[town.id] || 0;
+        var drainPenalty = (drainedSoFar > Math.max(3, townPop * 0.1)) ? -0.30 : 0;
+
+        // Try to recruit up to perDayCap
+        var recruited = 0;
+        var recruitedNames = [];
+        var stillNeeded = target - quest._recruitProgress;
+        var ranOutOfRoom = false;
+        for (var k2 = 0; k2 < candidates.length && recruited < perDayCap && recruited < stillNeeded; k2++) {
+            var cand = candidates[k2];
+            var npc = cand.p;
+            var rank = cand.rank;
+            var age = npc.age;
+            var gold = npc.gold || 0;
+
+            // Base willingness
+            var chance = 0.20;
+            // Younger more likely
+            if (age < 22) chance += 0.18;
+            else if (age < 28) chance += 0.10;
+            else if (age < 35) chance += 0.03;
+            else chance -= 0.10;
+            // Poorer more likely
+            if (gold < 10) chance += 0.18;
+            else if (gold < 50) chance += 0.10;
+            else if (gold < 200) chance += 0.02;
+            else if (gold >= 500) chance -= 0.12;
+            // Lower rank more likely
+            if (rank <= 1) chance += 0.15;
+            else if (rank === 2) chance += 0.05;
+            else if (rank === 3) chance -= 0.05;
+            // Personality (loyalty/courage are numeric 0-100 in this codebase)
+            var perso = npc.personality || {};
+            if ((perso.loyalty || 50) > 60) chance += 0.06;
+            if ((perso.courage || 50) > 60) chance += 0.08;
+            else if ((perso.courage || 50) < 30) chance -= 0.08;
+            // Established family resists
+            if (npc.spouseId) chance -= 0.06;
+            if (npc.childrenIds && npc.childrenIds.length > 0) chance -= 0.04;
+            // Player social skills
+            chance += socialSkillCount * 0.025;
+            if (Player.hasSkill && Player.hasSkill('charismatic')) chance += 0.06;
+            if (Player.hasSkill && Player.hasSkill('court_etiquette')) chance += 0.04;
+            // Town drain penalty
+            chance += drainPenalty;
+            chance = Math.max(0.03, Math.min(0.90, chance));
+
+            var rolled = rng ? rng.chance(chance) : (Math.random() < chance);
+            if (rolled) {
+                npc.skills = npc.skills || {};
+                try {
+                    Engine.recruitSoldier(npc, town, kingdom, 'infantry');
+                    npc.kingdomId = kingdomId; // ensure soldier belongs to the issuing kingdom
+                } catch(e) {
+                    continue;
+                }
+                recruited++;
+                recruitedNames.push(npc.firstName || 'A volunteer');
+                quest._recruitProgress = (quest._recruitProgress || 0) + 1;
+                quest._recruitedByTown[town.id] = (quest._recruitedByTown[town.id] || 0) + 1;
+            }
+        }
+
+        var attemptNum = player._kqActionAttempts[quest.id];
+        var progress = quest._recruitProgress || 0;
+        var isComplete = progress >= target;
+        if (isComplete) {
+            trackKQActionDone(quest.id);
+            try { EventTypes.emit('QUEST_ACTION_SUCCEEDED', { mechLabel: 'Recruit Fighting Men', attemptNum: attemptNum }); } catch(e) {}
+        }
+
+        // Build descriptive message
+        var msg;
+        if (isComplete) {
+            msg = '🎉 Recruitment quota MET! Total ' + progress + '/' + target + ' enlisted across the drive. Report back to the noble to claim your reward.';
+        } else if (recruited > 0) {
+            var nameList = recruitedNames.slice(0, 4).join(', ') + (recruitedNames.length > 4 ? ', and others' : '');
+            msg = '✅ Spent the day in ' + town.name + ' (' + dailyCost + 'g). Enlisted: ' + nameList + '. Drive progress: ' + progress + '/' + target + '.';
+        } else {
+            msg = '🙅 Spent the day in ' + town.name + ' (' + dailyCost + 'g), but no townsfolk agreed to enlist today. Drive progress: ' + progress + '/' + target + '. Try a different town or another day.';
+        }
+
+        return {
+            success: true,
+            actionSuccess: true, // always true — a day was spent; the quest "fails" only on expiry
+            isRecruitDrive: true,
+            recruited: recruited,
+            recruitProgress: progress,
+            recruitTarget: target,
+            recruitComplete: isComplete,
+            goldSpent: dailyCost,
+            ticksSpent: 1,
+            attempt: attemptNum,
+            chance: null,
+            message: msg
+        };
+    }
+
     // ── Attempt a one-off action quest (replaces instant "Report Complete") ──
     function attemptKQAction(questId, kingdomId) {
         _sync();
@@ -1995,6 +2229,16 @@
             if (!playerTown || !playerTown.isCapital || playerTown.kingdomId !== kingdomId) { // v9p33river411: must be THIS kingdom's capital
                 return { success: false, message: '📍 You must be in the kingdom capital to attempt this action. Travel to the capital first.' };
             }
+        }
+
+        // v9p33river513: Recruit Fighting Men — multi-day NPC recruitment
+        // drive. Custom branch (returns early): each invocation spends a day
+        // and a calculated gold amount based on town prosperity / market gold,
+        // and weighted-randomly recruits eligible NPCs (younger / poorer /
+        // lower-rank more likely) into the kingdom's garrison via
+        // Engine.recruitSoldier. Quest completes when _recruitProgress >= count.
+        if (actionType === 'recruit_npcs') {
+            return _attemptRecruitDriveDay(quest, kingdomId);
         }
 
         // H3: stay_location requires player to be in a town (not traveling)

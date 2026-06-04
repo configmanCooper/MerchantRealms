@@ -2280,8 +2280,8 @@ const KINGDOM_QUEST_POOL = {
         triggers: ['war_active'], personality: ['militarism_high'], urgency: 'high' },
     recruit_soldiers: { title: 'Recruit Fighting Men', cat: 'military', diff: 'medium', rank: 4,
         desc: 'Recruit able-bodied men for the royal army.',
-        req: { action: 'recruit_npcs', count: [5,10] },
-        reward: { gold: [500,1000], rep: 3, kingRel: 5, xp: 30 },
+        req: { action: 'recruit_npcs', count: [5,30] },
+        reward: { gold: [300,1500], rep: 3, kingRel: 5, xp: 30 },
         triggers: ['war_active'], personality: ['militarism_high'], urgency: 'high' },
     produce_weapons: { title: 'Arms Production', cat: 'military', diff: 'hard', rank: 4,
         desc: 'Produce weapons and ammunition for the military.',
@@ -3039,15 +3039,16 @@ const ACTION_QUEST_MECHANICS = {
     // MILITARY
     recruit_npcs: {
         label: 'Recruit Soldiers',
-        actionLabel: '📢 Begin Recruitment Drive',
-        tickCost: 8,
-        goldCost: 150,
+        actionLabel: '📢 Spend a Day Recruiting',
+        tickCost: 1,                   // 1 day per attempt; multi-day drive
+        goldCost: 0,                   // dynamic — calculated per attempt from town prosperity/market gold
         locationReq: 'any',
-        successBase: 0.75,
+        successBase: 0.75,             // unused — custom recruit branch handles outcome per-NPC
         skillKey: 'social',
-        narrative: 'You set up a recruitment post in the town square, offering the king\'s coin to able-bodied men willing to fight.',
+        narrative: 'You set up a recruitment post in the town square, offering the king\'s coin to able-bodied men willing to fight. Each day you spend convincing recruits costs gold and time.',
         successText: 'Volunteers line up eagerly. You meet your recruitment quota and deliver the new recruits to the barracks.',
-        failText: 'The townspeople are reluctant — fear of war outweighs the king\'s coin. You\'ll need to try again with better incentives.',
+        failText: 'The townspeople are reluctant — fear of war outweighs the king\'s coin. You\'ll need to keep trying or visit other towns.',
+        isRecruitDrive: true,          // v9p33river513: marks this as a multi-day recruit drive (custom branch in attemptKQAction)
     },
     stay_location: {
         label: 'Defend Position',

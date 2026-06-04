@@ -2901,9 +2901,53 @@ function _buildKQActiveCard(quest, kingdomId, day, progress) {
                     html += '<div style="font-size:0.58rem;color:#666;margin-top:4px;margin-left:8px;">Or use the manual action:</div>';
                 }
                 html += '<button class="btn-medieval" data-action="_attemptKQActionUI" data-id="' + safActId2 + '" data-kingdom="' + safKid2 + '" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">▶️ ' + escapeHtml(_curStepBtn ? _curStepBtn.label : 'Next Step') + '</button>';
+            } else if (_aqMech && _aqMech.isRecruitDrive) {
+                // v9p33river513: Recruit Fighting Men — multi-day NPC drive
+                var _rdTarget = (act.count || 1);
+                var _rdProgress = (quest._recruitProgress || 0);
+                var _rdPct = Math.min(100, Math.round((_rdProgress / Math.max(1, _rdTarget)) * 100));
+                var _rdRemaining = Math.max(0, _rdTarget - _rdProgress);
+                var _rdDone = _rdProgress >= _rdTarget;
+                // Estimate today's daily cost in the player's current town
+                var _rdDaily = null;
+                var _rdTown = null;
+                var _rdInOwnKingdom = false;
+                try {
+                    _rdTown = Engine.findTown(Player.townId);
+                    if (_rdTown && _rdTown.kingdomId === kingdomId && Player._calcRecruitDailyCost) {
+                        _rdDaily = Player._calcRecruitDailyCost(quest, _rdTown);
+                        _rdInOwnKingdom = true;
+                    }
+                } catch(e) {}
+
+                html += '<div style="font-size:0.72rem;color:#d4a843;margin-bottom:4px;font-weight:bold;">📢 ' + escapeHtml(_aqLabel) + ' <span style="font-size:0.62rem;color:#888;">(' + _rdProgress + '/' + _rdTarget + ' recruited)</span></div>';
+                // Progress bar
+                html += '<div style="background:rgba(0,0,0,0.3);border-radius:4px;height:6px;margin:4px 8px;overflow:hidden;">';
+                html += '<div style="height:100%;background:linear-gradient(90deg,#55a868,#4caf50);width:' + _rdPct + '%;border-radius:4px;transition:width 0.3s;"></div></div>';
+                // Status / cost / location info
+                html += '<div style="font-size:0.65rem;color:#aaa;margin:4px 0 4px 12px;">';
+                if (_rdDone) {
+                    html += '<div style="color:#55a868;">✅ Quota met — report to the noble to claim reward.</div>';
+                } else {
+                    html += '<div>🎯 Need ' + _rdRemaining + ' more recruit' + (_rdRemaining === 1 ? '' : 's') + '</div>';
+                    if (_rdTown && _rdInOwnKingdom && _rdDaily != null) {
+                        var _rdHas = (Player.state.gold || 0) >= _rdDaily;
+                        html += '<div style="color:' + (_rdHas ? '#55a868' : '#e74c3c') + ';">💰 ' + _rdTown.name + ' cost: ' + _rdDaily + 'g/day (prosperity-scaled)</div>';
+                    } else if (_rdTown && !_rdInOwnKingdom) {
+                        html += '<div style="color:#e74c3c;">📍 Travel to one of the kingdom\'s own towns to recruit.</div>';
+                    } else {
+                        html += '<div style="color:#e74c3c;">📍 Travel to a kingdom town to begin recruiting.</div>';
+                    }
+                    html += '<div>⏳ Each day spent recruits 0-' + (1 + Math.floor(((Player.state.skills ? Object.keys(Player.state.skills).filter(function(s){ return Player.state.skills[s]; }).length : 0)) / 8)) + ' volunteers based on the townsfolk\'s age, wealth, and rank.</div>';
+                }
+                html += '</div>';
+
+                if (!_rdDone) {
+                    var safActIdRD = quest.id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    var safKidRD = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    html += '<button class="btn-medieval" data-action="_attemptKQActionUI" data-id="' + safActIdRD + '" data-kingdom="' + safKidRD + '" style="font-size:0.7rem;padding:4px 12px;margin-top:4px;background:rgba(231,126,35,0.2) !important;border-color:rgba(231,126,35,0.4) !important;">' + escapeHtml(_aqMech.actionLabel || '📢 Spend a Day Recruiting') + '</button>';
+                }
             } else if (_aqMech) {
-                // Show action details with proper attempt button
-                html += '<div style="font-size:0.68rem;color:#e67e22;margin-bottom:4px;">⬜ ' + escapeHtml(_aqLabel) + '</div>';
                 html += '<div style="font-size:0.65rem;color:#999;margin:2px 0 4px 12px;font-style:italic;">' + escapeHtml(_aqMech.narrative || '') + '</div>';
                 // Requirements
                 html += '<div style="font-size:0.65rem;color:#aaa;margin-left:12px;">';
@@ -3009,7 +3053,44 @@ function _attemptKQActionUI(questId, kingdomId) {
         }
     } catch(e) {}
 
-    if (_aqMech) {
+    if (_aqMech && _aqMech.isRecruitDrive) {
+        // v9p33river513: Recruit Fighting Men — show per-day cost confirmation
+        var _rdcTown = null;
+        var _rdcDaily = null;
+        var _rdcInRange = false;
+        try {
+            _rdcTown = Engine.findTown(Player.townId);
+            if (_rdcTown && _kqQ && _rdcTown.kingdomId === kingdomId && Player._calcRecruitDailyCost) {
+                _rdcDaily = Player._calcRecruitDailyCost(_kqQ, _rdcTown);
+                _rdcInRange = true;
+            }
+        } catch(e) {}
+        var _rdcTarget = (_kqQ && _kqQ.requirements && _kqQ.requirements.action && _kqQ.requirements.action.count) || 1;
+        var _rdcProgress = (_kqQ && _kqQ._recruitProgress) || 0;
+        var _rdcHtml = '<div style="padding:10px;">';
+        _rdcHtml += '<div style="font-size:0.9rem;color:#d4a843;margin-bottom:6px;font-weight:bold;">📢 Spend a Day Recruiting</div>';
+        _rdcHtml += '<div style="font-size:0.78rem;color:#999;margin-bottom:10px;font-style:italic;">' + escapeHtml(_aqMech.narrative || '') + '</div>';
+        _rdcHtml += '<div style="background:rgba(0,0,0,0.2);border-radius:6px;padding:10px;font-size:0.82rem;">';
+        if (_rdcInRange && _rdcDaily != null) {
+            var _rdcHas = (Player.state.gold || 0) >= _rdcDaily;
+            _rdcHtml += '<div style="color:' + (_rdcHas ? '#e67e22' : '#e74c3c') + ';">💰 Cost in ' + escapeHtml(_rdcTown.name) + ': ' + _rdcDaily + 'g for today</div>';
+            if (!_rdcHas) _rdcHtml += '<div style="color:#e74c3c;font-size:0.75rem;">⚠️ You don\'t have enough gold.</div>';
+        } else {
+            _rdcHtml += '<div style="color:#e74c3c;">📍 You must be in one of the kingdom\'s own towns.</div>';
+        }
+        _rdcHtml += '<div style="color:#5dade2;">⏳ Time: 1 day</div>';
+        _rdcHtml += '<div style="color:#aaa;">📊 Progress: ' + _rdcProgress + '/' + _rdcTarget + ' recruits</div>';
+        _rdcHtml += '<div style="color:#aaa;font-size:0.75rem;margin-top:4px;">Younger, poorer, lower-rank townsfolk are more likely to enlist. Social skills improve your daily yield.</div>';
+        _rdcHtml += '</div>';
+        _rdcHtml += '<div style="font-size:0.75rem;color:#999;margin-top:8px;font-style:italic;">Gold and time are spent whether anyone enlists today or not.</div>';
+        _rdcHtml += '</div>';
+        var _safQidRD = questId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        var _safKidRD = kingdomId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        openModal('📢 Recruit Soldiers', _rdcHtml,
+            '<button class="btn-medieval" data-action="closeAndExecuteKQAction" data-id="' + _safQidRD + '" data-kingdom="' + _safKidRD + '" style="background:rgba(231,126,35,0.3) !important;border-color:rgba(231,126,35,0.5) !important;">📢 Spend a Day</button>' +
+            '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Cancel</button>'
+        );
+    } else if (_aqMech) {
         // Check for multi-step config
         var _msConf = (typeof MULTISTEP_ACTIONS !== 'undefined' && _kqQ && _kqQ.requirements && _kqQ.requirements.action) ? MULTISTEP_ACTIONS[_kqQ.requirements.action.type] : null;
         var _msProg = _msConf ? ((Player.state._kqStepProgress || {})[questId] || 0) : 0;
@@ -3061,6 +3142,45 @@ function _executeKQAction(questId, kingdomId) {
     // Show result modal with narrative
     var isSuccess = result.actionSuccess;
     var isStepSuccess = result.stepSuccess || false;
+    // v9p33river513: Recruit drive day result — render its own progress modal
+    if (result.isRecruitDrive) {
+        var _rrHtml = '<div style="padding:15px;">';
+        _rrHtml += '<div style="text-align:center;margin-bottom:12px;">';
+        if (result.recruitComplete) {
+            _rrHtml += '<div style="font-size:2.5em;">🏆</div>';
+            _rrHtml += '<h3 style="color:#2ecc71;margin:5px 0;">Recruitment Drive Complete!</h3>';
+        } else if (result.recruited > 0) {
+            _rrHtml += '<div style="font-size:2.5em;">✅</div>';
+            _rrHtml += '<h3 style="color:#d4a843;margin:5px 0;">Day Complete — ' + result.recruited + ' enlisted</h3>';
+        } else {
+            _rrHtml += '<div style="font-size:2.5em;">🙅</div>';
+            _rrHtml += '<h3 style="color:#e67e22;margin:5px 0;">Day Complete — No Volunteers</h3>';
+        }
+        _rrHtml += '</div>';
+        _rrHtml += '<p style="font-size:0.9rem;color:#ddd;margin:10px 0;">' + escapeHtml(result.message) + '</p>';
+        // Progress bar
+        var _rrPct = Math.min(100, Math.round((result.recruitProgress / Math.max(1, result.recruitTarget)) * 100));
+        _rrHtml += '<div style="margin:8px 0;">';
+        _rrHtml += '<div style="font-size:0.75rem;color:#aaa;margin-bottom:3px;">Drive progress: ' + result.recruitProgress + '/' + result.recruitTarget + ' recruits</div>';
+        _rrHtml += '<div style="background:rgba(0,0,0,0.3);border-radius:4px;height:8px;overflow:hidden;">';
+        _rrHtml += '<div style="height:100%;background:linear-gradient(90deg,#55a868,#4caf50);width:' + _rrPct + '%;border-radius:4px;transition:width 0.3s;"></div></div></div>';
+        _rrHtml += '<div style="margin:12px 0;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:0.8rem;">';
+        _rrHtml += '<div style="color:#aaa;margin-bottom:4px;">📊 Day Summary:</div>';
+        if (result.goldSpent > 0) _rrHtml += '<div style="color:#e67e22;">💰 Gold spent today: ' + result.goldSpent + 'g</div>';
+        _rrHtml += '<div style="color:#5dade2;">⏳ Time spent: 1 day</div>';
+        if (result.attempt) _rrHtml += '<div style="color:#ccb974;">📝 Day #' + result.attempt + ' of this drive</div>';
+        _rrHtml += '</div>';
+        if (result.recruitComplete) {
+            _rrHtml += '<p style="font-size:0.8rem;color:#55a868;font-style:italic;margin-top:8px;">Return to a noble to claim your reward.</p>';
+        } else {
+            _rrHtml += '<p style="font-size:0.8rem;color:#999;font-style:italic;margin-top:8px;">Click "📢 Spend a Day Recruiting" again to continue, or travel to another town to find fresher candidates.</p>';
+        }
+        _rrHtml += '</div>';
+        openModal(result.recruitComplete ? '🏆 Recruitment Complete' : '📢 Day of Recruiting', _rrHtml,
+            '<button class="btn-medieval" data-action="closeAndOpenNobilityDialog">Continue</button>'
+        );
+        return;
+    }
     var html = '<div style="padding:15px;">';
     html += '<div style="text-align:center;margin-bottom:12px;">';
 
