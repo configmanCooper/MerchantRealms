@@ -23230,6 +23230,11 @@
             player.pendingWorkName = '';
         }
 
+        // v508: Warehouse workers ferry needed inputs from town storage to
+        // needy player buildings BEFORE production runs, so deliveries can
+        // prevent same-day input stoppages.
+        if (Player.tickWarehouseAutoSupply) Player.tickWarehouseAutoSupply();
+
         // Building production
         tickBuildings();
         tickAutoSellStorage();

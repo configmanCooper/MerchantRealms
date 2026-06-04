@@ -1006,6 +1006,218 @@
     }
 
     // ========================================================
+    // §3.5 WAREHOUSE AUTO-SUPPLY (v508)
+    // Warehouses with the autoSupply toggle enabled use their
+    // workers to ferry needed inputs from shared town storage
+    // into player buildings whose production has stalled (or is
+    // about to) for lack of inputs. Budget: 30 weight per worker
+    // per day, all delivered within the same town.
+    // ========================================================
+
+    var WAREHOUSE_TYPES_AUTOSUPPLY = ['warehouse', 'warehouse_small', 'warehouse_large'];
+    var AUTOSUPPLY_WEIGHT_PER_WORKER = 30;
+    var AUTOSUPPLY_TARGET_STOCK_MULT = 5;
+
+    function _isWarehouseType(typeId) {
+        return WAREHOUSE_TYPES_AUTOSUPPLY.indexOf(typeId) >= 0;
+    }
+
+    function _activeConsumesFor(bt, bld) {
+        var activeProduct = bld.currentProduct || bld.productionChoice || (bt && bt.produces);
+        var activeRecipe = (bt && bt.availableProducts && bt.availableProducts[activeProduct]) || null;
+        if (activeRecipe && activeRecipe.consumes) return activeRecipe.consumes;
+        return (bt && bt.consumes) || {};
+    }
+
+    function _targetInputFreeSpace(bt, bld) {
+        var baseStorage = (bt && bt.storage) || 50;
+        var cap = Player._bldStorageCap ? Player._bldStorageCap(baseStorage, bld.level) : Math.floor(baseStorage * (1 + (((bld.level || 1) - 1) * 0.50)));
+        if (cap <= 0) return Infinity; // unlimited slot
+
+        var outputSet = {};
+        if (bt.produces) outputSet[bt.produces] = true;
+        if (bt.canProduce) {
+            for (var i = 0; i < bt.canProduce.length; i++) outputSet[bt.canProduce[i]] = true;
+        }
+        if (bt.availableProducts) {
+            for (var ap in bt.availableProducts) {
+                var apr = bt.availableProducts[ap];
+                if (apr && apr.produces) outputSet[apr.produces] = true;
+            }
+        }
+        var inputWeight = 0;
+        if (bld.inventory) {
+            for (var k in bld.inventory) {
+                if (outputSet[k]) continue;
+                var r = findResource(k);
+                inputWeight += (bld.inventory[k] || 0) * (r ? (r.weight || 1) : 1);
+            }
+        }
+        return Math.max(0, cap - inputWeight);
+    }
+
+    function _isTargetEligible(bld, bt, day) {
+        if (!bt || !bt.consumes) return false;
+        var consumes = bt.consumes;
+        var hasAny = false;
+        for (var _ck in consumes) { hasAny = true; break; }
+        if (!hasAny && (!bt.availableProducts)) return false;
+        if (bld.active === false) return false;
+        if (bld.condition === 'destroyed') return false;
+        if (bld._fireRepairUntil && day < bld._fireRepairUntil) return false;
+        if (bld._disabledUntil && day < bld._disabledUntil) return false;
+        if (bld.fallow) return false;
+        if (bld.depositDepleted) return false;
+        if (bld._delivering) return false;
+        return true;
+    }
+
+    /**
+     * Daily tick: warehouses with autoSupply ferry needed inputs to player
+     * buildings in the same town. Called BEFORE tickBuildings() so deliveries
+     * can prevent same-day stoppages.
+     */
+    function tickWarehouseAutoSupply() {
+        _sync();
+        if (!player || !player.buildings || !player.alive) return;
+        var day = ENGINE_REF ? ENGINE_REF.getDay() : 0;
+
+        // Group warehouses by town
+        var warehousesByTown = {};
+        for (var wi = 0; wi < player.buildings.length; wi++) {
+            var wh = player.buildings[wi];
+            if (!_isWarehouseType(wh.type)) continue;
+            if (!wh.autoSupply) continue;
+            if (wh.active === false) continue;
+            if (wh.condition === 'destroyed') continue;
+            if (wh._fireRepairUntil && day < wh._fireRepairUntil) continue;
+            if (wh._disabledUntil && day < wh._disabledUntil) continue;
+            if (!Array.isArray(wh.workers) || wh.workers.length === 0) continue;
+            // Once-per-day guard (ticks can fire multiple times)
+            if (wh._autoSupplyLastDay === day) continue;
+            wh._autoSupplyLastDay = day;
+            var tid = wh.townId;
+            if (!warehousesByTown[tid]) warehousesByTown[tid] = [];
+            warehousesByTown[tid].push(wh);
+        }
+
+        for (var townId in warehousesByTown) {
+            var warehouses = warehousesByTown[townId];
+            var townStorage = player.townStorage && player.townStorage[townId];
+            if (!townStorage) continue;
+
+            // Sum daily budget across all auto-supplying warehouses in this town.
+            var totalBudget = 0;
+            var workerCount = 0;
+            for (var wi2 = 0; wi2 < warehouses.length; wi2++) {
+                var wcount = warehouses[wi2].workers.length;
+                workerCount += wcount;
+                totalBudget += wcount * AUTOSUPPLY_WEIGHT_PER_WORKER;
+            }
+            if (totalBudget <= 0) continue;
+
+            // Build candidate list of needy buildings in same town.
+            var candidates = [];
+            for (var bi = 0; bi < player.buildings.length; bi++) {
+                var tgt = player.buildings[bi];
+                if (tgt.townId !== townId) continue;
+                if (_isWarehouseType(tgt.type)) continue;
+                var tbt = findBuildingType(tgt.type);
+                if (!tbt) continue;
+                if (!_isTargetEligible(tgt, tbt, day)) continue;
+                var consumes = _activeConsumesFor(tbt, tgt);
+                var hasConsume = false;
+                for (var _ck2 in consumes) { hasConsume = true; break; }
+                if (!hasConsume) continue;
+
+                // Find missing/low inputs
+                var needs = [];
+                var urgency = 0; // higher = more urgent
+                for (var resId in consumes) {
+                    var needPerCycle = consumes[resId] || 0;
+                    if (needPerCycle <= 0) continue;
+                    var have = (tgt.inventory && tgt.inventory[resId]) || 0;
+                    var targetStock = needPerCycle * AUTOSUPPLY_TARGET_STOCK_MULT;
+                    if (have >= targetStock) continue;
+                    var gap = targetStock - have;
+                    // Urgency: stopped (have < needPerCycle) most urgent; low (< 2x) next
+                    var stopped = have < needPerCycle;
+                    var low = have < needPerCycle * 2;
+                    if (stopped) urgency = Math.max(urgency, 3);
+                    else if (low) urgency = Math.max(urgency, 2);
+                    else urgency = Math.max(urgency, 1);
+                    needs.push({ resId: resId, gap: gap, stopped: stopped });
+                }
+                if (needs.length === 0) continue;
+                candidates.push({ bld: tgt, bt: tbt, needs: needs, urgency: urgency });
+            }
+            if (candidates.length === 0) continue;
+            candidates.sort(function(a, b) { return b.urgency - a.urgency; });
+
+            var deliveredTotalQty = 0;
+            var deliveredItems = {};
+
+            for (var ci = 0; ci < candidates.length && totalBudget > 0; ci++) {
+                var cand = candidates[ci];
+                var tgtBld = cand.bld;
+                var tgtBt = cand.bt;
+                var freeSpace = _targetInputFreeSpace(tgtBt, tgtBld);
+                if (freeSpace <= 0) continue;
+
+                // Sort needs: stopped first, then biggest gap.
+                cand.needs.sort(function(a, b) {
+                    if (a.stopped !== b.stopped) return a.stopped ? -1 : 1;
+                    return b.gap - a.gap;
+                });
+
+                for (var ni = 0; ni < cand.needs.length && totalBudget > 0 && freeSpace > 0; ni++) {
+                    var need = cand.needs[ni];
+                    var resId2 = need.resId;
+                    var available = townStorage[resId2] || 0;
+                    if (available <= 0) continue;
+                    var res = findResource(resId2);
+                    var unitW = res ? (res.weight || 1) : 1;
+                    if (unitW <= 0) unitW = 1;
+
+                    var maxByWeight = Math.floor(totalBudget / unitW);
+                    var maxBySpace = Math.floor(freeSpace / unitW);
+                    var toMove = Math.min(need.gap, available, maxByWeight, maxBySpace);
+                    if (toMove <= 0) continue;
+
+                    // Apply transfer
+                    if (!tgtBld.inventory) tgtBld.inventory = {};
+                    townStorage[resId2] = available - toMove;
+                    if (townStorage[resId2] <= 0) delete townStorage[resId2];
+                    tgtBld.inventory[resId2] = (tgtBld.inventory[resId2] || 0) + toMove;
+
+                    // Preserve perishable cohort tracking
+                    if (ENGINE_REF && ENGINE_REF.transferFoodCohorts) {
+                        try { ENGINE_REF.transferFoodCohorts(townStorage, tgtBld, resId2, toMove); } catch(e) {}
+                    }
+
+                    var w = toMove * unitW;
+                    totalBudget -= w;
+                    freeSpace -= w;
+                    deliveredTotalQty += toMove;
+                    deliveredItems[resId2] = (deliveredItems[resId2] || 0) + toMove;
+                }
+            }
+
+            // Brief journal line so the player sees the activity (only when something moved)
+            if (deliveredTotalQty > 0 && ENGINE_REF && ENGINE_REF.logEvent) {
+                var townObj = ENGINE_REF.findTown(townId);
+                var townName = townObj ? townObj.name : 'town';
+                var summaryParts = [];
+                for (var dik in deliveredItems) {
+                    var dres = findResource(dik);
+                    summaryParts.push((dres && dres.icon ? dres.icon + ' ' : '') + deliveredItems[dik] + ' ' + (dres ? dres.name : dik));
+                }
+                ENGINE_REF.logEvent('📦 Warehouse workers in ' + townName + ' delivered ' + summaryParts.join(', ') + ' to your needy buildings.', { _noToast: true }, 'my_buildings');
+            }
+        }
+    }
+
+    // ========================================================
     // §4 EXPORTS
     // ========================================================
 
@@ -1016,6 +1228,7 @@
     Player.respondToManagerRaise = respondToManagerRaise;
     Player.tickBuildingManagers = tickBuildingManagers;
     Player.tickBuildingReputation = tickBuildingReputation;
+    Player.tickWarehouseAutoSupply = tickWarehouseAutoSupply;
     Player.nameBuildingRetail = nameBuildingRetail;
 
 })(window.Player);

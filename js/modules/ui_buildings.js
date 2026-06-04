@@ -1786,6 +1786,22 @@
         }
         if (warehouseTypes.includes(bld.type)) {
             html += `<button class="btn-trade buy" style="font-size:0.7rem;" data-action="openWarehouseSecurityDialog" data-id="${bld.id}">🔐 Security Upgrades</button>`;
+            // v508: Auto-supply toggle — warehouse workers ferry needed inputs
+            // from town storage to player buildings in same town. 30 weight per
+            // worker per day. Requires workers.
+            var _whWorkers = (Array.isArray(bld.workers) ? bld.workers.length : 0);
+            var _whAutoOn = !!bld.autoSupply;
+            var _whBudget = _whWorkers * 30;
+            var _whHint = _whWorkers === 0
+                ? ' ⚠️ Needs workers'
+                : ' (' + _whBudget + ' wt/day)';
+            var _whBg = _whAutoOn
+                ? 'background:rgba(85,168,104,0.25);border-color:rgba(85,168,104,0.45);'
+                : 'background:rgba(120,120,120,0.15);border-color:rgba(180,160,120,0.3);';
+            html += '<button class="btn-trade" style="font-size:0.7rem;' + _whBg + '" data-action="toggleWarehouseAutoSupply" data-id="' + bld.id + '" title="When ON, warehouse workers move needed inputs from town storage to your needy buildings in this town (30 wt/worker/day).">'
+                + (_whAutoOn ? '🚚 Auto-Supply: ON' : '🚚 Auto-Supply: OFF')
+                + _whHint
+                + '</button>';
         }
 
         // Farm/livestock conversion button
@@ -2459,6 +2475,22 @@
     UI.registerAction('buyLockedStorageAndRefresh', function(_t, d) { UI.buyLockedStorage(d.id); UI.showBuildingDetail(d.id); });
     UI.registerAction('toggleFarmFallowAndRefresh', function(_t, d) { UI.toggleFarmFallow(d.id); UI.showBuildingDetail(d.id); });
     UI.registerAction('openWarehouseSecurityDialog', function(_t, d) { UI.openWarehouseSecurityDialog(d.id); });
+    UI.registerAction('toggleWarehouseAutoSupply', function(_t, d) {
+        var bld = (Player.buildings || []).find(function(b) { return b.id === d.id; });
+        if (!bld) { UI.toast('Warehouse not found.', 'warning'); return; }
+        bld.autoSupply = !bld.autoSupply;
+        var workers = Array.isArray(bld.workers) ? bld.workers.length : 0;
+        if (bld.autoSupply) {
+            if (workers === 0) {
+                UI.toast('🚚 Auto-Supply enabled, but warehouse has no workers — hire workers to begin deliveries.', 'warning');
+            } else {
+                UI.toast('🚚 Auto-Supply enabled — ' + (workers * 30) + ' wt/day to needy buildings.', 'success');
+            }
+        } else {
+            UI.toast('🚚 Auto-Supply disabled.', 'info');
+        }
+        UI.showBuildingDetail(d.id);
+    });
     UI.registerAction('confirmDemolishUI', function(_t, d) { UI.confirmDemolishUI(d.id, d.val); });
     UI.registerAction('listBuildingForSaleUI', function(_t, d) { UI.listBuildingForSaleUI(d.id); });
     UI.registerAction('openBuildingManagement', function() { UI.openBuildingManagement(); });
