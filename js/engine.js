@@ -18199,21 +18199,49 @@
 
                 var fulfilled = false;
                 if (neg.type === 'threaten') {
-                    // Check if player actually reduced production — verify player no longer owns buildings for this good
+                    // v9p33river540: properly detect when the player halted
+                    // production of the leveraged good. Old check only looked
+                    // at bt.produces fallback and bld.destroyed, so a player
+                    // who switched off active, removed workers, switched
+                    // multi-product recipe away, or was on strike still
+                    // counted as "still producing" → empty threat memory.
                     var playerStillProducing = false;
                     var playerBuildings = (typeof Player !== 'undefined' && Player.buildings) ? Player.buildings : [];
                     for (var pci = 0; pci < playerBuildings.length; pci++) {
                         var pcb = playerBuildings[pci];
                         if (!pcb || pcb.destroyed) continue;
+                        if (pcb.active === false) continue;
+                        if (pcb.condition === 'destroyed') continue;
+                        if (pcb._strikeUntil && pcb._strikeUntil > world.day) continue;
+                        if (pcb._disabledUntil && pcb._disabledUntil > world.day) continue;
+                        if (pcb.fallow || pcb.depositDepleted) continue;
+                        if (!pcb.workers || pcb.workers.length === 0) continue;
                         var pcbt = findBuildingType(pcb.type);
                         if (!pcbt) continue;
-                        var pcGood = pcb.currentProduct || pcb.productionChoice || pcbt.produces;
-                        if (pcGood === neg.leverageGood) {
-                            var pcTown = findTown(pcb.townId || pcb.locationTownId);
-                            if (pcTown && pcTown.kingdomId === kId) { playerStillProducing = true; break; }
+                        // Resolve the building's ACTUAL output good via the
+                        // same recipe-lookup logic as the production loop.
+                        var pcGood = pcbt.produces || null;
+                        if (pcb.currentProduct) {
+                            if (pcbt.availableProducts && pcbt.availableProducts[pcb.currentProduct]) {
+                                pcGood = pcbt.availableProducts[pcb.currentProduct].produces || pcb.currentProduct;
+                            } else if (pcbt.canProduce && pcbt.canProduce.indexOf(pcb.currentProduct) >= 0) {
+                                pcGood = pcb.currentProduct;
+                            } else {
+                                pcGood = pcb.currentProduct;
+                            }
+                        } else if (pcb.productionChoice) {
+                            if (pcbt.availableProducts && pcbt.availableProducts[pcb.productionChoice]) {
+                                pcGood = pcbt.availableProducts[pcb.productionChoice].produces || pcb.productionChoice;
+                            } else {
+                                pcGood = pcb.productionChoice;
+                            }
                         }
+                        if (pcGood !== neg.leverageGood) continue;
+                        var pcTown = findTown(pcb.townId || pcb.locationTownId);
+                        if (pcTown && pcTown.kingdomId === kId) { playerStillProducing = true; break; }
                     }
-                    // Fulfilled if supply dropped >= 25% OR player stopped producing
+                    // Fulfilled if player no longer producing in this kingdom
+                    // OR market supply dropped >= 25% (covers partial scaledown).
                     fulfilled = !playerStillProducing || (neg.baselineSupply > 0 && currentSupply <= neg.baselineSupply * 0.75);
                 } else {
                     // Entice: fulfilled if supply increased by >= 70% of amount needed
