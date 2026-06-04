@@ -71,20 +71,34 @@
     // ──────────────────────────────────────────────────────────
     // Caregiver detection
     // ──────────────────────────────────────────────────────────
+    // v9p33river535: the kids' actual townId is the canonical "home" — not the
+    // player's town. The previous logic gated spouse / nanny coverage on the
+    // PLAYER's location, so as soon as you traveled one town over, the spouse
+    // (who was still right there with the kids) was no longer considered a
+    // caregiver until you returned to the same town. Same issue for nannies.
+    function _kidsTownId() {
+        var kids = _livingDependentChildren();
+        if (!kids.length) return player.townId || null;
+        // Kids should normally be co-located; use the first kid's town.
+        for (var i = 0; i < kids.length; i++) {
+            if (kids[i].townId) return kids[i].townId;
+        }
+        return player.townId || null;
+    }
+
     function _spouseCaregiver() {
         if (!player.spouseId) return null;
         var sp = _findPerson(player.spouseId);
         if (!sp || sp.alive === false) return null;
         // Negligent spouses won't take care of kids
         if (_hasQuirk(sp, 'negligent_parent')) return null;
-        // Spouse must be in the same town as the kids (i.e., where the
-        // player lives). If kids are with the player and spouse is
-        // elsewhere, spouse isn't covering them.
-        // Use player.townId as the canonical "home" town.
         // If kids are with a family member elsewhere, spouse isn't covering them
         var fArr = player._familyChildArrangement;
         if (fArr && fArr.npcId && fArr.townId && fArr.townId !== sp.townId) return null;
-        if (player.townId && sp.townId && sp.townId === player.townId) return sp;
+        // v9p33river535: spouse covers the kids when she's in the SAME TOWN AS
+        // THE KIDS, regardless of where the player is.
+        var kidsTown = _kidsTownId();
+        if (kidsTown && sp.townId && sp.townId === kidsTown) return sp;
         return null;
     }
 
@@ -94,8 +108,10 @@
         var fArr = player._familyChildArrangement;
         if (fArr && fArr.npcId && fArr.townId && !fArr.abandoned) return null;
         var n = player._activeNanny;
-        if (!n.townId || !player.townId) return null;
-        if (n.townId !== player.townId) return null;
+        // v9p33river535: compare against the kids' town, not the player's town.
+        var kidsTown = _kidsTownId();
+        if (!n.townId || !kidsTown) return null;
+        if (n.townId !== kidsTown) return null;
         return n;
     }
 
@@ -152,8 +168,13 @@
     function hireNanny() {
         _ensureState();
         if (player._activeNanny) return { success: false, message: 'You already have a nanny.' };
-        var town = _findTown(player.townId);
-        if (!town) return { success: false, message: 'You must be in a town to hire a nanny.' };
+        // v9p33river535: hire the nanny where the KIDS are, not where the player is.
+        // Previously the nanny was hired in player.townId, so if you went to the
+        // capital to recruit one and your kids were back home, the nanny was
+        // useless until you returned home.
+        var kidsTown = _kidsTownId();
+        var town = _findTown(kidsTown) || _findTown(player.townId);
+        if (!town) return { success: false, message: 'No valid town to hire a nanny in.' };
         // v9p33river506: spouse takes precedence over a paid nanny. If the
         // spouse is currently in the right town and willing/able to care
         // for the kids, there's no reason to pay 100g/wk for a nanny.
@@ -169,7 +190,7 @@
         player.gold = Math.max(0, (player.gold || 0) - NANNY_WEEKLY_COST);
         player._activeNanny = {
             name: 'Nanny ' + (town.name ? town.name + 'er' : ''),
-            townId: player.townId,
+            townId: town.id,
             hiredDay: _getDay()
         };
         player._lastNannyChargeDay = _getDay();
@@ -279,12 +300,12 @@
     function tickChildcare() {
         _ensureState();
         // v9p33river535: never run childcare while the player is dead or in regency.
-        // The regent (spouse) is the canonical caregiver during regency, but
-        // _spouseCaregiver compares player.townId to the spouse's townId — once
-        // the player is dead/regency-ed, that lookup returns null and every child
-        // is flagged as unattended. The neglect death roll uses cause='neglect'
-        // which BYPASSES the child-protection ladder in killPerson, so the heir
-        // would die within seconds of regency starting at 300× speed.
+        // Even with the kid-town caregiver fix, a spouse may genuinely be away
+        // (visiting another town, abducted, etc) when the player dies — and the
+        // neglect death roll uses cause='neglect' which BYPASSES the child-
+        // protection ladder in killPerson, so the heir would die within seconds
+        // of regency starting at 300× speed. The regent (spouse) is the canonical
+        // caregiver during regency by design.
         if (player && (player.alive === false || player.regencyMode)) return;
         var day = _getDay();
         var kids = _livingDependentChildren();
