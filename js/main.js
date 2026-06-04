@@ -328,6 +328,33 @@ window.Game = (function () {
                 Music.setVolume(e.target.value / 100);
                 if (titleVolSlider) titleVolSlider.value = e.target.value;
             });
+            // v9p33river537: iPad fix — mirror the settings-panel slider fix
+            // from v497. iOS Safari can drop 'input' during fast drags, and
+            // the slider also lives inside .top-bar where pointer/touch events
+            // may not synthesize a final 'input' on touchend. Bind change +
+            // touchend/touchmove as fallbacks, and stopPropagation so the
+            // canvas pan handlers don't steal the gesture.
+            volSlider.addEventListener('change', function (e) {
+                if (typeof Music === 'undefined') return;
+                Music.init();
+                Music.setVolume(e.target.value / 100);
+                if (titleVolSlider) titleVolSlider.value = e.target.value;
+            });
+            volSlider.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { passive: true });
+            volSlider.addEventListener('touchmove', function (e) {
+                if (typeof Music === 'undefined') return;
+                Music.init();
+                Music.setVolume(e.target.value / 100);
+                if (titleVolSlider) titleVolSlider.value = e.target.value;
+                e.stopPropagation();
+            }, { passive: true });
+            volSlider.addEventListener('touchend', function (e) {
+                if (typeof Music === 'undefined') return;
+                Music.init();
+                Music.setVolume(e.target.value / 100);
+                if (titleVolSlider) titleVolSlider.value = e.target.value;
+                e.stopPropagation();
+            }, { passive: true });
         }
         if (titleVolSlider) {
             titleVolSlider.addEventListener('input', function (e) {

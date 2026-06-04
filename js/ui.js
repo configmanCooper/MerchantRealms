@@ -596,6 +596,17 @@ window.UI = (function () {
         registerAction('closeAndOpenSpouse', function() { closeModal(); UI.openSpousePanel(); });
         registerAction('openLeaderboard', function() { openLeaderboard(); });
 
+        // v9p33river537: top-bar ledger toggle (visible on iPad / tablet drawer mode)
+        registerAction('toggleLedgerDrawer', function() {
+            var leftPanel = document.getElementById('leftPanel');
+            if (!leftPanel) return;
+            if (leftPanel.classList.contains('drawer-open')) {
+                _toggleLeftDrawer(false);
+            } else {
+                _toggleLeftDrawer(true);
+            }
+        });
+
         // Seek Treatment action (from health alert banner and town action card)
         registerAction('seekTreatment', function() {
             // Try opening health detail panel which shows treatment options

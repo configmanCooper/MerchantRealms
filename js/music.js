@@ -19,6 +19,30 @@ window.Music = (function () {
     var FADE_MS = 2000;
     var _fadeInterval = null;
 
+    // v9p33river537: iOS Safari ignores any attempt to set audio.volume
+    // programmatically (it's effectively read-only — user controls volume
+    // via hardware buttons only). The audio.muted property IS honored on
+    // iOS though, so on iOS we route ALL volume/mute changes through
+    // audio.muted and skip the crossfade volume animation entirely.
+    var _isIOS = (function() {
+        try {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        } catch (e) { return false; }
+    })();
+
+    function _effectiveMuted() {
+        // Treat volume=0 as muted so iOS users (who can't lower volume below
+        // 100%) get an actual silent state when they drag the slider to 0.
+        return muted || volume <= 0.001;
+    }
+
+    function _applyAudioState(audio) {
+        if (!audio) return;
+        try { audio.muted = _effectiveMuted(); } catch (e) {}
+        try { audio.volume = _effectiveMuted() ? 0 : volume; } catch (e) {}
+    }
+
     var TRACK_FILES = {
         title:       'music/Title.mp3',
         peaceful:    'music/Peaceful.mp3',
@@ -39,8 +63,8 @@ window.Music = (function () {
         for (var mood in TRACK_FILES) {
             var audio = new Audio(TRACK_FILES[mood]);
             audio.loop = true;
-            audio.volume = muted ? 0 : volume;
             audio.preload = 'auto';
+            _applyAudioState(audio);
             tracks[mood] = audio;
         }
     }
@@ -55,7 +79,21 @@ window.Music = (function () {
         currentAudio = newAudio;
 
         // Set up the new track
-        var targetVol = muted ? 0 : volume;
+        var targetVol = _effectiveMuted() ? 0 : volume;
+        // v9p33river537: iOS Safari ignores audio.volume changes, so the
+        // crossfade animation does nothing visible there. Hard-cut instead:
+        // pause old track, start new at target state.
+        if (_isIOS) {
+            if (oldAudio && oldAudio !== newAudio) { try { oldAudio.pause(); } catch (e) {} }
+            _applyAudioState(newAudio);
+            var p = newAudio.play();
+            if (p && p.then) p.then(function() { console.log('Music: playing', mood); }).catch(function(e) {
+                console.warn('Music: play blocked for', mood, e.message);
+                playing = false;
+            });
+            return;
+        }
+
         newAudio.volume = 0;
         newAudio.currentTime = 0;
         var playPromise = newAudio.play();
@@ -75,16 +113,18 @@ window.Music = (function () {
         _fadeInterval = setInterval(function() {
             step++;
             var frac = step / steps;
+            // Re-read targetVol each frame so mid-fade volume/mute changes apply
+            var curTarget = _effectiveMuted() ? 0 : volume;
             // Fade new in
-            newAudio.volume = Math.min(targetVol, targetVol * frac);
+            newAudio.volume = Math.min(curTarget, curTarget * frac);
             // Fade old out
             if (oldAudio && oldAudio !== newAudio) {
-                oldAudio.volume = Math.max(0, targetVol * (1 - frac));
+                oldAudio.volume = Math.max(0, curTarget * (1 - frac));
             }
             if (step >= steps) {
                 clearInterval(_fadeInterval);
                 _fadeInterval = null;
-                newAudio.volume = targetVol;
+                newAudio.volume = curTarget;
                 if (oldAudio && oldAudio !== newAudio) {
                     oldAudio.pause();
                     oldAudio.volume = 0;
@@ -140,10 +180,14 @@ window.Music = (function () {
     function setVolume(v) {
         volume = Math.max(0, Math.min(1, v));
         localStorage.setItem('merchantRealms_musicVolume', volume);
+        // v9p33river537: apply mute state to ALL preloaded tracks (not just
+        // currentAudio) so the crossfade target gets the right state too.
+        // On iOS this is the only way to silence playback since audio.volume
+        // is read-only there.
+        for (var m in tracks) { _applyAudioState(tracks[m]); }
         if (currentAudio) {
-            currentAudio.volume = muted ? 0 : volume;
             // Resume playback if audio was paused and volume > 0
-            if (!muted && volume > 0 && currentAudio.paused && currentMood) {
+            if (!_effectiveMuted() && currentAudio.paused && currentMood) {
                 var p = currentAudio.play();
                 if (p && p.then) p.catch(function() {});
                 playing = true;
@@ -154,15 +198,18 @@ window.Music = (function () {
     function toggleMute() {
         muted = !muted;
         localStorage.setItem('merchantRealms_musicMuted', muted);
+        // v9p33river537: apply to ALL tracks via audio.muted (works on iOS,
+        // unlike audio.volume which is read-only). Without this the mute
+        // button graphic flipped but actual audio kept playing on iPad.
+        for (var m in tracks) { _applyAudioState(tracks[m]); }
         if (currentAudio) {
-            currentAudio.volume = muted ? 0 : volume;
             // Resume playback if unmuting and audio was paused
-            if (!muted && currentAudio.paused && currentMood) {
+            if (!_effectiveMuted() && currentAudio.paused && currentMood) {
                 var p = currentAudio.play();
                 if (p && p.then) p.catch(function() {});
                 playing = true;
             }
-        } else if (!muted && currentMood) {
+        } else if (!_effectiveMuted() && currentMood) {
             // No current audio but we have a mood — restart it
             crossfadeTo(currentMood);
             playing = true;
