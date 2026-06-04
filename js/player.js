@@ -20895,6 +20895,15 @@
         player.gold = data.gold != null ? data.gold : CONFIG.PLAYER_START_GOLD;
         player.townId = data.townId;
         player.inventory = data.inventory || {};
+        // v9p33river520: Migration — earlier saves accidentally captured
+        // engine-internal underscore-prefixed fields (_foodAge, _staleFood)
+        // as inventory entries. Strip them on load so they never appear in
+        // the player inventory dialog or in capacity math.
+        for (var _invKey in player.inventory) {
+            if (_invKey.charAt(0) === '_') {
+                delete player.inventory[_invKey];
+            }
+        }
         // Backfill any new resource types not present in saved inventory
         for (const key in RESOURCE_TYPES) {
             const resId = RESOURCE_TYPES[key].id;

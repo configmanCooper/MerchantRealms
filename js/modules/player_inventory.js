@@ -310,6 +310,7 @@
         var total = 0;
         for (var resId in player.inventory) {
             if (resId === 'horses') continue; // Horses tracked separately
+            if (resId.charAt(0) === '_') continue; // v9p33river520: skip internal underscore-prefixed metadata
             var qty = player.inventory[resId] || 0;
             if (qty <= 0) continue;
             var res = findResource(resId);

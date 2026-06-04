@@ -2763,7 +2763,10 @@ window.UI = (function () {
     function openPlayerInventory() {
         if (typeof Player === 'undefined') return;
         var inv = Player.inventory || {};
-        var keys = Object.keys(inv).filter(function(k) { return inv[k] > 0; });
+        // v9p33river520: skip underscore-prefixed internal tracking fields
+        // (e.g. _foodAge cohort ledger, _staleFood counts) so they never
+        // appear as bogus inventory items.
+        var keys = Object.keys(inv).filter(function(k) { return k.charAt(0) !== '_' && inv[k] > 0; });
         var totalWeight = 0;
         var html = '<div style="max-height:450px;overflow-y:auto;">';
         html += '<h4 style="margin:0 0 8px;">📦 Your Inventory</h4>';
