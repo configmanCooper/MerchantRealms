@@ -2547,7 +2547,9 @@ function showPersonDetail(person) {
             // ── Petition Signature Request ──
             if (typeof Player !== 'undefined' && Player.state && Player.state.petitions) {
                 var activePetitions = Player.state.petitions.filter(function(p) { return p.status === 'active'; });
-                if (activePetitions.length > 0) {
+                // v9p33river511: minors (under 18) cannot sign petitions.
+                var _personTooYoung = (person.age != null && person.age < 18);
+                if (activePetitions.length > 0 && !_personTooYoung) {
                     var eligiblePetitions = activePetitions.filter(function(p) {
                         return person.kingdomId === p.kingdomId && !(p.signatures && p.signatures.includes(person.id));
                     });

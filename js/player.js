@@ -33955,6 +33955,8 @@
         const npc = world.people.find(function(p) { return p.id === npcId; });
         if (!npc || !npc.alive) return { signed: false, chance: 0, message: 'Person not found or not alive.' };
         if (npc.townId !== player.townId) return { signed: false, chance: 0, message: 'That person is not in your current town.' };
+        // v9p33river511: minors (under 18) cannot sign petitions.
+        if (npc.age != null && npc.age < 18) return { signed: false, chance: 0, message: npc.firstName + ' is too young to sign a petition.' };
         if (npc.kingdomId !== petition.kingdomId) return { signed: false, chance: 0, message: 'That person is not a citizen of the petition\'s kingdom.' };
         // v9p33river504: socialRank is an OBJECT keyed by kingdomId, not a
         // number. Old check compared the whole object to 1 (always NaN) so
@@ -34095,6 +34097,8 @@
                     // Find eligible NPCs in petitioner's current town
                     var eligible = world.people.filter(function(p) {
                         if (!p.alive || p.townId !== ptr.currentTownId) return false;
+                        // v9p33river511: minors (under 18) cannot sign petitions.
+                        if (p.age != null && p.age < 18) return false;
                         if (p.kingdomId !== petition.kingdomId) return false;
                         // v9p33river504: socialRank is keyed by kingdomId.
                         // Old comparison (whole object >= 1) was always NaN,

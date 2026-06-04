@@ -404,6 +404,8 @@
                 var townNpcs = world.people.filter(function(p) {
                     if (!p.alive) return false;
                     if (p.townId !== Player.townId) return false;
+                    // v9p33river511: minors (under 18) cannot sign petitions.
+                    if (p.age != null && p.age < 18) return false;
                     // v9p33river504: must be a citizen (socialRank >= 1) of the
                     // petition's kingdom. socialRank is an object keyed by
                     // kingdomId. Elite merchants are auto-citizens by status.
