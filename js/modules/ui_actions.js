@@ -6344,11 +6344,22 @@ function clickTown(townId) {
         html += '<h2 style="margin:0 0 8px;color:#daa520;">💰 Economic Negotiation with ' + nobleName + '</h2>';
         html += '<div style="font-size:0.8rem;color:#aaa;margin-bottom:12px;">Use your economic power to influence this noble. They will pressure the king on your behalf.</div>';
 
+        // v9p33river541: show 7-day per-noble cooldown if active
+        var _ncDay = 0; try { _ncDay = Engine.getDay(); } catch(e) {}
+        var _ncCooldownLeft = 0;
+        if (person._negotiationCooldownDay && _ncDay < person._negotiationCooldownDay) {
+            _ncCooldownLeft = person._negotiationCooldownDay - _ncDay;
+            html += '<div style="background:rgba(218,165,32,0.10);border:1px solid rgba(218,165,32,0.4);border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:0.8rem;color:#daa520;">⏳ ' + nobleName + ' is still considering your last proposal. Wait <strong>' + _ncCooldownLeft + '</strong> more day' + (_ncCooldownLeft === 1 ? '' : 's') + ' before approaching them again.</div>';
+        }
+
         // Demand dropdown (shared between threaten and entice)
         var demandOpts = '';
         for (var di = 0; di < demands.length; di++) {
             demandOpts += '<option value="' + demands[di].id + '" data-param="' + (demands[di].param || '') + '">' + demands[di].label + '</option>';
         }
+
+        var _ncDisabled = _ncCooldownLeft > 0 ? ' disabled' : '';
+        var _ncDisabledStyle = _ncCooldownLeft > 0 ? 'opacity:0.5;cursor:not-allowed;' : '';
 
         // ── THREATEN SECTION ──
         if (leverage.threats.length > 0) {
@@ -6367,7 +6378,7 @@ function clickTown(townId) {
             html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
             html += '<span style="font-size:0.8rem;color:#ccc;white-space:nowrap;">Demand:</span>';
             html += '<select id="neg_threat_demand" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">' + demandOpts + '</select></div>';
-            html += '<button class="btn-medieval" data-action="executeNegotiation" data-id="' + personId + '" data-val="threaten" style="font-size:0.8rem;padding:5px 12px;background:rgba(139,0,0,0.25);border-color:rgba(139,0,0,0.5);color:#e74c3c;align-self:flex-end;">⚔️ Make Threat</button>';
+            html += '<button class="btn-medieval"' + _ncDisabled + ' data-action="executeNegotiation" data-id="' + personId + '" data-val="threaten" style="font-size:0.8rem;padding:5px 12px;background:rgba(139,0,0,0.25);border-color:rgba(139,0,0,0.5);color:#e74c3c;align-self:flex-end;' + _ncDisabledStyle + '">⚔️ Make Threat</button>';
             html += '</div></div>';
         }
 
@@ -6388,7 +6399,7 @@ function clickTown(townId) {
             html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">';
             html += '<span style="font-size:0.8rem;color:#ccc;white-space:nowrap;">In return:</span>';
             html += '<select id="neg_entice_demand" style="font-size:0.78rem;padding:3px 6px;flex:1;min-width:140px;background:#1a1a1a;color:#e0d6b8;border:1px solid #555;border-radius:3px;">' + demandOpts + '</select></div>';
-            html += '<button class="btn-medieval" data-action="executeNegotiation" data-id="' + personId + '" data-val="entice" style="font-size:0.8rem;padding:5px 12px;background:rgba(39,174,96,0.2);border-color:rgba(39,174,96,0.5);color:#27ae60;align-self:flex-end;">🎁 Propose Deal</button>';
+            html += '<button class="btn-medieval"' + _ncDisabled + ' data-action="executeNegotiation" data-id="' + personId + '" data-val="entice" style="font-size:0.8rem;padding:5px 12px;background:rgba(39,174,96,0.2);border-color:rgba(39,174,96,0.5);color:#27ae60;align-self:flex-end;' + _ncDisabledStyle + '">🎁 Propose Deal</button>';
             html += '</div></div>';
         }
 

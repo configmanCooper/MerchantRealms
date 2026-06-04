@@ -7033,6 +7033,19 @@
                 StoryMode.onPlayerAction('produce_item', { item: _activeProduces, qty: actualOutput, buildingType: bld.type, townId: bld.townId });
             }
 
+            // v9p33river541: credit production toward any active entice
+            // negotiations on the matching (kingdomId, goodId) so the noble's
+            // 14-day fulfillment check reflects what the player actually made.
+            if (actualOutput > 0 && _activeProduces) {
+                try {
+                    var _negTown = Engine.findTown(bld.townId);
+                    var _negKid = _negTown && _negTown.kingdomId;
+                    if (_negKid && Engine.notePlayerProductionForNegotiation) {
+                        Engine.notePlayerProductionForNegotiation(_activeProduces, _negKid, actualOutput);
+                    }
+                } catch (e) {}
+            }
+
             // ═══════════════════════════════════════════════════════════
             // STEP 7: STORE OUTPUT — with supply chain transfer support
             // ═══════════════════════════════════════════════════════════

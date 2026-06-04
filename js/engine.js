@@ -18040,6 +18040,18 @@
         var noble = findPerson(nobleId);
         if (!noble || !noble.alive) return { success: false, message: 'Noble not found.' };
 
+        // v9p33river541: 7-day cooldown on threat/entice attempts to the same
+        // noble. Prevents spamming negotiation attempts to maximize favorable
+        // RNG rolls. Cooldown is per-noble, applies to BOTH threats and
+        // entices (one cooldown clock total).
+        if (noble._negotiationCooldownDay && world.day < noble._negotiationCooldownDay) {
+            var _ncDaysLeft = noble._negotiationCooldownDay - world.day;
+            return {
+                success: false,
+                message: (noble.firstName + ' ' + noble.lastName) + ' is still considering your last proposal. Wait ' + _ncDaysLeft + ' more day' + (_ncDaysLeft === 1 ? '' : 's') + ' before approaching them again.'
+            };
+        }
+
         var kId = null;
         if (noble.socialRank && typeof noble.socialRank === 'object') {
             for (var sk in noble.socialRank) {
@@ -18092,6 +18104,7 @@
                 type: negType,
                 leverageGood: leverageGoodId,
                 leverageLocation: leverageLocation || kId,
+                kingdomId: kId,
                 demandAction: demandAction,
                 demandParam: demandParam || null,
                 agreed: agreed,
@@ -18099,9 +18112,16 @@
                 expiresDay: world.day + 14,
                 baselineSupply: baselineSupply,
                 amountNeeded: (leverage && leverage.amountNeeded) ? leverage.amountNeeded : 0,
+                // v9p33river541: track player's actual production of this good in
+                // this kingdom during the negotiation window so entice fulfillment
+                // doesn't over-credit unrelated NPC supply changes.
+                playerProduced: 0,
                 resolved: false
             });
         }
+
+        // v9p33river541: 7-day cooldown applies regardless of agreed/refused
+        noble._negotiationCooldownDay = world.day + 7;
 
         // Relationship change
         var isPlayerK = typeof Player !== 'undefined' && Player.citizenshipKingdomId === kId;
@@ -18244,9 +18264,18 @@
                     // OR market supply dropped >= 25% (covers partial scaledown).
                     fulfilled = !playerStillProducing || (neg.baselineSupply > 0 && currentSupply <= neg.baselineSupply * 0.75);
                 } else {
-                    // Entice: fulfilled if supply increased by >= 70% of amount needed
+                    // v9p33river541: entice fulfillment now prefers the player's
+                    // ACTUAL production of this good in this kingdom during the
+                    // window (tracked via Engine.notePlayerProductionForNegotiation
+                    // from player.js tickBuildings). Falls back to the legacy
+                    // market-supply delta so externally-staged deliveries (e.g.
+                    // selling stockpile via caravan, supply chain transfers) also
+                    // count.
                     var supplyGain = currentSupply - neg.baselineSupply;
-                    fulfilled = neg.amountNeeded > 0 && supplyGain >= neg.amountNeeded * 0.70;
+                    var prod = neg.playerProduced || 0;
+                    fulfilled = neg.amountNeeded > 0 &&
+                        (prod >= neg.amountNeeded * 0.70 ||
+                         supplyGain >= neg.amountNeeded * 0.70);
                 }
 
                 var nobleName = person.firstName + ' ' + person.lastName;
@@ -39977,6 +40006,25 @@
         getAvailableNegotiationDemands: function(kingdomId) { return getAvailableNegotiationDemands(kingdomId); },
         attemptEconomicNegotiation: function(nobleId, negType, leverageGoodId, leverageLocation, demandAction, demandParam) {
             return attemptEconomicNegotiation(nobleId, negType, leverageGoodId, leverageLocation, demandAction, demandParam);
+        },
+        // v9p33river541: hook so player.js tickBuildings can credit player
+        // production toward any active entice negotiations on the matching
+        // (kingdomId, goodId). Iterates noble._economicNegotiations.
+        notePlayerProductionForNegotiation: function(goodId, kingdomId, qty) {
+            if (!goodId || !kingdomId || !qty || qty <= 0) return;
+            if (!world || !world.people) return;
+            for (var npi = 0; npi < world.people.length; npi++) {
+                var _np = world.people[npi];
+                if (!_np || !_np.alive || !_np._economicNegotiations) continue;
+                for (var _ni = 0; _ni < _np._economicNegotiations.length; _ni++) {
+                    var _neg = _np._economicNegotiations[_ni];
+                    if (!_neg || _neg.resolved) continue;
+                    if (_neg.type !== 'entice') continue;
+                    if (_neg.leverageGood !== goodId) continue;
+                    if (_neg.kingdomId && _neg.kingdomId !== kingdomId) continue;
+                    _neg.playerProduced = (_neg.playerProduced || 0) + qty;
+                }
+            }
         },
         // ---- Noble Council Voting API ----
         getActiveVote: function(voteId) {
