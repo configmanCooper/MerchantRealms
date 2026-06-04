@@ -12618,27 +12618,67 @@ window.UI = (function () {
     }
 
     // v9p33river464: scan event message text for known NPC names and wrap in clickable spans
-    function _linkifyPersonNames(msgHtml) {
+    // v9p33river533: when event.details carries explicit person IDs (personIds array,
+    // personId, npcId, newKingId, deposedKingId, etc.), prefer those bindings so first-name
+    // collisions (e.g., two Baldric Jasperwells) link to the EXACT person referenced rather
+    // than whichever NPC happens to come first in world.people.
+    function _linkifyPersonNames(msgHtml, eventDetails) {
         try {
             if (!Engine || !Engine.getPeople) return msgHtml;
+            // ── Step 1: gather explicit-id bindings from event details ──
+            var explicit = []; // [{name, id}]
+            var explicitIds = {};
+            function _pushExplicit(id) {
+                if (!id || explicitIds[id]) return;
+                try {
+                    var person = Engine.findPerson ? Engine.findPerson(id) : (Engine.getPerson ? Engine.getPerson(id) : null);
+                    if (!person) return;
+                    var efn = (person.firstName || '').trim();
+                    var eln = (person.lastName || '').trim();
+                    var efull = (efn + ' ' + eln).trim();
+                    if (efull && msgHtml.indexOf(efull) !== -1) explicit.push({ name: efull, id: id });
+                    else if (efn && efn.length > 2 && msgHtml.indexOf(efn) !== -1) explicit.push({ name: efn, id: id });
+                    explicitIds[id] = true;
+                } catch(_pe) {}
+            }
+            if (eventDetails && typeof eventDetails === 'object') {
+                if (Array.isArray(eventDetails.personIds)) {
+                    for (var _xi = 0; _xi < eventDetails.personIds.length; _xi++) {
+                        var _xe = eventDetails.personIds[_xi];
+                        if (typeof _xe === 'string') _pushExplicit(_xe);
+                        else if (_xe && _xe.id) _pushExplicit(_xe.id);
+                    }
+                }
+                var _idKeys = ['personId', 'npcId', 'newKingId', 'deposedKingId', 'oldKingId', 'targetId', 'actorId', 'kingId', 'spouseId', 'childId'];
+                for (var _ki = 0; _ki < _idKeys.length; _ki++) {
+                    var _kv = eventDetails[_idKeys[_ki]];
+                    if (typeof _kv === 'string') _pushExplicit(_kv);
+                }
+            }
+            // ── Step 2: fall back to name-scan for any names not yet bound ──
             var people = Engine.getPeople();
-            if (!people || people.length === 0) return msgHtml;
-            // Build list of {fullName, firstName, id} sorted longest-name-first to avoid partial matches
-            var nameEntries = [];
+            if ((!people || people.length === 0) && explicit.length === 0) return msgHtml;
+            // Build full name-entries list: explicit-id bindings first (highest priority),
+            // then name-scan for everything else.
+            var nameEntries = explicit.slice();
+            var occupiedNames = {};
+            for (var _eni = 0; _eni < explicit.length; _eni++) occupiedNames[explicit[_eni].name] = true;
             for (var i = 0; i < people.length; i++) {
                 var p = people[i];
                 if (!p || !p.id) continue;
+                if (explicitIds[p.id]) continue; // already covered by explicit binding
                 var fn = (p.firstName || '').trim();
                 var ln = (p.lastName || '').trim();
                 var full = (fn + ' ' + ln).trim();
-                if (full.length > 1 && msgHtml.indexOf(full) !== -1) {
+                if (full.length > 1 && !occupiedNames[full] && msgHtml.indexOf(full) !== -1) {
                     nameEntries.push({ name: full, id: p.id });
-                } else if (fn.length > 2 && msgHtml.indexOf(fn) !== -1) {
+                } else if (fn.length > 2 && !occupiedNames[fn] && msgHtml.indexOf(fn) !== -1) {
                     nameEntries.push({ name: fn, id: p.id });
                 }
             }
             if (nameEntries.length === 0) return msgHtml;
-            // Sort longest first so "Everett Longmire" matches before "Everett"
+            // Sort longest first so "Everett Longmire" matches before "Everett".
+            // Stable secondary sort keeps explicit bindings ahead of name-scan ties.
             nameEntries.sort(function(a, b) { return b.name.length - a.name.length; });
             // v9p33river465: replace with placeholders first so shared first names do not nest inside prior links.
             var used = {};
@@ -12673,8 +12713,10 @@ window.UI = (function () {
         var html = '<div class="event-detail-panel">';
 
         // Main message — v9p33river464: linkify person names so player can click to open NPC detail
+        // v9p33river533: pass event.details so the linkifier prefers explicit person IDs over
+        // the name-scan heuristic (fixes wrong-NPC clicks when two NPCs share a name).
         var _evtMsgRaw = event.message || event.description || 'Event';
-        var _evtMsgLinked = _linkifyPersonNames(_evtMsgRaw);
+        var _evtMsgLinked = _linkifyPersonNames(_evtMsgRaw, event.details);
         html += '<div class="event-detail-message" style="font-size:1.1rem;margin-bottom:12px;color:var(--gold-bright);">' + _evtMsgLinked + '</div>';
         html += '<div class="event-detail-day" style="color:var(--text-dim);margin-bottom:12px;">Day ' + (event.day || '?') + '</div>';
 

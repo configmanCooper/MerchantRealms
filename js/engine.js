@@ -34709,6 +34709,152 @@
                 }
 
                 k._conspiracy = null;
+                // v9p33river533: full coup memory web — every noble who lived through
+                // the coup gets memories of the other principals so future interactions
+                // reflect who stood where (plotter, loyalist, deposed king, new king).
+                // Pairwise positive memories among co-plotters, pairwise negative across
+                // the coup fault line. Also wires the deposed-king↔player relationship
+                // hits: -50 / very-negative memory if the player founded the coup,
+                // -20 / negative memory if they were a member.
+                try {
+                    var _cwPlotterSet = {};
+                    for (var _cwi = 0; _cwi < plotterPersons.length; _cwi++) {
+                        if (plotterPersons[_cwi]) _cwPlotterSet[plotterPersons[_cwi].id] = true;
+                    }
+                    var _cwFounderId = (conspiracy && conspiracy.founder && conspiracy.founder !== 'player') ? conspiracy.founder : null;
+
+                    var _cwClampRel = function(v) { return Math.max(-100, Math.min(100, v)); };
+                    var _cwGetRel = function(a, bId) {
+                        if (!a._nobleRelationships) a._nobleRelationships = {};
+                        return a._nobleRelationships[bId] != null ? a._nobleRelationships[bId] : 50;
+                    };
+                    var _cwSetRel = function(a, bId, v) {
+                        if (!a._nobleRelationships) a._nobleRelationships = {};
+                        a._nobleRelationships[bId] = _cwClampRel(v);
+                    };
+
+                    // ── 1) Plotter ↔ Plotter (mutual positive memory + relationship boost) ──
+                    for (var _ppA = 0; _ppA < plotterPersons.length; _ppA++) {
+                        var _pA = plotterPersons[_ppA];
+                        if (!_pA || !_pA.alive) continue;
+                        for (var _ppB = 0; _ppB < plotterPersons.length; _ppB++) {
+                            if (_ppA === _ppB) continue;
+                            var _pB = plotterPersons[_ppB];
+                            if (!_pB || !_pB.alive) continue;
+                            var _pBIsLeader = leader && _pB.id === leader.id;
+                            var _pBIsFounder = _cwFounderId && _pB.id === _cwFounderId;
+                            var _coSent = (_pBIsLeader || _pBIsFounder) ? 3 : 2;
+                            var _coBoost = (_pBIsLeader || _pBIsFounder) ? 25 : 15;
+                            try {
+                                if (Engine._addNobleMemory) {
+                                    Engine._addNobleMemory(_pA, {
+                                        type: 'observation',
+                                        category: 'coup_co_plotter',
+                                        detail: (_pBIsFounder ? 'Founded' : (_pBIsLeader ? 'Led' : 'Stood with me in')) + ' the coup that installed ' + ((leader && leader.firstName) || 'a new ruler') + ' in ' + k.name,
+                                        actorId: _pB.id, targetId: _pA.id,
+                                        day: world.day, sentiment: _coSent, kingdomId: kId
+                                    });
+                                }
+                            } catch(_e) {}
+                            _cwSetRel(_pA, _pB.id, _cwGetRel(_pA, _pB.id) + _coBoost);
+                        }
+                    }
+
+                    // ── 2) Plotters ↔ Deposed King (negative both ways) ──
+                    if (kingPerson) {
+                        for (var _pkI = 0; _pkI < plotterPersons.length; _pkI++) {
+                            var _pk = plotterPersons[_pkI];
+                            if (!_pk || !_pk.alive || _pk.id === kingPerson.id) continue;
+                            var _pkIsLeader = leader && _pk.id === leader.id;
+                            var _pkIsFounder = _cwFounderId && _pk.id === _cwFounderId;
+                            try {
+                                if (Engine._addNobleMemory) {
+                                    Engine._addNobleMemory(_pk, {
+                                        type: 'observation',
+                                        category: 'coup_overthrew',
+                                        detail: 'We overthrew this king of ' + k.name,
+                                        actorId: kingPerson.id, targetId: _pk.id,
+                                        day: world.day, sentiment: -2, kingdomId: kId
+                                    });
+                                    Engine._addNobleMemory(kingPerson, {
+                                        type: 'observation',
+                                        category: 'coup_betrayed_me',
+                                        detail: _pkIsFounder
+                                            ? 'Founded the coup that deposed me from the throne of ' + k.name
+                                            : (_pkIsLeader
+                                                ? 'Led the coup that deposed me from the throne of ' + k.name
+                                                : 'Joined the coup that deposed me from the throne of ' + k.name),
+                                        actorId: _pk.id, targetId: kingPerson.id,
+                                        day: world.day, sentiment: (_pkIsFounder || _pkIsLeader) ? -4 : -3, kingdomId: kId
+                                    });
+                                }
+                            } catch(_e) {}
+                            _cwSetRel(_pk, kingPerson.id, _cwGetRel(_pk, kingPerson.id) - 30);
+                            var _kingHit = (_pkIsFounder || _pkIsLeader) ? -50 : -30;
+                            _cwSetRel(kingPerson, _pk.id, _cwGetRel(kingPerson, _pk.id) + _kingHit);
+                        }
+                    }
+
+                    // ── 3) Loyalists ↔ Plotters (negative both ways) ──
+                    for (var _lyI = 0; _lyI < allNobles.length; _lyI++) {
+                        var _ly = allNobles[_lyI];
+                        if (!_ly || !_ly.alive) continue;
+                        if (_cwPlotterSet[_ly.id]) continue;
+                        if (kingPerson && _ly.id === kingPerson.id) continue;
+                        if (leader && _ly.id === leader.id) continue;
+                        var _lyPreLoy = _preCoupLoyalty[_ly.id] != null ? _preCoupLoyalty[_ly.id] : 50;
+                        if (_lyPreLoy < 60) continue;
+                        for (var _lpI = 0; _lpI < plotterPersons.length; _lpI++) {
+                            var _lp = plotterPersons[_lpI];
+                            if (!_lp || !_lp.alive) continue;
+                            var _lpIsLeader = leader && _lp.id === leader.id;
+                            var _lpIsFounder = _cwFounderId && _lp.id === _cwFounderId;
+                            try {
+                                if (Engine._addNobleMemory) {
+                                    Engine._addNobleMemory(_ly, {
+                                        type: 'observation',
+                                        category: 'coup_traitor',
+                                        detail: (_lpIsLeader || _lpIsFounder)
+                                            ? 'Led the coup that overthrew our rightful king of ' + k.name
+                                            : 'Joined the coup that overthrew our rightful king of ' + k.name,
+                                        actorId: _lp.id, targetId: _ly.id,
+                                        day: world.day, sentiment: (_lpIsLeader || _lpIsFounder) ? -3 : -2, kingdomId: kId
+                                    });
+                                    Engine._addNobleMemory(_lp, {
+                                        type: 'observation',
+                                        category: 'coup_opposed',
+                                        detail: 'Remained loyal to the king we deposed in ' + k.name,
+                                        actorId: _ly.id, targetId: _lp.id,
+                                        day: world.day, sentiment: -1, kingdomId: kId
+                                    });
+                                }
+                            } catch(_e) {}
+                            _cwSetRel(_ly, _lp.id, _cwGetRel(_ly, _lp.id) + ((_lpIsLeader || _lpIsFounder) ? -30 : -15));
+                            _cwSetRel(_lp, _ly.id, _cwGetRel(_lp, _ly.id) - 10);
+                        }
+                    }
+
+                    // ── 4) Deposed king ↔ Player (only when player participated) ──
+                    if (kingPerson && playerIsPlotter) {
+                        try {
+                            if (Engine._addPlayerMemory) {
+                                Engine._addPlayerMemory(kingPerson, {
+                                    type: 'observation', source: 'player',
+                                    category: 'coup_deposed_by_player',
+                                    detail: _playerFoundedCoup
+                                        ? 'The player founded the coup that overthrew me as king of ' + k.name
+                                        : 'The player joined the coup that overthrew me as king of ' + k.name,
+                                    actorId: 'player', targetId: kingPerson.id,
+                                    day: world.day, sentiment: _playerFoundedCoup ? -4 : -3, kingdomId: kId
+                                });
+                            }
+                            if (typeof Player !== 'undefined' && Player.modifyRelationship) {
+                                Player.modifyRelationship(kingPerson.id, _playerFoundedCoup ? -50 : -20, undefined, 'coup_deposed_king_' + kId);
+                            }
+                        } catch(_e) {}
+                    }
+                } catch(_cwErr) { /* never block the coup terminus on memory-web errors */ }
+
                 // v9p33river523: stash outcome so playerExecuteConspiracy can report it.
                 // v9p33river532: include person IDs so Event Details can route clicks
                 // to the exact NPCs (otherwise first-name collisions like two Baldrics
