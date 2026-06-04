@@ -615,17 +615,28 @@
         if (town.founderId !== (player.id || 'player')) return { success: false, message: 'Not your outpost.' };
         if (town.isPort) return { success: false, message: town.name + ' already has docks.' };
         if ((town.walls || 0) < 1) return { success: false, message: 'Need walls level 1+ before building docks.' };
-        // Check if near water
-        var TS = CONFIG.TILE_SIZE || 16;
-        var prox = CONFIG.PORT_WATER_PROXIMITY || 3;
-        var cx = Math.floor(town.x / TS), cy = Math.floor(town.y / TS);
+        // v9p33river550: use the canonical ocean-proximity check so outposts can only
+        // become seaports if real ocean (not just a pond/lake) is within range — matches
+        // how worldgen / reconcilePortStatus decide port status for villages.
+        var prox = CONFIG.PORT_WATER_PROXIMITY || 5;
         var nearWater = false;
-        for (var dy = -prox; dy <= prox && !nearWater; dy++) {
-            for (var dx = -prox; dx <= prox && !nearWater; dx++) {
-                if (Engine.getTerrainAtPixel((cx + dx) * TS, (cy + dy) * TS) === 2) nearWater = true;
+        try {
+            if (Engine.townHasOceanNearby) {
+                nearWater = Engine.townHasOceanNearby(town, prox);
+            }
+        } catch (_eOcN) {}
+        if (!nearWater) {
+            // Fallback: any-water tile scan (legacy behavior) for paranoid safety on
+            // older saves where the ocean mask hasn't been built yet.
+            var TS = CONFIG.TILE_SIZE || 16;
+            var cx = Math.floor(town.x / TS), cy = Math.floor(town.y / TS);
+            for (var dy = -prox; dy <= prox && !nearWater; dy++) {
+                for (var dx = -prox; dx <= prox && !nearWater; dx++) {
+                    if (Engine.getTerrainAtPixel((cx + dx) * TS, (cy + dy) * TS) === 2) nearWater = true;
+                }
             }
         }
-        if (!nearWater) return { success: false, message: 'No water within ' + prox + ' tiles — cannot build docks.' };
+        if (!nearWater) return { success: false, message: 'No ocean within ' + prox + ' tiles — cannot build docks.' };
         var cost = { gold: 400, wood: 30, planks: 20, rope: 10, iron: 8 };
         if (hasSkill('cartographer')) { for (var k in cost) { cost[k] = Math.floor(cost[k] * 0.75); } }
         if (player.gold < cost.gold) return { success: false, message: 'Need ' + cost.gold + 'g (have ' + Math.floor(player.gold) + 'g).' };
@@ -1276,6 +1287,28 @@
             }
         } catch (_eMbs) {}
         town.garrison = Math.max(town.garrison || 0, 3);
+
+        // v9p33river550: if the promoted village sits near the ocean, auto-mark it as a
+        // seaport just like worldgen does for coastal towns via reconcilePortStatus. Add
+        // a basic dock + fishery if the town doesn't already have one (matches the
+        // reconcilePortStatus auto-promote shape for consistency).
+        try {
+            if (!town.isPort && Engine.townHasOceanNearby && Engine.townHasOceanNearby(town, CONFIG.PORT_WATER_PROXIMITY || 5)) {
+                town.isPort = true;
+                if (!town.buildings) town.buildings = [];
+                var _bDay = (Engine.getDay && Engine.getDay()) || 0;
+                if (!town.buildings.some(function(b) { return b && b.type === 'dock'; })) {
+                    town.buildings.push({ type: 'dock', level: 1, ownerId: null, builtDay: _bDay, condition: 'new', lastRepairDay: 0 });
+                }
+                if (!town.buildings.some(function(b) { return b && b.type === 'fishery'; })) {
+                    town.buildings.push({ type: 'fishery', level: 1, ownerId: null, builtDay: _bDay, condition: 'new', lastRepairDay: 0 });
+                }
+                if (town.market && town.market.supply) {
+                    town.market.supply.fish = Math.max(town.market.supply.fish || 0, 30);
+                    town.market.supply.salt = Math.max(town.market.supply.salt || 0, 15);
+                }
+            }
+        } catch (_ePort) {}
 
         var _pid = (player.id || 'player');
         if (town.founderId === _pid) {
