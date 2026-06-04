@@ -34491,7 +34491,24 @@
 
         if (_royalDecreeUsed || roll < estimate.chance) {
             petition.status = 'approved';
-            executePetitionAction(petition);
+            // v9p33river531: capture the executor's result so we can detect
+            // silent failures (e.g. sea-route validation aborts) and refund the
+            // royal-favor token instead of letting the player burn it on a
+            // petition that never actually executed.
+            var _execResult = executePetitionAction(petition);
+            var _execFailed = _execResult && _execResult.success === false;
+            if (_execFailed && _royalDecreeUsed) {
+                // Refund the favor — re-grant the same token shape that was consumed.
+                player.guaranteedPetition = player.guaranteedPetition || {};
+                if (_royalDecreeSource === 'coup_king_favor' && _gpVal && typeof _gpVal === 'object') {
+                    player.guaranteedPetition[petition.kingdomId] = _gpVal;
+                } else {
+                    player.guaranteedPetition[petition.kingdomId] = true;
+                }
+                petition.status = 'rejected';
+                Engine.logEvent('📜 Your royal favor was held in reserve — the king\'s clerks could not actually carry out the petition (' + (_execResult.message || _execResult.reason || 'unspecified reason') + '). The favor remains available for your next petition.', null, "my_kingdom");
+                return { success: false, approved: false, message: 'The petition could not be executed: ' + (_execResult.message || _execResult.reason || 'unspecified reason') + '. Your royal favor has been preserved.' };
+            }
             var xpReward = 30 + Math.floor(Math.min(70, estimate.signaturePct * 2));
             grantXP(xpReward, 'petition');
             // Track for platinum achievements
@@ -34798,21 +34815,35 @@
             }
             case 'build_sea_route': {
                 if (td.fromTownId && td.toTownId) {
-                    // v9p33river423: validate both ports belong to kingdom
                     var _seaFrom = Engine.findTown(td.fromTownId);
                     var _seaTo = Engine.findTown(td.toTownId);
-                    if (!_seaFrom || !_seaTo || _seaFrom.kingdomId !== petition.kingdomId || _seaTo.kingdomId !== petition.kingdomId) {
-                        Engine.logEvent('⚓ Cannot build sea route — both ports must be in your kingdom.', null, "my_kingdom");
-                        break;
+                    if (!_seaFrom || !_seaTo) {
+                        Engine.logEvent('⚓ Cannot build sea route — one of the ports could not be located.', null, "my_kingdom");
+                        return { success: false, reason: 'port_not_found' };
+                    }
+                    // v9p33river531: the Create Petition UI explicitly supports
+                    // cross-border sea routes (optgroups by kingdom, "foreign sea
+                    // routes" hint, kingdom-relation chance modifiers at
+                    // line 34264). The v423 check required BOTH ports in the
+                    // petitioning kingdom, which silently killed every
+                    // cross-border petition (including ones approved via
+                    // royal favor). Now: at LEAST ONE port must belong to the
+                    // petitioning kingdom — wholly-foreign petitions are still
+                    // rejected because the king has no jurisdiction over them.
+                    if (_seaFrom.kingdomId !== petition.kingdomId && _seaTo.kingdomId !== petition.kingdomId) {
+                        Engine.logEvent('⚓ Cannot build sea route — neither port belongs to your kingdom.', null, "my_kingdom");
+                        return { success: false, reason: 'wholly_foreign' };
                     }
                     var result = Engine.buildNewSeaRoute(td.fromTownId, td.toTownId, petition.kingdomId, {});
                     if (result && result.success) {
                         Engine.logEvent('⚓ The kingdom established a sea route between ' + (td.fromName || td.fromTownId) + ' and ' + (td.toName || td.toTownId) + '!', null, "my_kingdom");
+                        return { success: true };
                     } else {
                         Engine.logEvent('⚓ The king tried to establish a sea route but ' + (result ? result.message : 'it was not possible') + '.', null, "my_kingdom");
+                        return { success: false, reason: 'build_failed', message: result ? result.message : null };
                     }
                 }
-                break;
+                return { success: false, reason: 'missing_target' };
             }
             case 'promote_outpost': {
                 if (td.townId) {
