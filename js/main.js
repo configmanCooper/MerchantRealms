@@ -2975,7 +2975,7 @@ window.Game = (function () {
                         if (inPort || Player.travelOffSea || embarked) {
                             items.push({
                                 icon: '⛵',
-                                label: Player.travelOffSea ? 'Redirect Course Here' : 'Sail Here (Off-Sea)',
+                                label: Player.travelOffSea ? 'Redirect Course Here' : 'Sail Here (Off Route)',
                                 action: 'UI.showOffSeaDialog(' + worldCoords.x + ',' + worldCoords.y + ')'
                             });
                         }

@@ -5034,20 +5034,26 @@
         // nearby water tile and arrive docked at that port).
         var destTerrain = Engine.getTerrainAtPixel(destX, destY);
         var destPortTown = null;
-        if (destTerrain !== 2) {
-            // v9p33river60: if the destination is a port town's coords, find the
-            // nearest water tile and use that as the actual sailing destination.
-            try {
-                var _allTowns = Engine.getTowns ? Engine.getTowns() : [];
-                for (var _ti = 0; _ti < _allTowns.length; _ti++) {
-                    var _tt = _allTowns[_ti];
-                    if (!_tt.isPort) continue;
-                    if (Math.hypot(_tt.x - destX, _tt.y - destY) < 24) {
-                        destPortTown = _tt;
-                        break;
-                    }
+        // v9p33river552: search for a nearby port town REGARDLESS of whether
+        // the click hit land or water. Previously this only ran when the click
+        // landed on land, so clicking the water tile right next to a port
+        // (or any open water near one) never auto-docked at arrival.
+        try {
+            var _allTowns = Engine.getTowns ? Engine.getTowns() : [];
+            var _bestPortDist = Infinity;
+            for (var _ti = 0; _ti < _allTowns.length; _ti++) {
+                var _tt = _allTowns[_ti];
+                if (!_tt || !_tt.isPort) continue;
+                var _d = Math.hypot(_tt.x - destX, _tt.y - destY);
+                // ~5 tiles — generous so coastal water clicks still dock.
+                if (_d < 80 && _d < _bestPortDist) {
+                    destPortTown = _tt;
+                    _bestPortDist = _d;
                 }
-            } catch (_e) {}
+            }
+        } catch (_e) {}
+        if (destTerrain !== 2) {
+            // Destination is on land — must be a port town we can reroute to water for.
             if (!destPortTown) return { success: false, message: 'Destination must be water or a port town.' };
             // Search outward for the nearest water tile to the port
             var TS_p = CONFIG.TILE_SIZE || 16;
@@ -5067,11 +5073,10 @@
             if (!foundWater) return { success: false, message: 'Could not find open water near that port.' };
             destX = foundWater.x;
             destY = foundWater.y;
-            // v9p33river70: stash the target port so arrival auto-docks.
-            player._sailTargetPortId = destPortTown.id;
-        } else {
-            player._sailTargetPortId = null;
         }
+        // v9p33river70/552: stash the target port so arrival auto-docks. Set
+        // (or cleared) regardless of land/water path above.
+        player._sailTargetPortId = destPortTown ? destPortTown.id : null;
 
         // Validate ship
         if (!player.ships || player.ships.length === 0) return { success: false, message: 'You don\'t own any ships.' };

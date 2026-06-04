@@ -1305,7 +1305,7 @@
         }
 
         var html = '<div style="padding:8px">';
-        html += '<p style="margin:0 0 10px;color:#aaa;font-size:12px">⛵ Sail into open waters. Off-sea travel is 50% speed of sea routes with increased pirate risk.</p>';
+        html += '<p style="margin:0 0 10px;color:#aaa;font-size:12px">⛵ Sail into open waters. Off route sea travel is 50% speed of sea routes with increased pirate risk.</p>';
 
         for (var i = 0; i < ships.length; i++) {
             var s = ships[i];
@@ -1325,7 +1325,7 @@
         html += '</div>';
 
         var footer = '<button class="btn-medieval" data-action="closeModal" style="padding:6px 15px;">Cancel</button>';
-        openModal('⛵ Off-Sea Travel — Select Ship', html, footer);
+        openModal('⛵ Off Route Sea Travel — Select Ship', html, footer);
     }
 
     function _confirmOffSea(destX, destY, shipId) {
