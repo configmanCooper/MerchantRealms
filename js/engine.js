@@ -17078,6 +17078,7 @@
         // v9p33river497: run daily (was every 30 days) and auto-disband at
         // 90 days (was 180) per design request — coalitions need a tighter
         // window so they feel time-limited and force decisions.
+        var rng = world.rng;
         for (var ki = 0; ki < world.kingdoms.length; ki++) {
             var k = world.kingdoms[ki];
             if (!k._nobleCoalitions) continue;
@@ -17097,7 +17098,95 @@
                 }
                 return true;
             });
+
+            // v9p33river518: NPC organizers present their coalition when it
+            // has a strong chance of success. Runs daily so NPC nobles act
+            // promptly rather than waiting for the next 60-day formation tick.
+            for (var _ci = 0; _ci < k._nobleCoalitions.length; _ci++) {
+                _tryNpcPresentCoalition(k, k._nobleCoalitions[_ci], rng);
+            }
         }
+    }
+
+    // v9p33river518: an NPC-organized coalition's founder decides whether to
+    // present today. Triggers when the coalition has matured (14+ days) and
+    // either reached a "very likely" success chance (>=60%) or is in the
+    // back half of its window with a "likely" chance (>=45% after day 50).
+    // Returns true if a presentation attempt was made (success or failure).
+    function _tryNpcPresentCoalition(k, coal, rng) {
+        if (!k || !coal) return false;
+        if (coal.status !== 'forming') return false;
+        if (coal.organizer === 'player') return false;
+        if (!coal.members || coal.members.length < 2) return false;
+        // Founder must still be alive to lead the petition
+        var organizer = findPerson(coal.organizer);
+        if (!organizer || !organizer.alive) return false;
+        var age = world.day - (coal.formedDay || 0);
+        if (age < 14) return false;
+        var successChance = _computeCoalitionSuccessChance(coal, k);
+        var willPresent = false;
+        if (successChance >= 0.60) {
+            willPresent = true;
+        } else if (age >= 50 && successChance >= 0.45) {
+            willPresent = true;
+        } else if (age >= 75) {
+            // Window closing — present anyway rather than let it expire
+            willPresent = true;
+        }
+        if (!willPresent) return false;
+
+        var _coalCategory = (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k.id) ? 'my_kingdom' : 'foreign_kingdoms';
+        var _coalActionText = coal.causeLabel ? coal.causeLabel.toLowerCase() : coal.cause;
+        var _coalSuccessLabel = coal.causeLabel || coal.cause;
+
+        if (rng.chance(successChance)) {
+            if (coal.cause === 'promote_noble' && coal.causeData && coal.causeData.targetNobleId) {
+                var _promoOutcome = _applyCoalitionPromotionTarget(k, coal, _coalCategory);
+                if (!_promoOutcome.ok) {
+                    coal.status = 'dissolved';
+                    coal.resolvedDay = world.day;
+                    coal.resolutionMessage = _promoOutcome.message;
+                    logEvent('📜 A coalition in ' + k.name + ' lost momentum: ' + _promoOutcome.message, {
+                        type: 'npc_coalition_dissolved', kingdomId: k.id, cause: coal.cause
+                    }, _coalCategory);
+                    return true;
+                }
+                _coalActionText = 'promote ' + _promoOutcome.targetName;
+                _coalSuccessLabel = 'Promote ' + _promoOutcome.targetName;
+            } else if ((coal.cause === 'declare_war' || coal.cause === 'make_peace' || coal.cause === 'form_alliance') && coal.causeData && coal.causeData.targetKingdomId) {
+                _executeNobleAdvisedActionWithParam(k, coal.cause, rng, coal.causeData.targetKingdomId);
+            } else {
+                _executeNobleAdvisedAction(k, coal.cause, rng);
+            }
+            coal.status = 'resolved';
+            coal.resolvedDay = world.day;
+            coal.resolutionMessage = 'The king was persuaded! Coalition achieved: ' + _coalSuccessLabel;
+
+            for (var _smi = 0; _smi < coal.members.length; _smi++) {
+                for (var _smj = _smi + 1; _smj < coal.members.length; _smj++) {
+                    var _smA = findPerson(coal.members[_smi].id);
+                    var _smB = findPerson(coal.members[_smj].id);
+                    if (_smA && _smB && _smA.alive && _smB.alive) {
+                        if (!_smA._nobleRelationships) _smA._nobleRelationships = {};
+                        if (!_smB._nobleRelationships) _smB._nobleRelationships = {};
+                        _smA._nobleRelationships[_smB.id] = Math.min(100, (_smA._nobleRelationships[_smB.id] || 50) + 5);
+                        _smB._nobleRelationships[_smA.id] = Math.min(100, (_smB._nobleRelationships[_smA.id] || 50) + 5);
+                    }
+                }
+            }
+
+            logEvent('👑 ' + (organizer.firstName || 'A noble') + '\'s coalition in ' + k.name + ' successfully petitioned the king to ' + _coalActionText + '!', {
+                type: 'npc_coalition_success', kingdomId: k.id
+            }, _coalCategory);
+        } else {
+            coal.status = 'resolved';
+            coal.resolvedDay = world.day;
+            coal.resolutionMessage = 'The king rejected the petition.';
+            logEvent('👑 The king of ' + k.name + ' rejected ' + (organizer.firstName || 'a noble') + '\'s coalition petition to ' + _coalActionText + '.', {
+                type: 'npc_coalition_rejected', kingdomId: k.id
+            }, _coalCategory);
+        }
+        return true;
     }
 
     // v9p33river439: noble coalition AI — nobles autonomously form coalitions
@@ -17225,69 +17314,9 @@
             }
         }
 
-        for (var ki2 = 0; ki2 < world.kingdoms.length; ki2++) {
-            var k2 = world.kingdoms[ki2];
-            if (!k2._nobleCoalitions) continue;
-            for (var ci2 = 0; ci2 < k2._nobleCoalitions.length; ci2++) {
-                var coal = k2._nobleCoalitions[ci2];
-                if (coal.status !== 'forming' || coal.organizer === 'player') continue;
-                if (world.day - coal.formedDay < 30) continue;
-
-                var strength = _computeCoalitionStrength(coal, k2);
-                var threshold = _computeKingStubbornness(k2);
-                if (strength >= threshold * 0.7) {
-                    var successChance = _computeCoalitionSuccessChance(coal, k2);
-                    if (rng.chance(successChance)) {
-                        var _coalCategory = (typeof Player !== 'undefined' && Player.citizenshipKingdomId === k2.id) ? 'my_kingdom' : 'foreign_kingdoms';
-                        var _coalActionText = coal.causeLabel.toLowerCase();
-                        var _coalSuccessLabel = coal.causeLabel;
-                        if (coal.cause === 'promote_noble' && coal.causeData && coal.causeData.targetNobleId) {
-                            var _promoOutcome = _applyCoalitionPromotionTarget(k2, coal, _coalCategory); // v9p33river442: bugfix
-                            if (!_promoOutcome.ok) {
-                                coal.status = 'dissolved';
-                                coal.resolvedDay = world.day;
-                                coal.resolutionMessage = _promoOutcome.message;
-                                logEvent('📜 A coalition in ' + k2.name + ' lost momentum: ' + _promoOutcome.message, {
-                                    type: 'npc_coalition_dissolved', kingdomId: k2.id, cause: coal.cause
-                                }, _coalCategory);
-                                continue;
-                            }
-                            _coalActionText = 'promote ' + _promoOutcome.targetName;
-                            _coalSuccessLabel = 'Promote ' + _promoOutcome.targetName;
-                        } else if ((coal.cause === 'declare_war' || coal.cause === 'make_peace' || coal.cause === 'form_alliance') && coal.causeData && coal.causeData.targetKingdomId) {
-                            // v9p33river468: targeted diplomatic coalitions must act on their chosen kingdom.
-                            _executeNobleAdvisedActionWithParam(k2, coal.cause, rng, coal.causeData.targetKingdomId);
-                        } else {
-                            _executeNobleAdvisedAction(k2, coal.cause, rng);
-                        }
-                        coal.status = 'resolved';
-                        coal.resolvedDay = world.day;
-                        coal.resolutionMessage = 'The king was persuaded! Coalition achieved: ' + _coalSuccessLabel;
-
-                        for (var _smi = 0; _smi < coal.members.length; _smi++) {
-                            for (var _smj = _smi + 1; _smj < coal.members.length; _smj++) {
-                                var _smA = findPerson(coal.members[_smi].id);
-                                var _smB = findPerson(coal.members[_smj].id);
-                                if (_smA && _smB && _smA.alive && _smB.alive) {
-                                    if (!_smA._nobleRelationships) _smA._nobleRelationships = {};
-                                    if (!_smB._nobleRelationships) _smB._nobleRelationships = {};
-                                    _smA._nobleRelationships[_smB.id] = Math.min(100, (_smA._nobleRelationships[_smB.id] || 50) + 5);
-                                    _smB._nobleRelationships[_smA.id] = Math.min(100, (_smB._nobleRelationships[_smA.id] || 50) + 5);
-                                }
-                            }
-                        }
-
-                        logEvent('👑 A coalition in ' + k2.name + ' successfully petitioned the king to ' + _coalActionText + '!', {
-                            type: 'npc_coalition_success', kingdomId: k2.id
-                        }, _coalCategory);
-                    } else {
-                        coal.status = 'resolved';
-                        coal.resolvedDay = world.day;
-                        coal.resolutionMessage = 'The king rejected the petition.';
-                    }
-                }
-            }
-        }
+        // v9p33river518: NPC organizer presentation moved to tickNobleCoalitions
+        // (runs daily) so nobles act as soon as their chance of success is good
+        // rather than waiting up to 60 days for the next AI tick.
     }
 
     // v9p33river445: autonomous recruitment — any coalition/conspiracy member can recruit more nobles

@@ -1596,6 +1596,7 @@
                         <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerDayOffAction" data-id="${wId}" data-val="${bld.id}">🏖️ Day Off</button>
                         <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerBonusAction" data-id="${wId}" data-val="${bld.id}">💰 Bonus</button>
                         <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="giveWorkerRaiseAction" data-id="${wId}" data-val="${bld.id}">⬆️ Raise</button>
+                        <button class="btn btn-sm" style="font-size:0.65rem;padding:1px 5px;" data-action="unassignWorkerUI" data-id="${wId}" data-val="${bld.id}" title="Unassign from this building (keeps worker on payroll)">✕ Remove</button>
                         <button class="btn-trade sell" style="font-size:0.65rem;padding:1px 5px;" data-action="removeWorkerUI" data-id="${wId}" data-val="${bld.id}" title="Fires this worker (removes from payroll + all buildings)">🔥 Fire</button>
                     </div>
                 </div>`;
@@ -2295,6 +2296,15 @@
         if (result.success) showBuildingDetail(buildingId);
     }
 
+    // v9p33river518: per-building unassign (kept worker on payroll, available
+    // to assign to another building). Re-added as the dedicated "✕ Remove"
+    // button alongside the new "🔥 Fire" action.
+    function unassignWorkerUI(personId, buildingId) {
+        const result = Player.removeWorkerFromBuilding(personId, buildingId);
+        toast(result.message, result.success ? 'success' : 'warning');
+        if (result.success) showBuildingDetail(buildingId);
+    }
+
     function upgradeBuildingUI(buildingId) {
         const result = Player.upgradeBuilding(buildingId);
         toast(result.message, result.success ? 'success' : 'warning');
@@ -2395,6 +2405,7 @@
     UI.executeFarmConvertUI = executeFarmConvertUI;
     UI.assignWorkerUI = assignWorkerUI;
     UI.removeWorkerUI = removeWorkerUI;
+    UI.unassignWorkerUI = unassignWorkerUI;
     UI.upgradeBuildingUI = upgradeBuildingUI;
     UI.toggleGuard = toggleGuard;
     UI.buyLockedStorage = buyLockedStorage;
@@ -2464,6 +2475,7 @@
         UI.showBuildingDetail(d.val);
     });
     UI.registerAction('removeWorkerUI', function(_t, d) { UI.removeWorkerUI(d.id, d.val); });
+    UI.registerAction('unassignWorkerUI', function(_t, d) { UI.unassignWorkerUI(d.id, d.val); });
     UI.registerAction('assignWorkerUI', function(_t, d) { UI.assignWorkerUI(d.id); });
     UI.registerAction('supplyBuildingUI', function(_t, d) { UI.supplyBuildingUI(d.id, d.val, parseInt(d.qty)); });
     UI.registerAction('setTransferTarget', function(_t, d) { UI.setTransferTarget(d.id); });

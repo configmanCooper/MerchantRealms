@@ -1662,34 +1662,46 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
         html += ' · <span style="color:' + _cStrColor2 + ';">' + _cChanceLabel + '</span>';
         html += '</div>';
         html += '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:6px;">';
+        // v9p33river518: gate Recruit / Present-to-King by membership and authorship
+        //   - Recruit is only offered to coalition members.
+        //   - Present-to-King is only offered to the founder. NPC-organized
+        //     coalitions are presented by their NPC organizer's AI (see
+        //     tickNobleCoalitionsPresent in engine.js).
+        var _playerIsCoalMember = false;
+        for (var _pcmci = 0; _pcmci < _coal.members.length; _pcmci++) {
+            if (_coal.members[_pcmci].id === 'player') { _playerIsCoalMember = true; break; }
+        }
+        var _playerOrganizedCoal = (_coal.organizer === 'player');
         var _coalNobles = [];
-        try {
-            var _coalCandidates = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(targetKingdomId) : [];
-            if (!_coalCandidates.length && Engine.getWorld) {
-                var _cnWorld = Engine.getWorld();
-                var _cnPeople = _cnWorld ? _cnWorld.people : [];
-                for (var _cni = 0; _cni < _cnPeople.length; _cni++) {
-                    var _cnP = _cnPeople[_cni];
-                    if (!_cnP || !_cnP.alive) continue;
-                    if (!_cnP.socialRank || (_cnP.socialRank[targetKingdomId] || 0) < 4) continue;
-                    _coalCandidates.push(_cnP);
+        if (_playerIsCoalMember) {
+            try {
+                var _coalCandidates = Engine.getNoblesInKingdom ? Engine.getNoblesInKingdom(targetKingdomId) : [];
+                if (!_coalCandidates.length && Engine.getWorld) {
+                    var _cnWorld = Engine.getWorld();
+                    var _cnPeople = _cnWorld ? _cnWorld.people : [];
+                    for (var _cni = 0; _cni < _cnPeople.length; _cni++) {
+                        var _cnP = _cnPeople[_cni];
+                        if (!_cnP || !_cnP.alive) continue;
+                        if (!_cnP.socialRank || (_cnP.socialRank[targetKingdomId] || 0) < 4) continue;
+                        _coalCandidates.push(_cnP);
+                    }
                 }
-            }
-            for (var _cnj = 0; _cnj < _coalCandidates.length; _cnj++) {
-                var _cnNoble = _coalCandidates[_cnj];
-                if (!_cnNoble || !_cnNoble.alive || _cnNoble.id === 'player') continue;
-                if (_coalKingdom && _cnNoble.id === _coalKingdom.king) continue;
-                var _alreadyMember = false;
-                for (var _cmj = 0; _cmj < _coal.members.length; _cmj++) {
-                    if (_coal.members[_cmj].id === _cnNoble.id) { _alreadyMember = true; break; }
+                for (var _cnj = 0; _cnj < _coalCandidates.length; _cnj++) {
+                    var _cnNoble = _coalCandidates[_cnj];
+                    if (!_cnNoble || !_cnNoble.alive || _cnNoble.id === 'player') continue;
+                    if (_coalKingdom && _cnNoble.id === _coalKingdom.king) continue;
+                    var _alreadyMember = false;
+                    for (var _cmj = 0; _cmj < _coal.members.length; _cmj++) {
+                        if (_coal.members[_cmj].id === _cnNoble.id) { _alreadyMember = true; break; }
+                    }
+                    if (_alreadyMember) continue;
+                    // v9p33river451: age gate
+                    if (_cnNoble.age != null && _cnNoble.age < 18) continue;
+                    _coalNobles.push(_cnNoble);
                 }
-                if (_alreadyMember) continue;
-                // v9p33river451: age gate
-                if (_cnNoble.age != null && _cnNoble.age < 18) continue;
-                _coalNobles.push(_cnNoble);
-            }
-        } catch(e) {}
-        if (_coalNobles.length > 0) {
+            } catch(e) {}
+        }
+        if (_coalNobles.length > 0 && _playerIsCoalMember) {
             // v9p33river453: sort by player location — local first, remote grayed with town name
             var _coalPTownId = (typeof Player !== 'undefined') ? Player.townId : null;
             _coalNobles.sort(function(a, b) {
@@ -1711,19 +1723,21 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
             html += '</select>';
             html += '<button class="btn-medieval" data-action="recruitToCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" data-idx="' + _ci + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,100,180,0.3);border-color:rgba(60,100,180,0.5);">🤝 Recruit</button>';
         }
-        if (_coal.memberCount >= 2) {
+        // v9p33river518: Present-to-King is the founder's privilege only.
+        // NPC-organized coalitions are presented by their NPC organizer's AI.
+        if (_coal.memberCount >= 2 && _playerOrganizedCoal) {
             html += '<button class="btn-medieval" data-action="presentCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(60,140,60,0.3);border-color:rgba(60,140,60,0.5);">👑 Present to King</button>';
+        } else if (_coal.memberCount >= 2 && !_playerOrganizedCoal) {
+            // Inform the player why they can't present
+            var _organizerName = _coal.organizerName || 'the founder';
+            html += '<span style="font-size:0.7rem;color:#888;font-style:italic;padding:4px 6px;">Awaiting ' + escapeHtml(_organizerName) + ' to present</span>';
         }
         // v9p33river445: disband button for player-organized coalitions
         if (_coal.organizer === 'player') {
             html += '<button class="btn-medieval" data-action="disbandCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(196,78,82,0.3);border-color:rgba(196,78,82,0.5);">🚫 Disband</button>';
         }
         // v9p33river445: withdraw from coalition (player stays out, coalition continues)
-        var _playerInCoal = false;
-        for (var _pci = 0; _pci < _coal.members.length; _pci++) {
-            if (_coal.members[_pci].id === 'player') { _playerInCoal = true; break; }
-        }
-        if (_playerInCoal) {
+        if (_playerIsCoalMember && !_playerOrganizedCoal) {
             html += '<button class="btn-medieval" data-action="withdrawFromCoalition" data-id="' + targetKingdomId + '" data-val="' + _coal.id + '" style="font-size:0.72rem;padding:4px 8px;background:rgba(150,120,50,0.3);border-color:rgba(150,120,50,0.5);">🚪 Withdraw</button>';
         }
         html += '</div></div>';
