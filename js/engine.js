@@ -34301,12 +34301,15 @@
                 _playerConspiracyCaught(k, 'revolt_support', false);
             }
             k._conspiracy = null;
+            // v9p33river523: stash outcome
+            k._lastConspiracyOutcome = { type: 'revolt_support', succeeded: false, caught: true, townName: targetTown.name, goldFunneled: totalGoldFunneled };
         } else {
             // Not detected — conspiracy can continue or dissolve
             conspiracy.strength -= 40; // reset strength
             if (conspiracy.strength <= 0 || rng.chance(0.40)) {
                 k._conspiracy = null; // mission complete, disperse
             }
+            k._lastConspiracyOutcome = { type: 'revolt_support', succeeded: true, caught: false, townName: targetTown.name, goldFunneled: totalGoldFunneled, equipment: totalEquipment };
         }
     }
 
@@ -34442,11 +34445,14 @@
                 // Suspicion always spreads
                 _spreadAssassinationSuspicion(allNobles, plotterPersons, wasCaught, plotterCount, rng);
                 k._conspiracy = null;
+                // v9p33river523: stash outcome so playerExecuteConspiracy can report it.
+                k._lastConspiracyOutcome = { type: 'assassination', succeeded: true, caught: wasCaught, kingName: kingName.trim() };
 
             } else {
                 // Assassination fails — higher catch chance on failure (+15%)
                 var failCaught = rng.chance(Math.min(0.95, caughtChance + 0.15));
                 _conspiracyFails(k, conspiracy, category, failCaught, plotterPersons, allNobles, plotterCount);
+                k._lastConspiracyOutcome = { type: 'assassination', succeeded: false, caught: failCaught, kingName: kingName.trim() };
                 for (var _mfi = 0; _mfi < plotterPersons.length; _mfi++) {
                     try {
                         if (Engine._addPlayerMemory) {
@@ -34528,10 +34534,17 @@
                 }
 
                 k._conspiracy = null;
+                // v9p33river523: stash outcome so playerExecuteConspiracy can report it.
+                k._lastConspiracyOutcome = {
+                    type: 'coup', succeeded: true, caught: false,
+                    kingName: kingName.trim(),
+                    newKingName: leader ? ((leader.firstName || '') + ' ' + (leader.lastName || '')).trim() : 'A noble conspirator'
+                };
             } else {
                 // Coup fails — catch chance applies
                 var coupFailCaught = rng.chance(Math.min(0.95, caughtChance + 0.10));
                 _conspiracyFails(k, conspiracy, category, coupFailCaught, plotterPersons, allNobles, plotterCount);
+                k._lastConspiracyOutcome = { type: 'coup', succeeded: false, caught: coupFailCaught, kingName: kingName.trim() };
                 for (var _cpfi = 0; _cpfi < plotterPersons.length; _cpfi++) {
                     try {
                         if (Engine._addPlayerMemory) {
@@ -36977,12 +36990,55 @@
             var plotters = k._conspiracy.plotters || [];
             if (plotters.indexOf('player') < 0) return { success: false, message: 'You are not part of this conspiracy.' };
             if ((k._conspiracy.strength || 0) < 80) return { success: false, message: 'The conspiracy is not strong enough yet (need 80+ strength).' };
+            // v9p33river523: clear any stale outcome from previous plot
+            delete k._lastConspiracyOutcome;
             if (k._conspiracy.type === 'revolt_support') {
                 _executeRevoltSupport(k, k._conspiracy);
             } else {
                 _attemptConspiracyPlot(k, k._conspiracy);
             }
-            return { success: true, message: 'The plot has been set in motion!' };
+            // v9p33river523: build a specific success/failure message from the stashed outcome
+            var outcome = k._lastConspiracyOutcome;
+            delete k._lastConspiracyOutcome;
+            var msg = 'The plot has been set in motion.';
+            var success = true;
+            if (outcome) {
+                if (outcome.type === 'assassination') {
+                    if (outcome.succeeded) {
+                        msg = '💀 ' + (outcome.kingName || 'The king') + ' of ' + k.name + ' has been assassinated!';
+                        msg += outcome.caught
+                            ? ' But the plotters were identified — you face arrest and punishment!'
+                            : ' The assassins vanished into the shadows. The throne is empty.';
+                        success = !outcome.caught;
+                    } else {
+                        msg = '⚔️ The assassination attempt FAILED!';
+                        msg += outcome.caught
+                            ? ' The plotters were caught — you face arrest!'
+                            : ' The plotters escaped suspicion this time, but the conspiracy is weakened.';
+                        success = false;
+                    }
+                } else if (outcome.type === 'coup') {
+                    if (outcome.succeeded) {
+                        msg = '👑 The coup SUCCEEDED! ' + (outcome.newKingName || 'A new ruler') + ' now sits the throne of ' + k.name + ', deposing ' + (outcome.kingName || 'the old king') + '.';
+                        success = true;
+                    } else {
+                        msg = '⚔️ The coup FAILED!';
+                        msg += outcome.caught
+                            ? ' The plotters were rounded up — you face arrest!'
+                            : ' The plotters escaped into hiding. The conspiracy is weakened.';
+                        success = false;
+                    }
+                } else if (outcome.type === 'revolt_support') {
+                    if (outcome.caught) {
+                        msg = '🕵️ The crown discovered your aid to the rebels in ' + (outcome.townName || 'the town') + '! You face arrest!';
+                        success = false;
+                    } else {
+                        msg = '🔥 ' + (outcome.goldFunneled || 0) + 'g and ' + (outcome.equipment || 0) + ' weapons reached the rebels in ' + (outcome.townName || 'the town') + '. Pressure for revolt grows!';
+                        success = true;
+                    }
+                }
+            }
+            return { success: success, message: msg };
         },
 
         // v9p33river435: noble coalition — recruit a noble into an open political movement
