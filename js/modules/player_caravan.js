@@ -1697,6 +1697,37 @@
                 if (o.buildingId) {
                     // Store in specific building
                     var bld = (player.buildings || []).find(function(b) { return b.id === o.buildingId; });
+                    // v9p33river536: legacy compatibility — earlier versions of the order
+                    // builder stored buildingId as "<type>_<townBuildingsIndex>" instead of
+                    // the canonical pbld_NN id, so existing saved orders never matched the
+                    // real building. Try to resolve those by parsing the type prefix and
+                    // finding a player building of that type at this town. Auto-migrate
+                    // the order so subsequent runs are an O(1) lookup.
+                    if (!bld && typeof o.buildingId === 'string') {
+                        var _legacyMatch = o.buildingId.match(/^(.+)_(\d+)$/);
+                        if (_legacyMatch) {
+                            var _wantedType = _legacyMatch[1];
+                            var _wantedIdx = parseInt(_legacyMatch[2], 10);
+                            // Prefer town.buildings[idx] if it's a player-owned building of the right type
+                            var _townObj = Engine.findTown(townId);
+                            if (_townObj && _townObj.buildings && _townObj.buildings[_wantedIdx]) {
+                                var _tbCandidate = _townObj.buildings[_wantedIdx];
+                                if (_tbCandidate && _tbCandidate.ownerId === 'player' && _tbCandidate.type === _wantedType && _tbCandidate.id) {
+                                    bld = (player.buildings || []).find(function(b) { return b.id === _tbCandidate.id; });
+                                }
+                            }
+                            // Fallback: first player building of that type at this town
+                            if (!bld) {
+                                bld = (player.buildings || []).find(function(b) {
+                                    return b.townId === townId && b.type === _wantedType;
+                                });
+                            }
+                            if (bld) {
+                                o.buildingId = bld.id;
+                                logCaravan(caravan, '🔧 Migrated stale building reference for ' + resName + ' at ' + townName + '.');
+                            }
+                        }
+                    }
                     if (bld && bld.townId === townId) {
                         var bt = null;
                         for (var bk in BUILDING_TYPES) { if (BUILDING_TYPES[bk].id === bld.type) { bt = BUILDING_TYPES[bk]; break; } }

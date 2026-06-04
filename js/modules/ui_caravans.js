@@ -46,7 +46,14 @@
             if (b.ownerId !== 'player') continue;
             var bType = Engine.findBuildingType ? Engine.findBuildingType(b.type) : null;
             var bName = bType ? bType.name : b.type;
-            sel.innerHTML += '<option value="' + (b.type + '_' + bi) + '">🏗️ ' + bName + (b.level > 1 ? ' (Lv' + b.level + ')' : '') + '</option>';
+            // v9p33river536: emit the actual building id (e.g. "pbld_10"), not the
+            // synthetic "<type>_<townBuildingsIndex>" string. The order processor
+            // looks up the target via `player.buildings.find(b => b.id === o.buildingId)`,
+            // and `b.id` is the canonical pbld_NN id — the previous synthetic value
+            // never matched, so every store/dropoff order with a specific building
+            // target failed with "Target building not found".
+            var optVal = b.id ? b.id : (b.type + '_' + bi);
+            sel.innerHTML += '<option value="' + optVal + '">🏗️ ' + bName + (b.level > 1 ? ' (Lv' + b.level + ')' : '') + '</option>';
         }
     }
 
