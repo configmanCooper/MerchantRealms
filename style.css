@@ -4395,6 +4395,15 @@ body {
        have an obvious way to open the left ledger from the top bar. */
     .btn-ledger-toggle { display: inline-flex !important; }
 
+    /* v9p33river538: hide volume sliders on iPad / tablet drawer mode.
+       iOS Safari and iOS Chrome both ignore programmatic audio.volume
+       changes (the property is read-only — only hardware buttons can
+       adjust volume), so the sliders do nothing useful on iPad. The
+       🔊/🔇 mute toggle is still visible and works. */
+    #musicVolume,
+    #titleMusicVolume,
+    #settingsVolumeSlider { display: none !important; }
+
     /* Left panel becomes slide-in drawer */
     .left-panel {
         display: flex !important;
