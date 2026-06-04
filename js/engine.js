@@ -34505,6 +34505,66 @@
                     if (kingPerson.socialRank) kingPerson.socialRank[kId] = 4;
                     kingPerson.occupation = 'noble';
                     kingPerson.kingLoyalty = 10;
+
+                    // v9p33river525: deposed king is either imprisoned in the capital
+                    // (or largest town) of the kingdom, or exiled to a foreign kingdom.
+                    // Choice depends on the new king's personality: cruel/harsh => prison
+                    // for a long sentence, otherwise => exile.
+                    try {
+                        var _newKingP = leader && leader.personality ? leader.personality : null;
+                        var _exilePref = true;
+                        if (_newKingP) {
+                            if (_newKingP.justice === 'harsh' || _newKingP.cruelty === 'cruel' || _newKingP.mercy === 'merciless') _exilePref = false;
+                            else if (_newKingP.mercy === 'merciful' || _newKingP.justice === 'just') _exilePref = true;
+                            else _exilePref = rng.chance(0.55); // default lean toward exile
+                        } else {
+                            _exilePref = rng.chance(0.55);
+                        }
+
+                        if (_exilePref) {
+                            // Exile to a foreign kingdom — find one not at war with us if possible
+                            var _foreignTowns = world.towns.filter(function(t) { return t.kingdomId && t.kingdomId !== kId; });
+                            if (_foreignTowns.length > 0) {
+                                // Prefer capitals to make it narratively interesting
+                                var _foreignCapitals = _foreignTowns.filter(function(t) { return t.isCapital; });
+                                var _pool = _foreignCapitals.length > 0 ? _foreignCapitals : _foreignTowns;
+                                var _exileTown = _pool[rng.randInt(0, _pool.length - 1)];
+                                if (_exileTown) {
+                                    kingPerson.townId = _exileTown.id;
+                                    kingPerson._exiled = { fromKingdomId: kId, day: world.day, byKingId: leader ? leader.id : null };
+                                    // Strip their nobility in the home kingdom so they cannot scheme back easily
+                                    if (kingPerson.socialRank) kingPerson.socialRank[kId] = 0;
+                                    logEvent('🏃 The deposed ' + kingName.trim() + ' has been exiled from ' + k.name + ', fleeing to ' + _exileTown.name + '.', {
+                                        type: 'deposed_king_exiled', kingdomId: kId, destTownId: _exileTown.id
+                                    }, category);
+                                }
+                            }
+                        } else {
+                            // Imprison in the capital (or largest town) of this kingdom
+                            var _kTowns = world.towns.filter(function(t) { return t.kingdomId === kId; });
+                            var _capital = _kTowns.find(function(t) { return t.isCapital; });
+                            if (!_capital) {
+                                // Fall back to highest-population town
+                                var _largest = null;
+                                for (var _kti = 0; _kti < _kTowns.length; _kti++) {
+                                    if (!_largest || (_kTowns[_kti].population || 0) > (_largest.population || 0)) {
+                                        _largest = _kTowns[_kti];
+                                    }
+                                }
+                                _capital = _largest;
+                            }
+                            if (_capital) {
+                                kingPerson.townId = _capital.id;
+                                // Long sentence — coup-installed kings rarely show mercy to predecessors
+                                var _jailDays = 365 * (3 + rng.randInt(0, 4)); // 3-7 years
+                                kingPerson._jailedUntilDay = world.day + _jailDays;
+                                kingPerson._jailReason = 'Deposed king imprisoned after the coup that installed ' + ((leader && leader.firstName) || 'a new ruler') + '.';
+                                logEvent('⛓️ The deposed ' + kingName.trim() + ' has been imprisoned in ' + _capital.name + ' (' + Math.round(_jailDays / 365) + '-year sentence) by the new regime.', {
+                                    type: 'deposed_king_imprisoned', kingdomId: kId, townId: _capital.id, jailDays: _jailDays
+                                }, category);
+                            }
+                        }
+                    } catch(e) { /* never block the coup on exile/jail errors */ }
                 }
 
                 // Install new king
