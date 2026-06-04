@@ -746,10 +746,47 @@
         const rows = world.gridRows;
 
         // Convert pixel coordinates to tile coordinates (snapped to step grid)
-        const sx = Math.min(Math.max(Math.round(startPx / TS / step) * step, 0), cols - 1);
-        const sy = Math.min(Math.max(Math.round(startPy / TS / step) * step, 0), rows - 1);
-        const ex = Math.min(Math.max(Math.round(endPx / TS / step) * step, 0), cols - 1);
-        const ey = Math.min(Math.max(Math.round(endPy / TS / step) * step, 0), rows - 1);
+        var sx = Math.min(Math.max(Math.round(startPx / TS / step) * step, 0), cols - 1);
+        var sy = Math.min(Math.max(Math.round(startPy / TS / step) * step, 0), rows - 1);
+        var ex = Math.min(Math.max(Math.round(endPx / TS / step) * step, 0), cols - 1);
+        var ey = Math.min(Math.max(Math.round(endPy / TS / step) * step, 0), rows - 1);
+
+        // v9p33river555: for sea mode, the step-grid snap can land start/end on a
+        // non-traversable land tile (cost 9999) even when the original town tile is
+        // water/sand — and because the cost gate blocks the END from ever being
+        // accepted into the open set, A* exhausts maxNodes and returns null. Snap
+        // start/end to the nearest traversable (water > sand) step-aligned tile.
+        if (mode === 'sea') {
+            function _isTraversableSea(tx, ty) {
+                var t = terrainAt(tx, ty);
+                return t === TERRAIN.WATER.id || t === TERRAIN.SAND.id;
+            }
+            function _snapToWater(tx, ty) {
+                if (_isTraversableSea(tx, ty)) return { x: tx, y: ty };
+                // Search outward in step-aligned offsets, preferring water over sand
+                var bestWater = null, bestSand = null, bestDistW = Infinity, bestDistS = Infinity;
+                var maxR = 12; // ~24 tiles in any direction at step=2
+                for (var r = 1; r <= maxR; r++) {
+                    for (var dy = -r; dy <= r; dy++) {
+                        for (var dx = -r; dx <= r; dx++) {
+                            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                            var nx = tx + dx * step, ny = ty + dy * step;
+                            if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+                            var tt = terrainAt(nx, ny);
+                            var d = dx * dx + dy * dy;
+                            if (tt === TERRAIN.WATER.id && d < bestDistW) { bestDistW = d; bestWater = { x: nx, y: ny }; }
+                            else if (tt === TERRAIN.SAND.id && d < bestDistS) { bestDistS = d; bestSand = { x: nx, y: ny }; }
+                        }
+                    }
+                    if (bestWater) return bestWater;
+                }
+                return bestWater || bestSand || { x: tx, y: ty };
+            }
+            var snapStart = _snapToWater(sx, sy);
+            var snapEnd = _snapToWater(ex, ey);
+            sx = snapStart.x; sy = snapStart.y;
+            ex = snapEnd.x; ey = snapEnd.y;
+        }
 
         // Terrain cost lookup by mode
         function tileCost(tx, ty) {
