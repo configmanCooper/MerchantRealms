@@ -2104,7 +2104,7 @@
         // v9p33river342: track gold earned from trade for "Raise X gold
         // through trade" kingdom quests. trackKQTradeGold walks all
         // active kingdom quests and credits any with a goldTarget.
-        if (typeof Player !== 'undefined' && Player.trackKQTradeGold) Player.trackKQTradeGold(totalRevenue);
+        if (typeof Player !== 'undefined' && Player.trackKQTradeGold) Player.trackKQTradeGold(totalRevenue, town.kingdomId);
         // Sell from carried first (after any auto-dismount/unequip into inventory),
         // then from town storage
         var sellFromCarried = Math.min(qty, _heldNow);
@@ -3824,8 +3824,12 @@
                 if (_srcRecipe && bt.availableProducts && bt.availableProducts[_srcRecipe] && bt.availableProducts[_srcRecipe].produces) {
                     _actualProduces = bt.availableProducts[_srcRecipe].produces;
                 }
+                // v9p33river509: warehouses always accept transfers (route to town storage),
+                // so suppress the "does not consume" warning for warehouse-category targets.
+                var _isWarehouseTarget = (targetBt.category === 'storage') ||
+                    (targetBld.type === 'warehouse' || targetBld.type === 'warehouse_small' || targetBld.type === 'warehouse_large');
                 var consumesProduced = _activeConsumes && Object.keys(_activeConsumes).indexOf(_actualProduces) >= 0;
-                if (!consumesProduced) {
+                if (!consumesProduced && !_isWarehouseTarget) {
                     warning = ' ⚠️ Warning: ' + targetBt.name + ' does not consume ' + _actualProduces + '. Transfer will still work but goods will go to market supply.';
                 }
             }
@@ -6366,6 +6370,16 @@
         if (!amount || amount <= 0) return;
         const town = Engine.findTown(sourceBld.townId);
         if (!town) return;
+
+        // v9p33river509: check if the source's transfer target is a player-owned warehouse building
+        // (so we can route to shared town storage with overflow chain instead of writing to bld.inventory).
+        function _v509IsWarehouseBuildingTarget(srcBld) {
+            if (!srcBld || !srcBld.transferTarget || srcBld.transferTarget === 'warehouse' ||
+                srcBld.transferTarget === 'market' || srcBld.transferTarget === 'player') return false;
+            var _tb = player.buildings.find(function(b) { return b.id === srcBld.transferTarget; });
+            if (!_tb) return false;
+            return _tb.type === 'warehouse' || _tb.type === 'warehouse_small' || _tb.type === 'warehouse_large';
+        }
         
         if (sourceBld.transferTarget === 'player') {
             // Transfer directly to player inventory (if in town)
@@ -6434,8 +6448,9 @@
                     logFinance(_pRev2, 'building_sales', 'Sold ' + _pOverflow2 + ' ' + _pResName2 + ' (overflow)');
                 }
             }
-        } else if (sourceBld.transferTarget === 'warehouse') {
-            // Store in player's town storage — overflow sells to market at full price
+        } else if (sourceBld.transferTarget === 'warehouse' || _v509IsWarehouseBuildingTarget(sourceBld)) {
+            // v9p33river509: warehouse target (string OR a warehouse-type player building) deposits to town storage.
+            // Overflow chain: town storage → source building's own output inventory → market.
             if (!player.townStorage[sourceBld.townId]) player.townStorage[sourceBld.townId] = {};
             var storageCap = Player.getTownStorageCapacity(sourceBld.townId);
             var storageUsed = Player.getTownStorageUsed(sourceBld.townId);
@@ -6446,8 +6461,38 @@
             if (storeAmt > 0) {
                 player.townStorage[sourceBld.townId][resourceId] = (player.townStorage[sourceBld.townId][resourceId] || 0) + storeAmt;
             }
-            // Overflow sells at full market price
             var whOverflow = amount - storeAmt;
+            // v9p33river509: try source building's own output storage before dumping to market.
+            if (whOverflow > 0) {
+                var _srcBt = Engine.findBuildingType(sourceBld.type);
+                var _srcCap = _srcBt ? Player._bldStorageCap(_srcBt.storage || 50, sourceBld.level) : 0;
+                if (_srcCap > 0) {
+                    if (!sourceBld.inventory) sourceBld.inventory = {};
+                    var _srcOutSet = {};
+                    _srcOutSet[resourceId] = true;
+                    if (_srcBt && _srcBt.canProduce) {
+                        for (var _scpi = 0; _scpi < _srcBt.canProduce.length; _scpi++) _srcOutSet[_srcBt.canProduce[_scpi]] = true;
+                    }
+                    if (_srcBt) {
+                        var _srcConsumed = Player.getBuildingConsumedGoods(_srcBt);
+                        for (var _sck in _srcConsumed) { delete _srcOutSet[_sck]; }
+                    }
+                    var _srcOutputUsed = 0;
+                    for (var _sok in sourceBld.inventory) {
+                        if (_srcOutSet[_sok]) {
+                            var _sor = findResource(_sok);
+                            _srcOutputUsed += (sourceBld.inventory[_sok] || 0) * (_sor ? (_sor.weight || 1) : 1);
+                        }
+                    }
+                    var _srcSpace = Math.max(0, Math.floor((_srcCap - _srcOutputUsed) / _whWeight));
+                    var _srcStore = Math.min(whOverflow, _srcSpace);
+                    if (_srcStore > 0) {
+                        sourceBld.inventory[resourceId] = (sourceBld.inventory[resourceId] || 0) + _srcStore;
+                        whOverflow -= _srcStore;
+                    }
+                }
+            }
+            // Remaining overflow sells at full market price.
             if (whOverflow > 0 && town.market && town.market.supply) {
                 town.market.supply[resourceId] = (town.market.supply[resourceId] || 0) + whOverflow;
                 var _whPrice = (town.market.prices && town.market.prices[resourceId]) || (_whRes && _whRes.basePrice) || 1;
@@ -34396,7 +34441,18 @@
     // Execute a petition effect directly (used by court petition action)
     function executeCourtPetition(typeId, kingdomId, extraData) {
         var td = {};
-        if (extraData && extraData.targetKingdomId) td.targetKingdomId = extraData.targetKingdomId;
+        if (extraData) {
+            // v9p33river509: forward all target keys consumed by executePetitionAction.
+            if (extraData.targetKingdomId) td.targetKingdomId = extraData.targetKingdomId;
+            if (extraData.townId) td.townId = extraData.townId;
+            if (extraData.roadIndex != null) td.roadIndex = extraData.roadIndex;
+            if (extraData.fromTownId) td.fromTownId = extraData.fromTownId;
+            if (extraData.toTownId) td.toTownId = extraData.toTownId;
+            if (extraData.fromName) td.fromName = extraData.fromName;
+            if (extraData.toName) td.toName = extraData.toName;
+            if (extraData.resourceId) td.resourceId = extraData.resourceId;
+            if (extraData.resourceName) td.resourceName = extraData.resourceName;
+        }
         var fakePetition = { typeId: typeId, targetData: td, kingdomId: kingdomId };
         executePetitionAction(fakePetition);
     }

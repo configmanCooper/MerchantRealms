@@ -1903,7 +1903,7 @@
                 logFinance(revenue, 'caravan_sales', 'Caravan sold ' + sellQty + ' ' + res.name);
                 player.stats.totalGoldEarned += revenue;
                 // v9p33river342: credit toward "Raise X gold through trade" kingdom quests.
-                if (Player.trackKQTradeGold) Player.trackKQTradeGold(revenue);
+                if (Player.trackKQTradeGold) Player.trackKQTradeGold(revenue, town.kingdomId);
                 caravan.totalProfit = (caravan.totalProfit || 0) + revenue;
                 town.market.supply[o.good] = (town.market.supply[o.good] || 0) + sellQty;
                 // v9p33river85: gold flows out of the town's market to the caravan

@@ -30437,24 +30437,68 @@
             case 'network_nobles': {
                 // Network with other nobles — improve relationships
                 var kId2 = kingdomId;
+                var playerId = pPerson.id || 'player';
+                var _playerSpouseId = (typeof Player !== 'undefined' && Player.state && Player.state.spouseId) ? Player.state.spouseId : (pPerson.spouseId || null);
                 var nobles2 = world.people.filter(function(p) {
-                    return p.alive && p.socialRank && p.socialRank[kId2] >= 4 && p.id !== (pPerson.id || 'player');
+                    if (!p.alive || !p.socialRank || p.socialRank[kId2] < 4) return false;
+                    if (p.id === playerId) return false;
+                    // v9p33river509: don't target spouse
+                    if (_playerSpouseId && p.id === _playerSpouseId) return false;
+                    // v9p33river509: skip nobles already at 60+ relationship (either side)
+                    var _pRelView = (p._nobleRelationships && p._nobleRelationships[playerId]) || 0;
+                    var _playerRelView = 0;
+                    try {
+                        if (typeof Player !== 'undefined' && Player.getRelationship) {
+                            var _rel = Player.getRelationship(p.id);
+                            _playerRelView = (_rel && _rel.level) || 0;
+                        }
+                    } catch(e) {}
+                    if (_pRelView >= 60 || _playerRelView >= 60) return false;
+                    return true;
                 });
                 if (nobles2.length === 0) {
-                    result = { success: true, message: 'No nobles to network with.' };
+                    result = { success: true, message: 'No new nobles to network with — you already know everyone of note.' };
                     break;
                 }
-                var target = rng.pick(nobles2);
-                var tName = ((target.firstName || '') + ' ' + (target.lastName || '')).trim();
-                if (!target._nobleRelationships) target._nobleRelationships = {};
-                var playerId = pPerson.id || 'player';
-                target._nobleRelationships[playerId] = Math.min(100, (target._nobleRelationships[playerId] || 0) + rng.randInt(3, 8));
                 if (!pPerson._nobleRelationships) pPerson._nobleRelationships = {};
-                pPerson._nobleRelationships[target.id] = Math.min(100, (pPerson._nobleRelationships[target.id] || 0) + rng.randInt(2, 6));
-                result = { success: true, message: 'You networked with ' + tName + ' and improved your relationship.' };
-                // v9p33river463: memory — target remembers networking at court
-                _addFeastCourtMemory(target, 'court_networked', 'Player networked with them at court', 1, kingdomId);
-                EventTypes.emit('COURT_NETWORK', { npcName: tName });
+                // v9p33river509: two reward modes, randomly chosen.
+                //   A: +10 with one random noble.
+                //   B: +5 with up to 3 random nobles.
+                var _mode = rng.random() < 0.5 ? 'A' : 'B';
+                var _summaryNames = [];
+                if (_mode === 'A' || nobles2.length < 2) {
+                    var _t = rng.pick(nobles2);
+                    if (!_t._nobleRelationships) _t._nobleRelationships = {};
+                    _t._nobleRelationships[playerId] = Math.min(100, (_t._nobleRelationships[playerId] || 0) + 10);
+                    pPerson._nobleRelationships[_t.id] = Math.min(100, (pPerson._nobleRelationships[_t.id] || 0) + 10);
+                    try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(_t.id, 10); } catch(e) {}
+                    var _tName = ((_t.firstName || '') + ' ' + (_t.lastName || '')).trim();
+                    _summaryNames.push(_tName);
+                    _addFeastCourtMemory(_t, 'court_networked', 'Player networked with them at court', 2, kingdomId);
+                    EventTypes.emit('COURT_NETWORK', { npcName: _tName });
+                    result = { success: true, message: 'You spent the session deepening your bond with ' + _tName + ' (+10 relationship).' };
+                } else {
+                    var _picks = [];
+                    var _pool = nobles2.slice();
+                    var _n = Math.min(3, _pool.length);
+                    for (var _pk = 0; _pk < _n; _pk++) {
+                        var _idx = rng.randInt(0, _pool.length - 1);
+                        _picks.push(_pool[_idx]);
+                        _pool.splice(_idx, 1);
+                    }
+                    for (var _pi2 = 0; _pi2 < _picks.length; _pi2++) {
+                        var _np = _picks[_pi2];
+                        if (!_np._nobleRelationships) _np._nobleRelationships = {};
+                        _np._nobleRelationships[playerId] = Math.min(100, (_np._nobleRelationships[playerId] || 0) + 5);
+                        pPerson._nobleRelationships[_np.id] = Math.min(100, (pPerson._nobleRelationships[_np.id] || 0) + 5);
+                        try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(_np.id, 5); } catch(e) {}
+                        var _npName = ((_np.firstName || '') + ' ' + (_np.lastName || '')).trim();
+                        _summaryNames.push(_npName);
+                        _addFeastCourtMemory(_np, 'court_networked', 'Player networked with them at court', 1, kingdomId);
+                    }
+                    EventTypes.emit('COURT_NETWORK', { npcName: _summaryNames[0] });
+                    result = { success: true, message: 'You worked the room and improved relations with ' + _summaryNames.join(', ') + ' (+5 each).' };
+                }
                 break;
             }
             case 'praise_noble_loyalty': {
@@ -30476,8 +30520,8 @@
                 praiseTarget.perceivedKingLoyalty = Math.min(100, praiseTarget.perceivedKingLoyalty + praiseBoost);
                 // Slight actual loyalty boost from appreciation
                 praiseTarget.kingLoyalty = Math.min(100, (praiseTarget.kingLoyalty || 50) + 1);
-                // Player relationship improves with target
-                try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(praiseTarget.id, 3); } catch(e) {}
+                // Player relationship improves with target (v9p33river509: 3 → 5)
+                try { if (typeof Player !== 'undefined' && Player.modifyRelationship) Player.modifyRelationship(praiseTarget.id, 5); } catch(e) {}
                 result = { success: true, message: 'You praised ' + praiseName + '\'s loyalty to the king. (+' + praiseBoost + ' perceived loyalty)' };
                 // v9p33river463: memory — praised noble remembers player's public praise at court
                 _addFeastCourtMemory(praiseTarget, 'court_praised', 'Player publicly praised their loyalty at court', 2, kingdomId);

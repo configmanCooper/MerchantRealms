@@ -3860,6 +3860,11 @@ function _switchProposeActionTab(tabId, kingdomId) {
             _openCourtPetitionModal(kId);
             return;
         }
+        // v9p33river509: intercept praise_noble_loyalty to let the player pick the noble.
+        if (d.id === 'praise_noble_loyalty') {
+            _openCourtPraiseNobleModal(kId);
+            return;
+        }
         var result = Engine.doCourtAction(kId, d.id);
         if (result && result.success) {
             UI.toast(result.message, 'success');
@@ -3880,16 +3885,58 @@ function _switchProposeActionTab(tabId, kingdomId) {
         var PTYPES = typeof PETITION_TYPES !== 'undefined' ? PETITION_TYPES : [];
         var kingdoms = Engine.getKingdoms ? Engine.getKingdoms() : [];
 
-        var html = '<div style="padding:10px;max-height:400px;overflow-y:auto;">';
+        // v9p33river509: collect target candidates for the new target types so all petition
+        // options surface at court (not just no-target + kingdom-target).
+        var playerK = Engine.findKingdom(kingdomId);
+        var allTowns = (Engine.getTowns ? Engine.getTowns() : []) || [];
+        var kingdomTowns = allTowns.filter(function(t) { return t && t.kingdomId === kingdomId && !t.destroyed; });
+        kingdomTowns.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+        var kingdomPorts = kingdomTowns.filter(function(t) { return t.isPort; });
+        var allRoads = (Engine.getRoads ? Engine.getRoads() : []) || [];
+        var kingdomRoads = [];
+        for (var ri = 0; ri < allRoads.length; ri++) {
+            var rd = allRoads[ri];
+            if (!rd) continue;
+            var fT = Engine.findTown(rd.fromTownId);
+            var tT = Engine.findTown(rd.toTownId);
+            if ((fT && fT.kingdomId === kingdomId) || (tT && tT.kingdomId === kingdomId)) {
+                kingdomRoads.push({ idx: ri, road: rd, fromName: fT ? fT.name : '?', toName: tT ? tT.name : '?' });
+            }
+        }
+        var resourceList = [];
+        if (typeof RESOURCE_TYPES !== 'undefined') {
+            for (var _rk in RESOURCE_TYPES) {
+                if (!RESOURCE_TYPES.hasOwnProperty(_rk)) continue;
+                resourceList.push({ id: _rk, name: RESOURCE_TYPES[_rk].name || _rk });
+            }
+            resourceList.sort(function(a, b) { return a.name.localeCompare(b.name); });
+        }
+        var bannedSet = {};
+        if (playerK && playerK.laws && Array.isArray(playerK.laws.bannedGoods)) {
+            for (var _bg = 0; _bg < playerK.laws.bannedGoods.length; _bg++) bannedSet[playerK.laws.bannedGoods[_bg]] = true;
+        }
+
+        function _selOpts(items, valKey, labelKey) {
+            var s = '';
+            for (var i = 0; i < items.length; i++) {
+                s += '<option value="' + items[i][valKey] + '">' + items[i][labelKey] + '</option>';
+            }
+            return s;
+        }
+
+        var html = '<div style="padding:10px;max-height:480px;overflow-y:auto;">';
         html += '<p style="color:#ccc;font-size:0.85rem;margin:0 0 12px 0;">Present a petition directly to the king during court. No signatures needed, but success depends on the petition cost, king\'s personality, your reputation, and your relationships.</p>';
         if (PTYPES.length === 0) {
             html += '<p style="color:#e74c3c;">No petition types available.</p>';
         } else {
             for (var a = 0; a < PTYPES.length; a++) {
                 var pt = PTYPES[a];
-                // Skip petitions needing complex targets (town, road, etc.) — those need the full petition system
-                if (pt.requiresTarget && pt.targetType !== 'kingdom') continue;
                 var costLabel = pt.costFactor > 0 ? ' <span style="color:#8b0000;font-size:0.72rem;">(costly − harder to pass)</span>' : '';
+                var hdr = '<div style="font-size:0.88rem;color:#e8c76a;margin-bottom:6px;">' + pt.icon + ' <b>' + pt.name + '</b>' + costLabel + '</div>' +
+                          '<div style="color:#3a2a10;font-size:0.75rem;margin-bottom:6px;">' + pt.desc + '</div>';
+                var wrapOpen = '<div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:8px;margin-bottom:5px;">';
+                var wrapClose = '</div>';
+
                 if (!pt.requiresTarget) {
                     // Simple petition — direct submit
                     html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" ';
@@ -3898,26 +3945,90 @@ function _switchProposeActionTab(tabId, kingdomId) {
                     html += '<br><span style="color:#3a2a10;font-size:0.75rem;">' + pt.desc + '</span>';
                     html += '</button>';
                 } else if (pt.targetType === 'kingdom') {
-                    // Kingdom-target petition — show dropdown for target selection
                     var targetKingdoms = kingdoms.filter(function(k) { return k.id !== kingdomId && !k.defeated; });
                     if (pt.id === 'seek_peace') {
-                        var playerK = Engine.findKingdom(kingdomId);
                         targetKingdoms = targetKingdoms.filter(function(k) { return playerK && playerK.atWar && playerK.atWar.has(k.id); });
                     } else if (pt.id === 'declare_war') {
-                        var playerK2 = Engine.findKingdom(kingdomId);
-                        targetKingdoms = targetKingdoms.filter(function(k) { return !playerK2 || !playerK2.atWar || !playerK2.atWar.has(k.id); });
+                        targetKingdoms = targetKingdoms.filter(function(k) { return !playerK || !playerK.atWar || !playerK.atWar.has(k.id); });
                     }
                     if (targetKingdoms.length > 0) {
-                        html += '<div style="background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.2);border-radius:6px;padding:8px;margin-bottom:5px;">';
-                        html += '<div style="font-size:0.88rem;color:#e8c76a;margin-bottom:6px;">' + pt.icon + ' <b>' + pt.name + '</b>' + costLabel + '</div>';
-                        html += '<div style="color:#3a2a10;font-size:0.75rem;margin-bottom:6px;">' + pt.desc + '</div>';
+                        html += wrapOpen + hdr;
                         for (var tk = 0; tk < targetKingdoms.length; tk++) {
                             html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-target="' + targetKingdoms[tk].id + '" ';
                             html += 'style="width:100%;text-align:left;padding:6px 12px;margin-bottom:3px;color:#1a1a2e;background:linear-gradient(135deg,#b8944c,#d4b05a);border:1px solid #906020;font-size:0.82rem;">';
                             html += '🏰 ' + targetKingdoms[tk].name;
                             html += '</button>';
                         }
+                        html += wrapClose;
+                    }
+                } else if (pt.targetType === 'town') {
+                    // v9p33river509: town-target picker (build_market, repair_infrastructure, fund_festival,
+                    // demolish_tent_camps, promote_outpost, build_defense, build_well, increase_security).
+                    var townOpts = kingdomTowns;
+                    if (pt.id === 'promote_outpost') {
+                        townOpts = kingdomTowns.filter(function(t) { return t.category === 'outpost' && (t.population || 0) >= 20; });
+                    }
+                    if (townOpts.length > 0) {
+                        html += wrapOpen + hdr;
+                        html += '<select id="ptTown_' + pt.id + '" style="width:100%;padding:6px;margin-bottom:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">';
+                        for (var ti = 0; ti < townOpts.length; ti++) {
+                            html += '<option value="' + townOpts[ti].id + '">' + townOpts[ti].name + ' (pop ' + (townOpts[ti].population || 0) + ')</option>';
+                        }
+                        html += '</select>';
+                        html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-target-select="ptTown_' + pt.id + '" data-target-kind="town" ';
+                        html += 'style="width:100%;padding:6px 12px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.82rem;">Submit Petition</button>';
+                        html += wrapClose;
+                    }
+                } else if (pt.targetType === 'road') {
+                    if (kingdomRoads.length > 0) {
+                        html += wrapOpen + hdr;
+                        html += '<select id="ptRoad_' + pt.id + '" style="width:100%;padding:6px;margin-bottom:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">';
+                        for (var rki = 0; rki < kingdomRoads.length; rki++) {
+                            var _kr = kingdomRoads[rki];
+                            html += '<option value="' + _kr.idx + '">' + _kr.fromName + ' ↔ ' + _kr.toName + '</option>';
+                        }
+                        html += '</select>';
+                        html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-target-select="ptRoad_' + pt.id + '" data-target-kind="road" ';
+                        html += 'style="width:100%;padding:6px 12px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.82rem;">Submit Petition</button>';
+                        html += wrapClose;
+                    }
+                } else if (pt.targetType === 'town_pair') {
+                    if (kingdomTowns.length >= 2) {
+                        html += wrapOpen + hdr;
+                        html += '<div style="display:flex;gap:6px;margin-bottom:6px;">';
+                        html += '<select id="ptFrom_' + pt.id + '" style="flex:1;padding:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">' + _selOpts(kingdomTowns, 'id', 'name') + '</select>';
+                        html += '<select id="ptTo_' + pt.id + '" style="flex:1;padding:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">' + _selOpts(kingdomTowns, 'id', 'name') + '</select>';
                         html += '</div>';
+                        html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-from-select="ptFrom_' + pt.id + '" data-to-select="ptTo_' + pt.id + '" data-target-kind="town_pair" ';
+                        html += 'style="width:100%;padding:6px 12px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.82rem;">Submit Petition</button>';
+                        html += wrapClose;
+                    }
+                } else if (pt.targetType === 'port_pair') {
+                    if (kingdomPorts.length >= 2) {
+                        html += wrapOpen + hdr;
+                        html += '<div style="display:flex;gap:6px;margin-bottom:6px;">';
+                        html += '<select id="ptFrom_' + pt.id + '" style="flex:1;padding:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">' + _selOpts(kingdomPorts, 'id', 'name') + '</select>';
+                        html += '<select id="ptTo_' + pt.id + '" style="flex:1;padding:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">' + _selOpts(kingdomPorts, 'id', 'name') + '</select>';
+                        html += '</div>';
+                        html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-from-select="ptFrom_' + pt.id + '" data-to-select="ptTo_' + pt.id + '" data-target-kind="port_pair" ';
+                        html += 'style="width:100%;padding:6px 12px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.82rem;">Submit Petition</button>';
+                        html += wrapClose;
+                    }
+                } else if (pt.targetType === 'resource') {
+                    var resOpts = resourceList;
+                    if (pt.id === 'unban_goods') {
+                        resOpts = resourceList.filter(function(r) { return bannedSet[r.id]; });
+                    }
+                    if (resOpts.length > 0) {
+                        html += wrapOpen + hdr;
+                        html += '<select id="ptRes_' + pt.id + '" style="width:100%;padding:6px;margin-bottom:6px;background:#1a1a2e;color:#e8c76a;border:1px solid #906020;">';
+                        for (var rsi = 0; rsi < resOpts.length; rsi++) {
+                            html += '<option value="' + resOpts[rsi].id + '">' + resOpts[rsi].name + '</option>';
+                        }
+                        html += '</select>';
+                        html += '<button class="btn-medieval" data-action="submitCourtPetition" data-pettype="' + pt.id + '" data-kingdom="' + kingdomId + '" data-target-select="ptRes_' + pt.id + '" data-target-kind="resource" ';
+                        html += 'style="width:100%;padding:6px 12px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.82rem;">Submit Petition</button>';
+                        html += wrapClose;
                     }
                 }
             }
@@ -3926,6 +4037,56 @@ function _switchProposeActionTab(tabId, kingdomId) {
         openModal('📜 Present a Petition at Court', html, '<button class="btn-medieval" onclick="closeModal()">Cancel</button>');
     }
 
+    // v9p33river509: noble picker for Praise a Noble's Loyalty court action.
+    function _openCourtPraiseNobleModal(kingdomId) {
+        var world = Engine.getWorld ? Engine.getWorld() : null;
+        var playerId = Player.personId || 'player';
+        var nobles = ((world && world.people) || []).filter(function(p) {
+            return p.alive && p.socialRank && p.socialRank[kingdomId] >= 4 && p.id !== playerId;
+        });
+        nobles.sort(function(a, b) {
+            return ((b._nobleRelationships && b._nobleRelationships[playerId]) || 0) -
+                   ((a._nobleRelationships && a._nobleRelationships[playerId]) || 0);
+        });
+        var html = '<div style="padding:10px;max-height:400px;overflow-y:auto;">';
+        html += '<p style="color:#ccc;font-size:0.85rem;margin:0 0 10px 0;">Choose a noble whose loyalty you wish to praise at court. They will gain perceived loyalty, and your relationship with them will improve.</p>';
+        if (nobles.length === 0) {
+            html += '<p style="color:#e74c3c;">No eligible nobles at court.</p>';
+        } else {
+            for (var ni = 0; ni < nobles.length; ni++) {
+                var nb = nobles[ni];
+                var nbName = ((nb.firstName || '') + ' ' + (nb.lastName || '')).trim();
+                var rel = (nb._nobleRelationships && nb._nobleRelationships[playerId]) || 0;
+                var loyaltyTxt = (nb.kingLoyalty != null) ? (Math.round(nb.kingLoyalty) + '% loyalty') : '';
+                html += '<button class="btn-medieval" data-action="submitCourtPraiseNoble" data-kingdom="' + kingdomId + '" data-target="' + nb.id + '" ';
+                html += 'style="width:100%;text-align:left;padding:8px 12px;margin-bottom:5px;color:#1a1a2e;background:linear-gradient(135deg,#c9a84c,#e8c76a);border:1px solid #a08030;font-size:0.86rem;">';
+                html += '🏅 <b>' + nbName + '</b>';
+                html += '<br><span style="color:#3a2a10;font-size:0.74rem;">Relationship: ' + rel + ' · ' + loyaltyTxt + '</span>';
+                html += '</button>';
+            }
+        }
+        html += '</div>';
+        openModal('🏅 Praise a Noble\'s Loyalty', html, '<button class="btn-medieval" onclick="closeModal()">Cancel</button>');
+    }
+
+    UI.registerAction('submitCourtPraiseNoble', function(_t, d) {
+        var kId = d.kingdom || Player.citizenshipKingdomId;
+        if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
+        if (!d.target) { UI.toast('No noble selected.', 'warning'); return; }
+        var result = Engine.doCourtAction(kId, 'praise_noble_loyalty', { targetNobleId: d.target });
+        if (result && result.success) {
+            UI.toast(result.message, 'success');
+            if (typeof StoryMode !== 'undefined' && StoryMode.onPlayerAction) {
+                StoryMode.onPlayerAction('attend_court', { kingdomId: kId });
+            }
+        } else {
+            UI.toast(result ? result.message : 'Failed.', 'warning');
+        }
+        if (typeof closeModal === 'function') closeModal();
+        _nobilityTab = 'influence';
+        openNobilityDialog();
+    });
+
     UI.registerAction('submitCourtPetition', function(_t, d) {
         var kId = d.kingdom || Player.citizenshipKingdomId;
         if (!kId) { UI.toast('No kingdom.', 'warning'); return; }
@@ -3933,6 +4094,36 @@ function _switchProposeActionTab(tabId, kingdomId) {
         if (!petId) { UI.toast('No petition type selected.', 'warning'); return; }
         var extraData = { petitionTypeId: petId };
         if (d.target) extraData.targetKingdomId = d.target;
+        // v9p33river509: resolve target selectors for town/road/resource/town_pair/port_pair petitions.
+        if (d.targetSelect) {
+            var _sel = document.getElementById(d.targetSelect);
+            var _val = _sel ? _sel.value : null;
+            if (!_val) { UI.toast('Please select a target.', 'warning'); return; }
+            if (d.targetKind === 'town') {
+                extraData.townId = _val;
+            } else if (d.targetKind === 'road') {
+                extraData.roadIndex = parseInt(_val, 10);
+            } else if (d.targetKind === 'resource') {
+                extraData.resourceId = _val;
+                if (typeof RESOURCE_TYPES !== 'undefined' && RESOURCE_TYPES[_val]) {
+                    extraData.resourceName = RESOURCE_TYPES[_val].name;
+                }
+            }
+        }
+        if (d.fromSelect && d.toSelect) {
+            var _f = document.getElementById(d.fromSelect);
+            var _to = document.getElementById(d.toSelect);
+            var _fv = _f ? _f.value : null;
+            var _tv = _to ? _to.value : null;
+            if (!_fv || !_tv) { UI.toast('Please select both towns.', 'warning'); return; }
+            if (_fv === _tv) { UI.toast('Pick two different towns.', 'warning'); return; }
+            extraData.fromTownId = _fv;
+            extraData.toTownId = _tv;
+            var _ft = Engine.findTown(_fv);
+            var _tt = Engine.findTown(_tv);
+            if (_ft) extraData.fromName = _ft.name;
+            if (_tt) extraData.toName = _tt.name;
+        }
         var result = Engine.doCourtAction(kId, 'petition_king', extraData);
         if (result && result.success) {
             UI.toast(result.message, result.message.indexOf('GRANTED') >= 0 ? 'success' : 'info');

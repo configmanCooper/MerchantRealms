@@ -1930,7 +1930,7 @@
     // toward any quest with a goldTarget requirement. Previously
     // trackKQGoldSpent() existed but was never called from gameplay code,
     // so "Raise X gold through trade" quests were impossible to progress.
-    function trackKQTradeGold(amount) {
+    function trackKQTradeGold(amount, sellKingdomId) {
         _sync();
         if (!amount || amount <= 0) return;
         if (!player.kingdomQuests) return;
@@ -1943,6 +1943,10 @@
                 var reqs = aq.requirements || {};
                 var goldTarget = (reqs.action && reqs.action.goldTarget) || 0; // v9p33river411: was reqs.gold/reqs.goldTarget (wrong level)
                 if (goldTarget > 0) {
+                    // v9p33river509: Royal Export Mission (sell_foreign) only credits sales
+                    // made OUTSIDE the issuing kingdom. Skip same-kingdom sales.
+                    var _actType = (reqs.action && reqs.action.type) || null;
+                    if (_actType === 'sell_foreign' && sellKingdomId && kqKid === sellKingdomId) continue;
                     trackKQGoldSpent(aq.id, amount);
                 }
             }
