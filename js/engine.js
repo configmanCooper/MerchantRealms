@@ -36486,30 +36486,10 @@
             return world.majorEventHistory;
         },
 
-        // Player conspiracy system — get current conspiracy status in a kingdom
-        getKingdomConspiracy(kingdomId) {
-            var k = findKingdom(kingdomId);
-            if (!k || !k._conspiracy) return null;
-            var c = k._conspiracy;
-            var playerIn = c.plotters.indexOf('player') >= 0;
-            var plotterNames = [];
-            for (var i = 0; i < c.plotters.length; i++) {
-                if (c.plotters[i] === 'player') { plotterNames.push('You'); continue; }
-                var p = findPerson(c.plotters[i]);
-                if (p && p.alive) plotterNames.push((p.firstName || '?') + ' ' + (p.lastName || ''));
-            }
-            return {
-                type: c.type,
-                plotterCount: c.plotters.length,
-                plotterNames: plotterNames,
-                strength: c.strength,
-                startDay: c.startDay,
-                playerInvolved: playerIn,
-                detected: c.detected,
-                revoltTargetTownId: c.revoltTargetTownId || null,
-                revoltTargetTownName: c.revoltTargetTownName || null
-            };
-        },
+        // v9p33river522: legacy getKingdomConspiracy (no spy gate, no plotters guard) removed.
+        // The canonical implementation lives down in the Conspiracy API block (~line 39702).
+        // The old method was being shadowed by the later one in the Engine object literal anyway,
+        // but having both made it easy to "fix" the wrong copy. Kept here as a stub comment for grep'ability.
 
         // Player joins existing conspiracy
         playerJoinConspiracy(kingdomId) {
@@ -39727,7 +39707,26 @@
                     }
                 }
             } catch (e) { /* Player not loaded */ }
-            if (!inConspiracy && !hasSpy) return null;
+            if (!inConspiracy && !hasSpy) {
+                // v9p33river522: previously returned null, which caused the UI to think no
+                // conspiracy existed and offer to "Form Plot" — but playerFormConspiracy then
+                // rejected with "A conspiracy already exists in this kingdom. Try joining it
+                // instead." Return a redacted stub so the UI can show "shadowy rumours" and
+                // hide the form-plot UI, making the rejection self-evident.
+                return {
+                    hidden: true,
+                    type: 'unknown',
+                    plotters: [],
+                    plotterCount: 0,
+                    plotterNames: [],
+                    strength: 0,
+                    startDay: c.startDay,
+                    playerInvolved: false,
+                    detected: !!c.detected,
+                    revoltTargetTownId: null,
+                    revoltTargetTownName: null
+                };
+            }
             var plotterNames = [];
             for (var i = 0; i < plotters.length; i++) {
                 if (plotters[i] === 'player') {

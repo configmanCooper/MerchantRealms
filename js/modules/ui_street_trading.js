@@ -1431,7 +1431,15 @@ function _buildNobleIntrigueTab(citizenKingdomId, kingdom, playerRank, foreignKi
     html += '<div style="background:rgba(139,69,19,0.12);border:1px solid rgba(139,69,19,0.3);border-radius:8px;padding:10px;margin-bottom:10px;">';
     html += '<div style="font-size:0.95rem;font-weight:bold;color:#d4a76a;margin-bottom:6px;">🗡️ Conspiracies</div>';
 
-    if (_conspiracy && _conspiracy.playerInvolved) {
+    if (_conspiracy && _conspiracy.hidden) {
+        // v9p33river522: A conspiracy exists in this kingdom but the player has no
+        // visibility (not a plotter, no spy network covering it). Show a redacted
+        // hint so the player understands why they can't form a new plot.
+        html += '<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:8px;margin-bottom:6px;">';
+        html += '<div style="font-size:0.85rem;color:#e67e22;">🤫 Shadowy rumours of a plot are stirring in this kingdom...</div>';
+        html += '<div style="font-size:0.75rem;color:#aaa;margin-top:4px;">You lack the intelligence sources to confirm details. Establish a <b>spy network</b> in this kingdom (or join the plot if invited) to learn more. Only one conspiracy can simmer at a time.</div>';
+        html += '</div>';
+    } else if (_conspiracy && _conspiracy.playerInvolved) {
         // Player is in an active conspiracy — show status
         var _cStrColor = _conspiracy.strength >= 80 ? '#2ecc71' : _conspiracy.strength >= 50 ? '#e67e22' : '#c44e52';
         var _cStrLabel = _conspiracy.strength >= 80 ? 'Ready to strike!' : _conspiracy.strength >= 50 ? 'Growing stronger' : 'Still gathering support';
