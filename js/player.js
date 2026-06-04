@@ -17227,19 +17227,39 @@
         const rel = getRelationship(player.spouseId);
         const sameCity = spouse.townId === player.townId;
 
+        // v9p33river546: relationship decay now keyed on LAST INTERACTION
+        // (talk / spend time / date / give gold), not just proximity. Being
+        // in the same city stops the relationship from rotting only for a
+        // few days; after that, neglect compounds even when cohabiting.
+        var _todaySR = (typeof Engine !== 'undefined' && Engine.getDay) ? Engine.getDay() : 0;
+        if (player.spouseLastInteractionDay == null) {
+            // Backward-compat: existing saves start the clock today so
+            // they don't suddenly experience years of accrued neglect.
+            player.spouseLastInteractionDay = _todaySR;
+        }
+        var daysSinceTalk = _todaySR - player.spouseLastInteractionDay;
+        if (daysSinceTalk < 0) daysSinceTalk = 0;
+
         if (sameCity) {
-            // Small passive gain when in same town
-            modifyRelationship(player.spouseId, 0.05, 'spouse');
+            if (daysSinceTalk <= 3) {
+                // Freshly bonded — small passive gain
+                modifyRelationship(player.spouseId, 0.05, 'spouse');
+            } else if (daysSinceTalk <= 7) {
+                // No passive gain, no decay yet
+            } else if (daysSinceTalk <= 14) {
+                modifyRelationship(player.spouseId, -0.10, 'spouse');
+            } else if (daysSinceTalk <= 30) {
+                modifyRelationship(player.spouseId, -0.20, 'spouse');
+            } else {
+                modifyRelationship(player.spouseId, -0.35, 'spouse');
+            }
         } else {
-            // Decay when away
+            // Away from spouse — existing decay, escalated by how long since last contact.
             let decayRate = 0.3;
             if (spouse.quirks && spouse.quirks.includes('jealous')) decayRate *= 2;
+            if (daysSinceTalk > 14) decayRate += 0.10;
+            if (daysSinceTalk > 30) decayRate += 0.10;
             modifyRelationship(player.spouseId, -decayRate, 'spouse');
-        }
-
-        // Natural daily decay if no interaction
-        if (!sameCity) {
-            modifyRelationship(player.spouseId, -0.1, 'spouse');
             // Clingy quirk: extra -0.5/day when not in same town
             if (spouse.quirks && spouse.quirks.includes('clingy')) {
                 modifyRelationship(player.spouseId, -0.5, 'spouse');

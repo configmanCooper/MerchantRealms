@@ -274,6 +274,8 @@
         // Finalize the marriage
         player.spouseId = plan.fianceId;
         person.spouseId = 'player';
+        // v9p33river546: initialize spouse interaction clock at the wedding
+        try { player.spouseLastInteractionDay = (Engine.getDay && Engine.getDay()) || 0; } catch(_eSli) {}
         person.employerId = 'player';
         // v9p33river302: defensive — legacy/inherited states could lack the
         // employees array and crash on .includes(). Initialize if missing.
@@ -657,6 +659,9 @@
 
         modifyRelationship(player.spouseId, relGain, 'spouse');
 
+        // v9p33river546: mark spouse interaction so tickSpouseRelationship
+        // sees that the player actually talked to her and pauses neglect decay.
+        try { player.spouseLastInteractionDay = (Engine.getDay && Engine.getDay()) || player.spouseLastInteractionDay || 0; } catch(_eSli) {}
         return {
             success: true,
             message: spouse.firstName + ' says: "' + response + '"',
@@ -1239,6 +1244,10 @@
             relGain = Math.max(1, Math.round(relGain * 0.25));
         }
         modifyRelationship(personId, relGain, rel.type === 'spouse' ? 'spouse' : undefined);
+        // v9p33river546: dating your spouse counts as a spouse interaction
+        if (player.spouseId && personId === player.spouseId) {
+            try { player.spouseLastInteractionDay = (Engine.getDay && Engine.getDay()) || player.spouseLastInteractionDay || 0; } catch(_eSli) {}
+        }
 
         if (!player.dateProgress[personId]) {
             player.dateProgress[personId] = { traitProgress: 0, quirkProgress: 0, courtshipBonding: 0 };
@@ -2603,6 +2612,8 @@
         var rng = Engine.getRng();
         var boost = rng.randInt(3, 8);
         modifyRelationship(player.spouseId, boost);
+        // v9p33river546: mark spouse interaction
+        try { player.spouseLastInteractionDay = (Engine.getDay && Engine.getDay()) || player.spouseLastInteractionDay || 0; } catch(_eSli) {}
         if (typeof Game !== 'undefined' && Game.advanceTicks) Game.advanceTicks(CONFIG.ACTION_TICK_COSTS.spend_time_spouse || 15);
         EventTypes.emit('SPOUSE_QUALITY_TIME', { spouseFirstName: spouse.firstName });
         return { success: true, accepted: true, message: 'You and ' + spouse.firstName + ' enjoy time together. (Relationship +' + boost + ')' };
@@ -2622,6 +2633,8 @@
         player.spouseAI.gold += amount;
         var relBoost = Math.min(5, Math.floor(amount / 10) + 1);
         modifyRelationship(player.spouseId, relBoost);
+        // v9p33river546: giving spouse gold counts as a spouse interaction
+        try { player.spouseLastInteractionDay = (Engine.getDay && Engine.getDay()) || player.spouseLastInteractionDay || 0; } catch(_eSli) {}
         return { success: true, accepted: true, message: 'You give ' + amount + ' gold to ' + spouse.firstName + '. (Relationship +' + relBoost + ')' };
     }
 
