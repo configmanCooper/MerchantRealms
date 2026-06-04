@@ -26321,7 +26321,8 @@
                 };
 
                 var msg = tierMessages[t.tier] || '🤝 Your relationship with ' + npcName + ' has grown to ' + t.name + '!';
-                Engine.logEvent(msg, null, 'my_actions');
+                // v9p33river527: stamp personId so the Event Details modal can open the correct NPC.
+                Engine.logEvent(msg, { type: 'relationship_tier_milestone', personId: personId, tier: t.tier }, 'my_actions');
                 break;
             }
         }
@@ -26380,10 +26381,14 @@
         var emoji = threshold === 20 ? '🤝' : threshold === 40 ? '💛' : '💚';
         var label = threshold === 20 ? 'Friendly' : threshold === 40 ? 'Good Friends' : 'Close Friends';
 
+        // v9p33river527: include full name so multiple NPCs sharing a first name
+        // aren't ambiguous, and stamp personId in details so the Event Details
+        // modal can offer a "View Person" link to the *correct* NPC.
+        var fullName = ((person.firstName || '') + ' ' + (person.lastName || '')).trim() || fn;
         if (typeof toast !== 'undefined') {
-            toast(emoji + ' ' + fn + ': ' + msg, 'success');
+            toast(emoji + ' ' + fullName + ': ' + msg, 'success');
         }
-        try { Engine.logEvent(emoji + ' Relationship milestone with ' + fn + ' (' + label + '): ' + msg, null, 'social'); } catch(e) {}
+        try { Engine.logEvent(emoji + ' Relationship milestone with ' + fullName + ' (' + label + '): ' + msg, { type: 'relationship_milestone', personId: personId, threshold: threshold }, 'social'); } catch(e) {}
     }
 
     // ── Relationship Decay for Neglected Friendships ──

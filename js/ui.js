@@ -12779,6 +12779,20 @@ window.UI = (function () {
             html += '<button class="btn-action" style="margin-top:8px;" data-action="clickTown" data-id="' + locTownId + '">🗺️ View Location</button>';
         }
 
+        // v9p33river527: if the event references a specific person, offer a "View Person"
+        // button so the player jumps straight to the correct NPC (no more first-name
+        // collisions like two Cordelias for a relationship-milestone notification).
+        var _evtPersonId = (event.details && (event.details.personId || event.details.npcId)) || event.personId || null;
+        if (_evtPersonId) {
+            try {
+                var _evtPerson = Engine.findPerson ? Engine.findPerson(_evtPersonId) : null;
+                if (_evtPerson) {
+                    var _evtPersonLabel = ((_evtPerson.firstName || '') + ' ' + (_evtPerson.lastName || '')).trim() || 'Person';
+                    html += '<button class="btn-action" style="margin-top:8px;margin-left:6px;" data-action="showPersonDetailById" data-id="' + _evtPersonId + '">👤 View ' + escapeHtml(_evtPersonLabel) + '</button>';
+                }
+            } catch(e) { /* ignore lookup errors */ }
+        }
+
         // v9p33river375: match both the live toast text and the logged quest event text.
         var _evtMsg = ((event.message || event.description || '') + '').toLowerCase();
         if (_evtMsg.indexOf('has a quest for you') !== -1 || _evtMsg.indexOf('has approached you with a quest') !== -1) {
