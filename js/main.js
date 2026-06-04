@@ -3549,6 +3549,26 @@ window.Game = (function () {
         if (data.player && Player.deserialize) Player.deserialize(data.player);
         if (data.aiMerchants && Player.deserializeAI) Player.deserializeAI(data.aiMerchants);
 
+        // v9p33river554: complete any half-promoted villages stuck from the pre-v547
+        // petition handler that only flipped category='village' but left isOutpost=true.
+        // Without this, `Manage Outpost` still appears, the market acts as outpost, and
+        // isPort never auto-sets for coastal sites — breaking sea routes, infrastructure
+        // credit, and the village UX entirely. Runs once on load; idempotent thereafter.
+        try {
+            if (Player.applyVillagePromotion && Engine.getTowns) {
+                var _allTownsForMigration = Engine.getTowns() || [];
+                var _fixed = 0;
+                for (var _mi = 0; _mi < _allTownsForMigration.length; _mi++) {
+                    var _mt = _allTownsForMigration[_mi];
+                    if (_mt && _mt.isOutpost === true && _mt.category === 'village') {
+                        Player.applyVillagePromotion(_mt.id);
+                        _fixed++;
+                    }
+                }
+                if (_fixed > 0) console.log('[v554 migration] Repaired ' + _fixed + ' half-promoted village(s).');
+            }
+        } catch (_eMig) { console.error('[v554 migration] stalled-village repair failed:', _eMig); }
+
         _hideGameStartScreens();
 
         if (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive()) {
