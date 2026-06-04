@@ -4404,6 +4404,39 @@ body {
     #titleMusicVolume,
     #settingsVolumeSlider { display: none !important; }
 
+    /* v9p33river539: span top-bar across the FULL viewport on tablet so
+       (a) the buttons can wrap inside the visible area instead of being
+       clipped by the centered translateX(-50%), and (b) the new ledger
+       toggle button on the left is always reachable. Override the
+       centered absolute positioning entirely. */
+    .top-bar {
+        left: 0 !important;
+        right: 0 !important;
+        transform: none !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        min-width: 0 !important;
+        flex-wrap: wrap !important;
+        justify-content: space-between;
+        gap: 6px !important;
+        padding: 4px 8px !important;
+        box-sizing: border-box;
+    }
+    .top-bar .top-left,
+    .top-bar .top-center,
+    .top-bar .top-right {
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+    }
+    .top-bar .top-right { justify-content: flex-end; }
+    .top-bar .btn-speed {
+        padding: 3px 6px !important;
+        font-size: 0.7rem !important;
+    }
+    .top-bar .day-display { font-size: 0.75rem; }
+    .top-bar .btn-ledger-toggle { font-size: 1.05rem !important; }
+
     /* Left panel becomes slide-in drawer */
     .left-panel {
         display: flex !important;

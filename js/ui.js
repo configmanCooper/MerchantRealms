@@ -606,6 +606,23 @@ window.UI = (function () {
                 _toggleLeftDrawer(true);
             }
         });
+        // v9p33river539: belt-and-suspenders direct bind for iPad — some iOS
+        // touch sequences swallow the synthesized click. Bind touchend on
+        // the ledger button directly so taps always work.
+        setTimeout(function() {
+            var lb = document.getElementById('btnLedgerToggle');
+            if (!lb || lb._mrLedgerBound) return;
+            lb._mrLedgerBound = true;
+            var _ledgerToggle = function(e) {
+                if (e && e.preventDefault) e.preventDefault();
+                if (e && e.stopPropagation) e.stopPropagation();
+                var lp = document.getElementById('leftPanel');
+                if (!lp) return;
+                if (lp.classList.contains('drawer-open')) _toggleLeftDrawer(false);
+                else _toggleLeftDrawer(true);
+            };
+            lb.addEventListener('touchend', _ledgerToggle, { passive: false });
+        }, 100);
 
         // Seek Treatment action (from health alert banner and town action card)
         registerAction('seekTreatment', function() {
