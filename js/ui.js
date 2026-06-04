@@ -12782,13 +12782,32 @@ window.UI = (function () {
         // v9p33river527: if the event references a specific person, offer a "View Person"
         // button so the player jumps straight to the correct NPC (no more first-name
         // collisions like two Cordelias for a relationship-milestone notification).
-        var _evtPersonId = (event.details && (event.details.personId || event.details.npcId)) || event.personId || null;
-        if (_evtPersonId) {
+        // v9p33river532: also handle event.details.personIds (array of {id, role}) so
+        // multi-NPC events like coup outcomes get one button per referenced person.
+        var _evtPersonIdEntries = [];
+        var _evtSeenIds = {};
+        function _evtAddPersonEntry(id, role) {
+            if (!id || _evtSeenIds[id]) return;
+            _evtSeenIds[id] = true;
+            _evtPersonIdEntries.push({ id: id, role: role || null });
+        }
+        if (event.details && Array.isArray(event.details.personIds)) {
+            for (var _epi = 0; _epi < event.details.personIds.length; _epi++) {
+                var _epe = event.details.personIds[_epi];
+                if (typeof _epe === 'string') _evtAddPersonEntry(_epe, null);
+                else if (_epe && _epe.id) _evtAddPersonEntry(_epe.id, _epe.role || null);
+            }
+        }
+        var _evtPrimaryPersonId = (event.details && (event.details.personId || event.details.npcId)) || event.personId || null;
+        if (_evtPrimaryPersonId) _evtAddPersonEntry(_evtPrimaryPersonId, null);
+        for (var _epIdx = 0; _epIdx < _evtPersonIdEntries.length; _epIdx++) {
+            var _epEntry = _evtPersonIdEntries[_epIdx];
             try {
-                var _evtPerson = Engine.findPerson ? Engine.findPerson(_evtPersonId) : null;
+                var _evtPerson = Engine.findPerson ? Engine.findPerson(_epEntry.id) : null;
                 if (_evtPerson) {
                     var _evtPersonLabel = ((_evtPerson.firstName || '') + ' ' + (_evtPerson.lastName || '')).trim() || 'Person';
-                    html += '<button class="btn-action" style="margin-top:8px;margin-left:6px;" data-action="showPersonDetailById" data-id="' + _evtPersonId + '">👤 View ' + escapeHtml(_evtPersonLabel) + '</button>';
+                    var _evtBtnLabel = _epEntry.role ? (_epEntry.role + ': ' + _evtPersonLabel) : _evtPersonLabel;
+                    html += '<button class="btn-action" style="margin-top:8px;margin-left:6px;" data-action="showPersonDetailById" data-id="' + _epEntry.id + '">👤 View ' + escapeHtml(_evtBtnLabel) + '</button>';
                 }
             } catch(e) { /* ignore lookup errors */ }
         }

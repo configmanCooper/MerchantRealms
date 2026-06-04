@@ -34450,7 +34450,9 @@
                 _spreadAssassinationSuspicion(allNobles, plotterPersons, wasCaught, plotterCount, rng);
                 k._conspiracy = null;
                 // v9p33river523: stash outcome so playerExecuteConspiracy can report it.
-                k._lastConspiracyOutcome = { type: 'assassination', succeeded: true, caught: wasCaught, kingName: kingName.trim() };
+                // v9p33river532: include the assassinated king's personId so the Event
+                // Details modal can route clicks to the correct NPC.
+                k._lastConspiracyOutcome = { type: 'assassination', succeeded: true, caught: wasCaught, kingName: kingName.trim(), deposedKingId: kingPerson ? kingPerson.id : null };
 
             } else {
                 // Assassination fails — higher catch chance on failure (+15%)
@@ -34708,10 +34710,15 @@
 
                 k._conspiracy = null;
                 // v9p33river523: stash outcome so playerExecuteConspiracy can report it.
+                // v9p33river532: include person IDs so Event Details can route clicks
+                // to the exact NPCs (otherwise first-name collisions like two Baldrics
+                // open the wrong person).
                 k._lastConspiracyOutcome = {
                     type: 'coup', succeeded: true, caught: false,
                     kingName: kingName.trim(),
-                    newKingName: leader ? ((leader.firstName || '') + ' ' + (leader.lastName || '')).trim() : 'A noble conspirator'
+                    newKingName: leader ? ((leader.firstName || '') + ' ' + (leader.lastName || '')).trim() : 'A noble conspirator',
+                    newKingId: leader ? leader.id : null,
+                    deposedKingId: kingPerson ? kingPerson.id : null
                 };
             } else {
                 // Coup fails — catch chance applies
@@ -37213,6 +37220,24 @@
                     }
                 }
             }
+            // v9p33river532: log conspiracy outcome directly with personId details so the
+            // Event Details modal can route clicks to the exact NPCs (first-name collisions
+            // like two Baldrics otherwise open the wrong person). The toast call that
+            // follows in the UI will be deduped by the toast→logEvent duplicate guard.
+            try {
+                if (outcome) {
+                    var _coDetails = { type: 'conspiracy_outcome_player', conspiracyType: outcome.type, succeeded: !!outcome.succeeded, caught: !!outcome.caught, kingdomId: kingdomId };
+                    var _coPersons = [];
+                    if (outcome.deposedKingId) _coPersons.push({ id: outcome.deposedKingId, role: 'Deposed King' });
+                    if (outcome.newKingId) _coPersons.push({ id: outcome.newKingId, role: 'New King' });
+                    if (_coPersons.length > 0) {
+                        _coDetails.personIds = _coPersons;
+                        _coDetails.personId = _coPersons[0].id;
+                    }
+                    var _coCategory = (outcome.type === 'revolt_support') ? 'my_kingdom' : 'my_actions';
+                    logEvent(msg, _coDetails, _coCategory);
+                }
+            } catch(_coErr) { /* ignore */ }
             return { success: success, message: msg };
         },
 
