@@ -28801,6 +28801,12 @@
                 
                 // Apply security reductions
                 let theftChance = baseTheft;
+                // v9p33river512: scale by town.security (0–100, default 50).
+                // sec   0 → ×1.50 (lawless town, easier to rob)
+                // sec  50 → ×1.00 (baseline, unchanged)
+                // sec 100 → ×0.50 (fortified capital, half as likely)
+                var _tSec = Math.max(0, Math.min(100, (typeof town.security === 'number' ? town.security : 50)));
+                theftChance *= (1.5 - (_tSec / 100));
                 if (bld.securityUpgrades && bld.securityUpgrades.length > 0) {
                     for (const upgradeId of bld.securityUpgrades) {
                         const upgrade = CONFIG.WAREHOUSE_SECURITY[upgradeId];
