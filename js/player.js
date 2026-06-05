@@ -36911,9 +36911,82 @@
         return { success: true, message: '\uD83D\uDEE1\uFE0F Dismissed ' + name + '. (' + player.guards.length + '/' + getMaxGuards() + ')' };
     }
 
+    // v9p33river557: helper to replenish kingdom-paid guard slots after deaths.
+    // When a kingdomPaid guard dies, the granting kingdom should send a replacement
+    // (up to NOBLE_KINGDOM_GUARD_SLOTS per kingdom, capped by max guard slots).
+    function _replenishKingdomGuards(kId) {
+        if (!kId) return 0;
+        // Must still be a noble in this kingdom
+        var rank = (player.socialRank && player.socialRank[kId]) || 0;
+        if (rank < 4) return 0;
+        var kingdom = Engine.findKingdom ? Engine.findKingdom(kId) : null;
+        if (!kingdom) return 0;
+        // Need somewhere to recruit from — player's current town
+        if (!player.townId) return 0;
+        var townPeople = Engine.getPeople ? Engine.getPeople(player.townId) : [];
+        if (!townPeople || townPeople.length === 0) return 0;
+        // How many kingdom-paid guards from THIS kingdom does the player currently have?
+        var currentFromKingdom = 0;
+        var existingGuardIds = {};
+        for (var gi = 0; gi < player.guards.length; gi++) {
+            var gg = player.guards[gi];
+            if (gg.personId) existingGuardIds[gg.personId] = true;
+            if (gg.kingdomPaid && gg.paidByKingdomId === kId) currentFromKingdom++;
+        }
+        var maxFromKingdom = CONFIG.NOBLE_KINGDOM_GUARD_SLOTS || 4;
+        var deficit = Math.max(0, maxFromKingdom - currentFromKingdom);
+        var spaceLeft = getMaxGuards() - player.guards.length;
+        var toGrant = Math.min(deficit, spaceLeft);
+        if (toGrant <= 0) return 0;
+        // Build candidate pool from current town
+        var candidates = [];
+        for (var pi = 0; pi < townPeople.length; pi++) {
+            var nc = townPeople[pi];
+            if (!nc || !nc.alive || nc.age < 18) continue;
+            if (existingGuardIds[nc.id]) continue;
+            if (nc.id === player.spouseId) continue;
+            if (nc.isPlayerGuard) continue;
+            candidates.push(nc);
+        }
+        if (candidates.length === 0) return 0;
+        var rng = Engine.getRng ? Engine.getRng() : null;
+        var granted = 0;
+        for (var gi2 = 0; gi2 < toGrant && candidates.length > 0; gi2++) {
+            // Prefer combat-ready occupations
+            var preferred = candidates.filter(function(c) {
+                return c.occupation === 'soldier' || c.occupation === 'guard' || c.occupation === 'unemployed' || !c.occupation;
+            });
+            var pool = preferred.length > 0 ? preferred : candidates;
+            var chosen = (rng && rng.pick) ? rng.pick(pool) : pool[Math.floor(Math.random() * pool.length)];
+            if (!chosen) break;
+            chosen.isPlayerGuard = true;
+            chosen.previousOccupation = chosen.occupation;
+            chosen.previousTownId = chosen.townId;
+            chosen.occupation = 'player_guard';
+            var gName = (chosen.firstName || '') + (chosen.lastName ? ' ' + chosen.lastName : '');
+            if (!gName.trim()) gName = 'Royal Guard ' + (player.guards.length + 1);
+            player.guards.push({
+                id: 'guard_' + Date.now() + '_' + (rng ? rng.randInt(0, 9999) : Math.floor(Math.random() * 9999)),
+                personId: chosen.id,
+                name: gName,
+                hiredDay: Engine.getDay(),
+                kingdomPaid: true,
+                paidByKingdomId: kId
+            });
+            candidates = candidates.filter(function(c) { return c.id !== chosen.id; });
+            granted++;
+        }
+        if (granted > 0) {
+            player.personalGuards = player.guards.length;
+            // Kingdom pays the hiring cost
+            kingdom.gold = Math.max(0, (kingdom.gold || 0) - granted * (CONFIG.PLAYER_GUARD_HIRE_COST || 30));
+            Engine.logEvent('🛡️ ' + kingdom.name + ' has sent ' + granted + ' replacement guard' + (granted === 1 ? '' : 's') + ' to protect ' + (player.fullName || 'you') + '.', null, "military");
+        }
+        return granted;
+    }
+
     function tickPersonalGuardWages() {
         player.guards = player.guards || [];
-        if (player.guards.length === 0) return;
 
         // Sync guard NPC locations with player + remove dead guards
         for (var gi = player.guards.length - 1; gi >= 0; gi--) {
@@ -36932,6 +37005,23 @@
             }
         }
         player.personalGuards = player.guards.length;
+
+        // v9p33river557: kingdom replenishes any missing kingdom-paid guard slots.
+        // Run every tick (not just on death) so pre-existing deficits also heal
+        // when the player is in a populated town of the granting kingdom.
+        var _replenishKingdoms = {};
+        if (player.citizenshipKingdomId && ((player.socialRank || {})[player.citizenshipKingdomId] || 0) >= 4) {
+            _replenishKingdoms[player.citizenshipKingdomId] = true;
+        }
+        for (var _rgi = 0; _rgi < player.guards.length; _rgi++) {
+            var _rg = player.guards[_rgi];
+            if (_rg.kingdomPaid && _rg.paidByKingdomId) _replenishKingdoms[_rg.paidByKingdomId] = true;
+        }
+        var _rkIds = Object.keys(_replenishKingdoms);
+        for (var _rki = 0; _rki < _rkIds.length; _rki++) {
+            _replenishKingdomGuards(_rkIds[_rki]);
+        }
+
         if (player.guards.length === 0) return;
 
         var wage = (CONFIG.PLAYER_GUARD_DAILY_WAGE || 6) * player.guards.length;
