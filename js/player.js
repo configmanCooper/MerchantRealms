@@ -11294,19 +11294,20 @@
             return { success: false, message: target.name + ' declined the non-aggression pact.' };
         }
         kingdom.gold -= cost;
-        var duration = 270;
+        // v9p33river558: NAP duration shortened from 270 to 150 days
+        var duration = 150;
         if (!kingdom.peaceTreaties) kingdom.peaceTreaties = {};
         if (!target.peaceTreaties) target.peaceTreaties = {};
         kingdom.peaceTreaties[targetKingdomId] = Engine.getDay() + duration;
         target.peaceTreaties[kingdom.id] = Engine.getDay() + duration;
         if (kingdom.relations) kingdom.relations[targetKingdomId] = Math.min(100, relations + 5);
         if (target.relations) target.relations[kingdom.id] = Math.min(100, (target.relations[kingdom.id] || 0) + 5);
-        Engine.logEvent('🕊️ ' + kingdom.name + ' and ' + target.name + ' sign a non-aggression pact! (270 days)', {
+        Engine.logEvent('🕊️ ' + kingdom.name + ' and ' + target.name + ' sign a non-aggression pact! (' + duration + ' days)', {
             type: 'non_aggression_pact', kingdoms: [kingdom.id, target.id],
-            effects: ['Neither may declare war for 270 days', 'Relations +5 both ways']
+            effects: ['Neither may declare war for ' + duration + ' days', 'Relations +5 both ways']
         }, "my_kingdom");
-        autoJournalCapture('king', 'I signed a non-aggression pact with ' + target.name + '. Peace shall hold for 270 days.', { mood: 'content' });
-        return { success: true, message: 'Non-aggression pact signed with ' + target.name + ' for 270 days! Relations +5.' };
+        autoJournalCapture('king', 'I signed a non-aggression pact with ' + target.name + '. Peace shall hold for ' + duration + ' days.', { mood: 'content' });
+        return { success: true, message: 'Non-aggression pact signed with ' + target.name + ' for ' + duration + ' days! Relations +5.' };
     }
 
     // ── King Propose Mutual Defense Pact ──

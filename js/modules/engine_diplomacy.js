@@ -961,10 +961,10 @@
                 });
                 if (_napCandidates.length > 0) {
                     var _napTarget = rng.pick(_napCandidates);
-                    // Create a non-aggression pact (270 days, ~9 months)
+                    // v9p33river558: NAP duration shortened from 270 to 150 days (~5 months)
                     if (!k.peaceTreaties) k.peaceTreaties = {};
                     if (!_napTarget.peaceTreaties) _napTarget.peaceTreaties = {};
-                    var _napDuration = 270;
+                    var _napDuration = 150;
                     k.peaceTreaties[_napTarget.id] = world.day + _napDuration;
                     _napTarget.peaceTreaties[k.id] = world.day + _napDuration;
                     // Small relation boost

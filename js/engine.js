@@ -9984,11 +9984,13 @@
             k.warExhaustion = Math.max(0, k.warExhaustion - 0.5);
             return;
         }
-        // C2: Slower exhaustion accumulation — wars last longer with more battles
-        var gain = 0.10 + ((k.atWar ? k.atWar.size : 0) * 0.07);
+        // v9p33river558: tuned-down war exhaustion accumulation — wars wear kingdoms
+        // down less aggressively so conflicts last longer and rebuild phases are shorter.
+        // Was: 0.10 + size*0.07, +0.15 low-gold, +0.20 bankrupt.
+        var gain = 0.06 + ((k.atWar ? k.atWar.size : 0) * 0.04);
         var startGold = k._startingGold || 10000;
-        if (k.gold < startGold * 0.25) gain += 0.15;
-        if (k._bankruptDays > 0) gain += 0.20;
+        if (k.gold < startGold * 0.25) gain += 0.08;
+        if (k._bankruptDays > 0) gain += 0.12;
         k.warExhaustion = Math.min(100, k.warExhaustion + gain);
     }
 
@@ -9996,7 +9998,8 @@
     function addBattleLossExhaustion(k) {
         if (!k) return;
         if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
-        k.warExhaustion = Math.min(100, k.warExhaustion + 5);
+        // v9p33river558: was +5, reduced to +3
+        k.warExhaustion = Math.min(100, k.warExhaustion + 3);
         // C3: Track recent battle losses for noble loyalty drain
         k._recentBattleLosses = (k._recentBattleLosses || 0) + 1;
     }
@@ -10005,7 +10008,8 @@
     function addTownLossExhaustion(k) {
         if (!k) return;
         if (typeof k.warExhaustion !== 'number') k.warExhaustion = 0;
-        k.warExhaustion = Math.min(100, k.warExhaustion + 10);
+        // v9p33river558: was +10, reduced to +6
+        k.warExhaustion = Math.min(100, k.warExhaustion + 6);
     }
 
     // Apply war exhaustion effects (called each day per kingdom)
@@ -10131,7 +10135,8 @@
 
         // ── SURRENDER: heavy terms ──
         if (treatyType === 'surrender' && loserK && winnerK) {
-            var naDuration = 720;
+            // v9p33river558: was 720, reduced to 360 (still longer than other treaties since enforced).
+            var naDuration = 360;
             treaty.terms.nonAggression = { duration: naDuration, expiresDay: world.day + naDuration };
             treaty.expiresDay = world.day + naDuration;
 
@@ -10205,7 +10210,8 @@
 
         // ── EXHAUSTION: moderate terms (C4: now includes reparations) ──
         } else if (treatyType === 'exhaustion') {
-            var naDurationExh = 180;
+            // v9p33river558: was 180, reduced to 120
+            var naDurationExh = 120;
             treaty.terms.nonAggression = { duration: naDurationExh, expiresDay: world.day + naDurationExh };
             treaty.expiresDay = world.day + naDurationExh;
 
@@ -10238,7 +10244,8 @@
 
         // ── NEGOTIATED: moderate terms ──
         } else {
-            var naDurationNeg = 360;
+            // v9p33river558: was 360, reduced to 180
+            var naDurationNeg = 180;
             treaty.terms.nonAggression = { duration: naDurationNeg, expiresDay: world.day + naDurationNeg };
             treaty.expiresDay = world.day + naDurationNeg;
 
