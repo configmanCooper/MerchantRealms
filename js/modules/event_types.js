@@ -912,6 +912,22 @@
                 return p.childFirstName + ' ' + p.childLastName + ' married ' + p.targetFirstName + ' ' + p.targetLastName + '!';
             }
         },
+        CHILD_SEEKS_BLESSING: {
+            category: 'my_actions',
+            subcategory: 'family',
+            hidden: false,
+            render: function(p) {
+                return p.childFirstName + ' ' + (p.childLastName || '') + ' wishes to marry ' + p.suitorFirstName + ' ' + (p.suitorLastName || '') + ' and seeks your blessing.';
+            }
+        },
+        CHILD_DEFIED_PARENT: {
+            category: 'my_actions',
+            subcategory: 'family',
+            hidden: false,
+            render: function(p) {
+                return p.childFirstName + ' ' + (p.childLastName || '') + ' defied you and married ' + p.suitorFirstName + ' ' + (p.suitorLastName || '') + ' anyway!';
+            }
+        },
         MARRIAGE_PROPOSAL_RECEIVED: {
             category: 'my_actions',
             subcategory: 'family',

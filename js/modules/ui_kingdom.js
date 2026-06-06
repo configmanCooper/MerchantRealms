@@ -659,6 +659,39 @@
         html += '<button class="btn-action btn-small" data-action="familyAction" data-type="caretake">🏡 Caretake</button>';
         html += '</div>';
 
+        // v9p33river560: blessing requests from adult children seeking to marry
+        if (typeof Player !== 'undefined' && Player.getMarriageBlessingRequests) {
+            var blessings = Player.getMarriageBlessingRequests();
+            if (blessings.length > 0) {
+                html += '<div style="margin-top:12px;padding:10px;border-top:1px solid #555;background:rgba(180,140,60,0.08);border-radius:4px;">';
+                html += '<h4 style="color:#ffd070;margin:0 0 8px 0;">🌹 Blessing Requested</h4>';
+                var _curDay = (Engine.getDay && Engine.getDay()) || 0;
+                for (var bi = 0; bi < blessings.length; bi++) {
+                    var br = blessings[bi];
+                    var bChildLink = '<a href="#" data-action="showPersonLink" data-id="' + br.childId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + br.childName + '</a>';
+                    var bSuitorLink = '<a href="#" data-action="showPersonLink" data-id="' + br.suitorId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + br.suitorName + '</a>';
+                    var bChild = Engine.findPerson(br.childId);
+                    var bSuitor = Engine.findPerson(br.suitorId);
+                    var bRemaining = Math.max(0, (br.deadlineDay || 0) - _curDay);
+                    html += '<div style="margin-bottom:8px;padding:6px;background:rgba(0,0,0,0.20);border-radius:4px;">';
+                    html += '<div style="font-size:0.85rem;color:#ddd;">' + bChildLink;
+                    if (bChild) html += ' (' + (bChild.sex === 'M' ? '♂' : '♀') + ', age ' + bChild.age + ')';
+                    html += ' wishes to marry ' + bSuitorLink;
+                    if (bSuitor) html += ' (' + (bSuitor.sex === 'M' ? '♂' : '♀') + ', age ' + bSuitor.age + ')';
+                    html += '</div>';
+                    html += '<div style="font-size:0.72rem;color:#aaa;margin-top:2px;">⏳ ' + bRemaining + ' days to decide. Ignore = treated as refusal.</div>';
+                    // Suitor info pane (reuses the same renderer pattern)
+                    html += '<div id="blessingInfo_' + bi + '" style="margin-top:6px;padding:6px;background:rgba(0,0,0,0.25);border:1px solid #444;border-radius:4px;font-size:0.75rem;color:#ddd;"></div>';
+                    html += '<div style="margin-top:6px;">';
+                    html += '<button class="btn-action btn-small" data-action="respondToBlessingRequest" data-id="' + br.id + '" data-val="true">✅ Bless</button> ';
+                    html += '<button class="btn-action btn-small" style="background:rgba(200,60,50,0.3);" data-action="respondToBlessingRequest" data-id="' + br.id + '" data-val="false">❌ Refuse</button>';
+                    html += '</div>';
+                    html += '</div>';
+                }
+                html += '</div>';
+            }
+        }
+
         // Marriage proposals section
         if (typeof Player !== 'undefined' && Player.getMarriageProposals) {
             var proposals = Player.getMarriageProposals();
@@ -762,19 +795,26 @@
 
         openModal('👨‍👩‍👧‍👦 Family', html);
 
-        // v9p33river559: after the modal renders, populate the marriage info
-        // panes with the default-selected candidate's details. Wrapped in a
-        // setTimeout because openModal injects HTML synchronously but the
-        // browser still needs a tick to parse the inserted nodes.
+        // v9p33river559/v560: after the modal renders, populate the marriage
+        // info panes with the default-selected candidate's details. Wrapped in
+        // a setTimeout because openModal injects HTML synchronously but the
+        // browser still needs a tick to parse the inserted nodes. Also seeds
+        // the blessing info panes for any open requests.
         try {
             var _eligible = (Player.childrenIds || []).filter(function(cid) {
                 var c = Engine.findPerson(cid);
                 return c && c.alive && c.age >= 16 && !c.spouseId;
             });
+            var _blessings = (Player.getMarriageBlessingRequests ? Player.getMarriageBlessingRequests() : []) || [];
             setTimeout(function() {
                 for (var _mi = 0; _mi < _eligible.length; _mi++) {
                     if (typeof UI.refreshMarriageInfo === 'function') {
                         UI.refreshMarriageInfo(_mi, _eligible[_mi]);
+                    }
+                }
+                for (var _bi = 0; _bi < _blessings.length; _bi++) {
+                    if (typeof UI.refreshBlessingInfo === 'function') {
+                        UI.refreshBlessingInfo(_bi, _blessings[_bi].id);
                     }
                 }
             }, 30);
@@ -2229,6 +2269,54 @@
     UI.giveFamilyGoldDialog = giveFamilyGoldDialog;
     UI.giveFamilyItemDialog = giveFamilyItemDialog;
     // v9p33river559: marriage info-pane refresher (called by select onchange)
+    // v9p33river559/v560: build suitor-info HTML (rank, wealth, town, parents,
+    // relationship, reputation). Used by both Arrange Marriage and the
+    // Blessing Requested pane. If `est` is provided, append the outcome bars.
+    UI._buildSuitorInfoHTML = function(target, est) {
+        if (!target) return '<span style="color:#888;">No candidate selected.</span>';
+        var fullName = (target.firstName || '') + ' ' + (target.lastName || '');
+        var nameLink = '<a href="#" data-action="showPersonLink" data-id="' + target.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + fullName.trim() + '</a>';
+
+        var rankIdx = (Engine.getHighestRank ? Engine.getHighestRank(target.socialRank || {}) : 0) || 0;
+        var rankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx]) ? CONFIG.SOCIAL_RANKS[rankIdx].name : 'Peasant';
+        var town = Engine.getTown ? Engine.getTown(target.townId) : null;
+        var townName = town ? town.name : '(unknown)';
+        var nWorth = target.netWorth || target.gold || 0;
+        var bldCount = (target.buildings && target.buildings.length) || 0;
+
+        var s = '<div style="margin-bottom:4px;"><b>' + nameLink + '</b> (' + (target.sex === 'M' ? '♂' : '♀') + ', age ' + target.age + ')';
+        if (target.occupation) s += ' — ' + target.occupation;
+        s += '</div>';
+        s += '<div style="color:#bbb;">📍 ' + townName + ' &nbsp; ' + (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx] ? CONFIG.SOCIAL_RANKS[rankIdx].icon : '') + ' ' + rankName +
+             ' &nbsp; 💰 ' + nWorth.toLocaleString() + 'g' + (bldCount ? ' &nbsp; 🏛️ ' + bldCount + ' buildings' : '') + '</div>';
+
+        if (target.parentIds && target.parentIds.length) {
+            var parentBits = [];
+            for (var pi = 0; pi < target.parentIds.length; pi++) {
+                var par = Engine.findPerson(target.parentIds[pi]);
+                if (!par) continue;
+                var pRank = (Engine.getHighestRank ? Engine.getHighestRank(par.socialRank || {}) : 0) || 0;
+                var pRankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[pRank]) ? CONFIG.SOCIAL_RANKS[pRank].name : 'Peasant';
+                var pLink = '<a href="#" data-action="showPersonLink" data-id="' + par.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + par.firstName + ' ' + (par.lastName || '') + '</a>';
+                var pWorth = par.netWorth || par.gold || 0;
+                var aliveTag = par.alive ? '' : ' †';
+                parentBits.push(pLink + aliveTag + ' (' + pRankName + ', ' + pWorth.toLocaleString() + 'g' + (par.isEliteMerchant ? ', 🌟 Elite' : '') + ')');
+            }
+            if (parentBits.length) {
+                s += '<div style="color:#bbb;">👪 Parents: ' + parentBits.join(', ') + '</div>';
+            }
+        }
+
+        if (est) {
+            var relTxt = est.relationship >= 60 ? '<span style="color:#9ae09a;">Strong</span>' :
+                         est.relationship >= 30 ? '<span style="color:#d4d480;">Cordial</span>' :
+                         est.relationship > 0 ? '<span style="color:#bbb;">Neutral</span>' :
+                         '<span style="color:#e08080;">Poor</span>';
+            s += '<div style="color:#bbb;">🤝 Family relationship: ' + relTxt + ' (' + est.relationship + ') &nbsp; ⭐ Rep in kingdom: ' + est.reputation + '</div>';
+        }
+        return s;
+    };
+
     UI.refreshMarriageInfo = function(idx, childId) {
         try {
             var pane = document.getElementById('marriageInfo_' + idx);
@@ -2239,50 +2327,9 @@
             if (!target) { pane.innerHTML = '<span style="color:#888;">No candidate selected.</span>'; return; }
             var est = (typeof Player.estimateMarriageOutcome === 'function')
                 ? Player.estimateMarriageOutcome(childId, targetId)
-                : { rejectPct: 0, acceptPct: 0, dowryPct: 0, estimatedDowry: 0, factors: [], primaryParentId: null };
+                : { rejectPct: 0, acceptPct: 0, dowryPct: 0, estimatedDowry: 0, factors: [], relationship: 0, reputation: 0 };
 
-            // Build clickable name link
-            var fullName = (target.firstName || '') + ' ' + (target.lastName || '');
-            var nameLink = '<a href="#" data-action="showPersonLink" data-id="' + target.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + fullName.trim() + '</a>';
-
-            // Rank, wealth, town
-            var rankIdx = (Engine.getHighestRank ? Engine.getHighestRank(target.socialRank || {}) : 0) || 0;
-            var rankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx]) ? CONFIG.SOCIAL_RANKS[rankIdx].name : 'Peasant';
-            var town = Engine.getTown ? Engine.getTown(target.townId) : null;
-            var townName = town ? town.name : '(unknown)';
-            var nWorth = target.netWorth || target.gold || 0;
-            var bldCount = (target.buildings && target.buildings.length) || 0;
-
-            var s = '<div style="margin-bottom:4px;"><b>' + nameLink + '</b> (' + (target.sex === 'M' ? '♂' : '♀') + ', age ' + target.age + ')';
-            if (target.occupation) s += ' — ' + target.occupation;
-            s += '</div>';
-            s += '<div style="color:#bbb;">📍 ' + townName + ' &nbsp; ' + (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx] ? CONFIG.SOCIAL_RANKS[rankIdx].icon : '') + ' ' + rankName +
-                 ' &nbsp; 💰 ' + nWorth.toLocaleString() + 'g' + (bldCount ? ' &nbsp; 🏛️ ' + bldCount + ' buildings' : '') + '</div>';
-
-            // Parents
-            if (target.parentIds && target.parentIds.length) {
-                var parentBits = [];
-                for (var pi = 0; pi < target.parentIds.length; pi++) {
-                    var par = Engine.findPerson(target.parentIds[pi]);
-                    if (!par) continue;
-                    var pRank = (Engine.getHighestRank ? Engine.getHighestRank(par.socialRank || {}) : 0) || 0;
-                    var pRankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[pRank]) ? CONFIG.SOCIAL_RANKS[pRank].name : 'Peasant';
-                    var pLink = '<a href="#" data-action="showPersonLink" data-id="' + par.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + par.firstName + ' ' + (par.lastName || '') + '</a>';
-                    var pWorth = par.netWorth || par.gold || 0;
-                    var aliveTag = par.alive ? '' : ' †';
-                    parentBits.push(pLink + aliveTag + ' (' + pRankName + ', ' + pWorth.toLocaleString() + 'g' + (par.isEliteMerchant ? ', 🌟 Elite' : '') + ')');
-                }
-                if (parentBits.length) {
-                    s += '<div style="color:#bbb;">👪 Parents: ' + parentBits.join(', ') + '</div>';
-                }
-            }
-
-            // Relationship + reputation
-            var relTxt = est.relationship >= 60 ? '<span style="color:#9ae09a;">Strong</span>' :
-                         est.relationship >= 30 ? '<span style="color:#d4d480;">Cordial</span>' :
-                         est.relationship > 0 ? '<span style="color:#bbb;">Neutral</span>' :
-                         '<span style="color:#e08080;">Poor</span>';
-            s += '<div style="color:#bbb;">🤝 Family relationship: ' + relTxt + ' (' + est.relationship + ') &nbsp; ⭐ Rep in kingdom: ' + est.reputation + '</div>';
+            var s = UI._buildSuitorInfoHTML(target, est);
 
             // Outcome bars
             s += '<div style="margin-top:6px;padding:5px;background:rgba(0,0,0,0.3);border-radius:3px;">';
@@ -2299,13 +2346,51 @@
             s += '</div>';
             s += '</div>';
 
-            // Factors
             if (est.factors && est.factors.length) {
                 s += '<div style="font-size:0.7rem;color:#999;margin-top:4px;">Factors: ' + est.factors.join('; ') + '</div>';
             }
             pane.innerHTML = s;
         } catch (e) {
             try { console.warn('refreshMarriageInfo failed:', e); } catch (_) {}
+        }
+    };
+
+    // v9p33river560: render a blessing-request pane (suitor info + a small
+    // defiance hint). Called after openFamilyPanel renders.
+    UI.refreshBlessingInfo = function(idx, blessingId) {
+        try {
+            var pane = document.getElementById('blessingInfo_' + idx);
+            if (!pane) return;
+            var requests = (Player.getMarriageBlessingRequests ? Player.getMarriageBlessingRequests() : []);
+            var br = requests.find ? requests.find(function(r) { return r.id === blessingId; }) : null;
+            if (!br) { pane.innerHTML = '<span style="color:#888;">Request expired.</span>'; return; }
+            var suitor = Engine.findPerson(br.suitorId);
+            if (!suitor) { pane.innerHTML = '<span style="color:#888;">Suitor not found.</span>'; return; }
+
+            // Reuse the suitor-info builder with no est (different context).
+            var s = UI._buildSuitorInfoHTML(suitor, null);
+
+            // Defiance hint — show the child's loyalty & current relationship.
+            var child = Engine.findPerson(br.childId);
+            if (child) {
+                var loyalty = (child.personality && typeof child.personality.loyalty === 'number') ? child.personality.loyalty : 50;
+                var ambition = (child.personality && typeof child.personality.ambition === 'number') ? child.personality.ambition : 50;
+                var rel = 0;
+                if (Player.state && Player.state.relationships && Player.state.relationships[child.id]) {
+                    rel = Player.state.relationships[child.id].level || 0;
+                }
+                var defianceHint = loyalty < 35 ? '<span style="color:#e08080;">very likely to defy</span>' :
+                                   loyalty < 55 ? '<span style="color:#d4a060;">may defy</span>' :
+                                   loyalty < 75 ? '<span style="color:#d4d480;">probably will comply</span>' :
+                                   '<span style="color:#9ae09a;">very likely to comply</span>';
+                s += '<div style="margin-top:6px;padding:5px;background:rgba(0,0,0,0.3);border-radius:3px;font-size:0.72rem;color:#bbb;">';
+                s += 'If refused — ' + child.firstName + ' is ' + defianceHint + '.';
+                s += ' &nbsp;(loyalty ' + loyalty + ', ambition ' + ambition + ', bond with you ' + rel + ')';
+                s += '</div>';
+            }
+            pane.innerHTML = s;
+        } catch (e) {
+            try { console.warn('refreshBlessingInfo failed:', e); } catch (_) {}
         }
     };
     // Spouse Panel
@@ -2352,6 +2437,18 @@
         UI.toast(r.message, r.success ? 'success' : 'error');
         UI.closeModal();
         if (r.success) UI.openFamilyPanel();
+    });
+    // v9p33river560: bless or refuse an autonomous child-marriage request.
+    UI.registerAction('respondToBlessingRequest', function(_t, d) {
+        var bless = (d.val === 'true' || d.val === true);
+        var r = Player.respondToBlessingRequest(d.id, bless);
+        var tone = 'info';
+        if (r.outcome === 'blessed') tone = 'success';
+        else if (r.outcome === 'defied') tone = 'warning';
+        else if (r.outcome === 'complied') tone = 'success';
+        else if (!r.success) tone = 'error';
+        UI.toast(r.message, tone);
+        UI.openFamilyPanel();
     });
     UI.registerAction('giveFamilyGoldPreset', function(_t, d) { var r = Player.giveFamilyGold(d.id, parseInt(d.val)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });
     UI.registerAction('giveFamilyGoldCustom', function(_t, d) { var el = document.getElementById('familyGoldCustom'); if (!el) return; var r = Player.giveFamilyGold(d.id, parseInt(el.value)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });

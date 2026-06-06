@@ -977,6 +977,212 @@
         return ps()._marriageProposals || [];
     }
 
+    // v9p33river560: autonomous child-marriage flow — children 18+ can find
+    // their own match and ask for the player's blessing.
+    function getMarriageBlessingRequests() {
+        return ps()._marriageBlessingRequests || [];
+    }
+
+    // Discover potential matches for the player's adult unmarried children
+    // every ~60 days. If a match takes, a blessing request is created on
+    // player._marriageBlessingRequests with a 30-day deadline.
+    function checkAutonomousChildMarriages() {
+        var player = ps();
+        if (!player.alive) return;
+        if (!player.childrenIds) player.childrenIds = [];
+        if (!player._marriageBlessingRequests) player._marriageBlessingRequests = [];
+
+        var day = Engine.getDay();
+        if (day % 60 !== 0) return;
+
+        var rng = Engine.getRng();
+        if (!rng) return;
+        var world = Engine.getWorld();
+        if (!world) return;
+
+        for (var i = 0; i < player.childrenIds.length; i++) {
+            var child = Engine.findPerson(player.childrenIds[i]);
+            if (!child || !child.alive) continue;
+            if (child.age < 18) continue;
+            if (child.spouseId) continue;
+            // Skip if she already has an open blessing request
+            var hasOpen = player._marriageBlessingRequests.some(function(r) { return r.childId === child.id; });
+            if (hasOpen) continue;
+
+            // Per-tick chance scales with age — older unmarried children are
+            // more eager. Floor at 5%, cap at 30%.
+            var pBase = 0.05 + Math.min(0.25, (child.age - 18) * 0.02);
+            if (!rng.chance(pBase)) continue;
+
+            // Find a candidate: same town, opposite sex, 16-50, unmarried, alive
+            var candidates = world.people.filter(function(p) {
+                return p && p.alive && !p.spouseId && p.id !== child.id
+                    && p.sex !== child.sex && (p.age || 0) >= 16 && (p.age || 0) <= 50
+                    && p.townId === child.townId;
+            });
+            if (candidates.length === 0) continue;
+
+            // Prefer candidates closer in age (±10) when possible.
+            var preferred = candidates.filter(function(c) { return Math.abs((c.age || 25) - child.age) <= 10; });
+            var pool = preferred.length ? preferred : candidates;
+            var suitor = pool[Math.floor(rng.random() * pool.length)];
+            if (!suitor) continue;
+
+            var reqId = 'mb_' + day + '_' + child.id + '_' + suitor.id;
+            player._marriageBlessingRequests.push({
+                id: reqId,
+                childId: child.id,
+                childName: child.firstName + ' ' + (child.lastName || ''),
+                childSex: child.sex,
+                suitorId: suitor.id,
+                suitorName: suitor.firstName + ' ' + (suitor.lastName || ''),
+                day: day,
+                deadlineDay: day + 30,
+            });
+            EventTypes.emit('CHILD_SEEKS_BLESSING', {
+                childFirstName: child.firstName,
+                childLastName: (child.lastName || ''),
+                suitorFirstName: suitor.firstName,
+                suitorLastName: (suitor.lastName || ''),
+            });
+        }
+    }
+
+    // Roll defiance when the player refuses (or ignores) a blessing request.
+    // Returns { defied: bool, defianceScore: int }.
+    function _rollChildDefiance(child) {
+        var player = ps();
+        var loyalty = (child.personality && typeof child.personality.loyalty === 'number') ? child.personality.loyalty : 50;
+        var ambition = (child.personality && typeof child.personality.ambition === 'number') ? child.personality.ambition : 50;
+        var playerRank = (typeof getPlayerRankIndex === 'function') ? getPlayerRankIndex() : 0;
+        var rel = (player.relationships && player.relationships[child.id] && player.relationships[child.id].level) || 0;
+
+        // Defiance score (0-100ish). >= 50 → defies.
+        // Low loyalty pushes defiance up; high loyalty pulls it down.
+        // High player rank intimidates (less defiance).
+        // High relationship makes the child want to honor parent (less defiance).
+        // High ambition makes the child push for what they want (more defiance).
+        var score = 50;
+        score += (50 - loyalty) * 0.8;
+        score += (ambition - 50) * 0.4;
+        score -= playerRank * 6;
+        score -= rel * 0.4;
+
+        if (score < 0) score = 0;
+        if (score > 100) score = 100;
+        var rng = Engine.getRng();
+        var roll = (rng && rng.random) ? rng.random() * 100 : Math.random() * 100;
+        return { defied: roll < score, defianceScore: Math.round(score), loyalty: loyalty, rank: playerRank, relationship: rel };
+    }
+
+    // Player responds to a blessing request. `bless` is true (give blessing)
+    // or false (refuse). Returns { success, outcome, message }.
+    //   outcome:
+    //     'blessed'   - marriage proceeds
+    //     'complied'  - refused and child obeyed (no marriage)
+    //     'defied'    - refused but child married anyway, relationship -30
+    //     'ineligible'- target/child no longer eligible
+    //     'error'     - bad request id
+    function respondToBlessingRequest(reqId, bless) {
+        var player = ps();
+        if (!player._marriageBlessingRequests) return { success: false, outcome: 'error', message: 'No requests.' };
+        var req = player._marriageBlessingRequests.find(function(r) { return r.id === reqId; });
+        if (!req) return { success: false, outcome: 'error', message: 'Request not found.' };
+
+        // Remove from the queue regardless of outcome.
+        player._marriageBlessingRequests = player._marriageBlessingRequests.filter(function(r) { return r.id !== reqId; });
+
+        var child = Engine.findPerson(req.childId);
+        var suitor = Engine.findPerson(req.suitorId);
+        if (!child || !child.alive || child.spouseId) {
+            return { success: false, outcome: 'ineligible', message: 'Your child is no longer eligible.' };
+        }
+        if (!suitor || !suitor.alive || suitor.spouseId) {
+            return { success: false, outcome: 'ineligible', message: req.suitorName + ' is no longer available.' };
+        }
+
+        if (bless) {
+            // Blessing: small relationship boost, then auto-marry.
+            if (!player.relationships) player.relationships = {};
+            if (!player.relationships[child.id]) player.relationships[child.id] = { level: 0, type: 'family' };
+            player.relationships[child.id].level = Math.min(100, (player.relationships[child.id].level || 0) + 5);
+
+            var r = arrangeChildMarriage(req.childId, req.suitorId, 'accept_direct');
+            if (r.success) {
+                return { success: true, outcome: 'blessed', message: 'You blessed the union. ' + r.message };
+            }
+            return { success: false, outcome: 'ineligible', message: r.message };
+        }
+
+        // Refuse → roll defiance
+        var defy = _rollChildDefiance(child);
+        if (defy.defied) {
+            // Relationship slammed
+            if (!player.relationships) player.relationships = {};
+            if (!player.relationships[child.id]) player.relationships[child.id] = { level: 0, type: 'family' };
+            player.relationships[child.id].level = Math.max(-100, (player.relationships[child.id].level || 0) - 30);
+
+            var r2 = arrangeChildMarriage(req.childId, req.suitorId, 'accept_direct');
+            if (r2.success) {
+                EventTypes.emit('CHILD_DEFIED_PARENT', {
+                    childFirstName: child.firstName, childLastName: (child.lastName || ''),
+                    suitorFirstName: suitor.firstName, suitorLastName: (suitor.lastName || ''),
+                });
+                return {
+                    success: true, outcome: 'defied',
+                    message: child.firstName + ' defied you and married ' + suitor.firstName + ' anyway! (Relationship -30, defiance score ' + defy.defianceScore + ')',
+                };
+            }
+            return { success: false, outcome: 'ineligible', message: r2.message };
+        }
+
+        // Complied: small resentment
+        if (!player.relationships) player.relationships = {};
+        if (!player.relationships[child.id]) player.relationships[child.id] = { level: 0, type: 'family' };
+        player.relationships[child.id].level = Math.max(-100, (player.relationships[child.id].level || 0) - 5);
+        return {
+            success: true, outcome: 'complied',
+            message: child.firstName + ' bowed to your wishes and called off the engagement. (Relationship -5, defiance score ' + defy.defianceScore + ')',
+        };
+    }
+
+    // Tick expiry — once a request passes its deadline, treat as a passive
+    // refusal: the child rolls defiance against the player's silence.
+    function expireBlessingRequests() {
+        var player = ps();
+        if (!player._marriageBlessingRequests || player._marriageBlessingRequests.length === 0) return;
+        var day = Engine.getDay();
+        var expired = player._marriageBlessingRequests.filter(function(r) { return r.deadlineDay <= day; });
+        if (!expired.length) return;
+        player._marriageBlessingRequests = player._marriageBlessingRequests.filter(function(r) { return r.deadlineDay > day; });
+
+        for (var i = 0; i < expired.length; i++) {
+            var req = expired[i];
+            var child = Engine.findPerson(req.childId);
+            var suitor = Engine.findPerson(req.suitorId);
+            if (!child || !child.alive || child.spouseId) continue;
+            if (!suitor || !suitor.alive || suitor.spouseId) continue;
+            var defy = _rollChildDefiance(child);
+            if (defy.defied) {
+                if (!player.relationships) player.relationships = {};
+                if (!player.relationships[child.id]) player.relationships[child.id] = { level: 0, type: 'family' };
+                player.relationships[child.id].level = Math.max(-100, (player.relationships[child.id].level || 0) - 30);
+                var r = arrangeChildMarriage(req.childId, req.suitorId, 'accept_direct');
+                if (r.success) {
+                    EventTypes.emit('CHILD_DEFIED_PARENT', {
+                        childFirstName: child.firstName, childLastName: (child.lastName || ''),
+                        suitorFirstName: suitor.firstName, suitorLastName: (suitor.lastName || ''),
+                    });
+                }
+            } else {
+                // Just lapsed quietly — child gave up on the match.
+                if (!player.relationships) player.relationships = {};
+                if (!player.relationships[child.id]) player.relationships[child.id] = { level: 0, type: 'family' };
+                player.relationships[child.id].level = Math.max(-100, (player.relationships[child.id].level || 0) - 2);
+            }
+        }
+    }
+
     function getAllianceBenefits() {
         var player = ps();
         if (!player.familyAlliances || player.familyAlliances.length === 0) return { repBonus: 0, storageDiscount: 0, allianceCount: 0 };
@@ -994,6 +1200,10 @@
         // marry() comment.)
         if (!player.childrenIds) player.childrenIds = [];
         if (!player.alive) return;
+
+        // v9p33river560: autonomous-marriage discovery + deadline expiry.
+        try { checkAutonomousChildMarriages(); } catch (_eAcm) { /* defensive */ }
+        try { expireBlessingRequests(); } catch (_eEbr) { /* defensive */ }
 
         var currentDay = Engine.getDay();
         var rng = Engine.getRng();
@@ -3641,6 +3851,8 @@
     Player.respondToMarriageProposal = respondToMarriageProposal;
     Player.checkEliteMarriageProposals = checkEliteMarriageProposals;
     Player.getMarriageProposals = getMarriageProposals;
+    Player.getMarriageBlessingRequests = getMarriageBlessingRequests;
+    Player.respondToBlessingRequest = respondToBlessingRequest;
     Player.getAllianceBenefits = getAllianceBenefits;
     Player.tickPlayerChildren = tickPlayerChildren;
     Player.getPersonalityImpression = getPersonalityImpression;
