@@ -485,6 +485,20 @@
         var sex = person.sex || 'M';
         var tone = (typeof person.skinTone === 'number') ? person.skinTone : -1;
 
+        // v9p33river559: tier-based cache invalidation so the portrait refreshes
+        // when an NPC crosses a tier boundary (was: baby/child emojis stayed
+        // cached forever, e.g., daughters showing 👶 at age 23).
+        var currentTier;
+        if (typeof age !== 'number') currentTier = 'adult';
+        else if (age <= 2) currentTier = 'baby';
+        else if (age <= 15) currentTier = 'child';
+        else if (age >= 60) currentTier = 'elder';
+        else currentTier = 'adult';
+        if (person._portraitTier && person._portraitTier !== currentTier) {
+            person.portrait = null;
+        }
+        person._portraitTier = currentTier;
+
         // Baby (0-2): always use baby emoji
         if (typeof age === 'number' && age <= 2) {
             // Determine skin tone from parents if not set
@@ -512,8 +526,9 @@
             return person.portrait;
         }
 
-        // Child (3-12): use boy/girl emoji
-        if (typeof age === 'number' && age >= 3 && age <= 12) {
+        // Child (3-15): use boy/girl emoji. v9p33river559: range widened from
+        // 3-12 to 3-15 so 16+ daughters get adult portraits per design.
+        if (typeof age === 'number' && age >= 3 && age <= 15) {
             if (tone < 0) {
                 // Try to derive from parents or hash
                 var hash2 = 0;
@@ -16196,84 +16211,252 @@
     // ========================================================
     // §8D  DYNASTY MARRIAGES — arrange child marriages
     // ========================================================
-    function arrangeChildMarriage(childId, targetId) {
+    // v9p33river559: estimateMarriageOutcome — read-only preview of accept /
+    // reject / dowry probabilities + estimated dowry amount. Used by the
+    // Arrange-Marriage UI to show the player what they're getting into BEFORE
+    // committing, and reused internally by arrangeChildMarriage when rolling.
+    function estimateMarriageOutcome(childId, targetId) {
+        var blank = { rejectPct: 100, acceptPct: 0, dowryPct: 0, estimatedDowry: 0, factors: [], primaryParentId: null };
         var child = Engine.findPerson(childId);
         var target = Engine.findPerson(targetId);
-        if (!child || !child.alive) return { success: false, message: 'Child not found or not alive.' };
-        if (!target || !target.alive) return { success: false, message: 'Target not found or not alive.' };
-        if (child.age < 16) return { success: false, message: 'Your child must be at least 16.' };
-        if (target.age < 16) return { success: false, message: 'Target must be at least 16.' };
-        if (child.spouseId) return { success: false, message: 'Your child is already married.' };
-        if (target.spouseId) return { success: false, message: 'Target is already married.' };
-        if (child.sex === target.sex) return { success: false, message: 'Medieval tradition requires a man and a woman.' };
+        if (!child || !target) return blank;
 
-        // Check if child belongs to player
-        if (player.childrenIds.indexOf(childId) < 0) return { success: false, message: 'Not your child.' };
+        var factors = [];
 
-        // If target is elite merchant's child, check approval
-        var eliteParent = null;
+        // Find the decision-maker: prefer a living parent of the target,
+        // fall back to the target themselves if they're orphaned.
+        var primaryParent = null;
         if (target.parentIds) {
             for (var i = 0; i < target.parentIds.length; i++) {
                 var par = Engine.findPerson(target.parentIds[i]);
-                if (par && par.alive && par.isEliteMerchant) { eliteParent = par; break; }
+                if (par && par.alive) { primaryParent = par; break; }
             }
         }
+        var decider = primaryParent || target;
 
-        if (eliteParent) {
-            // Approval based on player reputation, net worth, social rank, relationship
-            var approvalScore = 0;
-            var kId = eliteParent.citizenshipKingdomId || eliteParent.kingdomId;
-            approvalScore += ((player.reputation[kId] || 0) - 40) * 0.5; // +/- based on rep vs 40 threshold
-            approvalScore += (Player.getNetWorth() > (eliteParent.netWorth || 500) ? 15 : -10);
-            var playerRank = getPlayerRankIndex();
-            var emRank = Engine.getHighestRank(eliteParent.socialRank || {});
-            approvalScore += (playerRank >= emRank ? 10 : -5);
-            // Relationship with elite merchant
-            var rel = player.relationships[eliteParent.id];
-            approvalScore += (rel ? (rel.level || 0) * 0.2 : 0);
-            // Personality: social merchant is easier to convince
-            var social = (eliteParent.personality && eliteParent.personality.social) || 50;
-            approvalScore += (social - 50) * 0.2;
+        // Rank
+        var playerRank = getPlayerRankIndex();
+        var deciderRank = Engine.getHighestRank ? Engine.getHighestRank(decider.socialRank || {}) : 0;
+        var rankDelta = playerRank - deciderRank;
 
-            if (approvalScore < 10) {
-                return { success: false, message: eliteParent.firstName + ' ' + (eliteParent.lastName || '') + ' rejected the marriage proposal. (Improve your standing, reputation, or relationship.)' };
-            }
+        // Wealth (net worth)
+        var playerWorth = Player.getNetWorth ? Player.getNetWorth() : (player.gold || 0);
+        var deciderWorth = decider.netWorth || (decider.gold || 0);
+        var worthRatio = deciderWorth > 0 ? playerWorth / deciderWorth : 2;
+
+        // Relationship with decider
+        var relLevel = 0;
+        if (player.relationships && player.relationships[decider.id]) {
+            relLevel = player.relationships[decider.id].level || 0;
         }
 
-        // Wedding cost
+        // Reputation in their kingdom
+        var deciderKid = decider.citizenshipKingdomId || decider.kingdomId;
+        var rep = (player.reputation && deciderKid) ? (player.reputation[deciderKid] || 0) : 0;
+
+        // Child age — younger child seen as more of a "burden" (higher dowry)
+        var childAge = child.age || 16;
+
+        // Base probabilities (out of 100)
+        var rejectScore = 25;
+        var acceptScore = 35;
+        var dowryScore = 40;
+
+        // Rank modifier
+        if (rankDelta >= 2) {
+            acceptScore += 25; rejectScore -= 12; dowryScore -= 10;
+            factors.push('You far outrank their family (+accept)');
+        } else if (rankDelta === 1) {
+            acceptScore += 10; rejectScore -= 4; dowryScore -= 4;
+            factors.push('You slightly outrank them (+accept)');
+        } else if (rankDelta === 0) {
+            factors.push('Even social standing');
+        } else if (rankDelta === -1) {
+            acceptScore -= 5; dowryScore += 12;
+            factors.push('They outrank you slightly (+dowry)');
+        } else {
+            acceptScore -= 18; rejectScore += 14; dowryScore += 6;
+            factors.push('They far outrank you (+reject)');
+        }
+
+        // Wealth modifier
+        if (worthRatio >= 2.5) {
+            acceptScore += 18; rejectScore -= 8; dowryScore -= 6;
+            factors.push('You are far wealthier (+accept)');
+        } else if (worthRatio >= 1.2) {
+            acceptScore += 8; dowryScore -= 3;
+            factors.push('You are wealthier (+accept)');
+        } else if (worthRatio >= 0.7) {
+            factors.push('Comparable wealth');
+        } else if (worthRatio >= 0.3) {
+            dowryScore += 12; acceptScore -= 5;
+            factors.push('They are wealthier (+dowry)');
+        } else {
+            dowryScore += 22; rejectScore += 6; acceptScore -= 16;
+            factors.push('They are far wealthier (+dowry/reject)');
+        }
+
+        // Relationship modifier
+        if (relLevel >= 60) {
+            acceptScore += 20; rejectScore -= 12; dowryScore -= 8;
+            factors.push('Strong rapport with their family (+accept)');
+        } else if (relLevel >= 30) {
+            acceptScore += 6; rejectScore -= 3;
+            factors.push('Some rapport');
+        } else if (relLevel < 0) {
+            acceptScore -= 18; rejectScore += 18;
+            factors.push('Poor rapport (+reject)');
+        }
+
+        // Reputation modifier
+        if (rep >= 60) {
+            acceptScore += 8; rejectScore -= 4;
+            factors.push('High reputation in their kingdom');
+        } else if (rep < 20) {
+            rejectScore += 8; acceptScore -= 5;
+            factors.push('Low reputation in their kingdom (+reject)');
+        }
+
+        // Child-age modifier — too young = harder
+        if (childAge < 18) {
+            dowryScore += 12; acceptScore -= 6;
+            factors.push('Your child is very young (+dowry)');
+        } else if (childAge < 22) {
+            dowryScore += 6;
+            factors.push('Your child is young');
+        } else if (childAge >= 30) {
+            acceptScore += 5; rejectScore += 5; dowryScore -= 5;
+            factors.push('Your child is past prime age');
+        }
+
+        // Elite merchant parent — stricter, prouder
+        if (primaryParent && primaryParent.isEliteMerchant) {
+            rejectScore += 6;
+            factors.push('Their family is an elite merchant house (stricter)');
+        }
+
+        // Clamp & normalize
+        if (rejectScore < 2) rejectScore = 2;
+        if (acceptScore < 2) acceptScore = 2;
+        if (dowryScore < 2) dowryScore = 2;
+        var total = rejectScore + acceptScore + dowryScore;
+        var rejectPct = Math.round((rejectScore / total) * 100);
+        var dowryPct = Math.round((dowryScore / total) * 100);
+        var acceptPct = 100 - rejectPct - dowryPct;
+        if (acceptPct < 0) { dowryPct += acceptPct; acceptPct = 0; }
+
+        // Estimated dowry (2000-20000g)
+        var baseDowry = 5000;
+        if (rankDelta < 0) baseDowry += -rankDelta * 2500;
+        if (worthRatio < 1) baseDowry += Math.round((1 - Math.max(0.1, worthRatio)) * 6000);
+        if (childAge < 18) baseDowry += 2500;
+        else if (childAge < 22) baseDowry += 1000;
+        if (relLevel < 30) baseDowry += 1500;
+        if (relLevel >= 60) baseDowry -= 2000;
+        if (rep < 20) baseDowry += 1000;
+        if (primaryParent && primaryParent.isEliteMerchant) baseDowry += 1500;
+        var estimatedDowry = Math.max(2000, Math.min(20000, Math.round(baseDowry / 500) * 500));
+
+        return {
+            rejectPct: rejectPct, acceptPct: acceptPct, dowryPct: dowryPct,
+            estimatedDowry: estimatedDowry,
+            primaryParentId: primaryParent ? primaryParent.id : null,
+            deciderId: decider.id,
+            playerRank: playerRank, targetRank: deciderRank,
+            playerWorth: playerWorth, targetWorth: deciderWorth,
+            relationship: relLevel, reputation: rep,
+            factors: factors,
+        };
+    }
+
+    function arrangeChildMarriage(childId, targetId, payDowry) {
+        var child = Engine.findPerson(childId);
+        var target = Engine.findPerson(targetId);
+        if (!child || !child.alive) return { success: false, outcome: 'error', message: 'Child not found or not alive.' };
+        if (!target || !target.alive) return { success: false, outcome: 'error', message: 'Target not found or not alive.' };
+        if (child.age < 16) return { success: false, outcome: 'error', message: 'Your child must be at least 16.' };
+        if (target.age < 16) return { success: false, outcome: 'error', message: 'Target must be at least 16.' };
+        if (child.spouseId) return { success: false, outcome: 'error', message: 'Your child is already married.' };
+        if (target.spouseId) return { success: false, outcome: 'error', message: 'Target is already married.' };
+        if (child.sex === target.sex) return { success: false, outcome: 'error', message: 'Medieval tradition requires a man and a woman.' };
+        if (player.childrenIds.indexOf(childId) < 0) return { success: false, outcome: 'error', message: 'Not your child.' };
+
         var weddingCost = 200;
-        if (player.gold < weddingCost) return { success: false, message: 'Need ' + weddingCost + 'g for the wedding.' };
-        player.gold -= weddingCost;
+        if (player.gold < weddingCost) return { success: false, outcome: 'cant_afford', message: 'Need ' + weddingCost + 'g for the wedding.' };
+
+        var est = estimateMarriageOutcome(childId, targetId);
+        var decider = Engine.findPerson(est.deciderId) || target;
+        var deciderName = decider.firstName + ' ' + (decider.lastName || '');
+
+        // If the player is responding to a prior dowry demand, skip the roll.
+        // payDowry === true means "I'll pay the previously-quoted dowry" — but
+        // we need to know the amount; the UI should pass it as a number.
+        var dowryAmount = 0;
+        var skipRoll = false;
+        if (payDowry === 'accept_direct') {
+            // Direct acceptance path (used by respondToMarriageProposal — they
+            // initiated, no roll or dowry needed).
+            skipRoll = true;
+        } else if (typeof payDowry === 'number' && payDowry > 0) {
+            dowryAmount = payDowry;
+            skipRoll = true;
+        }
+
+        if (!skipRoll) {
+            var rng = (typeof Engine !== 'undefined' && Engine.getRng) ? Engine.getRng() : null;
+            var roll = (rng && rng.random) ? rng.random() * 100 : Math.random() * 100;
+            if (roll < est.rejectPct) {
+                return {
+                    success: false, outcome: 'rejected',
+                    message: deciderName + ' rejected the proposal outright. (Improve your standing, reputation, or relationship.)',
+                };
+            }
+            if (roll < est.rejectPct + est.dowryPct) {
+                return {
+                    success: false, outcome: 'dowry',
+                    dowryAmount: est.estimatedDowry,
+                    deciderName: deciderName,
+                    message: deciderName + ' will accept the match only if you provide a dowry of ' + est.estimatedDowry + 'g.',
+                };
+            }
+            // Otherwise accepted with no dowry
+        }
+
+        if (player.gold < weddingCost + dowryAmount) {
+            return { success: false, outcome: 'cant_afford', message: 'Need ' + (weddingCost + dowryAmount) + 'g (wedding + dowry).' };
+        }
+        player.gold -= (weddingCost + dowryAmount);
 
         // Perform marriage
         child.spouseId = targetId;
         target.spouseId = childId;
 
-        // Both families gain relationship +15
-        if (eliteParent) {
-            if (!player.relationships[eliteParent.id]) player.relationships[eliteParent.id] = { level: 0, type: 'acquaintance' };
-            player.relationships[eliteParent.id].level = Math.min(100, (player.relationships[eliteParent.id].level || 0) + 15);
-            if (player.relationships[eliteParent.id].level >= 60) player.relationships[eliteParent.id].type = 'friend';
+        // Alliance handling — works for any decider (elite merchant or not)
+        if (decider && decider.id !== childId) {
+            if (!player.relationships[decider.id]) player.relationships[decider.id] = { level: 0, type: 'acquaintance' };
+            player.relationships[decider.id].level = Math.min(100, (player.relationships[decider.id].level || 0) + 15);
+            if (player.relationships[decider.id].level >= 60) player.relationships[decider.id].type = 'friend';
 
-            // Track alliance
             if (!player.familyAlliances) player.familyAlliances = [];
             player.familyAlliances.push({
-                familyId: eliteParent.id,
-                familyName: eliteParent.familyName || eliteParent.lastName || eliteParent.firstName,
+                familyId: decider.id,
+                familyName: decider.familyName || decider.lastName || decider.firstName,
                 throughChildId: childId,
                 partnerId: targetId,
                 startDay: Engine.getDay(),
             });
 
-            // Alliance reputation bonus: +2 in partner's primary kingdom
-            if (eliteParent.citizenshipKingdomId || eliteParent.kingdomId) {
-                var allianceKId = eliteParent.citizenshipKingdomId || eliteParent.kingdomId;
+            var allianceKId = decider.citizenshipKingdomId || decider.kingdomId;
+            if (allianceKId) {
                 player.reputation[allianceKId] = Math.min(100, (player.reputation[allianceKId] || 0) + 2);
             }
         }
 
         Engine.logEvent(child.firstName + ' ' + (child.lastName || '') + ' married ' + target.firstName + ' ' + (target.lastName || '') + '!', null, "my_actions");
-        return { success: true, message: child.firstName + ' married ' + target.firstName + '! (Cost: ' + weddingCost + 'g)' };
+        var msg = child.firstName + ' married ' + target.firstName + '! (Cost: ' + weddingCost + 'g';
+        if (dowryAmount > 0) msg += ' + ' + dowryAmount + 'g dowry';
+        msg += ')';
+        return { success: true, outcome: 'accepted', dowryPaid: dowryAmount, message: msg };
     }
 
     function getEligibleMarriageCandidates(childId) {
@@ -16304,7 +16487,7 @@
         if (!child || !child.alive || child.spouseId) return { success: false, message: 'Your child is no longer eligible.' };
         if (!target || !target.alive || target.spouseId) return { success: false, message: 'Their child is no longer eligible.' };
 
-        return arrangeChildMarriage(proposal.playerChildId, proposal.eliteChildId);
+        return arrangeChildMarriage(proposal.playerChildId, proposal.eliteChildId, 'accept_direct');
     }
 
     function checkEliteMarriageProposals() {
@@ -43948,6 +44131,7 @@
 
         // Dynasty Marriages
         arrangeChildMarriage,
+        estimateMarriageOutcome,
         getEligibleMarriageCandidates,
         respondToMarriageProposal,
         getMarriageProposals,

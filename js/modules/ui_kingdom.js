@@ -667,8 +667,18 @@
                 html += '<h4 style="color:#ffa0a0;margin:0 0 8px 0;">💍 Marriage Proposals</h4>';
                 for (var pi = 0; pi < proposals.length; pi++) {
                     var pr = proposals[pi];
+                    // v9p33river559: NPC names in proposals are clickable.
+                    var emLink = pr.eliteMerchantId
+                        ? '<a href="#" data-action="showPersonLink" data-id="' + pr.eliteMerchantId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + (pr.eliteMerchantName || '?') + '</a>'
+                        : (pr.eliteMerchantName || '?');
+                    var ecLink = pr.eliteChildId
+                        ? '<a href="#" data-action="showPersonLink" data-id="' + pr.eliteChildId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + (pr.eliteChildName || '?') + '</a>'
+                        : (pr.eliteChildName || '?');
+                    var pcLink = pr.playerChildId
+                        ? '<a href="#" data-action="showPersonLink" data-id="' + pr.playerChildId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + (pr.playerChildName || '?') + '</a>'
+                        : (pr.playerChildName || '?');
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
-                    html += '<div style="font-size:0.85rem;color:#ddd;">' + (pr.eliteMerchantName || '?') + ' proposes: ' + (pr.eliteChildName || '?') + ' wed ' + (pr.playerChildName || '?') + '</div>';
+                    html += '<div style="font-size:0.85rem;color:#ddd;">' + emLink + ' proposes: ' + ecLink + ' wed ' + pcLink + '</div>';
                     html += '<button class="btn-action btn-small" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="true">✅ Accept</button> ';
                     html += '<button class="btn-action btn-small" style="background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="false">❌ Reject</button>';
                     html += '</div>';
@@ -691,13 +701,16 @@
                     if (!childPerson) continue;
                     var candidates = Player.getEligibleMarriageCandidates(eligibleChildren[ci]);
                     if (candidates.length > 0) {
-                        html += '<div style="margin-bottom:6px;font-size:0.8rem;">' + childPerson.firstName + ' (' + (childPerson.sex === 'M' ? '♂' : '♀') + ', age ' + childPerson.age + '): ';
-                        html += '<select id="marriageTarget_' + ci + '" style="font-size:0.75rem;padding:2px 4px;max-width:140px;">';
+                        var childNameLink = '<a href="#" data-action="showPersonLink" data-id="' + childPerson.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + childPerson.firstName + '</a>';
+                        html += '<div style="margin-bottom:6px;font-size:0.8rem;">' + childNameLink + ' (' + (childPerson.sex === 'M' ? '♂' : '♀') + ', age ' + childPerson.age + '): ';
+                        // v9p33river559: onchange refreshes info-pane below dropdown.
+                        html += '<select id="marriageTarget_' + ci + '" onchange="UI.refreshMarriageInfo(' + ci + ',\'' + eligibleChildren[ci] + '\')" style="font-size:0.75rem;padding:2px 4px;max-width:180px;">';
                         for (var mi = 0; mi < Math.min(candidates.length, 10); mi++) {
                             html += '<option value="' + candidates[mi].id + '">' + candidates[mi].firstName + ' ' + (candidates[mi].lastName || '') + ' (age ' + candidates[mi].age + ')</option>';
                         }
                         html += '</select> ';
                         html += '<button class="btn-action btn-small" data-action="arrangeChildMarriage" data-id="' + eligibleChildren[ci] + '" data-idx="' + ci + '">💒 Arrange</button>';
+                        html += '<div id="marriageInfo_' + ci + '" style="margin-top:6px;padding:6px;background:rgba(0,0,0,0.25);border:1px solid #444;border-radius:4px;font-size:0.75rem;color:#ddd;"></div>';
                         html += '</div>';
                     } else {
                         html += '<div style="margin-bottom:6px;font-size:0.8rem;color:#888;">' + childPerson.firstName + ': No eligible candidates nearby</div>';
@@ -748,6 +761,24 @@
         } catch (_eCcUi) { /* defensive */ }
 
         openModal('👨‍👩‍👧‍👦 Family', html);
+
+        // v9p33river559: after the modal renders, populate the marriage info
+        // panes with the default-selected candidate's details. Wrapped in a
+        // setTimeout because openModal injects HTML synchronously but the
+        // browser still needs a tick to parse the inserted nodes.
+        try {
+            var _eligible = (Player.childrenIds || []).filter(function(cid) {
+                var c = Engine.findPerson(cid);
+                return c && c.alive && c.age >= 16 && !c.spouseId;
+            });
+            setTimeout(function() {
+                for (var _mi = 0; _mi < _eligible.length; _mi++) {
+                    if (typeof UI.refreshMarriageInfo === 'function') {
+                        UI.refreshMarriageInfo(_mi, _eligible[_mi]);
+                    }
+                }
+            }, 30);
+        } catch (_eMrf) { /* defensive */ }
     }
 
     function familyAction(action, npcId) {
@@ -2197,6 +2228,86 @@
     UI.familyAction = familyAction;
     UI.giveFamilyGoldDialog = giveFamilyGoldDialog;
     UI.giveFamilyItemDialog = giveFamilyItemDialog;
+    // v9p33river559: marriage info-pane refresher (called by select onchange)
+    UI.refreshMarriageInfo = function(idx, childId) {
+        try {
+            var pane = document.getElementById('marriageInfo_' + idx);
+            var sel = document.getElementById('marriageTarget_' + idx);
+            if (!pane || !sel) return;
+            var targetId = sel.value;
+            var target = Engine.findPerson(targetId);
+            if (!target) { pane.innerHTML = '<span style="color:#888;">No candidate selected.</span>'; return; }
+            var est = (typeof Player.estimateMarriageOutcome === 'function')
+                ? Player.estimateMarriageOutcome(childId, targetId)
+                : { rejectPct: 0, acceptPct: 0, dowryPct: 0, estimatedDowry: 0, factors: [], primaryParentId: null };
+
+            // Build clickable name link
+            var fullName = (target.firstName || '') + ' ' + (target.lastName || '');
+            var nameLink = '<a href="#" data-action="showPersonLink" data-id="' + target.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + fullName.trim() + '</a>';
+
+            // Rank, wealth, town
+            var rankIdx = (Engine.getHighestRank ? Engine.getHighestRank(target.socialRank || {}) : 0) || 0;
+            var rankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx]) ? CONFIG.SOCIAL_RANKS[rankIdx].name : 'Peasant';
+            var town = Engine.getTown ? Engine.getTown(target.townId) : null;
+            var townName = town ? town.name : '(unknown)';
+            var nWorth = target.netWorth || target.gold || 0;
+            var bldCount = (target.buildings && target.buildings.length) || 0;
+
+            var s = '<div style="margin-bottom:4px;"><b>' + nameLink + '</b> (' + (target.sex === 'M' ? '♂' : '♀') + ', age ' + target.age + ')';
+            if (target.occupation) s += ' — ' + target.occupation;
+            s += '</div>';
+            s += '<div style="color:#bbb;">📍 ' + townName + ' &nbsp; ' + (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[rankIdx] ? CONFIG.SOCIAL_RANKS[rankIdx].icon : '') + ' ' + rankName +
+                 ' &nbsp; 💰 ' + nWorth.toLocaleString() + 'g' + (bldCount ? ' &nbsp; 🏛️ ' + bldCount + ' buildings' : '') + '</div>';
+
+            // Parents
+            if (target.parentIds && target.parentIds.length) {
+                var parentBits = [];
+                for (var pi = 0; pi < target.parentIds.length; pi++) {
+                    var par = Engine.findPerson(target.parentIds[pi]);
+                    if (!par) continue;
+                    var pRank = (Engine.getHighestRank ? Engine.getHighestRank(par.socialRank || {}) : 0) || 0;
+                    var pRankName = (CONFIG.SOCIAL_RANKS && CONFIG.SOCIAL_RANKS[pRank]) ? CONFIG.SOCIAL_RANKS[pRank].name : 'Peasant';
+                    var pLink = '<a href="#" data-action="showPersonLink" data-id="' + par.id + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + par.firstName + ' ' + (par.lastName || '') + '</a>';
+                    var pWorth = par.netWorth || par.gold || 0;
+                    var aliveTag = par.alive ? '' : ' †';
+                    parentBits.push(pLink + aliveTag + ' (' + pRankName + ', ' + pWorth.toLocaleString() + 'g' + (par.isEliteMerchant ? ', 🌟 Elite' : '') + ')');
+                }
+                if (parentBits.length) {
+                    s += '<div style="color:#bbb;">👪 Parents: ' + parentBits.join(', ') + '</div>';
+                }
+            }
+
+            // Relationship + reputation
+            var relTxt = est.relationship >= 60 ? '<span style="color:#9ae09a;">Strong</span>' :
+                         est.relationship >= 30 ? '<span style="color:#d4d480;">Cordial</span>' :
+                         est.relationship > 0 ? '<span style="color:#bbb;">Neutral</span>' :
+                         '<span style="color:#e08080;">Poor</span>';
+            s += '<div style="color:#bbb;">🤝 Family relationship: ' + relTxt + ' (' + est.relationship + ') &nbsp; ⭐ Rep in kingdom: ' + est.reputation + '</div>';
+
+            // Outcome bars
+            s += '<div style="margin-top:6px;padding:5px;background:rgba(0,0,0,0.3);border-radius:3px;">';
+            s += '<div style="font-weight:bold;color:#d4af37;margin-bottom:3px;">Estimated Response:</div>';
+            s += '<div style="display:flex;height:14px;border-radius:3px;overflow:hidden;border:1px solid #555;">';
+            s += '<div style="width:' + est.acceptPct + '%;background:#4a8a4a;" title="Accept ' + est.acceptPct + '%"></div>';
+            s += '<div style="width:' + est.dowryPct + '%;background:#b08020;" title="Demand dowry ' + est.dowryPct + '%"></div>';
+            s += '<div style="width:' + est.rejectPct + '%;background:#a04040;" title="Reject ' + est.rejectPct + '%"></div>';
+            s += '</div>';
+            s += '<div style="display:flex;justify-content:space-between;font-size:0.7rem;margin-top:2px;">';
+            s += '<span style="color:#9ae09a;">✅ Accept ' + est.acceptPct + '%</span>';
+            s += '<span style="color:#d4a060;">💰 Dowry ' + est.dowryPct + '% (~' + est.estimatedDowry.toLocaleString() + 'g)</span>';
+            s += '<span style="color:#e08080;">❌ Reject ' + est.rejectPct + '%</span>';
+            s += '</div>';
+            s += '</div>';
+
+            // Factors
+            if (est.factors && est.factors.length) {
+                s += '<div style="font-size:0.7rem;color:#999;margin-top:4px;">Factors: ' + est.factors.join('; ') + '</div>';
+            }
+            pane.innerHTML = s;
+        } catch (e) {
+            try { console.warn('refreshMarriageInfo failed:', e); } catch (_) {}
+        }
+    };
     // Spouse Panel
     UI.openSpousePanel = openSpousePanel;
     UI.tryForBaby = tryForBaby;
@@ -2214,7 +2325,34 @@
     // --- Delegated action handlers ---
     UI.registerAction('showPersonLink', function(_t, d) { var p = Engine.findPerson(d.id); if (p) UI.showPersonDetail(p); });
     UI.registerAction('backToKingdomSelect', function() { UI.showKingdomSelection(window._kingdomSelectCallback); });
-    UI.registerAction('arrangeChildMarriage', function(_t, d) { var sel = document.getElementById('marriageTarget_' + d.idx); if (sel) { var r = Player.arrangeChildMarriage(d.id, sel.value); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) UI.openFamilyPanel(); } });
+    UI.registerAction('arrangeChildMarriage', function(_t, d) {
+        var sel = document.getElementById('marriageTarget_' + d.idx);
+        if (!sel) return;
+        var r = Player.arrangeChildMarriage(d.id, sel.value);
+        if (r && r.outcome === 'dowry') {
+            // v9p33river559: they want a dowry — ask the player to confirm payment.
+            var dn = r.deciderName || 'They';
+            var amt = r.dowryAmount || 0;
+            var confirmHtml = '<div style="padding:6px;color:#ddd;">'
+                + '<p>' + dn + ' will accept the marriage only if you provide a dowry of <b>' + amt.toLocaleString() + 'g</b> (plus the standard 200g wedding cost).</p>'
+                + '<p>Pay the dowry and proceed?</p>'
+                + '<div style="text-align:right;margin-top:10px;">'
+                + '<button class="btn-action" data-action="confirmDowryMarriage" data-id="' + d.id + '" data-targetid="' + sel.value + '" data-dowry="' + amt + '">💰 Pay ' + amt.toLocaleString() + 'g Dowry</button> '
+                + '<button class="btn-action" style="background:rgba(200,60,50,0.3);" data-action="closeModal">Decline</button>'
+                + '</div></div>';
+            UI.openModal('💍 Dowry Demanded', confirmHtml);
+        } else {
+            UI.toast(r.message, r.success ? 'success' : 'error');
+            if (r.success) UI.openFamilyPanel();
+        }
+    });
+    UI.registerAction('confirmDowryMarriage', function(_t, d) {
+        var dowry = parseInt(d.dowry, 10);
+        var r = Player.arrangeChildMarriage(d.id, d.targetid, dowry);
+        UI.toast(r.message, r.success ? 'success' : 'error');
+        UI.closeModal();
+        if (r.success) UI.openFamilyPanel();
+    });
     UI.registerAction('giveFamilyGoldPreset', function(_t, d) { var r = Player.giveFamilyGold(d.id, parseInt(d.val)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });
     UI.registerAction('giveFamilyGoldCustom', function(_t, d) { var el = document.getElementById('familyGoldCustom'); if (!el) return; var r = Player.giveFamilyGold(d.id, parseInt(el.value)); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });
     UI.registerAction('giveFamilyGift', function(_t, d) { var r = Player.giveFamilyGift(d.id, d.val, 1); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); UI.openFamilyPanel(); } });

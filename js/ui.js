@@ -18324,8 +18324,18 @@ window.UI = (function () {
                 html += '<h4 style="color:#ffa0a0;margin:0 0 8px 0;">💍 Marriage Proposals</h4>';
                 for (let pi = 0; pi < proposals.length; pi++) {
                     const pr = proposals[pi];
+                    // v9p33river559: clickable NPC names
+                    const _emLink = pr.eliteMerchantId
+                        ? '<a href="#" data-action="showPersonLink" data-id="' + pr.eliteMerchantId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + (pr.eliteMerchantName || '?') + '</a>'
+                        : (pr.eliteMerchantName || '?');
+                    const _ecLink = pr.eliteChildId
+                        ? '<a href="#" data-action="showPersonLink" data-id="' + pr.eliteChildId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + (pr.eliteChildName || '?') + '</a>'
+                        : (pr.eliteChildName || '?');
+                    const _pcLink = pr.playerChildId
+                        ? '<a href="#" data-action="showPersonLink" data-id="' + pr.playerChildId + '" style="color:#7ab5e0;text-decoration:underline;cursor:pointer;">' + (pr.playerChildName || '?') + '</a>'
+                        : (pr.playerChildName || '?');
                     html += '<div style="margin-bottom:8px;padding:6px;background:rgba(255,255,255,0.05);border-radius:4px;">';
-                    html += '<div style="font-size:0.85rem;color:#ddd;">' + pr.eliteMerchantName + ' proposes: ' + pr.eliteChildName + ' wed ' + pr.playerChildName + '</div>';
+                    html += '<div style="font-size:0.85rem;color:#ddd;">' + _emLink + ' proposes: ' + _ecLink + ' wed ' + _pcLink + '</div>';
                     html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="true">✅ Accept</button> ';
                     html += '<button class="btn-medieval" style="font-size:0.7rem;padding:3px 10px;margin-top:4px;background:rgba(200,60,50,0.3);" data-action="respondToMarriageProposal" data-id="' + pr.id + '" data-val="false">❌ Reject</button>';
                     html += '</div>';
