@@ -3650,7 +3650,10 @@
         if (townA.isCapital) score += 30;
         if (townB.isCapital) score += 30;
         // City/town tier bonus
-        var tierBonus = { village: 0, town: 5, city: 15, capital_city: 25 };
+        // v9p33river563: town.tier is only ever 'capital'|'city'|'town'|'village' (see the
+        // world-gen assignment at ~line 1599). The 'capital_city' key never matched, so
+        // capitals scored 0 from this map instead of 25.
+        var tierBonus = { village: 0, town: 5, city: 15, capital: 25 };
         score += (tierBonus[townA.tier] || 0) + (tierBonus[townB.tier] || 0);
         // Cross-kingdom: border roads are strategically important
         if (townA.kingdomId && townB.kingdomId && townA.kingdomId !== townB.kingdomId) {
@@ -6086,7 +6089,11 @@
                     const workerIds = bld.workers || [];
                     const baseWage = CONFIG.BASE_WAGE || 4;
 
-                    for (const wId of workerIds) {
+                    // v9p33river563: iterate a SNAPSHOT — the quit branches below splice
+                    // out of `workerIds` (which aliases bld.workers), and splicing during
+                    // a for..of shifts the iterator so the worker right after a quitter
+                    // was silently skipped for wages that day.
+                    for (const wId of workerIds.slice()) {
                         const worker = findPerson(wId);
                         if (!worker || !worker.alive) continue;
                         // Skill-modified wage: skilled workers earn more
@@ -23036,8 +23043,10 @@
         const defendK = findKingdom(town.kingdomId);
         if (!attackK || !defendK) return;
 
-        const siegeCost = Math.min(500, Math.max(100, army.soldiers * 5));
-        attackK.gold = Math.max(0, attackK.gold - siegeCost);
+        // v9p33river563: the siege cost is charged in startSiege() (line ~22661) using the
+        // identical formula. resolveBattleInstant() is only ever reached from the siege
+        // resolution path (or from a missing-kingdom fallback that returns above), so
+        // charging again here deducted the cost twice and destroyed kingdom gold.
 
         // Army unit composition (with fallback for legacy armies)
         const atkInf = army.infantry || Math.floor(army.soldiers * 0.6);
@@ -39961,6 +39970,9 @@
             _buildOffroadEdgeCache();
             _pathCache = {};
         },
+        // v9p33river563: getTownsForKingdom() existed in engine.js but was never exported,
+        // so engine_elite_merchants.js:7297 always fell back to an empty town list.
+        getTownsForKingdom: getTownsForKingdom,
         getNobleBuildings: function(nobleId) {
             var buildings = [];
             var person = findPerson(nobleId);

@@ -4271,7 +4271,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
             }
         }
         html += '</div>';
-        openModal('📜 Present a Petition at Court', html, '<button class="btn-medieval" onclick="closeModal()">Cancel</button>');
+        openModal('📜 Present a Petition at Court', html, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');
     }
 
     // v9p33river509: noble picker for Praise a Noble's Loyalty court action.
@@ -4303,7 +4303,7 @@ function _switchProposeActionTab(tabId, kingdomId) {
             }
         }
         html += '</div>';
-        openModal('🏅 Praise a Noble\'s Loyalty', html, '<button class="btn-medieval" onclick="closeModal()">Cancel</button>');
+        openModal('🏅 Praise a Noble\'s Loyalty', html, '<button class="btn-medieval" data-action="closeModal">Cancel</button>');
     }
 
     UI.registerAction('submitCourtPraiseNoble', function(_t, d) {

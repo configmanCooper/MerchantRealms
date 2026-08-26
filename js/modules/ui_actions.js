@@ -1937,7 +1937,7 @@ function showPersonDetail(person) {
         // v9p33river79: handle 'player' as a spouseId
         if (person.spouseId === 'player' && isPlayer) {
             html += `<div class="detail-row"><span class="label">Spouse</span>
-                <span class="value">${Player.firstName || ''} ${Player.lastName || ''} (You)</span></div>`;
+                <span class="value">${escapeHtml(Player.firstName || '')} ${escapeHtml(Player.lastName || '')} (You)</span></div>`;
         } else {
             try { spouse = Engine.getPerson(person.spouseId); } catch (e) { /* no-op */ }
             if (spouse) {
@@ -1975,7 +1975,7 @@ function showPersonDetail(person) {
                 _kidLabelDone = true;
                 var _pAge = Player.age || '?';
                 html += `<div class="detail-row"><span class="label">${_kidLabel}</span>
-                    <span class="value">${Player.firstName || ''} ${Player.lastName || ''} (${_pAge}) <span style="color:#d4af37;">— You</span></span></div>`;
+                    <span class="value">${escapeHtml(Player.firstName || '')} ${escapeHtml(Player.lastName || '')} (${_pAge}) <span style="color:#d4af37;">— You</span></span></div>`;
                 continue;
             }
             var child = null;
@@ -2012,7 +2012,7 @@ function showPersonDetail(person) {
                 _sibLabelDone = true;
                 if (_sibId === 'player' && isPlayer) {
                     html += `<div class="detail-row"><span class="label">${_sibLabel}</span>
-                        <span class="value">${Player.firstName || ''} ${Player.lastName || ''} (${Player.age || '?'}) <span style="color:#d4af37;">— You</span></span></div>`;
+                        <span class="value">${escapeHtml(Player.firstName || '')} ${escapeHtml(Player.lastName || '')} (${Player.age || '?'}) <span style="color:#d4af37;">— You</span></span></div>`;
                     continue;
                 }
                 var _sib = null;

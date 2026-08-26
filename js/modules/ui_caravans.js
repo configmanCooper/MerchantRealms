@@ -96,10 +96,18 @@
         var qtyLabel = order.qty === 'max' ? 'Max' : order.qty;
         var bldLabel = '';
         if (order.buildingId) {
-            var bParts = order.buildingId.split('_');
-            var bTypeId = bParts.slice(0, -1).join('_');
-            var bTypeDef = Engine.findBuildingType ? Engine.findBuildingType(bTypeId) : null;
-            bldLabel = ' → ' + (bTypeDef ? bTypeDef.name : bTypeId);
+            // v9p33river563: v9p33river536 changed the option value to the canonical
+            // building id ("pbld_10"), but this label parser still split on '_' and
+            // dropped the last chunk — yielding the bogus type id "pbld" for every
+            // player building, so the row always read " → pbld".
+            var _obBld = null;
+            var _obList = (typeof Player !== 'undefined' && Player.buildings) ? Player.buildings : [];
+            for (var _obi = 0; _obi < _obList.length; _obi++) {
+                if (_obList[_obi].id === order.buildingId) { _obBld = _obList[_obi]; break; }
+            }
+            var _obTypeId = _obBld ? _obBld.type : order.buildingId.split('_').slice(0, -1).join('_');
+            var bTypeDef = (_obTypeId && Engine.findBuildingType) ? Engine.findBuildingType(_obTypeId) : null;
+            bldLabel = ' → ' + (bTypeDef ? bTypeDef.name : (_obTypeId || order.buildingId));
         }
         var priceLabel = '';
         if (order.action === 'buy' && order.priceLimit) priceLabel = ' (max ' + order.priceLimit + 'g)';

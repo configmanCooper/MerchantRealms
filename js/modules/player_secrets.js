@@ -335,7 +335,10 @@
         _ensureState();
         _initState();
         for (var i = 0; i < player._knownSecrets.length; i++) {
-            if (player._knownSecrets[i].npcId === personId && !player._knownSecrets[i].kept) return true;
+            // v9p33river563: a secret that was already shared must not still offer the
+            // "Keep Secret" option — otherwise the player collects the keep bonus with the
+            // very person they betrayed.
+            if (player._knownSecrets[i].npcId === personId && !player._knownSecrets[i].kept && !player._knownSecrets[i].shared) return true;
         }
         return false;
     }
@@ -360,6 +363,12 @@
         }
         if (secret.kept) {
             return { success: false, message: 'You have already promised to keep this secret.' };
+        }
+        // v9p33river563: keeping and sharing are meant to be mutually exclusive — without
+        // this guard a player could share a secret for the listener bonus and then still
+        // claim the keep bonus from its owner.
+        if (secret.shared) {
+            return { success: false, message: 'You have already shared this secret — you cannot now promise to keep it.' };
         }
 
         secret.kept = true;
@@ -396,6 +405,11 @@
         }
         if (secret.shared) {
             return { success: false, message: 'You have already shared this secret.' };
+        }
+        // v9p33river563: a secret you explicitly promised to keep should not also be
+        // shareable — that stacked the keep bonus and the listener bonus from one secret.
+        if (secret.kept) {
+            return { success: false, message: 'You gave your word to keep this secret.' };
         }
 
         var listener = _findPerson(listenerPersonId);

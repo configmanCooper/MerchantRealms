@@ -5972,7 +5972,8 @@
                     }
                     _moveGuardsToPlayer();
                     Engine.logEvent('🌊 You washed ashore after the storm destroyed your ship.', null, 'travel_events');
-                    if (typeof Engine.pause === 'function') Engine.pause();
+                    // v9p33river563: Engine.pause() has never existed; Game.setSpeed(0) is the real pause.
+                    if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
                     return;
                 }
             }
@@ -6142,7 +6143,8 @@
                     cleanupTravelState();
                     if (typeof _moveGuardsToPlayer === 'function') _moveGuardsToPlayer();
                     Engine.logEvent('⛵ Arrived at ' + _port.name + '. Your ' + (_arrShip ? (_arrShip.name || _arrShip.type) : 'ship') + ' is docked at the port.', { type: 'travel_arrive' }, 'travel_events');
-                    if (typeof Engine.pause === 'function') Engine.pause();
+                    // v9p33river563: Engine.pause() has never existed; Game.setSpeed(0) is the real pause.
+                    if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
                     return;
                 }
                 // No port target — stop in open water; player must redirect or land
@@ -6153,7 +6155,8 @@
                 player.traveling = false;
                 // Keep travelOffSea true so player can redirect or land
                 Engine.logEvent('⛵ Arrived at destination in open water. Right-click to continue sailing or land.', { type: 'travel_arrive' }, 'travel_events');
-                if (typeof Engine.pause === 'function') Engine.pause();
+                // v9p33river563: Engine.pause() has never existed; Game.setSpeed(0) is the real pause.
+                if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
                 return;
             }
             // Handle free travel arrival (to arbitrary coordinates)
@@ -37499,7 +37502,8 @@
         };
 
         // Pause the game so player can make their choice
-        if (typeof Engine.pause === 'function') Engine.pause();
+        // v9p33river563: Engine.pause() has never existed; Game.setSpeed(0) is the real pause.
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(0);
 
         // Trigger the UI dialog
         if (typeof window._showEncounterDialog === 'function') {
@@ -37647,8 +37651,10 @@
         }
 
         player.encounterPending = null;
-        // Resume game
-        if (typeof Engine.unpause === 'function') Engine.unpause();
+        // v9p33river563: Engine.unpause() never existed. Encounters freeze travel via the
+        // player.encounterPending checks in subtick(), not via a game-speed pause — but the
+        // encounter DID stop the clock (Game.setSpeed(0)), so restore normal speed here.
+        if (typeof Game !== 'undefined' && Game.setSpeed && Game.getSpeed && Game.getSpeed() === 0) Game.setSpeed(1);
         return result;
     }
 
@@ -44025,6 +44031,10 @@
         get instrumentSkill() { return player.instrumentSkill || {}; },
         // Inventory Capacity System — moved to js/modules/player_inventory.js
         get storageContainer() { return player.storageContainer; },
+        // v9p33river563: ui.js reads `Player._backpack` in two places, but the flag only
+        // lived on the raw state object — so a player wearing a backpack UNDER a cart/wagon
+        // showed as having no backpack (and it vanished from the sell list).
+        get _backpack() { return !!player._backpack; },
         get townStorage() { return player.townStorage; },
         // getCarryCapacity, getCarriedWeight, buyHorse..dismountContainer → player_inventory.js
         // getInjuryDebuffs, _applyConditionHealthHit → player_health.js

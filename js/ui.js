@@ -775,7 +775,9 @@ window.UI = (function () {
         registerAction('_godToggleCrimeStealth', function() {
             window._godCrimeStealth = !window._godCrimeStealth;
             UI.toast('🥷 God-mode crime stealth: ' + (window._godCrimeStealth ? 'ON (catch chance ×0.05)' : 'OFF'), window._godCrimeStealth ? 'success' : 'info');
-            if (UI.openGodMode) UI.openGodMode();
+            // v9p33river563: UI.openGodMode does not exist — the panel opener is
+            // openGodModePanel, so the panel never refreshed after toggling stealth.
+            if (UI.openGodModePanel) UI.openGodModePanel();
         });
         registerAction('_setWaTab', function(_t, d) { window._waTab=d.id;UI.openWorldAnalytics() });
         registerAction('hireGuardUI', function() { UI.hireGuardUI(); });
@@ -2455,14 +2457,16 @@ window.UI = (function () {
         for (var i = 0; i < secrets.length; i++) {
             var s = secrets[i].secret;
             var idx = secrets[i].index;
-            var keptClass = s.kept ? 'opacity:0.5;' : '';
-            var keptLabel = s.kept ? ' <span style="color:#55a868;font-size:0.8em;">(Kept ✓)</span>' : '';
+            var keptClass = (s.kept || s.shared) ? 'opacity:0.5;' : '';
+            var keptLabel = s.kept ? ' <span style="color:#55a868;font-size:0.8em;">(Kept ✓)</span>'
+                          : (s.shared ? ' <span style="color:#c85050;font-size:0.8em;">(Shared ✗)</span>' : '');
             var typeColor = s.type === 'criminal' ? '#c85050' : s.type === 'conspiracy' ? '#9b59b6' : s.type === 'financial' ? '#d4af37' : s.type === 'political' ? '#5dade2' : '#aaa';
             html += '<div style="' + keptClass + 'margin-bottom:8px;padding:8px 10px;background:rgba(0,0,0,0.3);border:1px solid #444;border-radius:6px;border-left:3px solid ' + typeColor + ';">';
             html += '<div style="font-size:0.85em;color:#ddd;margin-bottom:4px;">' + escapeHtml(s.text) + keptLabel + '</div>';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
             html += '<span style="font-size:0.7em;color:' + typeColor + ';text-transform:uppercase;">' + escapeHtml(s.type) + '</span>';
-            if (!s.kept) {
+            // v9p33river563: a secret already shared can no longer be "kept".
+            if (!s.kept && !s.shared) {
                 html += '<button class="btn-medieval btn-keep-secret" data-secret-idx="' + idx + '" data-person-id="' + personId + '" style="font-size:0.75em;padding:3px 10px;">🤝 Keep Secret (+' + s.keepRel + ' rel)</button>';
             }
             html += '</div></div>';
@@ -2501,9 +2505,11 @@ window.UI = (function () {
         var allSecrets = Player.getAllKnownSecrets();
         if (!allSecrets || !allSecrets.length) { toast('You have no secrets to share.', 'warning'); return; }
         // Filter out secrets owned by the listener
+        // v9p33river563: also exclude secrets the player promised to KEEP — sharing
+        // those used to stack the keep bonus with the listener bonus.
         var shareable = [];
         for (var i = 0; i < allSecrets.length; i++) {
-            if (allSecrets[i].secret.npcId !== listenerPersonId) {
+            if (allSecrets[i].secret.npcId !== listenerPersonId && !allSecrets[i].secret.kept) {
                 shareable.push(allSecrets[i]);
             }
         }

@@ -4034,7 +4034,7 @@ window.Game = (function () {
 
         // Stop TTS and any audio
         try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
-        try { if (typeof Music !== 'undefined' && Music.stopAll) Music.stopAll(); } catch(e) {}
+        try { if (typeof Music !== 'undefined' && Music.stop) Music.stop(); } catch(e) {}
 
         // Renderer caches — invalidate everything possible
         try {

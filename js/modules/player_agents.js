@@ -989,7 +989,7 @@
         var town = Engine.findTown(agent.townId);
         if (!town) return;
         // Find player buildings in this town, boost output
-        var playerBuildings = town.buildings.filter(function(b) { return b.ownerId === 'player'; });
+        var playerBuildings = (town.buildings || []).filter(function(b) { return b.ownerId === 'player'; });
         if (playerBuildings.length === 0) {
             agent.reports.push({ day: day, msg: '🏠 No player buildings in ' + town.name + ' to manage.' });
             return;
@@ -1037,7 +1037,7 @@
         // Passive: reduces sabotage risk. Just report presence.
         var town = Engine.findTown(agent.townId);
         if (!town) return;
-        var playerBuildings = town.buildings.filter(function(b) { return b.ownerId === 'player'; });
+        var playerBuildings = (town.buildings || []).filter(function(b) { return b.ownerId === 'player'; });
         if (playerBuildings.length === 0) return;
         // Chance to catch saboteurs
         var catchChance = 0.05 + agent.skills.combat * 0.02;

@@ -2292,7 +2292,12 @@ window.Tutorial = (function () {
 
         // Center camera on starting town and zoom in for tutorial
         if (typeof Renderer !== 'undefined') {
-            if (Renderer.centerOnTown && startTownId) Renderer.centerOnTown(startTownId);
+            // v9p33river563: Renderer.centerOnTown() does not exist — the tutorial never
+            // centred on the starting town. Renderer.panTo(worldX, worldY) is the real API.
+            if (startTownId && Renderer.panTo && typeof Engine !== 'undefined' && Engine.findTown) {
+                var _tutTown = Engine.findTown(startTownId);
+                if (_tutTown) Renderer.panTo(_tutTown.x, _tutTown.y);
+            }
             if (Renderer.setZoom) Renderer.setZoom(1.6);
             else if (Renderer.getCamera) { var cam = Renderer.getCamera(); cam.zoom = 1.6; cam.targetZoom = 1.6; }
         }

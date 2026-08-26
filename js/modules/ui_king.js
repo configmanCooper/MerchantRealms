@@ -2856,10 +2856,18 @@
         openModal('💨 Confirm Escape', html, '');
     }
 
+    // v9p33river563: remembers the speed the game was running at before a revolt modal
+    // paused it, so it can be restored when the modal resolves.
+    var _revoltPreSpeed = 1;
+
     function _showRevoltUI(kingdom, intensity) {
         if (!kingdom) return;
         // Pause the game
-        if (typeof Game !== 'undefined' && Game.pause) Game.pause();
+        // v9p33river563: Game.pause() does not exist — setSpeed(0) is the real pause.
+        if (typeof Game !== 'undefined' && Game.setSpeed) {
+            _revoltPreSpeed = (Game.getSpeed ? Game.getSpeed() : 1) || 1;
+            Game.setSpeed(0);
+        }
 
         var fightChance = Math.round(Math.max(10, Math.min(80, 60 - intensity * 40)));
         var html = '<div style="text-align:center;font-family:\'Merriweather\',Georgia,serif;">';
@@ -2924,7 +2932,8 @@
             }
         }
         // Resume game
-        if (typeof Game !== 'undefined' && Game.resume) Game.resume();
+        // v9p33river563: Game.resume() does not exist — restore the pre-revolt speed.
+        if (typeof Game !== 'undefined' && Game.setSpeed) Game.setSpeed(_revoltPreSpeed || 1);
     }
 
     // Election UI — shown when king dies with no blood heir and player is a noble

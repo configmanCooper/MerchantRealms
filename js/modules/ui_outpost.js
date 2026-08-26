@@ -1292,7 +1292,9 @@
             var result = Player.startOffSeaTravel(destX, destY);
             if (result.success) {
                 toast(result.message || '⛵ Redirecting course!', 'success');
-                if (typeof Engine.resume === 'function') Engine.resume();
+                // v9p33river563: Engine.resume() never existed. Redirecting mid-voyage should
+                // restart the clock if the arrival pause stopped it.
+                if (typeof Game !== 'undefined' && Game.setSpeed && Game.getSpeed && Game.getSpeed() === 0) Game.setSpeed(1);
             } else {
                 toast(result.message, 'error');
             }
