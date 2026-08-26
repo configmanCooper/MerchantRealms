@@ -106,6 +106,23 @@
         em.npcMerchantInventory[goodId] = (em.npcMerchantInventory[goodId] || 0) + qty;
     }
 
+    // v9p33river564: deliver deal goods TO the player — into carried inventory when the
+    // player is standing in the delivery town, otherwise into that town's warehouse.
+    // Without this, every EM-side delivery simply deleted the goods.
+    function _creditPlayerDealGoods(goodId, qty, townId) {
+        var ps = _getPlayerState();
+        if (!ps || qty <= 0) return false;
+        if (ps.townId === townId) {
+            if (!ps.inventory) ps.inventory = {};
+            ps.inventory[goodId] = (ps.inventory[goodId] || 0) + qty;
+        } else {
+            if (!ps.townStorage) ps.townStorage = {};
+            if (!ps.townStorage[townId]) ps.townStorage[townId] = {};
+            ps.townStorage[townId][goodId] = (ps.townStorage[townId][goodId] || 0) + qty;
+        }
+        return true;
+    }
+
     function _getPlayerState() {
         return (typeof Player !== 'undefined' && Player.state) ? Player.state : null;
     }
@@ -418,6 +435,8 @@
         if (emTown === deliverTown) {
             // Personal delivery — same town
             _deductEMInventory(em, goodId, qty);
+            // v9p33river564: the goods left the EM but were never handed to the player.
+            _creditPlayerDealGoods(goodId, qty, deliverTown);
             deal.emDelivered = true;
             deal.emDeliveryMethod = 'personal';
             EventTypes.emit('EM_DEAL_DELIVERED_PERSONAL', {
@@ -507,6 +526,10 @@
         deal.playerDelivered = true;
 
         var em = findPerson(deal.emId);
+        // v9p33river564: the goods were removed from the player but never given to the
+        // elite merchant — `_addEMInventory` existed but had no caller, so every player
+        // delivery destroyed the goods outright.
+        if (em) _addEMInventory(em, goodId, qty);
         EventTypes.emit('EM_DEAL_PLAYER_DELIVERED', {
             dealId: deal.id,
             emId: deal.emId,
@@ -827,6 +850,20 @@
     Engine.getEMDeals = getEMDeals;
     Engine.getActiveDealsForEM = getActiveDealsForEM;
     Engine.canPlayerDeliverToDeal = canPlayerDeliverToDeal;
+    // v9p33river564: deal caravans carry goods that belong to the PLAYER. The generic
+    // caravan-arrival handler in engine_elite_merchants.js used to dump them into the
+    // destination market and pay the EM at market prices (so the EM was paid twice and
+    // the player got nothing). It now calls this on arrival for caravans tagged dealId.
+    Engine.deliverDealCaravan = function(caravan) {
+        if (!caravan || !caravan.dealId) return false;
+        var delivered = false;
+        for (var g in caravan.goods) {
+            var q = caravan.goods[g] || 0;
+            if (q > 0 && _creditPlayerDealGoods(g, q, caravan.toTownId)) delivered = true;
+        }
+        caravan.goods = {};
+        return delivered;
+    };
 
 })(typeof Engine !== 'undefined' ? Engine : null);
 

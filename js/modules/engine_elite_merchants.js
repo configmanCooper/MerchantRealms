@@ -1110,6 +1110,13 @@
 
                     // Arrived at destination — sell goods
                     var destTown = findTown(caravan.toTownId);
+                    // v9p33river564: EM-deal caravans carry goods owed to the PLAYER — hand
+                    // them over instead of dumping them on the market and paying the EM.
+                    if (caravan.dealId && Engine.deliverDealCaravan) {
+                        Engine.deliverDealCaravan(caravan);
+                        caravan.status = 'completed';
+                        continue;
+                    }
                     if (destTown && destTown.market) {
                         var totalRevenue = 0;
                         var totalTariffPaid = 0;

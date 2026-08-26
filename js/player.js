@@ -12203,9 +12203,15 @@
         soldiers = Math.min(soldiers, totalAvailable);
 
         // Deduct soldiers from staging town first, then nearest other towns
+        // v9p33river564: track exactly which town each soldier came from so a failed
+        // dispatch can refund them to their OWN garrison. Previously both failure paths
+        // refunded the whole amount to stagingTown, teleport-consolidating every other
+        // town's garrison — repeatable at will with an impossible order.
+        var _garPulls = [];
         var remaining = soldiers;
         var fromGar = Math.min(remaining, stagingAvail);
         stagingTown.garrison = (stagingTown.garrison || 0) - fromGar;
+        if (fromGar > 0) _garPulls.push({ town: stagingTown, amount: fromGar });
         remaining -= fromGar;
 
         // Calculate consolidation time from other towns
@@ -12228,6 +12234,7 @@
             for (var _sti4 = 0; _sti4 < otherTowns.length && remaining > 0; _sti4++) {
                 var pull = Math.min(remaining, otherTowns[_sti4].available);
                 otherTowns[_sti4].town.garrison = (otherTowns[_sti4].town.garrison || 0) - pull;
+                if (pull > 0) _garPulls.push({ town: otherTowns[_sti4].town, amount: pull });
                 remaining -= pull;
                 consolidationDays = Math.max(consolidationDays, otherTowns[_sti4].days);
             }
@@ -12257,7 +12264,10 @@
 
         if (!route || !route.legs || route.legs.length === 0) {
             // Refund soldiers to garrisons
-            stagingTown.garrison = (stagingTown.garrison || 0) + soldiers;
+            // v9p33river564: refund each pull to the town it came from.
+            for (var _rg1 = 0; _rg1 < _garPulls.length; _rg1++) {
+                _garPulls[_rg1].town.garrison = (_garPulls[_rg1].town.garrison || 0) + _garPulls[_rg1].amount;
+            }
             return { success: false, message: 'No route found to ' + targetTown.name + '. The army cannot reach it.' };
         }
 
@@ -12280,7 +12290,10 @@
             }
             if (shipsAvail < shipsNeeded) {
                 // Refund soldiers
-                stagingTown.garrison = (stagingTown.garrison || 0) + soldiers;
+                // v9p33river564: refund each pull to the town it came from.
+                for (var _rg2 = 0; _rg2 < _garPulls.length; _rg2++) {
+                    _garPulls[_rg2].town.garrison = (_garPulls[_rg2].town.garrison || 0) + _garPulls[_rg2].amount;
+                }
                 var portName = _embarkPort ? _embarkPort.name : 'the port';
                 return { success: false, message: 'This route crosses the sea! Need ' + shipsNeeded + ' ships at ' + portName + ' but only ' + shipsAvail + ' available. Build warships at port towns first.' };
             }
@@ -19471,6 +19484,11 @@
         if (town && town.market && town.market.supply && town.market.supply[eq.resource]) {
             town.market.supply[eq.resource] = Math.max(0, town.market.supply[eq.resource] - 1);
         }
+        // v9p33river564: the gold left the player and a unit left the market, but the
+        // market was never paid — every equip purchase destroyed `eq.price` from the
+        // world money supply. Mirror the buy() accounting.
+        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, eq.price);
+        if (typeof logFinance === 'function') logFinance(-eq.price, 'trading', 'Equipped ' + eq.name);
 
         player.weapon = { id: eq.id, name: eq.name, quality: eq.quality, combatBonus: eq.combatBonus };
 
@@ -19503,6 +19521,9 @@
         if (town && town.market && town.market.supply && town.market.supply[eq.resource]) {
             town.market.supply[eq.resource] = Math.max(0, town.market.supply[eq.resource] - 1);
         }
+        // v9p33river564: pay the market for the armor (see equipWeapon note).
+        if (town && Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, eq.price);
+        if (typeof logFinance === 'function') logFinance(-eq.price, 'trading', 'Equipped ' + eq.name);
 
         player.armor = { id: eq.id, name: eq.name, quality: eq.quality, combatBonus: eq.combatBonus };
 
@@ -23647,6 +23668,11 @@
 
         // Tick relationship system
         tickRelationships();
+
+        // v9p33river564: tickGuildFees() was written but never called from anywhere, so
+        // guild membership fees were never distributed to building owners. It self-gates
+        // on day % 30, so calling it daily is correct.
+        tickGuildFees();
 
         // Monthly: recalculate town-reputation → kingdom-reputation MODIFIER
         // This is NOT cumulative — it replaces the previous modifier value (max +25)

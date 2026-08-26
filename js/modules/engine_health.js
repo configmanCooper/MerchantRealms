@@ -1897,8 +1897,11 @@
                     }
                     delete p._treatmentTravelArrivalDay;
                     delete p._treatmentTravelTargetTownId;
-                    delete p._treatmentTravelOriginTownId;
-                    p._travelingForTreatment = false;
+                    // v9p33river564: do NOT clear the origin or the traveling flag here —
+                    // the "return healed travelers home" pass below needs both. Clearing
+                    // them on arrival (plus reading a field named `_treatmentOriginTown`
+                    // that is never written) meant nobles/kings/elite merchants who
+                    // travelled for treatment permanently relocated to the hospital town.
                     // Fall through to attempt admission this tick
                 } else {
                     continue; // still on the road
@@ -2162,7 +2165,11 @@
                     if (_childQueued) break;
 
                     var _childSev = _child.illnessSeverity || 'minor';
-                    var _childFee = NPC_HEALTH_CONFIG.TREATMENT_FEE ? (NPC_HEALTH_CONFIG.TREATMENT_FEE[_childSev] || 10) : 10;
+                    // v9p33river564: NPC_HEALTH_CONFIG.TREATMENT_FEE does not exist, so this
+                    // ternary always fell through to a flat 10g regardless of severity or
+                    // facility. Use the same per-facility priced fees the normal admit path
+                    // uses (bld._treatmentFees), falling back to 10g.
+                    var _childFee = (_cfBld._treatmentFees && _cfBld._treatmentFees[_childSev]) || 10;
 
                     // Parent pays for child's treatment
                     if (_rescueParent.gold >= _childFee) {
@@ -2175,13 +2182,21 @@
                         // Revenue to building owner
                         var _cOwnerK = findKingdom(_childTown.kingdomId);
                         var _cTaxRate = (_cOwnerK && _cOwnerK.healthcareTaxRate) || 0.15;
+                        var _cTax = Math.floor(_childFee * _cTaxRate);
                         if (_cfBld.ownerId === 'kingdom' || (_cOwnerK && _cfBld.ownerId === _cOwnerK.id)) {
                             if (_cOwnerK) _cOwnerK.gold = (_cOwnerK.gold || 0) + _childFee;
                         } else if (_cfBld.ownerId === 'player') {
-                            _cfBld.retailRevenue = (_cfBld.retailRevenue || 0) + (_childFee - Math.floor(_childFee * _cTaxRate));
+                            _cfBld.retailRevenue = (_cfBld.retailRevenue || 0) + (_childFee - _cTax);
                         } else if (_cfBld.ownerId) {
                             var _cfOwner = findPerson(_cfBld.ownerId);
-                            if (_cfOwner && _cfOwner.alive) _cfOwner.gold = (_cfOwner.gold || 0) + (_childFee - Math.floor(_childFee * _cTaxRate));
+                            if (_cfOwner && _cfOwner.alive) _cfOwner.gold = (_cfOwner.gold || 0) + (_childFee - _cTax);
+                        }
+                        // v9p33river564: the healthcare tax withheld from private owners was
+                        // subtracted but never credited to the kingdom — the gold simply
+                        // vanished. Mirror the normal admit path and book it as revenue.
+                        if (_cOwnerK && _cTax > 0 && _cfBld.ownerId && _cfBld.ownerId !== 'kingdom' && _cfBld.ownerId !== _cOwnerK.id) {
+                            _cOwnerK.gold = (_cOwnerK.gold || 0) + _cTax;
+                            _cOwnerK.healthcareTaxRevenue = (_cOwnerK.healthcareTaxRevenue || 0) + _cTax;
                         }
 
                         // Children go to front of queue (priority)
@@ -2245,13 +2260,21 @@
         for (var ri = 0; ri < _treatAlive.length; ri++) {
             var rp = _treatAlive[ri];
             if (!rp.alive || !rp._travelingForTreatment) continue;
+            // Still en route — don't send them back before they've arrived.
+            if (rp._treatmentTravelArrivalDay != null) continue;
             if (!rp.sick && !rp.injured && !rp._illnessTreatPaid) {
-                // Healed — return home
-                if (rp._treatmentOriginTown) {
-                    rp.townId = rp._treatmentOriginTown;
+                // Healed — return home.
+                // v9p33river564: the canonical field is _treatmentTravelOriginTownId
+                // (set at dispatch); `_treatmentOriginTown` was never written anywhere.
+                if (rp._treatmentTravelOriginTownId) {
+                    var _homeTown = findTown(rp._treatmentTravelOriginTownId);
+                    if (_homeTown) {
+                        rp.townId = _homeTown.id;
+                        rp.kingdomId = _homeTown.kingdomId;
+                    }
                 }
-                delete rp._travelingForTreatment;
-                delete rp._treatmentOriginTown;
+                rp._travelingForTreatment = false;
+                delete rp._treatmentTravelOriginTownId;
             }
         }
     }
