@@ -9243,27 +9243,11 @@
         }
 
         // Derive kingdom kingPersonality from the new king's actual NPC personality traits
-        var kp = newKing.personality || {};
-        var intVal = kp.intelligence || 50;
-        var warmVal = kp.warmth || 50;
-        var ambVal = kp.ambition || 50;
-        var frugVal = kp.frugality || 50;
-        var loyVal = kp.loyalty || 50;
-        var honVal = kp.honesty || 50;
-
-        kingdom.kingPersonality = {
-            generosity: warmVal >= 60 ? 'generous' : warmVal >= 40 ? 'fair' : 'greedy',
-            militarism: ambVal >= 70 ? 'aggressive' : loyVal >= 60 ? 'defensive' : 'peaceful',
-            justice: honVal >= 60 ? 'just' : 'pragmatic',
-            // v9p33river465: succession personality must still produce traditional kings for policy review.
-            tradition: intVal >= 60 ? 'progressive' : intVal < 35 ? 'traditional' : 'moderate',
-            icon: (kingdom.kingPersonality && kingdom.kingPersonality.icon) || '👑',
-            intelligence: intVal >= 80 ? 'brilliant' : intVal >= 60 ? 'clever' : intVal >= 40 ? 'average' : intVal >= 20 ? 'dim' : 'foolish',
-            temperament: warmVal >= 75 ? 'kind' : warmVal >= 50 ? 'fair' : warmVal >= 25 ? 'stern' : 'cruel',
-            ambition: ambVal >= 70 ? 'ambitious' : ambVal >= 35 ? 'content' : 'lazy',
-            greed: honVal >= 70 && frugVal >= 60 ? 'generous' : honVal >= 45 ? 'fair' : frugVal <= 30 ? 'corrupt' : 'greedy',
-            courage: loyVal >= 65 && ambVal >= 50 ? 'brave' : loyVal >= 35 ? 'cautious' : 'cowardly',
-        };
+        // v9p33river570: extracted to _deriveKingPersonality() so the revolt path shares it.
+        kingdom.kingPersonality = _deriveKingPersonality(
+            newKing,
+            (kingdom.kingPersonality && kingdom.kingPersonality.icon) || '👑'
+        );
 
         // New king changes diplomacy
         for (const otherId in kingdom.relations) {
@@ -13665,12 +13649,24 @@
 
         // 2) Personality
         var P = noble.personality || {};
+        // v9p33river570: this block read P.mercy and P.justice, neither of which exists on
+        // person.personality (loyalty, ambition, frugality, intelligence, warmth, honesty,
+        // selfishness, plus risk_tolerance/social). All four branches failed their
+        // `!= null` guard, so a noble's morality never affected a verdict at all.
+        //
+        // Both are derived rather than stored, using the engine's own definitions from
+        // _deriveKingPersonality(): warmth is the kindness axis (it produces temperament
+        // kind/cruel and generosity), and honesty is the justice axis (honVal >= 60 -> 'just').
+        var _warmVal = P.warmth  != null ? P.warmth  : 50;
+        var _honVal  = P.honesty != null ? P.honesty : 50;
         // Merciful / kind nobles lean toward acquittal
-        if (P.mercy != null && P.mercy > 60) score += 10;
-        else if (P.mercy != null && P.mercy < 30) score -= 10;
-        if (P.justice != null && P.justice > 70) score -= 12;     // strict justice → guilty
-        if (P.justice != null && P.justice < 30) score += 8;      // lenient → not guilty
-        if (P.honesty != null && P.honesty < 30) score += 5;      // dishonest nobles protect their own
+        if (_warmVal > 60) score += 10;
+        else if (_warmVal < 30) score -= 10;
+        // Honesty doubles as the justice axis: scrupulous nobles convict, and the original
+        // "dishonest nobles protect their own" bonus is folded in here so honesty is only
+        // counted once rather than applied twice from two separate branches.
+        if (_honVal >= 70) score -= 12;      // strict justice -> guilty
+        else if (_honVal < 30) score += 13;  // lenient + protects their own (8 + 5 combined)
         if (P.ambition != null && P.ambition > 70 && accusedIsPlayer) score -= 8; // ambitious nobles see opportunity in player's downfall
 
         // 3) Crime severity influences strict nobles further
@@ -15079,14 +15075,20 @@
 
             var _joinChance = 0.15; // base 15% chance
             // Personality modifiers
-            if (_nPers.ambition === 'ambitious') _joinChance += 0.15;
-            if (_nPers.courage === 'brave') _joinChance += 0.10;
-            if (_nPers.courage === 'cowardly') _joinChance -= 0.10;
+            // v9p33river570: these tested kingPersonality STRING enums against a NOBLE's
+            // person.personality, which only holds numbers — so every modifier here was dead
+            // and conspiracy recruitment ignored personality entirely. _deriveKingPersonality
+            // converts the noble's numeric traits into exactly these strings using the
+            // engine's own thresholds, so the branches below keep their original meaning.
+            var _nKp = _deriveKingPersonality(_noble);
+            if (_nKp.ambition === 'ambitious') _joinChance += 0.15;
+            if (_nKp.courage === 'brave') _joinChance += 0.10;
+            if (_nKp.courage === 'cowardly') _joinChance -= 0.10;
             // Fear effects: high fear DECREASES chance for cowardly, INCREASES for brave (angry)
             if (_nFear > 50) {
-                if (_nPers.courage === 'cowardly' || (_nPers.ambition || 50) < 30) {
+                if (_nKp.courage === 'cowardly' || (_nPers.ambition || 50) < 30) {
                     _joinChance -= 0.15; // too scared
-                } else if (_nPers.courage === 'brave') {
+                } else if (_nKp.courage === 'brave') {
                     _joinChance += 0.10; // anger at tyranny
                 }
             }
@@ -15443,10 +15445,18 @@
             for (var _snki = 0; _snki < _survivingNobles.length; _snki++) {
                 var _snNoble = _survivingNobles[_snki];
                 var _snPers = _snNoble.personality || {};
+                // v9p33river570: these tested kingPersonality STRING enums ('ambitious',
+                // 'brave', 'brilliant') against person.personality, which only ever holds
+                // NUMBERS — so every bonus was dead and the "best noble" was picked purely
+                // from rng.randInt(0, 20). Thresholds below are the same cutoffs
+                // _deriveKingPersonality() uses to produce those very strings.
+                var _snAmb = _snPers.ambition     != null ? _snPers.ambition     : 50;
+                var _snLoy = _snPers.loyalty      != null ? _snPers.loyalty      : 50;
+                var _snInt = _snPers.intelligence != null ? _snPers.intelligence : 50;
                 var _snScore = 50 + rng.randInt(0, 20); // nobles start with a 50pt advantage
-                if (_snPers.ambition === 'ambitious') _snScore += 30;
-                if (_snPers.courage === 'brave') _snScore += 20;
-                if (_snPers.intelligence === 'brilliant' || _snPers.intelligence === 'clever') _snScore += 15;
+                if (_snAmb >= 70) _snScore += 30;                       // 'ambitious'
+                if (_snLoy >= 65 && _snAmb >= 50) _snScore += 20;       // 'brave'
+                if (_snInt >= 60) _snScore += 15;                       // 'brilliant' or 'clever'
                 if (_snScore > bestNobleScore) { bestNobleScore = _snScore; newKing = _snNoble; }
             }
         }
@@ -15457,12 +15467,17 @@
                 var rebel = survivingRebels[ri];
                 var score = rng.randInt(0, 20);
                 var pers = rebel.personality || {};
-                if (pers.ambition === 'ambitious') score += 30;
-                else if (pers.ambition === 'content') score += 10;
-                if (pers.courage === 'brave') score += 25;
-                else if (pers.courage === 'cautious') score += 10;
-                if (pers.intelligence === 'brilliant' || pers.intelligence === 'clever') score += 15;
-                if (pers.temperament === 'stern' || pers.temperament === 'fair') score += 10;
+                // v9p33river570: same string-vs-number bug as the noble branch above.
+                var _rbAmb  = pers.ambition     != null ? pers.ambition     : 50;
+                var _rbLoy  = pers.loyalty      != null ? pers.loyalty      : 50;
+                var _rbInt  = pers.intelligence != null ? pers.intelligence : 50;
+                var _rbWarm = pers.warmth       != null ? pers.warmth       : 50;
+                if (_rbAmb >= 70) score += 30;                          // 'ambitious'
+                else if (_rbAmb >= 35) score += 10;                     // 'content'
+                if (_rbLoy >= 65 && _rbAmb >= 50) score += 25;          // 'brave'
+                else if (_rbLoy >= 35) score += 10;                     // 'cautious'
+                if (_rbInt >= 60) score += 15;                          // 'brilliant' or 'clever'
+                if (_rbWarm >= 25 && _rbWarm < 75) score += 10;         // 'stern' or 'fair'
                 if ((rebel.age || 25) >= 20 && (rebel.age || 25) <= 35) score += 10;
                 if (score > bestScore) { bestScore = score; newKing = rebel; }
             }
@@ -15484,16 +15499,23 @@
         }
 
         // Generate kingdom personality based on new king
-        var kp = newKing ? (newKing.personality || {}) : {};
-        var generosity = kp.generosity || rng.pick(['generous', 'fair', 'miserly']);
-        var militarism = rng.pick(['defensive', 'aggressive']); // revolt kingdoms tend toward military readiness
-        var justice = kp.justice || rng.pick(['just', 'pragmatic']);
-        var tradition = rng.pick(['progressive', 'moderate']); // revolters are reformers
-        var intelligence = kp.intelligence || rng.pick(['clever', 'average']);
-        var temperament = kp.temperament || rng.pick(['fair', 'stern']);
-        var ambition = kp.ambition || 'ambitious';
-        var greed = kp.greed || rng.pick(['fair', 'greedy']);
-        var courage = kp.courage || 'brave';
+        // v9p33river570: this used to read kp.generosity / kp.justice / kp.intelligence /
+        // kp.temperament / kp.ambition / kp.greed / kp.courage straight off the founder's
+        // person.personality — none of which exist there (it holds numbers, not the
+        // kingPersonality string enums). Every field therefore fell through to rng.pick(),
+        // so a breakaway kingdom's ideology had nothing to do with who founded it.
+        // Derive it the same way a succession king does, then keep the two revolt-specific
+        // overrides that were always intentional.
+        var _revoltKp = _deriveKingPersonality(newKing, '🔥');
+        var generosity   = _revoltKp.generosity;
+        var militarism   = rng.pick(['defensive', 'aggressive']); // revolt kingdoms tend toward military readiness
+        var justice      = _revoltKp.justice;
+        var tradition    = rng.pick(['progressive', 'moderate']); // revolters are reformers
+        var intelligence = _revoltKp.intelligence;
+        var temperament  = _revoltKp.temperament;
+        var ambition     = _revoltKp.ambition;
+        var greed        = _revoltKp.greed;
+        var courage      = _revoltKp.courage;
 
         // Pick a color for the new kingdom
         var usedColors = {};
@@ -19557,7 +19579,10 @@
                         if (!conscript.needs) conscript.needs = {};
                         var _cDrop = 25 + Math.floor(rng.random() * 20);
                         var _cPers = conscript.personality || {};
-                        if ((_cPers.courage || 50) > 65) _cDrop = Math.round(_cDrop * 0.6);
+                        // v9p33river570: `courage` is not a person trait, so `(_cPers.courage || 50) > 65`
+                        // was always false and brave conscripts never took a reduced happiness hit.
+                        var _cKp = _deriveKingPersonality(conscript);
+                        if (_cKp.courage === 'brave') _cDrop = Math.round(_cDrop * 0.6);
                         if ((_cPers.ambition || 50) > 60) _cDrop = Math.round(_cDrop * 0.75);
                         if (conscript.spouse || conscript.spouseId) _cDrop = Math.round(_cDrop * 1.3);
                         conscript.needs.happiness = Math.max(5, (conscript.needs.happiness || 50) - _cDrop);
@@ -25165,6 +25190,67 @@
         findPerson = function (id) { return personIndex[id] || null; };
     }
 
+    // ========================================================
+    //  PERSON PERSONALITY TRAITS — extended numeric traits
+    // ========================================================
+    // v9p33river570: `person.personality` was generated with only seven numeric traits
+    // (loyalty, ambition, frugality, intelligence, warmth, honesty, selfishness), yet
+    // several systems branched on `risk_tolerance` and `social` — which are only ever
+    // populated for elite merchants by ensureEliteMerchantFields(). Those branches were
+    // permanently dead (the `|| 50` fallback pinned them below their own thresholds).
+    //
+    // These two traits genuinely have no equivalent among the original seven, so they are
+    // added here rather than proxied. Generation matches the elite-merchant version exactly
+    // (3-roll bell curve), and this is idempotent so it doubles as the backfill for saves
+    // that predate it — the same approach already used for `selfishness`.
+    //
+    // NOTE: `courage`, `mercy` and `justice` are deliberately NOT added. The engine already
+    // defines all three in terms of existing traits inside _deriveKingPersonality() below
+    // (courage from loyalty+ambition, temperament/generosity from warmth, justice from
+    // honesty), so the consuming code derives them instead of storing duplicates.
+    function _ensurePersonTraits(p) {
+        if (!p) return null;
+        if (!p.personality) p.personality = {};
+        var _pt = p.personality;
+        if (_pt.risk_tolerance == null || _pt.social == null) {
+            var _r = world && world.rng ? world.rng : null;
+            var _roll = function () {
+                if (!_r) return 50;
+                return Math.floor((_r.random() + _r.random() + _r.random()) / 3 * 100);
+            };
+            if (_pt.risk_tolerance == null) _pt.risk_tolerance = _roll();
+            if (_pt.social == null) _pt.social = _roll();
+        }
+        return _pt;
+    }
+
+    // Canonical numeric-personality -> kingPersonality string-enum conversion.
+    // v9p33river570: this mapping used to live inline inside installNewKing(). The revolt
+    // path had its own broken copy that read the STRING fields straight off a person (which
+    // only ever carries NUMBERS), so a breakaway kingdom's entire ideology fell through to
+    // rng.pick() and had nothing to do with its founder. Both callers now share this.
+    function _deriveKingPersonality(person, existingIcon) {
+        var kp = (person && person.personality) || {};
+        var intVal  = kp.intelligence != null ? kp.intelligence : 50;
+        var warmVal = kp.warmth       != null ? kp.warmth       : 50;
+        var ambVal  = kp.ambition     != null ? kp.ambition     : 50;
+        var frugVal = kp.frugality    != null ? kp.frugality    : 50;
+        var loyVal  = kp.loyalty      != null ? kp.loyalty      : 50;
+        var honVal  = kp.honesty      != null ? kp.honesty      : 50;
+        return {
+            generosity:   warmVal >= 60 ? 'generous' : warmVal >= 40 ? 'fair' : 'greedy',
+            militarism:   ambVal  >= 70 ? 'aggressive' : loyVal >= 60 ? 'defensive' : 'peaceful',
+            justice:      honVal  >= 60 ? 'just' : 'pragmatic',
+            tradition:    intVal  >= 60 ? 'progressive' : intVal < 35 ? 'traditional' : 'moderate',
+            icon:         existingIcon || '👑',
+            intelligence: intVal >= 80 ? 'brilliant' : intVal >= 60 ? 'clever' : intVal >= 40 ? 'average' : intVal >= 20 ? 'dim' : 'foolish',
+            temperament:  warmVal >= 75 ? 'kind' : warmVal >= 50 ? 'fair' : warmVal >= 25 ? 'stern' : 'cruel',
+            ambition:     ambVal >= 70 ? 'ambitious' : ambVal >= 35 ? 'content' : 'lazy',
+            greed:        honVal >= 70 && frugVal >= 60 ? 'generous' : honVal >= 45 ? 'fair' : frugVal <= 30 ? 'corrupt' : 'greedy',
+            courage:      loyVal >= 65 && ambVal >= 50 ? 'brave' : loyVal >= 35 ? 'cautious' : 'cowardly',
+        };
+    }
+
     // Keep person index updated for new births
     function registerPerson(p) {
         personIndex[p.id] = p;
@@ -27900,8 +27986,14 @@
             if (!kingdom) continue;
 
             // Pick crime by personality
-            var sel = (actor.personality && actor.personality.selfishness != null) ? actor.personality.selfishness : 50;
-            var risk = (actor.personality && actor.personality.risk_tolerance != null) ? actor.personality.risk_tolerance : 50;
+            // v9p33river570: `risk_tolerance` used to be generated ONLY for elite merchants,
+            // and this loop explicitly skips them — so `risk` was always the 50 fallback and
+            // both `risk > 50` and `risk > 60` were unreachable. Regular NPCs could therefore
+            // only ever commit theft; assault and arson never fired. _ensurePersonTraits now
+            // guarantees the trait (the daily tick backfills it for older saves too).
+            var _actorPers = _ensurePersonTraits(actor) || {};
+            var sel = (_actorPers.selfishness != null) ? _actorPers.selfishness : 50;
+            var risk = (_actorPers.risk_tolerance != null) ? _actorPers.risk_tolerance : 50;
             var roll = rng.random();
             var crimeId, baseDetect;
             if (roll < 0.65) {
@@ -31241,7 +31333,11 @@
                     if (!_invitedNobles[_ini].accepted) continue;
                     var _invNoble = findPerson(_invitedNobles[_ini].id);
                     if (!_invNoble || !_invNoble._nobleRelationships) continue;
-                    var _invNp = _invNoble.personality || {};
+                    // v9p33river570: `social` was only generated for elite merchants, so for a
+                    // noble `_invNp.social` was undefined, `|| 50` pinned it to exactly 50, and
+                    // `50 > 60` meant the sociable-noble bonus never applied. _ensurePersonTraits
+                    // now guarantees it (the daily tick backfills older saves).
+                    var _invNp = _ensurePersonTraits(_invNoble) || {};
                     var _invBaseChance = 0.15;
                     if ((_invNp.social || 50) > 60) _invBaseChance += 0.10;
                     if ((_invNp.warmth || 50) > 60) _invBaseChance += 0.05;
@@ -34022,7 +34118,11 @@
             }
 
             // Militaristic nobles push for stronger military
-            var courage = pers.courage || 50;
+            // v9p33river570: `courage` is not a person trait — `pers.courage || 50` was always
+            // exactly 50, so `> 65` never fired and nobles applied zero war pressure. The
+            // engine derives courage from loyalty + ambition (see _deriveKingPersonality), so
+            // use that same combination as the numeric drive here.
+            var courage = Math.round(((pers.loyalty != null ? pers.loyalty : 50) + (pers.ambition != null ? pers.ambition : 50)) / 2);
             if (courage > 65) {
                 warPressure += (courage - 55) * 0.01 * weight;
             }
@@ -34803,8 +34903,13 @@
                         var _newKingP = leader && leader.personality ? leader.personality : null;
                         var _oldKingQuirks = (kingPerson.quirks && Array.isArray(kingPerson.quirks)) ? kingPerson.quirks : [];
                         var _oldKingVengeful = _oldKingQuirks.indexOf('vengeful') >= 0 || _oldKingQuirks.indexOf('vindictive') >= 0;
-                        var _newKingMerciful = _newKingP && (_newKingP.mercy === 'merciful' || _newKingP.justice === 'just');
-                        var _newKingCruel = _newKingP && (_newKingP.justice === 'harsh' || _newKingP.cruelty === 'cruel' || _newKingP.mercy === 'merciless');
+                        // v9p33river570: `mercy`, `cruelty` and `justice` are not person traits, so both
+                        // flags below were permanently false and a coup leader's temperament never
+                        // affected whether the deposed king's nobles were spared. Derive the equivalent
+                        // string enums from the leader's numeric traits instead.
+                        var _newKingKp = _newKingP ? _deriveKingPersonality(leader) : null;
+                        var _newKingMerciful = !!(_newKingKp && (_newKingKp.temperament === 'kind' || _newKingKp.justice === 'just'));
+                        var _newKingCruel = !!(_newKingKp && _newKingKp.temperament === 'cruel');
 
                         var _fate;
                         if (_newKingCruel) {
@@ -36575,6 +36680,12 @@
                     // Backfill selfishness for saves that predate this trait
                     if (_cp.personality && _cp.personality.selfishness == null) {
                         _cp.personality.selfishness = Math.floor((world.rng.random() + world.rng.random() + world.rng.random()) / 3 * 100);
+                    }
+                    // v9p33river570: same treatment for risk_tolerance / social — they were
+                    // only ever generated for elite merchants, so every branch keyed on them
+                    // (NPC assault/arson selection, feast invitations) was permanently dead.
+                    if (_cp.personality && (_cp.personality.risk_tolerance == null || _cp.personality.social == null)) {
+                        _ensurePersonTraits(_cp);
                     }
                     if (!_tickCache.peopleByTown[_cp.townId]) _tickCache.peopleByTown[_cp.townId] = [];
                     _tickCache.peopleByTown[_cp.townId].push(_cp);
