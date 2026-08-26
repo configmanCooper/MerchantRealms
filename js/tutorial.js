@@ -2319,7 +2319,9 @@ window.Tutorial = (function () {
             if (tc) tc.innerHTML = '';
             var badge = document.querySelector('[ref] .notification-count, .notif-count');
             if (badge) badge.textContent = '0';
-            if (typeof UI !== 'undefined' && UI.clearNotifications) UI.clearNotifications();
+            // v9p33river566: UI.clearNotifications() has never existed, so this guarded
+            // call was always skipped. There is no queue behind the toasts — clearing
+            // #toastContainer above is the whole job — so the dead call is removed.
         }, 200);
 
         // Start game music (tutorial doesn't trigger main.js music path)

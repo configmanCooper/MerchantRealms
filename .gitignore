@@ -1,4 +1,4 @@
-﻿# Dev/testing files
+# Dev/testing files
 node_modules/
 test_*.js
 server.js
@@ -23,3 +23,7 @@ desktop.ini
 # Rust build artifacts (source is tracked, binary .wasm is tracked in js/)
 wasm/target/
 wasm/Cargo.lock
+
+# Stray analysis temp files (must never be committed into the game folder)
+_*.tmp.txt
+_tmp_*

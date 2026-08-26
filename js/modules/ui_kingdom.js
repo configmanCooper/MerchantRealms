@@ -530,7 +530,7 @@
 
                 html += '<div class="family-member-card">';
                 html += '<div class="family-member-header">';
-                html += '<span><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="' + m.npcId + '">' + roleIcon + ' ' + m.name + '</a></span>';
+                html += '<span><a href="#" style="color:var(--gold);text-decoration:underline;cursor:pointer;" data-action="showPersonLink" data-id="' + m.npcId + '">' + roleIcon + ' ' + escapeHtml(m.name) + '</a></span>';
                 html += '<span class="family-role-badge">' + roleLabel + '</span>';
                 html += '</div>';
                 html += '<div class="family-member-body">';
@@ -584,8 +584,11 @@
                 html += '<button class="btn-action btn-small" data-action="familyAction" data-type="teach" data-id="' + m.npcId + '">📖 Teach</button>';
                 html += '<button class="btn-action btn-small" data-action="familyAction" data-type="connections" data-id="' + m.npcId + '">🤝 Connections</button>';
                 html += '<button class="btn-action btn-small" data-action="familyAction" data-type="gift" data-id="' + m.npcId + '">🎁 Gift</button>';
-                html += '<button class="btn-action btn-small" data-action="giveFamilyGoldDialog" data-id="' + m.npcId + '" data-val="' + m.name.replace(/'/g, "\\'") + '">💰 Give Gold</button>';
-                html += '<button class="btn-action btn-small" data-action="giveFamilyItemDialog" data-id="' + m.npcId + '" data-val="' + m.name.replace(/'/g, "\\'") + '">📦 Give Item</button>';
+                // v9p33river566: escapeHtml the name for the double-quoted data-val
+                // attribute — the old `.replace(/'/g, "\\'")` did nothing for the
+                // `"` that actually terminates the attribute.
+                html += '<button class="btn-action btn-small" data-action="giveFamilyGoldDialog" data-id="' + m.npcId + '" data-val="' + escapeHtml(m.name) + '">💰 Give Gold</button>';
+                html += '<button class="btn-action btn-small" data-action="giveFamilyItemDialog" data-id="' + m.npcId + '" data-val="' + escapeHtml(m.name) + '">📦 Give Item</button>';
                 html += '<button class="btn-action btn-small" data-action="familyAction" data-type="invite" data-id="' + m.npcId + '">🏠 Invite</button>';
                 html += '<button class="btn-action btn-small" data-action="familyAction" data-type="confide" data-id="' + m.npcId + '">💬 Confide</button>';
                 if (m.role === 'brother' || m.role === 'sister') {
@@ -854,7 +857,7 @@
 
     function giveFamilyGoldDialog(npcId, name) {
         var html = '<div style="text-align:center;padding:10px;">';
-        html += '<p style="color:var(--parchment);margin-bottom:12px;">How much gold to give <strong>' + name + '</strong>?</p>';
+        html += '<p style="color:var(--parchment);margin-bottom:12px;">How much gold to give <strong>' + escapeHtml(name) + '</strong>?</p>';
         html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Your gold: ' + formatGold(Player.gold) + 'g</p>';
         html += '<div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;">';
         var amounts = [10, 25, 50, 100, 250, 500];
@@ -873,7 +876,7 @@
 
     function giveFamilyItemDialog(npcId, name) {
         var html = '<div style="max-height:400px;overflow-y:auto;padding:6px;">';
-        html += '<p style="color:var(--parchment);margin-bottom:10px;">Select an item to give <strong>' + name + '</strong>:</p>';
+        html += '<p style="color:var(--parchment);margin-bottom:10px;">Select an item to give <strong>' + escapeHtml(name) + '</strong>:</p>';
         var inv = Player.inventory || {};
         var hasItems = false;
         // Group by category
@@ -2384,7 +2387,7 @@
                                    loyalty < 75 ? '<span style="color:#d4d480;">probably will comply</span>' :
                                    '<span style="color:#9ae09a;">very likely to comply</span>';
                 s += '<div style="margin-top:6px;padding:5px;background:rgba(0,0,0,0.3);border-radius:3px;font-size:0.72rem;color:#bbb;">';
-                s += 'If refused — ' + child.firstName + ' is ' + defianceHint + '.';
+                s += 'If refused — ' + escapeHtml(child.firstName || '') + ' is ' + defianceHint + '.';
                 s += ' &nbsp;(loyalty ' + loyalty + ', ambition ' + ambition + ', bond with you ' + rel + ')';
                 s += '</div>';
             }

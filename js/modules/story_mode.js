@@ -3432,8 +3432,19 @@ var StoryMode = (function () {
                 if (typeof STORY_DIALOGS !== 'undefined' && STORY_DIALOGS[dKey]) {
                     // Slight delay so UI is ready
                     setTimeout(function() {
-                        var dialogData = STORY_DIALOGS[dKey];
+                        // v9p33river566: this resume path used the SHARED STORY_DIALOGS
+                        // entry (mutating it) and attached no onComplete, so finishing a
+                        // dialog that was open at save time set none of its story flags
+                        // (metLordCalder, diplomaticVictory, battleWon, talkedToEdmund,
+                        // ceremonyAttended, ...) and never chained to `next`. Mirror
+                        // _showDialog()'s clone + completion wrapper.
+                        var dialogData = JSON.parse(JSON.stringify(STORY_DIALOGS[dKey]));
                         dialogData._dialogKey = dKey;
+                        var _resumeNext = dialogData.next || null;
+                        dialogData.onComplete = function () {
+                            _onDialogCompleted(dKey);
+                            if (_resumeNext) _showDialog(_resumeNext);
+                        };
                         if (typeof UI !== 'undefined' && UI.showStoryDialog) {
                             UI.showStoryDialog(dialogData, dLine);
                         }
@@ -3459,6 +3470,10 @@ var StoryMode = (function () {
         onMetNPC:          onMetNPC,
 
         getCurrentChapter: getCurrentChapter,
+        // v9p33river566: ui_story_tracker.js calls StoryMode.getChapters() behind a
+        // truthiness guard to derive the real chapter total, but it was never exported —
+        // so the tracker always fell back to the hardcoded 28 the guard was meant to replace.
+        getChapters:       function () { return CHAPTERS.slice(); },
         getChapterIndex:   getChapterIndex,
         getObjectives:     getObjectives,
         isButtonUnlocked:  isButtonUnlocked,

@@ -18525,6 +18525,11 @@
 
         // Sanitize and apply name
         chosenName = chosenName.trim();
+        // v9p33river566: strip HTML-significant characters. This name is later
+        // interpolated into innerHTML and into a double-quoted data-val attribute in
+        // the Family Panel, so a name containing < > " & broke the markup and could
+        // inject an executable onerror= handler.
+        chosenName = chosenName.replace(/[<>"'&`]/g, '');
         if (chosenName.length === 0) chosenName = child.firstName; // fallback to auto-generated
         if (chosenName.length > 20) chosenName = chosenName.substring(0, 20);
 
