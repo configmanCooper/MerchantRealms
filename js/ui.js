@@ -1802,7 +1802,7 @@ window.UI = (function () {
                     else if (Player.travelMode === 'npc_luxury_sea') travelModeIcon = '🛳️';
                     else if (Player.travelMode === 'kingdom') travelModeIcon = '👑';
                     else if (Player.travelMode === 'npc_vessel') travelModeIcon = '⛴️';
-                    else if (Player.travelBySea) travelModeIcon = '⛵';
+                    else if (Player.state && Player.state.travelBySea) travelModeIcon = '⛵';
                     else if (Player.travelOffroad) travelModeIcon = '🥾';
                     var travelText = travelModeIcon + ' Traveling...';
                     if (!Player.travelPaid) {
@@ -2417,6 +2417,11 @@ window.UI = (function () {
     // v9p33river401: Check for pending unsolicited events in update loop
     var _lastShownUnsolicitedEventId = null;
     var _ueResultModalOpen = false;
+    // v9p33river562: ui_actions.js sets this flag when it opens the unsolicited-event
+    // result modal, but it lives in this IIFE's scope — the bare assignment over there
+    // never reached this variable, so _checkPendingUnsolicitedEvent could hijack the
+    // result modal with the next pending event.
+    function _setUeResultModalOpen(v) { _ueResultModalOpen = !!v; }
     function _checkPendingUnsolicitedEvent() {
         try {
             if (_ueResultModalOpen) return;
@@ -18196,7 +18201,11 @@ window.UI = (function () {
         var msg = '💡 ' + tip.resource.icon + ' ' + tip.resource.name + ' sells for ' + Math.round(tip.remotePrice) + 'g in ' + tip.town.name;
         toast(msg, 'success');
         // Refresh trade panel to show new tip in market intel
-        if (typeof refreshTradePanel === 'function') refreshTradePanel();
+        // v9p33river562: `refreshTradePanel` does not exist, so `typeof ... === 'function'`
+        // was always false and the freshly bought tip never appeared in Market Intel until
+        // the dialog was reopened by hand. openTradeDialog() is the canonical re-render
+        // (same pattern used elsewhere in this file).
+        if (typeof openTradeDialog === 'function') openTradeDialog();
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -23904,10 +23913,66 @@ window.UI = (function () {
     // Functions registered on UI namespace by the module.
     // ========================================================
 
+    // v9p33river562: this initializer used to sit AFTER the module's `return {...}`
+    // statement, so it was unreachable and mobile long-press tooltips never bound.
+    // ── Mobile Long-Press Tooltip System ──────────────────────────
+    // Shows title attribute as a tooltip when user long-presses on mobile
+    (function _initMobileLongPress() {
+        var _lpTimer = null;
+        var _lpTooltip = null;
+
+        function _showTooltip(text, x, y) {
+            _hideTooltip();
+            _lpTooltip = document.createElement('div');
+            _lpTooltip.className = 'mobile-tooltip';
+            _lpTooltip.textContent = text;
+            _lpTooltip.style.cssText = 'position:fixed;z-index:100000;background:#2a1f14;color:#e8dcc8;'
+                + 'border:1px solid rgba(196,168,124,0.4);border-radius:6px;padding:8px 12px;'
+                + 'font-size:0.82rem;max-width:260px;line-height:1.4;pointer-events:none;'
+                + 'box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+            document.body.appendChild(_lpTooltip);
+            // Position near touch point
+            var rect = _lpTooltip.getBoundingClientRect();
+            var left = Math.min(x - 10, window.innerWidth - rect.width - 10);
+            var top = y - rect.height - 15;
+            if (top < 5) top = y + 20;
+            _lpTooltip.style.left = Math.max(5, left) + 'px';
+            _lpTooltip.style.top = top + 'px';
+        }
+
+        function _hideTooltip() {
+            if (_lpTooltip && _lpTooltip.parentNode) _lpTooltip.parentNode.removeChild(_lpTooltip);
+            _lpTooltip = null;
+        }
+
+        document.addEventListener('touchstart', function(e) {
+            var el = e.target.closest('[title]');
+            if (!el || !el.title) return;
+            var touch = e.touches[0];
+            var tx = touch.clientX, ty = touch.clientY;
+            var titleText = el.title;
+            _lpTimer = setTimeout(function() {
+                _showTooltip(titleText, tx, ty);
+                // Auto-hide after 4 seconds
+                setTimeout(_hideTooltip, 4000);
+            }, 500);
+        }, { passive: true });
+
+        document.addEventListener('touchend', function() {
+            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+        }, { passive: true });
+
+        document.addEventListener('touchmove', function() {
+            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+            _hideTooltip();
+        }, { passive: true });
+    })();
+
     return {
         init,
         update,
         updateUI: update,
+        _setUeResultModalOpen,
         updateDateDisplay,
         showGameUI,
         hideGameUI,
@@ -24292,56 +24357,4 @@ window.UI = (function () {
         openPlayerInventory,
     };
 
-    // ── Mobile Long-Press Tooltip System ──────────────────────────
-    // Shows title attribute as a tooltip when user long-presses on mobile
-    (function _initMobileLongPress() {
-        var _lpTimer = null;
-        var _lpTooltip = null;
-
-        function _showTooltip(text, x, y) {
-            _hideTooltip();
-            _lpTooltip = document.createElement('div');
-            _lpTooltip.className = 'mobile-tooltip';
-            _lpTooltip.textContent = text;
-            _lpTooltip.style.cssText = 'position:fixed;z-index:100000;background:#2a1f14;color:#e8dcc8;'
-                + 'border:1px solid rgba(196,168,124,0.4);border-radius:6px;padding:8px 12px;'
-                + 'font-size:0.82rem;max-width:260px;line-height:1.4;pointer-events:none;'
-                + 'box-shadow:0 4px 12px rgba(0,0,0,0.5);';
-            document.body.appendChild(_lpTooltip);
-            // Position near touch point
-            var rect = _lpTooltip.getBoundingClientRect();
-            var left = Math.min(x - 10, window.innerWidth - rect.width - 10);
-            var top = y - rect.height - 15;
-            if (top < 5) top = y + 20;
-            _lpTooltip.style.left = Math.max(5, left) + 'px';
-            _lpTooltip.style.top = top + 'px';
-        }
-
-        function _hideTooltip() {
-            if (_lpTooltip && _lpTooltip.parentNode) _lpTooltip.parentNode.removeChild(_lpTooltip);
-            _lpTooltip = null;
-        }
-
-        document.addEventListener('touchstart', function(e) {
-            var el = e.target.closest('[title]');
-            if (!el || !el.title) return;
-            var touch = e.touches[0];
-            var tx = touch.clientX, ty = touch.clientY;
-            var titleText = el.title;
-            _lpTimer = setTimeout(function() {
-                _showTooltip(titleText, tx, ty);
-                // Auto-hide after 4 seconds
-                setTimeout(_hideTooltip, 4000);
-            }, 500);
-        }, { passive: true });
-
-        document.addEventListener('touchend', function() {
-            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-        }, { passive: true });
-
-        document.addEventListener('touchmove', function() {
-            if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-            _hideTooltip();
-        }, { passive: true });
-    })();
 })();

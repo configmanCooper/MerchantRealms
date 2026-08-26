@@ -2389,7 +2389,10 @@
         var cfg = CONFIG.SPOUSE_AI;
         var ai = player.spouseAI;
         var idx = ai.managedBuildingIdx;
-        if (idx < 0 || idx >= player.buildings.length) {
+        // v9p33river562: harden against a non-numeric idx (null/undefined from older
+        // saves) — `null < 0` is false and `null >= len` is false, so the old guard
+        // let it through and player.buildings[null] threw.
+        if (typeof idx !== 'number' || !isFinite(idx) || idx < 0 || idx >= player.buildings.length) {
             ai.managedBuildingIdx = -1;
             ai.activity = 'idle';
             ai.activityDetail = 'No building to manage';
@@ -2519,9 +2522,12 @@
             var _spTown = Engine.findTown(spouse.townId);
             if (_spTown) {
                 var _spHasMed = false;
+                // v9p33river562: remember which medical building type was found so the
+                // fee is routed to that owner, not "first hospital-or-clinic found".
+                var _spMedType = null;
                 if (_spTown.buildings) {
                     for (var _bmi = 0; _bmi < _spTown.buildings.length; _bmi++) {
-                        if (_spTown.buildings[_bmi].type === 'hospital' || _spTown.buildings[_bmi].type === 'clinic') { _spHasMed = true; break; }
+                        if (_spTown.buildings[_bmi].type === 'hospital' || _spTown.buildings[_bmi].type === 'clinic') { _spHasMed = true; _spMedType = _spTown.buildings[_bmi].type; break; }
                     }
                 }
                 if (!_spHasMed && (_spTown.category === 'city' || _spTown.category === 'capital_city')) _spHasMed = true;
@@ -2535,7 +2541,7 @@
                         ai.daysSick = 0;
                         ai.daysInjured = 0;
                         ai.health = Math.min(ai.health + 40, cfg.HEALTH_MAX || 100);
-                        _payHealthcareRevenue(_spTown, _spCost);
+                        _payHealthcareRevenue(_spTown, _spCost, _spMedType || undefined);
                         ai.activity = 'recovering';
                         ai.activityDetail = 'Treated at hospital (' + _spCost + 'g)';
                         EventTypes.emit('SPOUSE_HOSPITAL_TREATMENT', { spouseFirstName: spouse.firstName, cost: _spCost });
@@ -2763,7 +2769,10 @@
         if (isNaN(buildingIdx)) return { success: false, message: 'Invalid building index.' };
         // -1 means unassign from building management
         if (buildingIdx === -1) {
-            player.spouseAI.managedBuildingIdx = null;
+            // v9p33river562: must be -1, not null — `null >= 0` is TRUE in JS, so the
+            // "manage" behavior stayed at weight 90 and executeSpouseManage() then did
+            // player.buildings[null] → undefined → TypeError on the next spouse tick.
+            player.spouseAI.managedBuildingIdx = -1;
             player.spouseAI.assignedTask = null;
             player.spouseAI.activity = 'idle';
             player.spouseAI.activityDetail = 'Unassigned from building management';
@@ -3544,6 +3553,22 @@
                 if (typeof UI !== 'undefined' && UI.showLoseScreen) UI.showLoseScreen('No Heir');
                 return;
             }
+            // v9p33river562: with _godInvincible set there was no `return` here, so
+            // execution fell through to `heir.firstName` on a null/dead heir and threw
+            // TypeError. End the regency cleanly instead.
+            player.regencyMode = false;
+            player.regencyData = null;
+            if (typeof UI !== 'undefined') {
+                UI._regencyToastsSuppressed = false;
+                UI._funeralLocked = false;
+                if (UI.hideRegencyFastForward) UI.hideRegencyFastForward();
+            }
+            if (typeof Game !== 'undefined' && Game.setSpeed) {
+                Game.setSpeed(player._regencyPreSpeed || 1);
+                delete player._regencyPreSpeed;
+            }
+            Engine.logEvent('👑 Regency ended — no living heir remains (god mode kept the line alive).', null, 'my_family');
+            return;
         }
 
         const threshold = getRegencyThreshold(rd.regencyScore);

@@ -3787,7 +3787,7 @@
         // Success — kill the merchant
         if (Engine.killPerson) Engine.killPerson(person, 'assassination');
         player.notoriety = (player.notoriety || 0) + 15;
-        recordCorruptAction('assassinate_passenger', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'murder', successful);
+        recordCorruptAction('assassinate_passenger', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'murder', true);
         grantXP(50, 'Assassination');
 
         // Remove from passenger list
@@ -5062,7 +5062,7 @@
             target._jailedCrimeId = null; // v9p33river264
             player.notoriety = Math.min(100, (player.notoriety || 0) + 10);
             town.crime = Math.min(100, (town.crime || 0) + 3);
-            recordCorruptAction('jailbreak', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'sabotage', successful);
+            recordCorruptAction('jailbreak', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'sabotage', true);
 
             // v9p33river199: massive relationship boost + reset all favor
             // cooldowns with the rescued NPC (you literally saved them).

@@ -2512,11 +2512,29 @@
                         }
 
                         if (isReturnLeg) {
+                            // v9p33river562: manual disband dropped the goods but silently
+                            // destroyed every piece of caravan equipment. Auto-disband (below)
+                            // returns all of it; mirror that here.
+                            var _mdAtTown = player.townId === dropTownId;
+                            if (!player.townStorage[dropTownId]) player.townStorage[dropTownId] = {};
+                            if (caravan.carrierHorses > 0) {
+                                player.inventory['horses'] = (player.inventory['horses'] || 0) + caravan.carrierHorses;
+                                caravan.carrierHorses = 0;
+                            }
+                            var _mdGear = [['swords', 'guardWeapons'], ['armor', 'guardArmor'], ['cart', 'carts'], ['wagon', 'wagons']];
+                            for (var _mdi = 0; _mdi < _mdGear.length; _mdi++) {
+                                var _mdItem = _mdGear[_mdi][0], _mdField = _mdGear[_mdi][1];
+                                if ((caravan[_mdField] || 0) > 0) {
+                                    if (_mdAtTown) player.inventory[_mdItem] = (player.inventory[_mdItem] || 0) + caravan[_mdField];
+                                    else player.townStorage[dropTownId][_mdItem] = (player.townStorage[dropTownId][_mdItem] || 0) + caravan[_mdField];
+                                    caravan[_mdField] = 0;
+                                }
+                            }
                             caravan.status = 'arrived';
                             caravan.active = false;
                             caravan.recurring = false;
                             logCaravan(caravan, '🏳️ Caravan disbanded after final run.');
-                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods dropped off.', { _noToast: true }, 'my_business');
+                            Engine.logEvent('Caravan disbanded at ' + dropTownName + '. All goods and equipment returned.', { _noToast: true }, 'my_business');
                             return;
                         } else {
                             caravan.returnTrip = true;
@@ -3420,6 +3438,22 @@
                 player.inventory['wagon'] = (player.inventory['wagon'] || 0) + caravan.wagons;
             } else {
                 player.townStorage[dropTownId]['wagon'] = (player.townStorage[dropTownId]['wagon'] || 0) + caravan.wagons;
+            }
+        }
+        // v9p33river562: guard weapons/armor were silently destroyed here even though
+        // the log line and return message both promise "equipment returned".
+        if (caravan.guardWeapons > 0) {
+            if (player.townId === dropTownId) {
+                player.inventory['swords'] = (player.inventory['swords'] || 0) + caravan.guardWeapons;
+            } else {
+                player.townStorage[dropTownId]['swords'] = (player.townStorage[dropTownId]['swords'] || 0) + caravan.guardWeapons;
+            }
+        }
+        if (caravan.guardArmor > 0) {
+            if (player.townId === dropTownId) {
+                player.inventory['armor'] = (player.inventory['armor'] || 0) + caravan.guardArmor;
+            } else {
+                player.townStorage[dropTownId]['armor'] = (player.townStorage[dropTownId]['armor'] || 0) + caravan.guardArmor;
             }
         }
 

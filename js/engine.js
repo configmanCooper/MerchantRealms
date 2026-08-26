@@ -3259,7 +3259,9 @@
         // Boost supply for towns with production chain buildings
         const buildingSupplyBoost = {
             'sawmill': { planks: 30 },
-            'smelter': { iron: 20 },
+            // v9p33river562: a second 'smelter' key further down this literal silently
+            // overwrote this one (JS keeps the last), so `{ iron: 20 }` was dead config.
+            // Merged into the surviving entry at the bottom of the object.
             'brick_kiln': { bricks: 25 },
             'weaver': { cloth: 20 },
             'rope_maker': { rope: 15 },
@@ -3281,7 +3283,7 @@
             'powder_works': { saltpeter: 8, blasting_powder: 3 },
             'charcoal_kiln': { charcoal: 10 },
             'coal_mine': { coal: 12 },
-            'smelter': { iron: 15, steel: 3 },
+            'smelter': { iron: 20, steel: 3 },
         };
 
         // Seed manure in towns that have animal buildings
@@ -27697,7 +27699,7 @@
             if (localEMs.length > 0) {
                 var strategyMatches = localEMs.filter(function(p) {
                     var strat = p.tradeStrategy || 'diversified';
-                    var preferred = STRATEGY_BUILDINGS[strat] || STRATEGY_BUILDINGS.diversified || [];
+                    var preferred = Engine.getStrategyBuildings ? Engine.getStrategyBuildings(strat) : [];
                     return preferred.indexOf(bld.type) >= 0;
                 });
                 var emPool = strategyMatches.length > 0 ? strategyMatches : localEMs;

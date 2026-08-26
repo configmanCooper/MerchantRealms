@@ -67,7 +67,19 @@
     var assignRandomQuirks = function(rng) { return Engine.assignRandomQuirks(rng); };
     var findResourceById = function(id) { return Engine.findResourceById(id); };
     var getMarketPrice = function(town, resId) { return Engine.getMarketPrice(town, resId); };
-    var collectTradeTax = function(kId, amount, goodId) { Engine.collectTradeTax(kId, amount, goodId); };
+    // v9p33river562: this wrapper silently dropped `isImport`, `townId` AND the return
+    // value. Every EM sale therefore ran through the import branch, paying trade
+    // subsidies out of the kingdom treasury to nobody (gold burned — the exact case
+    // v9p33river338 fixed elsewhere), and Guild Hall per-town trade bonuses never applied.
+    var collectTradeTax = function(kId, amount, goodId, isImport, townId) {
+        return Engine.collectTradeTax(kId, amount, goodId, isImport, townId);
+    };
+    // Credit any import subsidy back to the elite merchant that earned it.
+    var _emCollectTradeTax = function(em, kId, amount, goodId, isImport, townId) {
+        var r = Engine.collectTradeTax(kId, amount, goodId, isImport, townId);
+        if (em && r && r.subsidyAwarded > 0) em.gold = (em.gold || 0) + r.subsidyAwarded;
+        return r;
+    };
     var distributeConstructionWages = function(townId, gold, rng) { Engine.distributeConstructionWages(townId, gold, rng); };
     var rebuildBridge = function(roadIdx, bridgeId) { return Engine.rebuildBridge(roadIdx, bridgeId); };
     var destroyBridge = function(roadIdx, bridgeId) { return Engine.destroyBridge(roadIdx, bridgeId); };
@@ -1005,8 +1017,14 @@
                 }
 
                 // Detect if caravan is smuggling export-restricted goods
+                // v9p33river562: `_emCrossKingdom` was assigned per-iteration inside the
+                // destination loop above, so out here it held the value for the LAST
+                // destination examined, not the one actually chosen (`bestDest`).
+                // Recompute against the real destination.
+                var _bestDestTown = findTown(bestDest);
+                var _emCrossKingdomChosen = !!(_bestDestTown && _bestDestTown.kingdomId !== town.kingdomId);
                 var _emHasContraband = false;
-                if (_emCrossKingdom && _emExportBan.length > 0) {
+                if (_emCrossKingdomChosen && _emExportBan.length > 0) {
                     for (var _bgk in bestGoods) {
                         if (_emExportBan.indexOf(_bgk) >= 0) { _emHasContraband = true; break; }
                     }
@@ -1038,7 +1056,7 @@
     function tickNPCCaravans() {
         _syncState();
         if (!world || !world.npcCaravans) return;
-        // v9p33river561: this function used a bare `rng` in the export-contraband
+        // v9p33river562: this function used a bare `rng` in the export-contraband
         // check without ever aliasing it, throwing ReferenceError inside Engine.tick()
         // and aborting the rest of the day's simulation whenever an EM caravan
         // carrying export-restricted goods arrived.
@@ -1684,8 +1702,24 @@
                 var buildingIncome = 0;
                 for (var bi2 = 0; bi2 < emBuildings.length; bi2++) {
                     var bld = emBuildings[bi2];
-                    if (bld && bld.condition !== 'destroyed') {
+                    // v9p33river562: `em.buildings` entries are lightweight mirrors
+                    // ({ id, townId, type }) that never carry a `condition` field, so
+                    // `bld.condition !== 'destroyed'` was always true and destroyed
+                    // buildings kept paying passive income forever. Resolve the real
+                    // town-side record and check that instead.
+                    if (bld) {
                         var bldTown = findTown(bld.townId);
+                        var _realBld = null;
+                        if (bldTown && bldTown.buildings) {
+                            for (var _rbi = 0; _rbi < bldTown.buildings.length; _rbi++) {
+                                var _rb = bldTown.buildings[_rbi];
+                                if (_rb.ownerId !== em.id) continue;
+                                if (bld.id && _rb.id && _rb.id !== bld.id) continue;
+                                if (!bld.id && _rb.type !== bld.type) continue;
+                                _realBld = _rb; break;
+                            }
+                        }
+                        if (_realBld && _realBld.condition === 'destroyed') continue;
                         var prosper = bldTown ? (bldTown.prosperity || 30) / 100 : 0.3;
                         var biBt = findBuildingType(bld.type);
                         var _bldInc = 0;
@@ -2168,7 +2202,7 @@
                             var _emActualPay = Math.min(payment, Math.max(0, k.gold || 0));
                             em.gold = (em.gold || 0) + _emActualPay;
                             k.gold -= _emActualPay;
-                            collectTradeTax(k.id, _emActualPay, order.resourceId);
+                            collectTradeTax(k.id, _emActualPay, order.resourceId, false, em.townId || null);
                             if (k.militaryStockpile && k.militaryStockpile.hasOwnProperty(order.resourceId)) {
                                 k.militaryStockpile[order.resourceId] = (k.militaryStockpile[order.resourceId] || 0) + deliverQty;
                             } else {
@@ -2187,7 +2221,7 @@
                             if (buyQty > 0 && (em.gold || 0) >= buyPrice * buyQty) {
                                 em.gold -= Math.floor(buyPrice * buyQty);
                                 town.market.supply[order.resourceId] -= buyQty;
-                                collectTradeTax(town.kingdomId, Math.floor(buyPrice * buyQty), order.resourceId);
+                                _emCollectTradeTax(em, town.kingdomId, Math.floor(buyPrice * buyQty), order.resourceId, true, town.id);
                                 // Deliver immediately
                                 order.qtyDelivered += buyQty;
                                 var pay2 = buyQty * order.assignedPrice;
@@ -2404,7 +2438,7 @@
                         em.gold -= Math.floor(adjBuyPrice * qty);
                         inv[resId] = (inv[resId] || 0) + qty;
                         town.market.supply[resId] -= qty;
-                        collectTradeTax(town.kingdomId, Math.floor(adjBuyPrice * qty), resId);
+                        _emCollectTradeTax(em, town.kingdomId, Math.floor(adjBuyPrice * qty), resId, true, town.id);
                         grantEmXp(em, Math.max(1, Math.floor(adjBuyPrice * qty / 50)), 'trade');
                         emitTrackedEMNotification(em, 'bought ' + qty + ' ' + resId + ' in ' + (town.name || 'town'), { townId: town.id });
                     }
@@ -2429,7 +2463,7 @@
                         inv[resKey] = (inv[resKey] || 0) + scarceQty;
                         town.market.supply[resKey] -= scarceQty;
                         currentStock += scarceQty;
-                        collectTradeTax(town.kingdomId, Math.floor(scarcityPrice * scarceQty), resKey);
+                        _emCollectTradeTax(em, town.kingdomId, Math.floor(scarcityPrice * scarceQty), resKey, true, town.id);
                     }
                 }
             }
@@ -2453,7 +2487,7 @@
                     em.gold += Math.floor(demAdjPrice * demSellQty);
                     inv[demResId] -= demSellQty;
                     town.market.supply[demResId] = (town.market.supply[demResId] || 0) + demSellQty;
-                    collectTradeTax(town.kingdomId, Math.floor(demAdjPrice * demSellQty), demResId);
+                    collectTradeTax(town.kingdomId, Math.floor(demAdjPrice * demSellQty), demResId, false, town.id);
                     grantEmXp(em, Math.max(1, Math.floor(demAdjPrice * demSellQty / 50)), 'demand_trade');
                     emitTrackedEMNotification(em, 'exploited demand: sold ' + demSellQty + ' ' + demResId + ' in ' + (town.name || 'town'), { townId: town.id });
                 }
@@ -2484,7 +2518,7 @@
                     em.gold += Math.floor(adjSellPrice * sellQty);
                     inv[resId2] -= sellQty;
                     town.market.supply[resId2] = (town.market.supply[resId2] || 0) + sellQty;
-                    collectTradeTax(town.kingdomId, Math.floor(adjSellPrice * sellQty), resId2);
+                    collectTradeTax(town.kingdomId, Math.floor(adjSellPrice * sellQty), resId2, false, town.id);
                     grantEmXp(em, Math.max(1, Math.floor(adjSellPrice * sellQty / 50)), 'trade');
                     emitTrackedEMNotification(em, 'sold ' + sellQty + ' ' + resId2 + ' in ' + (town.name || 'town'), { townId: town.id });
                 }
@@ -3244,7 +3278,11 @@
                     for (var _ugMatId in ugBt.materials) {
                         var _ugQty = ugBt.materials[_ugMatId];
                         var _ugMatPrice = 0;
-                        try { _ugMatPrice = getMarketPrice(ugRef.townId, _ugMatId) || 0; } catch(e) { console.warn('[EM] getMarketPrice error:', e.message); }
+                        // v9p33river562: getMarketPrice() takes a TOWN OBJECT, not a
+                        // townId — passing the id hit the `!town.market` early return
+                        // so upgrade costs always used base prices.
+                        var _ugTown = findTown(ugRef.townId);
+                        try { _ugMatPrice = (_ugTown ? getMarketPrice(_ugTown, _ugMatId) : 0) || 0; } catch(e) { console.warn('[EM] getMarketPrice error:', e.message); }
                         if (_ugMatPrice <= 0) { var _ugRes = findResourceById(_ugMatId); _ugMatPrice = _ugRes ? (_ugRes.basePrice || 5) : 5; }
                         _ugBaseMaterialHalf += Math.floor(_ugQty * _ugMatPrice * 0.5);
                     }
@@ -5311,7 +5349,7 @@
                         em.npcMerchantInventory[scNeedId] = (em.npcMerchantInventory[scNeedId] || 0) + scBuyQty;
                         town.market.supply[scNeedId] -= scBuyQty;
                         scUsed += scBuyQty;
-                        collectTradeTax(town.kingdomId, Math.floor(scPrice * scBuyQty), scNeedId);
+                        _emCollectTradeTax(em, town.kingdomId, Math.floor(scPrice * scBuyQty), scNeedId, true, town.id);
                     }
                 } else if (emHasSkill(em, 'market_scout') && scTownSupply < scNeeded) {
                     // Check connected towns for input materials
@@ -5510,7 +5548,7 @@
                         connMedTown.market.supply[mgId] -= caravanQty;
                         // Deliver directly to medical stock (simplified — no travel delay for EM)
                         actualBld._medicalStock[mgId] = (actualBld._medicalStock[mgId] || 0) + caravanQty;
-                        collectTradeTax(connMedTown.kingdomId, caravanQty * (getMarketPrice(connMedTown, mgId) || 5), mgId);
+                        _emCollectTradeTax(em, connMedTown.kingdomId, caravanQty * (getMarketPrice(connMedTown, mgId) || 5), mgId, true, connMedTown.id);
                         break;
                     }
                 }
@@ -5622,7 +5660,7 @@
                             em.npcMerchantInventory[sbGood] = (em.npcMerchantInventory[sbGood] || 0) + sbQty;
                             town.market.supply[sbGood] -= sbQty;
                             storeUsed += sbQty;
-                            collectTradeTax(town.kingdomId, Math.floor(sbPrice * sbQty), sbGood);
+                            _emCollectTradeTax(em, town.kingdomId, Math.floor(sbPrice * sbQty), sbGood, true, town.id);
                         }
                     }
                 }
@@ -6277,7 +6315,7 @@
                             p.gold -= Math.floor(price * qty);
                             p.npcMerchantInventory[resId] = (p.npcMerchantInventory[resId] || 0) + qty;
                             town.market.supply[resId] -= qty;
-                            collectTradeTax(town.kingdomId, Math.floor(price * qty), resId);
+                            _emCollectTradeTax(p, town.kingdomId, Math.floor(price * qty), resId, true, town.id);
                         }
                     }
                 }
@@ -6294,7 +6332,7 @@
                         p.gold += Math.floor(price * qty);
                         p.npcMerchantInventory[resId] -= qty;
                         town.market.supply[resId] = (town.market.supply[resId] || 0) + qty;
-                        collectTradeTax(town.kingdomId, Math.floor(price * qty), resId);
+                        collectTradeTax(town.kingdomId, Math.floor(price * qty), resId, false, town.id);
                     }
                 }
             }
@@ -6688,7 +6726,7 @@
                             p.gold -= Math.floor(price * qty);
                             p.npcMerchantInventory[resId] = (p.npcMerchantInventory[resId] || 0) + qty;
                             town.market.supply[resId] -= qty;
-                            collectTradeTax(town.kingdomId, Math.floor(price * qty), resId);
+                            _emCollectTradeTax(p, town.kingdomId, Math.floor(price * qty), resId, true, town.id);
                             break;
                         }
                     }
@@ -6707,7 +6745,7 @@
                         p.gold += Math.floor(price * qty);
                         p.npcMerchantInventory[resId] -= qty;
                         town.market.supply[resId] = (town.market.supply[resId] || 0) + qty;
-                        collectTradeTax(town.kingdomId, Math.floor(price * qty), resId);
+                        collectTradeTax(town.kingdomId, Math.floor(price * qty), resId, false, town.id);
                     }
                 }
             }
@@ -7436,6 +7474,14 @@
         };
     }
     Engine.getEliteMerchantAgenda = getEliteMerchantAgenda;
+    // v9p33river562: engine.js:tickPlayerPropertySales() referenced a bare
+    // STRATEGY_BUILDINGS, which lives only inside this IIFE — that threw
+    // ReferenceError (aborting the rest of the day) as soon as the player
+    // listed a building for sale in a town with elite merchants.
+    Engine.getStrategyBuildings = function(strategy) {
+        var list = STRATEGY_BUILDINGS[strategy] || STRATEGY_BUILDINGS.diversified || [];
+        return list.slice();
+    };
     // v9p33river435: agenda system — expose strategy goods for trade intel
     Engine.getEMStrategyGoods = function(strategy) {
         var goods = STRATEGY_GOODS[strategy] || STRATEGY_GOODS['diversified'] || [];

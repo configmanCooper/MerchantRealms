@@ -966,7 +966,7 @@
         // in inventory (bought from market or canvas workshop), allow it.
         var inventoryGood = (player.inventory && player.inventory[containerId]) || 0;
         if (inventoryGood <= 0) {
-            var _bcHouse = (typeof getHouseInTown === 'function') ? getHouseInTown(player.townId) : null;
+            var _bcHouse = (Player.getHouseInTown) ? Player.getHouseInTown(player.townId) : null;
             var _bcHt = _bcHouse ? CONFIG.HOUSING_TYPES.find(function(h) { return h.id === _bcHouse.type; }) : null;
             var _bcWorkshop = (_bcHt && _bcHt.hasWorkshop) || (_bcHouse && _bcHouse.addons && _bcHouse.addons.indexOf('workshop') >= 0);
             if (!_bcWorkshop) {
@@ -1899,8 +1899,12 @@
                         jailDays = rng.randInt(3, 14);
                         if (kp.temperament === 'cruel' || kp.temperament === 'ruthless') jailDays = rng.randInt(7, 21);
                         if (kp.temperament === 'merciful' || kp.temperament === 'kind') jailDays = rng.randInt(2, 7);
-                        player.jailed = true;
-                        player.jailDaysRemaining = jailDays;
+                        // v9p33river562: `player.jailed` / `player.jailDaysRemaining` are not
+                        // canonical fields — nothing reads them. The real jail timer is
+                        // `player.jailedUntilDay`, so losing a war announced a sentence the
+                        // player never actually served.
+                        player.jailedUntilDay = Engine.getDay() + jailDays;
+                        player.jailFastForwardAvailable = false;
                         player.jailReason = 'Sided with ' + (alliedK ? alliedK.name : 'the losing side') + ' in the war';
                         player.jailKingdomId = enemySide;
                     }

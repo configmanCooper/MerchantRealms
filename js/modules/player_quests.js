@@ -2062,10 +2062,13 @@
 
         // Count social-branch skills for caps + bonuses
         var socialSkillCount = 0;
-        if (player.skills && typeof PLAYER_SKILLS !== 'undefined') {
+        // v9p33river562: PLAYER_SKILLS does not exist — the real global is SKILLS,
+        // so `typeof PLAYER_SKILLS !== 'undefined'` was always false and this cap
+        // was permanently stuck at its 1-per-day minimum.
+        if (player.skills && typeof SKILLS !== 'undefined') {
             for (var skId in player.skills) {
                 if (!player.skills[skId]) continue;
-                var skDef = PLAYER_SKILLS[skId];
+                var skDef = SKILLS[skId];
                 if (skDef && skDef.branch === 'social') socialSkillCount++;
             }
         }
@@ -2299,10 +2302,12 @@
         var skillBranch = isMultiStep ? (currentStep.skillKey || mech.skillKey || 'underworld') : (mech.skillKey || 'underworld');
 
         // Count skills in the relevant branch
-        if (player.skills && typeof PLAYER_SKILLS !== 'undefined') {
+        // v9p33river562: PLAYER_SKILLS does not exist — the real global is SKILLS,
+        // so this branch-skill bonus never applied.
+        if (player.skills && typeof SKILLS !== 'undefined') {
             for (var skId in player.skills) {
                 if (player.skills[skId]) {
-                    var skDef = PLAYER_SKILLS[skId];
+                    var skDef = SKILLS[skId];
                     if (skDef && skDef.branch === skillBranch) {
                         skillBonus += 0.03; // +3% per skill in branch
                     }

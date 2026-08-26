@@ -1339,23 +1339,28 @@
             var townEMs = (world.eliteMerchants || []).filter(function(em) { return em.alive && em.townId === town.id; });
             for (var _ei = 0; _ei < townEMs.length; _ei++) {
                 var em = townEMs[_ei];
-                if (!em.inventory) continue;
+                // v9p33river562: elite merchants carry goods in `npcMerchantInventory`,
+                // not `inventory` — this guard short-circuited every EM, so EMs were
+                // never caught in random inspections and the confiscation below wrote
+                // to a phantom field.
+                var emInv = em.npcMerchantInventory;
+                if (!emInv) continue;
 
                 var emCaughtItem = null;
                 for (var _ebi = 0; _ebi < bannedGoods.length; _ebi++) {
-                    if ((em.inventory[bannedGoods[_ebi]] || 0) >= 3) {
+                    if ((emInv[bannedGoods[_ebi]] || 0) >= 3) {
                         emCaughtItem = bannedGoods[_ebi]; break;
                     }
                 }
                 if (!emCaughtItem) {
                     for (var _eri = 0; _eri < restrictedGoods.length; _eri++) {
-                        if ((em.inventory[restrictedGoods[_eri]] || 0) >= 3) {
+                        if ((emInv[restrictedGoods[_eri]] || 0) >= 3) {
                             emCaughtItem = restrictedGoods[_eri]; break;
                         }
                     }
                 }
                 if (emCaughtItem) {
-                    em.inventory[emCaughtItem] = 0;
+                    emInv[emCaughtItem] = 0;
                     var emFine = 200;
                     if (k.crimePunishments && k.crimePunishments.smuggling) {
                         emFine = k.crimePunishments.smuggling.fine || 200;

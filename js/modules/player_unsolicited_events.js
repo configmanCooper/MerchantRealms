@@ -697,9 +697,11 @@ if (def.template === 'long_omen') {
     ] };
 }
 
-return { title: def.title, icon: def.icon, text: lead, choices: [{ id: 'leave', label: 'Move on', effectKey: 'leave' }] };
-
-
+        // v9p33river562: this catch-all `return` used to sit HERE, which made every
+        // template below it (poison_plot, court_intrigue, betrayal_chain, rival_merchant,
+        // old_debt, trusted_ally, forbidden_friendship, npc_in_trouble, alliance_offer,
+        // rumor_spiral, mistaken_identity, drunken_deal, tavern_chaos, cooking_contest,
+        // animal_chaos — 50 event definitions) unreachable dead code. Moved to the end.
         // ---- Drama/Intrigue Templates ----
         if (def.template === 'poison_plot') {
             if (step === 0) return { title: def.title, icon: def.icon, text: lead + ' In a shuttered pantry beneath a feast hall in {townName}, you overhear {npc2Name} bargaining for a powder that kills slow and looks like a fever. Then you hear the name that matters: {npcName}. By the next cup poured, someone important may die smiling. You can save a life, step into the conspiracy, dig for the hidden hand, or sell the secret while it is still worth something.', choices: [
@@ -1125,7 +1127,6 @@ return { title: def.title, icon: def.icon, text: lead, choices: [{ id: 'leave', 
         
 
         return { title: def.title, icon: def.icon, text: lead, choices: [{ id: 'leave', label: 'Move on', effectKey: 'leave' }] };
-
     }
 
     function _requireReason(choice, params) {

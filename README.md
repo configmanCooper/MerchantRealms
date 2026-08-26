@@ -46,14 +46,29 @@ Just click the link above! The game runs entirely in your browser — no install
 
 ## Running Locally
 
-If you want to run it on your own machine:
+If you want to run it on your own machine (Node.js required):
 
 1. Clone this repo
-2. Serve the folder with any static file server:
-   \\\
-   npx http-server . -p 3000
-   \\\
-   Or just open \index.html\ in a modern browser (some features need a local server).
+2. Start the bundled dev server:
+
+   **Windows**
+   ```
+   .\start.ps1              # serves http://localhost:3000 and opens your browser
+   .\start.ps1 -Port 3100   # use a different port
+   .\start.ps1 -NoBrowser   # server only
+   ```
+   or double-click `start-game.bat`.
+
+   **Any platform**
+   ```
+   node devserver.js        # honours the MR_PORT env var, defaults to 3000
+   ```
+
+3. Open `http://localhost:3000/`.
+
+The dev server sends `no-store` cache headers, so a plain refresh always picks up your
+latest edits. Opening `index.html` straight from disk mostly works, but some features
+(WASM, audio, saves) need a real HTTP origin.
 
 ## License
 

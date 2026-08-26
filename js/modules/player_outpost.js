@@ -1758,16 +1758,20 @@
                     }
                     if (!rng.chance(serviceChance)) continue;
 
+                    var fee = bt.retailConfig.serviceFee * (bld.level || 1);
+                    // v9p33river432: service fees must come from the town market gold pool instead of materializing from nothing.
+                    // v9p33river562: check affordability BEFORE consuming the materials —
+                    // the `continue` below used to skip the revenue while the consumables
+                    // had already been deducted, silently draining the shop's stock.
+                    var _serviceAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(town.id) : Infinity;
+                    if (_serviceAvail < fee) continue;
+
                     // Consume service materials
                     for (var sRes2 in serviceCost) {
                         bld.retailStock[sRes2] -= serviceCost[sRes2];
                         if (bld.retailStock[sRes2] <= 0) delete bld.retailStock[sRes2];
                     }
 
-                    var fee = bt.retailConfig.serviceFee * (bld.level || 1);
-                    // v9p33river432: service fees must come from the town market gold pool instead of materializing from nothing.
-                    var _serviceAvail = Engine.getTownMarketGold ? Engine.getTownMarketGold(town.id) : Infinity;
-                    if (_serviceAvail < fee) continue;
                     if (Engine.adjustTownMarketGold) Engine.adjustTownMarketGold(town.id, -fee);
                     // Tax the service fee
                     var serviceTax = Math.floor(fee * tariffRate);
@@ -1848,7 +1852,11 @@
             // Reputation bonus from sales
             if (actualCustomers > 0 && bt.retailConfig.repPerSale) {
                 var repGain = actualCustomers * bt.retailConfig.repPerSale;
-                addReputation(bld.townId, repGain);
+                // v9p33river562: bare `addReputation` does not exist anywhere — this
+                // threw ReferenceError every time an outpost retail building served
+                // customers, aborting the rest of the outpost tick.
+                if (Player.modifyTownReputation) Player.modifyTownReputation(bld.townId, repGain);
+                else if (Player.modifyTownRep) Player.modifyTownRep(bld.townId, repGain);
             }
 
             // Plague reduction from bathhouse

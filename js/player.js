@@ -20906,6 +20906,10 @@
             _unsolicitedEventCatCooldowns: structuredClone(player._unsolicitedEventCatCooldowns || {}),
             // v9p33river358: spouse jealousy + childcare state.
             _spouseAnger: player._spouseAnger ? structuredClone(player._spouseAnger) : null,
+            // v9p33river562: spouseAI was mutated all game (savings, managed building,
+            // assigned task, illness, in-flight travel) but never persisted — every
+            // save/reload silently reset the spouse to a healthy, idle, broke default.
+            spouseAI: player.spouseAI ? structuredClone(player.spouseAI) : null,
             _spouseRevealHistory: structuredClone(player._spouseRevealHistory || {}),
             _lastSpouseMisbehavior: player._lastSpouseMisbehavior || 0,
             _pendingCourtingDetections: structuredClone(player._pendingCourtingDetections || []),
@@ -21557,6 +21561,11 @@
         player._unsolicitedEventCatCooldowns = data._unsolicitedEventCatCooldowns || {};
         // v9p33river358: restore spouse jealousy + childcare state.
         player._spouseAnger = data._spouseAnger || null;
+        // v9p33river562: restore spouse AI state (see serialize note).
+        player.spouseAI = data.spouseAI || null;
+        if (player.spouseAI && typeof player.spouseAI.managedBuildingIdx !== 'number') {
+            player.spouseAI.managedBuildingIdx = -1;
+        }
         player._spouseRevealHistory = data._spouseRevealHistory || {};
         player._lastSpouseMisbehavior = data._lastSpouseMisbehavior || 0;
         player._pendingCourtingDetections = data._pendingCourtingDetections || [];
@@ -26665,8 +26674,10 @@
         // aren't ambiguous, and stamp personId in details so the Event Details
         // modal can offer a "View Person" link to the *correct* NPC.
         var fullName = ((person.firstName || '') + ' ' + (person.lastName || '')).trim() || fn;
-        if (typeof toast !== 'undefined') {
-            toast(emoji + ' ' + fullName + ': ' + msg, 'success');
+        // v9p33river562: `toast` is not in scope inside player.js, so `typeof toast`
+        // was always 'undefined' and the milestone toast never fired.
+        if (typeof UI !== 'undefined' && UI.toast) {
+            UI.toast(emoji + ' ' + fullName + ': ' + msg, 'success');
         }
         try { Engine.logEvent(emoji + ' Relationship milestone with ' + fullName + ' (' + label + '): ' + msg, { type: 'relationship_milestone', personId: personId, threshold: threshold }, 'social'); } catch(e) {}
     }
@@ -28083,6 +28094,9 @@
             if (btKeys.length === 0) return null;
             var btKey = btKeys[Math.floor(rng() * btKeys.length)];
             var bt = BUILDING_TYPES[btKey];
+            // v9p33river562: `best` was never declared — reading it on the first loop
+            // iteration threw ReferenceError, so this tip could never be produced.
+            var best = null;
             for (var i = 0; i < towns.length; i++) {
                 var cost = 0;
                 for (var matId in bt.materials) {
@@ -33850,7 +33864,7 @@
         if (totalCollected > 0) {
             player.gold += totalCollected;
             player.stats.totalGoldEarned = (player.stats.totalGoldEarned || 0) + totalCollected;
-            logEvent(`\uD83D\uDCB0 Collected ${Math.floor(totalCollected)}g in toll revenue.`, null, "my_business");
+            Engine.logEvent(`\uD83D\uDCB0 Collected ${Math.floor(totalCollected)}g in toll revenue.`, null, "my_business");
         }
         return totalCollected;
     }
@@ -34005,12 +34019,12 @@
             if (result.success) {
                 grantXP(50, 'royal influence');
                 modifyTownReputation(player.townId, 10);
-                logEvent(`\uD83D\uDC51 King ${kingdom.kingName || 'the King'} of ${kingdom.name} has agreed to build a road between ${currentTown.name} and ${targetTown.name}!`, null, "my_kingdom");
+                Engine.logEvent(`\uD83D\uDC51 King ${kingdom.kingName || 'the King'} of ${kingdom.name} has agreed to build a road between ${currentTown.name} and ${targetTown.name}!`, null, "my_kingdom");
                 return { success: true, message: `The king agreed! Road construction begins. Cost to you: ${playerCost.toLocaleString()}g. (You do NOT own this road \u2014 no tolls.)`, chance: Math.floor(chance * 100) };
             }
             return result;
         } else {
-            logEvent(`\uD83D\uDC51 King ${kingdom.kingName || 'the King'} of ${kingdom.name} declined your petition to build a road between ${currentTown.name} and ${targetTown.name}.`, null, "my_kingdom");
+            Engine.logEvent(`\uD83D\uDC51 King ${kingdom.kingName || 'the King'} of ${kingdom.name} declined your petition to build a road between ${currentTown.name} and ${targetTown.name}.`, null, "my_kingdom");
             return { success: false, message: `The king considered your petition but declined. Your ${playerCost.toLocaleString()}g petition fee is non-refundable. (Approval chance was ~${Math.floor(chance * 100)}%)` };
         }
     }
@@ -40260,7 +40274,7 @@
                     // Fallback: create a distant royal cousin
                     var cousinAge = Math.max(18, Math.min(65, player.age + (rng.randInt(-5, 5))));
                     var cousin = {
-                        id: uid('p'),
+                        id: Engine.uid('p'),
                         firstName: oppSex === 'M' ? rng.pick(NAMES.male) : rng.pick(NAMES.female),
                         lastName: kingPerson.lastName,
                         age: cousinAge,
@@ -43214,14 +43228,89 @@
         };
     }
 
+    // ── Indentured escape-method helpers ──
+    // v9p33river562: these three helpers were referenced by checkNPCEscapeHints()
+    // and attemptEscape() but never existed, so every call threw ReferenceError and
+    // nothing could ever populate player.indentured.discoveredEscapes (the escape
+    // UI was permanently empty and Player.attemptEscape always threw).
+    function hasEscape(escapeId) {
+        return !!(player.indentured && player.indentured.availableEscapes &&
+                  player.indentured.availableEscapes.indexOf(escapeId) >= 0);
+    }
+
+    function isDiscovered(escapeId) {
+        return !!(player.indentured && player.indentured.discoveredEscapes &&
+                  player.indentured.discoveredEscapes.indexOf(escapeId) >= 0);
+    }
+
+    function discoverEscape(escapeId) {
+        if (!player.indentured || !player.indentured.active) return false;
+        if (!player.indentured.discoveredEscapes) player.indentured.discoveredEscapes = [];
+        if (!hasEscape(escapeId)) return false;
+        if (isDiscovered(escapeId)) return false;
+        player.indentured.discoveredEscapes.push(escapeId);
+        return true;
+    }
+
+    // v9p33river562: tickIndentured() was called by tickSpecialStarts() but never
+    // defined — a daily ReferenceError inside Player.tick() that aborted every
+    // subsequent player system for indentured characters. It also left
+    // generateMasterTask()/checkTaskDeadline() orphaned (never called) and
+    // earlyReleaseOffered permanently false.
+    function tickIndentured() {
+        var ind = player.indentured;
+        if (!ind || !ind.active) return;
+        var day = Engine.getDay();
+        var rng = Engine.getRng();
+
+        // Contract served in full → freedom.
+        if (ind.contractDays > 0 && (day - (ind.startDay || 0)) >= ind.contractDays) {
+            freeFromIndenture('📜 Your indenture contract has run its full term. You are a free person!');
+            return;
+        }
+
+        // Master dead or missing → the contract dies with them.
+        var master = ind.masterId ? Engine.findPerson(ind.masterId) : null;
+        if (ind.masterId && (!master || !master.alive)) {
+            discoverEscape('master_dies');
+            freeFromIndenture('⚰️ Your master has died. With no one to hold the contract, you are free!');
+            return;
+        }
+
+        // Master mood drifts every 30 days.
+        if (day - (ind.masterMoodSince || 0) >= 30) {
+            var moods = ['kind', 'neutral', 'neutral', 'cruel', 'generous', 'suspicious'];
+            ind.masterMood = rng ? rng.pick(moods) : 'neutral';
+            ind.masterMoodSince = day;
+        }
+
+        // Task lifecycle: expire an overdue task, then hand out the next one.
+        checkTaskDeadline();
+        if (!ind.currentTask && day >= (ind.nextTaskDay || 0)) {
+            generateMasterTask();
+        }
+
+        // A well-liked servant who has worked off most of the debt gets offered
+        // an early buy-out (Player.acceptEarlyRelease + the ui_kingdom button).
+        if (!ind.earlyReleaseOffered && (ind.masterRelationship || 50) >= 70 &&
+            ind.debtRemaining > 0 && ind.debtRemaining <= 7500 &&
+            (ind.totalTasksCompleted || 0) >= 5) {
+            ind.earlyReleaseOffered = true;
+            Engine.logEvent('🤝 Your master hints that they would accept a payment to end your contract early.',
+                { type: 'indenture_early_release' }, 'my_actions');
+        }
+    }
+
     function tickSpecialStarts() {
         if (player.indentured && player.indentured.active) tickIndentured();
-        if (player.conquestServitude && player.conquestServitude.active) tickConquestServitude();
-        if (player.pilgrim && player.pilgrim.active) tickPilgrim();
-        if (player.shipwrecked && (player.shipwrecked.active || player.shipwrecked.embassy)) tickShipwrecked();
-        if (player.musician && (player.musician.active || player.musician.legacyChoice)) tickMusician();
-        if (player.militaryLeader && player.militaryLeader.active) tickMilitaryLeader();
-        if (player.scholar && (player.scholar.active || player.scholar.royaltiesActive)) tickScholar();
+        // v9p33river562: these six live in js/modules/player_conquest.js and are only
+        // reachable through the Player namespace — the bare calls were ReferenceErrors.
+        if (player.conquestServitude && player.conquestServitude.active && Player.tickConquestServitude) Player.tickConquestServitude();
+        if (player.pilgrim && player.pilgrim.active && Player.tickPilgrim) Player.tickPilgrim();
+        if (player.shipwrecked && (player.shipwrecked.active || player.shipwrecked.embassy) && Player.tickShipwrecked) Player.tickShipwrecked();
+        if (player.musician && (player.musician.active || player.musician.legacyChoice) && Player.tickMusician) Player.tickMusician();
+        if (player.militaryLeader && player.militaryLeader.active && Player.tickMilitaryLeader) Player.tickMilitaryLeader();
+        if (player.scholar && (player.scholar.active || player.scholar.royaltiesActive) && Player.tickScholar) Player.tickScholar();
         // v9p33river400: family worker expiry + business profit tick
         if (player.familyMembers && player.familyMembers.length > 0 && typeof Player.tickFamilyWorkers === 'function') Player.tickFamilyWorkers();
         // Story Mode tick
@@ -43734,7 +43823,10 @@
         get financialLedger() { return player.financialLedger; },
         get traveling() { return player.traveling; },
         get travelProgress() { return player.travelProgress; },
-        get travelBySea() { return player.travelBySea; },
+        // v9p33river562: this getter was shadowed by the `travelBySea` FUNCTION
+        // exported further down the same object literal (later key wins), so
+        // `Player.travelBySea` was always a truthy function, never the boolean.
+        // Read `Player.state.travelBySea` for the flag instead.
         get travelDestination() { return player.travelDestination; },
         get travelRoute() { return player.travelRoute; },
         get travelOffroad() { return player.travelOffroad; },
@@ -44564,6 +44656,11 @@
         acceptEarlyRelease: acceptEarlyRelease,
         attemptEscape: attemptEscape,
         checkNPCEscapeHints: checkNPCEscapeHints,
+        // v9p33river562: Player.discoverEscape is called from the military-enlist and
+        // conscription paths (guarded by typeof) but was never exported.
+        discoverEscape: discoverEscape,
+        hasEscape: hasEscape,
+        isEscapeDiscovered: isDiscovered,
         get gameStart() { return player.gameStart; },
         get familyMembers() { return player.familyMembers || []; },
         get indentured() { return player.indentured; },

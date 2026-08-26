@@ -2935,7 +2935,7 @@
                         }
                         if (built) {
                             var infra = chosenType === 'road' ? '\uD83D\uDEE4\uFE0F road' : '\u26F5 sea route';
-                            logEvent(`\uD83E\uDD1D ${k.name} and ${chosen.partner.name} jointly funded a new ${infra} between ${chosen.a.name} and ${chosen.b.name}!`, null, _eventEitherKingdomCategory(k.id, a.id));
+                            logEvent(`\uD83E\uDD1D ${k.name} and ${chosen.partner.name} jointly funded a new ${infra} between ${chosen.a.name} and ${chosen.b.name}!`, null, _eventEitherKingdomCategory(k.id, chosen.partner.id));
                         } else {
                             // Refund if construction failed
                             k.gold += halfCost;
@@ -3122,7 +3122,10 @@
                 // Positive = wants more, negative = wants fewer
                 var disposition = 0;
                 if (p.temperament === 'kind') disposition += 3;
-                else if (p.temperament === 'neutral') disposition += 1;
+                // v9p33river562: kingPersonality.temperament is only ever
+                // 'kind'|'fair'|'stern'|'cruel' — 'neutral' is never generated,
+                // so fair-tempered kings got no disposition adjustment at all.
+                else if (p.temperament === 'fair') disposition += 1;
                 else if (p.temperament === 'cruel') disposition -= 3;
                 if (p.greed === 'generous') disposition += 2;
                 else if (p.greed === 'fair') disposition += 1;

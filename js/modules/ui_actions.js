@@ -5658,7 +5658,7 @@ function clickTown(townId) {
         var res = Player.handleUnsolicitedEventChoice ? Player.handleUnsolicitedEventChoice(instanceId, choiceIndex) : { success: false, message: 'Unavailable.' };
         if (res.success && res.narrative) {
             UI.closeModal();
-            _ueResultModalOpen = true;
+            if (UI._setUeResultModalOpen) UI._setUeResultModalOpen(true);
             setTimeout(function() { if (UI.openUnsolicitedEventResult) UI.openUnsolicitedEventResult(res); }, 80);
         } else if (res.success) {
             UI.toast(res.message || 'Done.', 'success');

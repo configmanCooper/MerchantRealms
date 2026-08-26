@@ -851,13 +851,16 @@
                 // Hospital treatment for spouse — same cost as player, no time advance (companion stays at hospital)
                 var fees = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
                 var hospInfo2 = fees ? (fees.hospital || fees.clinic) : null;
+                // v9p33river562: pass the building type actually used so the fee is routed
+                // to the correct owner when a town has both a hospital and a clinic.
+                var _spBldType = (fees && fees.hospital) ? 'hospital' : 'clinic';
                 var cost = hospInfo2 && hospInfo2.fees ? (hospInfo2.fees[condSeverity] || getHospitalCost({ productCost: 10 }, condSeverity)) : getHospitalCost({ productCost: 10 }, condSeverity);
                 if (player.gold < cost) return { success: false, message: 'Not enough gold. Hospital costs ' + cost + 'g for ' + spouse.firstName + '.' };
 
                 // No Game.advanceTicks — companion is locked at hospital, player continues
                 player.gold -= cost;
                 player.stats.totalGoldSpent += cost;
-                _payHealthcareRevenue(town, cost);
+                _payHealthcareRevenue(town, cost, _spBldType);
 
                 // Treatment duration — spouse must stay at hospital
                 var spouseTreatDays = condSeverity === 'severe' ? 5 : condSeverity === 'moderate' ? 3 : 1;
@@ -1012,12 +1015,14 @@
 
                 var fees2 = Engine.getHospitalFees ? Engine.getHospitalFees(player.townId) : null;
                 var hospInfo3 = fees2 ? (fees2.hospital || fees2.clinic) : null;
+                // v9p33river562: route the fee to the building type actually used.
+                var _npcBldType = (fees2 && fees2.hospital) ? 'hospital' : 'clinic';
                 var cost2 = hospInfo3 && hospInfo3.fees ? (hospInfo3.fees[npcSev] || getHospitalCost({ productCost: 10 }, npcSev)) : getHospitalCost({ productCost: 10 }, npcSev);
                 if (player.gold < cost2) return { success: false, message: 'Not enough gold. Hospital costs ' + cost2 + 'g.' };
 
                 player.gold -= cost2;
                 player.stats.totalGoldSpent += cost2;
-                _payHealthcareRevenue(town, cost2);
+                _payHealthcareRevenue(town, cost2, _npcBldType);
 
                 // Treatment duration — companion must stay at hospital
                 var treatDays = npcSev === 'severe' ? 5 : npcSev === 'moderate' ? 3 : 1;
@@ -1082,9 +1087,12 @@
         var town = Engine.findTown(npc.townId);
         if (!town) return;
         var hasMed = false;
+        // v9p33river562: remember WHICH medical building type was found so the fee can be
+        // routed to its owner instead of "first hospital-or-clinic in the array".
+        var _medType = null;
         if (town.buildings) {
             for (var bi = 0; bi < town.buildings.length; bi++) {
-                if (town.buildings[bi].type === 'hospital' || town.buildings[bi].type === 'clinic') { hasMed = true; break; }
+                if (town.buildings[bi].type === 'hospital' || town.buildings[bi].type === 'clinic') { hasMed = true; _medType = town.buildings[bi].type; break; }
             }
         }
         if (!hasMed && (town.category === 'city' || town.category === 'capital_city')) hasMed = true;
@@ -1111,7 +1119,7 @@
         npc.illness = null;
         npc.health = Math.min((npc.health || 50) + 40, 100);
         if (npc._illnessTreatPaid) delete npc._illnessTreatPaid;
-        _payHealthcareRevenue(town, cost);
+        _payHealthcareRevenue(town, cost, _medType || undefined);
         var _hospMsg = '🏥 ' + (npc.firstName || 'A family member') + ' sought treatment at the hospital (' + cost + 'g).';
         Engine.logEvent(_hospMsg, { _noToast: true }, 'illness');
     }
