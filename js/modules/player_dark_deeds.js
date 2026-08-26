@@ -1310,7 +1310,10 @@
         var stolenItem = null;
         var stolenQty = 0;
         var npcGold = npc.gold || 0;
-        var npcInv = npc.inventory || {};
+        // v9p33river567: elite merchants keep their goods in `npcMerchantInventory`, not
+        // `inventory` — so stealing from an EM (a path this function explicitly tunes for,
+        // with an extra +0.15 detection penalty) could never yield goods, only gold.
+        var npcInv = (npc.isEliteMerchant ? npc.npcMerchantInventory : npc.inventory) || {};
         var invKeys = Object.keys(npcInv).filter(function(k) { return npcInv[k] > 0; });
         var hasLoot = (npcGold > 10 || invKeys.length > 0);
 
@@ -2090,14 +2093,26 @@
                 for (const k of kingdoms) {
                     player.reputation[k.id] = 0;
                 }
-                player.jailedUntilDay = 0;
-                recordCorruptAction('assassinate_king', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'murder');
+                // v9p33river567: this used to be `player.jailedUntilDay = 0`, which is a day
+                // number in the PAST — so being caught plotting regicide actually RELEASED the
+                // player from any jail term they were already serving, and the branch imposed
+                // no jail or exile of its own despite the message promising both.
+                var _regDay = Engine.getDay ? Engine.getDay() : 0;
+                player.jailedUntilDay = Math.max(player.jailedUntilDay || 0, _regDay + 180);
+                player.jailFastForwardAvailable = false;
+                player.jailReason = 'Plotting regicide';
+                player.jailKingdomId = kingdom ? kingdom.id : null;
+                if (!player.exiledFromKingdoms) player.exiledFromKingdoms = {};
+                for (const k2 of kingdoms) {
+                    player.exiledFromKingdoms[k2.id] = { day: _regDay, reason: 'murder' };
+                }
+                recordCorruptAction('assassinate_king', true, (kingdom ? kingdom.id : null), 'murder');
                 player.notoriety = (player.notoriety || 0) + _trackedNotoriety(100);
                 _addNobleNotorietyAndCheck(CONFIG.NOBLE_NOTORIETY_DIRECT_NOBLE_ADD || 20, 'plotting regicide');
                 EventTypes.emit('DD_REGICIDE_CAUGHT', { playerName: player.fullName, kingdomName: kingdom.name });
                 caughtMsg = '🚨 CAUGHT! Exiled from ALL kingdoms! All reputation lost! Permanent bounty!';
             } else {
-                recordCorruptAction('assassinate_king', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'murder', successful);
+                recordCorruptAction('assassinate_king', false, (kingdom ? kingdom.id : null), 'murder', successful);
                 player.notoriety = (player.notoriety || 0) + _trackedNotoriety(100);
             }
 
@@ -3769,15 +3784,19 @@
         if (hasSkill('assassin')) detection *= 0.5;
         if (hasSkill('poisoner')) detection *= 0.7;
         var rng = Engine.getRng();
+        // v9p33river567: `town`/`kingdom` used to be declared INSIDE the caught branch, so
+        // on the success path below they were hoisted-undefined and the recordCorruptAction
+        // kingdomId was always null — which meant a successful passenger assassination
+        // (the highest-notoriety non-regicide murder) never started a manhunt.
+        var town = Engine.findTown(player.townId);
+        var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
 
         if (rng && rng.chance(detection)) {
             // Caught! Severe punishment
             player.notoriety = (player.notoriety || 0) + 30;
-            var town = Engine.findTown(player.townId);
-            var kingdom = town ? (Engine.findKingdom ? Engine.findKingdom(town.kingdomId) : null) : null;
             var _passIsNoble = person && (person.occupation === 'noble' || person.occupation === 'king' || person.isKing);
             applyCorruptPenalty(town, kingdom, 5000, 50, 30, true, 'murder', _passIsNoble ? { isNobleTarget: true } : null);
-            recordCorruptAction('assassinate_passenger', true, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'murder');
+            recordCorruptAction('assassinate_passenger', true, (town ? town.kingdomId : null), 'murder');
             // Remove all passengers — they flee
             transport.passengers = [];
             EventTypes.emit('DD_PASSENGER_ASSASSIN_CAUGHT', { playerName: player.fullName, firstName: person.firstName });
@@ -3787,7 +3806,7 @@
         // Success — kill the merchant
         if (Engine.killPerson) Engine.killPerson(person, 'assassination');
         player.notoriety = (player.notoriety || 0) + 15;
-        recordCorruptAction('assassinate_passenger', false, (typeof town !== 'undefined' && town ? town.kingdomId : null), 'murder', true);
+        recordCorruptAction('assassinate_passenger', false, (town ? town.kingdomId : null), 'murder', true);
         grantXP(50, 'Assassination');
 
         // Remove from passenger list
@@ -4206,7 +4225,13 @@
             // King's personality decides the immediate punishment.
             var kp = targetK.kingPersonality || {};
             var choice;
-            if (kp.temperament === 'cruel' || kp.greed === 'corrupt' || kp.justice === 'corrupt') {
+            // v9p33river567: the original condition also tested
+            // `kp.justice === 'corrupt'`, but kingPersonality.justice is only ever
+            // 'just' or 'pragmatic' (engine.js:9257) — that clause could never fire.
+            // Removed rather than remapped: making 'pragmatic' execute would flip
+            // roughly half of all kings into the execute branch, which is a balance
+            // decision, not a bug fix.
+            if (kp.temperament === 'cruel' || kp.greed === 'corrupt') {
                 choice = 'execute';
             } else if (kp.temperament === 'kind' || kp.justice === 'just') {
                 choice = 'jail';
@@ -6217,9 +6242,16 @@
         // Show once player has any underworld skill, notoriety, or has committed crimes
         if ((player.notoriety || 0) > 0) return true;
         if ((player.corruptActions || 0) > 0) return true;
-        var skills = player.skills || [];
-        for (var i = 0; i < skills.length; i++) {
-            var sk = CONFIG.SKILLS ? CONFIG.SKILLS.find(function(s) { return s.id === skills[i]; }) : null;
+        // v9p33river567: `player.skills` is an OBJECT map (skillId -> true), not an array,
+        // so `skills.length` was undefined and this loop never ran — a player who trained
+        // an underworld skill but had 0 notoriety and 0 crimes never saw the Schemes button.
+        // `CONFIG.SKILLS` is also an object map, so the old `.find()` would have thrown had
+        // the loop ever executed.
+        var _skillMap = player.skills || {};
+        var _skillDefs = (typeof SKILLS !== 'undefined') ? SKILLS : (CONFIG.SKILLS || {});
+        for (var _sid in _skillMap) {
+            if (!_skillMap[_sid]) continue;
+            var sk = _skillDefs[_sid];
             if (sk && sk.branch === 'underworld') return true;
         }
         return false;

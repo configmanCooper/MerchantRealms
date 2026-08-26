@@ -28309,7 +28309,11 @@
             if (!p.buildings || p.buildings.length === 0) continue;
 
             // Track daily profit for each building
-            for (const bld of p.buildings) {
+            // v9p33river567: iterate a SNAPSHOT — the "close unprofitable business"
+            // branch below splices out of p.buildings, and splicing during a for..of
+            // shifts the iterator so the building right after a closure was skipped
+            // (same class as the wage-loop bug fixed in v9p33river563).
+            for (const bld of p.buildings.slice()) {
                 if (!bld._profitTracker) bld._profitTracker = { revenue: 0, costs: 0, days: 0 };
                 bld._profitTracker.days++;
 
@@ -30000,7 +30004,16 @@
         var kingdom = findKingdom(kingdomId);
         if (!kingdom) return { success: false, reason: 'Kingdom not found.' };
         var king = kingdom.king ? findPerson(kingdom.king) : null;
-        var greedVal = (king && king.personality && king.personality.greed !== undefined) ? king.personality.greed : 50;
+        // v9p33river567: `greed` lives on kingdom.kingPersonality (a string enum
+        // generous|fair|greedy|corrupt), NOT on person.personality — which is numeric-only
+        // (loyalty/ambition/frugality/intelligence/warmth/honesty/selfishness). Reading the
+        // Person always yielded undefined, so greedVal was pinned at 50 and the markup was a
+        // constant 2.25 for every kingdom. Prefer the kingdom enum, keep the Person read as
+        // a fallback for any save that does carry one.
+        var _kpGreed = (kingdom.kingPersonality && kingdom.kingPersonality.greed !== undefined)
+            ? kingdom.kingPersonality.greed
+            : ((king && king.personality && king.personality.greed !== undefined) ? king.personality.greed : 50);
+        var greedVal = _kpGreed;
         if (typeof greedVal === 'string') {
             greedVal = greedVal === 'greedy' ? 75 : greedVal === 'corrupt' ? 90 : greedVal === 'generous' ? 20 : 50;
         }
