@@ -16214,8 +16214,13 @@
     // §8C-2  RENAME PLAYER
     // ========================================================
     function setPlayerName(newFirst, newLast) {
-        var first = (newFirst || '').trim();
-        var last = (newLast || '').trim();
+        // v9p33river569: strip HTML-significant characters. The player name is
+        // interpolated into innerHTML and into quoted HTML attributes in several UI
+        // panels (rename dialog, character panel, family panel), so a name containing
+        // < > " ' & could break out of the markup and inject an event handler.
+        function _clean(s) { return String(s || '').replace(/[<>"'&`]/g, '').trim(); }
+        var first = _clean(newFirst);
+        var last = _clean(newLast);
         if (!first && !last) return { success: false, message: 'Name cannot be empty.' };
         if (first) player.firstName = first;
         if (last) player.lastName = last;

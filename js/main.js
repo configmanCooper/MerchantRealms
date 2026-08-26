@@ -1556,10 +1556,14 @@ window.Game = (function () {
             var _firstNamePool = typeof NAMES !== 'undefined' ? NAMES[playerSex === 'F' ? 'female' : 'male'] : null;
             var _surnamePool = typeof NAMES !== 'undefined' ? NAMES.surnames : null;
             // If name left blank, pick a random NPC-style name from NAMES pool
-            const playerFirstName = (firstNameInput && firstNameInput.value.trim()) || _pickStartRandom(_firstNamePool, 'Unknown');
+            // v9p33river569: strip HTML-significant characters from the typed name at the
+            // point of entry — it ends up in innerHTML and in quoted HTML attributes across
+            // several panels. Player.setPlayerName applies the same filter on rename.
+            function _cleanName(s) { return String(s || '').replace(/[<>"'&`]/g, '').trim(); }
+            const playerFirstName = (firstNameInput && _cleanName(firstNameInput.value)) || _pickStartRandom(_firstNamePool, 'Unknown');
             var isStoryStart = window._selectedStartConfig && window._selectedStartConfig.id === 'story_mode';
             const playerLastName = isStoryStart ? 'Ashford' :
-                ((lastNameInput && lastNameInput.value.trim()) || _pickStartRandom(_surnamePool, 'Merchant'));
+                ((lastNameInput && _cleanName(lastNameInput.value)) || _pickStartRandom(_surnamePool, 'Merchant'));
 
             function _restoreCharacterCreationScreen() {
                 var _ccs = document.getElementById('charCreateScreen');

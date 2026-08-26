@@ -6580,7 +6580,7 @@ window.UI = (function () {
             id: 'q_player_rank',
             summary: 'commenting on your social status',
             askFor: function(ctx) {
-                if (ctx.relTier === 'hostile' || ctx.relTier === 'cold') return null;
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
                 if (ctx.npcRank < 1 && !ctx.npcIsEM) return null;
                 var ps = (typeof Player !== 'undefined') ? Player.state : null;
                 if (!ps || !ps.socialRank) return null;
@@ -6745,7 +6745,7 @@ window.UI = (function () {
             id: 'q_npc_reputation',
             summary: 'commenting on your reputation',
             askFor: function(ctx) {
-                if (ctx.relTier === 'hostile' || ctx.relTier === 'cold') return null;
+                if (ctx.relTier === 'hostile' || ctx.relTier === 'cool') return null;
                 if (ctx.npcRank < 1 && !ctx.npcIsEM) return null;
                 if (ctx.family) return null;
                 var ps = (typeof Player !== 'undefined') ? Player.state : null;
@@ -10469,11 +10469,11 @@ window.UI = (function () {
         const body = `<div style="text-align:center;">
             <div style="margin-bottom:10px;">
                 <label style="display:block;margin-bottom:4px;font-weight:bold;">First Name</label>
-                <input type="text" id="renameFirst" class="char-input" maxlength="20" value="${Player.firstName || ''}" style="width:80%;padding:6px;font-size:1rem;" />
+                <input type="text" id="renameFirst" class="char-input" maxlength="20" value="${escapeHtml(Player.firstName || '')}" style="width:80%;padding:6px;font-size:1rem;" />
             </div>
             <div style="margin-bottom:10px;">
                 <label style="display:block;margin-bottom:4px;font-weight:bold;">Last Name</label>
-                <input type="text" id="renameLast" class="char-input" maxlength="20" value="${Player.lastName || ''}" style="width:80%;padding:6px;font-size:1rem;" />
+                <input type="text" id="renameLast" class="char-input" maxlength="20" value="${escapeHtml(Player.lastName || '')}" style="width:80%;padding:6px;font-size:1rem;" />
             </div>
         </div>`;
         const footer = `<button class="btn-medieval" data-action="confirmRenamePlayer">✅ Confirm</button>
@@ -10818,8 +10818,7 @@ window.UI = (function () {
             <h3>Identity</h3>
             <div style="text-align:center;margin-bottom:8px;">${_portraitDisplay}</div>
             <div class="detail-row"><span class="label">Name</span>
-                <span class="value">${Player.fullName || 'Unknown'} <button data-action="openRenamePlayer" style="cursor:pointer;background:none;border:none;padding:0 2px;font-size:0.85em;opacity:0.6;vertical-align:middle;" title="Change name">✏️</button></span></div>
-            <div class="detail-row"><span class="label">Sex</span>
+                <span class="value">${escapeHtml(Player.fullName || 'Unknown')} <button data-action="openRenamePlayer" style="cursor:pointer;background:none;border:none;padding:0 2px;font-size:0.85em;opacity:0.6;vertical-align:middle;" title="Change name">✏️</button></span></div>            <div class="detail-row"><span class="label">Sex</span>
                 <span class="value">${sexIcon} ${Player.sex === 'F' ? 'Female' : 'Male'}</span></div>
             <div class="detail-row"><span class="label">Age</span>
                 <span class="value">${Player.age || '?'}</span></div>
@@ -11299,11 +11298,15 @@ window.UI = (function () {
         setTimeout(function() {
             var mt = document.getElementById('modalTitle');
             if (mt) {
-                mt.innerHTML = mt.textContent +
+                // v9p33river569: this used to be `mt.innerHTML = mt.textContent + '<button…>'`,
+                // which re-parses the title — including the player-typed name that openModal
+                // had safely set with textContent — as HTML. Keep the name as text and append
+                // the buttons separately so it is never re-parsed.
+                mt.insertAdjacentHTML('beforeend',
                     ' <button class="btn-medieval" data-action="openJournal" style="font-size:0.65rem;padding:3px 10px;margin-left:10px;vertical-align:middle;">📖 Journal</button>' +
                     ' <button class="btn-medieval" data-action="openFinancialReport" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📊 Financial Report</button>' +
                     ' <button class="btn-medieval" data-action="openPlayerImpact" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">🏆 Player Impact</button>' +
-                    ' <button class="btn-medieval" data-action="openInventory" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📦 Inventory</button>';
+                    ' <button class="btn-medieval" data-action="openInventory" style="font-size:0.65rem;padding:3px 10px;vertical-align:middle;">📦 Inventory</button>');
             }
         }, 30);
     }
