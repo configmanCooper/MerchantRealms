@@ -15633,6 +15633,11 @@
         for (var oki = 0; oki < world.kingdoms.length; oki++) {
             var otherK = world.kingdoms[oki];
             if (otherK.id === newKingdomId) continue;
+            // v9p33river568: `kingdom.relations` can legitimately be undefined (canonical
+            // schema), and the parent-kingdom writes below are guarded — but these two were
+            // not, so a single kingdom without a relations map crashed the whole secession
+            // (and with it the rest of that day's world tick).
+            if (!otherK.relations) otherK.relations = {};
             if (parentK && parentK.relations && parentK.relations[otherK.id] != null) {
                 // Inverse on sliding scale: if they love parent (+80), they hate revolt (-80)
                 var parentRel = parentK.relations[otherK.id] || 0;
