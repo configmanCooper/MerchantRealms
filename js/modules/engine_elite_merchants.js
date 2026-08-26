@@ -1038,6 +1038,11 @@
     function tickNPCCaravans() {
         _syncState();
         if (!world || !world.npcCaravans) return;
+        // v9p33river561: this function used a bare `rng` in the export-contraband
+        // check without ever aliasing it, throwing ReferenceError inside Engine.tick()
+        // and aborting the rest of the day's simulation whenever an EM caravan
+        // carrying export-restricted goods arrived.
+        var rng = world.rng;
 
         for (var ci = world.npcCaravans.length - 1; ci >= 0; ci--) {
             var caravan = world.npcCaravans[ci];
@@ -1062,7 +1067,7 @@
                             _ecEmDetect -= 0.15;
                         }
                         _ecEmDetect = Math.max(0.01, _ecEmDetect);
-                        if (rng.random() < _ecEmDetect) {
+                        if ((rng ? rng.random() : Math.random()) < _ecEmDetect) {
                             // Caught — confiscate restricted goods, fine EM
                             var _ecEmK = findKingdom(caravan._exportRestrictionKingdomId);
                             var _ecEmKName = _ecEmK ? _ecEmK.name : 'the kingdom';
