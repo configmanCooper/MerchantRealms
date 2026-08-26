@@ -21199,6 +21199,26 @@
             _corruptionPoints: player._corruptionPoints || 0,
             _corruptionTrait: player._corruptionTrait || false,
             _militarySalesTotal: player._militarySalesTotal || 0,
+            // v9p33river565: these were all written during play but never persisted, so
+            // every save/reload silently reset them. Found with a serialize/deserialize
+            // gap scan over every `player.X =` write in the tree.
+            militaryService: player.militaryService ? structuredClone(player.militaryService) : null,
+            _marriageBlessingRequests: structuredClone(player._marriageBlessingRequests || []),
+            _revoltSupportRequests: structuredClone(player._revoltSupportRequests || []),
+            _supportedRevolt: player._supportedRevolt || null,
+            _helpedRevolt: player._helpedRevolt || false,
+            _kqSpecialRewards: structuredClone(player._kqSpecialRewards || []),
+            _kqLandGrants: structuredClone(player._kqLandGrants || []),
+            _kqFailCount: structuredClone(player._kqFailCount || {}),
+            _kqLastFailDay: structuredClone(player._kqLastFailDay || {}),
+            rentNegotiations: structuredClone(player.rentNegotiations || []),
+            landForSale: structuredClone(player.landForSale || []),
+            favorUsageTracker: structuredClone(player.favorUsageTracker || {}),
+            _healOfferCooldowns: structuredClone(player._healOfferCooldowns || {}),
+            _emBuildingPurchases: structuredClone(player._emBuildingPurchases || {}),
+            _propertyTaxArrears: structuredClone(player._propertyTaxArrears || {}),
+            spouseLastInteractionDay: player.spouseLastInteractionDay != null ? player.spouseLastInteractionDay : null,
+            fame: player.fame || 0,
             // Story Mode — serialize from controller if active
             storyMode: (typeof StoryMode !== 'undefined' && StoryMode.isActive && StoryMode.isActive() && StoryMode.serialize) ? StoryMode.serialize() : (player.storyMode ? structuredClone(player.storyMode) : null),
         };
@@ -21374,6 +21394,24 @@
         player._corruptionPoints = data._corruptionPoints || 0;
         player._corruptionTrait = data._corruptionTrait || false;
         player._militarySalesTotal = data._militarySalesTotal || 0;
+        // v9p33river565: restore the previously-unpersisted state (see serialize note).
+        player.militaryService = data.militaryService || null;
+        player._marriageBlessingRequests = data._marriageBlessingRequests || [];
+        player._revoltSupportRequests = data._revoltSupportRequests || [];
+        player._supportedRevolt = data._supportedRevolt || null;
+        player._helpedRevolt = data._helpedRevolt || false;
+        player._kqSpecialRewards = data._kqSpecialRewards || [];
+        player._kqLandGrants = data._kqLandGrants || [];
+        player._kqFailCount = data._kqFailCount || {};
+        player._kqLastFailDay = data._kqLastFailDay || {};
+        player.rentNegotiations = data.rentNegotiations || [];
+        player.landForSale = data.landForSale || [];
+        player.favorUsageTracker = data.favorUsageTracker || {};
+        player._healOfferCooldowns = data._healOfferCooldowns || {};
+        player._emBuildingPurchases = data._emBuildingPurchases || {};
+        player._propertyTaxArrears = data._propertyTaxArrears || {};
+        player.spouseLastInteractionDay = data.spouseLastInteractionDay != null ? data.spouseLastInteractionDay : null;
+        player.fame = data.fame || 0;
         // Story Mode
         player.storyMode = data.storyMode ? structuredClone(data.storyMode) : null;
         if (player.storyMode && player.storyMode.active && typeof StoryMode !== 'undefined' && StoryMode.deserialize) {
